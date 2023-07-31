@@ -15,7 +15,14 @@ import {
   toBNWei,
 } from "./utils";
 import { simpleDeposit, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { amountToLp, originChainId, defaultMinDepositConfirmations, modifyRelayHelper } from "./constants";
+import {
+  amountToLp,
+  originChainId,
+  defaultMinDepositConfirmations,
+  modifyRelayHelper,
+  CHAIN_ID_TEST_LIST,
+  repaymentChainId,
+} from "./constants";
 import { SpokePoolClient, HubPoolClient, MultiCallerClient, TokenClient, AcrossApiClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 
@@ -68,11 +75,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: originChainId, spokePool: spokePool_1 },
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: repaymentChainId, spokePool: spokePool_2 },
+      { l2ChainId: 1, spokePool: spokePool_2 },
     ]));
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
-    configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     spokePoolClient_1 = new SpokePoolClient(

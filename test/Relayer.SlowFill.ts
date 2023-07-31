@@ -2,7 +2,14 @@ import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWal
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, spyLogIncludes } from "./utils";
 import { originChainId, sinon } from "./utils";
-import { amountToLp, defaultTokenConfig, amountToDeposit, defaultMinDepositConfirmations } from "./constants";
+import {
+  amountToLp,
+  defaultTokenConfig,
+  amountToDeposit,
+  defaultMinDepositConfirmations,
+  CHAIN_ID_TEST_LIST,
+  repaymentChainId,
+} from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -46,6 +53,8 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
       { l2ChainId: originChainId, spokePool: spokePool_1 },
+      { l2ChainId: repaymentChainId, spokePool: spokePool_1 },
+      { l2ChainId: 1, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
@@ -55,7 +64,13 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
+    configStoreClient = new ConfigStoreClient(
+      spyLogger,
+      configStore,
+      { fromBlock: 0 },
+      CONFIG_STORE_VERSION,
+      CHAIN_ID_TEST_LIST
+    );
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.

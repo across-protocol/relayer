@@ -12,7 +12,6 @@ export type OutstandingTransfers = interfaces.OutstandingTransfers;
 // Common interfaces
 export type SortableEvent = interfaces.SortableEvent;
 export type BigNumberForToken = interfaces.BigNumberForToken;
-export type TreeData<T> = interfaces.TreeData<T>;
 
 // ConfigStore interfaces
 export type ParsedTokenConfig = interfaces.ParsedTokenConfig;

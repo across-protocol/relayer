@@ -30,6 +30,8 @@ describe("SpokePoolClient: Deposits", async function () {
     const outputDeposits = spokePoolClient.getDepositsForDestinationChain(destinationChainId);
     expect(outputDeposits.length).to.equal(2);
     inputDeposits.forEach((deposit, idx) => {
+      expect(outputDeposits[idx].blockTimestamp).to.not.be.undefined;
+      expect(outputDeposits[idx].realizedLpFeePct).to.not.be.undefined;
       Object.entries(deposit).forEach(([k, v]) => expect(v).to.be.equal(outputDeposits[idx][k]));
     });
   });

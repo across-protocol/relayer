@@ -1,4 +1,3 @@
-import winston from "winston";
 import { clients } from "@across-protocol/sdk-v2";
 import { FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { HubPoolClient } from "./HubPoolClient";
@@ -9,18 +8,15 @@ type SpokePoolFillFilter = clients.SpokePoolFillFilter;
 
 export class UBAClient extends clients.UBAClient {
   constructor(
-    chainIdIndices: number[],
     tokenSymbols: string[],
     hubPoolClient: HubPoolClient,
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
-    logger: winston.Logger,
-    maxBundleStates = 1
+    spokePoolClients: { [chainId: number]: SpokePoolClient }
   ) {
-    super(chainIdIndices, tokenSymbols, hubPoolClient, spokePoolClients, maxBundleStates, logger);
+    super(tokenSymbols, hubPoolClient, spokePoolClients);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
-    return getValidFillCandidates(chainId, this.hubPoolClient, this.spokePoolClients, filter);
+    return getValidFillCandidates(chainId, this.spokePoolClients, filter);
   }
 
   async getRefundRequests(chainId: number, filter: SpokePoolFillFilter = {}): Promise<RefundRequestWithBlock[]> {

@@ -14,6 +14,7 @@ import {
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { clients } from "@across-protocol/sdk-v2";
+import { UBA_MIN_CONFIG_STORE_VERSION } from "../common";
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -276,18 +277,15 @@ export async function getUnfilledDeposits(
         .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
         .map((deposit) => {
           let version: number;
-          // To determine if the fill is a UBA fill, we need to check against the bundle start block that would contain
-          // this fill.
-          const bundleStartBlockContainingDeposit = hubPoolClient.getBundleStartBlockContainingBlock(
-            deposit.blockNumber,
-            deposit.originChainId,
-            hubPoolClient.latestBlockNumber
-          );
-          if (clients.isUbaBlock(bundleStartBlockContainingDeposit, hubPoolClient.configStoreClient)) {
-            // Use version at start of bundle:
-            version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(
-              bundleStartBlockContainingDeposit
-            );
+          // To determine if the fill is a UBA fill, we need to check against the UBA bundle start blocks.
+          if (clients.isUBAActivatedAtBlock(hubPoolClient, deposit.blockNumber, deposit.originChainId)) {
+            // Use latest deposit block now to grab version which should be above the UBA activation version.
+            version = hubPoolClient.configStoreClient.getConfigStoreVersionForBlock(deposit.quoteBlockNumber);
+            if (version < UBA_MIN_CONFIG_STORE_VERSION) {
+              throw new Error(
+                `isUBAActivatedAtBlock claims UBA is activated as of deposit block ${deposit.blockNumber} but version at deposit time ${deposit.quoteBlockNumber} is ${version} which is below the minimum UBA version ${UBA_MIN_CONFIG_STORE_VERSION}`
+              );
+            }
           } else {
             // Deposit is not a UBA deposit, so use version at deposit quote timestamp:
             version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);

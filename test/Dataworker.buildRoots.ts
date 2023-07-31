@@ -20,19 +20,13 @@ import {
   mockTreeRoot,
   buildPoolRebalanceLeaves,
   modifyRelayHelper,
+  repaymentChainId,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import {
-  getRealizedLpFeeForFills,
-  getRefundForFills,
-  getRefund,
-  EMPTY_MERKLE_ROOT,
-  winston,
-  _getFeeAmount,
-} from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { compareAddresses } from "../src/utils";
 
 // Tested
@@ -47,7 +41,7 @@ let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient, spokePoo
 let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
-let spy: sinon.SinonSpy, spyLogger: winston.Logger;
+let spy: sinon.SinonSpy;
 
 let updateAllClients: () => Promise<void>;
 
@@ -70,7 +64,6 @@ describe("Dataworker: Build merkle roots", async function () {
       timer,
       spokePoolClients,
       spy,
-      spyLogger,
       spokePoolClient_1,
       spokePoolClient_2,
       updateAllClients,
@@ -1153,20 +1146,27 @@ describe("Dataworker: Build merkle roots", async function () {
       // Fully execute a bundle so we can have a history of running balances.
       const startingRunningBalances = amountToDeposit.mul(5);
       const initialPoolRebalanceLeaves = buildPoolRebalanceLeaves(
-        [originChainId, destinationChainId],
-        [[l1Token_1.address], [l1Token_1.address]],
-        [[toBN(0)], [toBN(0)]],
-        [[toBN(0)], [toBN(0)]],
-        [[startingRunningBalances], [startingRunningBalances]],
-        [0, 0]
+        [originChainId, destinationChainId, repaymentChainId, 1],
+        [[l1Token_1.address], [l1Token_1.address], [l1Token_1.address], [l1Token_1.address]],
+        [[toBN(0)], [toBN(0)], [toBN(0)], [toBN(0)]],
+        [[toBN(0)], [toBN(0)], [toBN(0)], [toBN(0)]],
+        [[startingRunningBalances], [startingRunningBalances], [startingRunningBalances], [startingRunningBalances]],
+        [0, 0, 0, 0]
       );
       const startingBlock = await hubPool.provider.getBlockNumber();
       const startingTree = await buildPoolRebalanceLeafTree(initialPoolRebalanceLeaves);
       await hubPool
         .connect(dataworker)
-        .proposeRootBundle([startingBlock, startingBlock], 2, startingTree.getHexRoot(), mockTreeRoot, mockTreeRoot);
+        .proposeRootBundle(
+          [startingBlock, startingBlock, startingBlock, startingBlock],
+          initialPoolRebalanceLeaves.length,
+          startingTree.getHexRoot(),
+          mockTreeRoot,
+          mockTreeRoot
+        );
       await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-      for (const leaf of initialPoolRebalanceLeaves) {
+      // Only execute first two leaves for this test.
+      for (const leaf of initialPoolRebalanceLeaves.slice(0, 2)) {
         await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaf), startingTree.getHexProof(leaf));
       }
 
@@ -1415,36 +1415,33 @@ describe("Dataworker: Build merkle roots", async function () {
     const l1TokenSymbol = "L1Token1";
     beforeEach(async function () {
       await updateAllClients();
-      ubaClient = new MockUBAClient(
-        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
-        [l1TokenSymbol],
-        hubPoolClient,
-        spokePoolClients,
-        spyLogger
-      );
+      ubaClient = new MockUBAClient([l1TokenSymbol], hubPoolClient, spokePoolClients);
     });
     describe("Build pool rebalance root", function () {
       it("> 0 flows", async function () {
+        // Test that the running balance, incentive balance, and the net running balance adjustment of only
+        // the latest flow are used, since these values are accumulated by the UBA client. So, add two
+        // flows.
         ubaClient.setFlows(originChainId, l1TokenSymbol, [
           {
             flow: {
               ...spokePoolClient_1.getFills()[0],
             },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: BigNumber.from(0),
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
+            runningBalance: toBNWei("2"),
+            incentiveBalance: toBNWei("2"),
+            netRunningBalanceAdjustment: toBNWei("1"),
+            lpFee: toBNWei("1"),
+            balancingFee: toBNWei("0.2"),
+          },
+          {
+            flow: {
+              ...spokePoolClient_1.getFills()[0],
             },
             runningBalance: toBNWei("1"),
             incentiveBalance: toBNWei("1"),
-            netRunningBalanceAdjustment: toBNWei("1"),
+            netRunningBalanceAdjustment: toBNWei("2"),
+            lpFee: toBNWei("1"),
+            balancingFee: toBNWei("0.2"),
           },
         ]);
 
@@ -1457,11 +1454,16 @@ describe("Dataworker: Build merkle roots", async function () {
           [originChainId, destinationChainId],
           ubaClient
         );
+        // The running balance, incentive balance, and net running balance adjustment are not accumulated from
+        // all flows, only the latest values are used.
         expect(
           deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
             chainId: originChainId,
-            bundleLpFees: [BigNumber.from(0)],
-            netSendAmounts: [toBNWei("1")],
+            // Sum of LP fees in flows
+            bundleLpFees: [toBNWei("2")],
+            // Last flow's net running balance amount
+            netSendAmounts: [toBNWei("2")],
+            // Last flow's running balance concatenated with last flow's incentive balance
             runningBalances: [toBNWei("1"), toBNWei("1")],
             groupIndex: 0,
             leafId: 0,
@@ -1639,18 +1641,9 @@ describe("Dataworker: Build merkle roots", async function () {
               ...spokePoolClient_1.getFills()[0],
               matchedDeposit: spokePoolClient_2.getDeposits()[0],
             },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: BigNumber.from(0),
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
+            balancingFee: toBNWei("0.2"),
+            lpFee: toBNWei("0.5"),
+            balancingFee: toBNWei("0.2"),
             runningBalance: toBNWei("1"),
             incentiveBalance: toBNWei("2"),
             netRunningBalanceAdjustment: toBNWei("-1"),
@@ -1825,7 +1818,7 @@ describe("Dataworker: Build merkle roots", async function () {
         };
         deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf1, leafId: 0 });
       });
-      it("Relayer balancing fees are added to refunded amonts to relayers", async function () {
+      it("Relayer balancing fees are added to refunded amounts to relayers", async function () {
         // Submit 1 deposit and 1 fill on same chain:
         await updateAllClients();
         const deposit1 = await buildDeposit(
@@ -1848,18 +1841,8 @@ describe("Dataworker: Build merkle roots", async function () {
             flow: {
               ...deposit,
             },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: toBNWei("0.1"),
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
+            lpFee: toBNWei("0.5"),
+            balancingFee: toBNWei("0.2"),
             runningBalance: toBNWei("0"),
             incentiveBalance: toBNWei("0"),
             netRunningBalanceAdjustment: toBNWei("0"),
@@ -1869,19 +1852,9 @@ describe("Dataworker: Build merkle roots", async function () {
               ...refund,
               matchedDeposit: deposit,
             },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: toBNWei("0.1"),
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
             runningBalance: toBNWei("0"),
+            balancingFee: toBNWei("0.2"),
+            lpFee: toBNWei("0.5"),
             incentiveBalance: toBNWei("0"),
             netRunningBalanceAdjustment: toBNWei("0"),
           },
@@ -1916,7 +1889,8 @@ describe("Dataworker: Build merkle roots", async function () {
           [originChainId],
           ubaClient
         );
-        let expectedRefundAmount = _getFeeAmount(refund.amount, toBNWei("0.1"));
+        // Balancing fee for refund above
+        let expectedRefundAmount = toBNWei("0.2");
         expect(relayerRefundLeaves1.leaves.length).to.equal(1);
         deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], {
           amountToReturn: ethers.constants.Zero,
@@ -1947,7 +1921,7 @@ describe("Dataworker: Build merkle roots", async function () {
           ubaClient
         );
         // Expected refund amount is now 1 + new balancing fee.
-        expectedRefundAmount = _getFeeAmount(refund.amount, toBNWei("0.1")).add(toBNWei("1"));
+        expectedRefundAmount = expectedRefundAmount.add(toBNWei("1"));
         expect(relayerRefundLeaves2.leaves.length).to.equal(1);
         deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], {
           amountToReturn: ethers.constants.Zero,
@@ -1969,18 +1943,8 @@ describe("Dataworker: Build merkle roots", async function () {
               ...refundRequest,
               matchedDeposit: deposit,
             },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: toBNWei("0.15"),
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
+            lpFee: toBNWei("0.5"),
+            balancingFee: toBNWei("0.1"),
             runningBalance: toBNWei("0"),
             incentiveBalance: toBNWei("0"),
             netRunningBalanceAdjustment: toBNWei("0"),
@@ -1995,7 +1959,7 @@ describe("Dataworker: Build merkle roots", async function () {
           ubaClient
         );
         // Expected refund amount is now 1 + new balancing fee.
-        expectedRefundAmount = _getFeeAmount(refundRequest.amount, toBNWei("0.15"));
+        expectedRefundAmount = toBNWei("0.1");
         expect(relayerRefundLeaves3.leaves.length).to.equal(1);
         deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[0], {
           amountToReturn: ethers.constants.Zero,
@@ -2048,20 +2012,10 @@ describe("Dataworker: Build merkle roots", async function () {
             flow: {
               ...spokePoolClient_2.getFills()[0],
             },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: expectedRelayerBalancingFee,
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
+            lpFee: toBNWei("0.5"),
+            balancingFee: expectedRelayerBalancingFee,
             runningBalance: toBNWei("1"),
-            incentiveBalance: toBNWei("1"),
+            incentiveBalance: expectedRelayerBalancingFee,
             netRunningBalanceAdjustment: toBNWei("1"),
           },
         ]);

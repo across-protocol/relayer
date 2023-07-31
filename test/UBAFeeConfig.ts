@@ -13,12 +13,13 @@ const hubPoolChainId = constants.HUBPOOL_CHAIN_ID;
 describe("UBAFeeConfig", async function () {
   beforeEach(async function () {
     originToken = randomAddress();
+
     config = new MockUBAConfig();
   });
   it("getUbaRewardMultiplier", async function () {
     config = new MockUBAConfig();
     // Default should be 1
-    expect(config.getUbaRewardMultiplier("999")).to.equal(1);
+    expect(config.getUbaRewardMultiplier("999")).to.equal(toBNWei("1"));
   });
   it("getIncentivePoolAdjustment", async function () {
     config = new MockUBAConfig();
@@ -119,6 +120,18 @@ describe("UBAFeeConfig", async function () {
   });
 
   describe("getBalancingFeeTuples", function () {
+    it("getZeroFeePointOnBalancingFeeCurve", async function () {
+      config.setBalancingFeeTuple(originChainId, [
+        [toBNWei("1"), toBNWei("0")],
+        [toBNWei("2"), toBNWei("1")],
+      ]);
+      expect(config.getZeroFeePointOnBalancingFeeCurve(originChainId)).to.equal(toBNWei("1"));
+    });
+    it("isBalancingFeeCurveFlatAtZero", async function () {
+      config.setBalancingFeeTuple(originChainId, [[toBNWei("1"), toBNWei("0")]]);
+      expect(config.isBalancingFeeCurveFlatAtZero(originChainId)).to.be.false;
+      expect(config.isBalancingFeeCurveFlatAtZero(destinationChainId)).to.be.true;
+    });
     it("No balancing fee tuples exist. Use default", function () {
       config.setDefaultBalancingFeeTuple([[toBNWei("100"), toBNWei("100")]]);
       expect(config.getBalancingFeeTuples(2)).to.be.deep.equal([[toBNWei("100"), toBNWei("100")]]);

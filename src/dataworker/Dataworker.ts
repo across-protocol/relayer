@@ -9,7 +9,6 @@ import {
   isDefined,
   buildPoolRebalanceLeafTree,
   updateTotalRefundAmountRaw,
-  _getFeeAmount,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
@@ -26,7 +25,6 @@ import {
 } from "../interfaces";
 import {
   PendingRootBundle,
-  TreeData,
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
@@ -51,7 +49,7 @@ import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import { isOvmChain } from "../clients/bridges";
-import { utils } from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk-v2";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -338,7 +336,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
@@ -364,15 +363,21 @@ export class Dataworker {
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
-    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
     let isUBA = false;
-    if (utils.isUBA(version)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
-        throw new Error("proposeRootBundle: Invalid config store version");
-      }
+    if (
+      sdk.clients.isUBAActivatedAtBlock(
+        this.clients.hubPoolClient,
+        mainnetBundleStartBlock,
+        this.clients.hubPoolClient.chainId
+      )
+    ) {
       isUBA = true;
     }
     if (!isUBA) {
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: "Proposing Legacy root bundle",
+      });
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesForProposal,
         spokePoolClients,
@@ -383,16 +388,11 @@ export class Dataworker {
         ..._rootBundleData,
       };
     } else {
-      const ubaClient = new UBAClient(
-        // Infer enabled chains from constructed spoke pool clients.
-        Object.keys(spokePoolClients).map((chainId) => Number(chainId)),
-        this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        this.clients.hubPoolClient,
-        spokePoolClients,
-        this.logger
-      );
-      // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-      await ubaClient.update(undefined, false);
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: "Proposing UBA root bundle",
+        mainnetBundleStartBlock,
+      });
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
         ubaClient,
@@ -571,6 +571,9 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
+    if (!ubaClient) {
+      throw new Error("UBA_proposeRootBundle#Undefined UBA client");
+    }
     const timerStart = Date.now();
     const enabledChainIds = Object.keys(spokePoolClients)
       .filter((chainId) => {
@@ -684,12 +687,11 @@ export class Dataworker {
         Number(chainId),
         this.chainIdListForBundleEvaluationBlockNumbers
       );
-
+      poolRebalanceLeafData.runningBalances[chainId] = {};
+      poolRebalanceLeafData.bundleLpFees[chainId] = {};
+      poolRebalanceLeafData.incentivePoolBalances[chainId] = {};
+      poolRebalanceLeafData.netSendAmounts[chainId] = {};
       for (const tokenSymbol of ubaClient.tokens) {
-        poolRebalanceLeafData.runningBalances[chainId] = {};
-        poolRebalanceLeafData.bundleLpFees[chainId] = {};
-        poolRebalanceLeafData.incentivePoolBalances[chainId] = {};
-        poolRebalanceLeafData.netSendAmounts[chainId] = {};
         const l1TokenAddress = this.clients.hubPoolClient
           .getL1Tokens()
           .find((l1Token) => l1Token.symbol === tokenSymbol)?.address;
@@ -703,23 +705,13 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
-        this.logger.debug({
-          at: "UBA buildPoolRebalanceLeaves",
-          message: `🌊 Found ${flowsForChain.length} flows for chain ${chainId} and token ${tokenSymbol}`,
-          flowsForChain,
-        });
 
         // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
         // chain, we'll find the previous running balance for it and use that as the starting point.
-        if (flowsForChain.length === 0) {
-          this.logger.debug({
-            at: "UBA buildPoolRebalanceLeaves",
-            message: `No flows for chain ${chainId} and token ${tokenSymbol}`,
-          });
-        } else {
+        if (flowsForChain.length > 0) {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
           const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
-          const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.systemFee.lpFee), BigNumber.from(0));
+          const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.lpFee), BigNumber.from(0));
           const netSendAmount = flowsForChain[flowsForChain.length - 1].netRunningBalanceAdjustment;
           poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = closingRunningBalance;
           poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = bundleLpFees;
@@ -736,7 +728,8 @@ export class Dataworker {
       this.maxL1TokenCountOverride,
       this.tokenTransferThreshold,
       poolRebalanceLeafData.incentivePoolBalances,
-      poolRebalanceLeafData.netSendAmounts
+      poolRebalanceLeafData.netSendAmounts,
+      true
     );
     const runningBalances = poolRebalanceLeafData.runningBalances;
     return {
@@ -788,19 +781,13 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
-        flowsForChain.forEach(({ flow, relayerFee }) => {
+        flowsForChain.forEach(({ flow, balancingFee }) => {
           // All flows in here are assumed to be valid, so we can use the flow's
           // repayment chain to pay out the refund. But we need to check which
           // token should be repaid in.
           if (isUbaOutflow(flow)) {
-            const feeAmount = _getFeeAmount(flow.amount, relayerFee.relayerBalancingFee);
-            updateTotalRefundAmountRaw(
-              fillsToRefund,
-              feeAmount,
-              flow.repaymentChainId,
-              flow.relayer,
-              outflowIsFill(flow) ? flow.destinationToken : flow.refundToken
-            );
+            const refundToken = outflowIsFill(flow) ? flow.destinationToken : flow.refundToken;
+            updateTotalRefundAmountRaw(fillsToRefund, balancingFee, flow.repaymentChainId, flow.relayer, refundToken);
           }
         });
       }
@@ -844,12 +831,12 @@ export class Dataworker {
         const matchingOutflow = ubaClient
           .getModifiedFlows(destinationChainId, tokenSymbol, blockRangesForDestChain[0], blockRangesForDestChain[1])
           .find((flow) => flow.flow.depositId === deposit.depositId);
-        if (!matchingOutflow || !matchingOutflow?.relayerFee?.relayerBalancingFee) {
+        if (!matchingOutflow || !matchingOutflow?.balancingFee) {
           throw new Error(`No matching outflow with refund balancing fee found for deposit ID ${deposit.depositId}`);
         }
         return {
           ...unfilledDeposit,
-          relayerBalancingFee: matchingOutflow.relayerFee.relayerBalancingFee,
+          relayerBalancingFee: matchingOutflow.balancingFee,
         };
       }
     );
@@ -861,7 +848,8 @@ export class Dataworker {
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     if (
       !this.clients.hubPoolClient.isUpdated ||
@@ -912,7 +900,8 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients
+      earliestBlocksInSpokePoolClients,
+      ubaClient
     );
     if (!valid) {
       // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
@@ -947,16 +936,26 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
+    ubaClient?: UBAClient
   ): Promise<
     // If valid is false, we get a reason and we might get expected trees.
     | {
         valid: false;
         reason: string;
         expectedTrees?: {
-          poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
-          relayerRefundTree: TreeData<RelayerRefundLeaf>;
-          slowRelayTree: TreeData<SlowFillLeaf>;
+          poolRebalanceTree: {
+            tree: MerkleTree<PoolRebalanceLeaf>;
+            leaves: PoolRebalanceLeaf[];
+          };
+          relayerRefundTree: {
+            tree: MerkleTree<RelayerRefundLeaf>;
+            leaves: RelayerRefundLeaf[];
+          };
+          slowRelayTree: {
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
+          };
         };
       }
     // If valid is true, we don't get a reason, and we always get expected trees.
@@ -964,9 +963,18 @@ export class Dataworker {
         valid: true;
         reason: undefined;
         expectedTrees: {
-          poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
-          relayerRefundTree: TreeData<RelayerRefundLeaf>;
-          slowRelayTree: TreeData<SlowFillLeaf>;
+          poolRebalanceTree: {
+            tree: MerkleTree<PoolRebalanceLeaf>;
+            leaves: PoolRebalanceLeaf[];
+          };
+          relayerRefundTree: {
+            tree: MerkleTree<RelayerRefundLeaf>;
+            leaves: RelayerRefundLeaf[];
+          };
+          slowRelayTree: {
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
+          };
         };
       }
   > {
@@ -1132,12 +1140,14 @@ export class Dataworker {
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
-    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
     let isUBA = false;
-    if (utils.isUBA(version)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
-        throw new Error("validateRootBundle: Invalid config store version");
-      }
+    if (
+      sdk.clients.isUBAActivatedAtBlock(
+        this.clients.hubPoolClient,
+        mainnetBundleStartBlock,
+        this.clients.hubPoolClient.chainId
+      )
+    ) {
       isUBA = true;
     }
     if (!isUBA) {
@@ -1151,15 +1161,6 @@ export class Dataworker {
         ..._rootBundleData,
       };
     } else {
-      const ubaClient = new UBAClient(
-        this.chainIdListForBundleEvaluationBlockNumbers,
-        this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        this.clients.hubPoolClient,
-        spokePoolClients,
-        this.logger
-      );
-      // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-      await ubaClient.update(undefined, false);
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesImpliedByBundleEndBlocks,
         ubaClient,
@@ -1265,7 +1266,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -1365,12 +1367,14 @@ export class Dataworker {
             this.clients.hubPoolClient.chainId,
             this.chainIdListForBundleEvaluationBlockNumbers
           )[0];
-          const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
           let isUBA = false;
-          if (utils.isUBA(version)) {
-            if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
-              throw new Error("proposeRootBundle: Invalid config store version");
-            }
+          if (
+            sdk.clients.isUBAActivatedAtBlock(
+              this.clients.hubPoolClient,
+              mainnetBundleStartBlock,
+              this.clients.hubPoolClient.chainId
+            )
+          ) {
             isUBA = true;
           }
           if (!isUBA) {
@@ -1383,15 +1387,6 @@ export class Dataworker {
               ..._rootBundleData,
             };
           } else {
-            const ubaClient = new UBAClient(
-              this.chainIdListForBundleEvaluationBlockNumbers,
-              this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-              this.clients.hubPoolClient,
-              spokePoolClients,
-              this.logger
-            );
-            // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-            await ubaClient.update(undefined, false);
             const _rootBundleData = await this.UBA_proposeRootBundle(blockNumberRanges, ubaClient, spokePoolClients);
             rootBundleData = {
               ..._rootBundleData,
@@ -1593,7 +1588,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -1639,7 +1635,8 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients
+      earliestBlocksInSpokePoolClients,
+      ubaClient
     );
 
     // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves and before
@@ -1912,7 +1909,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     const { configStoreClient, hubPoolClient } = this.clients;
     this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: "Executing relayer refund leaves" });
@@ -2004,12 +2002,14 @@ export class Dataworker {
           hubPoolClient.chainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         )[0];
-        const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
         let isUBA = false;
-        if (utils.isUBA(version)) {
-          if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
-            throw new Error("proposeRootBundle: Invalid config store version");
-          }
+        if (
+          sdk.clients.isUBAActivatedAtBlock(
+            this.clients.hubPoolClient,
+            mainnetBundleStartBlock,
+            this.clients.hubPoolClient.chainId
+          )
+        ) {
           isUBA = true;
         }
         if (!isUBA) {
@@ -2022,15 +2022,6 @@ export class Dataworker {
             ..._rootBundleData,
           };
         } else {
-          const ubaClient = new UBAClient(
-            this.chainIdListForBundleEvaluationBlockNumbers,
-            hubPoolClient.getL1Tokens().map((token) => token.symbol),
-            hubPoolClient,
-            spokePoolClients,
-            this.logger
-          );
-          // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-          await ubaClient.update({}, false);
           const _rootBundleData = await this.UBA_proposeRootBundle(blockNumberRanges, ubaClient, spokePoolClients);
           rootBundleData = {
             ..._rootBundleData,

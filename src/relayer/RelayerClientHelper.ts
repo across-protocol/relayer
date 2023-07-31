@@ -1,4 +1,3 @@
-import assert from "assert";
 import winston from "winston";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { Wallet } from "../utils";
@@ -37,13 +36,10 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
-  const tokenSymbols = []; // @todo: Populate with token list.
   const ubaClient = new UBAClient(
-    config.chainIdListIndices,
-    tokenSymbols,
+    commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
     commonClients.hubPoolClient,
-    spokePoolClients,
-    logger
+    spokePoolClients
   );
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
@@ -112,8 +108,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   await configStoreClient.update();
   const version = configStoreClient.getConfigStoreVersionForTimestamp();
   if (sdkUtils.isUBA(version)) {
-    assert(configStoreClient.isValidConfigStoreVersion(version), "Relayer does not support UBA transfers");
-    await ubaClient.update(undefined, true);
+    await ubaClient.update();
   } else {
     // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
     // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
