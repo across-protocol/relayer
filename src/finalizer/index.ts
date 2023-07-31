@@ -4,6 +4,7 @@ import {
   startupLogLevel,
   processEndPollingLoop,
   getNetworkName,
+  etherscanLink,
   getBlockForTimestamp,
   getCurrentTime,
   disconnectRedisClient,
@@ -172,25 +173,23 @@ export async function finalize(
     try {
       // Note: We might want to slice these up in the future but I don't forsee us including enough events
       // to approach the block gas limit.
-      const txn = await await multicall2.estimateGas.aggregate(finalizationsToBatch.callData);
-      console.log(txn);
-      return;
-      // finalizationsToBatch.withdrawals.forEach((withdrawal) => {
-      //   logger.info({
-      //     at: "Finalizer",
-      //     message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
-      //       withdrawal.l1TokenSymbol
-      //     } 🪃`,
-      //     transactionHash: etherscanLink(txn.transactionHash, 1),
-      //   });
-      // });
-      // finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
-      //   logger.info({
-      //     at: "Finalizer",
-      //     message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
-      //     transactionHash: etherscanLink(txn.transactionHash, 1),
-      //   });
-      // });
+      const txn = await (await multicall2.aggregate(finalizationsToBatch.callData)).wait();
+      finalizationsToBatch.withdrawals.forEach((withdrawal) => {
+        logger.info({
+          at: "Finalizer",
+          message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
+            withdrawal.l1TokenSymbol
+          } 🪃`,
+          transactionHash: etherscanLink(txn.transactionHash, 1),
+        });
+      });
+      finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
+        logger.info({
+          at: "Finalizer",
+          message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
+          transactionHash: etherscanLink(txn.transactionHash, 1),
+        });
+      });
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
