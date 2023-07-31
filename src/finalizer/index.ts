@@ -31,7 +31,6 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
 } from "../common";
-import * as optimismSDK from "@across-protocol/optimism-sdk";
 config();
 let logger: winston.Logger;
 
@@ -124,7 +123,7 @@ export async function finalize(
       finalizationsToBatch.callData.push(...finalizations.callData);
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 10) {
-      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as optimismSDK.CrossChainMessenger;
+      const crossChainMessenger = getOptimismClient(chainId, hubSigner);
       const firstBlockToFinalize = await getBlockForTimestamp(
         chainId,
         currentTime - optimisticRollupFinalizationWindow
