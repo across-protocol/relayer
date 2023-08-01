@@ -1,4 +1,3 @@
-import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient, MockUBAClient } from "./mocks";
 import { ethers, createSpyLogger, deployConfigStore, hubPoolFixture, deploySpokePool, expect } from "./utils";
 
@@ -22,15 +21,9 @@ describe("BaseAbstractClient.isUpdated", () => {
 
     spokePoolClient = new MockSpokePoolClient(spyLogger, spokePool, 1, deploymentBlock);
 
-    ubaClient = new MockUBAClient(
-      [1],
-      ["DAI"],
-      hubPoolClient,
-      {
-        "1": spokePoolClient,
-      },
-      spyLogger
-    );
+    ubaClient = new MockUBAClient([], hubPoolClient, {
+      "1": spokePoolClient,
+    });
   });
 
   describe("HubPoolClient", () => {
@@ -56,27 +49,15 @@ describe("BaseAbstractClient.isUpdated", () => {
   });
   describe("UBAClient", () => {
     it("should return true if the client is updated", async () => {
+      (hubPoolClient.configStoreClient as MockConfigStoreClient).setUBAActivationBlock(0);
       await hubPoolClient.configStoreClient.update();
       await hubPoolClient.update();
       await spokePoolClient.update();
       hubPoolClient.setLatestBlockNumber(50000);
-      await ubaClient.update(
-        {
-          "1": {} as clients.UBAChainState,
-        },
-        false
-      );
+      await ubaClient.update();
       expect(ubaClient.isUpdated).to.be.true;
     });
     it("should return false if the client is not updated", async () => {
-      await hubPoolClient.configStoreClient.update();
-      await hubPoolClient.update();
-      await ubaClient.update(
-        {
-          "1": {} as clients.UBAChainState,
-        },
-        false
-      );
       expect(ubaClient.isUpdated).to.be.false;
     });
   });

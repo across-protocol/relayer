@@ -61,14 +61,14 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     }
   }
 
-  public async set<T>(key: string, value: T, ttl?: number): Promise<boolean> {
+  public async set<T>(key: string, value: T, ttl?: number): Promise<string | undefined> {
     // Instantiate the redis client if it has not been instantiated yet.
     if (!this.redisClient) {
       await this.instantiate();
     }
     // Call the setRedisKey function to set the value in redis.
     await setRedisKey(key, JSON.stringify(value), this.redisClient, ttl);
-    // Return true to indicate that the value was set successfully.
-    return true;
+    // Return key to indicate that the value was set successfully.
+    return key;
   }
 }

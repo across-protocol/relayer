@@ -551,8 +551,8 @@ export class Relayer {
     }
 
     const { depositId } = deposit;
-    const { systemFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
-    const { systemFee: realizedLpFeePct } = systemFee;
+    const { depositBalancingFee, lpFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
+    const realizedLpFeePct = depositBalancingFee.add(lpFee);
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({
@@ -567,8 +567,16 @@ export class Relayer {
     if (!sdkUtils.isUBA(version)) {
       return toBN(0);
     }
-    const { relayerFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
-    return relayerFee.relayerBalancingFee;
+    const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
+      deposit.originToken,
+      deposit.originChainId
+    )?.symbol;
+    const relayerBalancingFee = this.clients.ubaClient.computeBalancingFeeForNextRefund(
+      deposit.destinationChainId,
+      tokenSymbol,
+      deposit.amount
+    );
+    return relayerBalancingFee;
   }
 
   private handleTokenShortfall() {

@@ -30,8 +30,8 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients, utils } from "@across-protocol/sdk-v2";
-const { refundRequestIsValid } = clients;
+import { clients } from "@across-protocol/sdk-v2";
+const { refundRequestIsValid, isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -184,12 +184,8 @@ export class BundleDataClient {
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
-    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetStartBlock);
     let isUBA = false;
-    if (utils.isUBA(version)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
-        throw new Error("loadData: Invalid config store version");
-      }
+    if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock, this.clients.hubPoolClient.chainId)) {
       isUBA = true;
     }
     return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
