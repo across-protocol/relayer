@@ -200,6 +200,7 @@ At this point we have a simplified description for deterministically setting all
       - Minus slow fills where destination chain equal to this chain
       - Minus slow fill excesses
       - Minus amounts included in `netSendAmounts`
+      - Plus latest validated running balance for token
     - Net send amounts
     - Refunds for fills where repayment chain equal to this chain
       - Amount per relayer
