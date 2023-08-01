@@ -10,6 +10,27 @@ SpokePool capital is required for two purposes: refunding relayers who successfu
 
 However, oftentimes SpokePools do not have enough capital on hand to fulfill the capital requirements described in the previous paragraph. This is when Across would want to tap into LP capital on HubPool to fulfill these capital deficits. Usually, the L2 network on which the SpokePool in question is deployed has a canonical bridge connected to Ethereum, where the HubPool is deployed. Across can therefore send its LP capital from the HubPool to the SpokePool and usually, this is a pretty fast L1 to L2 bridge over the canonical bridge.
 
+Tokens only enter Across in two ways: via user deposits or via liquidity providers. Tokens exit via SpokePools as refunds for relayers or to deposit recipients, and HubPools when liquidity providers remove funds.
+
+```mermaid
+stateDiagram-v2
+direction LR
+[*] --> Depositor
+Depositor --> SpokePool
+SpokePool --> Recipient
+SpokePool --> Relayer
+SpokePool --> CanonicalBridge
+CanonicalBridge --> HubPool
+HubPool --> CanonicalBridge
+CanonicalBridge --> SpokePool
+LP --> HubPool
+HubPool --> LP
+[*] --> LP
+LP --> [*]
+Recipient --> [*]
+Relayer --> [*]
+```
+
 ### What is a canonical bridge?
 
 An L2's "canonical bridge" is one that is secured by the same trusted agents that secures the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://docs.avax.network/learn/avalanche/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumoptions.
