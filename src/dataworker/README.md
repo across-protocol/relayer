@@ -1,8 +1,10 @@
 # How Across Root Bundles are Constructed
+
 This document explains how the Dataworker constructs "root bundles", which instruct the Across system how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
 
 ## Why does Across need to move capital around?
-There are two types of capital pools in Across: liquidity provider capital in the `HubPool` ("LP capital") and capital held in the `SpokePools` ("SpokePool balance"). 
+
+There are two types of capital pools in Across: liquidity provider capital in the `HubPool` ("LP capital") and capital held in the `SpokePools` ("SpokePool balance").
 
 SpokePool capital is required for two purposes: refunding relayers who successfully filled a deposit, on the repayment chain of their choice, and fulfilling deposits "slowly". These "slow" fills are performed when a deposit has not been fully filled by relayers and provides an assurance to depositors that their deposits will be filled **eventually** after some capped amount of time.
 
@@ -13,7 +15,8 @@ However, oftentimes SpokePools do not have enough capital on hand to fulfill the
 An L2's "canonical bridge" is one that is secured by the same trusted agents that secures the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://docs.avax.network/learn/avalanche/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumoptions.
 
 ### Supporting capital deficits on SpokePools without canonical bridges
-When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Across has a few ways to over come this. 
+
+When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Across has a few ways to over come this.
 
 One, it could use a third party bridge, but this is strongly avoided because it exposes LP capital to additional trust assumptions. Across historically has avoided supporting networks without canonical bridges for this reason, and moreover its been unnecessary as the most popular L2 networks have proven to be those that have spent the time to build out an effective canonical bridge.
 
@@ -28,7 +31,6 @@ This is where "bundles" come in. Across "bundles" are really just a collection o
 3. Whether to send any LP capital out of the HubPool over the canonical bridge to a SpokePool
 4. Whether to return any SpokePool balance back to the HubPool
 
-
 Points 3 and 4 above are dependent on 1 and 2 because the amount of capital to move between HubPool and SpokePool depends primarily on the relayer refund and slow fill requirements across the SpokePools.
 
 Across therefore keeps track of a "running balance" (for each token and for each chain) that takes into account:
@@ -36,8 +38,8 @@ Across therefore keeps track of a "running balance" (for each token and for each
 - The amount of token deposited on the SpokePool
 - minus the amount of refunds owed to relayer who wanted repayment out of that SpokePool
 - minus the unfilled amount from deposits needed to be slow filled out of that SpokePool
-  
-Generally, if this running balance is negative, then Across needs to send LP capital out of the HubPool to the SpokePool to meet all debt requirements. 
+
+Generally, if this running balance is negative, then Across needs to send LP capital out of the HubPool to the SpokePool to meet all debt requirements.
 
 ### SpokePool targets and thresholds
 
@@ -49,7 +51,7 @@ In a fantastical world, Across moves capital around instantaneously whenever cap
 
 These instructions can very easily be modified to conduct an "attack" on Across: "send all LP capital to my EOA on the Ethereum_SpokePool". Therefore its important that these bundle proposals are subject to a long enough challenge period that every invalid bundle gets challenged.
 
-On the other hand, the longer the challenge period, the slower that Across can respond to capital requirements. Across essentially can only move capital around as often as the challenge period, so every two hours currently. 
+On the other hand, the longer the challenge period, the slower that Across can respond to capital requirements. Across essentially can only move capital around as often as the challenge period, so every two hours currently.
 
 Every two hours, the Dataworker will propose capital reallocation instructions to Across based on the previous two hours' worth of token flows. This is where the concept of "bundle block ranges" comes into play. Each proposed root bundle includes something called the ["bundle evaluation block numbers"](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L149). These are included by the Dataworker [at proposal time](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L567) and are used by everyone else to validate their proposed Merkle roots.
 
@@ -60,6 +62,7 @@ These end blocks inform all actors which block ranges, per chain, they included 
 You might have noticed that the `uint256[] calldata bundleEvaluationBlockNumbers` are a single array of block numbers; how can you know which block range to query events over? A range usually implies an array of two dimensional arrays, likely with a "start" and "end" block per chain.
 
 The implied block range for a chain is simply:
+
 - `start`: previous bundle's end block for this chain + 1
 - `end`: the bundle end block for the chain
 
@@ -77,7 +80,7 @@ One assumption in Across, is that each chain that Across supports must have an e
 
 ```mermaid
 flowchart LR
-    A[A = end block for chain C in last validated proposal] --> B{C is disabled in pending proposal};  
+    A[A = end block for chain C in last validated proposal] --> B{C is disabled in pending proposal};
     B -->|True| C[B = A]
     B -->|False| D[B = A+1]
 ```
@@ -121,7 +124,7 @@ event FilledRelay(
 );
 ```
 
-A [deposit](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L119) contains: 
+A [deposit](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L119) contains:
 
 ```solidity
 event FundsDeposited(
@@ -142,7 +145,7 @@ Therefore, `amount`, `originChainId`, `destinationChainId`, `relayerFeePct`, `de
 
 Finally, the fill's `realizedLpFeePct` must be correct. Currently this is deterministically linked with the deposit's `quoteTimestamp`: there is a correct `realizedLpFeePct` for each `quoteTimestamp`, which is computed by querying the HubPool's "utilization" at the Ethereum block height corresponding to the `quoteTimestamp`. This is described in the [UMIP here](https://github.com/UMAprotocol/UMIPs/blob/e3198578b1d339914afa5243a80e3ac8055fba34/UMIPs/umip-157.md#validating-realizedlpfeepct).
 
-*N.B. This formula for setting the `realizedLpFeePct` will change in the UBA model and will not be primarily linked to the deposit's `quoteTimestamp`.*
+_N.B. This formula for setting the `realizedLpFeePct` will change in the UBA model and will not be primarily linked to the deposit's `quoteTimestamp`._
 
 ## Incorporating slow fills
 
@@ -157,7 +160,7 @@ flowchart TD
     B --> C[Check for existing slow fill for d]
     C -->|Slow fill for d does not exist| E[Determine how much to reserve for slow fill]
     E -->|U > 0| N[Create new slow fill for amount U]
-    E -->|U == 0| M["f completed the deposit but no slow fill leaf exists yet in this bundle. 
+    E -->|U == 0| M["f completed the deposit but no slow fill leaf exists yet in this bundle.
     We might have to remove funds from the SpokePool balance to account for a slow fill excess"]
     C -->|Slow fill for d already exists with amount Z| D["Compute remaining unfilled deposit amount X = minimum(Z, U)"]
     D -->|X == 0| F[Delete slow fill leaf for d]
@@ -168,7 +171,7 @@ Each slow fill amount `U` should be subtracted from the running balance of the s
 
 ### Slow Fill Excesses
 
-You'll notice that one of the flow chart paths leads to a possible slow fill "excess". This is referring to the situation where a slow fill leaf sent in a previous bundle to cover an unfilled deposit amount was front-run by a relayer's partial fill. This means that the SpokePool balance has some excess amount now containing the amount that the previous bundle had reserved as a slow fill payment. This excess would then need to be deleted from the running balance. 
+You'll notice that one of the flow chart paths leads to a possible slow fill "excess". This is referring to the situation where a slow fill leaf sent in a previous bundle to cover an unfilled deposit amount was front-run by a relayer's partial fill. This means that the SpokePool balance has some excess amount now containing the amount that the previous bundle had reserved as a slow fill payment. This excess would then need to be deleted from the running balance.
 
 Excesses from slow fills are only created when a partial fill completes a deposit. To compute the excess, we need to always check that a previous bundle proposer had not already sent a slow fill amount for this unfilled deposit. This can be determined by checking the last partial fill for the deposit. If the partial fill occurred in a previous bundle, then a slow fill was sent for it and there is an excess if `f` was not the slow fill execution. If `f` was a slow fill execution, then there is an excess if the executed amount is less than the original slow fill payment
 
@@ -199,7 +202,7 @@ At this point we have a simplified description for deterministically setting all
       - Minus amounts included in `netSendAmounts`
     - Net send amounts
     - Refunds for fills where repayment chain equal to this chain
-      - Amount per relayer 
+      - Amount per relayer
     - Slow fills where destination chain equal to this chain
 
 This is everything that the Dataworker needs to construct a root bundle! All that's left to do is to create Merkle Leaves containing the above information in the formats described below, and to summarize them as merkle roots. Only the merkle roots and bundle end blocks are published on-chain. Any validator of the bundle should now be able to take the bundle end blocks and re-construct the full merkle trees using the instructions above. If the validator constructs different merkle roots, then they should dispute the bundle during the challenge period.
