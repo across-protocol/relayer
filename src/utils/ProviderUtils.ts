@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ethers } from "ethers";
+import { FetchRequest, FetchResponse, Network, JsonRpcProvider } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
@@ -9,7 +9,6 @@ import {
   MAX_REORG_DISTANCE,
   PROVIDER_CACHE_TTL,
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
-  BLOCK_NUMBER_TTL,
 } from "../common";
 import { delay, Logger } from "./";
 
@@ -27,22 +26,32 @@ interface RateLimitTask {
   reject: (err: any) => void;
 }
 
-// StaticJsonRpcProvider is used in place of JsonRpcProvider to avoid redundant eth_chainId queries prior to each
-// request. This is safe to use when the back-end provider is guaranteed not to change.
-// See https://docs.ethers.io/v5/api/providers/jsonrpc-provider/#StaticJsonRpcProvider
-
-// This provider is a very small addition to the StaticJsonRpcProvider that ensures that no more than `maxConcurrency`
+// This provider is a very small addition to the JsonRpcProvider that ensures that no more than `maxConcurrency`
 // requests are ever in flight. It uses the async/queue library to manage this.
-class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
+class RateLimitedProvider extends JsonRpcProvider {
   // The queue object that manages the tasks.
   private queue: QueueObject;
+
+  // Conveniently store commonly-accessed properties
+  public chainId: number;
+  public url: string;
 
   // Takes the same arguments as the JsonRpcProvider, but it has an additional maxConcurrency value at the beginning
   // of the list.
   constructor(
     maxConcurrency: number,
-    ...cacheConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
+    ...cacheConstructorParams: ConstructorParameters<typeof JsonRpcProvider>
   ) {
+    // Add a static network to the options to avoid redundant eth_chainId queries prior to each
+    // request. This is safe to use when the back-end provider is guaranteed not to change.
+    // See https://docs.ethers.org/v6/api/providers/jsonrpc/#JsonRpcApiProviderOptions
+
+    // @dev cacheConstructorParams = [url?: string | FetchRequest, network?: Networkish, options?: JsonRpcApiProviderOptions]
+    // https://docs.ethers.org/v6/api/providers/jsonrpc/#JsonRpcProvider_new
+    cacheConstructorParams[2] = {
+      ...cacheConstructorParams[2],
+      staticNetwork: Network.from(cacheConstructorParams[1]),
+    }
     super(...cacheConstructorParams);
 
     // This sets up the queue. Each task is executed by calling the superclass's send method, which fires off the
@@ -54,6 +63,9 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
         .then(resolve)
         .catch(reject);
     }, maxConcurrency);
+
+    this.chainId = Number(this._network.chainId.toString());
+    this.url = this._getConnection().url;
   }
 
   override async send(method: string, params: Array<any>): Promise<any> {
@@ -71,8 +83,8 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
 
 const defaultTimeout = 60 * 1000;
 
-function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
-  return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
+function formatProviderError(provider: JsonRpcProvider, rawErrorText: string) {
+  return `Provider ${provider._getConnection().url} failed with error: ${rawErrorText}`;
 }
 
 function createSendErrorWithMessage(message: string, sendError: any) {
@@ -130,14 +142,14 @@ class CacheProvider extends RateLimitedProvider {
   ) {
     super(...jsonRpcConstructorParams);
 
-    if (MAX_REORG_DISTANCE[this.network.chainId] === undefined) {
-      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
+    if (MAX_REORG_DISTANCE[this.chainId] === undefined) {
+      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.chainId}`);
     }
 
-    this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
+    this.maxReorgDistance = MAX_REORG_DISTANCE[this.chainId];
 
     // Pre-compute as much of the redis key as possible.
-    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}`;
+    const cachePrefix = `${providerCacheNamespace},${new URL(this.url).hostname},${this.chainId}`;
     this.getBlockByNumberPrefix = `${cachePrefix}:getBlockByNumber,`;
     this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
     this.callCachePrefix = `${cachePrefix}:eth_call,`;
@@ -231,10 +243,7 @@ class CacheProvider extends RateLimitedProvider {
   }
 
   private async canCacheInformationFromBlock(blockNumber: number) {
-    // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
-    // the block that is allowed. This means if a block has been retrieved within the last n seconds, no provider
-    // query will be made.
-    const currentBlockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
+    const currentBlockNumber = await this.getBlockNumber();
 
     // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
     const firstUnsafeBlockNumber = currentBlockNumber - this.maxReorgDistance;
@@ -242,10 +251,10 @@ class CacheProvider extends RateLimitedProvider {
   }
 }
 
-class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
-  readonly providers: ethers.providers.StaticJsonRpcProvider[];
+class RetryProvider extends JsonRpcProvider {
+  readonly providers: JsonRpcProvider[];
   constructor(
-    params: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>[],
+    params: ConstructorParameters<typeof JsonRpcProvider>[],
     chainId: number,
     readonly nodeQuorumThreshold: number,
     readonly retries: number,
@@ -282,17 +291,17 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     const quorumThreshold = this._getQuorum(method, params);
     const requiredProviders = this.providers.slice(0, quorumThreshold);
     const fallbackProviders = this.providers.slice(quorumThreshold);
-    const errors: [ethers.providers.StaticJsonRpcProvider, string][] = [];
+    const errors: [JsonRpcProvider, string][] = [];
 
     // This function is used to try to send with a provider and if it fails pop an element off the fallback list to try
     // with that one. Once the fallback provider list is empty, the method throws. Because the fallback providers are
     // removed, we ensure that no provider is used more than once because we care about quorum, making sure all
     // considered responses come from unique providers.
     const tryWithFallback = (
-      provider: ethers.providers.StaticJsonRpcProvider
-    ): Promise<[ethers.providers.StaticJsonRpcProvider, any]> => {
+      provider: JsonRpcProvider
+    ): Promise<[JsonRpcProvider, any]> => {
       return this._trySend(provider, method, params)
-        .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
+        .then((result): [JsonRpcProvider, any] => [provider, result])
         .catch((err) => {
           // Append the provider and error to the error array.
           errors.push([provider, err?.stack || err?.toString()]);
@@ -316,7 +325,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     if (!results.every(isPromiseFulfilled)) {
       // Format the error so that it's very clear which providers failed and succeeded.
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
-      const successfulProviderUrls = results.filter(isPromiseFulfilled).map((result) => result.value[0].connection.url);
+      const successfulProviderUrls = results.filter(isPromiseFulfilled).map((result) => result.value[0]._getConnection().url);
       throw createSendErrorWithMessage(
         `Not enough providers succeeded. Errors:\n${errorTexts.join("\n")}\n` +
           `Successful Providers:\n${successfulProviderUrls.join("\n")}`,
@@ -334,7 +343,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     const throwQuorumError = () => {
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
-      const successfulProviderUrls = values.map(([provider]) => provider.connection.url);
+      const successfulProviderUrls = values.map(([provider]) => provider._getConnection().url);
       throw new Error(
         "Not enough providers agreed to meet quorum.\n" +
           "Providers that errored:\n" +
@@ -353,7 +362,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     const fallbackResults = await Promise.allSettled(
       fallbackProviders.map((provider) =>
         this._trySend(provider, method, params)
-          .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
+          .then((result): [JsonRpcProvider, any] => [provider, result])
           .catch((err) => {
             errors.push([provider, err?.stack || err?.toString()]);
             throw new Error("No fallbacks during quorum search");
@@ -400,11 +409,11 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     const mismatchedProviders = Object.fromEntries(
       [...values, ...fallbackValues]
         .filter(([, result]) => !compareRpcResults(method, result, quorumResult))
-        .map(([provider, result]) => [provider.connection.url, result])
+        .map(([provider, result]) => [provider._getConnection().url, result])
     );
     const quorumProviders = [...values, ...fallbackValues]
       .filter(([, result]) => compareRpcResults(method, result, quorumResult))
-      .map(([provider]) => provider.connection.url);
+      .map(([provider]) => provider._getConnection().url);
     if (Object.keys(mismatchedProviders).length > 0 || errors.length > 0) {
       logger.warn({
         at: "ProviderUtils",
@@ -420,7 +429,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     return quorumResult;
   }
 
-  _trySend(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
+  _trySend(provider: JsonRpcProvider, method: string, params: Array<any>): Promise<any> {
     let promise = provider.send(method, params);
     for (let i = 0; i < this.retries; i++) {
       promise = promise.catch(() => delay(this.delay).then(() => provider.send(method, params)));
@@ -526,7 +535,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   let rateLimitLogCounter = 0;
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
-    async (attempt: number, url: string): Promise<boolean> => {
+    async (req: FetchRequest, _res: FetchResponse, attempt: number): Promise<boolean> => {
       // Implement a slightly aggressive expontential backoff to account for fierce paralellism.
       // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.
       const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
@@ -534,11 +543,11 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
       if (logger && rateLimitLogCounter++ % logEveryNRateLimitErrors === 0) {
         // Make an effort to filter out any api keys.
-        const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
+        const regex = req.url.match(/https?:\/\/([\w.-]+)\/.*/);
         logger.debug({
           at: "ProviderUtils#rpcRateLimited",
           message: `Got rate-limit (429) response on attempt ${attempt}.`,
-          rpc: regex ? regex[1] : url,
+          rpc: regex ? regex[1] : req.url,
           retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,
         });
@@ -548,19 +557,25 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
       return attempt < retries;
     };
 
-  // See ethers ConnectionInfo for field descriptions.
-  // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
+  // See ethers FetchRequest for field descriptions.
+  // https://docs.ethers.org/v6/api/utils/fetching/#FetchRequest
   const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold).map(
-    (nodeUrl): [ethers.utils.ConnectionInfo, number] => [
-      {
-        url: nodeUrl,
-        timeout,
-        allowGzip: true,
-        throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
-        throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
-      },
-      chainId,
-    ]
+    (nodeUrl): [FetchRequest, number] => {
+      const fetchRequest = new FetchRequest(nodeUrl);
+      // Enable and request gzip-encoded responses. The response will
+      // automatically be decompressed.
+      fetchRequest.allowGzip = true;
+      // The timeout (in milliseconds) to wait for a complere response.
+      fetchRequest.timeout = timeout;
+      fetchRequest.setThrottleParams({
+        slotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
+      });
+      fetchRequest.retryFunc = rpcRateLimited({ nodeMaxConcurrency, logger });
+      return [
+        new FetchRequest(nodeUrl),
+        chainId,
+      ]
+  }
   );
 
   const provider = new RetryProvider(

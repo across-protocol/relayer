@@ -3,7 +3,6 @@ import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   winston,
   getNetworkName,
-  Contract,
   runTransaction,
   BigNumber,
   etherscanLink,
@@ -12,6 +11,7 @@ import {
   TransactionSimulationResult,
   willSucceed,
 } from "../utils";
+import { Contract } from "ethers"
 
 export interface AugmentedTransaction {
   contract: Contract;

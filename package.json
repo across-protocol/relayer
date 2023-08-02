@@ -30,7 +30,7 @@
     "async": "^3.2.4",
     "axios": "^1.4.0",
     "dotenv": "^16.3.1",
-    "ethers": "^5.7.2",
+    "ethers": "^6.6.7",
     "hardhat": "^2.14.0",
     "hardhat-deploy": "^0.11.34",
     "lodash": "^4.17.21",
