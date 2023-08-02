@@ -100,17 +100,24 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
       rpcResults[key] = value;
     }
   };
-
-  if (method === "eth_getBlockByNumber") {
-    // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
-    // led alchemy and quicknode to disagree on the the miner field's value.
-    const ignoredKeys = ["miner"];
+  const compareResultsAndFilterIgnoredKeys = (ignoredKeys: string[], rpcResultA: any, rpcResultB: any): boolean => {
     const ignoredMappingsA = deleteIgnoredKeys(ignoredKeys, rpcResultA);
     const ignoredMappingsB = deleteIgnoredKeys(ignoredKeys, rpcResultB);
     const result = lodash.isEqual(rpcResultA, rpcResultB);
     addIgnoredFilteredKeys(ignoredMappingsA, rpcResultA);
     addIgnoredFilteredKeys(ignoredMappingsB, rpcResultB);
     return result;
+  };
+
+  if (method === "eth_getBlockByNumber") {
+    // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
+    // led alchemy and quicknode to disagree on the the miner field's value.
+    return compareResultsAndFilterIgnoredKeys(["miner"], rpcResultA, rpcResultB);
+  } else if (method === "eth_getLogs") {
+    // We've seen some RPC's like QuickNode add in transactionLogIndex which isn't in the
+    // JSON RPC spec: https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterchanges
+    // Additional reference: https://github.com/ethers-io/ethers.js/issues/1721
+    return compareResultsAndFilterIgnoredKeys(["transactionLogIndex"], rpcResultA, rpcResultB);
   } else {
     return lodash.isEqual(rpcResultA, rpcResultB);
   }
