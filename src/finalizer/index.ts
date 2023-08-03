@@ -33,7 +33,7 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
 } from "../common";
-import { ChainFinalizer, FinalizerPromise, Withdrawal }from "./types";
+import { ChainFinalizer, FinalizerPromise, Withdrawal } from "./types";
 
 config();
 let logger: winston.Logger;
@@ -213,7 +213,7 @@ export async function finalize(
       const { withdrawals = [], proofs = [] } = groupBy(finalizationsToBatch.withdrawals, ({ type }) => {
         return type === "withdrawal" ? "withdrawals" : "proofs";
       });
-      proofs.forEach(({l2ChainId, amount, l1TokenSymbol: symbol }) => {
+      proofs.forEach(({ l2ChainId, amount, l1TokenSymbol: symbol }) => {
         const spokeChain = getNetworkName(l2ChainId);
         logger.info({
           at: "Finalizer",
