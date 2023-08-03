@@ -97,7 +97,7 @@ export function shouldCache(eventTimestamp: number, latestTime: number): boolean
 // JSON.stringify(object) ends up stringfying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
 // this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
 // object with BigNumber values.
-function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }) {
+export function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }): unknown {
   if (typeof value !== "object" || value?.type !== "BigNumber") {
     return value;
   }

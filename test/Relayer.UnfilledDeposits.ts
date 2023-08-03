@@ -15,7 +15,14 @@ import {
   toBNWei,
 } from "./utils";
 import { simpleDeposit, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { amountToLp, originChainId, defaultMinDepositConfirmations, modifyRelayHelper } from "./constants";
+import {
+  amountToLp,
+  originChainId,
+  defaultMinDepositConfirmations,
+  modifyRelayHelper,
+  CHAIN_ID_TEST_LIST,
+  repaymentChainId,
+} from "./constants";
 import { SpokePoolClient, HubPoolClient, MultiCallerClient, TokenClient, AcrossApiClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 
@@ -42,6 +49,15 @@ let unfilledDeposits: RelayerUnfilledDeposit[] = [];
 let _getUnfilledDeposits: Promise<RelayerUnfilledDeposit[]>;
 
 describe("Relayer: Unfilled Deposits", async function () {
+  const sortableEventFields = [
+    "blockNumber",
+    "blockTimestamp",
+    "quoteBlockNumber",
+    "logIndex",
+    "transactionIndex",
+    "transactionHash",
+  ];
+
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     // Deploy the two spokePools and their associated tokens. Set the chainId to match to associated chainIds. The first
@@ -59,11 +75,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: originChainId, spokePool: spokePool_1 },
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: repaymentChainId, spokePool: spokePool_2 },
+      { l2ChainId: 1, spokePool: spokePool_2 },
     ]));
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
-    configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     spokePoolClient_1 = new SpokePoolClient(
@@ -128,7 +146,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
 
     _getUnfilledDeposits = async (): Promise<RelayerUnfilledDeposit[]> => {
-      return await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, configStoreClient);
+      return await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, hubPoolClient);
     };
     unfilledDeposits = [];
   });
@@ -143,7 +161,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount,
@@ -212,7 +230,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Validate the relayer correctly computes the unfilled amount.
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -239,7 +257,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: unfilledAmount,
@@ -264,7 +282,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit2Complete.amount,
@@ -288,7 +306,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1Complete.amount,
@@ -363,7 +381,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -403,7 +421,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -448,11 +466,12 @@ describe("Relayer: Unfilled Deposits", async function () {
   });
 
   it("Skip deposits we don't have updated config store version for", async function () {
+    const highVersion = 1;
     // Set up test so that the latest version in the config store contract is higher than
     // the version in the config store client.
-    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${highVersion}`);
     const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
-    configStoreClient.setConfigStoreVersion(1);
+    configStoreClient.setConfigStoreVersion(highVersion - 1);
 
     // Now send a deposit after the update time. This deposit should be skipped as we don't have the latest
     // version at the quote timestamp.
@@ -461,9 +480,14 @@ describe("Relayer: Unfilled Deposits", async function () {
     await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
 
+    let unfilledDeposits: RelayerUnfilledDeposit[];
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
-    expect(unfilledDeposits[0].requiresNewConfigStoreVersion).to.be.true;
+    expect(unfilledDeposits[0].version).to.equal(highVersion);
+
+    // Relayer class should filter out based on its highest supported version.
+    unfilledDeposits = await relayerInstance.getUnfilledDeposits();
+    expect(unfilledDeposits.length).to.equal(0);
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0);

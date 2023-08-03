@@ -2,7 +2,13 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
-import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
+import {
+  CHAIN_ID_TEST_LIST,
+  amountToLp,
+  defaultMinDepositConfirmations,
+  defaultTokenConfig,
+  repaymentChainId,
+} from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -43,6 +49,9 @@ describe("Relayer: Token balance shortfall", async function () {
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: originChainId, spokePool: spokePool_1 },
+      { l2ChainId: repaymentChainId, spokePool: spokePool_1 },
+      { l2ChainId: 1, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
@@ -52,7 +61,13 @@ describe("Relayer: Token balance shortfall", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
+    configStoreClient = new ConfigStoreClient(
+      spyLogger,
+      configStore,
+      { fromBlock: 0 },
+      CONFIG_STORE_VERSION,
+      CHAIN_ID_TEST_LIST
+    );
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(

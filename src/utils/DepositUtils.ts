@@ -1,17 +1,10 @@
-import {
-  assert,
-  getDeposit,
-  setDeposit,
-  getRedisDepositKey,
-  getCurrentTime,
-  getRedis,
-  isDefined,
-  validateFillForDeposit,
-} from "../utils";
+import { assert, getDeposit, setDeposit, getRedisDepositKey, getCurrentTime, getRedis, isDefined } from "../utils";
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { assign, toBN, isFirstFillForDeposit } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { utils } from "@across-protocol/sdk-v2";
+const { validateFillForDeposit } = utils;
 
 export function getDepositPath(deposit: Deposit): string {
   return `${deposit.originToken}-->${deposit.destinationChainId}`;

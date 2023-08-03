@@ -14,7 +14,13 @@ import {
 import { createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, toBNWei } from "./utils";
-import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
+import {
+  CHAIN_ID_TEST_LIST,
+  amountToLp,
+  defaultMinDepositConfirmations,
+  defaultTokenConfig,
+  repaymentChainId,
+} from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -79,6 +85,9 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: originChainId, spokePool: spokePool_1 },
+      { l2ChainId: repaymentChainId, spokePool: spokePool_1 },
+      { l2ChainId: 1, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
@@ -88,7 +97,13 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     ({ spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
+    configStoreClient = new ConfigStoreClient(
+      spyLogger,
+      configStore,
+      { fromBlock: 0 },
+      CONFIG_STORE_VERSION,
+      CHAIN_ID_TEST_LIST
+    );
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
@@ -112,9 +127,8 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     spokePoolClients = Object.fromEntries(
       [spokePoolClient_1, spokePoolClient_2].map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
     );
-    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
 
-    ubaClient = new UBAClient(chainIds, [], hubPoolClient, spokePoolClients, spyLogger);
+    ubaClient = new UBAClient([], hubPoolClient, spokePoolClients, spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();

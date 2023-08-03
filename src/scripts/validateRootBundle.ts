@@ -32,7 +32,6 @@ import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { CONFIG_STORE_VERSION } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -78,7 +77,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     logger.error({
       at: "Dataworker#validate",
       message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
-      latestVersionSupported: CONFIG_STORE_VERSION,
+      latestVersionSupported: clients.configStoreClient.configStoreVersion,
       latestInConfigStore: clients.configStoreClient.getConfigStoreVersionForTimestamp(),
     });
     return;

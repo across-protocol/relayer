@@ -195,8 +195,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
             fill,
             allValidFills,
             hubPoolClient,
-            spokePoolClientsByChain,
-            chainIdListForBundleEvaluationBlockNumbers
+            spokePoolClientsByChain
           );
 
         // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
@@ -282,7 +281,8 @@ export function constructPoolRebalanceLeaves(
   maxL1TokenCount?: number,
   tokenTransferThreshold?: BigNumberForToken,
   incentivePoolBalances?: interfaces.RunningBalances,
-  netSendAmounts?: interfaces.RunningBalances
+  netSendAmounts?: interfaces.RunningBalances,
+  ubaMode = false
 ): interfaces.PoolRebalanceLeaf[] {
   // Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
   // we'll split up any leaves with too many L1 tokens.
@@ -325,7 +325,7 @@ export function constructPoolRebalanceLeaves(
           }
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (netSendAmounts?.[chainId] && netSendAmounts[chainId][l1Token]) {
+          if (ubaMode && netSendAmounts?.[chainId] && netSendAmounts[chainId][l1Token]) {
             return netSendAmounts[chainId][l1Token];
           } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
             return getNetSendAmountForL1Token(
@@ -339,16 +339,24 @@ export function constructPoolRebalanceLeaves(
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
           if (runningBalances[chainId]?.[l1Token]) {
-            return getRunningBalanceForL1Token(
-              transferThresholds[index],
-              spokeTargetBalances[index],
-              runningBalances[chainId][l1Token]
-            );
+            // If UBA bundle, then we don't need to compare running balance to transfer thresholds or
+            // spoke target balances, as the UBA client already performs similar logic to set the running balances
+            // for each flow. In the UBA, simply take the running balances computed by the UBA client.
+            if (ubaMode) {
+              return runningBalances[chainId][l1Token];
+            } else {
+              return getRunningBalanceForL1Token(
+                transferThresholds[index],
+                spokeTargetBalances[index],
+                runningBalances[chainId][l1Token]
+              );
+            }
           } else {
             return toBN(0);
           }
         });
         const incentiveBalances =
+          ubaMode &&
           incentivePoolBalances &&
           l1TokensToIncludeInThisLeaf.map((l1Token) => {
             if (incentivePoolBalances[chainId]?.[l1Token]) {

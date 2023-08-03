@@ -1,40 +1,25 @@
-import winston from "winston";
-import { clients, relayFeeCalculator } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk-v2";
 import { FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { HubPoolClient } from "./HubPoolClient";
 import { SpokePoolClient } from "./SpokePoolClient";
 
-const { getFills, getRefundRequests } = clients;
-type SpokePoolEventFilter = clients.SpokePoolEventFilter;
+const { getValidFillCandidates, getValidRefundCandidates } = clients;
 type SpokePoolFillFilter = clients.SpokePoolFillFilter;
-
-type RelayFeeCalculatorConfigWithMap = relayFeeCalculator.RelayFeeCalculatorConfigWithMap;
 
 export class UBAClient extends clients.UBAClient {
   constructor(
-    chainIdIndices: number[],
     tokenSymbols: string[],
     hubPoolClient: HubPoolClient,
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
-    logger: winston.Logger,
-    maxBundleStates = 1
+    spokePoolClients: { [chainId: number]: SpokePoolClient }
   ) {
-    super(
-      chainIdIndices,
-      tokenSymbols,
-      hubPoolClient,
-      spokePoolClients,
-      {} as RelayFeeCalculatorConfigWithMap,
-      maxBundleStates,
-      logger
-    );
+    super(tokenSymbols, hubPoolClient, spokePoolClients);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
-    return getFills(chainId, this.spokePoolClients, filter);
+    return getValidFillCandidates(chainId, this.spokePoolClients, filter);
   }
 
-  async getRefundRequests(chainId: number, filter: SpokePoolEventFilter = {}): Promise<RefundRequestWithBlock[]> {
-    return getRefundRequests(chainId, this.chainIdIndices, this.hubPoolClient, this.spokePoolClients, filter);
+  async getRefundRequests(chainId: number, filter: SpokePoolFillFilter = {}): Promise<RefundRequestWithBlock[]> {
+    return getValidRefundCandidates(chainId, this.hubPoolClient, this.spokePoolClients, filter);
   }
 }

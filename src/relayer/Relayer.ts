@@ -1,6 +1,6 @@
 import { constants as ethersConstants } from "ethers";
 import { groupBy } from "lodash";
-import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   BigNumber,
   isDefined,
@@ -12,13 +12,12 @@ import {
   getCurrentTime,
   buildFillRelayWithUpdatedFeeProps,
   isDepositSpedUp,
+  RelayerUnfilledDeposit,
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
-
-const { UBAActionType } = sdkClients;
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -34,25 +33,23 @@ export class Relayer {
     readonly config: RelayerConfig
   ) {}
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
-    // Fetch all unfilled deposits, order by total earnable fee.
-    // TODO: Note this does not consider the price of the token which will be added once the profitability module is
-    // added to this bot.
-
-    const { config } = this;
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
-      this.clients;
-
+  /**
+   * @description Retrieve the complete array of unfilled deposits.
+   * @returns An array of RelayerUnfilledDeposit objects, filtered by the maximum current supported config version.
+   */
+  public async getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
+    const { configStoreClient, hubPoolClient, spokePoolClients } = this.clients;
     const maxVersion = configStoreClient.configStoreVersion;
-    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, configStoreClient, config.maxRelayerLookBack);
-    const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, (deposit) =>
-      deposit.version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits"
-    );
+
+    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
+    const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, ({ version }) => {
+      return version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits";
+    });
 
     if (unsupportedDeposits.length > 0) {
-      const deposits = unsupportedDeposits.map((unsupported) => {
-        const { originChainId, depositId, transactionHash } = unsupported.deposit;
-        return { originChainId, depositId, version: unsupported.version, transactionHash };
+      const deposits = unsupportedDeposits.map(({ deposit, version }) => {
+        const { originChainId, depositId, transactionHash } = deposit;
+        return { originChainId, depositId, version, transactionHash };
       });
       this.logger.warn({
         at: "Relayer::checkForUnfilledDepositsAndFill",
@@ -63,16 +60,25 @@ export class Relayer {
       });
     }
 
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = supportedDeposits
-      // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-      .reduce((agg, curr) => {
-        const unfilledAmountUsd = profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
-        if (!agg[curr.deposit.originChainId]) {
-          agg[curr.deposit.originChainId] = toBN(0);
-        }
-        agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
-        return agg;
-      }, {});
+    return supportedDeposits;
+  }
+
+  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
+    // Fetch all unfilled deposits, order by total earnable fee.
+    const { config } = this;
+    const { acrossApiClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
+
+    const unfilledDeposits = await this.getUnfilledDeposits();
+
+    // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
+      const unfilledAmountUsd = profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
+      if (!agg[curr.deposit.originChainId]) {
+        agg[curr.deposit.originChainId] = toBN(0);
+      }
+      agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
+      return agg;
+    }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(config.minDepositConfirmations)
@@ -223,7 +229,7 @@ export class Relayer {
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
+        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
 
         const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
@@ -517,60 +523,47 @@ export class Relayer {
     }
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
-    const refundFee = (await this.computeRefundFees(version, fillAmount, [preferredChainId], hubPoolToken.symbol))[0];
+    const refundFee = this.computeRefundFee(version, deposit);
 
     const profitable = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
     return profitable ? preferredChainId : undefined;
   }
 
-  protected async computeRealizedLpFeePct(
-    version: number,
-    deposit: DepositWithBlock,
-    symbol: string
-  ): Promise<BigNumber> {
+  protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
+      if (deposit.realizedLpFeePct === undefined) {
+        throw new Error(`Deposit ${deposit.depositId} is missing realizedLpFeePct`);
+      }
       return deposit.realizedLpFeePct;
     }
 
-    const { originChainId, depositId, destinationChainId, amount, quoteBlockNumber } = deposit;
-    const {
-      lpFee,
-      depositBalancingFee: depositFee,
-      systemFee: realizedLpFeePct,
-    } = this.clients.ubaClient.computeSystemFee(originChainId, destinationChainId, symbol, amount, quoteBlockNumber);
+    const { depositId } = deposit;
+    const { depositBalancingFee, lpFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
+    const realizedLpFeePct = depositBalancingFee.add(lpFee);
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({
       at: "relayer::computeRealizedLpFeePct",
       message: `Computed UBA system fee for ${chain} depositId ${depositId}: ${realizedLpFeePct}`,
-      lpFee,
-      depositFee,
     });
 
     return realizedLpFeePct;
   }
 
-  protected async computeRefundFees(
-    version: number,
-    unfilledAmount: BigNumber,
-    chainIds: number[],
-    symbol: string,
-    hubPoolBlockNumber?: number
-  ): Promise<BigNumber[]> {
+  protected computeRefundFee(version: number, deposit: DepositWithBlock): BigNumber {
     if (!sdkUtils.isUBA(version)) {
-      return chainIds.map(() => toBN(0));
+      return toBN(0);
     }
-
-    const { hubPoolClient, ubaClient } = this.clients;
-    const fees = ubaClient.computeBalancingFees(
-      symbol,
-      unfilledAmount,
-      hubPoolBlockNumber ?? hubPoolClient.latestBlockNumber,
-      chainIds,
-      UBAActionType.Refund
+    const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
+      deposit.originToken,
+      deposit.originChainId
+    )?.symbol;
+    const relayerBalancingFee = this.clients.ubaClient.computeBalancingFeeForNextRefund(
+      deposit.destinationChainId,
+      tokenSymbol,
+      deposit.amount
     );
-
-    return fees.map(({ balancingFee }) => balancingFee);
+    return relayerBalancingFee;
   }
 
   private handleTokenShortfall() {

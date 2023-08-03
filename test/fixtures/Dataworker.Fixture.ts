@@ -133,6 +133,9 @@ export async function setupDataworker(
       l1Token: l1Token_1,
       destinationToken: l1Token_1,
     },
+    // Similar to above, should enable route for repayment chain as well so that config store client can look up
+    // token on that chain.
+    { destinationChainId: repaymentChainId, l1Token: l1Token_1, destinationToken: l1Token_1 },
   ]);
 
   // Set bond currency on hub pool so that roots can be proposed.
@@ -155,7 +158,7 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, testChainIdList);
   const hubPoolClient = new clients.HubPoolClient(
     spyLogger,
     hubPool,

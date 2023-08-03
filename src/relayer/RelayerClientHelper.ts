@@ -1,4 +1,5 @@
 import winston from "winston";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -35,13 +36,10 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
-  const tokenSymbols = []; // @todo: Populate with token list.
   const ubaClient = new UBAClient(
-    config.chainIdListIndices,
-    tokenSymbols,
+    commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
     commonClients.hubPoolClient,
-    spokePoolClients,
-    logger
+    spokePoolClients
   );
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
@@ -105,20 +103,26 @@ export async function constructRelayerClients(
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+  const { configStoreClient, spokePoolClients, ubaClient } = clients;
 
-  // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
-  // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
-  // having a "first run" update and then a "normal" update that considers this. see previous implementation here
-  // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
-  await updateSpokePoolClients(clients.spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
-    "RefundRequested",
-    "EnabledDepositRoute",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
-  ]);
+  await configStoreClient.update();
+  const version = configStoreClient.getConfigStoreVersionForTimestamp();
+  if (sdkUtils.isUBA(version)) {
+    await ubaClient.update();
+  } else {
+    // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
+    // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
+    // having a "first run" update and then a "normal" update that considers this. see previous implementation here
+    // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
+    await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
+      "RequestedSpeedUpDeposit",
+      "FilledRelay",
+      "EnabledDepositRoute",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]);
+  }
 
   // Update the token client first so that inventory client has latest balances.
 

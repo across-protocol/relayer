@@ -12,7 +12,6 @@ export type OutstandingTransfers = interfaces.OutstandingTransfers;
 // Common interfaces
 export type SortableEvent = interfaces.SortableEvent;
 export type BigNumberForToken = interfaces.BigNumberForToken;
-export type TreeData<T> = interfaces.TreeData<T>;
 
 // ConfigStore interfaces
 export type ParsedTokenConfig = interfaces.ParsedTokenConfig;
@@ -73,3 +72,4 @@ export type UBASystemFee = clients.SystemFeeResult;
 export const isUbaInflow = interfaces.isUbaInflow;
 export const isUbaOutflow = interfaces.isUbaOutflow;
 export const outflowIsFill = interfaces.outflowIsFill;
+export const outflowIsRefund = interfaces.outflowIsRefund;

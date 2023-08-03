@@ -1,7 +1,6 @@
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, interfaces } from "@across-protocol/sdk-v2";
 import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
-import { UBABalancingFee, UBASystemFee } from "../../src/interfaces";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockUBAClient extends UBAClient {
@@ -13,17 +12,7 @@ export class MockUBAClient extends UBAClient {
     this.balancingFees[chainId] = fee;
   }
 
-  computeBalancingFee(
-    _spokePoolToken: string,
-    _amount: BigNumber,
-    _hubPoolBlockNumber: number,
-    chainId: number,
-    feeType: clients.UBAActionType
-  ): UBABalancingFee {
-    return { balancingFee: this.getBalancingFee(chainId), actionType: feeType };
-  }
-
-  getBalancingFee(chainId: number): BigNumber {
+  _getBalancingFee(chainId: number): BigNumber {
     return this.balancingFees[chainId] ?? toBN(0);
   }
 
@@ -31,45 +20,30 @@ export class MockUBAClient extends UBAClient {
     this.lpFees[chainId] = fee;
   }
 
-  /* eslint-disable @typescript-eslint/no-unused-vars */
-  computeLpFee(
-    _amount: BigNumber,
-    depositChainId: number,
-    _hubPoolChainId: number,
-    _tokenSymbol: string,
-    _refundChainId: number
+  _computeLpFee(chain: number): BigNumber {
+    return this.lpFees[chain] ?? toBN(0);
+  }
+
+  computeFeesForDeposit(deposit: interfaces.UbaInflow): clients.SystemFeeResult {
+    const lpFee = this._computeLpFee(deposit.originChainId);
+    const depositBalancingFee = this._getBalancingFee(deposit.originChainId);
+    return {
+      lpFee,
+      depositBalancingFee,
+      systemFee: lpFee.add(depositBalancingFee),
+    };
+  }
+
+  computeBalancingFeeForNextRefund(
+    repaymentChainId: number,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _refundTokenSymbol: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _amount: BigNumber
   ): BigNumber {
-    // Ignore destinationChainId
-    return this.getLpFee(depositChainId);
+    return this._getBalancingFee(repaymentChainId);
   }
 
-  getLpFee(chainId: number): BigNumber {
-    return this.lpFees[chainId] ?? toBN(0);
-  }
-
-  /* eslint-enable @typescript-eslint/no-unused-vars */
-  computeSystemFee(
-    depositChainId: number,
-    destinationChainId: number,
-    spokePoolToken: string,
-    amount: BigNumber,
-    hubPoolBlockNumber: number
-  ): UBASystemFee {
-    const hubPoolToken = ""; // ignored
-    // @dev pass in anything for hubPoolChainId since it's not used
-    const lpFee = this.computeLpFee(amount, depositChainId, depositChainId, hubPoolToken, destinationChainId);
-
-    const { balancingFee: depositBalancingFee } = this.computeBalancingFee(
-      spokePoolToken,
-      amount,
-      hubPoolBlockNumber,
-      depositChainId,
-      clients.UBAActionType.Deposit
-    );
-    const systemFee = lpFee.add(depositBalancingFee);
-
-    return { lpFee, depositBalancingFee, systemFee };
-  }
   setFlows(chainId: number, token: string, modifiedFlows: clients.ModifiedUBAFlow[]): void {
     if (!this.flows[chainId]) {
       this.flows[chainId] = {};
@@ -86,5 +60,9 @@ export class MockUBAClient extends UBAClient {
     _toBlock?: number | undefined
   ): clients.ModifiedUBAFlow[] {
     return this.flows[chainId]?.[tokenSymbol] ?? [];
+  }
+
+  async validateFlow(flow: interfaces.UbaFlow): Promise<clients.ModifiedUBAFlow | undefined> {
+    return super.validateFlow(flow);
   }
 }

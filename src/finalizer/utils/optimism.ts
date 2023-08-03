@@ -1,4 +1,4 @@
-import * as optimismSDK from "@across-protocol/optimism-sdk";
+import * as optimismSDK from "@eth-optimism/sdk";
 import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
@@ -151,6 +151,7 @@ export async function finalizeOptimismMessage(
 ): Promise<Multicall2Call> {
   const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
     message.message as optimismSDK.MessageLike,
+    undefined,
     logIndex
   );
   return {
@@ -167,6 +168,7 @@ export async function proveOptimismMessage(
 ): Promise<Multicall2Call> {
   const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.proveMessage(
     message.message as optimismSDK.MessageLike,
+    undefined,
     logIndex
   );
   return {

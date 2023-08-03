@@ -58,6 +58,14 @@ describe("AcrossConfigStoreClient", async function () {
   });
 
   it("update", async function () {
+    [owner] = await ethers.getSigners();
+    ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
+
+    configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
+    configStoreClient.setConfigStoreVersion(0);
+
     // If ConfigStore has no events, stores nothing.
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(0);
@@ -71,12 +79,8 @@ describe("AcrossConfigStoreClient", async function () {
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
-    // Update ignores TokenConfig events that don't include all expected keys:
+    // Update ignores TokenConfig events that don't include a rate model:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: sampleRateModel, routeRateModel: { "999-888": sampleRateModel2 } })
-    );
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })
@@ -198,6 +202,56 @@ describe("AcrossConfigStoreClient", async function () {
       Object.entries(expectedTargetBalance).forEach(([k, v]) => {
         expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
+    });
+
+    it("Get UBA fee config", async function () {
+      // Can have a mix of strings and numbers in config JSON.
+      const realisticConfig = {
+        alpha: {
+          default: "400000000000000",
+          "1-10": 100000000000000,
+          "1-137": 100000000000000,
+          "1-42161": 100000000000000,
+        },
+        gamma: {
+          default: [
+            [500000000000000000, 0],
+            [650000000000000000, "500000000000000"],
+            [750000000000000000, 1000000000000000],
+            ["850000000000000000", 2500000000000000],
+            [900000000000000000, 5000000000000000],
+            [950000000000000000, 50000000000000000],
+          ],
+        },
+        omega: { "10": [[0, 0]], "137": [[0, 0]], "42161": [[0, 0]], default: [[0, 0]] },
+        rebalance: {
+          "10": { threshold_upper: 200000000, target_upper: "100000000" },
+          "137": { threshold_upper: 100000000, target_upper: 0 },
+          "42161": { threshold_upper: "200000000", target_upper: 100000000 },
+        },
+      };
+      const update = JSON.stringify({
+        uba: realisticConfig,
+      });
+      await configStore.updateTokenConfig(l1Token.address, update);
+      await configStoreClient.update();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
+      const parsedConfig = configStoreClient.getUBAConfig(l1Token.address, initialUpdate.blockNumber);
+
+      // Test a few objects
+      expect(parsedConfig).to.not.be.undefined;
+
+      // This is guaranteed to be defined as the expect above would have thrown if it was undefined.
+      if (parsedConfig) {
+        expect(parsedConfig.rebalance["137"].threshold_upper).to.equal("100000000");
+        expect(parsedConfig.gamma.default.length).to.equal(6);
+      }
+
+      // If block number is set too low, returns undefined.
+      expect(configStoreClient.getUBAConfig(l1Token.address, 0)).to.be.undefined;
+
+      // Default returns latest.
+      expect(configStoreClient.getUBAConfig(l1Token.address)).to.not.be.undefined;
     });
   });
   describe("GlobalConfig", function () {
