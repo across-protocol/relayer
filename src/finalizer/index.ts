@@ -226,7 +226,7 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Finalized ${spokeChain} withdrawal for ${amount} ${symbol} 🪃`,
-          transactionHash: etherscanLink(txn.transactionHash, hubPoolClient.chainId),
+          transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
     } catch (_error) {
