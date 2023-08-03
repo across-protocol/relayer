@@ -20,6 +20,7 @@ import {
   multicallPolygonFinalizations,
   multicallArbitrumFinalizations,
   multicallOptimismL1Proofs,
+  zkSyncFinalizer,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../clients";
@@ -148,6 +149,8 @@ async function arbitrumOneFinalizer(
 const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   10: optimismFinalizer,
   137: polygonFinalizer,
+  280: zkSyncFinalizer,
+  324: zkSyncFinalizer,
   42161: arbitrumOneFinalizer,
 };
 
@@ -163,6 +166,8 @@ export async function finalize(
   const finalizationWindows: { [chainId: number]: number } = {
     10: optimisticRollupFinalizationWindow,
     137: polygonFinalizationWindow,
+    280: oneDaySeconds * 4,
+    324: oneDaySeconds,
     42161: optimisticRollupFinalizationWindow,
   };
 
