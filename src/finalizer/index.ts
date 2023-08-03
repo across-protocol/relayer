@@ -1,3 +1,5 @@
+import assert from "assert";
+import { groupBy } from "lodash";
 import {
   Wallet,
   config,
@@ -9,8 +11,8 @@ import {
   getCurrentTime,
   disconnectRedisClient,
   getMultisender,
+  winston,
 } from "../utils";
-import { winston } from "../utils";
 import {
   getPosClient,
   getOptimismClient,
@@ -20,7 +22,7 @@ import {
   multicallOptimismL1Proofs,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient } from "../clients";
+import { HubPoolClient, SpokePoolClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -40,8 +42,126 @@ export interface Withdrawal {
   amount: string;
 }
 
+type FinalizerPromise = { callData: Multicall2Call[]; withdrawals: Withdrawal[] };
+
+interface ChainFinalizer {
+  (
+    signer: Wallet,
+    hubPoolClient: HubPoolClient,
+    spokePoolClient: SpokePoolClient,
+    firstBlockToFinalize: number
+  ): Promise<FinalizerPromise>;
+}
+
 // Filter for optimistic rollups
 const oneDaySeconds = 24 * 60 * 60;
+
+async function optimismFinalizer(
+  signer: Wallet,
+  hubPoolClient: HubPoolClient,
+  spokePoolClient: SpokePoolClient,
+  latestBlockToFinalize: number
+): Promise<FinalizerPromise> {
+  const { chainId } = spokePoolClient;
+  assert(chainId === 10, `Chain ID mismatch: ${chainId} != 10`);
+
+  const crossChainMessenger = getOptimismClient(10, signer);
+
+  // Sort tokensBridged events by their age. Submit proofs for recent events, and withdrawals for older events.
+  const earliestBlockToProve = latestBlockToFinalize + 1;
+  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
+    spokePoolClient.getTokensBridged(),
+    (e) => (e.blockNumber >= earliestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
+  );
+
+  // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
+  // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
+  logger.debug({
+    at: "Finalizer",
+    message: `Earliest TokensBridged block to attempt to submit proofs for ${getNetworkName(chainId)}`,
+    earliestBlockToProve,
+  });
+
+  const proofs = await multicallOptimismL1Proofs(
+    chainId,
+    recentTokensBridgedEvents,
+    crossChainMessenger,
+    hubPoolClient,
+    logger
+  );
+
+  // Next finalize withdrawals that have passed challenge period.
+  // Skip events that are likely not past the seven day challenge period.
+  logger.debug({
+    at: "Finalizer",
+    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    latestBlockToFinalize,
+  });
+
+  const finalizations = await multicallOptimismFinalizations(
+    chainId,
+    olderTokensBridgedEvents,
+    crossChainMessenger,
+    hubPoolClient,
+    logger
+  );
+
+  const callData = [...proofs.callData, ...finalizations.callData];
+  const withdrawals = [...proofs.withdrawals, ...finalizations.withdrawals];
+
+  return { callData, withdrawals };
+}
+
+async function polygonFinalizer(
+  signer: Wallet,
+  hubPoolClient: HubPoolClient,
+  spokePoolClient: SpokePoolClient,
+  latestBlockToFinalize: number
+): Promise<FinalizerPromise> {
+  const { chainId } = spokePoolClient;
+
+  const posClient = await getPosClient(signer);
+  logger.debug({
+    at: "Finalizer",
+    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    latestBlockToFinalize,
+  });
+
+  // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
+  // that are older than 1 day old:
+  const recentTokensBridgedEvents = spokePoolClient
+    .getTokensBridged()
+    .filter((e) => e.blockNumber >= latestBlockToFinalize);
+
+  return await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
+}
+
+async function arbitrumOneFinalizer(
+  signer: Wallet,
+  hubPoolClient: HubPoolClient,
+  spokePoolClient: SpokePoolClient,
+  latestBlockToFinalize: number
+): Promise<FinalizerPromise> {
+  const { chainId } = spokePoolClient;
+
+  logger.debug({
+    at: "Finalizer",
+    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    latestBlockToFinalize,
+  });
+  // Skip events that are likely not past the seven day challenge period.
+  const olderTokensBridgedEvents = spokePoolClient
+    .getTokensBridged()
+    .filter((e) => e.blockNumber < latestBlockToFinalize);
+
+  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
+}
+
+const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
+  10: optimismFinalizer,
+  137: polygonFinalizer,
+  42161: arbitrumOneFinalizer,
+};
 
 export async function finalize(
   logger: winston.Logger,
@@ -52,6 +172,12 @@ export async function finalize(
   optimisticRollupFinalizationWindow: number = 5 * oneDaySeconds,
   polygonFinalizationWindow: number = oneDaySeconds
 ): Promise<void> {
+  const finalizationWindows: { [chainId: number]: number } = {
+    10: optimisticRollupFinalizationWindow,
+    137: polygonFinalizationWindow,
+    42161: optimisticRollupFinalizationWindow,
+  };
+
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const multicall2 = getMultisender(1, hubSigner);
@@ -64,8 +190,8 @@ export async function finalize(
     withdrawals: [],
     optimismL1Proofs: [],
   };
-  // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
-  // on L1.
+
+  // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   for (const chainId of configuredChainIds) {
     const client = spokePoolClients[chainId];
     if (client === undefined) {
@@ -79,94 +205,18 @@ export async function finalize(
       });
       continue;
     }
-    const tokensBridged = client.getTokensBridged();
 
-    const currentTime = getCurrentTime();
-    if (chainId === 42161) {
-      const firstBlockToFinalize = await getBlockForTimestamp(
-        chainId,
-        currentTime - optimisticRollupFinalizationWindow
-      );
-      logger.debug({
-        at: "Finalizer",
-        message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-        firstBlockToFinalize,
-      });
-      // Skip events that are likely not past the seven day challenge period.
-      const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
-      const finalizations = await multicallArbitrumFinalizations(
-        olderTokensBridgedEvents,
-        hubSigner,
-        hubPoolClient,
-        logger
-      );
-      finalizationsToBatch.callData.push(...finalizations.callData);
-      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
-    } else if (chainId === 137) {
-      const posClient = await getPosClient(hubSigner);
-      const lastBlockToFinalize = await getBlockForTimestamp(chainId, currentTime - polygonFinalizationWindow);
-      logger.debug({
-        at: "Finalizer",
-        message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-        lastBlockToFinalize,
-      });
-      // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
-      // that are older than 1 day old:
-      const recentTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber >= lastBlockToFinalize);
-      const finalizations = await multicallPolygonFinalizations(
-        recentTokensBridgedEvents,
-        posClient,
-        hubSigner,
-        hubPoolClient,
-        logger
-      );
-      finalizationsToBatch.callData.push(...finalizations.callData);
-      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
-    } else if (chainId === 10) {
-      const crossChainMessenger = getOptimismClient(chainId, hubSigner);
-      const firstBlockToFinalize = await getBlockForTimestamp(
-        chainId,
-        currentTime - optimisticRollupFinalizationWindow
-      );
+    const chainFinalizer = chainFinalizers[chainId];
+    assert(chainFinalizer !== undefined, `No withdrawal finalizer available for chain ${chainId}`);
 
-      // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
-      // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time. Skip events older than 7 days old.
-      logger.debug({
-        at: "Finalizer",
-        message: `Earliest TokensBridged block to attempt to submit proofs for ${getNetworkName(chainId)}`,
-        earliestBlockToProve: firstBlockToFinalize,
-      });
-      const recentTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber >= firstBlockToFinalize);
-      const proofs = await multicallOptimismL1Proofs(
-        chainId,
-        recentTokensBridgedEvents,
-        crossChainMessenger,
-        hubPoolClient,
-        logger
-      );
-      finalizationsToBatch.callData.push(...proofs.callData);
-      finalizationsToBatch.optimismL1Proofs.push(...proofs.withdrawals);
+    const finalizationWindow = finalizationWindows[chainId];
+    assert(finalizationWindow !== undefined, `No finalization window defined for chain ${chainId}`);
 
-      // Next finalize withdrawals that have passed challenge period.
-      // Skip events that are likely not past the seven day challenge period.
-      logger.debug({
-        at: "Finalizer",
-        message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-        firstBlockToFinalize,
-      });
-      const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
-      const finalizations = await multicallOptimismFinalizations(
-        chainId,
-        olderTokensBridgedEvents,
-        crossChainMessenger,
-        hubPoolClient,
-        logger
-      );
-      finalizationsToBatch.callData.push(...finalizations.callData);
-      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
-    } else if (chainId === 288) {
-      throw new Error(`ChainId ${chainId} is not supported`);
-    }
+    const latestBlockToFinalize = await getBlockForTimestamp(chainId, getCurrentTime() - finalizationWindow);
+
+    const { callData, withdrawals } = await chainFinalizer(hubSigner, hubPoolClient, client, latestBlockToFinalize);
+    finalizationsToBatch.callData.push(...callData);
+    finalizationsToBatch.withdrawals.push(...withdrawals);
   }
 
   if (finalizationsToBatch.callData.length > 0) {
