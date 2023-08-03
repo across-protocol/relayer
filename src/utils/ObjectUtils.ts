@@ -82,9 +82,7 @@ function deleteIgnoredKeys(ignoredKeys: string[], obj: any) {
     return;
   }
   const newObj = { ...obj };
-  const ignoredMappings = {};
   for (const key of ignoredKeys) {
-    ignoredMappings[key] = obj[key];
     delete newObj[key];
   }
   return newObj;
