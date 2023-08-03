@@ -33,25 +33,10 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
 } from "../common";
+import { ChainFinalizer, FinalizerPromise, Withdrawal }from "./types";
+
 config();
 let logger: winston.Logger;
-
-export interface Withdrawal {
-  l2ChainId: number;
-  l1TokenSymbol: string;
-  amount: string;
-}
-
-type FinalizerPromise = { callData: Multicall2Call[]; withdrawals: Withdrawal[] };
-
-interface ChainFinalizer {
-  (
-    signer: Wallet,
-    hubPoolClient: HubPoolClient,
-    spokePoolClient: SpokePoolClient,
-    firstBlockToFinalize: number
-  ): Promise<FinalizerPromise>;
-}
 
 // Filter for optimistic rollups
 const oneDaySeconds = 24 * 60 * 60;
@@ -184,11 +169,9 @@ export async function finalize(
   const finalizationsToBatch: {
     callData: Multicall2Call[];
     withdrawals: Withdrawal[];
-    optimismL1Proofs: Withdrawal[];
   } = {
     callData: [],
     withdrawals: [],
-    optimismL1Proofs: [],
   };
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
@@ -220,24 +203,30 @@ export async function finalize(
   }
 
   if (finalizationsToBatch.callData.length > 0) {
+    const hubChainId = hubPoolClient.chainId;
+    const hubChain = getNetworkName(hubChainId);
+
     try {
       // Note: We might want to slice these up in the future but I don't forsee us including enough events
       // to approach the block gas limit.
       const txn = await (await multicall2.aggregate(finalizationsToBatch.callData)).wait();
-      finalizationsToBatch.withdrawals.forEach((withdrawal) => {
+      const { withdrawals = [], proofs = [] } = groupBy(finalizationsToBatch.withdrawals, ({ type }) => {
+        return type === "withdrawal" ? "withdrawals" : "proofs";
+      });
+      proofs.forEach(({l2ChainId, amount, l1TokenSymbol: symbol }) => {
+        const spokeChain = getNetworkName(l2ChainId);
         logger.info({
           at: "Finalizer",
-          message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
-            withdrawal.l1TokenSymbol
-          } 🪃`,
-          transactionHash: etherscanLink(txn.transactionHash, 1),
+          message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🔜`,
+          transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
-      finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
+      withdrawals.forEach(({ l2ChainId, amount, l1TokenSymbol: symbol }) => {
+        const spokeChain = getNetworkName(l2ChainId);
         logger.info({
           at: "Finalizer",
-          message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
-          transactionHash: etherscanLink(txn.transactionHash, 1),
+          message: `Finalized ${spokeChain} withdrawal for ${amount} ${symbol} 🪃`,
+          transactionHash: etherscanLink(txn.transactionHash, hubPoolClient.chainId),
         });
       });
     } catch (_error) {

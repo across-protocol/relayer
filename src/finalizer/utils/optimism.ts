@@ -1,9 +1,9 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
 import { BigNumber, convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 import { Multicall2Call } from "../../common";
+import { Withdrawal } from "../types";
 
 type OVM_CHAIN_ID = 10;
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
@@ -195,12 +195,15 @@ export async function multicallOptimismFinalizations(
   const withdrawals = finalizableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
-    return {
+    const withdrawal: Withdrawal = {
       l2ChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
+      type: "withdrawal",
     };
+    return withdrawal;
   });
+
   return {
     callData,
     withdrawals,
@@ -223,12 +226,15 @@ export async function multicallOptimismL1Proofs(
   const withdrawals = provableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
-    return {
+    const proof: Withdrawal = {
       l2ChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
+      type: "proof",
     };
+    return proof;
   });
+
   return {
     callData,
     withdrawals,
