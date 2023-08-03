@@ -12,6 +12,7 @@ import {
   BLOCK_NUMBER_TTL,
 } from "../common";
 import { delay, Logger } from "./";
+import { compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
 
 const logger = Logger;
 
@@ -81,34 +82,6 @@ function createSendErrorWithMessage(message: string, sendError: any) {
 }
 
 function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): boolean {
-  // This function mutates rpcResults and deletes the ignored keys. It returns the deleted keys that we can re-add
-  // back after we do the comparison with unignored keys. This is a faster algorithm than cloning an object but it has
-  // some side effects such as the order of keys in the rpcResults object changing.
-  const deleteIgnoredKeys = (ignoredKeys: string[], rpcResults: any) => {
-    if (!rpcResults) {
-      return;
-    }
-    const ignoredMappings = {};
-    for (const key of ignoredKeys) {
-      ignoredMappings[key] = rpcResults[key];
-      delete rpcResults[key];
-    }
-    return ignoredMappings;
-  };
-  const addIgnoredFilteredKeys = (ignoredMappings: any, rpcResults: any) => {
-    for (const [key, value] of Object.entries(ignoredMappings)) {
-      rpcResults[key] = value;
-    }
-  };
-  const compareResultsAndFilterIgnoredKeys = (ignoredKeys: string[], rpcResultA: any, rpcResultB: any): boolean => {
-    const ignoredMappingsA = deleteIgnoredKeys(ignoredKeys, rpcResultA);
-    const ignoredMappingsB = deleteIgnoredKeys(ignoredKeys, rpcResultB);
-    const result = lodash.isEqual(rpcResultA, rpcResultB);
-    addIgnoredFilteredKeys(ignoredMappingsA, rpcResultA);
-    addIgnoredFilteredKeys(ignoredMappingsB, rpcResultB);
-    return result;
-  };
-
   if (method === "eth_getBlockByNumber") {
     // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
     // led alchemy and quicknode to disagree on the the miner field's value.
