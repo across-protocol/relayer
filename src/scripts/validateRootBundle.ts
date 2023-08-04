@@ -181,10 +181,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
     mainnetBundleEndBlock,
-    clients.configStoreClient.getEnabledChains(
-      mainnetBundleEndBlock,
-      dataworker.chainIdListForBundleEvaluationBlockNumbers
-    )
+    clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
   );
 
   // Validate the event:
