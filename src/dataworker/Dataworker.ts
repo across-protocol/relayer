@@ -2302,10 +2302,7 @@ export class Dataworker {
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber,
-      this.clients.configStoreClient.getEnabledChains(
-        mainnetBundleEndBlock,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      )
+      this.clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
     );
   }
 }
