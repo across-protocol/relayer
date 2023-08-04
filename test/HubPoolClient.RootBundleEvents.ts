@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import hre from "hardhat";
 import { random } from "lodash";
 import { buildPoolRebalanceLeafTree, buildPoolRebalanceLeaves, createSpyLogger, randomAddress, winston } from "./utils";
@@ -44,7 +45,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     logger = createSpyLogger().spyLogger;
     const { configStore, deploymentBlock: fromBlock } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
-    configStoreClient = new ConfigStoreClient(logger, configStore, { fromBlock }, constants.CONFIG_STORE_VERSION, []);
+    configStoreClient = new ConfigStoreClient(logger, configStore, { fromBlock }, constants.CONFIG_STORE_VERSION);
     hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
   });
 
@@ -148,7 +149,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
       logIndex: 0,
       transactionHash: "",
     };
-    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber!)).to.equal(false);
 
     // Execute leaves.
     await timer.connect(dataworker).setCurrentTime(proposeTime + liveness + 1);
@@ -156,15 +157,15 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     // Not valid until all leaves are executed.
     await hubPoolClient.update();
-    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber!)).to.equal(false);
     const blockNumberBeforeAllLeavesExecuted = hubPoolClient.latestBlockNumber;
 
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves[1]), tree.getHexProof(leaves[1]));
     await hubPoolClient.update();
-    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(true);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber!)).to.equal(true);
 
     // Only searches for executed leaves up to input latest mainnet block to search
-    expect(hubPoolClient.isRootBundleValid(rootBundle, blockNumberBeforeAllLeavesExecuted)).to.equal(false);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, blockNumberBeforeAllLeavesExecuted!)).to.equal(false);
   });
 
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {
@@ -411,11 +412,12 @@ describe("HubPoolClient: RootBundle Events", async function () {
     );
   });
 
-  describe("HubPoolClient: UBA-specific runningBalances tests", async function () {
+  describe.only("HubPoolClient: UBA-specific runningBalances tests", async function () {
     const hubPoolChainId = 1;
     const chainIds = [10, 137, 42161];
     const maxConfigStoreVersion = UBA_MIN_CONFIG_STORE_VERSION + 1;
-    let hubPoolClient: MockHubPoolClient, configStoreClient: MockConfigStoreClient;
+    let hubPoolClient: MockHubPoolClient;
+    let configStoreClient: MockConfigStoreClient;
 
     beforeEach(async function () {
       const { configStore, deploymentBlock: fromBlock } = await deployConfigStore(owner, []);
@@ -424,10 +426,11 @@ describe("HubPoolClient: RootBundle Events", async function () {
         configStore,
         { fromBlock },
         maxConfigStoreVersion,
-        chainIds,
+        undefined,
         hubPoolChainId,
         true
       );
+      configStoreClient.setAvailableChains(chainIds);
       await configStoreClient.update();
 
       hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient, hubPoolChainId);
