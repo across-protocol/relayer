@@ -359,8 +359,7 @@ export async function _buildPoolRebalanceRoot(
     clients.hubPoolClient,
     spokePoolClients,
     allValidFills,
-    allValidFillsInRange,
-    chainIdListForBundleEvaluationBlockNumbers
+    allValidFillsInRange
   );
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
