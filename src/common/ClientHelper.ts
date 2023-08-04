@@ -225,8 +225,7 @@ export async function constructClients(
     logger,
     configStore,
     rateModelClientSearchSettings,
-    config.maxConfigVersion,
-    config.chainIdListIndices
+    config.maxConfigVersion
   );
 
   const hubPoolClientSearchSettings = {
