@@ -40,11 +40,17 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
   // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
   // to avoid configuration error.
   process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "16";
+  process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, dataworker, config } = await createDataworker(_logger, baseSigner);
 
   const { configStoreClient } = clients;
   await configStoreClient.update();
   const ubaActivationBlock = configStoreClient.getUBAActivationBlock();
+  logger.debug({
+    at: "UBAClientDemo",
+    message: `UBA activation block is ${ubaActivationBlock}`,
+    ubaActivationBundleStartBlocks: sdk.clients.getUbaActivationBundleStartBlocks(clients.hubPoolClient),
+  });
 
   // Create a mock config store client so we can inject a fake UBA activation block number to force the UBA client
   // to load UBA flows.
@@ -72,7 +78,9 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
     message: `Set UBA activation block to ${clients.configStoreClient.getUBAActivationBlock()}`,
   });
 
-  // Now construct the spoke pool clients:
+  // Now construct the spoke pool clients. We can use a "fast" setup here with limited lookback for each
+  // spoke pool client because we have flat balancing fees and can use caching to avoid having to
+  // fetch events from all time.
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
     config,
     clients,
@@ -100,13 +108,25 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
   );
 
   // Now, simply update the UBA client:
+  const redisCache = new RedisCache(REDIS_URL);
+  let successfullyInstantiated = false;
+  try {
+    await redisCache.instantiate();
+    successfullyInstantiated = true;
+  } catch (error) {
+    logger.warn({
+      at: "UBAClientDemo",
+      message: "Failed to instantiate redis cache",
+      error,
+    });
+  }
   const ubaClient = new sdk.clients.UBAClient(
     ["WETH", "USDC"],
     // clients.hubPoolClient.getL1Tokens().map((x) => x.symbol),
     clients.hubPoolClient,
     spokePoolClients,
     // Pass in no redis client for now as testing with fresh state is easier to reason about
-    new RedisCache(REDIS_URL)
+    successfullyInstantiated ? new RedisCache(REDIS_URL) : undefined
   );
   await ubaClient.update();
 }
