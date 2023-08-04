@@ -64,7 +64,9 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
       configStoreClient.configStore,
       configStoreClient.eventSearchConfig,
       configStoreClient.configStoreVersion,
-      configStoreClient.enabledChainIds
+      undefined,
+      undefined,
+      configStoreClient.getEnabledChains()
     );
     mockConfigStoreClient.setUBAActivationBlock(mockedUBAActivationBlock);
     clients.configStoreClient = mockConfigStoreClient;
