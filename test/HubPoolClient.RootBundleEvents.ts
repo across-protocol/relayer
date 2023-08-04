@@ -412,7 +412,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     );
   });
 
-  describe.only("HubPoolClient: UBA-specific runningBalances tests", async function () {
+  describe("HubPoolClient: UBA-specific runningBalances tests", async function () {
     const hubPoolChainId = 1;
     const chainIds = [10, 137, 42161];
     const maxConfigStoreVersion = UBA_MIN_CONFIG_STORE_VERSION + 1;
