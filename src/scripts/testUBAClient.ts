@@ -42,15 +42,23 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
   process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "16";
   process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, dataworker, config } = await createDataworker(_logger, baseSigner);
+  await updateClients(clients);
 
   const { configStoreClient } = clients;
-  await configStoreClient.update();
-  const ubaActivationBlock = configStoreClient.getUBAActivationBlock();
-  logger.debug({
-    at: "UBAClientDemo",
-    message: `UBA activation block is ${ubaActivationBlock}`,
-    ubaActivationBundleStartBlocks: sdk.clients.getUbaActivationBundleStartBlocks(clients.hubPoolClient),
-  });
+  let ubaActivationBlock: number;
+  try {
+    ubaActivationBlock = configStoreClient.getUBAActivationBlock();
+    logger.debug({
+      at: "UBAClientDemo",
+      message: `UBA activation block is ${ubaActivationBlock}`,
+      ubaActivationBundleStartBlocks: sdk.clients.getUbaActivationBundleStartBlocks(clients.hubPoolClient),
+    });
+  } catch (err) {
+    logger.debug({
+      at: "UBAClientDemo",
+      message: `Error getting UBA activation block: ${err}`,
+    });
+  }
 
   // Create a mock config store client so we can inject a fake UBA activation block number to force the UBA client
   // to load UBA flows.
