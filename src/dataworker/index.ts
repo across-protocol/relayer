@@ -30,7 +30,7 @@ export async function createDataworker(
   const dataworker = new Dataworker(
     _logger,
     clients,
-    config.chainIdListIndices,
+    clients.configStoreClient.getChainIdIndicesForBlock(),
     config.maxRelayerRepaymentLeafSizeOverride,
     config.maxPoolRebalanceLeafSizeOverride,
     config.tokenTransferThresholdOverride,
