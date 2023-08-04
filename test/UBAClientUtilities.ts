@@ -46,6 +46,7 @@ describe("UBAClientUtilities", function () {
       UBA_MIN_CONFIG_STORE_VERSION,
       chainIds
     );
+    configStoreClient.setAvailableChains(chainIds);
     configStoreClient.setConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION);
     configStoreClient.setUBAActivationBlock(0);
     await configStoreClient.update();
