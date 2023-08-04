@@ -408,10 +408,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
         clients,
         bundle.blockNumber,
-        clients.configStoreClient.getEnabledChains(
-          mainnetBundleEndBlock,
-          dataworker.chainIdListForBundleEvaluationBlockNumbers
-        )
+        clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
       );
       const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
         blockRange[0],
