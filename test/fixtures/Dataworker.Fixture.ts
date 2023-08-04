@@ -159,7 +159,9 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, testChainIdList);
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+  configStoreClient.setAvailableChains(testChainIdList);
+
   const hubPoolClient = new clients.HubPoolClient(
     spyLogger,
     hubPool,
