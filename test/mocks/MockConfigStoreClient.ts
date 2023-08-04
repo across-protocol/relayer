@@ -22,9 +22,9 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
       configStore,
       eventSearchConfig as EventSearchConfig,
       configStoreVersion,
-      enabledChainIds,
       chainId,
-      mockUpdate
+      mockUpdate,
+      enabledChainIds
     );
   }
 

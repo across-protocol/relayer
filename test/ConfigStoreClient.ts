@@ -63,7 +63,15 @@ describe("AcrossConfigStoreClient", async function () {
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
     const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
-    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
+    configStoreClient = new MockConfigStoreClient(
+      createSpyLogger().spyLogger,
+      configStore,
+      { fromBlock },
+      undefined,
+      undefined,
+      undefined,
+      false
+    );
     configStoreClient.setConfigStoreVersion(0);
 
     // If ConfigStore has no events, stores nothing.
@@ -76,6 +84,7 @@ describe("AcrossConfigStoreClient", async function () {
     // Add new TokenConfig events and check that updating again pulls in new events.
     await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
     await configStoreClient.update();
+
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
@@ -339,6 +348,10 @@ describe("AcrossConfigStoreClient", async function () {
       ).to.throw(/Could not find MaxL1TokenCount/);
     });
     it("Get disabled chain IDs for block range", async function () {
+      // set all possible chains for the next several tests
+      const allPossibleChains = [1, 19, 21, 23];
+      configStoreClient.setAvailableChains(allPossibleChains);
+
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), JSON.stringify([19]));
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), "invalid value");
       await configStore.updateGlobalConfig(
@@ -347,10 +360,6 @@ describe("AcrossConfigStoreClient", async function () {
       );
       await configStoreClient.update();
       const events = await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig());
-      const allPossibleChains = [1, 19, 21, 23];
-
-      // set all possible chains for the next several tests
-      configStoreClient.setEnabledChains(allPossibleChains);
 
       // When starting before first update, all chains were enabled once in range. Returns whatever is passed in as
       // `allPossibleChains`
@@ -363,11 +372,11 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.getEnabledChainsInBlockRange(0, undefined)).to.deep.equal(allPossibleChains);
 
       // Expect that calling with no available chains returns an empty array.
-      configStoreClient.setEnabledChains([]);
+      configStoreClient.setAvailableChains([]);
       expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1)).to.deep.equal([]);
 
       // set all possible chains for the next several tests
-      configStoreClient.setEnabledChains(allPossibleChains);
+      configStoreClient.setAvailableChains(allPossibleChains);
 
       // When starting at first update, 19 is disabled and not re-enabled until the third update. The second
       // update is treated as a no-op since its not a valid chain ID list.
@@ -380,6 +389,7 @@ describe("AcrossConfigStoreClient", async function () {
       expect(
         configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
+
       expect(
         configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber)
       ).to.deep.equal(allPossibleChains);
@@ -389,6 +399,7 @@ describe("AcrossConfigStoreClient", async function () {
       expect(
         configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
+
       expect(
         configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber)
       ).to.deep.equal(allPossibleChains);
