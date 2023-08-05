@@ -162,7 +162,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
 
+      // Execute a series of transactions to reflect the state changes from the above operations.
+      // This is done only if the sendingDataworkerTxsEnabled flag is set to true.
+      if (config.transactionExecutionsEnabled) {
       await clients.multiCallerClient.executeTransactionQueue();
+      }
 
       logger.debug({ at: "Dataworker#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 

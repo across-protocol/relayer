@@ -15,6 +15,9 @@ export class DataworkerConfig extends CommonConfig {
   readonly executorEnabled: boolean;
   readonly finalizerEnabled: boolean;
 
+  // Toggles whether or not the Dataworker should be able to send transactions on-chain.
+  readonly transactionExecutionsEnabled: boolean;
+
   // These variables can be toggled to choose whether the bot will submit transactions created
   // by each function. For example, setting `sendingDisputesEnabled=false` but `disputerEnabled=true`
   // means that the disputer logic will be run but won't send disputes on-chain.
@@ -48,9 +51,11 @@ export class DataworkerConfig extends CommonConfig {
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_START_BUNDLE,
+      SEND_DATAWORKER_TXS,
     } = env;
     super(env);
 
+    this.transactionExecutionsEnabled = SEND_DATAWORKER_TXS === "true";
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
     this.maxPoolRebalanceLeafSizeOverride = MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE
