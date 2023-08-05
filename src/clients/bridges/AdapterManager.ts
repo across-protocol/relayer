@@ -9,10 +9,10 @@ import {
   TransactionResponse,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
+import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces";
 export class AdapterManager {
-  public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
+  public adapters: { [chainId: number]: BaseAdapter } = {};
 
   constructor(
     readonly logger: winston.Logger,

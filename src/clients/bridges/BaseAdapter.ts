@@ -16,9 +16,8 @@ import {
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
-import { OutstandingTransfers } from "../../interfaces";
-import { SortableEvent } from "../../interfaces";
-
+import { OutstandingTransfers, SortableEvent } from "../../interfaces";
+import { TransactionResponse } from "../../utils";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
@@ -29,7 +28,7 @@ interface Events {
     [l1Token: string]: DepositEvent[];
   };
 }
-export class BaseAdapter {
+export abstract class BaseAdapter {
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
@@ -210,4 +209,15 @@ export class BaseAdapter {
   isWeth(l1Token: string): boolean {
     return l1Token.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
   }
+
+  abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
+
+  abstract sendTokenToTargetChain(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse>;
+
+  abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 }
