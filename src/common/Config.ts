@@ -20,7 +20,6 @@ export class CommonConfig {
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly toBlockOverride: Record<number, number> = {};
-  readonly chainIdListIndices: number[];
 
   constructor(env: ProcessEnv) {
     const {
@@ -33,16 +32,9 @@ export class CommonConfig {
       SEND_TRANSACTIONS,
       BUNDLE_REFUND_LOOKBACK,
       SPOKE_POOL_CHAINS_OVERRIDE,
-      CHAIN_ID_LIST_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
     } = env;
-
-    // This should really not be changed unless we're on Testnet as a lot depends on the order of these
-    // indices. If anything, add chains to this list.
-    this.chainIdListIndices = CHAIN_ID_LIST_OVERRIDE
-      ? JSON.parse(CHAIN_ID_LIST_OVERRIDE)
-      : Constants.CHAIN_ID_LIST_INDICES;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
 
@@ -55,16 +47,12 @@ export class CommonConfig {
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : Constants.BUNDLE_END_BLOCK_BUFFERS;
-    if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
-      for (const chainId of this.chainIdListIndices) {
-        assert(
-          Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
           "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
-        );
-      }
-    }
 
-    for (const chainId of Constants.CHAIN_ID_LIST_INDICES) {
+    // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.
+    const allPossibleChainIds = Object.keys(Constants.MIN_DEPOSIT_CONFIRMATIONS).map((chainId) => Number(chainId));
+
+    for (const chainId of allPossibleChainIds) {
       if (env[`TO_BLOCK_OVERRIDE_${chainId}`] !== undefined) {
         const toBlock = Number(env[`TO_BLOCK_OVERRIDE_${chainId}`]);
         assert(toBlock > 0, `TO_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
@@ -78,11 +66,7 @@ export class CommonConfig {
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
-    if (Object.keys(this.maxBlockLookBack).length > 0) {
-      for (const chainId of this.chainIdListIndices) {
-        assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
-      }
-    } else {
+    if (Object.keys(this.maxBlockLookBack).length === 0) {
       this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
     }
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
@@ -91,7 +75,7 @@ export class CommonConfig {
 
     // Multicall chunk size precedence: Environment, chain-specific config, global default.
     this.multiCallChunkSize = Object.fromEntries(
-      this.chainIdListIndices.map((_chainId) => {
+      allPossibleChainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         // prettier-ignore
         const chunkSize = Number(

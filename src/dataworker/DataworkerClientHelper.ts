@@ -35,7 +35,7 @@ export async function constructDataworkerClients(
     logger,
     commonClients,
     {},
-    config.chainIdListIndices,
+    commonClients.configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 

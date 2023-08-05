@@ -268,7 +268,9 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
           commonClients.hubSigner,
           commonClients.hubPoolClient,
           spokePoolClients,
-          config.finalizerChains
+          process.env.FINALIZER_CHAINS
+            ? JSON.parse(process.env.FINALIZER_CHAINS)
+            : commonClients.configStoreClient.getChainIdIndicesForBlock()
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });

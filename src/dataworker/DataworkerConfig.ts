@@ -7,7 +7,6 @@ export class DataworkerConfig extends CommonConfig {
   readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
   readonly rootBundleExecutionThreshold: BigNumber;
   readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
-  readonly finalizerChains: number[];
 
   // These variables can be toggled to choose whether the bot will go through the dataworker logic.
   readonly disputerEnabled: boolean;
@@ -43,7 +42,6 @@ export class DataworkerConfig extends CommonConfig {
       SEND_DISPUTES,
       SEND_PROPOSALS,
       SEND_EXECUTIONS,
-      FINALIZER_CHAINS,
       FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
@@ -84,7 +82,6 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
-    this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : this.chainIdListIndices;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
