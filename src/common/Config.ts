@@ -47,7 +47,6 @@ export class CommonConfig {
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : Constants.BUNDLE_END_BLOCK_BUFFERS;
-          "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
 
     // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.
     const allPossibleChainIds = Object.keys(Constants.MIN_DEPOSIT_CONFIRMATIONS).map((chainId) => Number(chainId));
