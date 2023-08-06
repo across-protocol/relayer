@@ -3,7 +3,7 @@ export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
     [contractName: string]: {
       address?: string;
-      abi?: any[];
+      abi?: unknown[];
     };
   };
 } = {

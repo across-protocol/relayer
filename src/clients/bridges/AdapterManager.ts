@@ -9,7 +9,7 @@ import {
   TransactionResponse,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter } from "./";
+import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces";
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
@@ -34,6 +34,9 @@ export class AdapterManager {
     }
     if (this.spokePoolClients[42161] !== undefined) {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
+    }
+    if (this.spokePoolClients[324] !== undefined) {
+      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddresses);
     }
 
     logger.debug({
