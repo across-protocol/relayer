@@ -1,13 +1,6 @@
 import { ethers } from "../utils";
 import { utils } from "@across-protocol/sdk-v2";
 
-// This array contains all chains that Across supports, although some of the chains could be currently disabled.
-// The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
-// in the same order as the following list. To add a new chain ID, append it to the end of the list. Never delete
-// a chain ID. The on-chain ConfigStore should store a list of enabled/disabled chain ID's that are a subset
-// of this list, so this list is simply the list of all possible Chain ID's that Across could support.
-export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
-
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.

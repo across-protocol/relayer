@@ -13,7 +13,6 @@ import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfig
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
 import {
-  CHAIN_ID_TEST_LIST,
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
@@ -36,6 +35,7 @@ import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import { Deposit } from "../src/interfaces";
+import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -78,14 +78,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(
-      spyLogger,
-      configStore,
-      { fromBlock: 0 },
-      CONFIG_STORE_VERSION,
-      CHAIN_ID_TEST_LIST
-    );
+
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    await configStoreClient.update();
+
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
 
@@ -103,12 +101,22 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       destinationChainId,
       spokePool2DeploymentBlock
     );
-    spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    spokePoolClients = {
+      [originChainId]: spokePoolClient_1,
+      [destinationChainId]: spokePoolClient_2,
+    };
+
+    for (const spokePoolClient of Object.values(spokePoolClients)) {
+      await spokePoolClient.update();
+    }
+
+    // We will need to update the config store client at least once
+    await configStoreClient.update();
 
     ubaClient = new MockUBAClient(
       hubPoolClient.getL1Tokens().map((x) => x.symbol),
       hubPoolClient,
-      spokePoolClients
+      generateNoOpSpokePoolClientsForDefaultChainIndices(spokePoolClients)
     );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
@@ -442,7 +450,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
   it("UBA: Uses UBA fee model after version bump", async function () {
     const version = UBA_MIN_CONFIG_STORE_VERSION;
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version, CHAIN_ID_TEST_LIST);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version);
+    await configStoreClient.update();
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
     relayerInstance = new Relayer(
       relayer.address,

@@ -44,6 +44,8 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
 
+    await configStoreClient.update();
+
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();

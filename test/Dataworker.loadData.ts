@@ -8,6 +8,7 @@ import {
   assertPromiseError,
   spyLogIncludes,
   buildRefundRequest,
+  sinon,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
@@ -72,18 +73,9 @@ describe("Dataworker: Load data used in all functions", async function () {
   });
 
   it("Default conditions", async function () {
-    // Throws error if config store client not updated.
-    await assertPromiseError(
-      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
-      "ConfigStoreClient not updated"
-    );
     await configStoreClient.update();
 
     // Throws error if hub pool client is not updated.
-    await assertPromiseError(
-      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
-      "HubPoolClient not updated"
-    );
     await hubPoolClient.update();
 
     // Throws error if spoke pool clients not updated

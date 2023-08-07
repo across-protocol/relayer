@@ -23,9 +23,9 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
     const logger = createSpyLogger().spyLogger;
     const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(logger, configStore);
-    hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
-
     await configStoreClient.update();
+
+    hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
     await hubPoolClient.update();
   });
 

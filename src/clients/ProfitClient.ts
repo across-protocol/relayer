@@ -60,9 +60,11 @@ const QUERY_HANDLERS: {
   10: relayFeeCalculator.OptimismQueries,
   137: relayFeeCalculator.PolygonQueries,
   288: relayFeeCalculator.BobaQueries,
+  324: relayFeeCalculator.ZkSyncQueries,
   42161: relayFeeCalculator.ArbitrumQueries,
   // Testnets:
   5: relayFeeCalculator.EthereumQueries,
+  280: relayFeeCalculator.ZkSyncQueries,
   421613: relayFeeCalculator.ArbitrumQueries,
 };
 
