@@ -20,6 +20,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   10: 1382400,
   137: 138240,
   288: 11520,
+  324: 4 * 24 * 60 * 60,
   42161: 1382400,
 };
 
@@ -113,6 +114,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   10: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
   288: 5, // At 60s/block, 50 blocks = 25 mins
+  324: 1500, // At 1s/block, 25 mins = 1500 blocks.
   42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   // Testnets:
   5: 0,
