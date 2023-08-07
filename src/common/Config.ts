@@ -70,7 +70,7 @@ export class CommonConfig {
    * @dev This should be called by passing in the latest chain ID indices from an updated ConfigStoreClient.
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
-  loadAndValidateConfigForChains(chainIdIndices: number[]) {
+  loadAndValidateConfigForChains(chainIdIndices: number[]): void {
     const multiCallChunkSize: { [chainId: number]: number } = {};
 
     for (const chainId of chainIdIndices) {

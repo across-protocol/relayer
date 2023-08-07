@@ -24,8 +24,7 @@ export async function run(logger: winston.Logger): Promise<void> {
 
   // Get all deposit routes involving chainId and token
   const commonClients = await constructClients(logger, config, baseSigner);
-  await updateClients(commonClients);
-  config.loadAndValidateConfigForChains(commonClients.configStoreClient.getChainIdIndicesForBlock());
+  await updateClients(commonClients, config);
   const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
     logger,
     commonClients.hubPoolClient,

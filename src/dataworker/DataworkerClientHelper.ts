@@ -2,6 +2,7 @@ import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   Clients,
+  CommonConfig,
   constructClients,
   constructSpokePoolClientsWithStartBlocks,
   updateClients,
@@ -53,8 +54,12 @@ export async function constructDataworkerClients(
   };
 }
 
-export async function updateDataworkerClients(clients: DataworkerClients, setAllowances = true): Promise<void> {
-  await updateClients(clients);
+export async function updateDataworkerClients(
+  clients: DataworkerClients,
+  config: CommonConfig,
+  setAllowances = true
+): Promise<void> {
+  await updateClients(clients, config);
 
   // Token client needs updated hub pool client to pull bond token data.
   await clients.tokenClient.update();

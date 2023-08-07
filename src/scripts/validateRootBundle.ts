@@ -71,8 +71,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // in the same block. This also handles the edge case where multiple disputes and proposals are in the
   // same block.
   const dvm = await getDvmContract(clients.configStoreClient.configStore.provider);
-  await updateDataworkerClients(clients, false);
-  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
+  await updateDataworkerClients(clients, config, false);
 
   if (!clients.configStoreClient.hasLatestConfigStoreVersion) {
     logger.error({
