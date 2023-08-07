@@ -41,9 +41,12 @@ describe("UBAClientUtilities.getUBAConfig", () => {
     );
 
     mockConfigStore = configStoreClient;
+    await mockConfigStore.update();
+
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
 
     hubPoolClient.addL1Token(validToken);
+    await hubPoolClient.update();
   });
 
   describe("Failing Conditions", () => {

@@ -63,15 +63,21 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     ]);
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(
-      spyLogger,
-      configStore,
-      { fromBlock: 0 },
-      CONFIG_STORE_VERSION,
+    ({ configStore } = await deployConfigStore(
+      owner,
+      [l1Token],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
       CHAIN_ID_TEST_LIST
-    );
+    ));
+
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    await configStoreClient.update();
+
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 

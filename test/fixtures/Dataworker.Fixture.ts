@@ -35,6 +35,7 @@ async function _constructSpokePoolClientsWithLookback(
   lookbackForAllChains?: number,
   deploymentBlocks?: { [chainId: number]: number }
 ) {
+  await hubPoolClient.update();
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
     return new clients.SpokePoolClient(
@@ -161,6 +162,8 @@ export async function setupDataworker(
 
   const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
   configStoreClient.setAvailableChains(testChainIdList);
+
+  await configStoreClient.update();
 
   const hubPoolClient = new clients.HubPoolClient(
     spyLogger,
