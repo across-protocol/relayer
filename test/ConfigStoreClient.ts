@@ -1,4 +1,4 @@
-import { originChainId } from "./utils";
+import { mineRandomBlocks, originChainId } from "./utils";
 import { expect, ethers, Contract, SignerWithAddress } from "./utils";
 import { toWei, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
@@ -72,9 +72,10 @@ describe("AcrossConfigStoreClient", async function () {
       JSON.stringify([1, 10, 137, 288, 42161, 100])
     );
 
-    // Sleep for one second - this is to ensure that the block number of the
-    // next event is different from the previous event.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // We want to ensure that enough time has passed so that
+    // we can be sure that the update is far enough away
+    // from the previous update.
+    await mineRandomBlocks();
 
     // We can submit a set of chain IDs that are not perfect
     // subsets of the protocol defaults. In this case, we would
@@ -84,9 +85,10 @@ describe("AcrossConfigStoreClient", async function () {
       JSON.stringify([10, 137, 288, 42161, 100])
     );
 
-    // Sleep for one second - this is to ensure that the block number of the
-    // next event is different from the previous event.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // We want to ensure that enough time has passed so that
+    // we can be sure that the update is far enough away
+    // from the previous update.
+    await mineRandomBlocks();
 
     // Finally, let's submit a set of chain IDs that contain
     // duplicates. In this case, we would expect this to be
