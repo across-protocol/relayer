@@ -78,13 +78,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(
-      spyLogger,
-      configStore,
-      { fromBlock: 0 },
-      CONFIG_STORE_VERSION,
-      CHAIN_ID_TEST_LIST
-    );
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
@@ -103,12 +98,26 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       destinationChainId,
       spokePool2DeploymentBlock
     );
-    spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    spokePoolClients = {
+      [originChainId]: spokePoolClient_1,
+      [destinationChainId]: spokePoolClient_2,
+    };
+
+    // We will need to update the config store client at least once
+    await configStoreClient.update();
 
     ubaClient = new MockUBAClient(
       hubPoolClient.getL1Tokens().map((x) => x.symbol),
       hubPoolClient,
-      spokePoolClients
+      {
+        // We need to set these for the UBA client to work.
+        "1": {} as unknown as SpokePoolClient,
+        "10": {} as unknown as SpokePoolClient,
+        "137": {} as unknown as SpokePoolClient,
+        "42161": {} as unknown as SpokePoolClient,
+        "288": {} as unknown as SpokePoolClient,
+        ...spokePoolClients,
+      }
     );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
