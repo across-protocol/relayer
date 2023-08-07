@@ -39,9 +39,11 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   10: WETH,
   137: MATIC,
   288: WETH,
+  324: WETH,
   42161: WETH,
   // Testnets:
   5: WETH,
+  280: WETH,
   421613: WETH,
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.

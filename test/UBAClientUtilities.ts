@@ -46,6 +46,7 @@ describe("UBAClientUtilities", function () {
       UBA_MIN_CONFIG_STORE_VERSION,
       chainIds
     );
+    configStoreClient.setAvailableChains(chainIds);
     configStoreClient.setConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION);
     configStoreClient.setUBAActivationBlock(0);
     await configStoreClient.update();
@@ -81,7 +82,7 @@ describe("UBAClientUtilities", function () {
     }
   });
 
-  const _publishValidatedBundles = async (bundleCount) => {
+  const _publishValidatedBundles = async (bundleCount: number) => {
     return await publishValidatedBundles(
       chainIds,
       l1Tokens,
@@ -89,7 +90,13 @@ describe("UBAClientUtilities", function () {
       spokePoolClients,
       bundleCount,
       runningBalances,
-      incentiveBalances
+      incentiveBalances,
+      // We can override the jump block to be 10_000. By increasing the random jump vector, we
+      // can minimize the chance of block collisions that would cause this function to
+      // nondeterministically fail in the CI. NOTE: a failure as a result of incorrect
+      // block ranges isn't necessarily a failure of the test, but of the randomness that
+      // is generated in the test environment to simulate the block ranges.
+      10_000
     );
   };
   describe("getUbaActivationBundleStartBlocks", function () {

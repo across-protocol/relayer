@@ -41,7 +41,7 @@ export async function constructMonitorClients(
     logger,
     commonClients,
     spokePoolClients,
-    config.chainIdListIndices,
+    commonClients.configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 

@@ -60,7 +60,9 @@ export async function constructRelayerClients(
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
-    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : config.chainIdListIndices
+    config.relayerDestinationChains.length > 0
+      ? config.relayerDestinationChains
+      : commonClients.configStoreClient.getChainIdIndicesForBlock()
   ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
@@ -81,7 +83,7 @@ export async function constructRelayerClients(
     logger,
     commonClients,
     spokePoolClients,
-    config.chainIdListIndices,
+    commonClients.configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);

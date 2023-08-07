@@ -52,6 +52,7 @@ describe("UBAClient: Flow validation", function () {
       UBA_MIN_CONFIG_STORE_VERSION,
       chainIds
     );
+    configStoreClient.setAvailableChains(chainIds);
     configStoreClient.setConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION);
     configStoreClient.setUBAActivationBlock(0);
     await configStoreClient.update();
@@ -71,6 +72,8 @@ describe("UBAClient: Flow validation", function () {
     const latestBlockNumber = await hubPool.provider.getBlockNumber();
     hubPoolClient.setLatestBlockNumber(latestBlockNumber);
 
+    await hubPoolClient.update();
+
     spokePoolClients = {};
     for (const originChainId of chainIds) {
       const { spokePool } = await deploySpokePool(ethers);
@@ -81,6 +84,7 @@ describe("UBAClient: Flow validation", function () {
       spokePoolClients[originChainId] = spokePoolClient;
       hubPoolClient.setCrossChainContracts(originChainId, spokePool.address, deploymentBlock);
       spokePoolClient.setLatestBlockSearched(deploymentBlock + 1000);
+      await spokePoolClient.update();
     }
 
     // We'll inject block ranges directly into the UBA client for each test

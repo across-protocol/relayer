@@ -1,4 +1,4 @@
-import { CommonConfig, ProcessEnv } from "../common";
+import { CommonConfig, MIN_DEPOSIT_CONFIRMATIONS, ProcessEnv } from "../common";
 import { ethers, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -163,7 +163,9 @@ export class MonitorConfig extends CommonConfig {
       );
     }
 
-    this.chainIdListIndices.forEach((chainId) => {
+    // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.
+    const allPossibleChainIds = Object.keys(MIN_DEPOSIT_CONFIRMATIONS).map((chainId) => Number(chainId));
+    allPossibleChainIds.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
         startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
           ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])

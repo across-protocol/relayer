@@ -1,4 +1,4 @@
-import { originChainId } from "./utils";
+import { mineRandomBlocks, originChainId } from "./utils";
 import { expect, ethers, Contract, SignerWithAddress } from "./utils";
 import { toWei, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
@@ -8,8 +8,10 @@ import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { SpokePoolTargetBalance } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
+import { constants } from "@across-protocol/sdk-v2";
+import { AcrossConfigStore } from "@across-protocol/contracts-v2";
 
-let l1Token: Contract, l2Token: Contract, configStore: Contract;
+let l1Token: Contract, l2Token: Contract, configStore: AcrossConfigStore;
 let owner: SignerWithAddress;
 let configStoreClient: MockConfigStoreClient;
 
@@ -51,19 +53,104 @@ describe("AcrossConfigStoreClient", async function () {
     [owner] = await ethers.getSigners();
     ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
 
-    configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
+    configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
     const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
     configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
     configStoreClient.setConfigStoreVersion(0);
+  });
+
+  it("should properly reason about chain id indices", async function () {
+    const [owner] = await ethers.getSigners();
+    const configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
+    configStoreClient.setConfigStoreVersion(0);
+
+    // Await the first update.
+    await configStoreClient.update();
+
+    // Sanity check to verify that the config store client is updated
+    expect(configStoreClient.isUpdated).to.be.true;
+
+    // Next, we can test the case where we submit an additional chain ID to our
+    // list of chain IDs.
+    const eventOne = await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+      JSON.stringify([1, 10, 137, 288, 42161, 100])
+    );
+
+    // We want to ensure that enough time has passed so that
+    // we can be sure that the update is far enough away
+    // from the previous update.
+    await mineRandomBlocks();
+
+    // We can submit a set of chain IDs that are not perfect
+    // subsets of the protocol defaults. In this case, we would
+    // expect this to be ignored during our update.
+    const eventTwo = await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+      JSON.stringify([10, 137, 288, 42161, 100])
+    );
+
+    // We want to ensure that enough time has passed so that
+    // we can be sure that the update is far enough away
+    // from the previous update.
+    await mineRandomBlocks();
+
+    // Finally, let's submit a set of chain IDs that contain
+    // duplicates. In this case, we would expect this to be
+    // ignored during our update.
+    const eventThree = await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+      JSON.stringify([1, 10, 137, 288, 42161, 100, 10])
+    );
+
+    // We can now update our client to reflect the changes we made previously
+    await configStoreClient.update();
+
+    // We should first test the case where no Chain ID Updates have been made.
+    // In this case, we should default to a set of protocol defaults as defined
+    // by the UMIP (https://github.com/UMAprotocol/UMIPs/pull/590).
+    expect(configStoreClient.getChainIdIndicesForBlock(0)).to.deep.equal(constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES);
+
+    // We should now expect that after event one, we have a set of chain IDs
+    // that equals the protocol defaults + 100.
+    expect(configStoreClient.getChainIdIndicesForBlock(eventOne.blockNumber)).to.deep.equal([
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
+    ]);
+
+    // We should now expect that after event two, we have a set of chain IDs
+    // that equals the protocol defaults + 100. This is because the second
+    // event is invalid and should be ignored.
+    expect(configStoreClient.getChainIdIndicesForBlock(eventTwo.blockNumber)).to.deep.equal([
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
+    ]);
+
+    // We can also check that the chain IDs haven't changed after event 3 because
+    // event three is invalid as it contains duplicates.
+    expect(configStoreClient.getChainIdIndicesForBlock(eventThree.blockNumber)).to.deep.equal([
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
+    ]);
   });
 
   it("update", async function () {
     [owner] = await ethers.getSigners();
     ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
 
-    configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
+    configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
     const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
-    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
+    configStoreClient = new MockConfigStoreClient(
+      createSpyLogger().spyLogger,
+      configStore,
+      { fromBlock },
+      undefined,
+      undefined,
+      undefined,
+      false
+    );
     configStoreClient.setConfigStoreVersion(0);
 
     // If ConfigStore has no events, stores nothing.
@@ -76,6 +163,7 @@ describe("AcrossConfigStoreClient", async function () {
     // Add new TokenConfig events and check that updating again pulls in new events.
     await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
     await configStoreClient.update();
+
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
@@ -104,7 +192,7 @@ describe("AcrossConfigStoreClient", async function () {
     expect(configStoreClient.cumulativeMaxL1TokenCountUpdates.length).to.equal(1);
 
     // Update ignores GlobalConfig events that have unexpected key or value type.
-    await configStore.updateGlobalConfig(utf8ToHex("gibberish"), MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF);
+    await configStore.updateGlobalConfig(utf8ToHex("gibberish"), String(MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF));
     await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE), "gibberish");
     await configStore.updateGlobalConfig(
       utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
@@ -260,7 +348,10 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.hasLatestConfigStoreVersion).to.be.false;
 
       // Can't set first update to same value as default version:
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), DEFAULT_CONFIG_STORE_VERSION);
+      await configStore.updateGlobalConfig(
+        utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION),
+        String(DEFAULT_CONFIG_STORE_VERSION)
+      );
       // Can't set update to non-integer:
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1.6");
       // Set config store version to 6, making client think it doesn't have latest version, which is 0 in SDK.
@@ -339,6 +430,10 @@ describe("AcrossConfigStoreClient", async function () {
       ).to.throw(/Could not find MaxL1TokenCount/);
     });
     it("Get disabled chain IDs for block range", async function () {
+      // set all possible chains for the next several tests
+      const allPossibleChains = [1, 19, 21, 23];
+      configStoreClient.setAvailableChains(allPossibleChains);
+
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), JSON.stringify([19]));
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), "invalid value");
       await configStore.updateGlobalConfig(
@@ -347,66 +442,57 @@ describe("AcrossConfigStoreClient", async function () {
       );
       await configStoreClient.update();
       const events = await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig());
-      const allPossibleChains = [1, 19, 21, 23];
 
       // When starting before first update, all chains were enabled once in range. Returns whatever is passed in as
       // `allPossibleChains`
-      expect(
-        configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1, allPossibleChains)
-      ).to.deep.equal(allPossibleChains);
-      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[2].blockNumber, allPossibleChains)).to.deep.equal(
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1)).to.deep.equal(
         allPossibleChains
       );
-      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1, [])).to.deep.equal([]);
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[2].blockNumber)).to.deep.equal(allPossibleChains);
 
       // When calling with no to block, returns all enabled chains at from block.
-      expect(configStoreClient.getEnabledChainsInBlockRange(0, undefined, allPossibleChains)).to.deep.equal(
-        allPossibleChains
-      );
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, undefined)).to.deep.equal(allPossibleChains);
+
+      // Expect that calling with no available chains returns an empty array.
+      configStoreClient.setAvailableChains([]);
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1)).to.deep.equal([]);
+
+      // set all possible chains for the next several tests
+      configStoreClient.setAvailableChains(allPossibleChains);
 
       // When starting at first update, 19 is disabled and not re-enabled until the third update. The second
       // update is treated as a no-op since its not a valid chain ID list.
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(
-          events[0].blockNumber,
-          events[1].blockNumber - 1,
-          allPossibleChains
-        )
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[1].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[1].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[1].blockNumber)
       ).to.deep.equal([1, 21, 23]);
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(
-          events[0].blockNumber,
-          events[2].blockNumber - 1,
-          allPossibleChains
-        )
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
+
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber)
       ).to.deep.equal(allPossibleChains);
 
       // When starting at second update, the initial enabled chain list doesn't include 19 since the second update
       // was a no-op.
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(
-          events[1].blockNumber,
-          events[2].blockNumber - 1,
-          allPossibleChains
-        )
+        configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
+
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber)
       ).to.deep.equal(allPossibleChains);
 
       // When starting at third update, 19 is enabled and 21 is disabled.
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[2].blockNumber, events[2].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[2].blockNumber, events[2].blockNumber)
       ).to.deep.equal([1, 19, 23]);
 
       // Throws if fromBlock > toBlock
-      expect(() => configStoreClient.getEnabledChainsInBlockRange(1, 0, allPossibleChains)).to.throw();
+      expect(() => configStoreClient.getEnabledChainsInBlockRange(1, 0)).to.throw();
 
       // Tests for `getDisabledChainsForBlock)
       expect(configStoreClient.getDisabledChainsForBlock(events[0].blockNumber)).to.deep.equal([19]);

@@ -1,13 +1,6 @@
 import { ethers } from "../utils";
 import { utils } from "@across-protocol/sdk-v2";
 
-// This array contains all chains that Across supports, although some of the chains could be currently disabled.
-// The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
-// in the same order as the following list. To add a new chain ID, append it to the end of the list. Never delete
-// a chain ID. The on-chain ConfigStore should store a list of enabled/disabled chain ID's that are a subset
-// of this list, so this list is simply the list of all possible Chain ID's that Across could support.
-export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
-
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
@@ -27,6 +20,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   10: 1382400,
   137: 138240,
   288: 11520,
+  324: 4 * 24 * 60 * 60,
   42161: 1382400,
 };
 
@@ -120,6 +114,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   10: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
   288: 5, // At 60s/block, 50 blocks = 25 mins
+  324: 1500, // At 1s/block, 25 mins = 1500 blocks.
   42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   // Testnets:
   5: 0,

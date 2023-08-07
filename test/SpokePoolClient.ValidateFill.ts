@@ -72,9 +72,10 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
+    await configStoreClient.update();
+
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
-    await configStoreClient.update();
     await hubPoolClient.update();
     spokePoolClient1 = new SpokePoolClient(
       spyLogger,
