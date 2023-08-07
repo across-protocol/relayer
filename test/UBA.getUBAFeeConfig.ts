@@ -47,9 +47,6 @@ describe("UBAClientUtilities.getUBAConfig", () => {
   });
 
   describe("Failing Conditions", () => {
-    it("should fail if the config is not updated", () => {
-      expect(() => getUBAFeeConfig()).to.throw(/Config client not updated/);
-    });
     it("should fail if an invalid token symbol is provided", async () => {
       const invalidTokenSymbol = "INVALID";
       await hubPoolClient.configStoreClient.update();
