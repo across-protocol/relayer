@@ -82,7 +82,7 @@ export class CommonConfig {
       if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
         assert(
           Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
-          "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
+          `BLOCK_RANGE_END_BLOCK_BUFFER is missing chainId ${chainId}`
         );
       }
 
