@@ -16,12 +16,13 @@ export type TransactionSimulationResult = {
 };
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
+const expectedRpcErrorMessages = new Set(["nonce has already been used", "intrinsic gas too low"]);
 const txnRetryable = (error?: unknown): boolean => {
   if (typeguards.isEthersError(error)) {
     return txnRetryErrors.has(error.code);
   }
 
-  return (error as Error)?.message?.includes("intrinsic gas too low");
+  return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
 export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
