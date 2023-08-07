@@ -72,6 +72,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // same block.
   const dvm = await getDvmContract(clients.configStoreClient.configStore.provider);
   await updateDataworkerClients(clients, false);
+  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
 
   if (!clients.configStoreClient.hasLatestConfigStoreVersion) {
     logger.error({

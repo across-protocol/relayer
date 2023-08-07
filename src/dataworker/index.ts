@@ -54,6 +54,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
     for (;;) {
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
+      config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
 
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and

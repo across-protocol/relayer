@@ -43,6 +43,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
   process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, dataworker, config } = await createDataworker(_logger, baseSigner);
   await updateClients(clients);
+  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
 
   const { configStoreClient } = clients;
   let ubaActivationBlock: number;

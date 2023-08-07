@@ -55,6 +55,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
   await updateDataworkerClients(clients, false);
+  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
 
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
