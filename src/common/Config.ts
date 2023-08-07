@@ -90,7 +90,8 @@ export class CommonConfig {
       if (Object.keys(this.maxBlockLookBack).length > 0) {
         assert(
           Object.keys(this.maxBlockLookBack).includes(chainId.toString()),
-          "MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}");
+          "MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}"
+        );
       }
 
       // Multicall chunk size precedence: Environment, chain-specific config, global default.
