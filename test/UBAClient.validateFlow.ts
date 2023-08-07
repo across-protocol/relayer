@@ -154,7 +154,8 @@ describe("UBAClient: Flow validation", function () {
       spokePoolClients,
       bundleCount,
       runningBalances,
-      incentiveBalances
+      incentiveBalances,
+      1000
     );
   };
   describe("validateFlow", function () {
