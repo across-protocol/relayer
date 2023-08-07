@@ -13,7 +13,7 @@ export async function publishValidatedBundles(
   spokePoolClients: SpokePoolClientsByChain,
   numberOfBundles: number,
   _runningBalances?: BigNumber[],
-  _incentiveBalances?: BigNumber[],
+  _incentiveBalances?: BigNumber[]
 ): Promise<Record<number, { start: number; end: number }[]>> {
   // Create a sets of unique block ranges per chain so that we have a lower chance of false positives
   // when fetching the block ranges for a specific chain.
