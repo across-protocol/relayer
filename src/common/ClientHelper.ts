@@ -253,8 +253,9 @@ export async function constructClients(
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
 //      so update the ConfigStoreClient first.
-export async function updateClients(clients: Clients): Promise<void> {
+export async function updateClients(clients: Clients, config: CommonConfig): Promise<void> {
   await clients.configStoreClient.update();
+  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
   await clients.hubPoolClient.update();
 }
 

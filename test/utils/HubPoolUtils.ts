@@ -13,15 +13,15 @@ export async function publishValidatedBundles(
   spokePoolClients: SpokePoolClientsByChain,
   numberOfBundles: number,
   _runningBalances?: BigNumber[],
-  _incentiveBalances?: BigNumber[],
-  randomJumpOverride?: number
+  _incentiveBalances?: BigNumber[]
 ): Promise<Record<number, { start: number; end: number }[]>> {
   // Create a sets of unique block ranges per chain so that we have a lower chance of false positives
   // when fetching the block ranges for a specific chain.
   const expectedBlockRanges: Record<number, { start: number; end: number }[]> = {}; // Save expected ranges here
   let nextBlockRangesForChain = Object.fromEntries(
     chainIds.map((chainId) => {
-      const randomJump = randomJumpOverride ?? Math.floor(Math.random() * 3);
+      // Random block range between 25 and 50 blocks.
+      const randomJump = 25 + Math.floor(Math.random() * 25);
       const _blockRange = [chainId, { start: 0, end: randomJump }];
       return _blockRange;
     })
@@ -66,13 +66,13 @@ export async function publishValidatedBundles(
     await hubPoolClient.update();
 
     // Make next block range span a random number of blocks:
-    const nextBlockRangeSize = Math.ceil(Math.random() * 10);
+    const nextBlockRangeSize = 25 + Math.ceil(Math.random() * 25);
     nextBlockRangesForChain = Object.fromEntries(
       chainIds.map((chainId) => [
         chainId,
         {
           start: nextBlockRangesForChain[chainId].end + 1,
-          end: nextBlockRangesForChain[chainId].end + nextBlockRangeSize,
+          end: nextBlockRangesForChain[chainId].end + 1 + nextBlockRangeSize,
         },
       ])
     );
