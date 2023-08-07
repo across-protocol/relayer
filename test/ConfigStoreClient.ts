@@ -9,8 +9,9 @@ import { GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { SpokePoolTargetBalance } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
 import { constants } from "@across-protocol/sdk-v2";
+import { AcrossConfigStore } from "@across-protocol/contracts-v2";
 
-let l1Token: Contract, l2Token: Contract, configStore: Contract;
+let l1Token: Contract, l2Token: Contract, configStore: AcrossConfigStore;
 let owner: SignerWithAddress;
 let configStoreClient: MockConfigStoreClient;
 
@@ -52,13 +53,19 @@ describe("AcrossConfigStoreClient", async function () {
     [owner] = await ethers.getSigners();
     ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
 
-    configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
+    configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
     const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
     configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
     configStoreClient.setConfigStoreVersion(0);
   });
 
   it("should properly reason about chain id indices", async function () {
+    const [owner] = await ethers.getSigners();
+    const configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
+    configStoreClient.setConfigStoreVersion(0);
+
     // Await the first update.
     await configStoreClient.update();
 
@@ -98,31 +105,34 @@ describe("AcrossConfigStoreClient", async function () {
       JSON.stringify([1, 10, 137, 288, 42161, 100, 10])
     );
 
+    // We can now update our client to reflect the changes we made previously
+    await configStoreClient.update();
+
     // We should first test the case where no Chain ID Updates have been made.
     // In this case, we should default to a set of protocol defaults as defined
     // by the UMIP (https://github.com/UMAprotocol/UMIPs/pull/590).
     expect(configStoreClient.getChainIdIndicesForBlock(0)).to.deep.equal(constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES);
 
-    // We can now update our client to reflect the changes we made previously
-    await configStoreClient.update();
-
     // We should now expect that after event one, we have a set of chain IDs
     // that equals the protocol defaults + 100.
     expect(configStoreClient.getChainIdIndicesForBlock(eventOne.blockNumber)).to.deep.equal([
-      1, 10, 137, 288, 42161, 100,
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
     ]);
 
     // We should now expect that after event two, we have a set of chain IDs
     // that equals the protocol defaults + 100. This is because the second
     // event is invalid and should be ignored.
     expect(configStoreClient.getChainIdIndicesForBlock(eventTwo.blockNumber)).to.deep.equal([
-      1, 10, 137, 288, 42161, 100,
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
     ]);
 
     // We can also check that the chain IDs haven't changed after event 3 because
     // event three is invalid as it contains duplicates.
     expect(configStoreClient.getChainIdIndicesForBlock(eventThree.blockNumber)).to.deep.equal([
-      1, 10, 137, 288, 42161, 100,
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
     ]);
   });
 
@@ -130,7 +140,7 @@ describe("AcrossConfigStoreClient", async function () {
     [owner] = await ethers.getSigners();
     ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
 
-    configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
+    configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
     const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
     configStoreClient = new MockConfigStoreClient(
       createSpyLogger().spyLogger,
@@ -182,7 +192,7 @@ describe("AcrossConfigStoreClient", async function () {
     expect(configStoreClient.cumulativeMaxL1TokenCountUpdates.length).to.equal(1);
 
     // Update ignores GlobalConfig events that have unexpected key or value type.
-    await configStore.updateGlobalConfig(utf8ToHex("gibberish"), MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF);
+    await configStore.updateGlobalConfig(utf8ToHex("gibberish"), String(MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF));
     await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE), "gibberish");
     await configStore.updateGlobalConfig(
       utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
@@ -338,7 +348,10 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.hasLatestConfigStoreVersion).to.be.false;
 
       // Can't set first update to same value as default version:
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), DEFAULT_CONFIG_STORE_VERSION);
+      await configStore.updateGlobalConfig(
+        utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION),
+        String(DEFAULT_CONFIG_STORE_VERSION)
+      );
       // Can't set update to non-integer:
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1.6");
       // Set config store version to 6, making client think it doesn't have latest version, which is 0 in SDK.
