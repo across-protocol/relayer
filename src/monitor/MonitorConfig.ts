@@ -1,4 +1,4 @@
-import { CommonConfig, MIN_DEPOSIT_CONFIRMATIONS, ProcessEnv } from "../common";
+import { CommonConfig, ProcessEnv } from "../common";
 import { ethers, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -13,8 +13,7 @@ export interface BotModes {
 }
 
 export class MonitorConfig extends CommonConfig {
-  readonly spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> =
-    {};
+  public spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
 
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
@@ -162,10 +161,11 @@ export class MonitorConfig extends CommonConfig {
         }
       );
     }
+  }
 
+  loadAndValidateConfigForChains(chainIdIndices: number[]): void {
     // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.
-    const allPossibleChainIds = Object.keys(MIN_DEPOSIT_CONFIRMATIONS).map((chainId) => Number(chainId));
-    allPossibleChainIds.forEach((chainId) => {
+    chainIdIndices.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
         startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
           ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
@@ -175,6 +175,7 @@ export class MonitorConfig extends CommonConfig {
           : undefined,
       };
     });
+    super.loadAndValidateConfigForChains(chainIdIndices);
   }
 }
 
