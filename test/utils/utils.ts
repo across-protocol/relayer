@@ -110,9 +110,7 @@ export async function deployConfigStore(
   maxL1TokensPerPoolRebalanceLeaf: number = MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
-  transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
-): Promise<{ configStore: utils.Contract; deploymentBlock: number }> {
-  const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
+): Promise<{ configStore: AcrossConfigStore; deploymentBlock: number }> {
   const { blockNumber: deploymentBlock } = await configStore.deployTransaction.wait();
 
   for (const token of tokensToAdd) {
