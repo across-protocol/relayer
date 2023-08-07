@@ -90,8 +90,7 @@ describe("UBAClientUtilities", function () {
       spokePoolClients,
       bundleCount,
       runningBalances,
-      incentiveBalances,
-      1000
+      incentiveBalances
     );
   };
   describe("getUbaActivationBundleStartBlocks", function () {
