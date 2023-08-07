@@ -16,6 +16,9 @@ describe("BaseAbstractClient.isUpdated", () => {
     const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
 
+    configStoreClient.setAvailableChains([1]);
+    await configStoreClient.update();
+
     const { spokePool } = await deploySpokePool(ethers);
     const deploymentBlock = await spokePool.provider.getBlockNumber();
 
