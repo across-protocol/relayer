@@ -91,7 +91,12 @@ describe("UBAClientUtilities", function () {
       bundleCount,
       runningBalances,
       incentiveBalances,
-      1000
+      // We can override the jump block to be 10_000. By increasing the random jump vector, we
+      // can minimize the chance of block collisions that would cause this function to
+      // nondeterministically fail in the CI. NOTE: a failure as a result of incorrect
+      // block ranges isn't necessarily a failure of the test, but of the randomness that
+      // is generated in the test environment to simulate the block ranges.
+      10_000
     );
   };
   describe("getUbaActivationBundleStartBlocks", function () {
