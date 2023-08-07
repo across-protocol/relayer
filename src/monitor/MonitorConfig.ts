@@ -13,8 +13,7 @@ export interface BotModes {
 }
 
 export class MonitorConfig extends CommonConfig {
-  readonly spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> =
-    {};
+  public spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
 
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
@@ -162,8 +161,11 @@ export class MonitorConfig extends CommonConfig {
         }
       );
     }
+  }
 
-    this.chainIdListIndices.forEach((chainId) => {
+  loadAndValidateConfigForChains(chainIdIndices: number[]): void {
+    // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.
+    chainIdIndices.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
         startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
           ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
@@ -173,6 +175,7 @@ export class MonitorConfig extends CommonConfig {
           : undefined,
       };
     });
+    super.loadAndValidateConfigForChains(chainIdIndices);
   }
 }
 

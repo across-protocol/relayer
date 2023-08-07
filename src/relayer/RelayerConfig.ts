@@ -102,8 +102,8 @@ export class RelayerConfig extends CommonConfig {
     (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
       : Constants.MIN_DEPOSIT_CONFIRMATIONS),
-      this.chainIdListIndices.forEach((chainId) => {
-        Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+      Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+        Object.keys(this.minDepositConfirmations[threshold]).forEach((chainId) => {
           const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
           assert(
             !isNaN(nBlocks) && nBlocks >= 0,

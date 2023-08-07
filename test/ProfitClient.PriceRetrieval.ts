@@ -70,7 +70,10 @@ describe("ProfitClient: Price Retrieval", async function () {
     const { configStore } = await deployConfigStore(owner, [l1Token]);
 
     const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+    await configStoreClient.update();
+
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
 
     mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
     profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], toBN(0));

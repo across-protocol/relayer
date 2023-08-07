@@ -54,7 +54,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   logger = _logger;
 
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
-  await updateDataworkerClients(clients, false);
+  await updateDataworkerClients(clients, config, false);
 
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
@@ -408,10 +408,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
         clients,
         bundle.blockNumber,
-        clients.configStoreClient.getEnabledChains(
-          mainnetBundleEndBlock,
-          dataworker.chainIdListForBundleEvaluationBlockNumbers
-        )
+        clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
       );
       const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
         blockRange[0],

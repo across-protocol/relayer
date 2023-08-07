@@ -82,6 +82,8 @@ describe("HubPool Utilization", async function () {
     await hubPool.addLiquidity(l1Token.address, amountToLp);
     await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
 
+    await configStoreClient.update();
+
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
     await configStoreClient.update();
     await hubPoolClient.update();

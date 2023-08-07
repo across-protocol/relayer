@@ -22,6 +22,8 @@ import sinon from "sinon";
 import chai from "chai";
 import chaiExclude from "chai-exclude";
 import _ from "lodash";
+import { AcrossConfigStore } from "@across-protocol/contracts-v2";
+import { constants } from "@across-protocol/sdk-v2";
 chai.use(chaiExclude);
 export { winston, sinon };
 
@@ -110,9 +112,12 @@ export async function deployConfigStore(
   maxL1TokensPerPoolRebalanceLeaf: number = MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
-  transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
-): Promise<{ configStore: utils.Contract; deploymentBlock: number }> {
-  const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
+  transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  additionalChainIdIndices?: number[]
+): Promise<{ configStore: AcrossConfigStore; deploymentBlock: number }> {
+  const configStore = (await (
+    await utils.getContractFactory("AcrossConfigStore", signer)
+  ).deploy()) as AcrossConfigStore;
   const { blockNumber: deploymentBlock } = await configStore.deployTransaction.wait();
 
   for (const token of tokensToAdd) {
@@ -133,6 +138,12 @@ export async function deployConfigStore(
     maxRefundPerRelayerRefundLeaf.toString()
   );
 
+  if (additionalChainIdIndices) {
+    await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+      JSON.stringify([...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES, ...additionalChainIdIndices])
+    );
+  }
   return { configStore, deploymentBlock };
 }
 

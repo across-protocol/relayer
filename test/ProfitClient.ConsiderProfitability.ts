@@ -98,8 +98,12 @@ describe("ProfitClient: Consider relay profit", async function () {
     const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(logger, configStore);
 
+    await configStoreClient.update();
+
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
+
+    await hubPoolClient.update();
 
     const { spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
       originChainId,

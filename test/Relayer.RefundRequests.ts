@@ -37,6 +37,7 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -96,15 +97,20 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     ]);
 
     ({ spyLogger } = createSpyLogger());
-    ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(
-      spyLogger,
-      configStore,
-      { fromBlock: 0 },
-      CONFIG_STORE_VERSION,
+    ({ configStore } = await deployConfigStore(
+      owner,
+      [l1Token],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
       CHAIN_ID_TEST_LIST
-    );
+    ));
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    await configStoreClient.update();
+
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
 
@@ -128,7 +134,16 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
       [spokePoolClient_1, spokePoolClient_2].map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
     );
 
-    ubaClient = new UBAClient([], hubPoolClient, spokePoolClients, spyLogger);
+    for (const spokePoolClient of Object.values(spokePoolClients)) {
+      await spokePoolClient.update();
+    }
+
+    ubaClient = new UBAClient(
+      [],
+      hubPoolClient,
+      generateNoOpSpokePoolClientsForDefaultChainIndices(spokePoolClients),
+      spyLogger
+    );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();

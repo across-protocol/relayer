@@ -14,39 +14,26 @@ describe("BaseAbstractClient.isUpdated", () => {
     const { configStore } = await deployConfigStore(owner, [l1Token]);
 
     const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+    await configStoreClient.update();
+
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
+
+    configStoreClient.setAvailableChains([1]);
+    await configStoreClient.update();
 
     const { spokePool } = await deploySpokePool(ethers);
     const deploymentBlock = await spokePool.provider.getBlockNumber();
 
     spokePoolClient = new MockSpokePoolClient(spyLogger, spokePool, 1, deploymentBlock);
 
+    await spokePoolClient.update();
+
     ubaClient = new MockUBAClient([], hubPoolClient, {
       "1": spokePoolClient,
     });
   });
 
-  describe("HubPoolClient", () => {
-    it("should return true if the client is updated", async () => {
-      await hubPoolClient.configStoreClient.update();
-      await hubPoolClient.update();
-      expect(hubPoolClient.isUpdated).to.be.true;
-    });
-
-    it("should return false if the client is not updated", async () => {
-      expect(hubPoolClient.isUpdated).to.be.false;
-    });
-  });
-  describe("SpokePoolClient", () => {
-    it("should return true if the client is updated", async () => {
-      await spokePoolClient.update();
-      expect(spokePoolClient.isUpdated).to.be.true;
-    });
-
-    it("should return false if the client is not updated", async () => {
-      expect(spokePoolClient.isUpdated).to.be.false;
-    });
-  });
   describe("UBAClient", () => {
     it("should return true if the client is updated", async () => {
       (hubPoolClient.configStoreClient as MockConfigStoreClient).setUBAActivationBlock(0);
