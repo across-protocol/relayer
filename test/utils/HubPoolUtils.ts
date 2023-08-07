@@ -79,6 +79,18 @@ export async function publishValidatedBundles(
   }
   await Promise.all(chainIds.map((chainId) => spokePoolClients[Number(chainId)].update()));
 
+  // Iterate over all the expected block ranges. Our goal is to ensure that none of the
+  // block ranges are invalid for the case of testing purposes. If we find a `start` block
+  // that is equal to or greater than the `end` block, we will set the `end` block to be
+  // equal to the `start` block + 1.
+  Object.values(expectedBlockRanges).forEach((blockRanges) => {
+    blockRanges.forEach((blockRange) => {
+      if (blockRange.start >= blockRange.end) {
+        blockRange.end = blockRange.start + 1;
+      }
+    });
+  });
+
   // Make the last bundle to cover until the last spoke client searched block, unless a spoke pool
   // client was provided for the chain. In this case we assume that chain is disabled.
   chainIds.forEach((chainId) => {

@@ -82,7 +82,7 @@ describe("UBAClientUtilities", function () {
     }
   });
 
-  const _publishValidatedBundles = async (bundleCount) => {
+  const _publishValidatedBundles = async (bundleCount: number) => {
     return await publishValidatedBundles(
       chainIds,
       l1Tokens,
@@ -90,7 +90,8 @@ describe("UBAClientUtilities", function () {
       spokePoolClients,
       bundleCount,
       runningBalances,
-      incentiveBalances
+      incentiveBalances,
+      1000
     );
   };
   describe("getUbaActivationBundleStartBlocks", function () {
