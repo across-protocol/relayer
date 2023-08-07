@@ -116,9 +116,8 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
 export function usage(badInput?: string): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
   const walletOpts = "mnemonic|privateKey";
-  const depositArgs =
-    "--origin <originChainId> --destination <destinationChainId>" + " --token <tokenSymbol> --amount <amount>";
-  const fillArgs = "--origin <originChainId> --hash <depositHash>";
+  const depositArgs = "--from <originChainId> --to <destinationChainId>" + " --token <tokenSymbol> --amount <amount>";
+  const fillArgs = "--from <originChainId> --hash <depositHash>";
 
   const pad = "deposit".length;
   usageStr += `
