@@ -88,7 +88,9 @@ export class CommonConfig {
 
       // Validate that there is a max block look back for each chain.
       if (Object.keys(this.maxBlockLookBack).length > 0) {
-        assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
+        assert(
+          Object.keys(this.maxBlockLookBack).includes(chainId.toString()),
+          "MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}");
       }
 
       // Multicall chunk size precedence: Environment, chain-specific config, global default.
