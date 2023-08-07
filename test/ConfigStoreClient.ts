@@ -71,6 +71,11 @@ describe("AcrossConfigStoreClient", async function () {
       utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
       JSON.stringify([1, 10, 137, 288, 42161, 100])
     );
+
+    // Sleep for one second - this is to ensure that the block number of the
+    // next event is different from the previous event.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // We can submit a set of chain IDs that are not perfect
     // subsets of the protocol defaults. In this case, we would
     // expect this to be ignored during our update.
@@ -78,6 +83,10 @@ describe("AcrossConfigStoreClient", async function () {
       utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
       JSON.stringify([10, 137, 288, 42161, 100])
     );
+
+    // Sleep for one second - this is to ensure that the block number of the
+    // next event is different from the previous event.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Finally, let's submit a set of chain IDs that contain
     // duplicates. In this case, we would expect this to be
