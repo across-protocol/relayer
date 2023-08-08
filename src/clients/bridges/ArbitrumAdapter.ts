@@ -176,6 +176,10 @@ export class ArbitrumAdapter extends BaseAdapter {
     return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, this.l1SubmitValue);
   }
 
+  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
+    throw new Error("Unneccessary to wrap ETH on Arbitrum");
+  }
+
   getL1Bridge(l1Token: SupportedL1Token): Contract {
     return new Contract(l1Gateways[l1Token], CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi, this.getSigner(1));
   }

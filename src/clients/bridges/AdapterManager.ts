@@ -76,20 +76,26 @@ export class AdapterManager {
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
-  // needs to e done on Boba and Optimism as only these two chains require ETH to be sent over the canonical bridge.
+  // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
+  // (not the ERC20).
   async wrapEthIfAboveThreshold(wrapThreshold: BigNumber): Promise<void> {
-    const optimismCall =
-      this.spokePoolClients[10] !== undefined
-        ? (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
-        : Promise.resolve(undefined);
-    const [optimismWrapTx] = await Promise.all([optimismCall]);
-
-    if (optimismWrapTx) {
+    const chainsToWrapEtherOn = [10, 324];
+    const calls: Promise<any>[] = [];
+    for (const chainId of chainsToWrapEtherOn) {
+      calls.push(
+        this.spokePoolClients[chainId] !== undefined
+          ? this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold)
+          : Promise.resolve(undefined)
+      );
+    }
+    const wrapTxns = await Promise.all(calls);
+    for (let i = 0; i < wrapTxns.length; i++) {
+      const wrapChain = chainsToWrapEtherOn[i];
       const mrkdwn =
-        "Ether on Optimism was wrapped due to being over the threshold of " +
+        `Ether on chain ${wrapChain} was wrapped due to being over the threshold of ` +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
-        `${`\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} `}.`;
-      this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
+        `${`\nWrap tx: ${etherscanLink(wrapTxns[i].hash, wrapChain)} `}.`;
+      this.logger.info({ at: "AdapterManager", message: `Eth wrapped on target chain ${wrapChain}🎁`, mrkdwn });
     }
   }
 

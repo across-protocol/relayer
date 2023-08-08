@@ -274,6 +274,10 @@ export class PolygonAdapter extends BaseAdapter {
     );
   }
 
+  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
+    throw new Error("Unneccessary to wrap ETH on Polygon");
+  }
+
   private isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
     return l1Token in tokenToBridge;
   }

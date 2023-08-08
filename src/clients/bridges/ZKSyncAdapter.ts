@@ -10,6 +10,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle } from "@across-protocol/sdk-v2";
+import { TransactionClient } from "../TransactionClient";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -19,8 +20,10 @@ export class ZKSyncAdapter extends BaseAdapter {
   // Tokens we know for sure that use the default L1 ERC20 bridge to bridge to ZkSync. This is added here for safety
   // so that we don't accidentally burn tokens by sending them over the wrong bridge contract. WETH/ETH is supported
   // via a different code path so its always supported.
-
   readonly supportedERC20s = ["USDC", "USDT", "WBTC"];
+
+  private txnClient: TransactionClient;
+
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -28,6 +31,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     monitoredAddresses: string[]
   ) {
     super(spokePoolClients, 324, monitoredAddresses, logger);
+    this.txnClient = new TransactionClient(logger);
   }
 
   // TODO: This will require observing production transfers to determine the correct events and contracts to track on
@@ -182,6 +186,30 @@ export class ZKSyncAdapter extends BaseAdapter {
     const hashes = await multicallerClient.executeTransactionQueue();
     // Send latest hash which should be the call to the ZkSync system contract.
     return { hash: hashes[hashes.length - 1] } as TransactionResponse;
+  }
+
+  /**
+   * @notice sendTokenToTargetChain will send WETH as ETH to the L2 recipient so we need to implement
+   * this function so that the AdapterManager can know when to wrap ETH into WETH.
+   * @param threshold
+   * @returns
+   */
+  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
+    const { chainId, txnClient } = this;
+    assert(chainId === 324, `chainId ${chainId} is not supported`);
+
+    const l2WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
+    const ethBalance = await this.getSigner(chainId).getBalance();
+    if (ethBalance.gt(threshold)) {
+      const l2Signer = this.getSigner(chainId);
+      // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.
+      const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
+      const method = "deposit";
+      const value = ethBalance.sub(threshold);
+      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
+      return (await txnClient.submit(chainId, [{ contract, chainId, method, args: [], value }]))[0];
+    }
+    return null;
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {

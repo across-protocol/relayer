@@ -235,4 +235,6 @@ export abstract class BaseAdapter {
   ): Promise<TransactionResponse>;
 
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
+
+  abstract wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null>;
 }
