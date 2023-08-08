@@ -52,14 +52,7 @@ export class BundleDataClient {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
-  ) {
-    logger.debug({
-      at: "BundleDataClient",
-      message: "Initialized BundleDataClient",
-      chainIdListForBundleEvaluationBlockNumbers,
-      spokePoolClientChains: Object.keys(spokePoolClients),
-    });
-  }
+  ) {}
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
