@@ -539,7 +539,8 @@ export function generateMarkdownForRootBundle(
 ): string {
   // Create helpful logs to send to slack transport
   let bundleBlockRangePretty = "";
-  chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
+  bundleBlockRange.forEach((_blockRange, index) => {
+    const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}${
       isChainDisabled(bundleBlockRange[index]) ? " 🥶" : ""
     }`;

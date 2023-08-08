@@ -52,7 +52,14 @@ export class BundleDataClient {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
-  ) {}
+  ) {
+    logger.debug({
+      at: "BundleDataClient",
+      message: "Initialized BundleDataClient",
+      chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClientChains: Object.keys(spokePoolClients),
+    });
+  }
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
@@ -210,9 +217,9 @@ export class BundleDataClient {
       throw new Error("HubPoolClient not updated");
     }
 
-    if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length) {
+    if (blockRangesForChains.length > this.chainIdListForBundleEvaluationBlockNumbers.length) {
       throw new Error(
-        `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
+        `Unexpected block range list length of ${blockRangesForChains.length}, should be <= ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
       );
     }
 
@@ -298,7 +305,10 @@ export class BundleDataClient {
       return isChainDisabled(blockRangeForChain);
     };
 
-    const allChainIds = Object.keys(spokePoolClients).map(Number);
+    // Infer chain ID's to load from number of block ranges passed in.
+    const allChainIds = blockRangesForChains.map(
+      (_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index]
+    );
 
     const validateRefundRequestAndSaveData = async (refundRequest: RefundRequestWithBlock): Promise<void> => {
       const result = await refundRequestIsValid(spokePoolClients, this.clients.hubPoolClient, refundRequest);

@@ -9,6 +9,7 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   SpokePool,
+  isDefined,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -182,6 +183,13 @@ export function getSpokePoolClientsForContract(
 ): SpokePoolClientsByChain {
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ chainId, contract, registrationBlock }) => {
+    if (!isDefined(fromBlocks[chainId])) {
+      logger.debug({
+        at: "ClientHelper#getSpokePoolClientsForContract",
+        message: `No fromBlock set for spoke pool client ${chainId}, setting from block to registration block`,
+        registrationBlock,
+      });
+    }
     const spokePoolClientSearchSettings = {
       fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
       toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,

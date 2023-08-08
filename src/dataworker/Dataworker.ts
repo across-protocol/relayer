@@ -110,6 +110,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#Constructor",
         message: "Dataworker constructed with overridden config store settings",
+        chainIdListForBundleEvaluationBlockNumbers,
         maxRefundCountOverride: this.maxRefundCountOverride,
         maxL1TokenCountOverride: this.maxL1TokenCountOverride,
         tokenTransferThreshold: this.tokenTransferThreshold,
@@ -377,6 +378,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Proposing Legacy root bundle",
+        blockRangesForProposal,
       });
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesForProposal,
@@ -391,7 +393,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Proposing UBA root bundle",
-        mainnetBundleStartBlock,
+        blockRangesForProposal,
       });
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
@@ -2289,7 +2291,8 @@ export class Dataworker {
    * @param spokePoolClients SpokePool clients to query. If one is undefined then the chain ID will be treated as
    * disabled.
    * @param mainnetBundleEndBlock Passed in to determine which disabled chain list to use (i.e. the list that is live
-   * at the time of this block).
+   * at the time of this block). Also used to determine which chain ID indices list to use which is the max
+   * set of chains we can return block ranges for.
    * @returns [number, number]: [startBlock, endBlock]
    */
   _getWidestPossibleBlockRangeForNextBundle(
@@ -2297,11 +2300,13 @@ export class Dataworker {
     mainnetBundleEndBlock: number
   ): number[][] {
     return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
-      this.chainIdListForBundleEvaluationBlockNumbers,
+      // We only want as many block ranges as there are chains enabled at the time of the bundle end block.
+      this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleEndBlock),
       spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber,
+      // We only want to count enabled chains at the same time that we are loading chain ID indices.
       this.clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
     );
   }
