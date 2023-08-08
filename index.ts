@@ -37,11 +37,12 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
   } else {
+    const signer = getSigner();
     do {
       try {
         // One global signer for use with a specific per-chain provider.
         // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
-        await cmds[cmd](logger, await getSigner());
+        await cmds[cmd](logger, signer);
       } catch (error) {
         if (await processCrash(logger, cmd, config.pollingDelay, error as AnyObject)) {
           // eslint-disable-next-line no-process-exit
