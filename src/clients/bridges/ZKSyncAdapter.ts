@@ -9,7 +9,9 @@ import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers } from "../../interfaces";
 import { MAX_SAFE_ALLOWANCE, TransactionResponse, winston } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
-import { L1Signer, Provider, Signer } from "zksync-web3";
+import * as zksync from "zksync";
+
+class ZKSyncWallet extends zksync.Wallet {}
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -49,20 +51,20 @@ export class ZKSyncAdapter extends BaseAdapter {
     }
     // Resolve the signer from the L1Signer
     const signer = await this.getL1Signer();
-    const depositTxn = await signer.deposit({
+    const depositTxn = await signer.depositToSyncFromEthereum({
       token: l1Token, // The ZKSync SDK only requires the Ethereum token address
+      depositTo: address, // The address to deposit to
       amount: amount.toString(), // The amount to transmit
-      to: address, // The address to receive the tokens on the L2 chain
-      approveERC20: true, // Will approve the ERC20 token if it hasn't been already
+      approveDepositAmountForERC20: true, // Will approve the ERC20 token if it hasn't been already
     });
-    return depositTxn;
+    return depositTxn.ethTx;
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     const signer = await this.getL1Signer();
     await Promise.all(
       l1Tokens.map(async (l1Token) => {
-        const txn = await signer.approveERC20(l1Token, MAX_SAFE_ALLOWANCE);
+        const txn = await signer.approveERC20TokenDeposits(l1Token, BigNumber.from(MAX_SAFE_ALLOWANCE));
         return txn.wait();
       })
     );
@@ -72,11 +74,12 @@ export class ZKSyncAdapter extends BaseAdapter {
    * Resolves an L1Signer from the ZKSync chain
    * @returns The L1Signer for the ZKSync chain
    */
-  private async getL1Signer(): Promise<L1Signer> {
-    const signerOnZKSync = this.spokePoolClients[324].spokePool.signer;
+  private async getL1Signer(): Promise<ZKSyncWallet> {
     const signerOnEthereum = this.spokePoolClients[1].spokePool.signer;
-
-    const signer = L1Signer.from(signerOnEthereum as Signer, signerOnZKSync.provider as Provider);
-    return signer;
+    const wallet = ZKSyncWallet.fromEthSigner(
+      signerOnEthereum,
+      this.spokePoolClients[324].spokePool.provider as unknown as zksync.SyncProvider
+    );
+    return wallet;
   }
 }
