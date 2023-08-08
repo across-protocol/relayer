@@ -51,20 +51,26 @@ export class ZKSyncAdapter extends BaseAdapter {
     }
     // Resolve the signer from the L1Signer
     const signer = await this.getL1Signer();
+    // Call into the deposit transaction to get create the transaction to Sync
     const depositTxn = await signer.depositToSyncFromEthereum({
       token: l1Token, // The ZKSync SDK only requires the Ethereum token address
       depositTo: address, // The address to deposit to
       amount: amount.toString(), // The amount to transmit
       approveDepositAmountForERC20: true, // Will approve the ERC20 token if it hasn't been already
     });
+    // Resolve just the ETH transaction from the deposit transaction
     return depositTxn.ethTx;
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+    // Resolve the signer from the L1Signer
     const signer = await this.getL1Signer();
+    // Approve all tokens
     await Promise.all(
       l1Tokens.map(async (l1Token) => {
+        // We want to approve the maximum amount of tokens
         const txn = await signer.approveERC20TokenDeposits(l1Token, BigNumber.from(MAX_SAFE_ALLOWANCE));
+        // Wait for the transaction to be mined
         return txn.wait();
       })
     );
