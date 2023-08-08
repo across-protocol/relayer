@@ -890,16 +890,15 @@ export class Dataworker {
       return;
     }
 
-    const pendingBundleBlockRanges = getImpliedBundleBlockRanges(
-      this.clients.hubPoolClient,
-      this.clients.configStoreClient,
-      // If there is a pending bundle, then the latest proposed bundle is the pending one.
-      this.clients.hubPoolClient.getProposedRootBundles().at(-1)
+    const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
-      pendingBundleBlockRanges[0][0]
+      nextBundleMainnetStartBlock
     );
     const { valid, reason } = await this.validateRootBundle(
       hubPoolChainId,
@@ -1627,16 +1626,14 @@ export class Dataworker {
       pendingRootBundle,
     });
 
-    const pendingBundleBlockRanges = getImpliedBundleBlockRanges(
-      this.clients.hubPoolClient,
-      this.clients.configStoreClient,
-      // If there is a pending bundle, then the latest proposed bundle is the pending one.
-      this.clients.hubPoolClient.getProposedRootBundles().at(-1)
+    const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      // Mainnet bundle start block for pending bundle is the first entry in the first entry.
-      pendingBundleBlockRanges[0][0]
+      nextBundleMainnetStartBlock
     );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
