@@ -76,9 +76,13 @@ export async function constructRelayerClients(
   );
   await profitClient.update();
 
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
-    baseSigner.address,
-  ]);
+  const adapterManager = new AdapterManager(
+    logger,
+    spokePoolClients,
+    commonClients.hubPoolClient,
+    commonClients.multiCallerClient,
+    [baseSigner.address]
+  );
 
   const bundleDataClient = new BundleDataClient(
     logger,

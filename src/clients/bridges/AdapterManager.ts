@@ -8,7 +8,7 @@ import {
   getL2TokenAddresses,
   TransactionResponse,
 } from "../../utils";
-import { SpokePoolClient, HubPoolClient } from "../";
+import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces";
 export class AdapterManager {
@@ -18,6 +18,7 @@ export class AdapterManager {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
+    readonly multicallerClient: MultiCallerClient,
     readonly monitoredAddresses: string[],
     // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
@@ -36,7 +37,7 @@ export class AdapterManager {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[324] !== undefined) {
-      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, multicallerClient, monitoredAddresses);
     }
 
     logger.debug({
@@ -143,6 +144,13 @@ export class AdapterManager {
       await this.adapters[42161].checkTokenApprovals(
         address,
         l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))
+      );
+    }
+
+    if (this.adapters[324] !== undefined) {
+      await this.adapters[324].checkTokenApprovals(
+        address,
+        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 324))
       );
     }
   }

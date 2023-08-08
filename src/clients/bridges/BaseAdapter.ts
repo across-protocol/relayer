@@ -18,6 +18,7 @@ import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../
 
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import { TransactionResponse } from "../../utils";
+import { CONTRACT_ADDRESSES } from "../../common";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
@@ -32,6 +33,7 @@ export abstract class BaseAdapter {
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
+  readonly wethAddress = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
@@ -206,8 +208,21 @@ export abstract class BaseAdapter {
     return `${getNetworkName(this.chainId)}Adapter`;
   }
 
+  /**
+   * Return true if passed in token address is L1 WETH address
+   * @param l1Token an address
+   * @returns True if l1Token is L1 weth address
+   */
   isWeth(l1Token: string): boolean {
-    return l1Token.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+    return l1Token.toLowerCase() === this.wethAddress;
+  }
+
+  /**
+   * Return L1 WETH contract
+   * @returns L1 WETH contract
+   */
+  getWeth(): Contract {
+    return new Contract(this.wethAddress, CONTRACT_ADDRESSES[1].weth.abi, this.getProvider(1));
   }
 
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;

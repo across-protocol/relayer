@@ -49,7 +49,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();
-    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
+    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, null, [relayer.address]);
 
     await constructChainSpecificFakes();
 

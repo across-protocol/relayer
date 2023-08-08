@@ -15,6 +15,7 @@ import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../src/common";
+import { gasPriceOracle } from "@across-protocol/sdk-v2";
 const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId", "zkSyncChainId"],
 });
@@ -35,7 +36,8 @@ export async function run(): Promise<void> {
 
   const baseSigner = await getSigner();
   const l1ChainId = Number(args.chainId);
-  const connectedSigner = baseSigner.connect(await getProvider(l1ChainId));
+  const l1Provider = await getProvider(l1ChainId);
+  const connectedSigner = baseSigner.connect(l1Provider);
   console.log("Connected to account", connectedSigner.address);
   const recipient = args.to;
   const token = args.token;
@@ -59,6 +61,14 @@ export async function run(): Promise<void> {
     connectedSigner
   );
   const l2PubdataByteLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
+  const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider, 1);
+  const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
+  // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
+  // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
+  // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
+  // contract does here:
+  // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
+  console.log("Actual L1 gas price (e.g. tx.gasprice)", estimatedL1GasPrice.toString());
 
   let simulationResult: TransactionSimulationResult;
 
@@ -70,7 +80,7 @@ export async function run(): Promise<void> {
   // Deposit ETH to ZkSync
   if (token === ZERO_ADDRESS) {
     const amountFromWei = ethers.utils.formatUnits(args.amount, 18);
-    console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.zkSyncChainId}}`);
+    console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.zkSyncChainId}`);
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
       return;
     }
@@ -86,9 +96,8 @@ export async function run(): Promise<void> {
       l2PubdataByteLimit
     );
     const params = [recipient, args.amount, "0x", l2GasLimit.toString(), l2PubdataByteLimit, [], recipient];
-    const estimatedL2GasPrice = await zkSyncProvider.getGasPrice();
     const l2TransactionBaseCost = await mailboxContract.l2TransactionBaseCost(
-      estimatedL2GasPrice,
+      estimatedL1GasPrice,
       l2GasLimit,
       l2PubdataByteLimit
     );
@@ -98,6 +107,7 @@ export async function run(): Promise<void> {
       chainId: args.chainId,
       method,
       args: params,
+      gasLimitMultiplier: 3,
       value: l2TransactionBaseCost.add(args.amount),
       message: "Deposit ETH to ZkSync",
       mrkdwn: "Deposit ETH to ZkSync",
@@ -135,9 +145,8 @@ export async function run(): Promise<void> {
     );
 
     const params = [recipient, token, args.amount, l2GasLimit, l2PubdataByteLimit];
-    const estimatedL2GasPrice = await zkSyncProvider.getGasPrice();
     const l2TransactionBaseCost = await mailboxContract.l2TransactionBaseCost(
-      estimatedL2GasPrice,
+      estimatedL1GasPrice,
       l2GasLimit,
       l2PubdataByteLimit
     );
@@ -148,6 +157,7 @@ export async function run(): Promise<void> {
       method,
       args: params,
       value: l2TransactionBaseCost,
+      gasLimitMultiplier: 3,
       message: "Deposit ERC20 to ZkSync",
       mrkdwn: "Deposit ERC20 to ZkSync",
     };
