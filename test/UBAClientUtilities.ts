@@ -127,22 +127,22 @@ describe("UBAClientUtilities", function () {
         Array(chainIds.length).fill(0)
       );
     });
-    it("If chain not active in bundle, returns 0 as start block", async function() {
+    it("If chain not active in bundle, returns 0 as start block", async function () {
       const expectedBlockRanges = await _publishValidatedBundles(3);
 
-            // Set UBA activation block to block right after first bundle was proposed.
-            const proposalBlocks = hubPoolClient.getProposedRootBundles().map((bundle) => bundle.blockNumber);
-            configStoreClient.setUBAActivationBlock(proposalBlocks[0] + 1);
-      
+      // Set UBA activation block to block right after first bundle was proposed.
+      const proposalBlocks = hubPoolClient.getProposedRootBundles().map((bundle) => bundle.blockNumber);
+      configStoreClient.setUBAActivationBlock(proposalBlocks[0] + 1);
+
       // Add extra chain to index list.
       const newChainIds = [...chainIds, 99];
-      configStoreClient.setAvailableChains(newChainIds)
+      configStoreClient.setAvailableChains(newChainIds);
       const result = getUbaActivationBundleStartBlocks(hubPoolClient);
       deepEqualsWithBigNumber(
         result,
-        newChainIds.map((chainId) => chainIds.includes(chainId) ? expectedBlockRanges[chainId][1].start : 0)
+        newChainIds.map((chainId) => (chainIds.includes(chainId) ? expectedBlockRanges[chainId][1].start : 0))
       );
-    })
+    });
   });
   describe("getMostRecentBundleBlockRanges", function () {
     it("Request maxBundleState 0", async function () {
@@ -178,20 +178,23 @@ describe("UBAClientUtilities", function () {
         deepEqualsWithBigNumber(result, expectedBlockRanges[chainId].slice(1));
       }
     });
-    it("If chain not active in bundle, returns a single range", async function() {
+    it("If chain not active in bundle, returns a single range", async function () {
       await _publishValidatedBundles(3);
-      
+
       // Add extra chain to index list.
       const newChainIds = [...chainIds, 99];
-      configStoreClient.setAvailableChains(newChainIds)
+      configStoreClient.setAvailableChains(newChainIds);
 
       // Get 2 most recent bundles. Should return single range with start equal to UBA activation block
       // and end equal to latest block searched for spoke pool client. Override the spoke pool clients
       // mapping to make sure that the new chain's "latestBlockSearched" is > 0.
       const spokePoolClientForNewChain = spokePoolClients[chainIds[0]];
-      const result = getMostRecentBundleBlockRanges(99, 2, hubPoolClient, {...spokePoolClients, [99]: spokePoolClientForNewChain});
+      const result = getMostRecentBundleBlockRanges(99, 2, hubPoolClient, {
+        ...spokePoolClients,
+        [99]: spokePoolClientForNewChain,
+      });
       deepEqualsWithBigNumber(result, [{ start: 0, end: spokePoolClientForNewChain.latestBlockSearched }]);
-    })
+    });
   });
   describe("getOpeningRunningBalances", function () {
     it("No valid bundles", async function () {
@@ -255,12 +258,12 @@ describe("UBAClientUtilities", function () {
         }
       }
     });
-    it("If chain not active in bundle, returns zero", async function() {
+    it("If chain not active in bundle, returns zero", async function () {
       await _publishValidatedBundles(3);
-      
+
       // Add extra chain to index list.
       const newChainIds = [...chainIds, 99];
-      configStoreClient.setAvailableChains(newChainIds)
+      configStoreClient.setAvailableChains(newChainIds);
 
       const result = getOpeningRunningBalanceForEvent(
         hubPoolClient,
@@ -273,7 +276,7 @@ describe("UBAClientUtilities", function () {
       );
       expect(result.runningBalance).to.equal(0);
       expect(result.incentiveBalance).to.equal(0);
-})
+    });
   });
   describe("getUBAFlows", function () {
     let deposit: DepositWithBlock, fill: FillWithBlock, refund: RefundRequestWithBlock;
