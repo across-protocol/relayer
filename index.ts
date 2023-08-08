@@ -37,7 +37,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
   } else {
-    const signer = getSigner();
+    const signer = await getSigner();
     do {
       try {
         // One global signer for use with a specific per-chain provider.
