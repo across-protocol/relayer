@@ -9,7 +9,7 @@ async function run(): Promise<void> {
   const wallet = zkWallet.fromMnemonic(process.env.MNEMONIC).connect(provider);
 
   const erc20BridgeABIs = await provider.getDefaultBridgeAddresses();
-  const rpcUrl = "https://mainnet.infura.io/v3/d0d5d84b4f1f40079b76b63220ef8926";
+  const rpcUrl = "";
   const ethProvider = new providers.StaticJsonRpcProvider(rpcUrl);
 
   const zksL1ERC20Bridge = new Contract(erc20BridgeABIs.erc20L1, zkUtils.L1_BRIDGE_ABI, ethProvider);
