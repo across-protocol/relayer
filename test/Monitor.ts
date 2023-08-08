@@ -112,6 +112,7 @@ describe("Monitor", async function () {
     tokenTransferClient = new TokenTransferClient(spyLogger, providers, [depositor.address]);
 
     adapterManager = new MockAdapterManager(null, null, null, null);
+    adapterManager.setSupportedChains(chainIds);
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
     monitorInstance = new Monitor(spyLogger, monitorConfig, {
       bundleDataClient,

@@ -70,7 +70,10 @@ export class Monitor {
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    this.monitorChains = Object.keys(clients.spokePoolClients).map((chainId) => Number(chainId));
+    const adapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
+    this.monitorChains = Object.keys(clients.spokePoolClients)
+      .map((chainId) => Number(chainId))
+      .filter((x) => adapterSupportedChains.includes(x));
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
@@ -502,6 +505,11 @@ export class Monitor {
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.monitorChains) {
+      // If chain wasn't active in latest bundle, then skip it.
+      const chainIndex = this.clients.hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
+      if (chainIndex >= lastFullyExecutedBundle.bundleEvaluationBlockNumbers.length) {
+        continue;
+      }
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
       for (const l1Token of allL1Tokens) {
         const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
