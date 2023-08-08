@@ -22,8 +22,7 @@ export interface DataworkerClients extends Clients {
 export async function constructDataworkerClients(
   logger: winston.Logger,
   config: DataworkerConfig,
-  baseSigner: Wallet,
-  setAllowances = true
+  baseSigner: Wallet
 ): Promise<DataworkerClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
   await updateClients(commonClients, config);
@@ -32,7 +31,7 @@ export async function constructDataworkerClients(
   const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
   await tokenClient.update();
   // Run approval on hub pool.
-  if (setAllowances) {
+  if (config.sendingTransactionsEnabled) {
     await tokenClient.setBondTokenAllowance();
   }
 

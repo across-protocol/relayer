@@ -71,12 +71,17 @@ export class Monitor {
     readonly clients: MonitorClients
   ) {
     const adapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
-    this.monitorChains = Object.keys(clients.spokePoolClients)
-      .map((chainId) => Number(chainId))
+    this.monitorChains = Object.values(clients.spokePoolClients)
+      .map(({ chainId }) => chainId)
       .filter((x) => adapterSupportedChains.includes(x));
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
+    logger.debug({
+      at: "Monitor#constructor",
+      message: "Initialized monitor",
+      monitorChains: this.monitorChains,
+    });
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
   }
 

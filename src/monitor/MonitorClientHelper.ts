@@ -58,7 +58,10 @@ export async function constructMonitorClients(
   const spokePoolChains = Object.keys(spokePoolClients)
     .map((chainId) => Number(chainId))
     .filter((chainId) => adapterSupportedChains.includes(chainId));
-  // We can only pass in providers for chain and spoke pool chains for chains that are supported in the adapter manager.
+  // The TokenTransferClient and CrossChainTransferClient are dependent on having adapters for all passed in chains
+  // so we need to filter out any chains that don't have adapters. This means limiting the chains we keep in
+  // `providerPerChain` when constructing the TokenTransferClient and limiting `spokePoolChains` when constructing
+  // the CrossChainTransferClient.
   const providerPerChain = Object.fromEntries(
     spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
   );

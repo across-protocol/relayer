@@ -17,15 +17,14 @@ let logger: winston.Logger;
 
 export async function createDataworker(
   _logger: winston.Logger,
-  baseSigner: Wallet,
-  sendAllowances = false
+  baseSigner: Wallet
 ): Promise<{
   config: DataworkerConfig;
   clients: DataworkerClients;
   dataworker: Dataworker;
 }> {
   const config = new DataworkerConfig(process.env);
-  const clients = await constructDataworkerClients(_logger, config, baseSigner, sendAllowances);
+  const clients = await constructDataworkerClients(_logger, config, baseSigner);
 
   const dataworker = new Dataworker(
     _logger,
