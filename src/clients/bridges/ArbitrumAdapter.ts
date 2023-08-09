@@ -70,18 +70,16 @@ export class ArbitrumAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
+    // Skip the token if we can't find the corresponding bridge.
+    // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
+    // rather than maintaining a list of native bridge-supported tokens.
+    const availableL1Tokens = l1Tokens.filter(this.isSupportedToken);
+
     const promises: Promise<Event[]>[] = [];
     const validTokens: string[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
-      for (const l1Token of l1Tokens) {
-        // Skip the token if we can't find the corresponding bridge.
-        // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
-        // rather than maintaining a list of native bridge-supported tokens.
-        if (!this.isSupportedToken(l1Token)) {
-          continue;
-        }
-
+      for (const l1Token of availableL1Tokens) {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
 

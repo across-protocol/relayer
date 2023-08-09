@@ -33,6 +33,8 @@ interface Events {
 
 const { TOKEN_SYMBOLS_MAP } = sdkConstants;
 
+type SupportedL1Token = string;
+
 export abstract class BaseAdapter {
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
@@ -248,4 +250,6 @@ export abstract class BaseAdapter {
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 
   abstract wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null>;
+
+  abstract isSupportedToken(l1Token: string): l1Token is SupportedL1Token;
 }
