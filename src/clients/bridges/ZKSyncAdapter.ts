@@ -73,13 +73,14 @@ export class ZKSyncAdapter extends BaseAdapter {
     const gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
 
     // Next, load estimated executed L1 gas price of the message transaction and the L2 gas limit.
+    const l1Provider = this.getProvider(this.hubChainId);
+    const l2Provider = this.spokePoolClients[this.chainId].spokePool.provider;
+    const zksProvider = new zksync.Provider(l2Provider.connection.url);
     const [l1GasPriceData, l2GasLimit] = await Promise.all([
-      gasPriceOracle.getGasPriceEstimate(this.getProvider(1), 1),
+      gasPriceOracle.getGasPriceEstimate(provider),
       zksync.utils.estimateDefaultBridgeDepositL2Gas(
-        this.getProvider(1),
-        // Need to pass in a custom ZkSyncProvider object here. We could grab this from the environment if we can
-        // pull in the URL from the existing ZkSync provider.
-        new zksync.Provider("https://mainnet.era.zksync.io"),
+        l1Provider,
+        zksProvider,
         l1Token,
         amount,
         address,
@@ -118,7 +119,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       const l1Weth = this.getWeth();
       multicallerClient.enqueueTransaction({
         contract: l1Weth,
-        chainId: 1,
+        chainId: this.hubChainId,
         method: "withdraw",
         args: [amount],
         message: "📦⭐️ Unwrapping WETH to deposit as ETH to ZkSync",
@@ -139,7 +140,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       // We need to figure out how much ETH we'll have to include as msg.value in order to execute this message.
       multicallerClient.enqueueTransaction({
         contract: mailboxContract,
-        chainId: 1,
+        chainId: this.hubChainId,
         method: "requestL2Transaction",
         args,
         message: "💌⭐️ Sending ETH to ZkSync",
@@ -151,10 +152,10 @@ export class ZKSyncAdapter extends BaseAdapter {
     // tokens in the future but for now, all supported tokens including USDT, USDC and WBTC use this bridge.
     else {
       const tokenInfo = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => {
-        return addresses[1] === l1Token;
+        return addresses[this.hubChainId] === l1Token;
       });
       if (!isDefined(tokenInfo)) {
-        throw new Error(`Cannot find L1 token ${l1Token} in TOKEN_SYMBOLS_MAP`);
+        throw new Error(`Cannot find L1 token ${l1Token} on chain ID ${this.hubChainId} in TOKEN_SYMBOLS_MAP`);
       }
       const isTokenSupported = this.supportedERC20s.includes(tokenInfo.symbol);
       if (!isTokenSupported) {
@@ -170,7 +171,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
       multicallerClient.enqueueTransaction({
         contract: this.getL1ERC20BridgeContract(),
-        chainId: 1,
+        chainId: this.hubChainId,
         method: "deposit",
         args,
         message: `💌🪙 Sending ${tokenInfo.symbol} to ZkSync`,
@@ -185,7 +186,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     // batch together several rebalance transactions.
     const hashes = await multicallerClient.executeTransactionQueue();
     // Send latest hash which should be the call to the ZkSync system contract.
-    return { hash: hashes[hashes.length - 1] } as TransactionResponse;
+    return { hash: hashes.at(-1) } as TransactionResponse;
   }
 
   /**
@@ -221,18 +222,20 @@ export class ZKSyncAdapter extends BaseAdapter {
   }
 
   private getMailboxContract(): Contract {
-    const zkSyncMailboxContractData = CONTRACT_ADDRESSES[1]?.zkSyncMailbox;
+    const { hubChainId } = this;
+    const zkSyncMailboxContractData = CONTRACT_ADDRESSES[hubChainId]?.zkSyncMailbox;
     if (!zkSyncMailboxContractData) {
-      throw new Error(`zkSyncMailboxContractData not found for chain ${1}`);
+      throw new Error(`zkSyncMailboxContractData not found for chain ${hubChainId}`);
     }
-    return new Contract(zkSyncMailboxContractData.address, zkSyncMailboxContractData.abi, this.getSigner(1));
+    return new Contract(zkSyncMailboxContractData.address, zkSyncMailboxContractData.abi, this.getSigner(hubChainId));
   }
 
   private getL1ERC20BridgeContract(): Contract {
-    const l1Erc20BridgeContractData = CONTRACT_ADDRESSES[1]?.zkSyncDefaultErc20Bridge;
+    const { hubChainId } = this;
+    const l1Erc20BridgeContractData = CONTRACT_ADDRESSES[hubChainId]?.zkSyncDefaultErc20Bridge;
     if (!l1Erc20BridgeContractData) {
-      throw new Error(`l1Erc20BridgeContractData not found for chain ${1}`);
+      throw new Error(`l1Erc20BridgeContractData not found for chain ${hubChainId}`);
     }
-    return new Contract(l1Erc20BridgeContractData.address, l1Erc20BridgeContractData.abi, this.getSigner(1));
+    return new Contract(l1Erc20BridgeContractData.address, l1Erc20BridgeContractData.abi, this.getSigner(hubChainId));
   }
 }
