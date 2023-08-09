@@ -37,6 +37,14 @@ export class AdapterManager {
     }
   }
 
+  /**
+   * @notice Returns list of chains we have adapters for
+   * @returns list of chain IDs we have adapters for
+   */
+  supportedChains(): number[] {
+    return Object.keys(this.adapters).map((chainId) => Number(chainId));
+  }
+
   async getOutstandingCrossChainTokenTransferAmount(
     chainId: number,
     l1Tokens: string[]

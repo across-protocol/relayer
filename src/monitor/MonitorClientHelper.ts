@@ -46,12 +46,6 @@ export async function constructMonitorClients(
   );
 
   // Need to update HubPoolClient to get latest tokens.
-  const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
-  const providerPerChain = Object.fromEntries(
-    spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
-  );
-  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
-
   const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
   const adapterManager = new AdapterManager(
     logger,
@@ -60,6 +54,18 @@ export async function constructMonitorClients(
     [baseSigner.address, ...spokePoolAddresses],
     commonClients.hubPoolClient.hubPool.address
   );
+  const adapterSupportedChains = adapterManager.supportedChains();
+  const spokePoolChains = Object.keys(spokePoolClients)
+    .map((chainId) => Number(chainId))
+    .filter((chainId) => adapterSupportedChains.includes(chainId));
+  // The TokenTransferClient and CrossChainTransferClient are dependent on having adapters for all passed in chains
+  // so we need to filter out any chains that don't have adapters. This means limiting the chains we keep in
+  // `providerPerChain` when constructing the TokenTransferClient and limiting `spokePoolChains` when constructing
+  // the CrossChainTransferClient.
+  const providerPerChain = Object.fromEntries(
+    spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
+  );
+  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
   const crossChainTransferClient = new CrossChainTransferClient(logger, spokePoolChains, adapterManager);
 
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };

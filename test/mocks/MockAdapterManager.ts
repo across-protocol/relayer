@@ -5,6 +5,7 @@ import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces";
 
 export class MockAdapterManager extends AdapterManager {
+  public adapterChains: number[] | undefined;
   public tokensSentCrossChain: {
     [chainId: number]: { [l1Token: string]: { amount: BigNumber; hash: string } };
   } = {};
@@ -17,6 +18,13 @@ export class MockAdapterManager extends AdapterManager {
     const hash = createRandomBytes32();
     this.tokensSentCrossChain[chainId][l1Token] = { amount, hash };
     return { hash } as TransactionResponse;
+  }
+
+  setSupportedChains(chains: number[]): void {
+    this.adapterChains = chains;
+  }
+  supportedChains(): number[] {
+    return this.adapterChains ?? super.supportedChains();
   }
 
   override async getOutstandingCrossChainTokenTransferAmount(

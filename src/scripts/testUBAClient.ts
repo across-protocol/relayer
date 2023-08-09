@@ -42,7 +42,6 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
   process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "16";
   process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, dataworker, config } = await createDataworker(_logger, baseSigner);
-  await updateClients(clients, config);
 
   const { configStoreClient } = clients;
   let ubaActivationBlock: number;
@@ -51,7 +50,6 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
     logger.debug({
       at: "UBAClientDemo",
       message: `UBA activation block is ${ubaActivationBlock}`,
-      ubaActivationBundleStartBlocks: sdk.clients.getUbaActivationBundleStartBlocks(clients.hubPoolClient),
     });
   } catch (err) {
     logger.debug({
