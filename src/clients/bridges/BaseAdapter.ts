@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
+import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../../clients";
 import {
   toBN,
@@ -29,11 +30,15 @@ interface Events {
     [l1Token: string]: DepositEvent[];
   };
 }
+
+const { TOKEN_SYMBOLS_MAP } = sdkConstants;
+
 export abstract class BaseAdapter {
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
-  readonly wethAddress = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+  readonly hubChainId = 1; // @todo: Make dynamic
+  readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
@@ -46,7 +51,7 @@ export abstract class BaseAdapter {
     readonly logger: winston.Logger
   ) {
     this.chainId = _chainId;
-    this.baseL1SearchConfig = { ...this.getSearchConfig(1) };
+    this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
   }
 
@@ -61,7 +66,7 @@ export abstract class BaseAdapter {
   // Note: this must be called after the SpokePoolClients are updated.
   getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
     // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
-    const l1LatestBlock = this.spokePoolClients[1].latestBlockNumber;
+    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockNumber;
     const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
@@ -92,7 +97,9 @@ export abstract class BaseAdapter {
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
-    const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
+    const l1TokenContracts = l1Tokens.map((l1Token) =>
+      new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
+    );
     const allowances = await Promise.all(
       l1TokenContracts.map((l1TokenContract, index) => {
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
@@ -121,10 +128,13 @@ export abstract class BaseAdapter {
     for (const { l1Token, targetContract } of tokensToApprove) {
       const tx = await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]);
       const receipt = await tx.wait();
+      const { hubChainId } = this;
+      const hubNetwork = getNetworkName(hubChainId);
+      const spokeNetwork = getNetworkName(this.chainId);
       mrkdwn +=
-        ` - Approved Canonical ${getNetworkName(this.chainId)} token bridge ${etherscanLink(targetContract, 1)} ` +
-        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, 1)} on ${getNetworkName(1)}. ` +
-        `tx: ${etherscanLink(receipt.transactionHash, 1)}\n`;
+        ` - Approved canonical ${spokeNetwork} token bridge ${etherscanLink(targetContract, hubChainId)} ` +
+        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
+        `tx: ${etherscanLink(receipt.transactionHash, hubChainId)}\n`;
     }
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
@@ -222,7 +232,8 @@ export abstract class BaseAdapter {
    * @returns L1 WETH contract
    */
   getWeth(): Contract {
-    return new Contract(this.wethAddress, CONTRACT_ADDRESSES[1].weth.abi, this.getProvider(1));
+    const { hubChainId } = this;
+    return new Contract(this.wethAddress, CONTRACT_ADDRESSES[hubChainId].weth.abi, this.getProvider(hubChainId));
   }
 
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
