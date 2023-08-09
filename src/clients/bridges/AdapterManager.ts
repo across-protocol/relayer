@@ -1,5 +1,6 @@
 import {
   BigNumber,
+  isDefined,
   winston,
   toBN,
   createFormatFunction,
@@ -80,14 +81,10 @@ export class AdapterManager {
   // (not the ERC20).
   async wrapEthIfAboveThreshold(wrapThreshold: BigNumber): Promise<void> {
     const chainsToWrapEtherOn = [10, 324];
-    const calls: Promise<any>[] = [];
-    for (const chainId of chainsToWrapEtherOn) {
-      calls.push(
-        this.spokePoolClients[chainId] !== undefined
-          ? this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold)
-          : Promise.resolve(undefined)
-      );
-    }
+    const calls: Promise<TransactionResponse>[] = chainsToWrapEtherOn
+      .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
+      .map((chainId) => this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold));
+
     const wrapTxns = await Promise.all(calls);
     for (let i = 0; i < wrapTxns.length; i++) {
       const wrapChain = chainsToWrapEtherOn[i];
