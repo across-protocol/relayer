@@ -1,3 +1,4 @@
+import assert from "assert";
 import * as contracts from "@across-protocol/contracts-v2";
 import { ethers, Contract, Wallet } from "ethers";
 import minimist from "minimist";
@@ -14,6 +15,15 @@ const testChains = [5, 280];
 const chains = [1, 10, 137, 324, 42161];
 
 const padding = 20;
+
+function resolveHubChainId(spokeChainId: number): number {
+  if (chains.includes(spokeChainId)) {
+    return 1;
+  }
+
+  assert(testChains.includes(spokeChainId), `Unsupported SpokePool chain ID: ${spokeChainId}`);
+  return 5;
+}
 
 function getTokenAddress(symbol: string, chainId: number): ERC20 {
   const token = contracts.TOKEN_SYMBOLS_MAP[symbol];
@@ -32,10 +42,7 @@ function getTokenAddress(symbol: string, chainId: number): ERC20 {
 
 async function getHubPoolContract(chainId: number): Promise<Contract> {
   const contractName = "HubPool";
-  const hubPoolChainId = chains.includes(chainId) ? 1 : 5;
-  if (!testChains.includes(chainId)) {
-    throw new Error(`Unsupported chainId: ${chainId}`);
-  }
+  const hubPoolChainId = resolveHubChainId(chainId);
 
   const hubPool = getDeployedContract(contractName, hubPoolChainId);
   const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(hubPoolChainId, 1)[0]);
@@ -113,16 +120,65 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   return true;
 }
 
-export function usage(badInput?: string): boolean {
+async function dumpConfig(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
+
+  const chainId = Number(args.chainId);
+  const [_hubPool, _spokePool] = await Promise.all([getHubPoolContract(chainId), getSpokePoolContract(chainId)]);
+
+  const hubChainId = resolveHubChainId(chainId);
+  const spokeProvider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(chainId, 1)[0]);
+  const spokePool = _spokePool.connect(spokeProvider);
+
+  const [
+    spokePoolChainId,
+    hubPoolAddress,
+    admin,
+    wethAddress,
+    _currentTime,
+  ] = await Promise.all([
+    spokePool.chainId(),
+    spokePool.hubPool(),
+    spokePool.crossDomainAdmin(),
+    spokePool.wrappedNativeToken(),
+    spokePool.getCurrentTime(),
+  ]);
+
+  // deploymentBlock = deployments[chainId.toString()].SpokePool.blockNumber;
+  // const adminAlias = ethers.utils.getAddress(ethers.BigNumber.from(admin).add(zkUtils.L1_TO_L2_ALIAS_OFFSET).toHexString());
+
+  if(chainId !== Number(spokePoolChainId)) {
+    throw new Error(`Chain ${chainId} SpokePool mismatch: ${spokePoolChainId} != ${chainId} (${spokePool.address})`);
+  }
+
+  const adminAlias = "...tbd";
+  const currentTime = Number(_currentTime);
+  const currentTimeStr = (new Date(Number(currentTime) * 1000)).toUTCString();
+
+  console.log(
+    `Dumping chain ${chainId} SpokePool config:\n` +
+      `\t${"HubPool chain ID".padEnd(padding)}: ${hubChainId}\n` +
+      `\t${"HubPool address".padEnd(padding)}: ${hubPoolAddress}\n` +
+      `\t${"Cross-domain admin".padEnd(padding)}: ${admin}\n` +
+      `\t${"Cross-domain alias".padEnd(padding)}: ${adminAlias}\n` +
+      `\t${"WETH".padEnd(padding)}: ${wethAddress}\n` +
+      `\t${"Current time".padEnd(padding)}: ${currentTimeStr} (${currentTime})\n`
+  );
+
+  return true;
+}
+
+function usage(badInput?: string): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
   const walletOpts = "mnemonic|privateKey";
   const depositArgs = "--from <originChainId> --to <destinationChainId>" + " --token <tokenSymbol> --amount <amount>";
+  const dumpConfigArgs = "--chainId";
   const fillArgs = "--from <originChainId> --hash <depositHash>";
 
   const pad = "deposit".length;
   usageStr += `
     Usage:
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
+    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fill".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
@@ -133,9 +189,10 @@ export function usage(badInput?: string): boolean {
 }
 
 async function run(argv: string[]): Promise<boolean> {
+  const configOpts = ["chainId"];
   const depositOpts = ["from", "to", "token", "amount"];
   const opts = {
-    string: ["wallet", ...depositOpts],
+    string: ["wallet", ...configOpts, ...depositOpts],
     default: {
       wallet: "mnemonic",
     },
@@ -158,12 +215,15 @@ async function run(argv: string[]): Promise<boolean> {
   }
   ["MNEMONIC", "PRIVATE_KEY"].forEach((envVar) => (process.env[envVar] = ""));
 
-  if (argv[0]) {
-    return await deposit(args, signer);
-  } else if (args.fill) {
-    // @todo Not supported yet...
-    usage(); // no return
-  } else {
+  switch (argv[0]) {
+    case "deposit":
+      return await deposit(args, signer);
+    case "dump":
+      return await dumpConfig(args, signer);
+    case "fill":
+      // @todo Not supported yet...
+      usage(); // no return
+    default:
     usage(); // no return
   }
 }
