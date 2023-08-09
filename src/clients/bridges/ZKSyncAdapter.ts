@@ -238,4 +238,20 @@ export class ZKSyncAdapter extends BaseAdapter {
     }
     return new Contract(l1Erc20BridgeContractData.address, l1Erc20BridgeContractData.abi, this.getSigner(hubChainId));
   }
+
+  private getL2ERC20BridgeContract(): Contract {
+    const { provider } = this.spokePoolClients[this.chainId].spokePool;
+    const zksProvider = new zksync.Provider((provider as JsonRpcProvider).connection.url);; // @todo: Do we want to hardcode these?
+    const { erc20L2 } = await zksProvider.getDefaultBridgeAddresses();
+    return new Contract(erc20L2, zksync.utils.L2_BRIDGE_ABI, provider);
+  }
+
+  /**
+   * @dev The L1Messenger contract is on zkSync and emits L1MessageSent when a mesage is sent back to mainnet.
+   */
+  private get l1Messenger(): Contract {
+    const { provider } = this.spokePoolClients[this.chainId].spokePool;
+    const { L1_MESSENGER, L1_MESSENGER_ADDRESS } = zksync.utils; // @todo Do we want to hardcode these?
+    return new Contract(L1_MESSENGER_ADDRESS, L1_MESSENGER, provider);
+  }
 }
