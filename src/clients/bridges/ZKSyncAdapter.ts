@@ -1,4 +1,4 @@
-import { BigNumber, Contract } from "ethers";
+import { BigNumber, Contract, providers } from "ethers";
 import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers } from "../../interfaces";
 import { TransactionResponse, fromWei, winston } from "../../utils";
@@ -75,9 +75,9 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Next, load estimated executed L1 gas price of the message transaction and the L2 gas limit.
     const l1Provider = this.getProvider(this.hubChainId);
     const l2Provider = this.spokePoolClients[this.chainId].spokePool.provider;
-    const zksProvider = new zksync.Provider(l2Provider.connection.url);
+    const zksProvider = new zksync.Provider((l2Provider as providers.JsonRpcProvider).connection.url);
     const [l1GasPriceData, l2GasLimit] = await Promise.all([
-      gasPriceOracle.getGasPriceEstimate(provider),
+      gasPriceOracle.getGasPriceEstimate(l1Provider),
       zksync.utils.estimateDefaultBridgeDepositL2Gas(
         l1Provider,
         zksProvider,
