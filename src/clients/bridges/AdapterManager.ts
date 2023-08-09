@@ -129,32 +129,12 @@ export class AdapterManager {
   async setL1TokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
-    if (this.adapters[10] !== undefined) {
-      await this.adapters[10].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10))
-      );
-    }
-
-    if (this.adapters[137] !== undefined) {
-      await this.adapters[137].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))
-      );
-    }
-
-    if (this.adapters[42161] !== undefined) {
-      await this.adapters[42161].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))
-      );
-    }
-
-    if (this.adapters[324] !== undefined) {
-      await this.adapters[324].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 324))
-      );
+    for (const chainId of [10, 137, 324, 42161]) {
+      const adapter = this.adapters[chainId];
+      if (isDefined(adapter)) {
+        const hubTokens = l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, chainId));
+        await adapter.checkTokenApprovals(address, hubTokens);
+      }
     }
   }
 
