@@ -113,7 +113,7 @@ export class Monitor {
   }
 
   async checkUtilization(): Promise<void> {
-    this.logger.debug({ at: "AcrossMonitor#Utilization", message: "Checking for pool utilization ratio" });
+    this.logger.debug({ at: "Monitor#checkUtilization", message: "Checking for pool utilization ratio" });
     const l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const l1TokenUtilizations = await Promise.all(
       l1Tokens.map(async (l1Token) => {
@@ -134,13 +134,13 @@ export class Monitor {
           ${etherscanLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
           ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
-        this.logger.debug({ at: "UtilizationMonitor", message: "High pool utilization warning 🏊", mrkdwn });
+        this.logger.debug({ at: "Monitor#checkUtilization", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
   }
 
   async checkUnknownRootBundleCallers(): Promise<void> {
-    this.logger.debug({ at: "AcrossMonitor#RootBundleCallers", message: "Checking for unknown root bundle callers" });
+    this.logger.debug({ at: "Monitor#RootBundleCallers", message: "Checking for unknown root bundle callers" });
 
     const proposedBundles = this.clients.hubPoolClient.getProposedRootBundlesInBlockRange(
       this.hubPoolStartingBlock,
@@ -168,7 +168,7 @@ export class Monitor {
 
   async checkUnknownRelayers(): Promise<void> {
     const chainIds = this.monitorChains;
-    this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
+    this.logger.debug({ at: "Monitor#checkUnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
       const fills = this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
         this.spokePoolsBlocks[chainId].startingBlock,
@@ -183,7 +183,7 @@ export class Monitor {
         const mrkdwn =
           `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
           ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(fill.transactionHash, chainId)}`;
-        this.logger.warn({ at: "Monitor", message: "Unknown relayer 🛺", mrkdwn });
+        this.logger.warn({ at: "Monitor#checkUnknownRelayers", message: "Unknown relayer 🛺", mrkdwn });
       }
     }
   }
@@ -226,7 +226,7 @@ export class Monitor {
     }
 
     if (mrkdwn) {
-      this.logger.info({ at: "Monitor", message: "Unfilled deposits ⏱", mrkdwn });
+      this.logger.info({ at: "Monitor#reportUnfilledDeposits", message: "Unfilled deposits ⏱", mrkdwn });
     }
   }
 
@@ -273,7 +273,7 @@ export class Monitor {
 
       mrkdwn += summaryMrkdwn;
       this.logger.info({
-        at: "Monitor",
+        at: "Monitor#reportRelayerBalances",
         message: `Balance report for ${relayer} 📖`,
         mrkdwn,
       });
@@ -534,7 +534,7 @@ export class Monitor {
         if (transferBalance.gt(0)) {
           const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
           this.logger.warn({
-            at: "Monitor",
+            at: "Monitor#checkStuckRebalances",
             message: "HubPool -> SpokePool rebalances stuck 🦴",
             mrkdwn,
             transferBalance: transferBalance.toString(),
@@ -672,7 +672,7 @@ export class Monitor {
 
       if (mrkdwn) {
         this.logger.info({
-          at: "Monitor",
+          at: "Monitor#updateUnknownTransfers",
           message: `Transfers that are not fills for relayer ${relayer} 🦨`,
           mrkdwn,
         });
@@ -836,7 +836,7 @@ export class Monitor {
       `An unknown EOA ${etherscanLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
       `\ntx: ${etherscanLink(transactionHash, 1)}`;
     this.logger.error({
-      at: "Monitor",
+      at: "Monitor#notifyIfUnknownCaller",
       message: `Unknown bundle caller (${action}) ${emoji}${
         action === BundleAction.PROPOSED
           ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${etherscanLink(

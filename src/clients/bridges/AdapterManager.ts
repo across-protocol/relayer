@@ -35,6 +35,12 @@ export class AdapterManager {
     if (this.spokePoolClients[42161] !== undefined) {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
     }
+
+    logger.debug({
+      at: "AdapterManager#constructor",
+      message: "Initialized AdapterManager",
+      adapterChains: Object.keys(this.adapters).map((chainId) => Number(chainId)),
+    });
   }
 
   /**
