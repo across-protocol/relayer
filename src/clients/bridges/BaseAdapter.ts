@@ -224,7 +224,7 @@ export abstract class BaseAdapter {
    * @returns True if l1Token is L1 weth address
    */
   isWeth(l1Token: string): boolean {
-    return l1Token.toLowerCase() === this.wethAddress;
+    return l1Token.toLowerCase() === this.wethAddress.toLowerCase();
   }
 
   /**
