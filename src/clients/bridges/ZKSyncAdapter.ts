@@ -11,6 +11,7 @@ import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle } from "@across-protocol/sdk-v2";
 import { TransactionClient } from "../TransactionClient";
+import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -239,10 +240,10 @@ export class ZKSyncAdapter extends BaseAdapter {
     return new Contract(l1Erc20BridgeContractData.address, l1Erc20BridgeContractData.abi, this.getSigner(hubChainId));
   }
 
-  private getL2ERC20BridgeContract(): Contract {
+  private async getL2ERC20BridgeContract(): Promise<Contract> {
     const { provider } = this.spokePoolClients[this.chainId].spokePool;
-    const zksProvider = new zksync.Provider((provider as JsonRpcProvider).connection.url);; // @todo: Do we want to hardcode these?
-    const { erc20L2 } = await zksProvider.getDefaultBridgeAddresses();
+    const zksProvider = convertEthersRPCToZKSyncRPC(provider);
+    const { erc20L2 } = await zksProvider.getDefaultBridgeAddresses(); // @todo: Do we want to hardcode these?
     return new Contract(erc20L2, zksync.utils.L2_BRIDGE_ABI, provider);
   }
 
