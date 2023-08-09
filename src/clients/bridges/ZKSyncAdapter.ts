@@ -36,7 +36,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
   // TODO: This will require observing production transfers to determine the correct events and contracts to track on
   // the L1 and L2 side.
-  getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
@@ -47,7 +47,7 @@ export class ZKSyncAdapter extends BaseAdapter {
         continue;
       }
     }
-    throw new Error("Method not implemented.");
+    return {};
   }
 
   async sendTokenToTargetChain(
