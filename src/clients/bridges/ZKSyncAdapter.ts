@@ -14,9 +14,8 @@ import { TransactionClient } from "../TransactionClient";
 import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 
 // Tokens we know for sure that use the default L1 ERC20 bridge to bridge to ZkSync. This is added here for safety
-// so that we don't accidentally burn tokens by sending them over the wrong bridge contract. WETH/ETH is supported
-// via a different code path so its always supported.
-const supportedERC20s = ["USDC", "USDT", "WBTC"];
+// so that we don't accidentally burn tokens by sending them over the wrong bridge contract.
+const supportedERC20s = ["USDC", "USDT", "WBTC", "WETH"];
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
