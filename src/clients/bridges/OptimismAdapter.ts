@@ -33,7 +33,7 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, 10, monitoredAddresses, logger, { symbols: [] });
+    super(spokePoolClients, 10, monitoredAddresses, logger, { symbols: Object.keys(TOKEN_SYMBOLS_MAP) });
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
   }
@@ -125,6 +125,9 @@ export class OptimismAdapter extends BaseAdapter {
     const contract = this.getL1TokenGateway(l1Token);
     const originChainId = (await contract.provider.getNetwork()).chainId;
     assert(originChainId !== destinationChainId);
+
+    // Assert that this token is supported before proceeding.
+    assert(this.isSupportedToken(l1Token), `token ${l1Token} is not supported`);
 
     let method = "depositERC20";
     let args = [l1Token, l2Token, amount, l2Gas, "0x"];
