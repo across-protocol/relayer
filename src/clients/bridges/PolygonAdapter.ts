@@ -9,6 +9,7 @@ import {
   isDefined,
   BigNumberish,
   TransactionResponse,
+  resolveTokenSymbolsFromTokenAddresses,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -115,7 +116,13 @@ export class PolygonAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 137, monitoredAddresses, logger, { addresses: Object.keys(tokenToBridge) });
+    super(
+      spokePoolClients,
+      137,
+      monitoredAddresses,
+      logger,
+      resolveTokenSymbolsFromTokenAddresses(Object.keys(tokenToBridge), BaseAdapter.hubChainId)
+    );
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.

@@ -11,6 +11,8 @@ const { TOKEN_SYMBOLS_MAP } = constants;
 
 export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
 
+const availableTokenSymbols = ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BADGER", "BAL", "ACX"];
+
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   private txnClient: TransactionClient;
@@ -33,7 +35,7 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, 10, monitoredAddresses, logger, { symbols: Object.keys(TOKEN_SYMBOLS_MAP) });
+    super(spokePoolClients, 10, monitoredAddresses, logger, availableTokenSymbols);
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
   }

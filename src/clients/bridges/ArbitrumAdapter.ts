@@ -9,6 +9,7 @@ import {
   BigNumberish,
   isDefined,
   TransactionResponse,
+  resolveTokenSymbolsFromTokenAddresses,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -63,9 +64,16 @@ export class ArbitrumAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 42161, monitoredAddresses, logger, {
-      addresses: Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
-    });
+    super(
+      spokePoolClients,
+      42161,
+      monitoredAddresses,
+      logger,
+      resolveTokenSymbolsFromTokenAddresses(
+        Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
+        BaseAdapter.hubChainId
+      )
+    );
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {

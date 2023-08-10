@@ -31,7 +31,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly multicallerClient: MultiCallerClient,
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, { symbols: supportedERC20s });
+    super(spokePoolClients, 324, monitoredAddresses, logger, supportedERC20s);
     this.txnClient = new TransactionClient(logger);
   }
 
