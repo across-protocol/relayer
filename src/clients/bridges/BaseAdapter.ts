@@ -14,6 +14,7 @@ import {
   MakeOptional,
   AnyObject,
   BigNumber,
+  isDefined,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
@@ -37,11 +38,14 @@ type SupportedL1Token = string;
 type SupportedTokenSymbol = string;
 
 export abstract class BaseAdapter {
+  static readonly hubChainId = 1; // @todo: Make dynamic
+
+  readonly hubChainId = BaseAdapter.hubChainId;
+
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
-  readonly hubChainId = 1; // @todo: Make dynamic
-  readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
+  readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[BaseAdapter.hubChainId];
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
@@ -52,13 +56,7 @@ export abstract class BaseAdapter {
     _chainId: number,
     readonly monitoredAddresses: string[],
     readonly logger: winston.Logger,
-    readonly supportedTokens:
-      | {
-          symbols: SupportedTokenSymbol[];
-        }
-      | {
-          addresses: SupportedL1Token[];
-        }
+    readonly supportedTokens: SupportedTokenSymbol[]
   ) {
     this.chainId = _chainId;
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
@@ -258,20 +256,8 @@ export abstract class BaseAdapter {
 
     // If we don't have a symbol for this token, it's not supported
     // by the hub pool and therefore not by this adapter
-    if (!relevantSymbol) {
-      return false;
-    }
-
-    // We've been provided a list of valid l1token addresses
-    // and we're checking if the l1token is in that list
-    if ("addresses" in this.supportedTokens) {
-      return this.supportedTokens.addresses.includes(l1Token);
-    }
-    // We've been provided a list of valid l1token symbols
-    // and we're checking if the l1token is in that list
-    else {
-      return this.supportedTokens.symbols.includes(relevantSymbol);
-    }
+    // Additionally, if the symbol is not in the supported tokens list, it's not supported
+    return isDefined(relevantSymbol) && this.supportedTokens.includes(relevantSymbol);
   }
 
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
