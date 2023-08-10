@@ -41,17 +41,24 @@ export class ZKSyncAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
+    // Store all the event queries as promises for finalization events on L1 and L2.
     const eventQueriesFromL2Finalizations: Promise<Event[]>[] = [];
     const eventQueriesFromL1Finalizations: Promise<Event[]>[] = [];
 
+    // Resolve the mailbox and bridge contracts for L1 and L2.
     const mailbox = this.getMailboxContract();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = await this.getL2ERC20BridgeContract();
 
+    // Iterate over all the addresses we're monitoring.
     for (const address of this.monitoredAddresses) {
+      // Iterate over all the tokens we're monitoring.
       for (const l1TokenAddress of l1Tokens.filter(this.isSupportedToken.bind(this))) {
+        // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
 
+        // Resolve each of the event queries and correct contracts
+        // needed to resolve finalization events on L1.
         const [l1Contract, l1FilterFinalization] = isWeth
           ? [mailbox, mailbox.filters.EthWithdrawalFinalized(address)]
           : [
@@ -59,8 +66,9 @@ export class ZKSyncAdapter extends BaseAdapter {
               l1ERC20Bridge.filters.WithdrawalFinalized(null, address),
               l1ERC20Bridge.filters.DepositInitiated(null, address),
             ];
-        eventQueriesFromL1Finalizations.push(paginatedEventQuery(l1Contract, l1FilterFinalization, l1SearchConfig));
 
+        // Resolve each of the event queries and correct contracts
+        // needed to resolve finalization events on L2.
         const [l2Contract, l2Filter] = isWeth
           ? [mailbox, mailbox.filters.EthDepositFinalized(address)]
           : [
@@ -68,10 +76,15 @@ export class ZKSyncAdapter extends BaseAdapter {
               l2ERC20Bridge.filters.FinalizeDeposit(null, address),
               l2ERC20Bridge.filters.WithdrawalInitiated(address),
             ];
+
+        // Push the event query to the list of event queries for L1 finalizations.
+        eventQueriesFromL1Finalizations.push(paginatedEventQuery(l1Contract, l1FilterFinalization, l1SearchConfig));
+        // Push the event query to the list of event queries for L2 finalizations.
         eventQueriesFromL2Finalizations.push(paginatedEventQuery(l2Contract, l2Filter, l2SearchConfig));
       }
     }
 
+    // Resolve all the event queries for L1 and L2 finalizations.
     const [l1Finalizations, l2Finalizations] = await Promise.all([
       Promise.all(eventQueriesFromL1Finalizations),
       Promise.all(eventQueriesFromL2Finalizations),
