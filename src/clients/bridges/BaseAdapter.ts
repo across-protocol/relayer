@@ -45,7 +45,7 @@ export abstract class BaseAdapter {
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
-  readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[BaseAdapter.hubChainId];
+  readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
