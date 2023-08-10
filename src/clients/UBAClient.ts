@@ -8,11 +8,12 @@ type SpokePoolFillFilter = clients.SpokePoolFillFilter;
 
 export class UBAClient extends clients.UBAClient {
   constructor(
+    clientConfig: clients.UBAClientConfig,
     tokenSymbols: string[],
     hubPoolClient: HubPoolClient,
     spokePoolClients: { [chainId: number]: SpokePoolClient }
   ) {
-    super(tokenSymbols, hubPoolClient, spokePoolClients);
+    super(clientConfig, tokenSymbols, hubPoolClient, spokePoolClients);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
