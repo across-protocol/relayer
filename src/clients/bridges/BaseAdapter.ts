@@ -261,7 +261,7 @@ export abstract class BaseAdapter {
       return false;
     }
 
-    // If the symbol result is "ETH", then we need to modify it to be "WETH"
+    // If the symbol result is "ETH", then we need to modify it to be "WETH" because WETH and ETH are both used as symbol keys in TOKEN_SYMBOLS_MAP. This does NOT assume that they have equivalent L1 token addresses
     if (relevantSymbol === "ETH") {
       relevantSymbol = "WETH";
     }
