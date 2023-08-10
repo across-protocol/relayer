@@ -64,7 +64,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     monitoredAddresses: string[]
   ) {
     super(spokePoolClients, 42161, monitoredAddresses, logger, {
-      addresses: [...Object.keys(l1Gateways), ...Object.keys(l2Gateways)],
+      addresses: Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
     });
   }
 
