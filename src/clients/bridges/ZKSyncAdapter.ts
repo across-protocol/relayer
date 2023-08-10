@@ -303,9 +303,9 @@ export class ZKSyncAdapter extends BaseAdapter {
   }
 
   isSupportedToken(l1Token: string): l1Token is string {
-    const relevantSymbol = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => {
-      return Object.values(addresses).includes(l1Token);
-    })?.symbol;
-    return (relevantSymbol && this.isWeth(relevantSymbol)) || this.supportedERC20s.includes(relevantSymbol);
+    const relevantSymbol = Object.values(TOKEN_SYMBOLS_MAP).find(
+      ({ addresses }) => addresses[this.hubChainId] === l1Token
+    )?.symbol;
+    return relevantSymbol && this.supportedERC20s.includes(relevantSymbol);
   }
 }
