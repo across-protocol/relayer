@@ -13,16 +13,15 @@ import { gasPriceOracle } from "@across-protocol/sdk-v2";
 import { TransactionClient } from "../TransactionClient";
 import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 
+// Tokens we know for sure that use the default L1 ERC20 bridge to bridge to ZkSync. This is added here for safety
+// so that we don't accidentally burn tokens by sending them over the wrong bridge contract.
+const supportedERC20s = ["USDC", "USDT", "WBTC", "WETH"];
+
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
  * where related to Across' inventory management.
  */
 export class ZKSyncAdapter extends BaseAdapter {
-  // Tokens we know for sure that use the default L1 ERC20 bridge to bridge to ZkSync. This is added here for safety
-  // so that we don't accidentally burn tokens by sending them over the wrong bridge contract. WETH/ETH is supported
-  // via a different code path so its always supported.
-  readonly supportedERC20s = ["USDC", "USDT", "WBTC"];
-
   private txnClient: TransactionClient;
 
   constructor(
@@ -31,7 +30,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly multicallerClient: MultiCallerClient,
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger);
+    super(spokePoolClients, 324, monitoredAddresses, logger, supportedERC20s);
     this.txnClient = new TransactionClient(logger);
   }
 
@@ -211,7 +210,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       if (!isDefined(tokenInfo)) {
         throw new Error(`Cannot find L1 token ${l1Token} on chain ID ${this.hubChainId} in TOKEN_SYMBOLS_MAP`);
       }
-      const isTokenSupported = this.supportedERC20s.includes(tokenInfo.symbol);
+      const isTokenSupported = this.isSupportedToken(l1Token);
       if (!isTokenSupported) {
         throw new Error(`Token ${l1Token} is not supported, make sure to add it to this.supportedERC20s`);
       }
@@ -270,7 +269,7 @@ export class ZKSyncAdapter extends BaseAdapter {
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     const associatedL1Bridges = l1Tokens
       // We unwrap WETH to send it over as ETH so it doesn't require an approval.
-      .filter((token) => !this.isWeth(token) && !this.supportedERC20s.includes(token))
+      .filter((token) => !this.isWeth(token) && !this.isSupportedToken(token))
       .map(() => this.getL1ERC20BridgeContract().address);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
@@ -300,12 +299,5 @@ export class ZKSyncAdapter extends BaseAdapter {
       throw new Error(`l2Erc20BridgeContractData not found for chain ${this.chainId}`);
     }
     return new Contract(l2Erc20BridgeContractData.address, l2Erc20BridgeContractData.abi, provider);
-  }
-
-  isSupportedToken(l1Token: string): l1Token is string {
-    const relevantSymbol = Object.values(TOKEN_SYMBOLS_MAP).find(
-      ({ addresses }) => addresses[this.hubChainId] === l1Token
-    )?.symbol;
-    return relevantSymbol && this.supportedERC20s.includes(relevantSymbol);
   }
 }

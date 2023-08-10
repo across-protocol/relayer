@@ -11,6 +11,8 @@ const { TOKEN_SYMBOLS_MAP } = constants;
 
 export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
 
+const availableTokenSymbols = ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BADGER", "BAL", "ACX"];
+
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   private txnClient: TransactionClient;
@@ -33,7 +35,7 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, 10, monitoredAddresses, logger);
+    super(spokePoolClients, 10, monitoredAddresses, logger, availableTokenSymbols);
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
   }
@@ -126,6 +128,9 @@ export class OptimismAdapter extends BaseAdapter {
     const originChainId = (await contract.provider.getNetwork()).chainId;
     assert(originChainId !== destinationChainId);
 
+    // Assert that this token is supported before proceeding.
+    assert(this.isSupportedToken(l1Token), `token ${l1Token} is not supported`);
+
     let method = "depositERC20";
     let args = [l1Token, l2Token, amount, l2Gas, "0x"];
 
@@ -207,9 +212,5 @@ export class OptimismAdapter extends BaseAdapter {
 
   private hasCustomL2Bridge(l1Token: string): boolean {
     return l1Token in this.customOvmBridgeAddresses;
-  }
-
-  isSupportedToken(l1Token: string): l1Token is string {
-    return true;
   }
 }

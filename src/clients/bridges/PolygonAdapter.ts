@@ -9,6 +9,7 @@ import {
   isDefined,
   BigNumberish,
   TransactionResponse,
+  resolveTokenSymbolsFromTokenAddresses,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -115,7 +116,13 @@ export class PolygonAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 137, monitoredAddresses, logger);
+    super(
+      spokePoolClients,
+      137,
+      monitoredAddresses,
+      logger,
+      resolveTokenSymbolsFromTokenAddresses(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
+    );
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
@@ -274,9 +281,5 @@ export class PolygonAdapter extends BaseAdapter {
 
   async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
     throw new Error("Unneccessary to wrap ETH on Polygon");
-  }
-
-  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
-    return l1Token in tokenToBridge;
   }
 }

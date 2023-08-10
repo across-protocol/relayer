@@ -14,6 +14,7 @@ import {
   MakeOptional,
   AnyObject,
   BigNumber,
+  isDefined,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
@@ -34,12 +35,16 @@ interface Events {
 const { TOKEN_SYMBOLS_MAP } = sdkConstants;
 
 type SupportedL1Token = string;
+type SupportedTokenSymbol = string;
 
 export abstract class BaseAdapter {
+  static readonly HUB_CHAIN_ID = 1; // @todo: Make dynamic
+
+  readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
+
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
-  readonly hubChainId = 1; // @todo: Make dynamic
   readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
 
   l1DepositInitiatedEvents: Events = {};
@@ -50,7 +55,8 @@ export abstract class BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     _chainId: number,
     readonly monitoredAddresses: string[],
-    readonly logger: winston.Logger
+    readonly logger: winston.Logger,
+    readonly supportedTokens: SupportedTokenSymbol[]
   ) {
     this.chainId = _chainId;
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
@@ -238,6 +244,32 @@ export abstract class BaseAdapter {
     return new Contract(this.wethAddress, CONTRACT_ADDRESSES[hubChainId].weth.abi, this.getProvider(hubChainId));
   }
 
+  /**
+   * Determine whether this adapter supports an l1 token address
+   * @param l1Token an address
+   * @returns True if l1Token is supported
+   */
+  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
+    // Resolve the token info for this address on the hub chain
+    const tokenInfo = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[this.hubChainId] === l1Token);
+
+    // Resolve the symbol for this token
+    let relevantSymbol = tokenInfo?.symbol;
+
+    // If we don't have a symbol for this token, return that the token is not supported
+    if (!isDefined(relevantSymbol)) {
+      return false;
+    }
+
+    // If the symbol result is "ETH", then we need to modify it to be "WETH" because WETH and ETH are both used as symbol keys in TOKEN_SYMBOLS_MAP. This does NOT assume that they have equivalent L1 token addresses
+    if (relevantSymbol === "ETH") {
+      relevantSymbol = "WETH";
+    }
+
+    // if the symbol is not in the supported tokens list, it's not supported
+    return this.supportedTokens.includes(relevantSymbol);
+  }
+
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
 
   abstract sendTokenToTargetChain(
@@ -250,6 +282,4 @@ export abstract class BaseAdapter {
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 
   abstract wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null>;
-
-  abstract isSupportedToken(l1Token: string): l1Token is SupportedL1Token;
 }
