@@ -114,7 +114,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
       CONFIG_STORE_VERSION,
       [originChainId, destinationChainId],
       originChainId,
-      false,
+      false
     );
     await configStoreClient.update();
 
