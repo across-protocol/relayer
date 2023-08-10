@@ -1,7 +1,7 @@
 import { BigNumber, Contract, Event } from "ethers";
 import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers } from "../../interfaces";
-import { paginatedEventQuery, TransactionResponse, fromWei, winston, EventSearchConfig } from "../../utils";
+import { paginatedEventQuery, TransactionResponse, fromWei, winston } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import { MultiCallerClient } from "../MultiCallerClient";
 import assert from "assert";
@@ -54,12 +54,20 @@ export class ZKSyncAdapter extends BaseAdapter {
 
         const [l1Contract, l1FilterFinalization] = isWeth
           ? [mailbox, mailbox.filters.EthWithdrawalFinalized(address)]
-          : [l1ERC20Bridge, l1ERC20Bridge.filters.WithdrawalFinalized(null, address)];
+          : [
+              l1ERC20Bridge,
+              l1ERC20Bridge.filters.WithdrawalFinalized(null, address),
+              l1ERC20Bridge.filters.DepositInitiated(null, address),
+            ];
         eventQueriesFromL1Finalizations.push(paginatedEventQuery(l1Contract, l1FilterFinalization, l1SearchConfig));
 
         const [l2Contract, l2Filter] = isWeth
           ? [mailbox, mailbox.filters.EthDepositFinalized(address)]
-          : [l2ERC20Bridge, l2ERC20Bridge.filters.FinalizeDeposit(null, address)];
+          : [
+              l2ERC20Bridge,
+              l2ERC20Bridge.filters.FinalizeDeposit(null, address),
+              l2ERC20Bridge.filters.WithdrawalInitiated(address),
+            ];
         eventQueriesFromL2Finalizations.push(paginatedEventQuery(l2Contract, l2Filter, l2SearchConfig));
       }
     }
