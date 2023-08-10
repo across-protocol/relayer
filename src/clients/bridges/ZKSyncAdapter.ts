@@ -35,8 +35,13 @@ export class ZKSyncAdapter extends BaseAdapter {
     this.txnClient = new TransactionClient(logger);
   }
 
-  // TODO: This will require observing production transfers to determine the correct events and contracts to track on
-  // the L1 and L2 side.
+  // TODO: To dial this function in we should probably review on-chain data from prod
+  //       to ensure everything is working as expected. Also, at the moment, this function
+  //       needs to still extract transfer initiated events for all four combinations of
+  //       L1 and L2 tokens. Once this is done, we can reconcile all finalized transfers
+  //       against the transfer requests to determine which ones have not been yet finalized.
+  // TODO: ^^
+  // FIXME: Resolve ^^
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
