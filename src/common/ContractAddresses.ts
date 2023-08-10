@@ -37,6 +37,15 @@ export const CONTRACT_ADDRESSES: {
           stateMutability: "pure",
           type: "function",
         },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "address", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "EthWithdrawalFinalized",
+          type: "event",
+        },
       ],
     },
     zkSyncDefaultErc20Bridge: {
@@ -54,6 +63,16 @@ export const CONTRACT_ADDRESSES: {
           outputs: [{ internalType: "bytes32", name: "l2TxHash", type: "bytes32" }],
           stateMutability: "payable",
           type: "function",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "to", type: "address" },
+            { indexed: true, internalType: "address", name: "address", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "WithdrawalFinalized",
+          type: "event",
         },
       ],
     },
@@ -310,6 +329,24 @@ export const CONTRACT_ADDRESSES: {
           payable: false,
           stateMutability: "view",
           type: "function",
+        },
+      ],
+    },
+  },
+  324: {
+    zkSyncDefaultErc20Bridge: {
+      address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "l1Sender", type: "address" },
+            { indexed: true, internalType: "address", name: "l2Receiver", type: "address" },
+            { indexed: true, internalType: "address", name: "l2Token", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "FinalizeDeposit",
+          type: "event",
         },
       ],
     },
