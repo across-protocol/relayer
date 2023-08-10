@@ -250,14 +250,24 @@ export abstract class BaseAdapter {
    * @returns True if l1Token is supported
    */
   isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
-    const relevantSymbol = Object.values(TOKEN_SYMBOLS_MAP).find(
-      ({ addresses }) => addresses[this.hubChainId] === l1Token
-    )?.symbol;
+    // Resolve the token info for this address on the hub chain
+    const tokenInfo = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[this.hubChainId] === l1Token);
 
-    // If we don't have a symbol for this token, it's not supported
-    // by the hub pool and therefore not by this adapter
-    // Additionally, if the symbol is not in the supported tokens list, it's not supported
-    return isDefined(relevantSymbol) && this.supportedTokens.includes(relevantSymbol);
+    // Resolve the symbol for this token
+    let relevantSymbol = tokenInfo?.symbol;
+
+    // If we don't have a symbol for this token, return that the token is not supported
+    if (!isDefined(relevantSymbol)) {
+      return false;
+    }
+
+    // If the symbol result is "ETH", then we need to modify it to be "WETH"
+    if (relevantSymbol === "ETH") {
+      relevantSymbol = "WETH";
+    }
+
+    // if the symbol is not in the supported tokens list, it's not supported
+    return this.supportedTokens.includes(relevantSymbol);
   }
 
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
