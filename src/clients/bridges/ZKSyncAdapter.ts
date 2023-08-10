@@ -53,7 +53,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const mailbox = this.getMailboxContract();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
-    const l2ERC20Bridge = await this.getL2ERC20BridgeContract();
+    const l2ERC20Bridge = this.getL2ERC20BridgeContract();
 
     // Iterate over all the addresses we're monitoring.
     for (const address of this.monitoredAddresses) {
@@ -293,7 +293,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     return new Contract(l1Erc20BridgeContractData.address, l1Erc20BridgeContractData.abi, this.getSigner(hubChainId));
   }
 
-  private async getL2ERC20BridgeContract(): Promise<Contract> {
+  private getL2ERC20BridgeContract(): Contract {
     const { provider } = this.spokePoolClients[this.chainId].spokePool;
     const l2Erc20BridgeContractData = CONTRACT_ADDRESSES[this.chainId]?.zkSyncDefaultErc20Bridge;
     if (!l2Erc20BridgeContractData) {
