@@ -8,7 +8,6 @@ export { Logger } from "@uma/financial-templates-lib";
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, BigNumberish } from "ethers";
 export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
 export { ethers, providers } from "ethers";
-export { Wallet as ZKSyncWallet } from "zksync-web3";
 export type { Block, TransactionResponse, TransactionReceipt } from "@ethersproject/abstract-provider";
 export { config } from "dotenv";
 
