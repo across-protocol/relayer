@@ -57,20 +57,13 @@ export function blockRangesAreInvalidForSpokeClients(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
-  if (blockRanges.length !== chainIdListForBundleEvaluationBlockNumbers.length) {
-    throw new Error("DataworkerUtils#blockRangesAreInvalidForSpokeClients: Invalid bundle block range length");
-  }
-  return chainIdListForBundleEvaluationBlockNumbers.some((chainId) => {
-    const blockRangeForChain = getBlockRangeForChain(
-      blockRanges,
-      Number(chainId),
-      chainIdListForBundleEvaluationBlockNumbers
-    );
+  return blockRanges.some(([start, end], index) => {
+    const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
-    if (isNaN(blockRangeForChain[1]) || isNaN(blockRangeForChain[0])) {
+    if (isNaN(end) || isNaN(start)) {
       return true;
     }
-    if (blockRangeForChain[1] === blockRangeForChain[0]) {
+    if (start === end) {
       return false;
     }
 
@@ -81,14 +74,11 @@ export function blockRangesAreInvalidForSpokeClients(
 
     const clientLastBlockQueried =
       spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
-    const bundleRangeToBlock = blockRangeForChain[1];
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, blockRangeForChain[0]);
-    return (
-      bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
-    );
+    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, start);
+    return bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried;
   });
 }
 
