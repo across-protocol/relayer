@@ -77,6 +77,9 @@ export class ZKSyncAdapter extends BaseAdapter {
       Promise.all(eventQueriesFromL2Finalizations),
     ]);
 
+    // WE ARE CURRENTLY NOT USING THESE VARIABLES
+    // WE CAN LIST THEM BELOW AS NO-OPs TO AVOID LINTING ERRORS
+    // FIXME: RESOLVE THIS FOR PROD
     l1Finalizations;
     l2Finalizations;
 
