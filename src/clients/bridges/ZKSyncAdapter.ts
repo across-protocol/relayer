@@ -1,7 +1,7 @@
-import { BigNumber, Contract, providers } from "ethers";
+import { BigNumber, Contract, Event, providers } from "ethers";
 import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers } from "../../interfaces";
-import { TransactionResponse, fromWei, winston } from "../../utils";
+import { paginatedEventQuery, TransactionResponse, fromWei, winston, EventSearchConfig } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import { MultiCallerClient } from "../MultiCallerClient";
 import assert from "assert";
@@ -11,7 +11,6 @@ import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle } from "@across-protocol/sdk-v2";
 import { TransactionClient } from "../TransactionClient";
-import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -41,13 +40,37 @@ export class ZKSyncAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
-    for (const l1Token of l1Tokens) {
-      for (const monitoredAddress of this.monitoredAddresses) {
-        l1Token;
-        monitoredAddress;
-        continue;
+    const eventQueriesFromL2Finalizations: Promise<Event[]>[] = [];
+    const eventQueriesFromL1Finalizations: Promise<Event[]>[] = [];
+
+    const mailbox = this.getMailboxContract();
+    const l1ERC20Bridge = this.getL1ERC20BridgeContract();
+    const l2ERC20Bridge = await this.getL2ERC20BridgeContract();
+
+    for (const address of this.monitoredAddresses) {
+      for (const l1TokenAddress of l1Tokens.filter(this.isSupportedToken.bind(this))) {
+        const isWeth = this.isWeth(l1TokenAddress);
+
+        const [l1Contract, l1FilterFinalization] = isWeth
+          ? [mailbox, mailbox.filters.EthWithdrawalFinalized(address)]
+          : [l1ERC20Bridge, l1ERC20Bridge.filters.WithdrawalFinalized(null, address)];
+        eventQueriesFromL1Finalizations.push(paginatedEventQuery(l1Contract, l1FilterFinalization, l1SearchConfig));
+
+        const [l2Contract, l2Filter] = isWeth
+          ? [mailbox, mailbox.filters.EthDepositFinalized(address)]
+          : [l2ERC20Bridge, l2ERC20Bridge.filters.FinalizeDeposit(null, address)];
+        eventQueriesFromL2Finalizations.push(paginatedEventQuery(l2Contract, l2Filter, l2SearchConfig));
       }
     }
+
+    const [l1Finalizations, l2Finalizations] = await Promise.all([
+      Promise.all(eventQueriesFromL1Finalizations),
+      Promise.all(eventQueriesFromL2Finalizations),
+    ]);
+
+    l1Finalizations;
+    l2Finalizations;
+
     return {};
   }
 
@@ -242,17 +265,26 @@ export class ZKSyncAdapter extends BaseAdapter {
 
   private async getL2ERC20BridgeContract(): Promise<Contract> {
     const { provider } = this.spokePoolClients[this.chainId].spokePool;
-    const zksProvider = convertEthersRPCToZKSyncRPC(provider);
-    const { erc20L2 } = await zksProvider.getDefaultBridgeAddresses(); // @todo: Do we want to hardcode these?
-    return new Contract(erc20L2, zksync.utils.L2_BRIDGE_ABI, provider);
+    const l2Erc20BridgeContractData = CONTRACT_ADDRESSES[this.chainId]?.zkSyncDefaultErc20Bridge;
+    if (!l2Erc20BridgeContractData) {
+      throw new Error(`l2Erc20BridgeContractData not found for chain ${this.chainId}`);
+    }
+    return new Contract(l2Erc20BridgeContractData.address, l2Erc20BridgeContractData.abi, provider);
   }
 
   /**
    * @dev The L1Messenger contract is on zkSync and emits L1MessageSent when a mesage is sent back to mainnet.
    */
-  private get l1Messenger(): Contract {
+  private getl1Messenger(): Contract {
     const { provider } = this.spokePoolClients[this.chainId].spokePool;
     const { L1_MESSENGER, L1_MESSENGER_ADDRESS } = zksync.utils; // @todo Do we want to hardcode these?
     return new Contract(L1_MESSENGER_ADDRESS, L1_MESSENGER, provider);
+  }
+
+  isSupportedToken(l1Token: string): l1Token is string {
+    const relevantSymbol = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => {
+      return Object.values(addresses).includes(l1Token);
+    })?.symbol;
+    return (relevantSymbol && this.isWeth(relevantSymbol)) || this.supportedERC20s.includes(relevantSymbol);
   }
 }
