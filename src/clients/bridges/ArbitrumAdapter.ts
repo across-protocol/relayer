@@ -71,7 +71,7 @@ export class ArbitrumAdapter extends BaseAdapter {
       logger,
       resolveTokenSymbolsFromTokenAddresses(
         Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
-        BaseAdapter.hubChainId
+        BaseAdapter.HUB_CHAIN_ID
       )
     );
   }

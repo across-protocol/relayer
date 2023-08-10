@@ -38,9 +38,9 @@ type SupportedL1Token = string;
 type SupportedTokenSymbol = string;
 
 export abstract class BaseAdapter {
-  static readonly hubChainId = 1; // @todo: Make dynamic
+  static readonly HUB_CHAIN_ID = 1; // @todo: Make dynamic
 
-  readonly hubChainId = BaseAdapter.hubChainId;
+  readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
 
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;

@@ -121,7 +121,7 @@ export class PolygonAdapter extends BaseAdapter {
       137,
       monitoredAddresses,
       logger,
-      resolveTokenSymbolsFromTokenAddresses(Object.keys(tokenToBridge), BaseAdapter.hubChainId)
+      resolveTokenSymbolsFromTokenAddresses(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
     );
   }
 
