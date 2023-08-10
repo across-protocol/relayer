@@ -118,6 +118,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   // Testnets:
   5: 0,
+  280: 0,
   421613: 0,
 };
 

@@ -33,7 +33,7 @@ import {
 import { FillWithBlock, RefundRequestWithBlock } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { delay } from "../src/utils";
-import { MockInventoryClient, MockProfitClient } from "./mocks";
+import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
@@ -107,7 +107,15 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
       undefined,
       CHAIN_ID_TEST_LIST
     ));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    configStoreClient = new MockConfigStoreClient(
+      spyLogger,
+      configStore,
+      { fromBlock: 0 },
+      CONFIG_STORE_VERSION,
+      [originChainId, destinationChainId],
+      originChainId,
+      false
+    );
     await configStoreClient.update();
 
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
