@@ -1,4 +1,4 @@
-import { BigNumber, Contract, Event, providers } from "ethers";
+import { BigNumber, Contract, Event } from "ethers";
 import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers } from "../../interfaces";
 import { paginatedEventQuery, TransactionResponse, fromWei, winston, EventSearchConfig } from "../../utils";
@@ -11,6 +11,7 @@ import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle } from "@across-protocol/sdk-v2";
 import { TransactionClient } from "../TransactionClient";
+import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -99,7 +100,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Next, load estimated executed L1 gas price of the message transaction and the L2 gas limit.
     const l1Provider = this.getProvider(this.hubChainId);
     const l2Provider = this.spokePoolClients[this.chainId].spokePool.provider;
-    const zksProvider = new zksync.Provider((l2Provider as providers.JsonRpcProvider).connection.url);
+    const zksProvider = convertEthersRPCToZKSyncRPC(l2Provider);
     const [l1GasPriceData, l2GasLimit] = await Promise.all([
       gasPriceOracle.getGasPriceEstimate(l1Provider),
       zksync.utils.estimateDefaultBridgeDepositL2Gas(
