@@ -1,3 +1,4 @@
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { BigNumber } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
@@ -12,4 +13,29 @@ export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0
   } else {
     return 0;
   }
+}
+
+/**
+ * Resolve the token symbol for the given token address and chain ID.
+ * @param tokenAddress The token address to resolve the symbol for.
+ * @param chainId The chain ID to resolve the symbol for.
+ * @returns The token symbol for the given token address and chain ID, or undefined if the token address is not
+ * recognized.
+ */
+export function resolveTokenSymbolFromTokenAddress(tokenAddress: string, chainId: number): string | undefined {
+  const tokenInfo = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === tokenAddress);
+  return tokenInfo?.symbol;
+}
+
+/**
+ * Resolve the token symbols for the given token addresses and chain ID.
+ * @param tokenAddresses The token addresses to resolve the symbols for.
+ * @param chainId The chain ID to resolve the symbols for.
+ * @returns The token symbols for the given token addresses and chain ID. Undefined values are filtered out.
+ * @see resolveTokenSymbolFromTokenAddress
+ */
+export function resolveTokenSymbolsFromTokenAddresses(tokenAddresses: string[], chainId: number): string[] {
+  return tokenAddresses
+    .map((tokenAddress) => resolveTokenSymbolFromTokenAddress(tokenAddress, chainId))
+    .filter(Boolean);
 }
