@@ -63,7 +63,9 @@ export class ArbitrumAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 42161, monitoredAddresses, logger);
+    super(spokePoolClients, 42161, monitoredAddresses, logger, {
+      addresses: [...Object.keys(l1Gateways), ...Object.keys(l2Gateways)],
+    });
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -192,9 +194,5 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   getL2Bridge(l1Token: SupportedL1Token): Contract {
     return new Contract(l2Gateways[l1Token], CONTRACT_ADDRESSES[42161].erc20Gateway.abi, this.getSigner(this.chainId));
-  }
-
-  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
-    return l1Token in l1Gateways && l1Token in l2Gateways;
   }
 }

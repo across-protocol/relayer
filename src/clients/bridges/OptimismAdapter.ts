@@ -33,7 +33,7 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, 10, monitoredAddresses, logger);
+    super(spokePoolClients, 10, monitoredAddresses, logger, { symbols: [] });
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
   }
@@ -207,9 +207,5 @@ export class OptimismAdapter extends BaseAdapter {
 
   private hasCustomL2Bridge(l1Token: string): boolean {
     return l1Token in this.customOvmBridgeAddresses;
-  }
-
-  isSupportedToken(l1Token: string): l1Token is string {
-    return true;
   }
 }

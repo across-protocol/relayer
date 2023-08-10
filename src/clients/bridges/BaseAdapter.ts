@@ -34,6 +34,7 @@ interface Events {
 const { TOKEN_SYMBOLS_MAP } = sdkConstants;
 
 type SupportedL1Token = string;
+type SupportedTokenSymbol = string;
 
 export abstract class BaseAdapter {
   chainId: number;
@@ -50,7 +51,14 @@ export abstract class BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     _chainId: number,
     readonly monitoredAddresses: string[],
-    readonly logger: winston.Logger
+    readonly logger: winston.Logger,
+    readonly supportedTokens:
+      | {
+          symbols: SupportedTokenSymbol[];
+        }
+      | {
+          addresses: SupportedL1Token[];
+        }
   ) {
     this.chainId = _chainId;
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
@@ -238,6 +246,34 @@ export abstract class BaseAdapter {
     return new Contract(this.wethAddress, CONTRACT_ADDRESSES[hubChainId].weth.abi, this.getProvider(hubChainId));
   }
 
+  /**
+   * Determine whether this adapter supports an l1 token address
+   * @param l1Token an address
+   * @returns True if l1Token is supported
+   */
+  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
+    const relevantSymbol = Object.values(TOKEN_SYMBOLS_MAP).find(
+      ({ addresses }) => addresses[this.hubChainId] === l1Token
+    )?.symbol;
+
+    // If we don't have a symbol for this token, it's not supported
+    // by the hub pool and therefore not by this adapter
+    if (!relevantSymbol) {
+      return false;
+    }
+
+    // We've been provided a list of valid l1token addresses
+    // and we're checking if the l1token is in that list
+    if ("addresses" in this.supportedTokens) {
+      return this.supportedTokens.addresses.includes(l1Token);
+    }
+    // We've been provided a list of valid l1token symbols
+    // and we're checking if the l1token is in that list
+    else {
+      return this.supportedTokens.symbols.includes(relevantSymbol);
+    }
+  }
+
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
 
   abstract sendTokenToTargetChain(
@@ -250,6 +286,4 @@ export abstract class BaseAdapter {
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 
   abstract wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null>;
-
-  abstract isSupportedToken(l1Token: string): l1Token is SupportedL1Token;
 }
