@@ -10,7 +10,7 @@ import {
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { UBAClient } from "../clients/UBAClient";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
 
 config();
 let logger: winston.Logger;
@@ -101,6 +101,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       );
 
       const ubaClient = new UBAClient(
+        // @dev: Consider customizing this config when using the UBAClient in prod.
+        new sdkClients.UBAClientConfig(),
         clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
         clients.hubPoolClient,
         spokePoolClients

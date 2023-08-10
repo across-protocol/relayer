@@ -38,6 +38,7 @@ import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
+import * as sdk from "@across-protocol/sdk-v2";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -139,10 +140,10 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     }
 
     ubaClient = new UBAClient(
+      new sdk.clients.UBAClientConfig(),
       [],
       hubPoolClient,
-      generateNoOpSpokePoolClientsForDefaultChainIndices(spokePoolClients),
-      spyLogger
+      generateNoOpSpokePoolClientsForDefaultChainIndices(spokePoolClients)
     );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);

@@ -127,6 +127,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
     });
   }
   const ubaClient = new sdk.clients.UBAClient(
+    new sdk.clients.UBAClientConfig(),
     ["WETH", "USDC"],
     // clients.hubPoolClient.getL1Tokens().map((x) => x.symbol),
     clients.hubPoolClient,

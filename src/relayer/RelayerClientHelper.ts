@@ -1,5 +1,5 @@
 import winston from "winston";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
 import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -37,6 +37,7 @@ export async function constructRelayerClients(
   );
 
   const ubaClient = new UBAClient(
+    new sdkClients.UBAClientConfig(),
     commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
     commonClients.hubPoolClient,
     spokePoolClients
