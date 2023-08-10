@@ -302,15 +302,6 @@ export class ZKSyncAdapter extends BaseAdapter {
     return new Contract(l2Erc20BridgeContractData.address, l2Erc20BridgeContractData.abi, provider);
   }
 
-  /**
-   * @dev The L1Messenger contract is on zkSync and emits L1MessageSent when a mesage is sent back to mainnet.
-   */
-  private getl1Messenger(): Contract {
-    const { provider } = this.spokePoolClients[this.chainId].spokePool;
-    const { L1_MESSENGER, L1_MESSENGER_ADDRESS } = zksync.utils; // @todo Do we want to hardcode these?
-    return new Contract(L1_MESSENGER_ADDRESS, L1_MESSENGER, provider);
-  }
-
   isSupportedToken(l1Token: string): l1Token is string {
     const relevantSymbol = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => {
       return Object.values(addresses).includes(l1Token);
