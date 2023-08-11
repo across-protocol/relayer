@@ -132,7 +132,7 @@ export class OpStackAdapter extends BaseAdapter {
       args = [address, amount, l2Gas, destinationChainId];
     }
 
-    // Pad gas when bridging to Optimism: https://community.optimism.io/docs/developers/bedrock/differences
+    // Pad gas when bridging to Base: https://community.optimism.io/docs/developers/bedrock/differences
     const gasLimitMultiplier = 1.5;
     const _txnRequest: AugmentedTransaction = { contract, chainId: originChainId, method, args, gasLimitMultiplier };
     const { reason, succeed, transaction: txnRequest } = (await txnClient.simulate([_txnRequest]))[0];
