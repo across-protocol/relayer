@@ -12,7 +12,9 @@ export class OpStackAdapter extends BaseAdapter {
   private txnClient: TransactionClient;
 
   private readonly atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
-  private readonly mainnetOvmStandardBridgeAddress;
+  private readonly atomicDepositorAbi = CONTRACT_ADDRESSES[1].atomicDepositor.abi;
+  private readonly mainnetOvmStandardBridgeAddress: string;
+  private readonly mainnetOvmStandardBridgeAbi: any[];
 
   constructor(
     chainId: number,
@@ -29,6 +31,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
     this.mainnetOvmStandardBridgeAddress = CONTRACT_ADDRESSES[1][`ovmStandardBridge_${chainId}`].address;
+    this.mainnetOvmStandardBridgeAbi = CONTRACT_ADDRESSES[1][`ovmStandardBridge_${chainId}`].abi;
     if (!this.mainnetOvmStandardBridgeAddress) {
       throw new Error(`No ovmStandardBridgeAddress for chainId ${chainId}`);
     }
@@ -176,12 +179,12 @@ export class OpStackAdapter extends BaseAdapter {
     const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
       ? this.customL1BridgeAddresses[l1Token]
       : this.mainnetOvmStandardBridgeAddress;
-    return new Contract(l1BridgeAddress, CONTRACT_ADDRESSES[1].daiOptimismBridge.abi, this.getSigner(1));
+    return new Contract(l1BridgeAddress, this.mainnetOvmStandardBridgeAbi, this.getSigner(1));
   }
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      return new Contract(this.atomicDepositorAddress, CONTRACT_ADDRESSES[1].atomicDepositor.abi, this.getSigner(1));
+      return new Contract(this.atomicDepositorAddress, this.atomicDepositorAbi, this.getSigner(1));
     } else {
       return this.getL1Bridge(l1Token);
     }
