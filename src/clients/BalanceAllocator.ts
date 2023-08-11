@@ -1,4 +1,5 @@
-import { BigNumber, ERC20, ethers, ZERO_ADDRESS, min } from "../utils";
+import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { BigNumber, ERC20, ethers, ZERO_ADDRESS, min, isDefined } from "../utils";
 
 // This type is used to map used and current balances of different users.
 export interface BalanceMap {
@@ -141,9 +142,19 @@ export class BalanceAllocator {
     this.balances = {};
   }
 
+  isEthAddress(chainId: number, tokenAddress: string): boolean {
+    // If there is an ETH address defined in CONTRACT_ADDRESSES, use it, otherwise assume ETH address is the zero
+    // address.
+    if (isDefined(CONTRACT_ADDRESSES[chainId]?.eth?.address)) {
+      return CONTRACT_ADDRESSES[chainId].eth.address === tokenAddress;
+    } else {
+      return ZERO_ADDRESS === tokenAddress;
+    }
+  }
+
   // This method is primarily here to be overriden for testing purposes.
   protected async _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
-    return token === ZERO_ADDRESS
+    return this.isEthAddress(chainId, token)
       ? await this.providers[chainId].getBalance(holder)
       : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
   }
