@@ -390,9 +390,12 @@ export async function _buildPoolRebalanceRoot(
   };
 }
 
-// Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,
-// so if the l2TokenAddress is WETH and the SpokePool is one such chain that holds both ETH and WETH,
-// then it should return both ETH and WETH. For other chains, it should only return the l2TokenAddress.
+/**
+ * @notice Returns WETH and ETH token addresses for chain if defined, or throws an error if they're not
+ * in the hardcoded dictionary.
+ * @param chainId chain to check for WETH and ETH addresses
+ * @returns WETH and ETH addresses.
+ */
 function getWethAndEth(chainId): string[] {
   const wethAndEth = [CONTRACT_ADDRESSES[chainId].weth.address, CONTRACT_ADDRESSES[chainId].eth.address];
   if (wethAndEth.some((chainId) => !isDefined(chainId))) {
@@ -400,6 +403,15 @@ function getWethAndEth(chainId): string[] {
   }
   return wethAndEth;
 }
+/**
+ * @notice Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,
+ * so if the l2TokenAddress is WETH and the SpokePool is one such chain that holds both ETH and WETH,
+ * then it should return both ETH and WETH. For other chains, it should only return the l2TokenAddress.
+ * @param l2TokenAddress L2 token address in spoke leaf that we want to get addresses to check spoke balances for
+ * @param l2ChainId L2 chain of Spoke
+ * @returns Tokens that we should check the SpokePool balance for in order to execute a spoke leaf for
+ * `l2TokenAddress` on `l2ChainId`.
+ */
 export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
   l2TokenAddress: string,
   l2ChainId: number
