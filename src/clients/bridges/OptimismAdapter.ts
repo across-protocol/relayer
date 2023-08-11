@@ -9,7 +9,7 @@ import {
   isDefined,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
+import { AugmentedTransaction, SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
@@ -20,7 +20,6 @@ const { TOKEN_SYMBOLS_MAP } = constants;
 
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
-  private txnClient: TransactionClient;
 
   private customL1OptimismBridgeAddresses = {
     [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge,
@@ -50,7 +49,6 @@ export class OptimismAdapter extends BaseAdapter {
         .map(({ symbol }) => symbol)
     );
     this.l2Gas = 200000;
-    this.txnClient = new TransactionClient(logger);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -139,14 +137,14 @@ export class OptimismAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
     const { chainId: destinationChainId, l2Gas, txnClient } = this;
     assert(destinationChainId === 10, `chainId ${destinationChainId} is not supported`);
 
     const contract = this.getL1TokenGateway(l1Token);
-    const originChainId = (await contract.provider.getNetwork()).chainId;
-    assert(originChainId !== destinationChainId);
+    const originChainId = this.hubChainId;
 
     let method = this.isSNX(l1Token) ? "depositTo" : "depositERC20";
     let args = this.isSNX(l1Token) ? [address, amount] : [l1Token, l2Token, amount, l2Gas, "0x"];
@@ -170,6 +168,14 @@ export class OptimismAdapter extends BaseAdapter {
     }
 
     this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
+    if (simMode) {
+      this.logger.debug({
+        at: "OptimismAdapter#sendTokenToTargetChain",
+        message: "Simulated bridging tokens",
+        succeed,
+      });
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    }
     return (await txnClient.submit(originChainId, [txnRequest]))[0];
   }
 

@@ -1,5 +1,4 @@
 import {
-  runTransaction,
   assign,
   Contract,
   BigNumber,
@@ -13,7 +12,7 @@ import {
   assert,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
-import { SpokePoolClient } from "../../clients";
+import { AugmentedTransaction, SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
@@ -134,7 +133,7 @@ export class PolygonAdapter extends BaseAdapter {
     // Skip the tokens if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
-    const availableTokens = l1Tokens.filter(this.isSupportedToken);
+    const availableTokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
     const promises: Promise<Event[]>[] = [];
     const validTokens: SupportedL1Token[] = [];
@@ -220,7 +219,8 @@ export class PolygonAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
     assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     let method = "depositFor";
@@ -232,8 +232,29 @@ export class PolygonAdapter extends BaseAdapter {
       method = "bridgeWethToPolygon";
       args = [address, amount.toString()];
     }
+    const _txnRequest: AugmentedTransaction = {
+      contract: this.getL1TokenGateway(l1Token),
+      chainId: this.hubChainId,
+      method,
+      args,
+    };
+    const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
+    if (!succeed) {
+      const message = `Failed to simulate ${method} deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
+      this.logger.warn({ at: this.getName(), message, reason });
+      throw new Error(`${message} (${reason})`);
+    }
+
     this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
+    if (simMode) {
+      this.logger.debug({
+        at: "PolygonAdapter#sendTokenToTargetChain",
+        message: "Simulated bridging tokens",
+        succeed,
+      });
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    }
+    return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {

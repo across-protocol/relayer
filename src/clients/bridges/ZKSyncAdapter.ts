@@ -9,6 +9,8 @@ import {
   spreadEventWithBlockNumber,
   assign,
   Event,
+  ZERO_ADDRESS,
+  RetryProvider,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import assert from "assert";
@@ -17,7 +19,6 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle } from "@across-protocol/sdk-v2";
-import { TransactionClient } from "../TransactionClient";
 import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 import { BigNumberish } from "../../utils/FormattingUtils";
 
@@ -26,8 +27,6 @@ import { BigNumberish } from "../../utils/FormattingUtils";
  * where related to Across' inventory management.
  */
 export class ZKSyncAdapter extends BaseAdapter {
-  private txnClient: TransactionClient;
-
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -42,7 +41,6 @@ export class ZKSyncAdapter extends BaseAdapter {
         .filter(({ addresses }) => isDefined(addresses[CHAIN_IDs.ZK_SYNC]))
         .map(({ symbol }) => symbol)
     );
-    this.txnClient = new TransactionClient(logger);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -52,6 +50,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
     const atomicWethDepositor = this.getAtomicDepositor();
+    const aliasedAtomicWethDepositor =  zksync.utils.applyL1ToL2Alias(atomicWethDepositor.address)
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -89,8 +88,8 @@ export class ZKSyncAdapter extends BaseAdapter {
                   l1SearchConfig
                 ),
 
-                // Filter on `l2Receiver` address
-                paginatedEventQuery(l2EthContract, l2EthContract.filters.Mint(address), l2SearchConfig),
+                // Filter on transfers between aliased AtomicDepositor address and l2Receiver
+                paginatedEventQuery(l2EthContract, l2EthContract.filters.Transfer(aliasedAtomicWethDepositor, address), l2SearchConfig),
               ]);
             } else {
               [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
@@ -127,7 +126,8 @@ export class ZKSyncAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     _l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
     const { chainId: destinationChainId } = this;
     assert(destinationChainId === 324, `chainId ${destinationChainId} is not supported`);
@@ -151,7 +151,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     const l2Provider = this.spokePoolClients[this.chainId].spokePool.provider;
     let zkProvider;
     try {
-      zkProvider = convertEthersRPCToZKSyncRPC(l2Provider);
+      zkProvider = convertEthersRPCToZKSyncRPC(l2Provider as RetryProvider);
     } catch (error) {
       this.logger.error({
         at: "ZkSyncClient#sendTokenToTargetChain",
@@ -211,11 +211,30 @@ export class ZKSyncAdapter extends BaseAdapter {
         at: "ZkSyncClient#sendTokenToTargetChain",
         message: `💌⭐️ Sending ${fromWei(amount.toString())} ETH to ZkSync`,
       });
-      return (
-        await this.txnClient.submit(this.hubChainId, [
+      const {
+        succeed,
+        reason,
+        transaction: txnRequest,
+      } = (
+        await this.txnClient.simulate([
           { contract: l1TokenBridge, chainId: this.hubChainId, method: "bridgeWethToZkSync", args },
         ])
       )[0];
+      if (!succeed) {
+        const message = `Failed to simulate bridgeWethToZkSync deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
+        this.logger.warn({ at: this.getName(), message, reason });
+        throw new Error(`${message} (${reason})`);
+      }
+      if (simMode) {
+        this.logger.info({
+          at: "ZkSyncClient#sendTokenToTargetChain",
+          message: `💌⭐️ Simulated sending ${fromWei(amount.toString())} ETH to ZkSync`,
+          succeed,
+        });
+        return { hash: ZERO_ADDRESS } as TransactionResponse;
+      } else {
+        return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
+      }
     }
     // If the token is an ERC20, use the default ERC20 bridge. We might need to use custom ERC20 bridges for other
     // tokens in the future but for now, all supported tokens including USDT, USDC and WBTC use this bridge.
@@ -241,11 +260,30 @@ export class ZKSyncAdapter extends BaseAdapter {
         at: "ZkSyncClient#sendTokenToTargetChain",
         message: `💌🪙 Sending ${fromWei(amount.toString(), tokenInfo.decimals)} ${tokenInfo.symbol} to ZkSync`,
       });
-      return (
-        await this.txnClient.submit(this.hubChainId, [
+      const {
+        succeed,
+        reason,
+        transaction: txnRequest,
+      } = (
+        await this.txnClient.simulate([
           { contract: l1TokenBridge, chainId: this.hubChainId, method: "deposit", args, value: l2TransactionBaseCost },
         ])
       )[0];
+      if (!succeed) {
+        const message = `Failed to simulate deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
+        this.logger.warn({ at: this.getName(), message, reason });
+        throw new Error(`${message} (${reason})`);
+      }
+      if (simMode) {
+        this.logger.info({
+          at: "ZkSyncClient#sendTokenToTargetChain",
+          message: `💌⭐️ Simulated sending ${fromWei(amount.toString(), tokenInfo.decimals)} ERC20 to ZkSync`,
+          succeed,
+        });
+        return { hash: ZERO_ADDRESS } as TransactionResponse;
+      } else {
+        return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
+      }
     }
   }
 

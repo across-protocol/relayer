@@ -67,12 +67,13 @@ export class AdapterManager {
     address: string,
     chainId: number | string,
     l1Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
     chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
-    return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount);
+    return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
@@ -84,7 +85,7 @@ export class AdapterManager {
       .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
       .map((chainId) => this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold));
 
-    const wrapTxns = await Promise.all(calls);
+    const wrapTxns = (await Promise.all(calls)).filter(isDefined.bind(this));
     for (let i = 0; i < wrapTxns.length; i++) {
       const wrapChain = chainsToWrapEtherOn[i];
       const mrkdwn =

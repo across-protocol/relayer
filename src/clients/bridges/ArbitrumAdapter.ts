@@ -2,7 +2,6 @@ import {
   assign,
   BigNumber,
   Contract,
-  runTransaction,
   spreadEvent,
   spreadEventWithBlockNumber,
   winston,
@@ -11,9 +10,10 @@ import {
   TransactionResponse,
   resolveTokenSymbols,
   assert,
+  ZERO_ADDRESS,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
-import { SpokePoolClient } from "../../clients";
+import { AugmentedTransaction, SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
@@ -84,7 +84,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     // Skip the token if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
-    const availableL1Tokens = l1Tokens.filter(this.isSupportedToken);
+    const availableL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
     const promises: Promise<Event[]>[] = [];
     const validTokens: string[] = [];
@@ -171,7 +171,8 @@ export class ArbitrumAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
     assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     this.log("Bridging tokens", { l1Token, l2Token, amount });
@@ -183,7 +184,31 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.l2GasPrice, // gasPriceBid
       this.transactionSubmissionData, // data
     ];
-    return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, this.l1SubmitValue);
+    const method = "outboundTransfer";
+    const _txnRequest: AugmentedTransaction = {
+      contract: this.getL1GatewayRouter(),
+      chainId: this.hubChainId,
+      method,
+      args,
+      value: this.l1SubmitValue,
+    };
+    const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
+    if (!succeed) {
+      const message = `Failed to simulate ${method} deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
+      this.logger.warn({ at: this.getName(), message, reason });
+      throw new Error(`${message} (${reason})`);
+    }
+
+    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
+    if (simMode) {
+      this.logger.debug({
+        at: "ArbitrumAdapter#sendTokenToTargetChain",
+        message: "Simulated bridging tokens",
+        succeed,
+      });
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    }
+    return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
   }
 
   async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {

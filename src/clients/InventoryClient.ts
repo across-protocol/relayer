@@ -35,7 +35,8 @@ export class InventoryClient {
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
-    readonly bundleRefundLookback = 2
+    readonly bundleRefundLookback = 2,
+    readonly simMode = false
   ) {
     this.scalar = toBN(10).pow(18);
     this.formatWei = createFormatFunction(2, 4, false, 18);
@@ -335,7 +336,7 @@ export class InventoryClient {
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const rebalance of possibleRebalances) {
         const { chainId, l1Token, amount } = rebalance;
-        const { hash } = await this.sendTokenCrossChain(chainId, l1Token, amount);
+        const { hash } = await this.sendTokenCrossChain(chainId, l1Token, amount, this.simMode);
         executedTransactions.push({ ...rebalance, hash });
       }
 
@@ -584,9 +585,10 @@ export class InventoryClient {
   async sendTokenCrossChain(
     chainId: number | string,
     l1Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
-    return await this.adapterManager.sendTokenCrossChain(this.relayer, Number(chainId), l1Token, amount);
+    return await this.adapterManager.sendTokenCrossChain(this.relayer, Number(chainId), l1Token, amount, simMode);
   }
 
   async _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {

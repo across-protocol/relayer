@@ -1,8 +1,7 @@
-import { Provider } from "@ethersproject/abstract-provider";
 import { assert } from "chai";
-import { providers } from "ethers";
 import { Provider as ZKSyncProvider } from "zksync-web3";
 import { isDefined } from "./TypeGuards";
+import { RetryProvider } from "./ProviderUtils";
 
 /**
  * Converts a valid Ethers Provider into a ZKSync Provider
@@ -10,8 +9,8 @@ import { isDefined } from "./TypeGuards";
  * @returns A ZKSync Provider
  * @throws If the provider is not a valid JsonRpcProvider
  */
-export function convertEthersRPCToZKSyncRPC(ethersProvider: Provider): ZKSyncProvider {
-  const url = (ethersProvider as providers.JsonRpcProvider)?.connection?.url;
+export function convertEthersRPCToZKSyncRPC(ethersProvider: RetryProvider): ZKSyncProvider {
+  const url = (ethersProvider as RetryProvider).providers[0].connection.url;
   assert(isDefined(url), "Provider must be of type JsonRpcProvider");
   return new ZKSyncProvider(url);
 }

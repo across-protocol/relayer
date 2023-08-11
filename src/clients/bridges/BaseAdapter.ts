@@ -2,7 +2,7 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { constants as sdkConstants } from "@across-protocol/sdk-v2";
-import { SpokePoolClient } from "../../clients";
+import { SpokePoolClient, TransactionClient } from "../../clients";
 import {
   toBN,
   MAX_SAFE_ALLOWANCE,
@@ -52,6 +52,8 @@ export abstract class BaseAdapter {
   l2DepositFinalizedEvents: Events = {};
   l2DepositFinalizedEvents_DepositAdapter: Events = {};
 
+  txnClient: TransactionClient;
+
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     _chainId: number,
@@ -62,6 +64,7 @@ export abstract class BaseAdapter {
     this.chainId = _chainId;
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
+    this.txnClient = new TransactionClient(logger);
   }
 
   getSigner(chainId: number): Signer {
@@ -272,7 +275,8 @@ export abstract class BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode: boolean
   ): Promise<TransactionResponse>;
 
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
