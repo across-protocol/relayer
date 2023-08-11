@@ -1,7 +1,14 @@
-import { BigNumber, Contract, Event } from "ethers";
+import { BigNumber, Contract } from "ethers";
 import { BaseAdapter } from "./BaseAdapter";
-import { OutstandingTransfers } from "../../interfaces";
-import { paginatedEventQuery, TransactionResponse, fromWei, winston } from "../../utils";
+import { OutstandingTransfers, SortableEvent } from "../../interfaces";
+import {
+  paginatedEventQuery,
+  TransactionResponse,
+  fromWei,
+  winston,
+  spreadEventWithBlockNumber,
+  assign,
+} from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import { MultiCallerClient } from "../MultiCallerClient";
 import assert from "assert";
@@ -12,6 +19,7 @@ import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle } from "@across-protocol/sdk-v2";
 import { TransactionClient } from "../TransactionClient";
 import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
+import { BigNumberish } from "../../utils/FormattingUtils";
 
 // Tokens we know for sure that use the default L1 ERC20 bridge to bridge to ZkSync. This is added here for safety
 // so that we don't accidentally burn tokens by sending them over the wrong bridge contract.
@@ -34,25 +42,21 @@ export class ZKSyncAdapter extends BaseAdapter {
     this.txnClient = new TransactionClient(logger);
   }
 
-  // TODO: To dial this function in we should probably review on-chain data from prod
-  //       to ensure everything is working as expected. Also, at the moment, this function
-  //       needs to still extract transfer initiated events for all four combinations of
-  //       L1 and L2 tokens. Once this is done, we can reconcile all finalized transfers
-  //       against the transfer requests to determine which ones have not been yet finalized.
-  // TODO: ^^
-  // FIXME: Resolve ^^
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
-    // Store all the event queries as promises for finalization events on L1 and L2.
-    const eventQueriesFromL2Finalizations: Promise<Event[]>[] = [];
-    const eventQueriesFromL1Finalizations: Promise<Event[]>[] = [];
-
     // Resolve the mailbox and bridge contracts for L1 and L2.
-    const mailbox = this.getMailboxContract();
+    const l2EthContract = this.getL2Eth();
+    const atomicWethDepositor = this.getAtomicDepositor();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
+
+    // Store promises for all the event queries we're going to make. They should go in in sets of two in the following
+    // order:
+    // 1. L1 deposit initiated
+    // 2. L2 deposit finalized
+    const promises = [];
 
     // Iterate over all the addresses we're monitoring.
     for (const address of this.monitoredAddresses) {
@@ -61,46 +65,79 @@ export class ZKSyncAdapter extends BaseAdapter {
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
 
-        // Resolve each of the event queries and correct contracts
-        // needed to resolve finalization events on L1.
-        const [l1Contract, l1FilterFinalization] = isWeth
-          ? [mailbox, mailbox.filters.EthWithdrawalFinalized(address)]
-          : [
+        // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
+        // will appear in mailbox.
+        if (isWeth) {
+          // Filter on 'from' address and 'to' address
+          promises.push(
+            paginatedEventQuery(
+              atomicWethDepositor,
+              atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
+              l1SearchConfig
+            )
+          );
+          // Filter on `l2Receiver` address
+          promises.push(paginatedEventQuery(l2EthContract, l2EthContract.filters.Mint(address), l2SearchConfig));
+        } else {
+          // Filter on 'from' and 'to' address
+          promises.push(
+            paginatedEventQuery(
               l1ERC20Bridge,
-              l1ERC20Bridge.filters.WithdrawalFinalized(null, address),
-              l1ERC20Bridge.filters.DepositInitiated(null, address),
-            ];
-
-        // Resolve each of the event queries and correct contracts
-        // needed to resolve finalization events on L2.
-        const [l2Contract, l2Filter] = isWeth
-          ? [mailbox, mailbox.filters.EthDepositFinalized(address)]
-          : [
-              l2ERC20Bridge,
-              l2ERC20Bridge.filters.FinalizeDeposit(null, address),
-              l2ERC20Bridge.filters.WithdrawalInitiated(address),
-            ];
-
-        // Push the event query to the list of event queries for L1 finalizations.
-        eventQueriesFromL1Finalizations.push(paginatedEventQuery(l1Contract, l1FilterFinalization, l1SearchConfig));
-        // Push the event query to the list of event queries for L2 finalizations.
-        eventQueriesFromL2Finalizations.push(paginatedEventQuery(l2Contract, l2Filter, l2SearchConfig));
+              l1ERC20Bridge.filters.DepositInitiated(null, address, address),
+              l1SearchConfig
+            )
+          );
+          // Filter on `l2Receiver` address and `l1Sender` address
+          promises.push(
+            paginatedEventQuery(l2ERC20Bridge, l2ERC20Bridge.filters.FinalizeDeposit(address, address), l2SearchConfig)
+          );
+        }
       }
     }
 
-    // Resolve all the event queries for L1 and L2 finalizations.
-    const [l1Finalizations, l2Finalizations] = await Promise.all([
-      Promise.all(eventQueriesFromL1Finalizations),
-      Promise.all(eventQueriesFromL2Finalizations),
-    ]);
+    const results = await Promise.all(promises);
 
-    // WE ARE CURRENTLY NOT USING THESE VARIABLES
-    // WE CAN LIST THEM BELOW AS NO-OPs TO AVOID LINTING ERRORS
-    // FIXME: RESOLVE THIS FOR PROD
-    l1Finalizations;
-    l2Finalizations;
+    // 2 events per token.
+    const numEventsPerMonitoredAddress = 2 * l1Tokens.length;
 
-    return {};
+    // Segregate the events list by monitored address.
+    const resultsByMonitoredAddress = Object.fromEntries(
+      this.monitoredAddresses.map((monitoredAddress, index) => {
+        const start = index * numEventsPerMonitoredAddress;
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+      })
+    );
+
+    // Process events for each monitored address.
+    for (const monitoredAddress of this.monitoredAddresses) {
+      const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
+      // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents,
+      // l2DepositFinalizedEvents state from the BaseAdapter.
+      eventsToProcess.forEach((result, index) => {
+        // Each token has two events.
+        const l1Token = l1Tokens[Math.floor(index / 2)];
+        const events = result.map((event) => {
+          // All events will have _amount and _to parameters.
+          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+            _amount: BigNumberish;
+            _to: string;
+          };
+          return {
+            amount: eventSpread["_amount"],
+            to: eventSpread["_to"],
+            ...eventSpread,
+          };
+        });
+        // Every other event is a deposit initiated event or deposit finalized event.
+        const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
+        assign(eventsStorage, [monitoredAddress, l1Token], events);
+      });
+    }
+
+    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
+    this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
+
+    return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
 
   async sendTokenToTargetChain(
@@ -263,6 +300,15 @@ export class ZKSyncAdapter extends BaseAdapter {
       throw new Error(`zkSyncMailboxContractData not found for chain ${hubChainId}`);
     }
     return new Contract(zkSyncMailboxContractData.address, zkSyncMailboxContractData.abi, this.getSigner(hubChainId));
+  }
+
+  private getL2Eth(): Contract {
+    const { chainId } = this;
+    const ethContractData = CONTRACT_ADDRESSES[chainId]?.eth;
+    if (!ethContractData) {
+      throw new Error(`contractData not found for chain ${chainId}`);
+    }
+    return new Contract(ethContractData.address, ethContractData.abi, this.getSigner(chainId));
   }
 
   private getL1ERC20BridgeContract(): Contract {

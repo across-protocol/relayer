@@ -37,15 +37,6 @@ export const CONTRACT_ADDRESSES: {
           stateMutability: "pure",
           type: "function",
         },
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "address", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "EthWithdrawalFinalized",
-          type: "event",
-        },
       ],
     },
     zkSyncDefaultErc20Bridge: {
@@ -67,21 +58,11 @@ export const CONTRACT_ADDRESSES: {
         {
           anonymous: false,
           inputs: [
-            { indexed: true, internalType: "address", name: "to", type: "address" },
-            { indexed: true, internalType: "address", name: "address", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "WithdrawalFinalized",
-          type: "event",
-        },
-        {
-          anonymous: false,
-          inputs: [
             { indexed: true, internalType: "address", name: "l2DepositHash", type: "address" },
             { indexed: true, internalType: "address", name: "from", type: "address" },
-            { indexed: true, internalType: "address", name: "to", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
             { indexed: false, internalType: "address", name: "l1Token", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
           ],
           name: "DepositInitiated",
           type: "event",
@@ -180,6 +161,16 @@ export const CONTRACT_ADDRESSES: {
           outputs: [],
           stateMutability: "nonpayable",
           type: "function",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "ZkSyncEthDepositInitiated",
+          type: "event",
         },
         { stateMutability: "payable", type: "receive" },
       ],
@@ -467,28 +458,28 @@ export const CONTRACT_ADDRESSES: {
           anonymous: false,
           inputs: [
             { indexed: true, internalType: "address", name: "l1Sender", type: "address" },
-            { indexed: true, internalType: "address", name: "l2Receiver", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
             { indexed: true, internalType: "address", name: "l2Token", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
           ],
           name: "FinalizeDeposit",
-          type: "event",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "l2Sender", type: "address" },
-            { indexed: true, internalType: "address", name: "l1Receiver", type: "address" },
-            { indexed: true, internalType: "address", name: "l2Token", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "WithdrawalInitiated",
           type: "event",
         },
       ],
     },
     eth: {
       address: "0x000000000000000000000000000000000000800A",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "Mint",
+          type: "event",
+        },
+      ],
     },
     weth: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
