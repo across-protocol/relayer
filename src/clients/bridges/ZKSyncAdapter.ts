@@ -50,7 +50,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
     const atomicWethDepositor = this.getAtomicDepositor();
-    const aliasedAtomicWethDepositor =  zksync.utils.applyL1ToL2Alias(atomicWethDepositor.address)
+    const aliasedAtomicWethDepositor = zksync.utils.applyL1ToL2Alias(atomicWethDepositor.address);
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -89,7 +89,11 @@ export class ZKSyncAdapter extends BaseAdapter {
                 ),
 
                 // Filter on transfers between aliased AtomicDepositor address and l2Receiver
-                paginatedEventQuery(l2EthContract, l2EthContract.filters.Transfer(aliasedAtomicWethDepositor, address), l2SearchConfig),
+                paginatedEventQuery(
+                  l2EthContract,
+                  l2EthContract.filters.Transfer(aliasedAtomicWethDepositor, address),
+                  l2SearchConfig
+                ),
               ]);
             } else {
               [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
