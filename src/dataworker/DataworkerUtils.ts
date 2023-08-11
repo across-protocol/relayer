@@ -416,7 +416,7 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
   l2TokenAddress: string,
   l2ChainId: number
 ): string[] {
-  const spokesThatHoldEthAndWeth = [10, 324];
+  const spokesThatHoldEthAndWeth = [10, 324, 8453];
   if (!spokesThatHoldEthAndWeth.includes(l2ChainId)) {
     return [l2TokenAddress];
   }

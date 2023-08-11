@@ -423,6 +423,61 @@ export const CONTRACT_ADDRESSES: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
     },
   },
+  8453: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
+            { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
+            { indexed: true, internalType: "address", name: "_from", type: "address" },
+            { indexed: false, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
+          ],
+          name: "DepositFinalized",
+          type: "event",
+        },
+      ],
+    },
+    weth: {
+      address: "0x4200000000000000000000000000000000000006",
+      abi: [
+        {
+          constant: false,
+          inputs: [{ name: "wad", type: "uint256" }],
+          name: "withdraw",
+          outputs: [],
+          payable: false,
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          constant: false,
+          inputs: [],
+          name: "deposit",
+          outputs: [],
+          payable: true,
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          constant: true,
+          inputs: [{ name: "", type: "address" }],
+          name: "balanceOf",
+          outputs: [{ name: "", type: "uint256" }],
+          payable: false,
+          stateMutability: "view",
+          type: "function",
+        },
+      ],
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
   42161: {
     erc20Gateway: {
       abi: [
