@@ -259,8 +259,7 @@ export class PolygonAdapter extends BaseAdapter {
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      const atomicDepositor = CONTRACT_ADDRESSES[1].atomicDepositor;
-      return new Contract(atomicDepositor.address, atomicDepositor.abi, this.getSigner(1));
+      return this.getAtomicDepositor();
     } else {
       return new Contract(
         CONTRACT_ADDRESSES[1].polygonRootChainManager.address,

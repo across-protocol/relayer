@@ -21,8 +21,6 @@ export class OptimismAdapter extends BaseAdapter {
     [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge.address,
   } as const;
 
-  private atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
-
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -186,7 +184,7 @@ export class OptimismAdapter extends BaseAdapter {
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      return new Contract(this.atomicDepositorAddress, CONTRACT_ADDRESSES[1].atomicDepositor.abi, this.getSigner(1));
+      return this.getAtomicDepositor();
     } else {
       return this.getL1Bridge(l1Token);
     }

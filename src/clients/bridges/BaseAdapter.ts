@@ -46,6 +46,7 @@ export abstract class BaseAdapter {
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
+  readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor.address;
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
@@ -242,6 +243,19 @@ export abstract class BaseAdapter {
   getWeth(): Contract {
     const { hubChainId } = this;
     return new Contract(this.wethAddress, CONTRACT_ADDRESSES[hubChainId].weth.abi, this.getProvider(hubChainId));
+  }
+
+  /**
+   * Get L1 Atomic WETH depositor contract
+   * @returns L1 Atomic WETH depositor contract
+   */
+  getAtomicDepositor(): Contract {
+    const { hubChainId } = this;
+    return new Contract(
+      this.atomicDepositorAddress,
+      CONTRACT_ADDRESSES[hubChainId].atomicWeth.abi,
+      this.getProvider(hubChainId)
+    );
   }
 
   /**

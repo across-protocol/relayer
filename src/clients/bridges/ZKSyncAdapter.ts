@@ -166,39 +166,22 @@ export class ZKSyncAdapter extends BaseAdapter {
       mailboxContract: mailboxContract.address,
     });
 
+    const l1TokenBridge = this.getL1TokenBridge(l1Token);
     if (this.isWeth(l1Token)) {
-      // 1. Unwrap WETH:
-      this.log("Unwrapping WETH to deposit as ETH to ZkSync", { amount });
-      const l1Weth = this.getWeth();
-      multicallerClient.enqueueTransaction({
-        contract: l1Weth,
-        chainId: this.hubChainId,
-        method: "withdraw",
-        args: [amount],
-        message: "📦⭐️ Unwrapping WETH to deposit as ETH to ZkSync",
-        mrkdwn: `📦⭐️ Unwrapping ${fromWei(amount.toString())} WETH to deposit as ETH to ZkSync`,
-      });
-
-      // 2. Send newly unwrapped ETH to ZkSync.
       const args = [
         address, // L2 receiver
         amount, // Amount
-        "0x", // Data, set to 0x since we just want to send ETH
         l2GasLimit.toString(), // L2 gas limit
         gasPerPubdataLimit, // GasPerPubdataLimit.
-        [], // Factory deps: An array of L2 bytecodes that will be marked as known on L2. Leave as [] unless
-        // deploying a contract with libraries.
-        address, // Refund recipient. Can set to address if an EOA.
+        address, // Refund recipient. Can set to caller address if an EOA.
       ];
-      // We need to figure out how much ETH we'll have to include as msg.value in order to execute this message.
       multicallerClient.enqueueTransaction({
-        contract: mailboxContract,
+        contract: l1TokenBridge,
         chainId: this.hubChainId,
-        method: "requestL2Transaction",
+        method: "bridgeWethToZkSync",
         args,
         message: "💌⭐️ Sending ETH to ZkSync",
         mrkdwn: `💌⭐️ Sending ${fromWei(amount.toString())} ETH to ZkSync`,
-        value: l2TransactionBaseCost.add(amount),
       });
     }
     // If the token is an ERC20, use the default ERC20 bridge. We might need to use custom ERC20 bridges for other
@@ -223,7 +206,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       ];
 
       multicallerClient.enqueueTransaction({
-        contract: this.getL1ERC20BridgeContract(),
+        contract: l1TokenBridge,
         chainId: this.hubChainId,
         method: "deposit",
         args,
@@ -268,9 +251,8 @@ export class ZKSyncAdapter extends BaseAdapter {
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     const associatedL1Bridges = l1Tokens
-      // We unwrap WETH to send it over as ETH so it doesn't require an approval.
-      .filter((token) => !this.isWeth(token) && !this.isSupportedToken(token))
-      .map(() => this.getL1ERC20BridgeContract().address);
+      .filter((token) => this.isSupportedToken(token))
+      .map((l1Token) => this.getL1TokenBridge(l1Token).address);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
@@ -290,6 +272,14 @@ export class ZKSyncAdapter extends BaseAdapter {
       throw new Error(`l1Erc20BridgeContractData not found for chain ${hubChainId}`);
     }
     return new Contract(l1Erc20BridgeContractData.address, l1Erc20BridgeContractData.abi, this.getSigner(hubChainId));
+  }
+
+  private getL1TokenBridge(l1Token: string): Contract {
+    if (this.isWeth(l1Token)) {
+      return this.getAtomicDepositor();
+    } else {
+      return this.getL1ERC20BridgeContract();
+    }
   }
 
   private getL2ERC20BridgeContract(): Contract {
