@@ -54,6 +54,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
+    // Predeclare this function for use below. It is used to process all events that are saved.
     const processEvent = (event: Event) => {
       // All events will have _amount and _to parameters.
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
@@ -74,8 +75,7 @@ export class ZKSyncAdapter extends BaseAdapter {
             // Resolve whether the token is WETH or not.
             const isWeth = this.isWeth(l1TokenAddress);
 
-            let initiatedQueryResult: ReturnType<typeof processEvent>[];
-            let finalizedQueryResult: ReturnType<typeof processEvent>[];
+            let initiatedQueryResult: Event[], finalizedQueryResult: Event[];
             if (isWeth) {
               // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
               // will appear in mailbox.
@@ -85,33 +85,31 @@ export class ZKSyncAdapter extends BaseAdapter {
                   atomicWethDepositor,
                   atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
                   l1SearchConfig
-                ).then((events) => events.map(processEvent)),
-                // Filter on `l2Receiver` address
-                paginatedEventQuery(l2EthContract, l2EthContract.filters.Mint(address), l2SearchConfig).then((events) =>
-                  events.map(processEvent)
                 ),
+
+                // Filter on `l2Receiver` address
+                paginatedEventQuery(l2EthContract, l2EthContract.filters.Mint(address), l2SearchConfig),
               ]);
             } else {
               [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
                 // Filter on 'from' and 'to' address
-
                 paginatedEventQuery(
                   l1ERC20Bridge,
                   l1ERC20Bridge.filters.DepositInitiated(null, address, address),
                   l1SearchConfig
-                ).then((events) => events.map(processEvent)),
-                // Filter on `l2Receiver` address and `l1Sender` address
+                ),
 
+                // Filter on `l2Receiver` address and `l1Sender` address
                 paginatedEventQuery(
                   l2ERC20Bridge,
                   l2ERC20Bridge.filters.FinalizeDeposit(address, address),
                   l2SearchConfig
-                ).then((events) => events.map(processEvent)),
+                ),
               ]);
             }
 
-            assign(this.l1DepositInitiatedEvents, [address, l1TokenAddress], initiatedQueryResult);
-            assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult);
+            assign(this.l1DepositInitiatedEvents, [address, l1TokenAddress], initiatedQueryResult.map(processEvent));
+            assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
           })
         )
       )
