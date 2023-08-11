@@ -11,7 +11,8 @@ export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
   private txnClient: TransactionClient;
 
-  private atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
+  private readonly atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
+  private readonly mainnetOvmStandardBridgeAddress;
 
   constructor(
     chainId: number,
@@ -27,6 +28,10 @@ export class OpStackAdapter extends BaseAdapter {
     super(spokePoolClients, chainId, monitoredAddresses, logger);
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
+    this.mainnetOvmStandardBridgeAddress = CONTRACT_ADDRESSES[1][`ovmStandardBridge_${chainId}`].address;
+    if (!this.mainnetOvmStandardBridgeAddress) {
+      throw new Error(`No ovmStandardBridgeAddress for chainId ${chainId}`);
+    }
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -170,7 +175,7 @@ export class OpStackAdapter extends BaseAdapter {
     }
     const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
       ? this.customL1BridgeAddresses[l1Token]
-      : CONTRACT_ADDRESSES[1].ovmStandardBridge.address;
+      : this.mainnetOvmStandardBridgeAddress;
     return new Contract(l1BridgeAddress, CONTRACT_ADDRESSES[1].daiOptimismBridge.abi, this.getSigner(1));
   }
 
