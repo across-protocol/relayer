@@ -58,7 +58,7 @@ export class OptimismAdapter extends BaseAdapter {
           l2SearchFilter = [ZERO_ADDRESS, undefined, monitoredAddress];
         } else if (this.isSNX(l1Token)) {
           l1SearchFilter = [monitoredAddress];
-          l2SearchFilter = [undefined, monitoredAddress];
+          l2SearchFilter = [monitoredAddress];
         }
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
