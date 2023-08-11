@@ -74,7 +74,7 @@ contract AtomicWethDepositor {
         uint256 valueToSubmitXChainMessage = l2TransactionBaseCost + amount;
         weth.transferFrom(msg.sender, address(this), valueToSubmitXChainMessage);
         weth.withdraw(valueToSubmitXChainMessage);
-        zkSyncL1Bridge.requestL2Transaction{ msg.value: valueToSubmitXChainMessage }(
+        zkSyncL1Bridge.requestL2Transaction{ value: valueToSubmitXChainMessage }(
             to,
             amount,
             "",
