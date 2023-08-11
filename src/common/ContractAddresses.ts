@@ -345,35 +345,6 @@ export const CONTRACT_ADDRESSES: {
       ],
     },
   },
-  324: {
-    zkSyncDefaultErc20Bridge: {
-      address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
-      abi: [
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "l1Sender", type: "address" },
-            { indexed: true, internalType: "address", name: "l2Receiver", type: "address" },
-            { indexed: true, internalType: "address", name: "l2Token", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "FinalizeDeposit",
-          type: "event",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "l2Sender", type: "address" },
-            { indexed: true, internalType: "address", name: "l1Receiver", type: "address" },
-            { indexed: true, internalType: "address", name: "l2Token", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "WithdrawalInitiated",
-          type: "event",
-        },
-      ],
-    },
-  },
   10: {
     daiOptimismBridge: {
       address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
@@ -476,6 +447,33 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   324: {
+    zkSyncDefaultErc20Bridge: {
+      address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "l1Sender", type: "address" },
+            { indexed: true, internalType: "address", name: "l2Receiver", type: "address" },
+            { indexed: true, internalType: "address", name: "l2Token", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "FinalizeDeposit",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "l2Sender", type: "address" },
+            { indexed: true, internalType: "address", name: "l1Receiver", type: "address" },
+            { indexed: true, internalType: "address", name: "l2Token", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "WithdrawalInitiated",
+          type: "event",
+        },
+      ],
+    },
     eth: {
       address: "0x000000000000000000000000000000000000800A",
     },
