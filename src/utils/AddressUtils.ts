@@ -22,7 +22,7 @@ export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0
  * @returns The token symbol for the given token address and chain ID, or undefined if the token address is not
  * recognized.
  */
-export function resolveTokenSymbolFromTokenAddress(tokenAddress: string, chainId: number): string | undefined {
+export function resolveTokenSymbol(tokenAddress: string, chainId: number): string | undefined {
   const tokenInfo = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === tokenAddress);
   return tokenInfo?.symbol;
 }
@@ -32,10 +32,10 @@ export function resolveTokenSymbolFromTokenAddress(tokenAddress: string, chainId
  * @param tokenAddresses The token addresses to resolve the symbols for.
  * @param chainId The chain ID to resolve the symbols for.
  * @returns The token symbols for the given token addresses and chain ID. Undefined values are filtered out.
- * @see resolveTokenSymbolFromTokenAddress
+ * @see resolveTokenSymbol
  */
-export function resolveTokenSymbolsFromTokenAddresses(tokenAddresses: string[], chainId: number): string[] {
+export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
   return tokenAddresses
-    .map((tokenAddress) => resolveTokenSymbolFromTokenAddress(tokenAddress, chainId))
+    .map((tokenAddress) => resolveTokenSymbol(tokenAddress, chainId))
     .filter(Boolean);
 }

@@ -9,7 +9,7 @@ import {
   isDefined,
   BigNumberish,
   TransactionResponse,
-  resolveTokenSymbolsFromTokenAddresses,
+  resolveTokenSymbols,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -121,7 +121,7 @@ export class PolygonAdapter extends BaseAdapter {
       137,
       monitoredAddresses,
       logger,
-      resolveTokenSymbolsFromTokenAddresses(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
+      resolveTokenSymbols(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
     );
   }
 

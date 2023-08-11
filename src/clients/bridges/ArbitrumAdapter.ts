@@ -9,7 +9,7 @@ import {
   BigNumberish,
   isDefined,
   TransactionResponse,
-  resolveTokenSymbolsFromTokenAddresses,
+  resolveTokenSymbols,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -69,7 +69,7 @@ export class ArbitrumAdapter extends BaseAdapter {
       42161,
       monitoredAddresses,
       logger,
-      resolveTokenSymbolsFromTokenAddresses(
+      resolveTokenSymbols(
         Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
         BaseAdapter.HUB_CHAIN_ID
       )
