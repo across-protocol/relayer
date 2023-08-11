@@ -145,11 +145,7 @@ export class BalanceAllocator {
   isEthAddress(chainId: number, tokenAddress: string): boolean {
     // If there is an ETH address defined in CONTRACT_ADDRESSES, use it, otherwise assume ETH address is the zero
     // address.
-    if (isDefined(CONTRACT_ADDRESSES[chainId]?.eth?.address)) {
-      return CONTRACT_ADDRESSES[chainId].eth.address === tokenAddress;
-    } else {
-      return ZERO_ADDRESS === tokenAddress;
-    }
+    return ( CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS ) === tokenAddress;
   }
 
   // This method is primarily here to be overriden for testing purposes.
