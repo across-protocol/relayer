@@ -51,7 +51,6 @@ export async function constructMonitorClients(
     logger,
     spokePoolClients,
     commonClients.hubPoolClient,
-    commonClients.multiCallerClient,
     [baseSigner.address, ...spokePoolAddresses],
     commonClients.hubPoolClient.hubPool.address
   );

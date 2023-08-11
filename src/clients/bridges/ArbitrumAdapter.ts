@@ -10,6 +10,7 @@ import {
   isDefined,
   TransactionResponse,
   resolveTokenSymbols,
+  assert,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -172,6 +173,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<TransactionResponse> {
+    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     this.log("Bridging tokens", { l1Token, l2Token, amount });
     const args = [
       l1Token, // token

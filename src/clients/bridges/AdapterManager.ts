@@ -9,7 +9,7 @@ import {
   getL2TokenAddresses,
   TransactionResponse,
 } from "../../utils";
-import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../";
+import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces";
 export class AdapterManager {
@@ -19,7 +19,6 @@ export class AdapterManager {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly multicallerClient: MultiCallerClient,
     readonly monitoredAddresses: string[],
     // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
@@ -38,7 +37,7 @@ export class AdapterManager {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[324] !== undefined) {
-      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, multicallerClient, monitoredAddresses);
+      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddresses);
     }
 
     logger.debug({
@@ -108,7 +107,7 @@ export class AdapterManager {
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
       if (!l2TokenForL1Token) {
-        throw new Error("No L2 token found for L1 token");
+        throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
       if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) {
         throw new Error("Mismatch tokens!");

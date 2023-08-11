@@ -24,14 +24,16 @@ export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0
  */
 export function matchTokenSymbol(tokenAddress: string, chainId: number): string[] {
   return Object.values(TOKEN_SYMBOLS_MAP)
-    .filter(({ addresses }) => addresses[chainId] === tokenAddress)
+    .filter(({ addresses }) => addresses[chainId].toLowerCase() === tokenAddress.toLowerCase())
     .map(({ symbol }) => symbol);
 }
 
 export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
   return tokenAddresses
     .map((tokenAddress) => {
-      return Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === tokenAddress)?.symbol;
+      return Object.values(TOKEN_SYMBOLS_MAP).find(
+        ({ addresses }) => addresses[chainId].toLowerCase() === tokenAddress.toLowerCase()
+      )?.symbol;
     })
     .filter(Boolean);
 }

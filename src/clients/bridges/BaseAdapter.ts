@@ -237,15 +237,6 @@ export abstract class BaseAdapter {
   }
 
   /**
-   * Return L1 WETH contract
-   * @returns L1 WETH contract
-   */
-  getWeth(): Contract {
-    const { hubChainId } = this;
-    return new Contract(this.wethAddress, CONTRACT_ADDRESSES[hubChainId].weth.abi, this.getProvider(hubChainId));
-  }
-
-  /**
    * Get L1 Atomic WETH depositor contract
    * @returns L1 Atomic WETH depositor contract
    */
@@ -253,8 +244,8 @@ export abstract class BaseAdapter {
     const { hubChainId } = this;
     return new Contract(
       this.atomicDepositorAddress,
-      CONTRACT_ADDRESSES[hubChainId].atomicWeth.abi,
-      this.getProvider(hubChainId)
+      CONTRACT_ADDRESSES[hubChainId].atomicDepositor.abi,
+      this.getSigner(hubChainId)
     );
   }
 

@@ -11,7 +11,6 @@ import {
   Event,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
-import { MultiCallerClient } from "../MultiCallerClient";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -32,7 +31,6 @@ export class ZKSyncAdapter extends BaseAdapter {
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly multicallerClient: MultiCallerClient,
     monitoredAddresses: string[]
   ) {
     super(
@@ -131,8 +129,9 @@ export class ZKSyncAdapter extends BaseAdapter {
     _l2Token: string,
     amount: BigNumber
   ): Promise<TransactionResponse> {
-    const { chainId: destinationChainId, multicallerClient } = this;
+    const { chainId: destinationChainId } = this;
     assert(destinationChainId === 324, `chainId ${destinationChainId} is not supported`);
+    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
 
     const mailboxContract = this.getMailboxContract();
 
@@ -150,18 +149,29 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Next, load estimated executed L1 gas price of the message transaction and the L2 gas limit.
     const l1Provider = this.getProvider(this.hubChainId);
     const l2Provider = this.spokePoolClients[this.chainId].spokePool.provider;
-    const zksProvider = convertEthersRPCToZKSyncRPC(l2Provider);
+    let zkProvider;
+    try {
+      zkProvider = convertEthersRPCToZKSyncRPC(l2Provider);
+    } catch (error) {
+      this.logger.error({
+        at: "ZkSyncClient#sendTokenToTargetChain",
+        message: "Failed to get zkProvider, are you on a testnet or hardhat network?",
+        error,
+      });
+    }
     const [l1GasPriceData, l2GasLimit] = await Promise.all([
       gasPriceOracle.getGasPriceEstimate(l1Provider),
-      zksync.utils.estimateDefaultBridgeDepositL2Gas(
-        l1Provider,
-        zksProvider,
-        l1Token,
-        amount,
-        address,
-        address,
-        gasPerPubdataLimit
-      ),
+      isDefined(zkProvider)
+        ? zksync.utils.estimateDefaultBridgeDepositL2Gas(
+            l1Provider,
+            zkProvider,
+            l1Token,
+            amount,
+            address,
+            address,
+            gasPerPubdataLimit
+          )
+        : Promise.resolve(2_000_000),
     ]);
 
     // Now figure out the equivalent of the "tx.gasprice".
@@ -197,14 +207,15 @@ export class ZKSyncAdapter extends BaseAdapter {
         gasPerPubdataLimit, // GasPerPubdataLimit.
         address, // Refund recipient. Can set to caller address if an EOA.
       ];
-      multicallerClient.enqueueTransaction({
-        contract: l1TokenBridge,
-        chainId: this.hubChainId,
-        method: "bridgeWethToZkSync",
-        args,
-        message: "💌⭐️ Sending ETH to ZkSync",
-        mrkdwn: `💌⭐️ Sending ${fromWei(amount.toString())} ETH to ZkSync`,
+      this.logger.debug({
+        at: "ZkSyncClient#sendTokenToTargetChain",
+        message: `💌⭐️ Sending ${fromWei(amount.toString())} ETH to ZkSync`,
       });
+      return (
+        await this.txnClient.submit(this.hubChainId, [
+          { contract: l1TokenBridge, chainId: this.hubChainId, method: "bridgeWethToZkSync", args },
+        ])
+      )[0];
     }
     // If the token is an ERC20, use the default ERC20 bridge. We might need to use custom ERC20 bridges for other
     // tokens in the future but for now, all supported tokens including USDT, USDC and WBTC use this bridge.
@@ -226,25 +237,16 @@ export class ZKSyncAdapter extends BaseAdapter {
         l2GasLimit.toString(), // L2 gas limit
         gasPerPubdataLimit, // GasPerPubdataLimit.
       ];
-
-      multicallerClient.enqueueTransaction({
-        contract: l1TokenBridge,
-        chainId: this.hubChainId,
-        method: "deposit",
-        args,
-        message: `💌🪙 Sending ${tokenInfo.symbol} to ZkSync`,
-        mrkdwn: `💌🪙 Sending ${fromWei(amount.toString(), tokenInfo.decimals)} ${tokenInfo.symbol} to ZkSync`,
-        value: l2TransactionBaseCost,
+      this.logger.debug({
+        at: "ZkSyncClient#sendTokenToTargetChain",
+        message: `💌🪙 Sending ${fromWei(amount.toString(), tokenInfo.decimals)} ${tokenInfo.symbol} to ZkSync`,
       });
+      return (
+        await this.txnClient.submit(this.hubChainId, [
+          { contract: l1TokenBridge, chainId: this.hubChainId, method: "deposit", args, value: l2TransactionBaseCost },
+        ])
+      )[0];
     }
-
-    // TODO: For now, execute the multicaller client here because the BaseAdapter interface expects this function to
-    // return a TransactionResponse object including a transaction hash. In the future, change all the other
-    // L2 adapters to also use the multicaller client so that the downstream caller, i.e. the Relayer, can potentially
-    // batch together several rebalance transactions.
-    const hashes = await multicallerClient.executeTransactionQueue();
-    // Send latest hash which should be the call to the ZkSync system contract.
-    return { hash: hashes.at(-1) } as TransactionResponse;
   }
 
   /**
@@ -262,7 +264,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.
-      const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
+      const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[this.hubChainId].weth.abi, l2Signer);
       const method = "deposit";
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });

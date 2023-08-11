@@ -1,11 +1,12 @@
 import { expect, ethers, SignerWithAddress, createSpyLogger, winston } from "./utils";
 import { BigNumber, deployConfigStore, FakeContract, hubPoolFixture, smock, toBN } from "./utils";
-import { MockHubPoolClient } from "./mocks";
-import { bnToHex, getL2TokenAddresses } from "../src/utils";
-import { ConfigStoreClient, SpokePoolClient } from "../src/clients";
+import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+import { bnToHex, getL2TokenAddresses, toBNWei } from "../src/utils";
+import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
 import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../src/common";
+import * as zksync from "zksync-web3";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 let hubPoolClient: MockHubPoolClient;
@@ -27,7 +28,11 @@ let l1PolygonRootChainManager: FakeContract;
 // Arbitrum contracts
 let l1ArbitrumBridge: FakeContract;
 
-const enabledChainIds = [1, 10, 137, 288, 42161];
+// ZkSync contracts
+let l1MailboxContract: FakeContract;
+let l1ZkSyncBridge: FakeContract;
+
+const enabledChainIds = [1, 10, 137, 288, 42161, 324];
 
 const mainnetTokens = {
   usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -42,14 +47,14 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     ({ spyLogger } = createSpyLogger());
 
     const { configStore } = await deployConfigStore(owner, []);
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+    const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
 
     await configStoreClient.update();
 
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();
-    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, null, [relayer.address]);
+    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
 
     await constructChainSpecificFakes();
 
@@ -125,7 +130,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
 
   it("Correctly sends tokens to chain: Polygon", async function () {
-    const chainId = 137; // Boba ChainId
+    const chainId = 137;
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
@@ -157,7 +162,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
 
   it("Correctly sends tokens to chain: Arbitrum", async function () {
-    const chainId = 42161; // Boba ChainId
+    const chainId = 42161;
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
@@ -197,6 +202,42 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
   });
+
+  it("Correctly sends tokens to chain: zkSync", async function () {
+    const chainId = 324;
+    l1MailboxContract.l2TransactionBaseCost.returns(toBNWei("0.2"));
+    //  ERC20 tokens:
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
+    expect(l1ZkSyncBridge.deposit).to.have.been.calledWith(
+      relayer.address, // user
+      mainnetTokens["usdc"], // root token
+      amountToSend, // deposit data. bytes encoding of the amount to send.
+      2_000_000, // l2 gas limit, default is 2mil if on hardhat network
+      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT // gasPerPubdataLimit
+    );
+    expect(l1ZkSyncBridge.deposit).to.have.been.calledWithValue(toBNWei("0.2"));
+
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
+    expect(l1ZkSyncBridge.deposit).to.have.been.calledWith(
+      relayer.address, // user
+      mainnetTokens["wbtc"], // root token
+      amountToSend, // deposit data. bytes encoding of the amount to send.
+      2_000_000, // l2 gas limit, default is 2mil if on hardhat network
+      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT // gasPerPubdataLimit
+    );
+    expect(l1ZkSyncBridge.deposit).to.have.been.calledWithValue(toBNWei("0.2"));
+
+    // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
+    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWith(
+      relayer.address,
+      amountToSend,
+      2_000_000,
+      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT,
+      relayer.address
+    );
+    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWithValue(0);
+  });
 });
 
 async function seedMocks() {
@@ -231,6 +272,10 @@ async function constructChainSpecificFakes() {
 
   // Arbitrum contracts
   l1ArbitrumBridge = await makeFake("arbitrumErc20GatewayRouter", "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef");
+
+  // zkSync contracts
+  l1ZkSyncBridge = await makeFake("zkSyncDefaultErc20Bridge", "0x57891966931Eb4Bb6FB81430E6cE0A03AAbDe063");
+  l1MailboxContract = await makeFake("zkSyncMailbox", "0x32400084C286CF3E17e7B677ea9583e60a000324");
 }
 
 async function makeFake(contractName: string, address: string) {

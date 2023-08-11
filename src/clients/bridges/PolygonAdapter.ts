@@ -10,6 +10,7 @@ import {
   BigNumberish,
   TransactionResponse,
   resolveTokenSymbols,
+  assert,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -221,6 +222,7 @@ export class PolygonAdapter extends BaseAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<TransactionResponse> {
+    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.
     let args = [address, l1Token, bnToHex(amount)];
