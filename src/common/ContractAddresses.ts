@@ -109,7 +109,7 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
-    // Optimism and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+    // OVM, ZkSync and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
       address: "0x23d52aC1F96a4e98A0cef0830981867e1F881d81",
@@ -133,6 +133,19 @@ export const CONTRACT_ADDRESSES: {
             { internalType: "uint256", name: "amount", type: "uint256" },
           ],
           name: "bridgeWethToPolygon",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "address", name: "to", type: "address" },
+            { internalType: "uint256", name: "amount", type: "uint256" },
+            { internalType: "uint256", name: "l2GasLimit", type: "uint256" },
+            { internalType: "uint256", name: "l2GasPerPubdataByteLimit", type: "uint256" },
+            { internalType: "address", name: "refundRecipient", type: "address" },
+          ],
+          name: "bridgeWethToZkSync",
           outputs: [],
           stateMutability: "nonpayable",
           type: "function",
