@@ -15,9 +15,27 @@ interface PolygonL1Bridge {
     function depositEtherFor(address _to) external payable;
 }
 
+interface ZkSyncL1Bridge {
+    function requestL2Transaction(
+        address _contractL2,
+        uint256 _l2Value,
+        bytes calldata _calldata,
+        uint256 _l2GasLimit,
+        uint256 _l2GasPerPubdataByteLimit,
+        bytes[] calldata _factoryDeps,
+        address _refundRecipient
+    ) external payable;
+
+    function l2TransactionBaseCost(
+        uint256 _gasPrice,
+        uint256 _l2GasLimit,
+        uint256 _l2GasPerPubdataByteLimit
+    ) external pure returns (uint256);
+}
+
 /**
  * @notice Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain
- * bridges for Optimism, Boba and Polygon. Needed as these chains only support bridging of ETH, not WETH.
+ * bridges for OVM chains, ZkSync and Polygon. Needed as these chains only support bridging of ETH, not WETH.
  */
 
 contract AtomicWethDepositor {
@@ -25,6 +43,7 @@ contract AtomicWethDepositor {
     OvmL1Bridge public immutable optimismL1Bridge = OvmL1Bridge(0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1);
     OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
+    ZkSyncL1Bridge public immmutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
 
     function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {
         require(chainId == 10 || chainId == 288, "Can only bridge to Optimism Or boba");
@@ -37,6 +56,31 @@ contract AtomicWethDepositor {
         weth.transferFrom(msg.sender, address(this), amount);
         weth.withdraw(amount);
         polygonL1Bridge.depositEtherFor{ value: amount }(to);
+    }
+
+    function bridgeWethToZkSync(address to, uint256 amount, uint256 l2GasLimit, uint256 l2GasPerPubdataByteLimit, address refundRecipient) public {
+        // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
+        // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
+        // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
+        // contract does here:
+        // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
+        uint256 l2TransactionBaseCost = zkSyncL1Bridge.l2TransactionBaseCost(
+            tx.gasprice,
+            l2GasLimit,
+            l2GasPerPubdataByteLimit
+        );
+        uint256 valueToSubmitXChainMessage = l2TransactionBaseCost + amount;
+        weth.transferFrom(msg.sender, address(this), valueToSubmitXChainMessage);
+        weth.withdraw(valueToSubmitXChainMessage);
+        zkSyncL1Bridge.requestL2Transaction{ msg.value: valueToSubmitXChainMessage }(
+            to,
+            amount,
+            "",
+            l2GasLimit,
+            l2GasPerPubdataByteLimit,
+            new bytes[](0),
+            refundRecipient
+        );
     }
 
     fallback() external payable {}
