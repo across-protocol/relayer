@@ -398,7 +398,7 @@ export async function _buildPoolRebalanceRoot(
  */
 function getWethAndEth(chainId): string[] {
   const wethAndEth = [CONTRACT_ADDRESSES[chainId].weth.address, CONTRACT_ADDRESSES[chainId].eth.address];
-  if (wethAndEth.some((chainId) => !isDefined(chainId))) {
+  if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
     throw new Error(`WETH or ETH address not defined for chain ${chainId}`);
   }
   return wethAndEth;
