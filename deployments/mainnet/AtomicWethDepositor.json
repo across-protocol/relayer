@@ -1,0 +1,161 @@
+{
+  "address": "0x23d52aC1F96a4e98A0cef0830981867e1F881d81",
+  "abi": [
+    {
+      "stateMutability": "payable",
+      "type": "fallback"
+    },
+    {
+      "inputs": [],
+      "name": "baseL1Bridge",
+      "outputs": [
+        {
+          "internalType": "contract OvmL1Bridge",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "bobaL1Bridge",
+      "outputs": [
+        {
+          "internalType": "contract OvmL1Bridge",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint32",
+          "name": "l2Gas",
+          "type": "uint32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "chainId",
+          "type": "uint256"
+        }
+      ],
+      "name": "bridgeWethToOvm",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "bridgeWethToPolygon",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "optimismL1Bridge",
+      "outputs": [
+        {
+          "internalType": "contract OvmL1Bridge",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "polygonL1Bridge",
+      "outputs": [
+        {
+          "internalType": "contract PolygonL1Bridge",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "weth",
+      "outputs": [
+        {
+          "internalType": "contract Weth",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "stateMutability": "payable",
+      "type": "receive"
+    }
+  ],
+  "transactionHash": "0xf3bc3b4f45883ca7285b0abbf02897c4f44c4d310a2cc1c7a50dd39675634265",
+  "receipt": {
+    "to": null,
+    "from": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+    "contractAddress": "0x23d52aC1F96a4e98A0cef0830981867e1F881d81",
+    "transactionIndex": 24,
+    "gasUsed": "574998",
+    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "blockHash": "0xb500ad6b6f23171e4e32ecce14fc7a67f2aa4b39544ba184354d961b0fb0fc54",
+    "transactionHash": "0xf3bc3b4f45883ca7285b0abbf02897c4f44c4d310a2cc1c7a50dd39675634265",
+    "logs": [],
+    "blockNumber": 17889383,
+    "cumulativeGasUsed": "3846996",
+    "status": 1,
+    "byzantium": true
+  },
+  "args": [],
+  "numDeployments": 1,
+  "solcInputHash": "44c6b190a717e10e5d20a93bd6e58bed",
+  "metadata": "{\"compiler\":{\"version\":\"0.8.18+commit.87f61d96\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"stateMutability\":\"payable\",\"type\":\"fallback\"},{\"inputs\":[],\"name\":\"baseL1Bridge\",\"outputs\":[{\"internalType\":\"contract OvmL1Bridge\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"bobaL1Bridge\",\"outputs\":[{\"internalType\":\"contract OvmL1Bridge\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"uint32\",\"name\":\"l2Gas\",\"type\":\"uint32\"},{\"internalType\":\"uint256\",\"name\":\"chainId\",\"type\":\"uint256\"}],\"name\":\"bridgeWethToOvm\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"bridgeWethToPolygon\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"optimismL1Bridge\",\"outputs\":[{\"internalType\":\"contract OvmL1Bridge\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"polygonL1Bridge\",\"outputs\":[{\"internalType\":\"contract PolygonL1Bridge\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"weth\",\"outputs\":[{\"internalType\":\"contract Weth\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"notice\":\"Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain bridges for Optimism, Boba and Polygon. Needed as these chains only support bridging of ETH, not WETH.\",\"version\":1}},\"settings\":{\"compilationTarget\":{\"contracts/AtomicWethDepositor.sol\":\"AtomicWethDepositor\"},\"evmVersion\":\"paris\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\",\"useLiteralContent\":true},\"optimizer\":{\"enabled\":true,\"runs\":1000000},\"remappings\":[],\"viaIR\":true},\"sources\":{\"contracts/AtomicWethDepositor.sol\":{\"content\":\"// SPDX-License-Identifier: GPL-3.0-only\\npragma solidity ^0.8.13;\\n\\ninterface Weth {\\n    function withdraw(uint256 _wad) external;\\n\\n    function transferFrom(address _from, address _to, uint256 _wad) external;\\n}\\n\\ninterface OvmL1Bridge {\\n    function depositETHTo(address _to, uint32 _l2Gas, bytes calldata _data) external payable;\\n}\\n\\ninterface PolygonL1Bridge {\\n    function depositEtherFor(address _to) external payable;\\n}\\n\\n/**\\n * @notice Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain\\n * bridges for Optimism, Boba and Polygon. Needed as these chains only support bridging of ETH, not WETH.\\n */\\n\\ncontract AtomicWethDepositor {\\n    Weth public immutable weth = Weth(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);\\n    OvmL1Bridge public immutable optimismL1Bridge = OvmL1Bridge(0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1);\\n    OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);\\n    OvmL1Bridge public immutable baseL1Bridge = OvmL1Bridge(0x3154Cf16ccdb4C6d922629664174b904d80F2C35);\\n    PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);\\n\\n    function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {\\n        weth.transferFrom(msg.sender, address(this), amount);\\n        weth.withdraw(amount);\\n\\n        if (chainId == 10) {\\n            optimismL1Bridge.depositETHTo{ value: amount }(to, l2Gas, \\\"\\\");\\n        } else if (chainId == 8453) {\\n            baseL1Bridge.depositETHTo{ value: amount }(to, l2Gas, \\\"\\\");\\n        } else if (chainId == 288) {\\n            bobaL1Bridge.depositETHTo{ value: amount }(to, l2Gas, \\\"\\\");\\n        }\\n\\n        revert(\\\"Invalid chainId\\\");\\n    }\\n\\n    function bridgeWethToPolygon(address to, uint256 amount) public {\\n        weth.transferFrom(msg.sender, address(this), amount);\\n        weth.withdraw(amount);\\n        polygonL1Bridge.depositEtherFor{ value: amount }(to);\\n    }\\n\\n    fallback() external payable {}\\n    receive() external payable {}\\n}\\n\",\"keccak256\":\"0x162bb50e8f6e3a8f8852f57fa3830f112eb3d9ae5754f50d5993179307a6aed8\",\"license\":\"GPL-3.0-only\"}},\"version\":1}",
+  "bytecode": "0x61012080604052346100e65773c02aaa39b223fe8d0a0e5c4f27ead9083c756cc26080527399c9fc46f92e8a1c0dec1b1747d010903e884be160a05273dc1664458d2f0b6090bea60a8793a4e66c2f1c0060c052733154cf16ccdb4c6d922629664174b904d80f2c3560e0526101009073a0c68c638235ee32657e8f720a23cec1bfc77c77825261098091826100ec833960805182818160db0152818161067a015261084d015260a0518281816101b20152610520015260c0518281816103ca01526108bb015260e0518281816102e90152610602015251818181610593015261074a0152f35b600080fdfe608060409080825260049081361015610020575b505050361561001e57005b005b600090813560e01c908163019f8e8114610871575080633fc8cef314610802578063b3d5ccc314610626578063b745c3f3146105b7578063c80dcc3814610548578063d3cdc8f9146104d55763e88650c40361001357346102cc5760807ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc3601126102cc576100ad6108df565b6024356044359163ffffffff831683036104d15773ffffffffffffffffffffffffffffffffffffffff6064357f00000000000000000000000000000000000000000000000000000000000000008216803b156104af5788517f23b872dd0000000000000000000000000000000000000000000000000000000081523389820190815230602082015260408101879052889082908190606001038183865af180156104c7579088916104b3575b5050803b156104af57868560248a838d5195869485937f2e1a7d4d0000000000000000000000000000000000000000000000000000000085528401525af180156104a55790879161048d575b5050600a81036102dd57507f00000000000000000000000000000000000000000000000000000000000000001691823b156102d9579161024a9391859388518096819582947f9a2ac6d50000000000000000000000000000000000000000000000000000000084528b84019060809273ffffffffffffffffffffffffffffffffffffffff63ffffffff9216835216602082015260606040820152600060608201520190565b03925af180156102cf576102b8575b505060206064925b51917f08c379a0000000000000000000000000000000000000000000000000000000008352820152600f60248201527f496e76616c696420636861696e496400000000000000000000000000000000006044820152fd5b6102c28291610907565b6102cc5780610259565b80fd5b84513d84823e3d90fd5b8480fd5b61210581036103b057507f00000000000000000000000000000000000000000000000000000000000000001691823b156102d957916103819391859388518096819582947f9a2ac6d50000000000000000000000000000000000000000000000000000000084528b84019060809273ffffffffffffffffffffffffffffffffffffffff63ffffffff9216835216602082015260606040820152600060608201520190565b03925af180156102cf5761039c575b50506020606492610261565b6103a68291610907565b6102cc5780610390565b610120146103c8575b50505050506020606492610261565b7f00000000000000000000000000000000000000000000000000000000000000001691823b156102d957916104629391859388518096819582947f9a2ac6d50000000000000000000000000000000000000000000000000000000084528b84019060809273ffffffffffffffffffffffffffffffffffffffff63ffffffff9216835216602082015260606040820152600060608201520190565b03925af180156102cf57610479575b8080806103b9565b6104838291610907565b6102cc5780610471565b61049690610907565b6104a15785386101a5565b8580fd5b89513d89823e3d90fd5b8680fd5b6104bc90610907565b6104af578638610159565b8a513d8a823e3d90fd5b8380fd5b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b5080fd5b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b50903461054457827ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc3601126105445761065e6108df565b9260243573ffffffffffffffffffffffffffffffffffffffff807f00000000000000000000000000000000000000000000000000000000000000001695863b156104a15783517f23b872dd0000000000000000000000000000000000000000000000000000000081523386820190815230602082015260408101859052909790879089908190606001038183855af180156107e4576107ee575b869750803b156104af5786809160248751809481937f2e1a7d4d000000000000000000000000000000000000000000000000000000008352898c8401525af180156107e4579087916107d0575b5050817f00000000000000000000000000000000000000000000000000000000000000001690813b156104af578693602492865197889586947f4faa8a2600000000000000000000000000000000000000000000000000000000865216908401525af19081156107c757506107b75750f35b6107c090610907565b6102cc5780f35b513d84823e3d90fd5b6107d990610907565b6104a1578538610745565b85513d89823e3d90fd5b9590966107fa90610907565b9486906106f8565b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b90503461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc3601126105445760209073ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b6004359073ffffffffffffffffffffffffffffffffffffffff8216820361090257565b600080fd5b67ffffffffffffffff811161091b57604052565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fdfea2646970667358221220807cc95bb22edc680cb363f6df3c9ee8e27b0b4e56311d1f8b4bde8f0114094664736f6c63430008120033",
+  "deployedBytecode": "0x608060409080825260049081361015610020575b505050361561001e57005b005b600090813560e01c908163019f8e8114610871575080633fc8cef314610802578063b3d5ccc314610626578063b745c3f3146105b7578063c80dcc3814610548578063d3cdc8f9146104d55763e88650c40361001357346102cc5760807ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc3601126102cc576100ad6108df565b6024356044359163ffffffff831683036104d15773ffffffffffffffffffffffffffffffffffffffff6064357f00000000000000000000000000000000000000000000000000000000000000008216803b156104af5788517f23b872dd0000000000000000000000000000000000000000000000000000000081523389820190815230602082015260408101879052889082908190606001038183865af180156104c7579088916104b3575b5050803b156104af57868560248a838d5195869485937f2e1a7d4d0000000000000000000000000000000000000000000000000000000085528401525af180156104a55790879161048d575b5050600a81036102dd57507f00000000000000000000000000000000000000000000000000000000000000001691823b156102d9579161024a9391859388518096819582947f9a2ac6d50000000000000000000000000000000000000000000000000000000084528b84019060809273ffffffffffffffffffffffffffffffffffffffff63ffffffff9216835216602082015260606040820152600060608201520190565b03925af180156102cf576102b8575b505060206064925b51917f08c379a0000000000000000000000000000000000000000000000000000000008352820152600f60248201527f496e76616c696420636861696e496400000000000000000000000000000000006044820152fd5b6102c28291610907565b6102cc5780610259565b80fd5b84513d84823e3d90fd5b8480fd5b61210581036103b057507f00000000000000000000000000000000000000000000000000000000000000001691823b156102d957916103819391859388518096819582947f9a2ac6d50000000000000000000000000000000000000000000000000000000084528b84019060809273ffffffffffffffffffffffffffffffffffffffff63ffffffff9216835216602082015260606040820152600060608201520190565b03925af180156102cf5761039c575b50506020606492610261565b6103a68291610907565b6102cc5780610390565b610120146103c8575b50505050506020606492610261565b7f00000000000000000000000000000000000000000000000000000000000000001691823b156102d957916104629391859388518096819582947f9a2ac6d50000000000000000000000000000000000000000000000000000000084528b84019060809273ffffffffffffffffffffffffffffffffffffffff63ffffffff9216835216602082015260606040820152600060608201520190565b03925af180156102cf57610479575b8080806103b9565b6104838291610907565b6102cc5780610471565b61049690610907565b6104a15785386101a5565b8580fd5b89513d89823e3d90fd5b8680fd5b6104bc90610907565b6104af578638610159565b8a513d8a823e3d90fd5b8380fd5b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b5080fd5b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b50903461054457827ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc3601126105445761065e6108df565b9260243573ffffffffffffffffffffffffffffffffffffffff807f00000000000000000000000000000000000000000000000000000000000000001695863b156104a15783517f23b872dd0000000000000000000000000000000000000000000000000000000081523386820190815230602082015260408101859052909790879089908190606001038183855af180156107e4576107ee575b869750803b156104af5786809160248751809481937f2e1a7d4d000000000000000000000000000000000000000000000000000000008352898c8401525af180156107e4579087916107d0575b5050817f00000000000000000000000000000000000000000000000000000000000000001690813b156104af578693602492865197889586947f4faa8a2600000000000000000000000000000000000000000000000000000000865216908401525af19081156107c757506107b75750f35b6107c090610907565b6102cc5780f35b513d84823e3d90fd5b6107d990610907565b6104a1578538610745565b85513d89823e3d90fd5b9590966107fa90610907565b9486906106f8565b50823461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc360112610544576020905173ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b90503461054457817ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc3601126105445760209073ffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b6004359073ffffffffffffffffffffffffffffffffffffffff8216820361090257565b600080fd5b67ffffffffffffffff811161091b57604052565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fdfea2646970667358221220807cc95bb22edc680cb363f6df3c9ee8e27b0b4e56311d1f8b4bde8f0114094664736f6c63430008120033",
+  "devdoc": {
+    "kind": "dev",
+    "methods": {},
+    "version": 1
+  },
+  "userdoc": {
+    "kind": "user",
+    "methods": {},
+    "notice": "Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain bridges for Optimism, Boba and Polygon. Needed as these chains only support bridging of ETH, not WETH.",
+    "version": 1
+  },
+  "storageLayout": {
+    "storage": [],
+    "types": null
+  }
+}
