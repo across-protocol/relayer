@@ -8,6 +8,7 @@ import {
   winston,
   spreadEventWithBlockNumber,
   assign,
+  Event,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import { MultiCallerClient } from "../MultiCallerClient";
@@ -51,88 +52,70 @@ export class ZKSyncAdapter extends BaseAdapter {
     const atomicWethDepositor = this.getAtomicDepositor();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
+    const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
-    // Store promises for all the event queries we're going to make. They should go in in sets of two in the following
-    // order:
-    // 1. L1 deposit initiated
-    // 2. L2 deposit finalized
-    const promises = [];
+    const processEvent = (event: Event) => {
+      // All events will have _amount and _to parameters.
+      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+        _amount: BigNumberish;
+        _to: string;
+      };
+      return {
+        amount: eventSpread["_amount"],
+        to: eventSpread["_to"],
+        ...eventSpread,
+      };
+    };
 
-    // Iterate over all the addresses we're monitoring.
-    for (const address of this.monitoredAddresses) {
-      // Iterate over all the tokens we're monitoring.
-      for (const l1TokenAddress of l1Tokens.filter(this.isSupportedToken.bind(this))) {
-        // Resolve whether the token is WETH or not.
-        const isWeth = this.isWeth(l1TokenAddress);
+    await Promise.all(
+      this.monitoredAddresses.map((address) =>
+        Promise.all(
+          supportedL1Tokens.map(async (l1TokenAddress) => {
+            // Resolve whether the token is WETH or not.
+            const isWeth = this.isWeth(l1TokenAddress);
 
-        // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
-        // will appear in mailbox.
-        if (isWeth) {
-          // Filter on 'from' address and 'to' address
-          promises.push(
-            paginatedEventQuery(
-              atomicWethDepositor,
-              atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
-              l1SearchConfig
-            )
-          );
-          // Filter on `l2Receiver` address
-          promises.push(paginatedEventQuery(l2EthContract, l2EthContract.filters.Mint(address), l2SearchConfig));
-        } else {
-          // Filter on 'from' and 'to' address
-          promises.push(
-            paginatedEventQuery(
-              l1ERC20Bridge,
-              l1ERC20Bridge.filters.DepositInitiated(null, address, address),
-              l1SearchConfig
-            )
-          );
-          // Filter on `l2Receiver` address and `l1Sender` address
-          promises.push(
-            paginatedEventQuery(l2ERC20Bridge, l2ERC20Bridge.filters.FinalizeDeposit(address, address), l2SearchConfig)
-          );
-        }
-      }
-    }
+            let initiatedQueryResult: ReturnType<typeof processEvent>[];
+            let finalizedQueryResult: ReturnType<typeof processEvent>[];
+            if (isWeth) {
+              // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
+              // will appear in mailbox.
+              [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+                // Filter on 'from' address and 'to' address
+                paginatedEventQuery(
+                  atomicWethDepositor,
+                  atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
+                  l1SearchConfig
+                ).then((events) => events.map(processEvent)),
+                // Filter on `l2Receiver` address
+                paginatedEventQuery(l2EthContract, l2EthContract.filters.Mint(address), l2SearchConfig).then((events) =>
+                  events.map(processEvent)
+                ),
+              ]);
+            } else {
+              [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+                // Filter on 'from' and 'to' address
 
-    const results = await Promise.all(promises);
+                paginatedEventQuery(
+                  l1ERC20Bridge,
+                  l1ERC20Bridge.filters.DepositInitiated(null, address, address),
+                  l1SearchConfig
+                ).then((events) => events.map(processEvent)),
+                // Filter on `l2Receiver` address and `l1Sender` address
 
-    // 2 events per token.
-    const numEventsPerMonitoredAddress = 2 * l1Tokens.length;
+                paginatedEventQuery(
+                  l2ERC20Bridge,
+                  l2ERC20Bridge.filters.FinalizeDeposit(address, address),
+                  l2SearchConfig
+                ).then((events) => events.map(processEvent)),
+              ]);
+            }
 
-    // Segregate the events list by monitored address.
-    const resultsByMonitoredAddress = Object.fromEntries(
-      this.monitoredAddresses.map((monitoredAddress, index) => {
-        const start = index * numEventsPerMonitoredAddress;
-        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
-      })
+            assign(this.l1DepositInitiatedEvents, [address, l1TokenAddress], initiatedQueryResult);
+            assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult);
+          })
+        )
+      )
     );
-
-    // Process events for each monitored address.
-    for (const monitoredAddress of this.monitoredAddresses) {
-      const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
-      // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents,
-      // l2DepositFinalizedEvents state from the BaseAdapter.
-      eventsToProcess.forEach((result, index) => {
-        // Each token has two events.
-        const l1Token = l1Tokens[Math.floor(index / 2)];
-        const events = result.map((event) => {
-          // All events will have _amount and _to parameters.
-          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-            _amount: BigNumberish;
-            _to: string;
-          };
-          return {
-            amount: eventSpread["_amount"],
-            to: eventSpread["_to"],
-            ...eventSpread,
-          };
-        });
-        // Every other event is a deposit initiated event or deposit finalized event.
-        const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
-        assign(eventsStorage, [monitoredAddress, l1Token], events);
-      });
-    }
 
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
     this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;

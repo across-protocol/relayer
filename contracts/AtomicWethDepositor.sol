@@ -43,7 +43,7 @@ contract AtomicWethDepositor {
     OvmL1Bridge public immutable optimismL1Bridge = OvmL1Bridge(0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1);
     OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
-    ZkSyncL1Bridge public immmutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
+    ZkSyncL1Bridge public immutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
 
     event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
 
@@ -60,7 +60,13 @@ contract AtomicWethDepositor {
         polygonL1Bridge.depositEtherFor{ value: amount }(to);
     }
 
-    function bridgeWethToZkSync(address to, uint256 amount, uint256 l2GasLimit, uint256 l2GasPerPubdataByteLimit, address refundRecipient) public {
+    function bridgeWethToZkSync(
+        address to,
+        uint256 amount,
+        uint256 l2GasLimit,
+        uint256 l2GasPerPubdataByteLimit,
+        address refundRecipient
+    ) public {
         // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
         // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
         // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
@@ -74,7 +80,7 @@ contract AtomicWethDepositor {
         uint256 valueToSubmitXChainMessage = l2TransactionBaseCost + amount;
         weth.transferFrom(msg.sender, address(this), valueToSubmitXChainMessage);
         weth.withdraw(valueToSubmitXChainMessage);
-        zkSyncL1Bridge.requestL2Transaction{ msg.value: valueToSubmitXChainMessage }(
+        zkSyncL1Bridge.requestL2Transaction{ value: valueToSubmitXChainMessage }(
             to,
             amount,
             "",
