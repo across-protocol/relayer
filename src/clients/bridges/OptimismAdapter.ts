@@ -1,5 +1,13 @@
 import assert from "assert";
-import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, BigNumberish, TransactionResponse } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  ZERO_ADDRESS,
+  paginatedEventQuery,
+  BigNumberish,
+  TransactionResponse,
+  isDefined,
+} from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import { BaseAdapter } from "./";
@@ -7,6 +15,7 @@ import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { CHAIN_IDs } from "@across-protocol/contracts-v2";
 const { TOKEN_SYMBOLS_MAP } = constants;
 
 export class OptimismAdapter extends BaseAdapter {
@@ -31,7 +40,15 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, 10, monitoredAddresses, logger, availableTokenSymbols);
+    super(
+      spokePoolClients,
+      10,
+      monitoredAddresses,
+      logger,
+      Object.values(TOKEN_SYMBOLS_MAP)
+        .filter(({ addresses }) => isDefined(addresses[CHAIN_IDs.OPTIMISM]))
+        .map(({ symbol }) => symbol)
+    );
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
   }

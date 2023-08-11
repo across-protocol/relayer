@@ -15,16 +15,12 @@ import { MultiCallerClient } from "../MultiCallerClient";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle } from "@across-protocol/sdk-v2";
 import { TransactionClient } from "../TransactionClient";
 import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 import { BigNumberish } from "../../utils/FormattingUtils";
-
-// Tokens we know for sure that use the default L1 ERC20 bridge to bridge to ZkSync. This is added here for safety
-// so that we don't accidentally burn tokens by sending them over the wrong bridge contract.
-const supportedERC20s = ["USDC", "USDT", "WBTC", "WETH"];
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -39,7 +35,15 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly multicallerClient: MultiCallerClient,
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, supportedERC20s);
+    super(
+      spokePoolClients,
+      324,
+      monitoredAddresses,
+      logger,
+      Object.values(TOKEN_SYMBOLS_MAP)
+        .filter(({ addresses }) => isDefined(addresses[CHAIN_IDs.ZK_SYNC]))
+        .map(({ symbol }) => symbol)
+    );
     this.txnClient = new TransactionClient(logger);
   }
 

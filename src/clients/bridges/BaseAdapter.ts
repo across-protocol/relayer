@@ -14,7 +14,7 @@ import {
   MakeOptional,
   AnyObject,
   BigNumber,
-  isDefined,
+  matchTokenSymbol,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
@@ -264,23 +264,15 @@ export abstract class BaseAdapter {
    * @returns True if l1Token is supported
    */
   isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
-    // Resolve the token info for this address on the hub chain
-    const tokenInfoMatches = Object.values(TOKEN_SYMBOLS_MAP).filter(
-      ({ addresses }) => addresses[this.hubChainId] === l1Token
-    );
+    const relevantSymbols = matchTokenSymbol(l1Token, this.hubChainId);
 
-    // If no tokens match this address, return that the token is not supported
-    if (tokenInfoMatches.length === 0) {
+    // If we don't have a symbol for this token, return that the token is not supported
+    if (relevantSymbols.length === 0) {
       return false;
     }
 
-    // Resolve the symbols from the token lists
-    const symbolsMatched = tokenInfoMatches.map(({ symbol }) => symbol);
-
-    // We need to make sure the supported tokens list includes at least one
-    // of the symbols that we've matched. If there is an inclusion, then
-    // the token is supported. Otherwise, it is not.
-    return symbolsMatched.some((symbol) => this.supportedTokens.includes(symbol));
+    // if the symbol is not in the supported tokens list, it's not supported
+    return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
 
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
