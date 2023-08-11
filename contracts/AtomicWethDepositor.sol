@@ -45,7 +45,7 @@ contract AtomicWethDepositor {
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
     ZkSyncL1Bridge public immmutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
 
-    event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
+    event ZkSyncEthDepositInitiated(address indexed from, address to, uint256 amount);
 
     function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {
         require(chainId == 10 || chainId == 288, "Can only bridge to Optimism Or boba");
