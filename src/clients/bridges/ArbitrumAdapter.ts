@@ -185,7 +185,7 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
-    throw new Error("Unneccessary to wrap ETH on Arbitrum");
+    throw new Error("Unnecessary to wrap ETH on Arbitrum");
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
