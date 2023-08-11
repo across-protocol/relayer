@@ -1,5 +1,5 @@
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
-import { BigNumber, ERC20, ethers, ZERO_ADDRESS, min, isDefined } from "../utils";
+import { BigNumber, ERC20, ethers, ZERO_ADDRESS, min } from "../utils";
 
 // This type is used to map used and current balances of different users.
 export interface BalanceMap {
@@ -145,7 +145,7 @@ export class BalanceAllocator {
   isEthAddress(chainId: number, tokenAddress: string): boolean {
     // If there is an ETH address defined in CONTRACT_ADDRESSES, use it, otherwise assume ETH address is the zero
     // address.
-    return ( CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS ) === tokenAddress;
+    return (CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS) === tokenAddress;
   }
 
   // This method is primarily here to be overriden for testing purposes.
