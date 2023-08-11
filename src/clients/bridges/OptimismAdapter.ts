@@ -9,8 +9,6 @@ import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
 const { TOKEN_SYMBOLS_MAP } = constants;
 
-export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
-
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   private txnClient: TransactionClient;
