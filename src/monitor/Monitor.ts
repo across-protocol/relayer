@@ -63,17 +63,19 @@ export class Monitor {
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
   private balanceAllocator: BalanceAllocator;
+  // Chains for each spoke pool client.
   public monitorChains: number[];
+  // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
+  // have an inventory manager adapter.
+  public crossChainAdapterSupportedChains: number[];
 
   public constructor(
     readonly logger: winston.Logger,
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    const adapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
-    this.monitorChains = Object.values(clients.spokePoolClients)
-      .map(({ chainId }) => chainId)
-      .filter((x) => adapterSupportedChains.includes(x));
+    this.crossChainAdapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
+    this.monitorChains = Object.values(clients.spokePoolClients).map(({ chainId }) => chainId);
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
@@ -81,6 +83,7 @@ export class Monitor {
       at: "Monitor#constructor",
       message: "Initialized monitor",
       monitorChains: this.monitorChains,
+      crossChainAdapterSupportedChains: this.crossChainAdapterSupportedChains,
     });
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
   }
@@ -509,7 +512,7 @@ export class Monitor {
     }
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
-    for (const chainId of this.monitorChains) {
+    for (const chainId of this.crossChainAdapterSupportedChains) {
       // If chain wasn't active in latest bundle, then skip it.
       const chainIndex = this.clients.hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
       if (chainIndex >= lastFullyExecutedBundle.bundleEvaluationBlockNumbers.length) {
@@ -564,7 +567,7 @@ export class Monitor {
 
   updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable): void {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
-    for (const chainId of this.monitorChains) {
+    for (const chainId of this.crossChainAdapterSupportedChains) {
       for (const l1Token of allL1Tokens) {
         const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
           relayer,

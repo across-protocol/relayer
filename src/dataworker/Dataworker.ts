@@ -37,6 +37,7 @@ import {
   blockRangesAreInvalidForSpokeClients,
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
+  l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
 } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
@@ -46,8 +47,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
-import { isOvmChain } from "../clients/bridges";
+import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
@@ -71,8 +71,6 @@ type ProposeRootBundleReturnType = {
   slowFillLeaves: SlowFillLeaf[];
   slowFillTree: MerkleTree<SlowFillLeaf>;
 };
-
-const ovmWethTokens = [CONTRACT_ADDRESSES[10].weth.address, CONTRACT_ADDRESSES[10].eth.address];
 
 export type PoolRebalanceRoot = {
   runningBalances: RunningBalances;
@@ -1522,9 +1520,10 @@ export class Dataworker {
           const amountRequired = getRefund(relayData.amount.sub(amountFilled), relayData.realizedLpFeePct);
           const success = await balanceAllocator.requestBalanceAllocation(
             relayData.destinationChainId,
-            isOvmChain(relayData.destinationChainId) && ovmWethTokens.includes(relayData.destinationToken)
-              ? ovmWethTokens
-              : [relayData.destinationToken],
+            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
+              relayData.destinationToken,
+              relayData.destinationChainId
+            ),
             client.spokePool.address,
             amountRequired
           );
@@ -2096,9 +2095,7 @@ export class Dataworker {
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
           const success = await balanceAllocator.requestBalanceAllocation(
             leaf.chainId,
-            isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)
-              ? ovmWethTokens
-              : [leaf.l2TokenAddress],
+            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(leaf.l2TokenAddress, leaf.chainId),
             client.spokePool.address,
             totalSent
           );
