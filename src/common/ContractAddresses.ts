@@ -415,6 +415,14 @@ export const CONTRACT_ADDRESSES: {
       ],
     },
   },
+  324: {
+    eth: {
+      address: "0x000000000000000000000000000000000000800A",
+    },
+    weth: {
+      address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
+    },
+  },
   42161: {
     erc20Gateway: {
       abi: [

@@ -15,6 +15,7 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  isDefined,
   MerkleTree,
   winston,
 } from "../utils";
@@ -28,6 +29,7 @@ import { subtractExcessFromPreviousSlowFillsFromRunningBalances } from "./PoolRe
 import { getAmountToReturnForRelayerRefundLeaf } from "./RelayerRefundUtils";
 import { sortRefundAddresses, sortRelayerRefundLeaves } from "./RelayerRefundUtils";
 import { utils } from "@across-protocol/sdk-v2";
+import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -386,4 +388,39 @@ export async function _buildPoolRebalanceRoot(
     leaves,
     tree: buildPoolRebalanceLeafTree(leaves),
   };
+}
+
+/**
+ * @notice Returns WETH and ETH token addresses for chain if defined, or throws an error if they're not
+ * in the hardcoded dictionary.
+ * @param chainId chain to check for WETH and ETH addresses
+ * @returns WETH and ETH addresses.
+ */
+function getWethAndEth(chainId): string[] {
+  const wethAndEth = [CONTRACT_ADDRESSES[chainId].weth.address, CONTRACT_ADDRESSES[chainId].eth.address];
+  if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
+    throw new Error(`WETH or ETH address not defined for chain ${chainId}`);
+  }
+  return wethAndEth;
+}
+/**
+ * @notice Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,
+ * so if the l2TokenAddress is WETH and the SpokePool is one such chain that holds both ETH and WETH,
+ * then it should return both ETH and WETH. For other chains, it should only return the l2TokenAddress.
+ * @param l2TokenAddress L2 token address in spoke leaf that we want to get addresses to check spoke balances for
+ * @param l2ChainId L2 chain of Spoke
+ * @returns Tokens that we should check the SpokePool balance for in order to execute a spoke leaf for
+ * `l2TokenAddress` on `l2ChainId`.
+ */
+export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
+  l2TokenAddress: string,
+  l2ChainId: number
+): string[] {
+  const spokesThatHoldEthAndWeth = [10, 324];
+  if (!spokesThatHoldEthAndWeth.includes(l2ChainId)) {
+    return [l2TokenAddress];
+  }
+  // If we get to here, ETH and WETH addresses should be defined, or we'll throw an error.
+  const ethAndWeth = getWethAndEth(l2ChainId);
+  return ethAndWeth.includes(l2TokenAddress) ? ethAndWeth : [l2TokenAddress];
 }
