@@ -138,6 +138,7 @@ export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
   10: 75,
+  8453: 75,
 };
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
@@ -198,3 +199,7 @@ export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
   target: string;
 };
+
+// These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
+// a bundle execution is possible with the funds in the pool.
+export const spokesThatHoldEthAndWeth = [10, 324, 8453];
