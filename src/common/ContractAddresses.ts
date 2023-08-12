@@ -128,7 +128,7 @@ export const CONTRACT_ADDRESSES: {
     // Optimism and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0x5313b68C88cC34ad269a5deD27aB5A6a1BE0fddd",
+      address: "0xaA282C4E86beFda4a1E7C9c06165869026D27852",
       abi: [
         { stateMutability: "payable", type: "fallback" },
         {
