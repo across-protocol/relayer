@@ -58,9 +58,9 @@ contract AtomicWethDepositor {
             baseL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 288) {
             bobaL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else {
+            revert("Invalid OVM chainId");
         }
-
-        revert("Invalid chainId");
     }
 
     function bridgeWethToPolygon(address to, uint256 amount) public {
