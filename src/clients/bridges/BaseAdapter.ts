@@ -293,9 +293,10 @@ export abstract class BaseAdapter {
       value: msgValue,
     };
     const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
+    const { contract: targetContract, ...txnRequestData } = txnRequest;
     if (!succeed) {
-      const message = `Failed to simulate ${method} deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
-      this.logger.warn({ at: this.getName(), message, reason, contract: contract.address });
+      const message = `Failed to simulate ${method} deposit from ${txnRequest.chainId} for mainnet token ${l1Token}`;
+      this.logger.warn({ at: this.getName(), message, reason, contract: targetContract.address, txnRequestData });
       throw new Error(`${message} (${reason})`);
     }
 
@@ -308,9 +309,7 @@ export abstract class BaseAdapter {
       l2Token,
       amount,
       contract: contract.address,
-      method,
-      chainId: this.hubChainId,
-      msgValue,
+      txnRequestData,
     });
     if (simMode) {
       this.logger.debug({
