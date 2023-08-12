@@ -9,7 +9,7 @@ import {
   isDefined,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient } from "../../clients";
+import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
@@ -140,43 +140,33 @@ export class OptimismAdapter extends BaseAdapter {
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    const { chainId: destinationChainId, l2Gas, txnClient } = this;
-    assert(destinationChainId === 10, `chainId ${destinationChainId} is not supported`);
+    const { chainId, l2Gas } = this;
 
     const contract = this.getL1TokenGateway(l1Token);
-    const originChainId = this.hubChainId;
 
     let method = this.isSNX(l1Token) ? "depositTo" : "depositERC20";
     let args = this.isSNX(l1Token) ? [address, amount] : [l1Token, l2Token, amount, l2Gas, "0x"];
 
-    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to call bridgeWethToOvm
     // on the atomic depositor contract. Note that value is still 0 as this method will pull WETH from the caller.
     if (this.isWeth(l1Token)) {
       method = "bridgeWethToOvm";
-      args = [address, amount, l2Gas, destinationChainId];
+      args = [address, amount, l2Gas, chainId];
     }
 
     // Pad gas when bridging to Optimism: https://community.optimism.io/docs/developers/bedrock/differences
     const gasLimitMultiplier = 1.5;
-    const _txnRequest: AugmentedTransaction = { contract, chainId: originChainId, method, args, gasLimitMultiplier };
-    const { reason, succeed, transaction: txnRequest } = (await txnClient.simulate([_txnRequest]))[0];
-    if (!succeed) {
-      const message = `Failed to simulate ${method} deposit to chainId ${destinationChainId} for mainnet token ${l1Token}`;
-      this.logger.warn({ at: this.getName(), message, reason });
-      throw new Error(`${message} (${reason})`);
-    }
-
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    if (simMode) {
-      this.logger.debug({
-        at: "OptimismAdapter#sendTokenToTargetChain",
-        message: "Simulated bridging tokens",
-        succeed,
-      });
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
-    }
-    return (await txnClient.submit(originChainId, [txnRequest]))[0];
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      contract,
+      method,
+      args,
+      gasLimitMultiplier,
+      BigNumber.from(0),
+      simMode
+    );
   }
 
   async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {

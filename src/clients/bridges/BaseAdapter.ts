@@ -2,7 +2,7 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { constants as sdkConstants } from "@across-protocol/sdk-v2";
-import { SpokePoolClient, TransactionClient } from "../../clients";
+import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import {
   toBN,
   MAX_SAFE_ALLOWANCE,
@@ -15,12 +15,15 @@ import {
   AnyObject,
   BigNumber,
   matchTokenSymbol,
+  ZERO_ADDRESS,
+  assert,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import { TransactionResponse } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { BigNumberish } from "../../utils/FormattingUtils";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
@@ -267,6 +270,57 @@ export abstract class BaseAdapter {
 
     // if the symbol is not in the supported tokens list, it's not supported
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
+  }
+
+  async _sendTokenToTargetChain(
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumberish,
+    contract: Contract,
+    method: string,
+    args: any[],
+    gasLimitMultiplier: number,
+    msgValue: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse> {
+    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    const _txnRequest: AugmentedTransaction = {
+      contract,
+      chainId: this.hubChainId,
+      method,
+      args,
+      gasLimitMultiplier,
+      value: msgValue,
+    };
+    const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
+    if (!succeed) {
+      const message = `Failed to simulate ${method} deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
+      this.logger.warn({ at: this.getName(), message, reason, contract: contract.address });
+      throw new Error(`${message} (${reason})`);
+    }
+
+    this.logger.debug({
+      at: `${this.getName()}#_sendTokenToTargetChain`,
+      message: `💌⭐️ Bridging tokens${simMode ? " in simulation mode" : ""} from ${this.hubChainId} to ${
+        this.chainId
+      }`,
+      l1Token,
+      l2Token,
+      amount,
+      contract: contract.address,
+      method,
+      chainId: this.hubChainId,
+      msgValue,
+    });
+    if (simMode) {
+      this.logger.debug({
+        at: `${this.getName()}#_sendTokenToTargetChain`,
+        message: "Simulation result",
+        succeed,
+      });
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    }
+    return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
   }
 
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;

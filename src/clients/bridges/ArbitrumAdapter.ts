@@ -9,11 +9,9 @@ import {
   isDefined,
   TransactionResponse,
   resolveTokenSymbols,
-  assert,
-  ZERO_ADDRESS,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient } from "../../clients";
+import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
@@ -174,8 +172,6 @@ export class ArbitrumAdapter extends BaseAdapter {
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-    this.log("Bridging tokens", { l1Token, l2Token, amount });
     const args = [
       l1Token, // token
       address, // to
@@ -184,31 +180,17 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.l2GasPrice, // gasPriceBid
       this.transactionSubmissionData, // data
     ];
-    const method = "outboundTransfer";
-    const _txnRequest: AugmentedTransaction = {
-      contract: this.getL1GatewayRouter(),
-      chainId: this.hubChainId,
-      method,
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      this.getL1GatewayRouter(),
+      "outboundTransfer",
       args,
-      value: this.l1SubmitValue,
-    };
-    const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
-    if (!succeed) {
-      const message = `Failed to simulate ${method} deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
-      this.logger.warn({ at: this.getName(), message, reason });
-      throw new Error(`${message} (${reason})`);
-    }
-
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    if (simMode) {
-      this.logger.debug({
-        at: "ArbitrumAdapter#sendTokenToTargetChain",
-        message: "Simulated bridging tokens",
-        succeed,
-      });
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
-    }
-    return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
+      1,
+      this.l1SubmitValue,
+      simMode
+    );
   }
 
   async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {

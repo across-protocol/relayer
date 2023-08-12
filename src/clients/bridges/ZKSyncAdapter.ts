@@ -4,12 +4,10 @@ import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import {
   paginatedEventQuery,
   TransactionResponse,
-  fromWei,
   winston,
   spreadEventWithBlockNumber,
   assign,
   Event,
-  ZERO_ADDRESS,
   RetryProvider,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
@@ -129,15 +127,13 @@ export class ZKSyncAdapter extends BaseAdapter {
   async sendTokenToTargetChain(
     address: string,
     l1Token: string,
-    _l2Token: string,
+    l2Token: string,
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
     const { chainId: destinationChainId } = this;
     assert(destinationChainId === 324, `chainId ${destinationChainId} is not supported`);
     assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-
-    const mailboxContract = this.getMailboxContract();
 
     // Load common data that we'll need in order to correctly submit an L1 to L2 message. Ultimately we're going to
     // need to know the amount of msg.value that we'll have to send to the ZkSync bridge contract (i.e. Mailbox
@@ -157,138 +153,75 @@ export class ZKSyncAdapter extends BaseAdapter {
     try {
       zkProvider = convertEthersRPCToZKSyncRPC(l2Provider as RetryProvider);
     } catch (error) {
-      this.logger.error({
+      this.logger.warn({
         at: "ZkSyncClient#sendTokenToTargetChain",
         message: "Failed to get zkProvider, are you on a testnet or hardhat network?",
         error,
       });
     }
-    const [l1GasPriceData, l2GasLimit] = await Promise.all([
-      gasPriceOracle.getGasPriceEstimate(l1Provider),
-      isDefined(zkProvider)
-        ? zksync.utils.estimateDefaultBridgeDepositL2Gas(
-            l1Provider,
-            zkProvider,
-            l1Token,
-            amount,
-            address,
-            address,
-            gasPerPubdataLimit
-          )
-        : Promise.resolve(2_000_000),
-    ]);
+    const l2GasLimit = (await isDefined(zkProvider))
+      ? await zksync.utils.estimateDefaultBridgeDepositL2Gas(
+          l1Provider,
+          zkProvider,
+          l1Token,
+          amount,
+          address,
+          address,
+          gasPerPubdataLimit
+        )
+      : 2_000_000;
 
-    // Now figure out the equivalent of the "tx.gasprice".
-    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
-    // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
-    // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
-    // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
-    // contract does here:
-    // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
+    const contract = this.getL1TokenBridge(l1Token);
+    let args = [
+      address, // L2 receiver
+      amount, // Amount
+      l2GasLimit.toString(), // L2 gas limit
+      gasPerPubdataLimit, // GasPerPubdataLimit.
+      address, // Refund recipient. Can set to caller address if an EOA.
+    ];
+    let method = "bridgeWethToZkSync";
+    let value = BigNumber.from(0);
 
-    // The l2TransactionBaseCost needs to be included as msg.value to pay for the transaction. its a bit of an
-    // overestimate if the estimatedL1GasPrice and/or l2GasLimit are overestimates, and if its insufficient then the
-    // L1 transaction will revert.
-    const l2TransactionBaseCost = await mailboxContract.l2TransactionBaseCost(
-      estimatedL1GasPrice,
-      l2GasLimit,
-      gasPerPubdataLimit
-    );
-    this.log("Computed L1-->L2 message parameters", {
-      l2TransactionBaseCost,
-      gasPerPubdataLimit,
-      estimatedL1GasPrice,
-      l1GasPriceData,
-      mailboxContract: mailboxContract.address,
-    });
-
-    const l1TokenBridge = this.getL1TokenBridge(l1Token);
-    if (this.isWeth(l1Token)) {
-      const args = [
-        address, // L2 receiver
-        amount, // Amount
-        l2GasLimit.toString(), // L2 gas limit
-        gasPerPubdataLimit, // GasPerPubdataLimit.
-        address, // Refund recipient. Can set to caller address if an EOA.
-      ];
-      this.logger.debug({
-        at: "ZkSyncClient#sendTokenToTargetChain",
-        message: `💌⭐️ Sending ${fromWei(amount.toString())} ETH to ZkSync`,
-      });
-      const {
-        succeed,
-        reason,
-        transaction: txnRequest,
-      } = (
-        await this.txnClient.simulate([
-          { contract: l1TokenBridge, chainId: this.hubChainId, method: "bridgeWethToZkSync", args },
-        ])
-      )[0];
-      if (!succeed) {
-        const message = `Failed to simulate bridgeWethToZkSync deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
-        this.logger.warn({ at: this.getName(), message, reason });
-        throw new Error(`${message} (${reason})`);
-      }
-      if (simMode) {
-        this.logger.info({
-          at: "ZkSyncClient#sendTokenToTargetChain",
-          message: `💌⭐️ Simulated sending ${fromWei(amount.toString())} ETH to ZkSync`,
-          succeed,
-        });
-        return { hash: ZERO_ADDRESS } as TransactionResponse;
-      } else {
-        return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
-      }
-    }
-    // If the token is an ERC20, use the default ERC20 bridge. We might need to use custom ERC20 bridges for other
-    // tokens in the future but for now, all supported tokens including USDT, USDC and WBTC use this bridge.
-    else {
-      const tokenInfo = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => {
-        return addresses[this.hubChainId] === l1Token;
-      });
-      if (!isDefined(tokenInfo)) {
-        throw new Error(`Cannot find L1 token ${l1Token} on chain ID ${this.hubChainId} in TOKEN_SYMBOLS_MAP`);
-      }
-      const isTokenSupported = this.isSupportedToken(l1Token);
-      if (!isTokenSupported) {
-        throw new Error(`Token ${l1Token} is not supported, make sure to add it to this.supportedERC20s`);
-      }
-      const args = [
+    // If not using AtomicDepositor with WETH, sending over default ERC20 bridge requires including enough
+    // msg.value to cover the L2 transaction cost.
+    if (!this.isWeth(l1Token)) {
+      args = [
         address, // L2 receiver
         l1Token, // L1 token to deposit
         amount, // Amount
         l2GasLimit.toString(), // L2 gas limit
         gasPerPubdataLimit, // GasPerPubdataLimit.
       ];
-      this.logger.debug({
-        at: "ZkSyncClient#sendTokenToTargetChain",
-        message: `💌🪙 Sending ${fromWei(amount.toString(), tokenInfo.decimals)} ${tokenInfo.symbol} to ZkSync`,
+      method = "deposit";
+
+      // Now figure out the equivalent of the "tx.gasprice".
+      const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider);
+      // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
+      // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
+      // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
+      // contract does here:
+      // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
+
+      // The l2TransactionBaseCost needs to be included as msg.value to pay for the transaction. its a bit of an
+      // overestimate if the estimatedL1GasPrice and/or l2GasLimit are overestimates, and if its insufficient then the
+      // L1 transaction will revert.
+
+      const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
+      const l2TransactionBaseCost = await this.getMailboxContract().l2TransactionBaseCost(
+        estimatedL1GasPrice,
+        l2GasLimit,
+        gasPerPubdataLimit
+      );
+      this.log("Computed L1-->L2 message parameters for ERC20 deposit", {
+        l2TransactionBaseCost,
+        gasPerPubdataLimit,
+        estimatedL1GasPrice,
+        l1GasPriceData,
       });
-      const {
-        succeed,
-        reason,
-        transaction: txnRequest,
-      } = (
-        await this.txnClient.simulate([
-          { contract: l1TokenBridge, chainId: this.hubChainId, method: "deposit", args, value: l2TransactionBaseCost },
-        ])
-      )[0];
-      if (!succeed) {
-        const message = `Failed to simulate deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
-        this.logger.warn({ at: this.getName(), message, reason });
-        throw new Error(`${message} (${reason})`);
-      }
-      if (simMode) {
-        this.logger.info({
-          at: "ZkSyncClient#sendTokenToTargetChain",
-          message: `💌⭐️ Simulated sending ${fromWei(amount.toString(), tokenInfo.decimals)} ERC20 to ZkSync`,
-          succeed,
-        });
-        return { hash: ZERO_ADDRESS } as TransactionResponse;
-      } else {
-        return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
-      }
+      value = l2TransactionBaseCost;
     }
+
+    return await this._sendTokenToTargetChain(l1Token, l2Token, amount, contract, method, args, 1, value, simMode);
   }
 
   /**

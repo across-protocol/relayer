@@ -261,7 +261,7 @@ async function seedMocks() {
 
 async function constructChainSpecificFakes() {
   // Shared contracts.
-  l1AtomicDepositor = await makeFake("atomicDepositor", "0x26eaf37ee5daf49174637bdcd2f7759a25206c34");
+  l1AtomicDepositor = await makeFake("atomicDepositor", "0x5313b68C88cC34ad269a5deD27aB5A6a1BE0fddd");
 
   // Optimism contracts
   l1OptimismBridge = await makeFake("ovmStandardBridge", "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1");

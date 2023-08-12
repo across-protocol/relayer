@@ -9,10 +9,9 @@ import {
   BigNumberish,
   TransactionResponse,
   resolveTokenSymbols,
-  assert,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient } from "../../clients";
+import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
@@ -222,7 +221,6 @@ export class PolygonAdapter extends BaseAdapter {
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.
     let args = [address, l1Token, bnToHex(amount)];
@@ -232,29 +230,17 @@ export class PolygonAdapter extends BaseAdapter {
       method = "bridgeWethToPolygon";
       args = [address, amount.toString()];
     }
-    const _txnRequest: AugmentedTransaction = {
-      contract: this.getL1TokenGateway(l1Token),
-      chainId: this.hubChainId,
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      this.getL1TokenGateway(l1Token),
       method,
       args,
-    };
-    const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
-    if (!succeed) {
-      const message = `Failed to simulate ${method} deposit to chainId ${this.chainId} for mainnet token ${l1Token}`;
-      this.logger.warn({ at: this.getName(), message, reason });
-      throw new Error(`${message} (${reason})`);
-    }
-
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    if (simMode) {
-      this.logger.debug({
-        at: "PolygonAdapter#sendTokenToTargetChain",
-        message: "Simulated bridging tokens",
-        succeed,
-      });
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
-    }
-    return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
+      1,
+      BigNumber.from(0),
+      simMode
+    );
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
