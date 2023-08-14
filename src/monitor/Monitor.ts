@@ -21,6 +21,7 @@ import {
   ethers,
   etherscanLink,
   etherscanLinks,
+  getEthAddressForChain,
   getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
@@ -29,7 +30,6 @@ import {
   toBN,
   toWei,
   winston,
-  ZERO_ADDRESS,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -316,6 +316,21 @@ export class Monitor {
     const { monitoredBalances } = this.monitorConfig;
     const balances = await this._getBalances(monitoredBalances);
     const decimalValues = await this._getDecimals(monitoredBalances);
+
+    this.logger.debug({
+      at: "Monitor#checkBalances",
+      message: "Checking balances",
+      currentBalances: monitoredBalances.map(({ chainId, token, account, warnThreshold, errorThreshold }, i) => {
+        return {
+          chainId,
+          token,
+          account,
+          currentBalance: balances[i].toString(),
+          warnThreshold: ethers.utils.parseUnits(warnThreshold.toString(), decimalValues[i]),
+          errorThreshold: ethers.utils.parseUnits(errorThreshold.toString(), decimalValues[i]),
+        };
+      }),
+    });
     const alerts = (
       await Promise.all(
         monitoredBalances.map(
@@ -334,8 +349,9 @@ export class Monitor {
               trippedThreshold = { level: "error", threshold: errorThreshold };
             }
             if (trippedThreshold !== null) {
+              const ethAddressForChain = getEthAddressForChain(chainId);
               const symbol =
-                token === ZERO_ADDRESS
+                token === ethAddressForChain
                   ? getNativeTokenSymbol(chainId)
                   : await new Contract(
                       token,
@@ -913,8 +929,9 @@ export class Monitor {
         if (this.balanceCache[chainId]?.[token]?.[account]) {
           return this.balanceCache[chainId][token][account];
         }
+        const ethAddressForChain = getEthAddressForChain(chainId);
         const balance =
-          token === ZERO_ADDRESS
+          token === ethAddressForChain
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
             : // Use the latest block number the SpokePoolClient is aware of to query balances.
               // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
@@ -939,7 +956,8 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        if (token === ZERO_ADDRESS) {
+        const ethAddressForChain = getEthAddressForChain(chainId);
+        if (token === ethAddressForChain) {
           return 18;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token]) {
