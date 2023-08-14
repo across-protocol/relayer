@@ -67,7 +67,7 @@ const QUERY_HANDLERS: {
   8453: relayFeeCalculator.BaseQueries,
   // Testnets:
   5: relayFeeCalculator.EthereumQueries,
-  280: relayFeeCalculator.ZkSyncQueries,
+  280: relayFeeCalculator.zkSyncGoerliQueries,
   421613: relayFeeCalculator.ArbitrumQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
 };
