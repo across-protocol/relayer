@@ -1,5 +1,4 @@
 import {
-  runTransaction,
   assign,
   Contract,
   BigNumber,
@@ -9,6 +8,7 @@ import {
   isDefined,
   BigNumberish,
   TransactionResponse,
+  resolveTokenSymbols,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -115,7 +115,13 @@ export class PolygonAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 137, monitoredAddresses, logger);
+    super(
+      spokePoolClients,
+      137,
+      monitoredAddresses,
+      logger,
+      resolveTokenSymbols(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
+    );
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
@@ -123,18 +129,16 @@ export class PolygonAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
+    // Skip the tokens if we can't find the corresponding bridge.
+    // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
+    // rather than maintaining a list of native bridge-supported tokens.
+    const availableTokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+
     const promises: Promise<Event[]>[] = [];
     const validTokens: SupportedL1Token[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
-      for (const l1Token of l1Tokens) {
-        // Skip the token if we can't find the corresponding bridge.
-        // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
-        // rather than maintaining a list of native bridge-supported tokens.
-        if (!this.isSupportedToken(l1Token)) {
-          continue;
-        }
-
+      for (const l1Token of availableTokens) {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Token = this.getL2Token(l1Token);
 
@@ -214,7 +218,8 @@ export class PolygonAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.
@@ -225,8 +230,17 @@ export class PolygonAdapter extends BaseAdapter {
       method = "bridgeWethToPolygon";
       args = [address, amount.toString()];
     }
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      this.getL1TokenGateway(l1Token),
+      method,
+      args,
+      1,
+      BigNumber.from(0),
+      simMode
+    );
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
@@ -254,8 +268,7 @@ export class PolygonAdapter extends BaseAdapter {
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      const atomicDepositor = CONTRACT_ADDRESSES[1].atomicDepositor;
-      return new Contract(atomicDepositor.address, atomicDepositor.abi, this.getSigner(1));
+      return this.getAtomicDepositor();
     } else {
       return new Contract(
         CONTRACT_ADDRESSES[1].polygonRootChainManager.address,
@@ -274,7 +287,7 @@ export class PolygonAdapter extends BaseAdapter {
     );
   }
 
-  private isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
-    return l1Token in tokenToBridge;
+  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
+    throw new Error("Unneccessary to wrap ETH on Polygon");
   }
 }
