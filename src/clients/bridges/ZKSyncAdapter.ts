@@ -14,9 +14,9 @@ import { SpokePoolClient } from "../SpokePoolClient";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
-import { gasPriceOracle } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
 import { BigNumberish } from "../../utils/FormattingUtils";
 
@@ -30,15 +30,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      324,
-      monitoredAddresses,
-      logger,
-      Object.values(TOKEN_SYMBOLS_MAP)
-        .filter(({ addresses }) => isDefined(addresses[CHAIN_IDs.ZK_SYNC]))
-        .map(({ symbol }) => symbol)
-    );
+    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC"]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -67,56 +59,48 @@ export class ZKSyncAdapter extends BaseAdapter {
       };
     };
 
-    await Promise.all(
-      this.monitoredAddresses.map((address) =>
-        Promise.all(
-          supportedL1Tokens.map(async (l1TokenAddress) => {
-            // Resolve whether the token is WETH or not.
-            const isWeth = this.isWeth(l1TokenAddress);
+    await utils.mapAsync(this.monitoredAddresses, async (address) => {
+      return await utils.mapAsync(supportedL1Tokens, async (l1TokenAddress) => {
+        // Resolve whether the token is WETH or not.
+        const isWeth = this.isWeth(l1TokenAddress);
 
-            let initiatedQueryResult: Event[], finalizedQueryResult: Event[];
-            if (isWeth) {
-              // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
-              // will appear in mailbox.
-              [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
-                // Filter on 'from' address and 'to' address
-                paginatedEventQuery(
-                  atomicWethDepositor,
-                  atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
-                  l1SearchConfig
-                ),
+        let initiatedQueryResult: Event[], finalizedQueryResult: Event[];
+        if (isWeth) {
+          // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
+          // will appear in mailbox.
+          [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+            // Filter on 'from' address and 'to' address
+            paginatedEventQuery(
+              atomicWethDepositor,
+              atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
+              l1SearchConfig
+            ),
 
-                // Filter on transfers between aliased AtomicDepositor address and l2Receiver
-                paginatedEventQuery(
-                  l2EthContract,
-                  l2EthContract.filters.Transfer(aliasedAtomicWethDepositor, address),
-                  l2SearchConfig
-                ),
-              ]);
-            } else {
-              [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
-                // Filter on 'from' and 'to' address
-                paginatedEventQuery(
-                  l1ERC20Bridge,
-                  l1ERC20Bridge.filters.DepositInitiated(null, address, address),
-                  l1SearchConfig
-                ),
+            // Filter on transfers between aliased AtomicDepositor address and l2Receiver
+            paginatedEventQuery(
+              l2EthContract,
+              l2EthContract.filters.Transfer(aliasedAtomicWethDepositor, address),
+              l2SearchConfig
+            ),
+          ]);
+        } else {
+          [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+            // Filter on 'from' and 'to' address
+            paginatedEventQuery(
+              l1ERC20Bridge,
+              l1ERC20Bridge.filters.DepositInitiated(null, address, address),
+              l1SearchConfig
+            ),
 
-                // Filter on `l2Receiver` address and `l1Sender` address
-                paginatedEventQuery(
-                  l2ERC20Bridge,
-                  l2ERC20Bridge.filters.FinalizeDeposit(address, address),
-                  l2SearchConfig
-                ),
-              ]);
-            }
+            // Filter on `l2Receiver` address and `l1Sender` address
+            paginatedEventQuery(l2ERC20Bridge, l2ERC20Bridge.filters.FinalizeDeposit(address, address), l2SearchConfig),
+          ]);
+        }
 
-            assign(this.l1DepositInitiatedEvents, [address, l1TokenAddress], initiatedQueryResult.map(processEvent));
-            assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
-          })
-        )
-      )
-    );
+        assign(this.l1DepositInitiatedEvents, [address, l1TokenAddress], initiatedQueryResult.map(processEvent));
+        assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
+      });
+    });
 
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
     this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
@@ -159,6 +143,8 @@ export class ZKSyncAdapter extends BaseAdapter {
         error,
       });
     }
+    // If zkSync provider can't be created for some reason, default to a very conservative 2mil L2 gas limit
+    // which should be sufficient for this transaction.
     const l2GasLimit = (await isDefined(zkProvider))
       ? await zksync.utils.estimateDefaultBridgeDepositL2Gas(
           l1Provider,
@@ -230,8 +216,8 @@ export class ZKSyncAdapter extends BaseAdapter {
    * @param threshold
    * @returns
    */
-  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
-    const { chainId, txnClient } = this;
+  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+    const { chainId } = this;
     assert(chainId === 324, `chainId ${chainId} is not supported`);
 
     const l2WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
@@ -240,10 +226,9 @@ export class ZKSyncAdapter extends BaseAdapter {
       const l2Signer = this.getSigner(chainId);
       // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.
       const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[this.hubChainId].weth.abi, l2Signer);
-      const method = "deposit";
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
-      return (await txnClient.submit(chainId, [{ contract, chainId, method, args: [], value }]))[0];
+      return await this._wrapEthIfAboveThreshold(contract, value, simMode);
     }
     return null;
   }

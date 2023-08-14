@@ -61,7 +61,7 @@ export async function run(): Promise<void> {
     connectedSigner
   );
   const l2PubdataByteLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
-  const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider, 1);
+  const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider, l1ChainId);
   const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
   // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
   // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
@@ -107,6 +107,7 @@ export async function run(): Promise<void> {
       chainId: args.chainId,
       method,
       args: params,
+      // Empirically I've seen that without this gas cost multiplier, transactions sometimes run out of gas.
       gasLimitMultiplier: 3,
       value: l2TransactionBaseCost.add(args.amount),
       message: "Deposit ETH to ZkSync",
@@ -157,6 +158,7 @@ export async function run(): Promise<void> {
       method,
       args: params,
       value: l2TransactionBaseCost,
+      // See comment above about gas cost multiplier.
       gasLimitMultiplier: 3,
       message: "Deposit ERC20 to ZkSync",
       mrkdwn: "Deposit ERC20 to ZkSync",

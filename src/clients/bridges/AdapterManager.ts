@@ -15,6 +15,12 @@ import { OutstandingTransfers } from "../../interfaces";
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
 
+  // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
+  // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
+  // manager will attempt to wrap ETH on into WETH. This is not necessary for chains that receive WETH, the ERC20,
+  // over the bridge.
+  public chainsToWrapEtherOn = [10, 324];
+
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -79,15 +85,14 @@ export class AdapterManager {
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
   // (not the ERC20).
-  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber): Promise<void> {
-    const chainsToWrapEtherOn = [10, 324];
-    const calls: Promise<TransactionResponse>[] = chainsToWrapEtherOn
+  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber, simMode = false): Promise<void> {
+    const calls: Promise<TransactionResponse>[] = this.chainsToWrapEtherOn
       .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
-      .map((chainId) => this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold));
+      .map((chainId) => this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, simMode));
 
     const wrapTxns = (await Promise.all(calls)).filter(isDefined.bind(this));
     for (let i = 0; i < wrapTxns.length; i++) {
-      const wrapChain = chainsToWrapEtherOn[i];
+      const wrapChain = this.chainsToWrapEtherOn[i];
       const mrkdwn =
         `Ether on chain ${wrapChain} was wrapped due to being over the threshold of ` +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +

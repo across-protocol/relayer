@@ -6,7 +6,8 @@ import {
   paginatedEventQuery,
   BigNumberish,
   TransactionResponse,
-  isDefined,
+  compareAddressesSimple,
+  ethers,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -39,15 +40,18 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(
-      spokePoolClients,
-      10,
-      monitoredAddresses,
-      logger,
-      Object.values(TOKEN_SYMBOLS_MAP)
-        .filter(({ addresses }) => isDefined(addresses[CHAIN_IDs.OPTIMISM]))
-        .map(({ symbol }) => symbol)
-    );
+    super(spokePoolClients, 10, monitoredAddresses, logger, [
+      "DAI",
+      "SNX",
+      "USDC",
+      "USDT",
+      "WETH",
+      "WBTC",
+      "UMA",
+      "BAL",
+      "ACX",
+      "POOL",
+    ]);
     this.l2Gas = 200000;
   }
 
@@ -164,13 +168,13 @@ export class OptimismAdapter extends BaseAdapter {
       method,
       args,
       gasLimitMultiplier,
-      BigNumber.from(0),
+      ethers.constants.Zero,
       simMode
     );
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
-    const { chainId, txnClient } = this;
+  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+    const { chainId } = this;
     assert(chainId === 10, `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[10].weth;
@@ -178,10 +182,9 @@ export class OptimismAdapter extends BaseAdapter {
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
-      const method = "deposit";
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
-      return (await txnClient.submit(chainId, [{ contract, chainId, method, args: [], value }]))[0];
+      return await this._wrapEthIfAboveThreshold(contract, value, simMode);
     }
     return null;
   }
@@ -221,7 +224,7 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   isSNX(l1Token: string): boolean {
-    return l1Token.toLowerCase() === "0xc011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f";
+    return compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]);
   }
 
   private hasCustomL1Bridge(l1Token: string): boolean {

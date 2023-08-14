@@ -1,4 +1,4 @@
-import { assert } from "chai";
+import assert from "assert";
 import { Provider as ZKSyncProvider } from "zksync-web3";
 import { isDefined } from "./TypeGuards";
 import { RetryProvider } from "./ProviderUtils";

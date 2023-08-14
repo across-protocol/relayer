@@ -612,7 +612,7 @@ export class InventoryClient {
       return;
     }
     this.log("Checking ETH->WETH Wrap status");
-    await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold);
+    await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold, this.simMode);
   }
 
   async update(): Promise<void> {

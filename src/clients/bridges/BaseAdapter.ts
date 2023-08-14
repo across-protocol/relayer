@@ -17,6 +17,7 @@ import {
   matchTokenSymbol,
   ZERO_ADDRESS,
   assert,
+  compareAddressesSimple,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
@@ -239,7 +240,7 @@ export abstract class BaseAdapter {
    * @returns True if l1Token is L1 weth address
    */
   isWeth(l1Token: string): boolean {
-    return l1Token === this.wethAddress || l1Token.toLowerCase() === this.wethAddress.toLowerCase();
+    return compareAddressesSimple(l1Token, this.wethAddress);
   }
 
   /**
@@ -322,6 +323,31 @@ export abstract class BaseAdapter {
     return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
   }
 
+  async _wrapEthIfAboveThreshold(
+    l2WEthContract: Contract,
+    value: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse> {
+    const { chainId, txnClient } = this;
+    const method = "deposit";
+    if (simMode) {
+      const { succeed, reason } = (
+        await txnClient.simulate([{ contract: l2WEthContract, chainId, method, args: [], value }])
+      )[0];
+      this.logger.debug({
+        at: `${this.getName()}#_wrapEthIfAboveThreshold`,
+        message: "Simulation result",
+        l2WEthContract: l2WEthContract.address,
+        value,
+        succeed,
+        reason,
+      });
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    } else {
+      return (await txnClient.submit(chainId, [{ contract: l2WEthContract, chainId, method, args: [], value }]))[0];
+    }
+  }
+
   abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
 
   abstract sendTokenToTargetChain(
@@ -334,5 +360,5 @@ export abstract class BaseAdapter {
 
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 
-  abstract wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null>;
+  abstract wrapEthIfAboveThreshold(threshold: BigNumber, simMode: boolean): Promise<TransactionResponse | null>;
 }
