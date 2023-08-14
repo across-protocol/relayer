@@ -316,6 +316,21 @@ export class Monitor {
     const { monitoredBalances } = this.monitorConfig;
     const balances = await this._getBalances(monitoredBalances);
     const decimalValues = await this._getDecimals(monitoredBalances);
+
+    this.logger.debug({
+      at: "Monitor#checkBalances",
+      message: "Checking balances",
+      currentBalances: monitoredBalances.map(({ chainId, token, account, warnThreshold, errorThreshold }, i) => {
+        return {
+          chainId,
+          token,
+          account,
+          currentBalance: balances[i].toString(),
+          warnThreshold: ethers.utils.parseUnits(warnThreshold.toString(), decimalValues[i]),
+          errorThreshold: ethers.utils.parseUnits(errorThreshold.toString(), decimalValues[i]),
+        };
+      }),
+    });
     const alerts = (
       await Promise.all(
         monitoredBalances.map(
