@@ -1,17 +1,8 @@
-import {
-  BigNumber,
-  isDefined,
-  winston,
-  toBN,
-  createFormatFunction,
-  etherscanLink,
-  Signer,
-  getL2TokenAddresses,
-  TransactionResponse,
-} from "../../utils";
+import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces";
+import { utils } from "@across-protocol/sdk-v2";
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
 
@@ -86,19 +77,12 @@ export class AdapterManager {
   // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
   // (not the ERC20).
   async wrapEthIfAboveThreshold(wrapThreshold: BigNumber, simMode = false): Promise<void> {
-    const calls: Promise<TransactionResponse>[] = this.chainsToWrapEtherOn
-      .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
-      .map((chainId) => this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, simMode));
-
-    const wrapTxns = (await Promise.all(calls)).filter(isDefined.bind(this));
-    for (let i = 0; i < wrapTxns.length; i++) {
-      const wrapChain = this.chainsToWrapEtherOn[i];
-      const mrkdwn =
-        `Ether on chain ${wrapChain} was wrapped due to being over the threshold of ` +
-        `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
-        `${`\nWrap tx: ${etherscanLink(wrapTxns[i].hash, wrapChain)} `}.`;
-      this.logger.info({ at: "AdapterManager", message: `Eth wrapped on target chain ${wrapChain}🎁`, mrkdwn });
-    }
+    await utils.mapAsync(
+      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
+      async (chainId) => {
+        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, simMode);
+      }
+    );
   }
 
   getSigner(chainId: number): Signer {

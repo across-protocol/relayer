@@ -1,7 +1,8 @@
 import { ethers, BigNumber } from "ethers";
-import { utils } from "@across-protocol/sdk-v2";
-import { createFormatFunction } from "../utils";
+import { utils, constants } from "@across-protocol/sdk-v2";
+import { createFormatFunction } from "@uma/common";
 
+export { createFormatFunction };
 export type BigNumberish = ethers.BigNumberish;
 export type BN = ethers.BigNumber;
 
@@ -27,12 +28,44 @@ export const formatFeePct = (relayerFeePct: BigNumber): string => {
   return createFormatFunction(2, 4, false, 16)(toBN(relayerFeePct).toString());
 };
 
-export { createFormatFunction } from "@uma/common";
-
-import { createEtherscanLinkMarkdown } from "@uma/common";
-
 export function etherscanLink(txHashOrAddress: string, chainId: number | string): string {
-  return createEtherscanLinkMarkdown(txHashOrAddress, Number(chainId));
+  return _createEtherscanLinkMarkdown(txHashOrAddress, Number(chainId));
+}
+
+// Generate an etherscan link prefix. If a networkId is provided then the URL will point to this network. Else, assume mainnet.
+export function createEtherscanLinkFromTx(networkId: number): string {
+  let url;
+  if (constants.PUBLIC_NETWORKS[networkId]) {
+    url = `${constants.PUBLIC_NETWORKS[networkId].etherscan}`;
+  } else {
+    url = "https://etherscan.io/";
+  }
+
+  return url;
+}
+
+// Convert either an address or transaction to a shorter version.
+// 0x772871a444c6e4e9903d8533a5a13101b74037158123e6709470f0afbf6e7d94 -> 0x7787...7d94
+export function createShortHexString(hex: string): string {
+  return hex.substring(0, 5) + "..." + hex.substring(hex.length - 6, hex.length);
+}
+
+// Take in either a transaction or an account and generate an etherscan link for the corresponding
+// network formatted in markdown.
+function _createEtherscanLinkMarkdown(hex: string, chainId = 1): string | null {
+  if (hex.substring(0, 2) != "0x") {
+    return null;
+  }
+  const shortURLString = createShortHexString(hex);
+  // Transaction hash
+  if (hex.length == 66) {
+    return `<${createEtherscanLinkFromTx(chainId)}tx/${hex}|${shortURLString}>`;
+  }
+  // Account
+  else if (hex.length == 42) {
+    return `<${createEtherscanLinkFromTx(chainId)}address/${hex}|${shortURLString}>`;
+  }
+  return null;
 }
 
 export function etherscanLinks(txHashesOrAddresses: string[], chainId: number | string): string {

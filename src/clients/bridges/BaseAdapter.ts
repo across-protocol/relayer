@@ -24,7 +24,7 @@ import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import { TransactionResponse } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BigNumberish } from "../../utils/FormattingUtils";
+import { BigNumberish, createFormatFunction } from "../../utils/FormattingUtils";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
@@ -301,11 +301,10 @@ export abstract class BaseAdapter {
       throw new Error(`${message} (${reason})`);
     }
 
+    const message = `💌⭐️ Bridging tokens from ${this.hubChainId} to ${this.chainId}`;
     this.logger.debug({
       at: `${this.getName()}#_sendTokenToTargetChain`,
-      message: `💌⭐️ Bridging tokens${simMode ? " in simulation mode" : ""} from ${this.hubChainId} to ${
-        this.chainId
-      }`,
+      message,
       l1Token,
       l2Token,
       amount,
@@ -320,19 +319,24 @@ export abstract class BaseAdapter {
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     }
-    return (await this.txnClient.submit(this.hubChainId, [txnRequest]))[0];
+    return (await this.txnClient.submit(this.hubChainId, [{ ...txnRequest, message }]))[0];
   }
 
   async _wrapEthIfAboveThreshold(
+    wrapThreshold: BigNumber,
     l2WEthContract: Contract,
     value: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
     const { chainId, txnClient } = this;
     const method = "deposit";
+    const mrkdwn =
+      `Ether on chain ${this.chainId} was wrapped due to being over the threshold of ` +
+      `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.`;
+    const message = `Eth wrapped on target chain ${this.chainId}🎁`;
     if (simMode) {
       const { succeed, reason } = (
-        await txnClient.simulate([{ contract: l2WEthContract, chainId, method, args: [], value }])
+        await txnClient.simulate([{ contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message }])
       )[0];
       this.logger.debug({
         at: `${this.getName()}#_wrapEthIfAboveThreshold`,
@@ -344,7 +348,11 @@ export abstract class BaseAdapter {
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     } else {
-      return (await txnClient.submit(chainId, [{ contract: l2WEthContract, chainId, method, args: [], value }]))[0];
+      return (
+        await txnClient.submit(chainId, [
+          { contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message },
+        ])
+      )[0];
     }
   }
 

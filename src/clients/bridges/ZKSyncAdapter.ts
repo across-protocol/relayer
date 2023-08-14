@@ -207,7 +207,9 @@ export class ZKSyncAdapter extends BaseAdapter {
       value = l2TransactionBaseCost;
     }
 
-    return await this._sendTokenToTargetChain(l1Token, l2Token, amount, contract, method, args, 1, value, simMode);
+    // Empirically I've seen this L1 to L2 message transaction fail with out of gas without a >1 gas limit multiplier
+    // set.
+    return await this._sendTokenToTargetChain(l1Token, l2Token, amount, contract, method, args, 3, value, simMode);
   }
 
   /**
@@ -228,7 +230,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[this.hubChainId].weth.abi, l2Signer);
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
-      return await this._wrapEthIfAboveThreshold(contract, value, simMode);
+      return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
     }
     return null;
   }

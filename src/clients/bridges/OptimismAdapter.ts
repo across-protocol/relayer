@@ -184,7 +184,7 @@ export class OptimismAdapter extends BaseAdapter {
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
-      return await this._wrapEthIfAboveThreshold(contract, value, simMode);
+      return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
     }
     return null;
   }
