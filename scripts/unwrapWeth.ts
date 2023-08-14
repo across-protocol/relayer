@@ -22,6 +22,7 @@ const WETH_ADDRESSES = {
   137: "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619",
   288: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
   324: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
+  8453: "0x4200000000000000000000000000000000000006",
 };
 
 export async function run(): Promise<void> {
