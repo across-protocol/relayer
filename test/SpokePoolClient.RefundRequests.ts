@@ -57,19 +57,32 @@ describe("SpokePoolClient: Refund Requests", async function () {
 
   it("Correctly filters out refund requests based on blockNumber", async function () {
     // New events must come _after_ the current latestBlockNumber.
-    const latestBlockNumber = spokePoolClient.latestBlockNumber;
-    const minExpectedBlockNumber = latestBlockNumber + 1 + spokePoolClient.minBlockRange;
+    const { chainId: repaymentChainId, latestBlockNumber } = spokePoolClient;
+    const nEvents = 5;
+    const minExpectedBlockNumber = latestBlockNumber + nEvents;
 
-    const refundRequestEvents: RefundRequestWithBlock[] = [];
-    for (let blockNumber = latestBlockNumber + 1; blockNumber <= minExpectedBlockNumber; ++blockNumber) {
+    let refundRequestEvents: RefundRequestWithBlock[] = [];
+    for (let txn = 0; txn < nEvents; ++txn) {
       // Barebones Event - only absolutely necessary fields are populated.
+      const blockNumber = latestBlockNumber + 1 + txn;
       const refundRequest = { relayer, originChainId, blockNumber } as RefundRequestWithBlock;
       const testEvent = spokePoolClient.generateRefundRequest(refundRequest);
       spokePoolClient.addEvent(testEvent);
-      refundRequestEvents.push(spreadEventWithBlockNumber(testEvent) as RefundRequestWithBlock);
+      refundRequestEvents.push({
+        ...spreadEventWithBlockNumber(testEvent),
+        repaymentChainId,
+        blockTimestamp: (await testEvent.getBlock()).timestamp,
+      } as RefundRequestWithBlock);
     }
     await spokePoolClient.update();
-    expect(spokePoolClient.latestBlockNumber - latestBlockNumber).to.be.at.least(4);
+    refundRequestEvents = refundRequestEvents.map((e) => {
+      const block = spokePoolClient.blocks[e.blockNumber];
+      return {
+        ...e,
+        blockTimestamp: block.timestamp,
+      };
+    }) as RefundRequestWithBlock[];
+    expect(spokePoolClient.latestBlockNumber - latestBlockNumber).to.be.at.least(nEvents);
 
     // Filter out the RefundRequests at the fringes.
     const fromBlock = latestBlockNumber + 2;

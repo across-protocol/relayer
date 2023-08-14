@@ -12,11 +12,14 @@ export class RelayerConfig extends CommonConfig {
   // If this is false, the relayer will throw an error when fetching prices fails.
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
+  readonly sendingRefundRequestsEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
   readonly relayerGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
+  // List of depositors we only want to send slow fills for.
+  readonly slowDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
@@ -33,12 +36,14 @@ export class RelayerConfig extends CommonConfig {
   constructor(env: ProcessEnv) {
     const {
       RELAYER_DESTINATION_CHAINS,
+      SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
+      SEND_REFUND_REQUESTS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
@@ -52,6 +57,9 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS
       ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
+      : [];
+    this.slowDepositors = SLOW_DEPOSITORS
+      ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
@@ -88,13 +96,14 @@ export class RelayerConfig extends CommonConfig {
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
+    this.sendingRefundRequestsEnabled = SEND_REFUND_REQUESTS !== "false";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
     (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
       : Constants.MIN_DEPOSIT_CONFIRMATIONS),
-      this.chainIdListIndices.forEach((chainId) => {
-        Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+      Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+        Object.keys(this.minDepositConfirmations[threshold]).forEach((chainId) => {
           const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
           assert(
             !isNaN(nBlocks) && nBlocks >= 0,

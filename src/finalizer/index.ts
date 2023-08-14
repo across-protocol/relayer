@@ -31,7 +31,6 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
 } from "../common";
-import * as optimismSDK from "@across-protocol/optimism-sdk";
 config();
 let logger: winston.Logger;
 
@@ -55,7 +54,8 @@ export async function finalize(
 ): Promise<void> {
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = getMultisender(1, hubSigner);
+  const hubChainId = hubPoolClient.chainId;
+  const multicall2 = getMultisender(hubChainId, hubSigner);
   const finalizationsToBatch: {
     callData: Multicall2Call[];
     withdrawals: Withdrawal[];
@@ -82,12 +82,11 @@ export async function finalize(
     }
     const tokensBridged = client.getTokensBridged();
 
+    const currentTime = getCurrentTime();
     if (chainId === 42161) {
       const firstBlockToFinalize = await getBlockForTimestamp(
-        hubPoolClient.chainId,
         chainId,
-        getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime()
+        currentTime - optimisticRollupFinalizationWindow
       );
       logger.debug({
         at: "Finalizer",
@@ -106,12 +105,7 @@ export async function finalize(
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
-      const lastBlockToFinalize = await getBlockForTimestamp(
-        hubPoolClient.chainId,
-        chainId,
-        getCurrentTime() - polygonFinalizationWindow,
-        getCurrentTime()
-      );
+      const lastBlockToFinalize = await getBlockForTimestamp(chainId, currentTime - polygonFinalizationWindow);
       logger.debug({
         at: "Finalizer",
         message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
@@ -130,12 +124,10 @@ export async function finalize(
       finalizationsToBatch.callData.push(...finalizations.callData);
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 10) {
-      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as optimismSDK.CrossChainMessenger;
+      const crossChainMessenger = getOptimismClient(chainId, hubSigner);
       const firstBlockToFinalize = await getBlockForTimestamp(
-        hubPoolClient.chainId,
         chainId,
-        getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime()
+        currentTime - optimisticRollupFinalizationWindow
       );
 
       // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
@@ -189,14 +181,14 @@ export async function finalize(
           message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
             withdrawal.l1TokenSymbol
           } 🪃`,
-          transactionHash: etherscanLink(txn.transactionHash, 1),
+          transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
       finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
         logger.info({
           at: "Finalizer",
           message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
-          transactionHash: etherscanLink(txn.transactionHash, 1),
+          transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
     } catch (_error) {
@@ -277,7 +269,9 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
           commonClients.hubSigner,
           commonClients.hubPoolClient,
           spokePoolClients,
-          config.finalizerChains
+          process.env.FINALIZER_CHAINS
+            ? JSON.parse(process.env.FINALIZER_CHAINS)
+            : commonClients.configStoreClient.getChainIdIndicesForBlock()
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });

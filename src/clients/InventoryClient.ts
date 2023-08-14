@@ -13,9 +13,10 @@ import {
   AnyObject,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { AdapterManager, CrossChainTransferClient, weth9Abi } from "./bridges";
+import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
+import { CONTRACT_ADDRESSES } from "../common";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
@@ -50,11 +51,14 @@ export class InventoryClient {
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
     // We want to skip any l2 token that is not present in the inventory config.
-    if (String(chainId) !== "1" && this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
+    chainId = Number(chainId);
+    if (
+      chainId !== this.hubPoolClient.chainId &&
+      this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined
+    ) {
       return toBN(0);
     }
 
-    chainId = Number(chainId);
     // If the chain does not have this token (EG BOBA on Optimism) then 0.
     const balance =
       this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || toBN(0);
@@ -114,7 +118,8 @@ export class InventoryClient {
   }
 
   getEnabledL2Chains(): number[] {
-    return this.getEnabledChains().filter((chainId) => chainId !== 1);
+    const hubPoolChainId = this.hubPoolClient.chainId;
+    return this.getEnabledChains().filter((chainId) => chainId !== hubPoolChainId);
   }
 
   getL1Tokens(): string[] {
@@ -126,7 +131,7 @@ export class InventoryClient {
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
   trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string): void {
-    this.tokenClient.decrementLocalBalance(1, l1Token, rebalance);
+    this.tokenClient.decrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, rebalance, Number(chainId));
   }
 
@@ -164,15 +169,15 @@ export class InventoryClient {
   // number to the target threshold and:
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
-  async determineRefundChainId(deposit: Deposit): Promise<number> {
-    const destinationChainId = deposit.destinationChainId;
-    if (!this.isInventoryManagementEnabled()) {
+  async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number> {
+    const { amount, destinationChainId } = deposit;
+
+    // Always refund on L1 if the transfer is to L1.
+    if (!this.isInventoryManagementEnabled() || destinationChainId === this.hubPoolClient.chainId) {
       return destinationChainId;
     }
-    if (destinationChainId === 1) {
-      return 1;
-    } // Always refund on L1 if the transfer is to L1.
-    const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
+
+    l1Token ??= this.hubPoolClient.getL1TokenForDeposit(deposit);
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
     if (
@@ -184,7 +189,7 @@ export class InventoryClient {
     const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
     const chainVirtualBalance = this.getBalanceOnChainForL1Token(destinationChainId, l1Token);
     const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(deposit.amount);
+    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(amount);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
 
@@ -195,7 +200,7 @@ export class InventoryClient {
     } catch (e) {
       // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
       // Inventory management can always rebalance from Mainnet to other chains easily if needed.
-      return 1;
+      return this.hubPoolClient.chainId;
     }
 
     // Add upcoming refunds going to this destination chain.
@@ -207,7 +212,7 @@ export class InventoryClient {
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), toBN(0));
     cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
 
-    const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(deposit.amount);
+    const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(amount);
     // Compute what the balance will be on the target chain, considering this relay and the finalization of the
     // transfers that are currently flowing through the canonical bridge.
     const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
@@ -217,7 +222,7 @@ export class InventoryClient {
     // If the post relay allocation, considering funds in transit, is larger than the target threshold then refund on L1
     // Else, refund on destination chian to keep funds within the target.
     const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][destinationChainId].targetPct);
-    const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? 1 : destinationChainId;
+    const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? this.hubPoolClient.chainId : destinationChainId;
 
     this.log("Evaluated refund Chain", {
       chainShortfall,
@@ -356,7 +361,7 @@ export class InventoryClient {
               cumulativeBalance.toString()
             )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
             `${formatter(this.getTokenShortFall(l1Token, chainId).toString())} ${symbol} ` +
-            `tx: ${etherscanLink(hash, 1)}\n`;
+            `tx: ${etherscanLink(hash, this.hubPoolClient.chainId)}\n`;
         }
       }
 
@@ -586,7 +591,7 @@ export class InventoryClient {
 
   async _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
-    const l2Weth = new Contract(_l2Weth, weth9Abi, l2Signer);
+    const l2Weth = new Contract(_l2Weth, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return await runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }

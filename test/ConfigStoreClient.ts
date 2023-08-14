@@ -1,19 +1,18 @@
-import hre from "hardhat";
-import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
+import { mineRandomBlocks, originChainId } from "./utils";
+import { expect, ethers, Contract, SignerWithAddress } from "./utils";
+import { toWei, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
-import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
+import { destinationChainId } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { HubPoolClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
+import { GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { SpokePoolTargetBalance } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
+import { constants } from "@across-protocol/sdk-v2";
+import { AcrossConfigStore } from "@across-protocol/contracts-v2";
 
-let spokePool: Contract, hubPool: Contract, l2Token: Contract;
-let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
+let l1Token: Contract, l2Token: Contract, configStore: AcrossConfigStore;
 let owner: SignerWithAddress;
-
 let configStoreClient: MockConfigStoreClient;
 
 // Same rate model used for across-v1 tests:
@@ -50,27 +49,110 @@ const tokenConfigToUpdate = JSON.stringify({
 });
 
 describe("AcrossConfigStoreClient", async function () {
-  before(async function () {
-    // This test can fail inexplicably due to underlying chain "stall" if it follows after another test.
-    await hre.network.provider.request({ method: "hardhat_reset", params: [] });
-  });
-
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    ({ spokePool, erc20: l2Token } = await deploySpokePoolWithToken(originChainId, repaymentChainId));
-    ({ hubPool, timer, dai: l1Token, weth } = await hubPoolFixture());
-    await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
+    ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
 
-    configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
-    const receipt = await configStore.deployTransaction.wait();
-    const eventSearchConfig = { fromBlock: receipt.blockNumber };
-    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, eventSearchConfig);
+    configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
+    configStoreClient.setConfigStoreVersion(0);
+  });
+
+  it("should properly reason about chain id indices", async function () {
+    const [owner] = await ethers.getSigners();
+    const configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
     configStoreClient.setConfigStoreVersion(0);
 
-    await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
+    // Await the first update.
+    await configStoreClient.update();
+
+    // Sanity check to verify that the config store client is updated
+    expect(configStoreClient.isUpdated).to.be.true;
+
+    // Next, we can test the case where we submit an additional chain ID to our
+    // list of chain IDs.
+    const eventOne = await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+      JSON.stringify([1, 10, 137, 288, 42161, 100])
+    );
+
+    // We want to ensure that enough time has passed so that
+    // we can be sure that the update is far enough away
+    // from the previous update.
+    await mineRandomBlocks();
+
+    // We can submit a set of chain IDs that are not perfect
+    // subsets of the protocol defaults. In this case, we would
+    // expect this to be ignored during our update.
+    const eventTwo = await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+      JSON.stringify([10, 137, 288, 42161, 100])
+    );
+
+    // We want to ensure that enough time has passed so that
+    // we can be sure that the update is far enough away
+    // from the previous update.
+    await mineRandomBlocks();
+
+    // Finally, let's submit a set of chain IDs that contain
+    // duplicates. In this case, we would expect this to be
+    // ignored during our update.
+    const eventThree = await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+      JSON.stringify([1, 10, 137, 288, 42161, 100, 10])
+    );
+
+    // We can now update our client to reflect the changes we made previously
+    await configStoreClient.update();
+
+    // We should first test the case where no Chain ID Updates have been made.
+    // In this case, we should default to a set of protocol defaults as defined
+    // by the UMIP (https://github.com/UMAprotocol/UMIPs/pull/590).
+    expect(configStoreClient.getChainIdIndicesForBlock(0)).to.deep.equal(constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES);
+
+    // We should now expect that after event one, we have a set of chain IDs
+    // that equals the protocol defaults + 100.
+    expect(configStoreClient.getChainIdIndicesForBlock(eventOne.blockNumber)).to.deep.equal([
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
+    ]);
+
+    // We should now expect that after event two, we have a set of chain IDs
+    // that equals the protocol defaults + 100. This is because the second
+    // event is invalid and should be ignored.
+    expect(configStoreClient.getChainIdIndicesForBlock(eventTwo.blockNumber)).to.deep.equal([
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
+    ]);
+
+    // We can also check that the chain IDs haven't changed after event 3 because
+    // event three is invalid as it contains duplicates.
+    expect(configStoreClient.getChainIdIndicesForBlock(eventThree.blockNumber)).to.deep.equal([
+      ...constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES,
+      100,
+    ]);
   });
 
   it("update", async function () {
+    [owner] = await ethers.getSigners();
+    ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
+
+    configStore = (await (await getContractFactory("AcrossConfigStore", owner)).deploy()) as AcrossConfigStore;
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    configStoreClient = new MockConfigStoreClient(
+      createSpyLogger().spyLogger,
+      configStore,
+      { fromBlock },
+      undefined,
+      undefined,
+      undefined,
+      false
+    );
+    configStoreClient.setConfigStoreVersion(0);
+
     // If ConfigStore has no events, stores nothing.
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(0);
@@ -81,15 +163,12 @@ describe("AcrossConfigStoreClient", async function () {
     // Add new TokenConfig events and check that updating again pulls in new events.
     await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
     await configStoreClient.update();
+
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
-    // Update ignores TokenConfig events that don't include all expected keys:
+    // Update ignores TokenConfig events that don't include a rate model:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: sampleRateModel, routeRateModel: { "999-888": sampleRateModel2 } })
-    );
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })
@@ -113,7 +192,7 @@ describe("AcrossConfigStoreClient", async function () {
     expect(configStoreClient.cumulativeMaxL1TokenCountUpdates.length).to.equal(1);
 
     // Update ignores GlobalConfig events that have unexpected key or value type.
-    await configStore.updateGlobalConfig(utf8ToHex("gibberish"), MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF);
+    await configStore.updateGlobalConfig(utf8ToHex("gibberish"), String(MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF));
     await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE), "gibberish");
     await configStore.updateGlobalConfig(
       utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
@@ -148,92 +227,6 @@ describe("AcrossConfigStoreClient", async function () {
       expect(() =>
         configStoreClient.getRateModelForBlockNumber(l2Token.address, 1, 2, initialRateModelUpdate.blockNumber)
       ).to.throw(/No updated rate model events for L1 token/);
-    });
-
-    it("computeRealizedLpFeePct", async function () {
-      const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
-      await l1Token.approve(hubPool.address, amountToLp);
-      await hubPool.addLiquidity(l1Token.address, amountToLp);
-
-      await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
-      await configStoreClient.update();
-      await hubPoolClient.update();
-
-      const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
-      const initialRateModelUpdateTime = (await ethers.provider.getBlock(initialRateModelUpdate.blockNumber)).timestamp;
-
-      // Takes into account deposit amount's effect on utilization. This deposit uses 10% of the pool's liquidity
-      // so the fee should reflect a 10% post deposit utilization.
-      const depositData = {
-        depositId: 0,
-        depositor: owner.address,
-        recipient: owner.address,
-        originToken: l2Token.address,
-        destinationToken: l1Token.address,
-        realizedLpFeePct: toBN(0),
-        amount: amountToLp.div(10),
-        originChainId,
-        destinationChainId: repaymentChainId,
-        relayerFeePct: toBN(0),
-        quoteTimestamp: initialRateModelUpdateTime,
-        // Quote time needs to be >= first rate model event time
-      };
-
-      // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
-      // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
-      expect((await hubPoolClient.computeRealizedLpFeePct(depositData, l1Token.address)).realizedLpFeePct).to.equal(
-        toBNWei("0.000117987509354032")
-      );
-
-      // Next, let's increase the pool utilization from 0% to 60% by sending 60% of the pool's liquidity to
-      // another chain.
-      const leaves = buildPoolRebalanceLeaves(
-        [repaymentChainId],
-        [[l1Token.address]],
-        [[toBN(0)]],
-        [[amountToLp.div(10).mul(6)]], // Send 60% of total liquidity to spoke pool
-        [[toBN(0)]],
-        [0]
-      );
-      const tree = await buildPoolRebalanceLeafTree(leaves);
-      await weth.approve(hubPool.address, totalBond);
-      await hubPool.proposeRootBundle([1], 1, tree.getHexRoot(), mockTreeRoot, mockTreeRoot);
-      await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-      await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
-
-      // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
-      // pool utilization factor.
-      expect(
-        (
-          await hubPoolClient.computeRealizedLpFeePct(
-            {
-              ...depositData,
-              amount: toBNWei("0.0000001"),
-              // Note: we need to set the deposit quote timestamp to one after the utilisation % jumped from 0% to 10%.
-              // This is because the rate model uses the quote time to fetch the liquidity utilization at that quote time.
-              quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
-            },
-            l1Token.address
-          )
-        ).realizedLpFeePct
-      ).to.equal(toBNWei("0.001371068779697899"));
-
-      // Relaying 10% of pool should give exact same result as this test, which sends a relay that is 10% of the pool's
-      // size when the pool is already at 60% utilization. The resulting post-relay utilization is therefore 70%.
-      // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
-      expect(
-        (
-          await hubPoolClient.computeRealizedLpFeePct(
-            {
-              ...depositData,
-              // Same as before, we need to use a timestamp following the `executeRootBundle` call so that we can capture
-              // the current pool utilization at 10%.
-              quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
-            },
-            l1Token.address
-          )
-        ).realizedLpFeePct
-      ).to.equal(toBNWei("0.002081296752280018"));
     });
 
     it("Get token transfer threshold for block", async function () {
@@ -298,6 +291,56 @@ describe("AcrossConfigStoreClient", async function () {
         expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
     });
+
+    it("Get UBA fee config", async function () {
+      // Can have a mix of strings and numbers in config JSON.
+      const realisticConfig = {
+        alpha: {
+          default: "400000000000000",
+          "1-10": 100000000000000,
+          "1-137": 100000000000000,
+          "1-42161": 100000000000000,
+        },
+        gamma: {
+          default: [
+            [500000000000000000, 0],
+            [650000000000000000, "500000000000000"],
+            [750000000000000000, 1000000000000000],
+            ["850000000000000000", 2500000000000000],
+            [900000000000000000, 5000000000000000],
+            [950000000000000000, 50000000000000000],
+          ],
+        },
+        omega: { "10": [[0, 0]], "137": [[0, 0]], "42161": [[0, 0]], default: [[0, 0]] },
+        rebalance: {
+          "10": { threshold_upper: 200000000, target_upper: "100000000" },
+          "137": { threshold_upper: 100000000, target_upper: 0 },
+          "42161": { threshold_upper: "200000000", target_upper: 100000000 },
+        },
+      };
+      const update = JSON.stringify({
+        uba: realisticConfig,
+      });
+      await configStore.updateTokenConfig(l1Token.address, update);
+      await configStoreClient.update();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
+      const parsedConfig = configStoreClient.getUBAConfig(l1Token.address, initialUpdate.blockNumber);
+
+      // Test a few objects
+      expect(parsedConfig).to.not.be.undefined;
+
+      // This is guaranteed to be defined as the expect above would have thrown if it was undefined.
+      if (parsedConfig) {
+        expect(parsedConfig.rebalance["137"].threshold_upper).to.equal("100000000");
+        expect(parsedConfig.gamma.default.length).to.equal(6);
+      }
+
+      // If block number is set too low, returns undefined.
+      expect(configStoreClient.getUBAConfig(l1Token.address, 0)).to.be.undefined;
+
+      // Default returns latest.
+      expect(configStoreClient.getUBAConfig(l1Token.address)).to.not.be.undefined;
+    });
   });
   describe("GlobalConfig", function () {
     it("Gets config store version for time", async function () {
@@ -305,7 +348,10 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.hasLatestConfigStoreVersion).to.be.false;
 
       // Can't set first update to same value as default version:
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), DEFAULT_CONFIG_STORE_VERSION);
+      await configStore.updateGlobalConfig(
+        utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION),
+        String(DEFAULT_CONFIG_STORE_VERSION)
+      );
       // Can't set update to non-integer:
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1.6");
       // Set config store version to 6, making client think it doesn't have latest version, which is 0 in SDK.
@@ -384,6 +430,10 @@ describe("AcrossConfigStoreClient", async function () {
       ).to.throw(/Could not find MaxL1TokenCount/);
     });
     it("Get disabled chain IDs for block range", async function () {
+      // set all possible chains for the next several tests
+      const allPossibleChains = [1, 19, 21, 23];
+      configStoreClient.setAvailableChains(allPossibleChains);
+
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), JSON.stringify([19]));
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), "invalid value");
       await configStore.updateGlobalConfig(
@@ -392,66 +442,57 @@ describe("AcrossConfigStoreClient", async function () {
       );
       await configStoreClient.update();
       const events = await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig());
-      const allPossibleChains = [1, 19, 21, 23];
 
       // When starting before first update, all chains were enabled once in range. Returns whatever is passed in as
       // `allPossibleChains`
-      expect(
-        configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1, allPossibleChains)
-      ).to.deep.equal(allPossibleChains);
-      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[2].blockNumber, allPossibleChains)).to.deep.equal(
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1)).to.deep.equal(
         allPossibleChains
       );
-      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1, [])).to.deep.equal([]);
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[2].blockNumber)).to.deep.equal(allPossibleChains);
 
       // When calling with no to block, returns all enabled chains at from block.
-      expect(configStoreClient.getEnabledChainsInBlockRange(0, undefined, allPossibleChains)).to.deep.equal(
-        allPossibleChains
-      );
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, undefined)).to.deep.equal(allPossibleChains);
+
+      // Expect that calling with no available chains returns an empty array.
+      configStoreClient.setAvailableChains([]);
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1)).to.deep.equal([]);
+
+      // set all possible chains for the next several tests
+      configStoreClient.setAvailableChains(allPossibleChains);
 
       // When starting at first update, 19 is disabled and not re-enabled until the third update. The second
       // update is treated as a no-op since its not a valid chain ID list.
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(
-          events[0].blockNumber,
-          events[1].blockNumber - 1,
-          allPossibleChains
-        )
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[1].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[1].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[1].blockNumber)
       ).to.deep.equal([1, 21, 23]);
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(
-          events[0].blockNumber,
-          events[2].blockNumber - 1,
-          allPossibleChains
-        )
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
+
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber)
       ).to.deep.equal(allPossibleChains);
 
       // When starting at second update, the initial enabled chain list doesn't include 19 since the second update
       // was a no-op.
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(
-          events[1].blockNumber,
-          events[2].blockNumber - 1,
-          allPossibleChains
-        )
+        configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber - 1)
       ).to.deep.equal([1, 21, 23]);
+
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber)
       ).to.deep.equal(allPossibleChains);
 
       // When starting at third update, 19 is enabled and 21 is disabled.
       expect(
-        configStoreClient.getEnabledChainsInBlockRange(events[2].blockNumber, events[2].blockNumber, allPossibleChains)
+        configStoreClient.getEnabledChainsInBlockRange(events[2].blockNumber, events[2].blockNumber)
       ).to.deep.equal([1, 19, 23]);
 
       // Throws if fromBlock > toBlock
-      expect(() => configStoreClient.getEnabledChainsInBlockRange(1, 0, allPossibleChains)).to.throw();
+      expect(() => configStoreClient.getEnabledChainsInBlockRange(1, 0)).to.throw();
 
       // Tests for `getDisabledChainsForBlock)
       expect(configStoreClient.getDisabledChainsForBlock(events[0].blockNumber)).to.deep.equal([19]);

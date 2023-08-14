@@ -1,13 +1,6 @@
 import { ethers } from "../utils";
 import { utils } from "@across-protocol/sdk-v2";
 
-// This array contains all chains that Across supports, although some of the chains could be currently disabled.
-// The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
-// in the same order as the following list. To add a new chain ID, append it to the end of the list. Never delete
-// a chain ID. The on-chain ConfigStore should store a list of enabled/disabled chain ID's that are a subset
-// of this list, so this list is simply the list of all possible Chain ID's that Across could support.
-export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
-
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
@@ -24,9 +17,11 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   1: 28800,
-  10: 1382400,
+  10: 172800, // 1 block every 2 seconds after bedrock
   137: 138240,
   288: 11520,
+  324: 4 * 24 * 60 * 60,
+  8453: 172800, // Same as Optimism.
   42161: 1382400,
 };
 
@@ -60,9 +55,13 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   10: 0,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
+  324: 0,
+  8453: 0,
   42161: 0,
   // Testnets:
   5: 0,
+  280: 0,
+  84531: 0,
   421613: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
@@ -71,19 +70,27 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     10: 60,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
+    324: 0,
+    8453: 60,
     42161: 0,
     // Testnets:
     5: 0,
+    280: 0,
     421613: 0,
+    84531: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
     10: 60,
     137: 80,
     288: 0,
+    324: 0,
+    8453: 60,
     42161: 0,
     // Testnets:
     5: 0,
+    280: 0,
+    84531: 0,
     421613: 0,
   },
 };
@@ -101,20 +108,28 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   10: 10000, // Quick
   137: 3490,
   288: 4990,
+  324: 10000,
+  8453: 10000,
   42161: 10000,
   // Testnets:
   5: 10000,
+  280: 10000,
+  84531: 10000,
   421613: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
   1: 25, // At 12s/block, 25 blocks = 5 mins
-  10: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  10: 150, // 2s/block, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
   288: 5, // At 60s/block, 50 blocks = 25 mins
+  324: 1500, // At 1s/block, 25 mins = 1500 blocks.
+  8453: 750, // At 2s/block, 25 mins = 750 blocks.
   42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   // Testnets:
   5: 0,
+  280: 0,
+  84531: 0,
   421613: 0,
 };
 
@@ -123,6 +138,7 @@ export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
   10: 75,
+  8453: 75,
 };
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
@@ -141,9 +157,13 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   10: 120,
   137: 256,
   288: 0,
+  324: 0,
+  8453: 120,
   42161: 0,
   // Testnets:
   5: 0,
+  280: 0,
+  84531: 0,
   421613: 0,
 };
 
@@ -153,6 +173,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
 } = {
   1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  8453: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -169,10 +190,16 @@ export const multicall3Addresses = {
   10: "0xcA11bde05977b3631167028862bE2a173976CA11",
   137: "0xcA11bde05977b3631167028862bE2a173976CA11",
   288: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  8453: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  84531: "0xcA11bde05977b3631167028862bE2a173976CA11",
   421613: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
   target: string;
 };
+
+// These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
+// a bundle execution is possible with the funds in the pool.
+export const spokesThatHoldEthAndWeth = [10, 324, 8453];

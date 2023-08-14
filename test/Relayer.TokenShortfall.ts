@@ -2,7 +2,13 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
-import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
+import {
+  CHAIN_ID_TEST_LIST,
+  amountToLp,
+  defaultMinDepositConfirmations,
+  defaultTokenConfig,
+  repaymentChainId,
+} from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -43,6 +49,9 @@ describe("Relayer: Token balance shortfall", async function () {
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: originChainId, spokePool: spokePool_1 },
+      { l2ChainId: repaymentChainId, spokePool: spokePool_1 },
+      { l2ChainId: 1, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
@@ -51,9 +60,21 @@ describe("Relayer: Token balance shortfall", async function () {
     ]);
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
+    ({ configStore } = await deployConfigStore(
+      owner,
+      [l1Token],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      CHAIN_ID_TEST_LIST
+    ));
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    await configStoreClient.update();
+
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
+
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
@@ -89,8 +110,8 @@ describe("Relayer: Token balance shortfall", async function () {
       },
       {
         relayerTokens: [],
+        slowDepositors: [],
         relayerDestinationChains: [],
-        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig

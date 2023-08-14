@@ -20,6 +20,15 @@ const destinationChainId2 = destinationChainId + 1;
 let spokePoolClient: SpokePoolClient;
 
 describe("SpokePoolClient: SpeedUp", async function () {
+  const ignoredFields = [
+    "blockNumber",
+    "blockTimestamp",
+    "logIndex",
+    "quoteBlockNumber",
+    "transactionHash",
+    "transactionIndex",
+  ];
+
   beforeEach(async function () {
     [, depositor] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(originChainId));
@@ -57,7 +66,13 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await spokePoolClient.update();
 
     // After speedup should return the appended object with the new fee information and signature.
-    const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
+    const expectedDepositData = {
+      ...deposit,
+      speedUpSignature: speedUpSignature.signature,
+      newRelayerFeePct: newRelayFeePct,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
+    };
     expect(
       deepEqualsWithBigNumber(
         spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock),
@@ -70,7 +85,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
       deepEqualsWithBigNumber(
         spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
         expectedDepositData,
-        ["blockNumber", "logIndex", "quoteBlockNumber", "transactionHash", "transactionIndex"]
+        ignoredFields
       )
     ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
@@ -114,7 +129,13 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await spokePoolClient.update();
 
     // After speedup should return the appended object with the new fee information and signature.
-    const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
+    const expectedDepositData = {
+      ...deposit,
+      speedUpSignature: speedUpSignature.signature,
+      newRelayerFeePct: newRelayFeePct,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
+    };
     expect(
       deepEqualsWithBigNumber(
         spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock),
@@ -126,7 +147,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(
       deepEqualsWithBigNumber(
         spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
-        expectedDepositData
+        expectedDepositData,
+        ignoredFields
       )
     ).to.be.true;
   });
@@ -158,13 +180,11 @@ describe("SpokePoolClient: SpeedUp", async function () {
       deepEqualsWithBigNumber(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock), deposit)
     ).to.be.true;
     expect(
-      deepEqualsWithBigNumber(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0], deposit, [
-        "quoteBlockNumber",
-        "logIndex",
-        "blockNumber",
-        "transactionHash",
-        "transactionIndex",
-      ])
+      deepEqualsWithBigNumber(
+        spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
+        deposit,
+        ignoredFields
+      )
     ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
     expect(spokePoolClient.getDeposits()[0].speedUpSignature).to.deep.equal(undefined);
@@ -210,8 +230,10 @@ describe("SpokePoolClient: SpeedUp", async function () {
     // Should use the faster data between the two speedups.
     const expectedDepositData = {
       ...deposit,
-      speedUpSignature: speedUpFasterSignature,
+      speedUpSignature: speedUpFasterSignature.signature,
       newRelayerFeePct: speedupFaster,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
     };
     expect(
       deepEqualsWithBigNumber(
@@ -223,7 +245,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
       deepEqualsWithBigNumber(
         spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
         expectedDepositData,
-        ["quoteBlockNumber", "logIndex", "blockNumber", "transactionHash", "transactionIndex"]
+        ignoredFields
       )
     ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);

@@ -1,4 +1,4 @@
-import { Contract, ethers, getBlockForTimestamp, getCurrentTime, isEventOlder, sortEventsDescending } from ".";
+import { Contract, ethers, getBlockForTimestamp, isEventOlder, sortEventsDescending } from ".";
 import * as uma from "@uma/contracts-node";
 import { HubPoolClient } from "../clients";
 import { ProposedRootBundle, SortableEvent } from "../interfaces";
@@ -25,12 +25,8 @@ export async function getDisputeForTimestamp(
   const priceRequestBlock =
     disputeRequestBlock !== undefined
       ? disputeRequestBlock
-      : await getBlockForTimestamp(
-          hubPoolClient.chainId,
-          hubPoolClient.chainId,
-          disputeRequestTimestamp,
-          getCurrentTime()
-        );
+      : await getBlockForTimestamp(hubPoolClient.chainId, disputeRequestTimestamp);
+
   const disputes = await dvm.queryFilter(filter, priceRequestBlock, priceRequestBlock);
   return disputes.find((e) => e.args.time.toString() === disputeRequestTimestamp.toString()) as SortableEvent;
 }

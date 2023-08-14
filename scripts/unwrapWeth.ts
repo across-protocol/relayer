@@ -1,4 +1,4 @@
-import { ethers, getSigner, getProvider, WETH9, toBN, isKeyOf } from "../src/utils";
+import { ethers, getSigner, getProvider, WETH9, toBN, isKeyOf, getNetworkName } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 
@@ -21,6 +21,8 @@ const WETH_ADDRESSES = {
   42161: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
   137: "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619",
   288: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+  324: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
+  8453: "0x4200000000000000000000000000000000000006",
 };
 
 export async function run(): Promise<void> {
@@ -48,7 +50,9 @@ export async function run(): Promise<void> {
       await connectedSigner.provider.getBalance(baseSigner.address),
       decimals
     );
-    console.log(`Current ETH balance for account ${baseSigner.address} on Mainnet: ${currentBalance}`);
+    console.log(
+      `Current ETH balance for account ${baseSigner.address} on ${getNetworkName(chainId)}: ${currentBalance}`
+    );
     if ((await connectedSigner.provider.getBalance(baseSigner.address)).lt(toBN(args.amount))) {
       console.log(`ETH balance < ${amountFromWei}, exiting`);
       return;

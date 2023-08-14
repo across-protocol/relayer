@@ -1,11 +1,10 @@
-import { ConfigStoreClient, HubPoolClient } from "../clients";
+import { SpokePoolClient } from "../clients";
 import {
   BigNumberForToken,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
   PoolRebalanceLeaf,
-  ProposedRootBundle,
   SlowFillLeaf,
   SpokePoolClientsByChain,
 } from "../interfaces";
@@ -16,6 +15,7 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  isDefined,
   MerkleTree,
   winston,
 } from "../utils";
@@ -28,6 +28,10 @@ import { updateRunningBalanceForDeposit } from "./PoolRebalanceUtils";
 import { subtractExcessFromPreviousSlowFillsFromRunningBalances } from "./PoolRebalanceUtils";
 import { getAmountToReturnForRelayerRefundLeaf } from "./RelayerRefundUtils";
 import { sortRefundAddresses, sortRelayerRefundLeaves } from "./RelayerRefundUtils";
+import { utils } from "@across-protocol/sdk-v2";
+import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { spokesThatHoldEthAndWeth } from "../common/Constants";
+export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -48,100 +52,21 @@ export function getEndBlockBuffers(
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => blockRangeEndBlockBuffer[chainId] ?? 0);
 }
 
-export function getBlockRangeForChain(
-  blockRange: number[][],
-  chain: number,
-  chainIdListForBundleEvaluationBlockNumbers: number[]
-): number[] {
-  const indexForChain = chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
-  if (indexForChain === -1) {
-    throw new Error(`Could not find chain ${chain} in chain ID list ${chainIdListForBundleEvaluationBlockNumbers}`);
-  }
-  const blockRangeForChain = blockRange[indexForChain];
-  if (!blockRangeForChain || blockRangeForChain.length !== 2) {
-    throw new Error(`Invalid block range for chain ${chain}`);
-  }
-  return blockRangeForChain;
-}
-
-export function getBlockForChain(
-  bundleEvaluationBlockNumbers: number[],
-  chain: number,
-  chainIdListForBundleEvaluationBlockNumbers: number[]
-): number {
-  const indexForChain = chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
-  if (indexForChain === -1) {
-    throw new Error(`Could not find chain ${chain} in chain ID list ${chainIdListForBundleEvaluationBlockNumbers}`);
-  }
-  const blockForChain = bundleEvaluationBlockNumbers[indexForChain];
-  if (blockForChain === undefined) {
-    throw new Error(`Invalid block range for chain ${chain}`);
-  }
-  return blockForChain;
-}
-
-/**
- * Return bundle block range for `rootBundle` whose bundle end blocks were included in the proposal.
- * This amounts to reconstructing the bundle range start block.
- * @param rootBundle Root bundle to return bundle block range for
- * @returns blockRanges: number[][], [[startBlock, endBlock], [startBlock, endBlock], ...]
- */
-export function getImpliedBundleBlockRanges(
-  hubPoolClient: HubPoolClient,
-  configStoreClient: ConfigStoreClient,
-  rootBundle: ProposedRootBundle,
-  chainIdListForBundleEvaluationBlockNumbers: number[]
-): number[][] {
-  const prevRootBundle = hubPoolClient.getLatestFullyExecutedRootBundle(rootBundle.blockNumber);
-  // If chain is disabled for this bundle block range, end block should be same as previous bundle.
-  // Otherwise the range should be previous bundle's endBlock + 1 to current bundle's end block.
-
-  // Get enabled chains for this bundle block range.
-  // Don't let caller override the list of enabled chains when constructing an implied bundle block range,
-  // since this function is designed to reconstruct a historical bundle block range.
-  const enabledChains = configStoreClient.getEnabledChains(
-    getBlockForChain(
-      rootBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-      hubPoolClient.chainId,
-      chainIdListForBundleEvaluationBlockNumbers
-    ),
-    chainIdListForBundleEvaluationBlockNumbers
-  );
-
-  return rootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
-    const chainId = chainIdListForBundleEvaluationBlockNumbers[i];
-    const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
-      ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
-      : 0;
-    if (!enabledChains.includes(chainId)) {
-      return [endBlock.toNumber(), endBlock.toNumber()];
-    }
-    return [fromBlock, endBlock.toNumber()];
-  });
-}
-
 // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
 // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
 export function blockRangesAreInvalidForSpokeClients(
-  spokePoolClients: SpokePoolClientsByChain,
+  spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
-  if (blockRanges.length !== chainIdListForBundleEvaluationBlockNumbers.length) {
-    throw new Error("DataworkerUtils#blockRangesAreInvalidForSpokeClients: Invalid bundle block range length");
-  }
-  return chainIdListForBundleEvaluationBlockNumbers.some((chainId) => {
-    const blockRangeForChain = getBlockRangeForChain(
-      blockRanges,
-      Number(chainId),
-      chainIdListForBundleEvaluationBlockNumbers
-    );
+  return blockRanges.some(([start, end], index) => {
+    const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
-    if (isNaN(blockRangeForChain[1]) || isNaN(blockRangeForChain[0])) {
+    if (isNaN(end) || isNaN(start)) {
       return true;
     }
-    if (blockRangeForChain[1] === blockRangeForChain[0]) {
+    if (start === end) {
       return false;
     }
 
@@ -152,14 +77,11 @@ export function blockRangesAreInvalidForSpokeClients(
 
     const clientLastBlockQueried =
       spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
-    const bundleRangeToBlock = blockRangeForChain[1];
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, blockRangeForChain[0]);
-    return (
-      bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
-    );
+    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, start);
+    return bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried;
   });
 }
 
@@ -226,7 +148,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
         depositId: deposit.deposit.depositId,
         message: "0x",
       },
-      payoutAdjustmentPct: "0",
+      payoutAdjustmentPct: deposit?.relayerBalancingFee?.toString() ?? "0",
     })
   );
 
@@ -247,6 +169,8 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   };
 }
 
+// @dev `runningBalances` is only used in pre-UBA model to determine whether a spoke's running balances
+// are over the target/threshold. In the UBA model, this is handled at the UBA client level.
 export function _buildRelayerRefundRoot(
   endBlockForMainnet: number,
   fillsToRefund: FillsToRefund,
@@ -254,7 +178,8 @@ export function _buildRelayerRefundRoot(
   runningBalances: RunningBalances,
   clients: DataworkerClients,
   maxRefundCount: number,
-  tokenTransferThresholdOverrides: BigNumberForToken
+  tokenTransferThresholdOverrides: BigNumberForToken,
+  isUBA = false
 ): {
   leaves: RelayerRefundLeaf[];
   tree: MerkleTree<RelayerRefundLeaf>;
@@ -276,27 +201,34 @@ export function _buildRelayerRefundRoot(
 
       // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
       // refunds.
-      const l1TokenCounterpart = clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-        repaymentChainId,
-        l2TokenAddress,
-        endBlockForMainnet
-      );
-      const transferThreshold =
-        tokenTransferThresholdOverrides[l1TokenCounterpart] ||
-        clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
 
-      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
-        l1TokenCounterpart,
-        Number(repaymentChainId),
-        endBlockForMainnet
-      );
+      // If UBA model, set amount to return to 0 for now until we match this leaf against a pool rebalance leaf. In
+      // the UBA model, the amount to return is simpler to compute: simply set it equal to the negative
+      // net send amount value if the net send amount is negative.
+      let amountToReturn = toBN(0);
+      if (!isUBA) {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenCounterpartAtBlock(
+          repaymentChainId,
+          l2TokenAddress,
+          endBlockForMainnet
+        );
+        const transferThreshold =
+          tokenTransferThresholdOverrides[l1TokenCounterpart] ||
+          clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
 
-      // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
-      const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-        transferThreshold,
-        spokePoolTargetBalance,
-        runningBalances[repaymentChainId][l1TokenCounterpart]
-      );
+        const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+          l1TokenCounterpart,
+          Number(repaymentChainId),
+          endBlockForMainnet
+        );
+
+        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
+        amountToReturn = getAmountToReturnForRelayerRefundLeaf(
+          transferThreshold,
+          spokePoolTargetBalance,
+          runningBalances[repaymentChainId][l1TokenCounterpart]
+        );
+      }
       for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount) {
         relayerRefundLeaves.push({
           groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
@@ -324,30 +256,37 @@ export function _buildRelayerRefundRoot(
         leaf.l1Tokens[index],
         leaf.chainId
       );
-      // If we've already seen this leaf, then skip.
-      if (
-        relayerRefundLeaves.some(
-          (relayerRefundLeaf) =>
-            relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
-        )
-      ) {
+      // If we've already seen this leaf, then skip. If UBA, reset the net send amount and then skip.
+      const existingLeaf = relayerRefundLeaves.find(
+        (relayerRefundLeaf) =>
+          relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
+      );
+      if (existingLeaf !== undefined) {
+        if (isUBA) {
+          existingLeaf.amountToReturn = netSendAmount.mul(-1);
+        }
         return;
       }
-      const transferThreshold =
-        tokenTransferThresholdOverrides[leaf.l1Tokens[index]] ||
-        clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
 
-      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
-        leaf.l1Tokens[index],
-        leaf.chainId,
-        endBlockForMainnet
-      );
+      // If UBA model we don't need to do the following to figure out the amount to return:
+      let amountToReturn = netSendAmount.mul(-1);
+      if (!isUBA) {
+        const transferThreshold =
+          tokenTransferThresholdOverrides[leaf.l1Tokens[index]] ||
+          clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
 
-      const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-        transferThreshold,
-        spokePoolTargetBalance,
-        runningBalances[leaf.chainId][leaf.l1Tokens[index]]
-      );
+        const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+          leaf.l1Tokens[index],
+          leaf.chainId,
+          endBlockForMainnet
+        );
+
+        amountToReturn = getAmountToReturnForRelayerRefundLeaf(
+          transferThreshold,
+          spokePoolTargetBalance,
+          runningBalances[leaf.chainId][leaf.l1Tokens[index]]
+        );
+      }
       relayerRefundLeaves.push({
         groupIndex: 0, // Will delete this group index after using it to sort leaves for the same chain ID and
         // L2 token address
@@ -413,8 +352,7 @@ export async function _buildPoolRebalanceRoot(
     clients.hubPoolClient,
     spokePoolClients,
     allValidFills,
-    allValidFillsInRange,
-    chainIdListForBundleEvaluationBlockNumbers
+    allValidFillsInRange
   );
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
@@ -451,4 +389,38 @@ export async function _buildPoolRebalanceRoot(
     leaves,
     tree: buildPoolRebalanceLeafTree(leaves),
   };
+}
+
+/**
+ * @notice Returns WETH and ETH token addresses for chain if defined, or throws an error if they're not
+ * in the hardcoded dictionary.
+ * @param chainId chain to check for WETH and ETH addresses
+ * @returns WETH and ETH addresses.
+ */
+function getWethAndEth(chainId): string[] {
+  const wethAndEth = [CONTRACT_ADDRESSES[chainId].weth.address, CONTRACT_ADDRESSES[chainId].eth.address];
+  if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
+    throw new Error(`WETH or ETH address not defined for chain ${chainId}`);
+  }
+  return wethAndEth;
+}
+/**
+ * @notice Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,
+ * so if the l2TokenAddress is WETH and the SpokePool is one such chain that holds both ETH and WETH,
+ * then it should return both ETH and WETH. For other chains, it should only return the l2TokenAddress.
+ * @param l2TokenAddress L2 token address in spoke leaf that we want to get addresses to check spoke balances for
+ * @param l2ChainId L2 chain of Spoke
+ * @returns Tokens that we should check the SpokePool balance for in order to execute a spoke leaf for
+ * `l2TokenAddress` on `l2ChainId`.
+ */
+export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
+  l2TokenAddress: string,
+  l2ChainId: number
+): string[] {
+  if (!spokesThatHoldEthAndWeth.includes(l2ChainId)) {
+    return [l2TokenAddress];
+  }
+  // If we get to here, ETH and WETH addresses should be defined, or we'll throw an error.
+  const ethAndWeth = getWethAndEth(l2ChainId);
+  return ethAndWeth.includes(l2TokenAddress) ? ethAndWeth : [l2TokenAddress];
 }

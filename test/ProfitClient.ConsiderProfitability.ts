@@ -79,14 +79,14 @@ function testProfitability(
   const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd.add(refundFeeUsd));
   const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
 
-  const fillProfitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
+  const profitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
 
   return {
     grossRelayerFeeUsd,
     netRelayerFeePct,
     relayerCapitalUsd,
     netRelayerFeeUsd,
-    fillProfitable,
+    profitable,
   } as FillProfit;
 }
 
@@ -98,8 +98,12 @@ describe("ProfitClient: Consider relay profit", async function () {
     const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(logger, configStore);
 
+    await configStoreClient.update();
+
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
+
+    await hubPoolClient.update();
 
     const { spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
       originChainId,
@@ -283,24 +287,23 @@ describe("ProfitClient: Consider relay profit", async function () {
             const relayerFeePct = _relayerFeePct.gt(maxRelayerFeePct) ? maxRelayerFeePct : _relayerFeePct;
             const deposit = { relayerFeePct, destinationChainId } as Deposit;
 
-            const fill: FillProfit = testProfitability(deposit, fillAmountUsd, gasCostUsd, zeroRefundFee);
+            const expected = testProfitability(deposit, fillAmountUsd, gasCostUsd, zeroRefundFee);
             spyLogger.debug({
-              message: `Expect ${l1Token.symbol} deposit is ${fill.fillProfitable ? "" : "un"}profitable:`,
+              message: `Expect ${l1Token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
               fillAmount,
               fillAmountUsd,
               gasCostUsd,
               grossRelayerFeePct: `${formatFeePct(relayerFeePct)} %`,
               gasCostPct: `${formatFeePct(gasCostPct)} %`,
-              relayerCapitalUsd: fill.relayerCapitalUsd,
+              relayerCapitalUsd: expected.relayerCapitalUsd,
               minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
               minRelayerFeeUsd: minRelayerFeePct.mul(fillAmountUsd).div(fixedPoint),
-              netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)} %`,
-              netRelayerFeeUsd: fill.netRelayerFeeUsd,
+              netRelayerFeePct: `${formatFeePct(expected.netRelayerFeePct)} %`,
+              netRelayerFeeUsd: expected.netRelayerFeeUsd,
             });
 
-            expect(profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token)).to.equal(
-              fill.fillProfitable
-            );
+            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
+            expect(profitable).to.equal(expected.profitable);
           });
         });
       });
@@ -334,9 +337,9 @@ describe("ProfitClient: Consider relay profit", async function () {
             const refundFee = fillAmount.mul(feeMultiplier).div(fixedPoint);
             const nativeRefundFee = nativeFillAmount.mul(feeMultiplier).div(fixedPoint);
             const refundFeeUsd = refundFee.mul(tokenPriceUsd).div(fixedPoint);
-            const fill: FillProfit = testProfitability(deposit, fillAmountUsd, gasCostUsd, refundFeeUsd);
+            const expected = testProfitability(deposit, fillAmountUsd, gasCostUsd, refundFeeUsd);
             spyLogger.debug({
-              message: `Expect ${l1Token.symbol} deposit is ${fill.fillProfitable ? "" : "un"}profitable:`,
+              message: `Expect ${l1Token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
               tokenPrice: formatEther(tokenPriceUsd),
               fillAmount: formatEther(fillAmount),
               fillAmountUsd: formatEther(fillAmountUsd),
@@ -346,16 +349,15 @@ describe("ProfitClient: Consider relay profit", async function () {
               refundFeeUsd: formatEther(refundFeeUsd),
               grossRelayerFeePct: `${formatFeePct(relayerFeePct)} %`,
               gasCostPct: `${formatFeePct(gasCostPct)} %`,
-              relayerCapitalUsd: formatEther(fill.relayerCapitalUsd),
+              relayerCapitalUsd: formatEther(expected.relayerCapitalUsd),
               minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
               minRelayerFeeUsd: formatEther(minRelayerFeePct.mul(fillAmountUsd).div(fixedPoint)),
-              netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)} %`,
-              netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
+              netRelayerFeePct: `${formatFeePct(expected.netRelayerFeePct)} %`,
+              netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            expect(profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token)).to.equal(
-              fill.fillProfitable
-            );
+            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
+            expect(profitable).to.equal(expected.profitable);
           });
         });
       });

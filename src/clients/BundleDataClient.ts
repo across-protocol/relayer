@@ -5,6 +5,7 @@ import {
   FillsToRefund,
   FillWithBlock,
   ProposedRootBundle,
+  RefundRequestWithBlock,
   UnfilledDeposit,
   UnfilledDepositsForOriginChain,
 } from "../interfaces";
@@ -28,7 +29,9 @@ import {
   getEndBlockBuffers,
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
-import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
+import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
+import { clients } from "@across-protocol/sdk-v2";
+const { refundRequestIsValid, isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -89,8 +92,7 @@ export class BundleDataClient {
     const bundleEvaluationBlockRanges = getImpliedBundleBlockRanges(
       this.clients.hubPoolClient,
       this.clients.configStoreClient,
-      bundle,
-      this.chainIdListForBundleEvaluationBlockNumbers
+      bundle
     );
     const { fillsToRefund } = await this.loadData(bundleEvaluationBlockRanges, this.spokePoolClients, false);
 
@@ -111,10 +113,7 @@ export class BundleDataClient {
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber,
-      this.clients.configStoreClient.getEnabledChains(
-        this.clients.hubPoolClient.latestBlockNumber,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      )
+      this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockNumber)
     );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
@@ -177,6 +176,28 @@ export class BundleDataClient {
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
   }> {
+    const mainnetStartBlock = getBlockRangeForChain(
+      blockRangesForChains,
+      this.clients.hubPoolClient.chainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[0];
+    let isUBA = false;
+    if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock, this.clients.hubPoolClient.chainId)) {
+      isUBA = true;
+    }
+    return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
+  }
+  async _loadData(
+    blockRangesForChains: number[][],
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    isUBA = false,
+    logData = true
+  ): Promise<{
+    unfilledDeposits: UnfilledDeposit[];
+    fillsToRefund: FillsToRefund;
+    allValidFills: FillWithBlock[];
+    deposits: DepositWithBlock[];
+  }> {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
@@ -189,9 +210,9 @@ export class BundleDataClient {
       throw new Error("HubPoolClient not updated");
     }
 
-    if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length) {
+    if (blockRangesForChains.length > this.chainIdListForBundleEvaluationBlockNumbers.length) {
       throw new Error(
-        `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
+        `Unexpected block range list length of ${blockRangesForChains.length}, should be <= ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
       );
     }
 
@@ -233,6 +254,9 @@ export class BundleDataClient {
       // total realized LP fee %.
       assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
       allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
+
+      // Note: the UBA model doesn't use the following realized LP fees data but we keep it for backwards
+      // compatibility.
       updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
       // Save deposit as one that is eligible for a slow fill, since there is a fill
@@ -265,19 +289,38 @@ export class BundleDataClient {
       }
     };
 
-    const isChainDisabled = (chainId: number): boolean => {
+    const _isChainDisabled = (chainId: number): boolean => {
       const blockRangeForChain = getBlockRangeForChain(
         blockRangesForChains,
         chainId,
         this.chainIdListForBundleEvaluationBlockNumbers
       );
-      return blockRangeForChain[0] === blockRangeForChain[1];
+      return isChainDisabled(blockRangeForChain);
     };
 
-    const allChainIds = Object.keys(spokePoolClients).map(Number);
+    // Infer chain ID's to load from number of block ranges passed in.
+    const allChainIds = blockRangesForChains.map(
+      (_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index]
+    );
+
+    const validateRefundRequestAndSaveData = async (refundRequest: RefundRequestWithBlock): Promise<void> => {
+      const result = await refundRequestIsValid(spokePoolClients, this.clients.hubPoolClient, refundRequest);
+      if (result.valid) {
+        const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = result.matchingFill;
+        assignValidFillToFillsToRefund(fillsToRefund, fill, refundRequest.repaymentChainId, refundRequest.refundToken);
+        updateTotalRefundAmount(fillsToRefund, fill, refundRequest.repaymentChainId, refundRequest.refundToken);
+      } else {
+        this.logger.warn({
+          at: "SpokePoolClient#validateRefundRequestAndSaveData",
+          message: "Invalid refund request",
+          refundRequest,
+          invalidReason: result.reason,
+        });
+      }
+    };
 
     for (const originChainId of allChainIds) {
-      if (isChainDisabled(originChainId)) {
+      if (_isChainDisabled(originChainId)) {
         continue;
       }
 
@@ -291,7 +334,7 @@ export class BundleDataClient {
         if (originChainId === destinationChainId) {
           continue;
         }
-        if (isChainDisabled(destinationChainId)) {
+        if (_isChainDisabled(destinationChainId)) {
           continue;
         }
 
@@ -328,7 +371,29 @@ export class BundleDataClient {
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
-        await Promise.all(fillsForOriginChain.map(async (fill) => validateFillAndSaveData(fill, blockRangeForChain)));
+        await Promise.all(
+          fillsForOriginChain.map(async (fill) => {
+            // In the UBA model, fills that request repayment on another chain must send a separate refund request
+            // in order to mark their place in the outflow queue for that chain. This is because the UBA determines
+            // fees based on sequencing of events. Pre-UBA, the fee model treats each fill independently so there
+            // is no need to mark a fill's place in line on the repayment chain.
+            if (!isUBA || fill.destinationChainId === fill.repaymentChainId) {
+              validateFillAndSaveData(fill, blockRangeForChain);
+            }
+          })
+        );
+      }
+
+      // Handle fills that requested repayment on a different chain and submitted a refund request.
+      // These should map with only full fills where fill.destinationChainId !== fill.repaymentChainId.
+      if (isUBA) {
+        const blockRangeForChain = getBlockRangeForChain(
+          blockRangesForChains,
+          Number(originChainId),
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+        const refundRequests = originClient.getRefundRequests(blockRangeForChain[0], blockRangeForChain[1]);
+        await Promise.all(refundRequests.map(async (refundRequest) => validateRefundRequestAndSaveData(refundRequest)));
       }
     }
 

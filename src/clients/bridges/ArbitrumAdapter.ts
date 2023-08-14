@@ -13,12 +13,13 @@ import {
 import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
-import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { OutstandingTransfers } from "../../interfaces";
+import { CONTRACT_ADDRESSES } from "../../common";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
+// TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
 const l1Gateways = {
   [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
@@ -31,8 +32,6 @@ const l1Gateways = {
   [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BAL
   [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // ACX
 } as const;
-
-const l1GatewayRouter = "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef";
 
 const l2Gateways = {
   [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "0x096760F208390250649E3e8763348E783AEF5562", // USDC
@@ -178,15 +177,19 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
-    return new Contract(l1Gateways[l1Token], arbitrumL1Erc20GatewayInterface, this.getSigner(1));
+    return new Contract(l1Gateways[l1Token], CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi, this.getSigner(1));
   }
 
   getL1GatewayRouter(): Contract {
-    return new Contract(l1GatewayRouter, arbitrumL1Erc20GatewayInterface, this.getSigner(1));
+    return new Contract(
+      CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address,
+      CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi,
+      this.getSigner(1)
+    );
   }
 
   getL2Bridge(l1Token: SupportedL1Token): Contract {
-    return new Contract(l2Gateways[l1Token], arbitrumL2Erc20GatewayInterface, this.getSigner(this.chainId));
+    return new Contract(l2Gateways[l1Token], CONTRACT_ADDRESSES[42161].erc20Gateway.abi, this.getSigner(this.chainId));
   }
 
   isSupportedToken(l1Token: string): l1Token is SupportedL1Token {

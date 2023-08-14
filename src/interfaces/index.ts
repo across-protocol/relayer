@@ -1,4 +1,4 @@
-import { interfaces } from "@across-protocol/sdk-v2";
+import { clients, interfaces } from "@across-protocol/sdk-v2";
 
 export * from "./InventoryManagement";
 export * from "./SpokePool";
@@ -12,7 +12,6 @@ export type OutstandingTransfers = interfaces.OutstandingTransfers;
 // Common interfaces
 export type SortableEvent = interfaces.SortableEvent;
 export type BigNumberForToken = interfaces.BigNumberForToken;
-export type TreeData<T> = interfaces.TreeData<T>;
 
 // ConfigStore interfaces
 export type ParsedTokenConfig = interfaces.ParsedTokenConfig;
@@ -68,7 +67,9 @@ export type UbaOutflow = interfaces.UbaOutflow;
 export type UbaFlow = interfaces.UbaFlow;
 export type UBASpokeBalanceType = interfaces.UBASpokeBalanceType;
 export type UBAFeeResult = interfaces.UBAFeeResult;
-export type UBAFlowRange = interfaces.UBAFlowRange;
+export type UBABalancingFee = clients.BalancingFeeReturnType;
+export type UBASystemFee = clients.SystemFeeResult;
 export const isUbaInflow = interfaces.isUbaInflow;
 export const isUbaOutflow = interfaces.isUbaOutflow;
 export const outflowIsFill = interfaces.outflowIsFill;
+export const outflowIsRefund = interfaces.outflowIsRefund;

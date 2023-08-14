@@ -56,6 +56,14 @@ const config: HardhatUserConfig = {
       accounts: { mnemonic },
       companionNetworks: { l1: "mainnet" },
     },
+    zksync: {
+      chainId: 324,
+      url: "https://mainnet.era.zksync.io",
+      saveDeployments: true,
+      accounts: { mnemonic },
+      companionNetworks: { l1: "mainnet" },
+      zksync: true,
+    },
     "arbitrum-rinkeby": {
       chainId: 421611,
       url: getNodeUrl("arbitrum-rinkeby", true, 421611),
@@ -68,6 +76,13 @@ const config: HardhatUserConfig = {
       url: getNodeUrl("rinkeby", true, 4),
       saveDeployments: true,
       accounts: { mnemonic },
+    },
+    base: {
+      chainId: 8453,
+      url: "https://mainnet.base.org",
+      saveDeployments: true,
+      accounts: { mnemonic },
+      companionNetworks: { l1: "mainnet" },
     },
   },
   gasReporter: { enabled: process.env.REPORT_GAS !== undefined, currency: "USD" },

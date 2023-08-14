@@ -2,7 +2,7 @@
 import winston from "winston";
 import assert from "assert";
 export { winston, assert };
-export { delay, Logger } from "@uma/financial-templates-lib";
+export { Logger } from "@uma/financial-templates-lib";
 
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, BigNumberish } from "ethers";
 export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
@@ -14,6 +14,7 @@ export { config } from "dotenv";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./DepositUtils";
+export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
 export * from "./ObjectUtils";

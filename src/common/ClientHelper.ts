@@ -9,11 +9,11 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   SpokePool,
+  isDefined,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { CONFIG_STORE_VERSION } from "./";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -66,13 +66,7 @@ export async function constructSpokePoolClientsWithLookback(
 
   // Use the first block that we'll query on mainnet to figure out which chains were enabled between then
   // and the the latest mainnet block. These chains were enabled via the ConfigStore.
-  const fromBlock_1 = await getBlockForTimestamp(
-    hubPoolChainId,
-    hubPoolChainId,
-    currentTime - initialLookBackOverride,
-    currentTime
-  );
-
+  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, currentTime - initialLookBackOverride);
   const enabledChains = getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
@@ -83,10 +77,7 @@ export async function constructSpokePoolClientsWithLookback(
         if (chainId === 1) {
           return [chainId, fromBlock_1];
         } else {
-          return [
-            chainId,
-            await getBlockForTimestamp(hubPoolChainId, chainId, currentTime - initialLookBackOverride, currentTime),
-          ];
+          return [chainId, await getBlockForTimestamp(chainId, currentTime - initialLookBackOverride)];
         }
       })
     )
@@ -167,7 +158,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
       const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
       const spokePoolRegistrationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
       const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock)).timestamp;
-      const registrationBlock = await getBlockForTimestamp(hubPoolClient.chainId, chainId, time, getCurrentTime());
+      const registrationBlock = await getBlockForTimestamp(chainId, time);
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );
@@ -192,6 +183,13 @@ export function getSpokePoolClientsForContract(
 ): SpokePoolClientsByChain {
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ chainId, contract, registrationBlock }) => {
+    if (!isDefined(fromBlocks[chainId])) {
+      logger.debug({
+        at: "ClientHelper#getSpokePoolClientsForContract",
+        message: `No fromBlock set for spoke pool client ${chainId}, setting from block to registration block`,
+        registrationBlock,
+      });
+    }
     const spokePoolClientSearchSettings = {
       fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
       toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,
@@ -235,8 +233,7 @@ export async function constructClients(
     logger,
     configStore,
     rateModelClientSearchSettings,
-    CONFIG_STORE_VERSION,
-    config.chainIdListIndices
+    config.maxConfigVersion
   );
 
   const hubPoolClientSearchSettings = {
@@ -264,8 +261,9 @@ export async function constructClients(
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
 //      so update the ConfigStoreClient first.
-export async function updateClients(clients: Clients): Promise<void> {
+export async function updateClients(clients: Clients, config: CommonConfig): Promise<void> {
   await clients.configStoreClient.update();
+  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
   await clients.hubPoolClient.update();
 }
 

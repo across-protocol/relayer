@@ -11,7 +11,8 @@ import {
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
   BLOCK_NUMBER_TTL,
 } from "../common";
-import { Logger } from ".";
+import { delay, Logger } from "./";
+import { compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
 
 const logger = Logger;
 
@@ -71,10 +72,6 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
 
 const defaultTimeout = 60 * 1000;
 
-function delay(s: number): Promise<void> {
-  return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
-}
-
 function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
   return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
 }
@@ -85,42 +82,22 @@ function createSendErrorWithMessage(message: string, sendError: any) {
 }
 
 function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): boolean {
-  // This function mutates rpcResults and deletes the ignored keys. It returns the deleted keys that we can re-add
-  // back after we do the comparison with unignored keys. This is a faster algorithm than cloning an object but it has
-  // some side effects such as the order of keys in the rpcResults object changing.
-  const deleteIgnoredKeys = (ignoredKeys: string[], rpcResults: any) => {
-    if (!rpcResults) {
-      return;
-    }
-    const ignoredMappings = {};
-    for (const key of ignoredKeys) {
-      ignoredMappings[key] = rpcResults[key];
-      delete rpcResults[key];
-    }
-    return ignoredMappings;
-  };
-  const addIgnoredFilteredKeys = (ignoredMappings: any, rpcResults: any) => {
-    for (const [key, value] of Object.entries(ignoredMappings)) {
-      rpcResults[key] = value;
-    }
-  };
-
   if (method === "eth_getBlockByNumber") {
     // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
     // led alchemy and quicknode to disagree on the the miner field's value.
-    const ignoredKeys = ["miner"];
-    const ignoredMappingsA = deleteIgnoredKeys(ignoredKeys, rpcResultA);
-    const ignoredMappingsB = deleteIgnoredKeys(ignoredKeys, rpcResultB);
-    const result = lodash.isEqual(rpcResultA, rpcResultB);
-    addIgnoredFilteredKeys(ignoredMappingsA, rpcResultA);
-    addIgnoredFilteredKeys(ignoredMappingsB, rpcResultB);
-    return result;
+    return compareResultsAndFilterIgnoredKeys(["miner"], rpcResultA, rpcResultB);
+  } else if (method === "eth_getLogs") {
+    // We've seen some RPC's like QuickNode add in transactionLogIndex which isn't in the
+    // JSON RPC spec: https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterchanges
+    // Additional reference: https://github.com/ethers-io/ethers.js/issues/1721
+    return compareResultsAndFilterIgnoredKeys(["transactionLogIndex"], rpcResultA, rpcResultB);
   } else {
     return lodash.isEqual(rpcResultA, rpcResultB);
   }
 }
 
 class CacheProvider extends RateLimitedProvider {
+  public readonly getBlockByNumberPrefix: string;
   public readonly getLogsCachePrefix: string;
   public readonly callCachePrefix: string;
   public readonly maxReorgDistance: number;
@@ -141,6 +118,7 @@ class CacheProvider extends RateLimitedProvider {
 
     // Pre-compute as much of the redis key as possible.
     const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}`;
+    this.getBlockByNumberPrefix = `${cachePrefix}:getBlockByNumber,`;
     this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
     this.callCachePrefix = `${cachePrefix}:eth_call,`;
 
@@ -182,6 +160,8 @@ class CacheProvider extends RateLimitedProvider {
   private buildRedisKey(method: string, params: Array<any>) {
     // Only handles eth_getLogs and eth_call right now.
     switch (method) {
+      case "eth_getBlockByNumber":
+        return this.getBlockByNumberPrefix + JSON.stringify(params);
       case "eth_getLogs":
         return this.getLogsCachePrefix + JSON.stringify(params);
       case "eth_call":
@@ -212,9 +192,11 @@ class CacheProvider extends RateLimitedProvider {
       }
 
       return this.canCacheInformationFromBlock(toBlock);
-    } else if (method === "eth_call") {
-      // Block number is the second argument. Parse as hex.
-      const blockNumber = parseInt(params[1], 16);
+    } else if ("eth_call" === method || "eth_getBlockByNumber" === method) {
+      // Pull out the block tag from params. Its position in params is dependent on the method.
+      // We are only interested in numeric block tags, which would be hex-encoded strings.
+      const idx = method === "eth_getBlockByNumber" ? 0 : 1;
+      const blockNumber = parseInt(params[idx], 16);
 
       // If the block number isn't present or is a text string, this will be NaN and we return false.
       if (Number.isNaN(blockNumber)) {

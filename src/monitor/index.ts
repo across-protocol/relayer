@@ -11,7 +11,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): P
   let clients;
 
   try {
-    logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "Monitor started 🔭", config });
+    logger[startupLogLevel(config)]({ at: "Monitor#index", message: "Monitor started 🔭", config });
 
     clients = await constructMonitorClients(config, logger, baseSigner);
     const acrossMonitor = new Monitor(logger, config, clients);
@@ -24,25 +24,25 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): P
       if (config.botModes.utilizationEnabled) {
         await acrossMonitor.checkUtilization();
       } else {
-        logger.debug({ at: "AcrossMonitor", message: "Utilization monitor disabled" });
+        logger.debug({ at: "Monitor#index", message: "Utilization monitor disabled" });
       }
 
       if (config.botModes.unknownRootBundleCallersEnabled) {
         await acrossMonitor.checkUnknownRootBundleCallers();
       } else {
-        logger.debug({ at: "AcrossMonitor", message: "UnknownRootBundleCallers monitor disabled" });
+        logger.debug({ at: "Monitor#index", message: "UnknownRootBundleCallers monitor disabled" });
       }
 
       if (config.botModes.unknownRelayerCallersEnabled) {
         await acrossMonitor.checkUnknownRelayers();
       } else {
-        logger.debug({ at: "AcrossMonitor", message: "UnknownRelayerCallers monitor disabled" });
+        logger.debug({ at: "Monitor#index", message: "UnknownRelayerCallers monitor disabled" });
       }
 
       if (config.botModes.stuckRebalancesEnabled) {
         await acrossMonitor.checkStuckRebalances();
       } else {
-        logger.debug({ at: "AcrossMonitor", message: "StuckRebalances monitor disabled" });
+        logger.debug({ at: "Monitor#index", message: "StuckRebalances monitor disabled" });
       }
 
       if (config.botModes.reportEnabled) {
@@ -55,20 +55,20 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): P
       if (config.botModes.refillBalancesEnabled) {
         await acrossMonitor.refillBalances();
       } else {
-        logger.debug({ at: "AcrossMonitor", message: "Refiller disabled" });
+        logger.debug({ at: "Monitor#index", message: "Refiller disabled" });
       }
 
       if (config.botModes.balancesEnabled) {
         await acrossMonitor.checkBalances();
       } else {
-        logger.debug({ at: "AcrossMonitor", message: "CheckBalances monitor disabled" });
+        logger.debug({ at: "Monitor#index", message: "CheckBalances monitor disabled" });
       }
 
       await clients.multiCallerClient.executeTransactionQueue();
 
       logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
-      if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) {
+      if (await processEndPollingLoop(logger, "Monitor#index", config.pollingDelay)) {
         break;
       }
     }

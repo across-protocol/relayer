@@ -1,29 +1,20 @@
-import { ConfigStoreClient, HubPoolClient } from "../clients";
-import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { queryHistoricalDepositForFill } from "../utils";
+import assert from "assert";
+import { HubPoolClient } from "../clients";
+import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
   assign,
   getRealizedLpFeeForFills,
   getRefundForFills,
+  isDefined,
   sortEventsDescending,
   toBN,
   sortEventsAscending,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-
-const FILL_DEPOSIT_COMPARISON_KEYS = [
-  "amount",
-  "originChainId",
-  "relayerFeePct",
-  "realizedLpFeePct",
-  "depositId",
-  "depositor",
-  "recipient",
-  "destinationChainId",
-  "destinationToken",
-  "message",
-] as const;
+import { clients } from "@across-protocol/sdk-v2";
+import { UBA_MIN_CONFIG_STORE_VERSION } from "../common";
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -87,19 +78,32 @@ export function updateTotalRefundAmount(
   if (fill.updatableRelayData.isSlowRelay) {
     return;
   }
-  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
   const refund = getRefundForFills([fill]);
-  refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(refund) : refund;
+  updateTotalRefundAmountRaw(fillsToRefund, refund, chainToSendRefundTo, fill.relayer, repaymentToken);
+}
+
+export function updateTotalRefundAmountRaw(
+  fillsToRefund: FillsToRefund,
+  amount: BigNumber,
+  chainToSendRefundTo: number,
+  recipient: string,
+  repaymentToken: string
+): void {
+  if (!fillsToRefund?.[chainToSendRefundTo]?.[repaymentToken]) {
+    assign(fillsToRefund, [chainToSendRefundTo, repaymentToken], {});
+  }
+  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
+  refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(amount) : amount;
 
   // Instantiate dictionary if it doesn't exist.
   if (!refundObj.refunds) {
     assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "refunds"], {});
   }
 
-  if (refundObj.refunds[fill.relayer]) {
-    refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
+  if (refundObj.refunds[recipient]) {
+    refundObj.refunds[recipient] = refundObj.refunds[recipient].add(amount);
   } else {
-    refundObj.refunds[fill.relayer] = refund;
+    refundObj.refunds[recipient] = amount;
   }
 }
 
@@ -134,8 +138,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   fill: FillWithBlock,
   allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
-  spokePoolClientsByChain: SpokePoolClientsByChain,
-  chainIdListForBundleEvaluationBlockNumbers: number[]
+  spokePoolClientsByChain: SpokePoolClientsByChain
 ): Promise<{
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
@@ -188,8 +191,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
     latestMainnetBlock,
     firstFillForSameDeposit.blockNumber,
-    firstFillForSameDeposit.destinationChainId,
-    chainIdListForBundleEvaluationBlockNumbers
+    firstFillForSameDeposit.destinationChainId
   );
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
   let lastMatchingFillInSameBundle: FillWithBlock;
@@ -232,21 +234,37 @@ export type RelayerUnfilledDeposit = {
   invalidFills: Fill[];
 };
 
-// Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
-export function getUnfilledDeposits(
+// @description Returns an array of unfilled deposits over all spokePoolClients.
+// @param spokePoolClients  Mapping of chainIds to SpokePoolClient objects.
+// @param configStoreClient ConfigStoreClient instance.
+// @param depositLookBack   Deposit lookback (in seconds) since SpokePoolClient time as at last update.
+// @returns Array of unfilled deposits.
+export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
-  maxUnfilledDepositLookBack: number,
-  configStoreClient: ConfigStoreClient
-): RelayerUnfilledDeposit[] {
+  hubPoolClient: HubPoolClient,
+  depositLookBack?: number
+): Promise<RelayerUnfilledDeposit[]> {
   const unfilledDeposits: RelayerUnfilledDeposit[] = [];
+  const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+
+  let earliestBlockNumbers = Object.values(spokePoolClients).map(({ deploymentBlock }) => deploymentBlock);
+  if (isDefined(depositLookBack)) {
+    earliestBlockNumbers = await Promise.all(
+      Object.values(spokePoolClients).map((spokePoolClient) => {
+        const currentTime = spokePoolClient.getCurrentTime();
+        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - depositLookBack);
+      })
+    );
+  }
+
   // Iterate over each chainId and check for unfilled deposits.
-  const chainIds = Object.keys(spokePoolClients);
-  for (const originChain of chainIds) {
-    const originClient = spokePoolClients[originChain];
-    for (const destinationChain of chainIds) {
-      if (originChain === destinationChain) {
-        continue;
-      }
+  for (const originClient of Object.values(spokePoolClients)) {
+    const { chainId: originChainId } = originClient;
+    const chainIdx = chainIds.indexOf(originChainId);
+    assert(chainIdx !== -1, `Invalid chain index for chainId ${originChainId} (${chainIdx})`);
+    const earliestBlockNumber = earliestBlockNumbers[chainIdx];
+
+    for (const destinationChain of chainIds.filter((chainId) => chainId !== originChainId)) {
       // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
@@ -254,12 +272,23 @@ export function getUnfilledDeposits(
       const depositsForDestinationChain: DepositWithBlock[] =
         originClient.getDepositsForDestinationChain(destinationChain);
 
-      // If deposit is older than unfilled deposit lookback, ignore it.
-      const cutOff = originClient.latestBlockNumber - maxUnfilledDepositLookBack;
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
-        .filter((deposit) => deposit.blockNumber >= cutOff)
+        .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
         .map((deposit) => {
-          const version = configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+          let version: number;
+          // To determine if the fill is a UBA fill, we need to check against the UBA bundle start blocks.
+          if (clients.isUBAActivatedAtBlock(hubPoolClient, deposit.blockNumber, deposit.originChainId)) {
+            // Use latest deposit block now to grab version which should be above the UBA activation version.
+            version = hubPoolClient.configStoreClient.getConfigStoreVersionForBlock(deposit.quoteBlockNumber);
+            if (version < UBA_MIN_CONFIG_STORE_VERSION) {
+              throw new Error(
+                `isUBAActivatedAtBlock claims UBA is activated as of deposit block ${deposit.blockNumber} but version at deposit time ${deposit.quoteBlockNumber} is ${version} which is below the minimum UBA version ${UBA_MIN_CONFIG_STORE_VERSION}`
+              );
+            }
+          } else {
+            // Deposit is not a UBA deposit, so use version at deposit quote timestamp:
+            version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+          }
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
@@ -267,33 +296,5 @@ export function getUnfilledDeposits(
     }
   }
 
-  // If the config store version is up to date, then we can return the unfilled deposits as is. Otherwise, we need to
-  // make sure we have a high enough version for each deposit.
-  if (configStoreClient.hasLatestConfigStoreVersion) {
-    return unfilledDeposits;
-  } else {
-    return unfilledDeposits.map((unfilledDeposit) => {
-      return {
-        ...unfilledDeposit,
-        requiresNewConfigStoreVersion: !configStoreClient.hasValidConfigStoreVersionForTimestamp(
-          unfilledDeposit.deposit.quoteTimestamp
-        ),
-      };
-    });
-  }
-}
-
-// Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
-// by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
-export function validateFillForDeposit(fill: Fill, deposit?: Deposit): boolean {
-  if (deposit === undefined) {
-    return false;
-  }
-
-  // Note: this short circuits when a key is found where the comparison doesn't match.
-  // TODO: if we turn on "strict" in the tsconfig, the elements of FILL_DEPOSIT_COMPARISON_KEYS will be automatically
-  // validated against the fields in Fill and Deposit, generating an error if there is a discrepency.
-  return FILL_DEPOSIT_COMPARISON_KEYS.every((key) => {
-    return fill[key] !== undefined && fill[key].toString() === deposit[key]?.toString();
-  });
+  return unfilledDeposits;
 }

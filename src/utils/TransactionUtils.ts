@@ -16,12 +16,13 @@ export type TransactionSimulationResult = {
 };
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
+const expectedRpcErrorMessages = new Set(["nonce has already been used", "intrinsic gas too low"]);
 const txnRetryable = (error?: unknown): boolean => {
   if (typeguards.isEthersError(error)) {
     return txnRetryErrors.has(error.code);
   }
 
-  return (error as Error)?.message?.includes("intrinsic gas too low");
+  return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
 export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
@@ -79,7 +80,7 @@ export async function runTransaction(
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
       logger.debug({
-        at: "TxUtil",
+        at: "TxUtil#runTransaction",
         message: "Retrying txn due to expected error",
         error: JSON.stringify(error),
         retriesRemaining,
@@ -87,14 +88,39 @@ export async function runTransaction(
 
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
-      // If transaction error reason is known to be benign, then reduce the log level to warn.
-      logger[txnRetryable(error) ? "warn" : "error"]({
-        at: "TxUtil",
+      // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
+      // and log them as clearly as possible. For example:
+      // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
+      // - Mid-level (eth_estimateGas): "reason":"execution reverted: delegatecall failed" (UNPREDICTABLE_GAS_LIMIT)
+      // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
+      const commonFields = {
+        at: "TxUtil#runTransaction",
         message: "Error executing tx",
         retriesRemaining,
-        error: JSON.stringify(error),
+        target: getTarget(contract.address),
+        method,
+        args,
+        value,
+        nonce,
         notificationPath: "across-error",
-      });
+      };
+      if (typeguards.isEthersError(error)) {
+        const ethersErrors: { reason: string; err: EthersError }[] = [];
+        let topError = error;
+        while (typeguards.isEthersError(topError)) {
+          ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
+          topError = topError.error as EthersError;
+        }
+        logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
+          ...commonFields,
+          errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
+        });
+      } else {
+        logger[txnRetryable(error) ? "warn" : "error"]({
+          ...commonFields,
+          error: JSON.stringify(error),
+        });
+      }
       throw error;
     }
   }

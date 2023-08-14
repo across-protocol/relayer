@@ -25,7 +25,7 @@ export async function constructMonitorClients(
   baseSigner: Wallet
 ): Promise<MonitorClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
-  await updateClients(commonClients);
+  await updateClients(commonClients, config);
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
@@ -41,17 +41,11 @@ export async function constructMonitorClients(
     logger,
     commonClients,
     spokePoolClients,
-    config.chainIdListIndices,
+    commonClients.configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 
   // Need to update HubPoolClient to get latest tokens.
-  const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
-  const providerPerChain = Object.fromEntries(
-    spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
-  );
-  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
-
   const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
   const adapterManager = new AdapterManager(
     logger,
@@ -60,7 +54,22 @@ export async function constructMonitorClients(
     [baseSigner.address, ...spokePoolAddresses],
     commonClients.hubPoolClient.hubPool.address
   );
-  const crossChainTransferClient = new CrossChainTransferClient(logger, spokePoolChains, adapterManager);
+  const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
+  const providerPerChain = Object.fromEntries(
+    spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
+  );
+  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
+
+  // The CrossChainTransferClient is dependent on having adapters for all passed in chains
+  // so we need to filter out any chains that don't have adapters. This means limiting the chains we keep in
+  // `providerPerChain` when constructing the TokenTransferClient and limiting `spokePoolChains` when constructing
+  // the CrossChainTransferClient.
+  const crossChainAdapterSupportedChains = adapterManager.supportedChains();
+  const crossChainTransferClient = new CrossChainTransferClient(
+    logger,
+    spokePoolChains.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
+    adapterManager
+  );
 
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };
 }

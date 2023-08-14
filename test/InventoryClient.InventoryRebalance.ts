@@ -66,7 +66,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const { configStore } = await deployConfigStore(owner, [l1Token]);
 
     const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+    await configStoreClient.update();
+
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
 
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);

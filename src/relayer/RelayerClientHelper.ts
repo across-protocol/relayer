@@ -1,6 +1,7 @@
 import winston from "winston";
+import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
 import { Wallet } from "../utils";
-import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient } from "../clients";
+import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
@@ -9,6 +10,7 @@ import { constructSpokePoolClientsWithLookback } from "../common";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
+  ubaClient: UBAClient;
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
@@ -21,7 +23,7 @@ export async function constructRelayerClients(
   baseSigner: Wallet
 ): Promise<RelayerClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
-  await updateClients(commonClients);
+  await updateClients(commonClients, config);
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
@@ -32,6 +34,13 @@ export async function constructRelayerClients(
     config,
     baseSigner,
     config.maxRelayerLookBack
+  );
+
+  const ubaClient = new UBAClient(
+    new sdkClients.UBAClientConfig(),
+    commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
+    commonClients.hubPoolClient,
+    spokePoolClients
   );
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
@@ -52,7 +61,9 @@ export async function constructRelayerClients(
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
-    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : config.chainIdListIndices
+    config.relayerDestinationChains.length > 0
+      ? config.relayerDestinationChains
+      : commonClients.configStoreClient.getChainIdIndicesForBlock()
   ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
@@ -73,7 +84,7 @@ export async function constructRelayerClients(
     logger,
     commonClients,
     spokePoolClients,
-    config.chainIdListIndices,
+    commonClients.configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
@@ -90,24 +101,31 @@ export async function constructRelayerClients(
     config.bundleRefundLookback
   );
 
-  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
+  return { ...commonClients, spokePoolClients, ubaClient, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+  const { configStoreClient, spokePoolClients, ubaClient } = clients;
 
-  // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
-  // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
-  // having a "first run" update and then a "normal" update that considers this. see previous implementation here
-  // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
-  await updateSpokePoolClients(clients.spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
-    "EnabledDepositRoute",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
-  ]);
+  await configStoreClient.update();
+  const version = configStoreClient.getConfigStoreVersionForTimestamp();
+  if (sdkUtils.isUBA(version)) {
+    await ubaClient.update();
+  } else {
+    // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
+    // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
+    // having a "first run" update and then a "normal" update that considers this. see previous implementation here
+    // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
+    await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
+      "RequestedSpeedUpDeposit",
+      "FilledRelay",
+      "EnabledDepositRoute",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]);
+  }
 
   // Update the token client first so that inventory client has latest balances.
 

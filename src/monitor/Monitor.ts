@@ -63,17 +63,28 @@ export class Monitor {
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
   private balanceAllocator: BalanceAllocator;
+  // Chains for each spoke pool client.
   public monitorChains: number[];
+  // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
+  // have an inventory manager adapter.
+  public crossChainAdapterSupportedChains: number[];
 
   public constructor(
     readonly logger: winston.Logger,
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    this.monitorChains = Object.keys(clients.spokePoolClients).map((chainId) => Number(chainId));
+    this.crossChainAdapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
+    this.monitorChains = Object.values(clients.spokePoolClients).map(({ chainId }) => chainId);
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
+    logger.debug({
+      at: "Monitor#constructor",
+      message: "Initialized monitor",
+      monitorChains: this.monitorChains,
+      crossChainAdapterSupportedChains: this.crossChainAdapterSupportedChains,
+    });
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
   }
 
@@ -105,7 +116,7 @@ export class Monitor {
   }
 
   async checkUtilization(): Promise<void> {
-    this.logger.debug({ at: "AcrossMonitor#Utilization", message: "Checking for pool utilization ratio" });
+    this.logger.debug({ at: "Monitor#checkUtilization", message: "Checking for pool utilization ratio" });
     const l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const l1TokenUtilizations = await Promise.all(
       l1Tokens.map(async (l1Token) => {
@@ -126,13 +137,13 @@ export class Monitor {
           ${etherscanLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
           ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
-        this.logger.debug({ at: "UtilizationMonitor", message: "High pool utilization warning 🏊", mrkdwn });
+        this.logger.debug({ at: "Monitor#checkUtilization", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
   }
 
   async checkUnknownRootBundleCallers(): Promise<void> {
-    this.logger.debug({ at: "AcrossMonitor#RootBundleCallers", message: "Checking for unknown root bundle callers" });
+    this.logger.debug({ at: "Monitor#RootBundleCallers", message: "Checking for unknown root bundle callers" });
 
     const proposedBundles = this.clients.hubPoolClient.getProposedRootBundlesInBlockRange(
       this.hubPoolStartingBlock,
@@ -160,7 +171,7 @@ export class Monitor {
 
   async checkUnknownRelayers(): Promise<void> {
     const chainIds = this.monitorChains;
-    this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
+    this.logger.debug({ at: "Monitor#checkUnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
       const fills = this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
         this.spokePoolsBlocks[chainId].startingBlock,
@@ -175,16 +186,16 @@ export class Monitor {
         const mrkdwn =
           `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
           ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(fill.transactionHash, chainId)}`;
-        this.logger.warn({ at: "Monitor", message: "Unknown relayer 🛺", mrkdwn });
+        this.logger.warn({ at: "Monitor#checkUnknownRelayers", message: "Unknown relayer 🛺", mrkdwn });
       }
     }
   }
 
   async reportUnfilledDeposits(): Promise<void> {
-    const unfilledDeposits = getUnfilledDeposits(
+    const unfilledDeposits = await getUnfilledDeposits(
       this.clients.spokePoolClients,
-      this.monitorConfig.maxRelayerLookBack,
-      this.clients.configStoreClient
+      this.clients.hubPoolClient,
+      this.monitorConfig.maxRelayerLookBack
     );
 
     // Group unfilled amounts by chain id and token id.
@@ -218,7 +229,7 @@ export class Monitor {
     }
 
     if (mrkdwn) {
-      this.logger.info({ at: "Monitor", message: "Unfilled deposits ⏱", mrkdwn });
+      this.logger.info({ at: "Monitor#reportUnfilledDeposits", message: "Unfilled deposits ⏱", mrkdwn });
     }
   }
 
@@ -265,7 +276,7 @@ export class Monitor {
 
       mrkdwn += summaryMrkdwn;
       this.logger.info({
-        at: "Monitor",
+        at: "Monitor#reportRelayerBalances",
         message: `Balance report for ${relayer} 📖`,
         mrkdwn,
       });
@@ -501,7 +512,12 @@ export class Monitor {
     }
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
-    for (const chainId of this.monitorChains) {
+    for (const chainId of this.crossChainAdapterSupportedChains) {
+      // If chain wasn't active in latest bundle, then skip it.
+      const chainIndex = this.clients.hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
+      if (chainIndex >= lastFullyExecutedBundle.bundleEvaluationBlockNumbers.length) {
+        continue;
+      }
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
       for (const l1Token of allL1Tokens) {
         const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
@@ -521,7 +537,7 @@ export class Monitor {
         if (transferBalance.gt(0)) {
           const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
           this.logger.warn({
-            at: "Monitor",
+            at: "Monitor#checkStuckRebalances",
             message: "HubPool -> SpokePool rebalances stuck 🦴",
             mrkdwn,
             transferBalance: transferBalance.toString(),
@@ -551,7 +567,7 @@ export class Monitor {
 
   updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable): void {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
-    for (const chainId of this.monitorChains) {
+    for (const chainId of this.crossChainAdapterSupportedChains) {
       for (const l1Token of allL1Tokens) {
         const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
           relayer,
@@ -659,7 +675,7 @@ export class Monitor {
 
       if (mrkdwn) {
         this.logger.info({
-          at: "Monitor",
+          at: "Monitor#updateUnknownTransfers",
           message: `Transfers that are not fills for relayer ${relayer} 🦨`,
           mrkdwn,
         });
@@ -823,7 +839,7 @@ export class Monitor {
       `An unknown EOA ${etherscanLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
       `\ntx: ${etherscanLink(transactionHash, 1)}`;
     this.logger.error({
-      at: "Monitor",
+      at: "Monitor#notifyIfUnknownCaller",
       message: `Unknown bundle caller (${action}) ${emoji}${
         action === BundleAction.PROPOSED
           ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${etherscanLink(
