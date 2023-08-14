@@ -374,20 +374,6 @@ export class Monitor {
   async refillBalances(): Promise<void> {
     const { refillEnabledBalances } = this.monitorConfig;
 
-    // Update config:
-    for (const refillConfig of refillEnabledBalances) {
-      const chainId = refillConfig.chainId;
-      // If an 'eth' address is defined for this chain in CONTRACT_ADDRESSES, then use it.
-      const ethAddressForChain = getEthAddressForChain(chainId);
-      if (ethAddressForChain !== refillConfig.token) {
-        this.logger.debug({
-          at: "Monitor#refillBalances",
-          message: `ETH token for chain ${chainId} reset to ${ethAddressForChain}`,
-        });
-        refillConfig.token = ethAddressForChain;
-      }
-    }
-
     // Check for current balances.
     const currentBalances = await this._getBalances(refillEnabledBalances);
     const decimalValues = await this._getDecimals(refillEnabledBalances);
@@ -955,7 +941,7 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        const ethAddressForChain = getEthAddressForChain(chainId)
+        const ethAddressForChain = getEthAddressForChain(chainId);
         if (token === ethAddressForChain) {
           return 18;
         } // Assume all EVM chains have 18 decimal native tokens.

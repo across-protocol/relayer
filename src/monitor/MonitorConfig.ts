@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, ZERO_ADDRESS } from "../utils";
+import { ethers, getEthAddressForChain, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -102,7 +102,7 @@ export class MonitorConfig extends CommonConfig {
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
             // Fields that are always set to defaults:
-            token: ZERO_ADDRESS,
+            token: getEthAddressForChain(chainId),
           };
         }
       );
