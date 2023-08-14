@@ -134,7 +134,7 @@ export async function getGasPrice(
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3
 ): Promise<Partial<FeeData>> {
-  const chainId = (await provider.getNetwork()).chainId;
+  const { chainId}  = (await provider.getNetwork());
   const feeData = await gasPriceOracle.getGasPriceEstimate(provider, chainId);
 
   if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
