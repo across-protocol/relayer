@@ -150,9 +150,9 @@ export class MonitorConfig extends CommonConfig {
             parsedWarnThreshold = Number(warnThreshold);
           }
 
-          const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;
+          const isNativeToken = !token || token === "0x0" || token === getEthAddressForChain(chainId);
           return {
-            token: isNativeToken ? ZERO_ADDRESS : token,
+            token: isNativeToken ? getEthAddressForChain(chainId) : token,
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
             account: ethers.utils.getAddress(account),
