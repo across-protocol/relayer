@@ -1,5 +1,5 @@
 import { BalanceAllocator } from "../clients";
-import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
+import { spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
@@ -30,7 +30,6 @@ import {
   toBN,
   toWei,
   winston,
-  ZERO_ADDRESS,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -956,7 +955,7 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        const ethAddressForChain = CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
+        const ethAddressForChain = getEthAddressForChain(chainId)
         if (token === ethAddressForChain) {
           return 18;
         } // Assume all EVM chains have 18 decimal native tokens.
