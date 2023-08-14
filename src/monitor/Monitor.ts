@@ -1,5 +1,5 @@
 import { BalanceAllocator } from "../clients";
-import { spokePoolClientsToProviders } from "../common";
+import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
@@ -21,6 +21,7 @@ import {
   ethers,
   etherscanLink,
   etherscanLinks,
+  getEthAddressForChain,
   getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
@@ -334,8 +335,9 @@ export class Monitor {
               trippedThreshold = { level: "error", threshold: errorThreshold };
             }
             if (trippedThreshold !== null) {
+              const ethAddressForChain = getEthAddressForChain(chainId);
               const symbol =
-                token === ZERO_ADDRESS
+                token === ethAddressForChain
                   ? getNativeTokenSymbol(chainId)
                   : await new Contract(
                       token,
@@ -372,6 +374,20 @@ export class Monitor {
    */
   async refillBalances(): Promise<void> {
     const { refillEnabledBalances } = this.monitorConfig;
+
+    // Update config:
+    for (const refillConfig of refillEnabledBalances) {
+      const chainId = refillConfig.chainId;
+      // If an 'eth' address is defined for this chain in CONTRACT_ADDRESSES, then use it.
+      const ethAddressForChain = getEthAddressForChain(chainId);
+      if (ethAddressForChain !== refillConfig.token) {
+        this.logger.debug({
+          at: "Monitor#refillBalances",
+          message: `ETH token for chain ${chainId} reset to ${ethAddressForChain}`,
+        });
+        refillConfig.token = ethAddressForChain;
+      }
+    }
 
     // Check for current balances.
     const currentBalances = await this._getBalances(refillEnabledBalances);
@@ -913,8 +929,9 @@ export class Monitor {
         if (this.balanceCache[chainId]?.[token]?.[account]) {
           return this.balanceCache[chainId][token][account];
         }
+        const ethAddressForChain = getEthAddressForChain(chainId);
         const balance =
-          token === ZERO_ADDRESS
+          token === ethAddressForChain
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
             : // Use the latest block number the SpokePoolClient is aware of to query balances.
               // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
@@ -939,7 +956,8 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        if (token === ZERO_ADDRESS) {
+        const ethAddressForChain = CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
+        if (token === ethAddressForChain) {
           return 18;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token]) {
