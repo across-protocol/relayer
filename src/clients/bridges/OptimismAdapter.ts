@@ -14,11 +14,13 @@ export class OptimismAdapter extends BaseAdapter {
   private txnClient: TransactionClient;
 
   private customL1OptimismBridgeAddresses = {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge.address,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: CONTRACT_ADDRESSES[1].snxOptimismBridge,
   } as const;
 
   private customOvmBridgeAddresses = {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge.address,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: CONTRACT_ADDRESSES[10].snxOptimismBridge,
   } as const;
 
   private atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
@@ -44,18 +46,25 @@ export class OptimismAdapter extends BaseAdapter {
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of l1Tokens) {
-        const l1Method = this.isWeth(l1Token) ? "ETHDepositInitiated" : "ERC20DepositInitiated";
+        const l1Method = this.isWeth(l1Token)
+          ? "ETHDepositInitiated"
+          : this.isSNX(l1Token)
+          ? "DepositInitiated"
+          : "ERC20DepositInitiated";
         let l1SearchFilter = [l1Token, undefined, monitoredAddress];
         let l2SearchFilter = [l1Token, undefined, monitoredAddress];
         if (this.isWeth(l1Token)) {
           l1SearchFilter = [undefined, monitoredAddress];
           l2SearchFilter = [ZERO_ADDRESS, undefined, monitoredAddress];
+        } else if (this.isSNX(l1Token)) {
+          l1SearchFilter = [monitoredAddress];
+          l2SearchFilter = [monitoredAddress];
         }
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
         // Transfers might have come from the monitored address itself or another sender address (if specified).
         const senderAddress = this.senderAddress || this.atomicDepositorAddress;
-        const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
+        const adapterSearchConfig = this.isSNX(l1Token) ? [senderAddress] : [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
           paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig),
@@ -124,8 +133,8 @@ export class OptimismAdapter extends BaseAdapter {
     const originChainId = (await contract.provider.getNetwork()).chainId;
     assert(originChainId !== destinationChainId);
 
-    let method = "depositERC20";
-    let args = [l1Token, l2Token, amount, l2Gas, "0x"];
+    let method = this.isSNX(l1Token) ? "depositTo" : "depositERC20";
+    let args = this.isSNX(l1Token) ? [address, amount] : [l1Token, l2Token, amount, l2Gas, "0x"];
 
     // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to call bridgeWethToOvm
     // on the atomic depositor contract. Note that value is still 0 as this method will pull WETH from the caller.
@@ -175,10 +184,10 @@ export class OptimismAdapter extends BaseAdapter {
     if (this.chainId !== 10) {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
-    const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
+    const l1BridgeData = this.hasCustomL1Bridge(l1Token)
       ? this.customL1OptimismBridgeAddresses[l1Token]
-      : CONTRACT_ADDRESSES[1].ovmStandardBridge.address;
-    return new Contract(l1BridgeAddress, CONTRACT_ADDRESSES[1].daiOptimismBridge.abi, this.getSigner(1));
+      : CONTRACT_ADDRESSES[1].ovmStandardBridge;
+    return new Contract(l1BridgeData.address, l1BridgeData.abi, this.getSigner(1));
   }
 
   getL1TokenGateway(l1Token: string): Contract {
@@ -193,10 +202,14 @@ export class OptimismAdapter extends BaseAdapter {
     if (this.chainId !== 10) {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
-    const l2BridgeAddress = this.hasCustomL2Bridge(l1Token)
+    const l2BridgeData = this.hasCustomL2Bridge(l1Token)
       ? this.customOvmBridgeAddresses[l1Token]
-      : CONTRACT_ADDRESSES[10].ovmStandardBridge.address;
-    return new Contract(l2BridgeAddress, CONTRACT_ADDRESSES[10].ovmStandardBridge.abi, this.getSigner(this.chainId));
+      : CONTRACT_ADDRESSES[10].ovmStandardBridge;
+    return new Contract(l2BridgeData.address, l2BridgeData.abi, this.getSigner(this.chainId));
+  }
+
+  isSNX(l1Token: string): boolean {
+    return l1Token.toLowerCase() === "0xc011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f";
   }
 
   private hasCustomL1Bridge(l1Token: string): boolean {

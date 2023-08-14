@@ -41,10 +41,12 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   288: WETH,
   324: WETH,
   42161: WETH,
+  8453: WETH,
   // Testnets:
   5: WETH,
   280: WETH,
   421613: WETH,
+  84531: WETH,
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
@@ -62,10 +64,12 @@ const QUERY_HANDLERS: {
   288: relayFeeCalculator.BobaQueries,
   324: relayFeeCalculator.ZkSyncQueries,
   42161: relayFeeCalculator.ArbitrumQueries,
+  8453: relayFeeCalculator.BaseQueries,
   // Testnets:
   5: relayFeeCalculator.EthereumQueries,
   280: relayFeeCalculator.zkSyncGoerliQueries,
   421613: relayFeeCalculator.ArbitrumQueries,
+  84531: relayFeeCalculator.BaseGoerliQueries,
 };
 
 const { PriceClient } = priceClient;

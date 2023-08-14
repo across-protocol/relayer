@@ -30,6 +30,7 @@ import { getAmountToReturnForRelayerRefundLeaf } from "./RelayerRefundUtils";
 import { sortRefundAddresses, sortRelayerRefundLeaves } from "./RelayerRefundUtils";
 import { utils } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { spokesThatHoldEthAndWeth } from "../common/Constants";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -416,7 +417,6 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
   l2TokenAddress: string,
   l2ChainId: number
 ): string[] {
-  const spokesThatHoldEthAndWeth = [10, 324];
   if (!spokesThatHoldEthAndWeth.includes(l2ChainId)) {
     return [l2TokenAddress];
   }
