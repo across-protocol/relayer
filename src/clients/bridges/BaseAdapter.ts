@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/ban-types */
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
-import { SpokePoolClient } from "../../clients";
+import { constants as sdkConstants } from "@across-protocol/sdk-v2";
+import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import {
   toBN,
   MAX_SAFE_ALLOWANCE,
@@ -13,12 +14,17 @@ import {
   MakeOptional,
   AnyObject,
   BigNumber,
+  matchTokenSymbol,
+  ZERO_ADDRESS,
+  assert,
+  compareAddressesSimple,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
-import { OutstandingTransfers } from "../../interfaces";
-import { SortableEvent } from "../../interfaces";
-
+import { OutstandingTransfers, SortableEvent } from "../../interfaces";
+import { TransactionResponse } from "../../utils";
+import { CONTRACT_ADDRESSES } from "../../common";
+import { BigNumberish, createFormatFunction } from "../../utils/FormattingUtils";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
@@ -29,24 +35,40 @@ interface Events {
     [l1Token: string]: DepositEvent[];
   };
 }
-export class BaseAdapter {
+
+const { TOKEN_SYMBOLS_MAP } = sdkConstants;
+
+type SupportedL1Token = string;
+type SupportedTokenSymbol = string;
+
+export abstract class BaseAdapter {
+  static readonly HUB_CHAIN_ID = 1; // @todo: Make dynamic
+
+  readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
+
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
+  readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
+  readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor.address;
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
   l2DepositFinalizedEvents_DepositAdapter: Events = {};
 
+  txnClient: TransactionClient;
+
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     _chainId: number,
     readonly monitoredAddresses: string[],
-    readonly logger: winston.Logger
+    readonly logger: winston.Logger,
+    readonly supportedTokens: SupportedTokenSymbol[]
   ) {
     this.chainId = _chainId;
-    this.baseL1SearchConfig = { ...this.getSearchConfig(1) };
+    this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
+    this.txnClient = new TransactionClient(logger);
   }
 
   getSigner(chainId: number): Signer {
@@ -60,7 +82,7 @@ export class BaseAdapter {
   // Note: this must be called after the SpokePoolClients are updated.
   getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
     // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
-    const l1LatestBlock = this.spokePoolClients[1].latestBlockNumber;
+    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockNumber;
     const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
@@ -91,7 +113,9 @@ export class BaseAdapter {
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
-    const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
+    const l1TokenContracts = l1Tokens.map(
+      (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
+    );
     const allowances = await Promise.all(
       l1TokenContracts.map((l1TokenContract, index) => {
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
@@ -120,10 +144,13 @@ export class BaseAdapter {
     for (const { l1Token, targetContract } of tokensToApprove) {
       const tx = await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]);
       const receipt = await tx.wait();
+      const { hubChainId } = this;
+      const hubNetwork = getNetworkName(hubChainId);
+      const spokeNetwork = getNetworkName(this.chainId);
       mrkdwn +=
-        ` - Approved Canonical ${getNetworkName(this.chainId)} token bridge ${etherscanLink(targetContract, 1)} ` +
-        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, 1)} on ${getNetworkName(1)}. ` +
-        `tx: ${etherscanLink(receipt.transactionHash, 1)}\n`;
+        ` - Approved canonical ${spokeNetwork} token bridge ${etherscanLink(targetContract, hubChainId)} ` +
+        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
+        `tx: ${etherscanLink(receipt.transactionHash, hubChainId)}\n`;
     }
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
@@ -207,7 +234,139 @@ export class BaseAdapter {
     return `${getNetworkName(this.chainId)}Adapter`;
   }
 
+  /**
+   * Return true if passed in token address is L1 WETH address
+   * @param l1Token an address
+   * @returns True if l1Token is L1 weth address
+   */
   isWeth(l1Token: string): boolean {
-    return l1Token.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+    return compareAddressesSimple(l1Token, this.wethAddress);
   }
+
+  /**
+   * Get L1 Atomic WETH depositor contract
+   * @returns L1 Atomic WETH depositor contract
+   */
+  getAtomicDepositor(): Contract {
+    const { hubChainId } = this;
+    return new Contract(
+      this.atomicDepositorAddress,
+      CONTRACT_ADDRESSES[hubChainId].atomicDepositor.abi,
+      this.getSigner(hubChainId)
+    );
+  }
+
+  /**
+   * Determine whether this adapter supports an l1 token address
+   * @param l1Token an address
+   * @returns True if l1Token is supported
+   */
+  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
+    const relevantSymbols = matchTokenSymbol(l1Token, this.hubChainId);
+
+    // If we don't have a symbol for this token, return that the token is not supported
+    if (relevantSymbols.length === 0) {
+      return false;
+    }
+
+    // if the symbol is not in the supported tokens list, it's not supported
+    return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
+  }
+
+  async _sendTokenToTargetChain(
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumberish,
+    contract: Contract,
+    method: string,
+    args: any[],
+    gasLimitMultiplier: number,
+    msgValue: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse> {
+    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    const _txnRequest: AugmentedTransaction = {
+      contract,
+      chainId: this.hubChainId,
+      method,
+      args,
+      gasLimitMultiplier,
+      value: msgValue,
+    };
+    const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
+    const { contract: targetContract, ...txnRequestData } = txnRequest;
+    if (!succeed) {
+      const message = `Failed to simulate ${method} deposit from ${txnRequest.chainId} for mainnet token ${l1Token}`;
+      this.logger.warn({ at: this.getName(), message, reason, contract: targetContract.address, txnRequestData });
+      throw new Error(`${message} (${reason})`);
+    }
+
+    const message = `💌⭐️ Bridging tokens from ${this.hubChainId} to ${this.chainId}`;
+    this.logger.debug({
+      at: `${this.getName()}#_sendTokenToTargetChain`,
+      message,
+      l1Token,
+      l2Token,
+      amount,
+      contract: contract.address,
+      txnRequestData,
+    });
+    if (simMode) {
+      this.logger.debug({
+        at: `${this.getName()}#_sendTokenToTargetChain`,
+        message: "Simulation result",
+        succeed,
+      });
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    }
+    return (await this.txnClient.submit(this.hubChainId, [{ ...txnRequest, message }]))[0];
+  }
+
+  async _wrapEthIfAboveThreshold(
+    wrapThreshold: BigNumber,
+    l2WEthContract: Contract,
+    value: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse> {
+    const { chainId, txnClient } = this;
+    const method = "deposit";
+    const mrkdwn =
+      `Ether on chain ${this.chainId} was wrapped due to being over the threshold of ` +
+      `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.`;
+    const message = `Eth wrapped on target chain ${this.chainId}🎁`;
+    if (simMode) {
+      const { succeed, reason } = (
+        await txnClient.simulate([{ contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message }])
+      )[0];
+      this.logger.debug({
+        at: `${this.getName()}#_wrapEthIfAboveThreshold`,
+        message: "Simulation result",
+        l2WEthContract: l2WEthContract.address,
+        value,
+        succeed,
+        reason,
+      });
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    } else {
+      return (
+        await txnClient.submit(chainId, [
+          { contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message },
+        ])
+      )[0];
+    }
+  }
+
+  abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
+
+  abstract sendTokenToTargetChain(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse>;
+
+  abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
+
+  abstract wrapEthIfAboveThreshold(threshold: BigNumber, simMode: boolean): Promise<TransactionResponse | null>;
 }

@@ -1,8 +1,8 @@
-import { typeguards } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, typeguards } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } from "../utils";
+import { winston, Contract, getContractInfoFromAddress, ethers, Wallet } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
-import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
+import { toBNWei, BigNumber, toBN, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -134,23 +134,23 @@ export async function getGasPrice(
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3
 ): Promise<Partial<FeeData>> {
-  const [feeData, chainInfo] = await Promise.all([provider.getFeeData(), provider.getNetwork()]);
-  if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
-    // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
-    // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
-    if (chainInfo.chainId === 137) {
-      feeData.maxPriorityFeePerGas = toGWei((await getPolygonPriorityFee()).fastest.toString());
-    }
-    if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
-      feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
-    }
-    return {
-      maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, priorityScaler * maxFeePerGasScaler), // scale up the maxFeePerGas. Any extra paid on this is refunded.
-      maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
-    };
-  } else {
-    return { gasPrice: scaleByNumber(feeData.gasPrice, priorityScaler) };
+  const { chainId } = await provider.getNetwork();
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, chainId);
+
+  if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
+    feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
   }
+
+  // Handle chains with legacy pricing.
+  if (feeData.maxPriorityFeePerGas.eq(0)) {
+    return { gasPrice: scaleByNumber(feeData.maxFeePerGas, priorityScaler) };
+  }
+
+  // Default to EIP-1559 (type 2) pricing.
+  return {
+    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, priorityScaler * maxFeePerGasScaler),
+    maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
+  };
 }
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
@@ -182,25 +182,6 @@ export function getTarget(targetAddress: string):
   } catch (error) {
     return { targetAddress };
   }
-}
-
-async function getPolygonPriorityFee(): Promise<{
-  safeLow: number;
-  standard: number;
-  fast: number;
-  fastest: number;
-  blockTime: number;
-  blockNumber: number;
-}> {
-  const res = await fetch("https://gasstation.polygon.technology");
-  return (await res.json()) as {
-    safeLow: number;
-    standard: number;
-    fast: number;
-    fastest: number;
-    blockTime: number;
-    blockNumber: number;
-  };
 }
 
 function scaleByNumber(amount: ethers.BigNumber, scaling: number) {

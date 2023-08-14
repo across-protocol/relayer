@@ -1,17 +1,26 @@
 import assert from "assert";
-import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, BigNumberish, TransactionResponse } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  ZERO_ADDRESS,
+  paginatedEventQuery,
+  BigNumberish,
+  TransactionResponse,
+  compareAddressesSimple,
+  ethers,
+} from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
+import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { CHAIN_IDs } from "@across-protocol/contracts-v2";
 const { TOKEN_SYMBOLS_MAP } = constants;
 
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
-  private txnClient: TransactionClient;
 
   private customL1OptimismBridgeAddresses = {
     [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge,
@@ -23,8 +32,6 @@ export class OptimismAdapter extends BaseAdapter {
     [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: CONTRACT_ADDRESSES[10].snxOptimismBridge,
   } as const;
 
-  private atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
-
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -33,9 +40,19 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, 10, monitoredAddresses, logger);
+    super(spokePoolClients, 10, monitoredAddresses, logger, [
+      "DAI",
+      "SNX",
+      "USDC",
+      "USDT",
+      "WETH",
+      "WBTC",
+      "UMA",
+      "BAL",
+      "ACX",
+      "POOL",
+    ]);
     this.l2Gas = 200000;
-    this.txnClient = new TransactionClient(logger);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -124,14 +141,12 @@ export class OptimismAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
-    const { chainId: destinationChainId, l2Gas, txnClient } = this;
-    assert(destinationChainId === 10, `chainId ${destinationChainId} is not supported`);
+    const { chainId, l2Gas } = this;
 
     const contract = this.getL1TokenGateway(l1Token);
-    const originChainId = (await contract.provider.getNetwork()).chainId;
-    assert(originChainId !== destinationChainId);
 
     let method = this.isSNX(l1Token) ? "depositTo" : "depositERC20";
     let args = this.isSNX(l1Token) ? [address, amount] : [l1Token, l2Token, amount, l2Gas, "0x"];
@@ -140,25 +155,26 @@ export class OptimismAdapter extends BaseAdapter {
     // on the atomic depositor contract. Note that value is still 0 as this method will pull WETH from the caller.
     if (this.isWeth(l1Token)) {
       method = "bridgeWethToOvm";
-      args = [address, amount, l2Gas, destinationChainId];
+      args = [address, amount, l2Gas, chainId];
     }
 
     // Pad gas when bridging to Optimism: https://community.optimism.io/docs/developers/bedrock/differences
     const gasLimitMultiplier = 1.5;
-    const _txnRequest: AugmentedTransaction = { contract, chainId: originChainId, method, args, gasLimitMultiplier };
-    const { reason, succeed, transaction: txnRequest } = (await txnClient.simulate([_txnRequest]))[0];
-    if (!succeed) {
-      const message = `Failed to simulate ${method} deposit to chainId ${destinationChainId} for mainnet token ${l1Token}`;
-      this.logger.warn({ at: this.getName(), message, reason });
-      throw new Error(`${message} (${reason})`);
-    }
-
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    return (await txnClient.submit(originChainId, [txnRequest]))[0];
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      contract,
+      method,
+      args,
+      gasLimitMultiplier,
+      ethers.constants.Zero,
+      simMode
+    );
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
-    const { chainId, txnClient } = this;
+  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+    const { chainId } = this;
     assert(chainId === 10, `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[10].weth;
@@ -166,10 +182,9 @@ export class OptimismAdapter extends BaseAdapter {
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
-      const method = "deposit";
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
-      return (await txnClient.submit(chainId, [{ contract, chainId, method, args: [], value }]))[0];
+      return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
     }
     return null;
   }
@@ -192,7 +207,7 @@ export class OptimismAdapter extends BaseAdapter {
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      return new Contract(this.atomicDepositorAddress, CONTRACT_ADDRESSES[1].atomicDepositor.abi, this.getSigner(1));
+      return this.getAtomicDepositor();
     } else {
       return this.getL1Bridge(l1Token);
     }
@@ -209,7 +224,7 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   isSNX(l1Token: string): boolean {
-    return l1Token.toLowerCase() === "0xc011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f";
+    return compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]);
   }
 
   private hasCustomL1Bridge(l1Token: string): boolean {
