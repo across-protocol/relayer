@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, getEthAddressForChain, ZERO_ADDRESS } from "../utils";
+import { ethers, getEthAddressForChain } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
