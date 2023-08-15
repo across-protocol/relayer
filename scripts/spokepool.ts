@@ -120,22 +120,16 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   return true;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function dumpConfig(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
-
   const chainId = Number(args.chainId);
-  const [_hubPool, _spokePool] = await Promise.all([getHubPoolContract(chainId), getSpokePoolContract(chainId)]);
+  const _spokePool = await getSpokePoolContract(chainId);
 
   const hubChainId = resolveHubChainId(chainId);
   const spokeProvider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(chainId, 1)[0]);
   const spokePool = _spokePool.connect(spokeProvider);
 
-  const [
-    spokePoolChainId,
-    hubPoolAddress,
-    admin,
-    wethAddress,
-    _currentTime,
-  ] = await Promise.all([
+  const [spokePoolChainId, hubPoolAddress, admin, wethAddress, _currentTime] = await Promise.all([
     spokePool.chainId(),
     spokePool.hubPool(),
     spokePool.crossDomainAdmin(),
@@ -146,13 +140,13 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
   // deploymentBlock = deployments[chainId.toString()].SpokePool.blockNumber;
   // const adminAlias = ethers.utils.getAddress(ethers.BigNumber.from(admin).add(zkUtils.L1_TO_L2_ALIAS_OFFSET).toHexString());
 
-  if(chainId !== Number(spokePoolChainId)) {
+  if (chainId !== Number(spokePoolChainId)) {
     throw new Error(`Chain ${chainId} SpokePool mismatch: ${spokePoolChainId} != ${chainId} (${spokePool.address})`);
   }
 
   const adminAlias = "...tbd";
   const currentTime = Number(_currentTime);
-  const currentTimeStr = (new Date(Number(currentTime) * 1000)).toUTCString();
+  const currentTimeStr = new Date(Number(currentTime) * 1000).toUTCString();
 
   console.log(
     `Dumping chain ${chainId} SpokePool config:\n` +
@@ -224,7 +218,7 @@ async function run(argv: string[]): Promise<boolean> {
       // @todo Not supported yet...
       usage(); // no return
     default:
-    usage(); // no return
+      usage(); // no return
   }
 }
 
