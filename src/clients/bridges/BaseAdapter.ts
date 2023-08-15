@@ -312,7 +312,7 @@ export abstract class BaseAdapter {
       amount,
       contract: contract.address,
       txnRequestData,
-      mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol}`,
+      mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${this.chainId}`,
     });
     if (simMode) {
       this.logger.debug({
