@@ -27,6 +27,9 @@ export class DataworkerConfig extends CommonConfig {
   readonly dataworkerFastLookbackCount: number;
   readonly dataworkerFastStartBundle: number | string;
 
+  // Used to determine whether or not the dataworker's components will be run in sequence or in parallel.
+  readonly parallelizeDataworkerComponents: boolean;
+
   readonly bufferToPropose: number;
 
   constructor(env: ProcessEnv) {
@@ -46,6 +49,7 @@ export class DataworkerConfig extends CommonConfig {
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_START_BUNDLE,
+      PARALLELIZE_DATAWORKER_COMPONENTS,
     } = env;
     super(env);
 
@@ -83,6 +87,8 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
+
+    this.parallelizeDataworkerComponents = PARALLELIZE_DATAWORKER_COMPONENTS === "true";
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
     // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
