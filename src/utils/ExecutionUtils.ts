@@ -48,3 +48,21 @@ export function rejectAfterDelay(seconds: number, message = ""): Promise<never> 
     });
   });
 }
+
+/**
+ * Run a batch of async functions in parallel or sequentially.
+ * @param asyncFunctions The async functions to run.
+ * @param sequential Whether to run the functions sequentially or in parallel.
+ */
+export async function runBatchAsyncFunctions(
+  asyncFunctions: Array<() => Promise<unknown>>,
+  sequential = false
+): Promise<void> {
+  if (sequential) {
+    for (const fn of asyncFunctions) {
+      await fn();
+    }
+  } else {
+    await Promise.all(asyncFunctions.map((fn) => fn()));
+  }
+}
