@@ -32,6 +32,9 @@ let l1ArbitrumBridge: FakeContract;
 let l1MailboxContract: FakeContract;
 let l1ZkSyncBridge: FakeContract;
 
+// Base contracts
+let l1BaseBridge: FakeContract;
+
 const enabledChainIds = [1, 10, 137, 288, 42161, 324];
 
 const mainnetTokens = {
@@ -236,6 +239,37 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWithValue(0);
   });
+  it("Correctly sends tokens to chain: Base", async function () {
+    const chainId = 8453; // Base ChainId
+    //  ERC20 tokens:
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
+    expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
+      mainnetTokens["usdc"], // l1 token
+      getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
+      amountToSend, // amount
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      "0x" // data
+    );
+
+    // DAI should not be a custom token on base.
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
+    expect(l1BaseBridge.depositTo).to.have.been.calledWith(
+      mainnetTokens["dai"], // l1 token
+      getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
+      amountToSend, // amount
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      "0x" // data
+    );
+
+    // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
+    expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
+      relayer.address, // to
+      amountToSend, // amount
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      chainId // chainId
+    );
+  });
 });
 
 async function seedMocks() {
@@ -262,7 +296,7 @@ async function constructChainSpecificFakes() {
   l1AtomicDepositor = await makeFake("atomicDepositor", CONTRACT_ADDRESSES[1].atomicDepositor.address!);
 
   // Optimism contracts
-  l1OptimismBridge = await makeFake("ovmStandardBridge", CONTRACT_ADDRESSES[1].ovmStandardBridge.address!);
+  l1OptimismBridge = await makeFake("ovmStandardBridge_10", CONTRACT_ADDRESSES[1].ovmStandardBridge_10.address!);
   l1OptimismDaiBridge = await makeFake("daiOptimismBridge", CONTRACT_ADDRESSES[1].daiOptimismBridge.address!);
   l1OptimismSnxBridge = await makeFake("snxOptimismBridge", CONTRACT_ADDRESSES[1].snxOptimismBridge.address!);
 
@@ -281,6 +315,9 @@ async function constructChainSpecificFakes() {
   // zkSync contracts
   l1ZkSyncBridge = await makeFake("zkSyncDefaultErc20Bridge", CONTRACT_ADDRESSES[1].zkSyncDefaultErc20Bridge.address!);
   l1MailboxContract = await makeFake("zkSyncMailbox", CONTRACT_ADDRESSES[1].zkSyncMailbox.address!);
+
+  // Base contracts
+  l1BaseBridge = await makeFake("ovmStandardBridge_8453", CONTRACT_ADDRESSES[1].ovmStandardBridge_8453.address!);
 }
 
 async function makeFake(contractName: string, address: string) {
