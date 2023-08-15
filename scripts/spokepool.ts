@@ -1,9 +1,16 @@
 import assert from "assert";
 import * as contracts from "@across-protocol/contracts-v2";
-import { ethers, Contract, Wallet } from "ethers";
+import { LogDescription } from "@ethersproject/abi";
+import { BigNumber, Contract, ethers, Wallet } from "ethers";
 import minimist from "minimist";
+import { groupBy } from "lodash";
 import { config } from "dotenv";
-import { getDeployedContract, getNodeUrlList } from "../src/utils";
+import {
+  getDeployedContract,
+  getNetworkName,
+  getNodeUrlList,
+  resolveTokenSymbols
+} from "../src/utils";
 
 type ERC20 = {
   address: string;
@@ -11,18 +18,66 @@ type ERC20 = {
   symbol: string;
 };
 
+const { MaxUint256, Zero } = ethers.constants;
+
 const testChains = [5, 280];
 const chains = [1, 10, 137, 324, 42161];
 
 const padding = 20;
 
-function resolveHubChainId(spokeChainId: number): number {
-  if (chains.includes(spokeChainId)) {
-    return 1;
-  }
+function formatAddress(address: string, maxWidth = 18): string {
+  const separator = "...";
+  const textLen = maxWidth - separator.length;
+  return address.substring(0, Math.ceil(textLen / 2)) +
+    "..." +
+    address.substring(address.length - Math.floor(textLen / 2), address.length);
+}
 
-  assert(testChains.includes(spokeChainId), `Unsupported SpokePool chain ID: ${spokeChainId}`);
-  return 5;
+function printDeposit(log: LogDescription): void{
+  const originChainId = log.args.originChainId as number;
+  const destinationChainId = log.args.destinationChainId as number;
+  const depositor = log.args.depositor as string;
+  const recipient = log.args.depositor as string;
+  const originToken = log.args.originToken;
+  const amount = log.args.amount as BigNumber;
+
+  const tokenSymbol = resolveTokenSymbols([originToken], originChainId)[0];
+  console.log(
+    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
+      `\t${"Depositor".padEnd(padding)}: ${formatAddress(depositor, 18)}\n` +
+      `\t${"Recipient".padEnd(padding)}: ${formatAddress(recipient, 18)}\n` +
+      `\t${"Origin chain".padEnd(padding)}: ${getNetworkName(originChainId).toString().padStart(18)}\n` +
+      `\t${"Destination chain".padEnd(padding)}: ${getNetworkName(destinationChainId).padStart(18)}\n` +
+      `\t${"Token".padEnd(padding)}: ${tokenSymbol.padStart(18)}\n` +
+      `\t${"Amount".padEnd(padding)}: ${amount.toString().padStart(18)}\n` +
+      `\t${"Relayer Fee".padEnd(padding)}: ${log.args.relayerFeePct.toString().padStart(18)}\n`
+  );
+}
+
+function printFill(log: LogDescription): void{
+  const originChainId = log.args.originChainId as number;
+  const destinationChainId = log.args.destinationChainId as number;
+  const depositor = log.args.depositor as string;
+  const recipient = log.args.depositor as string;
+  const destinationToken = log.args.destinationToken;
+  const amount = log.args.amount as BigNumber;
+  const totalFilledAmount = log.args.totalFilledAmount as BigNumber;
+
+  const tokenSymbol = resolveTokenSymbols([destinationToken], destinationChainId)[0];
+  const totalFilledPct = `${totalFilledAmount.mul(100).div(amount)} %`;
+  console.log(
+    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
+      `\t${"Depositor".padEnd(padding)}: ${formatAddress(depositor, 18)}\n` +
+      `\t${"Recipient".padEnd(padding)}: ${formatAddress(recipient, 18)}\n` +
+      `\t${"Origin chain".padEnd(padding)}: ${getNetworkName(originChainId).toString().padStart(18)}\n` +
+      `\t${"Destination chain".padEnd(padding)}: ${getNetworkName(destinationChainId).padStart(18)}\n` +
+      `\t${"Token".padEnd(padding)}: ${tokenSymbol.padStart(18)}\n` +
+      `\t${"Amount".padEnd(padding)}: ${amount.toString().padStart(18)}\n` +
+      `\t${"Fill Amount".padEnd(padding)}: ${log.args.fillAmount.toString().padStart(18)}\n` +
+      `\t${"Relayer Fee".padEnd(padding)}: ${log.args.relayerFeePct.toString().padStart(18)}\n` +
+      `\t${"LP Fee".padEnd(padding)}: ${log.args.realizedLpFeePct.toString().padStart(18)}\n` +
+      `\t${"Filled".padEnd(padding)}: ${totalFilledPct.padStart(18)}\n`
+  );
 }
 
 function getTokenAddress(symbol: string, chainId: number): ERC20 {
@@ -38,6 +93,15 @@ function getTokenAddress(symbol: string, chainId: number): ERC20 {
   }
 
   return { address: addresses[chainId], decimals, symbol };
+}
+
+function resolveHubChainId(spokeChainId: number): number {
+  if (chains.includes(spokeChainId)) {
+    return 1;
+  }
+
+  assert(testChains.includes(spokeChainId), `Unsupported SpokePool chain ID: ${spokeChainId}`);
+  return 5;
 }
 
 async function getHubPoolContract(chainId: number): Promise<Contract> {
@@ -82,9 +146,9 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     console.log("Approval complete...");
   }
 
-  const relayerFeePct = ethers.constants.Zero;
+  const relayerFeePct = Zero;
+  const maxCount = MaxUint256;
   const quoteTimestamp = Math.round(Date.now() / 1000);
-  const maxCount = ethers.constants.MaxUint256;
 
   console.log(
     `Submitting deposit on chain ID ${fromChainId}\n` +
@@ -161,11 +225,52 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
   return true;
 }
 
+async function fetchTxn(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
+  const { txnHash } = args;
+  const chainId = Number(args.chainId);
+
+  if (
+    txnHash === undefined ||
+    typeof txnHash !== "string" ||
+    txnHash.length != 66 ||
+    !txnHash.startsWith("0x")
+  ) {
+    throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
+  }
+
+  const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(chainId, 1)[0]);
+  const spokePool = await getSpokePoolContract(chainId);
+
+  const txn = await provider.getTransactionReceipt(txnHash);
+  const fundsDeposited = spokePool.interface.getEventTopic("FundsDeposited");
+  const filledRelay = spokePool.interface.getEventTopic("FilledRelay");
+  const logs = txn.logs.filter(({ address }) => address === spokePool.address);
+  const { deposits = [], fills = [] } = groupBy(logs, ({ topics }) => {
+    switch (topics[0]) {
+      case fundsDeposited:
+        return "deposits";
+      case filledRelay:
+        return "fills";
+    }
+  });
+
+  deposits.forEach((deposit) => {
+    printDeposit(spokePool.interface.parseLog(deposit));
+  });
+
+  fills.forEach((fill) => {
+    printFill(spokePool.interface.parseLog(fill));
+  });
+
+  return true;
+}
+
 function usage(badInput?: string): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
   const walletOpts = "mnemonic|privateKey";
   const depositArgs = "--from <originChainId> --to <destinationChainId>" + " --token <tokenSymbol> --amount <amount>";
   const dumpConfigArgs = "--chainId";
+  const fetchArgs = "--chainId <chainId> --txnHash <txnHash>";
   const fillArgs = "--from <originChainId> --hash <depositHash>";
 
   const pad = "deposit".length;
@@ -173,6 +278,7 @@ function usage(badInput?: string): boolean {
     Usage:
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
+    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fill".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
@@ -184,11 +290,16 @@ function usage(badInput?: string): boolean {
 
 async function run(argv: string[]): Promise<boolean> {
   const configOpts = ["chainId"];
-  const depositOpts = ["from", "to", "token", "amount"];
+  const depositOpts = ["from", "to", "token", "amount", "recipient"];
+  const fetchOpts = ["chainId", "transactionHash"];
+  const fillOpts = [];
   const opts = {
-    string: ["wallet", ...configOpts, ...depositOpts],
+    string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts],
     default: {
       wallet: "mnemonic",
+    },
+    alias: {
+      "transactionHash": "txnHash",
     },
     unknown: usage,
   };
@@ -214,6 +325,8 @@ async function run(argv: string[]): Promise<boolean> {
       return await deposit(args, signer);
     case "dump":
       return await dumpConfig(args, signer);
+    case "fetch":
+      return await fetchTxn(args, signer);
     case "fill":
       // @todo Not supported yet...
       usage(); // no return
