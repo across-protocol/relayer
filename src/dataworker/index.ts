@@ -1,4 +1,12 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Wallet,
+  disconnectRedisClient,
+  runBatchAsyncFunctions,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -113,59 +121,68 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         await ubaClient.update();
       }
 
-      // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled) {
-        await dataworker.validatePendingRootBundle(
-          spokePoolClients,
-          config.sendingDisputesEnabled,
-          fromBlocks,
-          ubaClient
-        );
-      } else {
-        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
-      }
+      await runBatchAsyncFunctions(
+        [
+          async () => {
+            // Validate and dispute pending proposal before proposing a new one
+            if (config.disputerEnabled) {
+              await dataworker.validatePendingRootBundle(
+                spokePoolClients,
+                config.sendingDisputesEnabled,
+                fromBlocks,
+                ubaClient
+              );
+            } else {
+              logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
+            }
+          },
+          async () => {
+            if (config.proposerEnabled) {
+              await dataworker.proposeRootBundle(
+                spokePoolClients,
+                config.rootBundleExecutionThreshold,
+                config.sendingProposalsEnabled,
+                fromBlocks,
+                ubaClient
+              );
+            } else {
+              logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
+            }
+          },
+          async () => {
+            if (config.executorEnabled) {
+              const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-      if (config.proposerEnabled) {
-        await dataworker.proposeRootBundle(
-          spokePoolClients,
-          config.rootBundleExecutionThreshold,
-          config.sendingProposalsEnabled,
-          fromBlocks,
-          ubaClient
-        );
-      } else {
-        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
-      }
+              await dataworker.executePoolRebalanceLeaves(
+                spokePoolClients,
+                balanceAllocator,
+                config.sendingExecutionsEnabled,
+                fromBlocks,
+                ubaClient
+              );
 
-      if (config.executorEnabled) {
-        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
-
-        await dataworker.executePoolRebalanceLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
-        );
-
-        // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
-        );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
-        );
-      } else {
-        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
-      }
+              // Execute slow relays before relayer refunds to give them priority for any L2 funds.
+              await dataworker.executeSlowRelayLeaves(
+                spokePoolClients,
+                balanceAllocator,
+                config.sendingExecutionsEnabled,
+                fromBlocks,
+                ubaClient
+              );
+              await dataworker.executeRelayerRefundLeaves(
+                spokePoolClients,
+                balanceAllocator,
+                config.sendingExecutionsEnabled,
+                fromBlocks,
+                ubaClient
+              );
+            } else {
+              logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+            }
+          },
+        ],
+        !config.parallelizeDataworkerComponents
+      );
 
       await clients.multiCallerClient.executeTransactionQueue();
 
