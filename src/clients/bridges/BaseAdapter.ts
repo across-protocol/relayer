@@ -279,7 +279,7 @@ export abstract class BaseAdapter {
     amount: BigNumberish,
     contract: Contract,
     method: string,
-    args: any[],
+    args: unknown[],
     gasLimitMultiplier: number,
     msgValue: BigNumber,
     simMode: boolean
