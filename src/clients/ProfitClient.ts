@@ -1,5 +1,5 @@
 import { Provider } from "@ethersproject/abstract-provider";
-import { utils as ethersUtils } from "ethers";
+import { constants as ethersConstants, utils as ethersUtils } from "ethers";
 import * as constants from "../common/Constants";
 import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
@@ -41,10 +41,12 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   288: WETH,
   324: WETH,
   42161: WETH,
+  8453: WETH,
   // Testnets:
   5: WETH,
   280: WETH,
   421613: WETH,
+  84531: WETH,
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
@@ -62,10 +64,12 @@ const QUERY_HANDLERS: {
   288: relayFeeCalculator.BobaQueries,
   324: relayFeeCalculator.ZkSyncQueries,
   42161: relayFeeCalculator.ArbitrumQueries,
+  8453: relayFeeCalculator.BaseQueries,
   // Testnets:
   5: relayFeeCalculator.EthereumQueries,
-  280: relayFeeCalculator.ZkSyncQueries,
+  280: relayFeeCalculator.zkSyncGoerliQueries,
   421613: relayFeeCalculator.ArbitrumQueries,
+  84531: relayFeeCalculator.BaseGoerliQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -83,7 +87,7 @@ export class ProfitClient {
   // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
-  private isGoerli: boolean;
+  private readonly isTestnet: boolean;
 
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
@@ -114,7 +118,7 @@ export class ProfitClient {
       );
     }
 
-    this.isGoerli = this.hubPoolClient.chainId === CHAIN_IDs.GOERLI;
+    this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
   }
 
   getAllPrices(): { [address: string]: BigNumber } {
@@ -124,20 +128,17 @@ export class ProfitClient {
   getPriceOfToken(token: string): BigNumber {
     // Warn on this initially, and move to an assert() once any latent issues are resolved.
     // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
-    if (this.tokenPrices[token] === undefined) {
+    if (this.tokenPrices[token] === undefined && !this.isTestnet) {
       this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.` });
-      return toBN(0);
+      return ethersConstants.Zero;
     }
 
-    if (this.isGoerli && token === TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.GOERLI]) {
-      return this.tokenPrices[WETH];
-    }
     return this.tokenPrices[token];
   }
 
   // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
   getTotalGasCost(chainId: number): BigNumber {
-    return this.totalGasCosts[chainId] ? toBN(this.totalGasCosts[chainId]) : toBN(0);
+    return this.totalGasCosts[chainId] ? toBN(this.totalGasCosts[chainId]) : ethersConstants.Zero;
   }
 
   // Estimate the gas cost of filling this relay.
@@ -325,7 +326,7 @@ export class ProfitClient {
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): boolean {
     const { profitable } = this.getFillProfitability(deposit, fillAmount, refundFee, l1Token);
-    return profitable ?? false;
+    return profitable ?? this.isTestnet;
   }
 
   captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {
@@ -355,23 +356,13 @@ export class ProfitClient {
       decimals: 18,
     };
 
-    // Support for relaying WETH on public testnet Goerli by adding price lookups for
-    // mainnet tokens which we'll ultimately use as the Goerli token prices.
-    if (this.isGoerli) {
-      l1Tokens[WETH] = {
-        address: WETH,
-        symbol: "WETH",
-        decimals: 18,
-      };
-    }
-
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
 
     // Pre-populate any new addresses.
     Object.values(l1Tokens).forEach((token: L1Token) => {
       const { address, symbol } = token;
       if (this.tokenPrices[address] === undefined) {
-        this.tokenPrices[address] = toBN(0);
+        this.tokenPrices[address] = ethersConstants.Zero;
         newTokens.push(symbol);
       }
     });

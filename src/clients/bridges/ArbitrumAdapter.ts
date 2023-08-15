@@ -2,13 +2,13 @@ import {
   assign,
   BigNumber,
   Contract,
-  runTransaction,
   spreadEvent,
   spreadEventWithBlockNumber,
   winston,
   BigNumberish,
   isDefined,
   TransactionResponse,
+  resolveTokenSymbols,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -63,25 +63,32 @@ export class ArbitrumAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 42161, monitoredAddresses, logger);
+    super(
+      spokePoolClients,
+      42161,
+      monitoredAddresses,
+      logger,
+      resolveTokenSymbols(
+        Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
+        BaseAdapter.HUB_CHAIN_ID
+      )
+    );
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
+    // Skip the token if we can't find the corresponding bridge.
+    // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
+    // rather than maintaining a list of native bridge-supported tokens.
+    const availableL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+
     const promises: Promise<Event[]>[] = [];
     const validTokens: string[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
-      for (const l1Token of l1Tokens) {
-        // Skip the token if we can't find the corresponding bridge.
-        // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
-        // rather than maintaining a list of native bridge-supported tokens.
-        if (!this.isSupportedToken(l1Token)) {
-          continue;
-        }
-
+      for (const l1Token of availableL1Tokens) {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
 
@@ -162,9 +169,9 @@ export class ArbitrumAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
-    this.log("Bridging tokens", { l1Token, l2Token, amount });
     const args = [
       l1Token, // token
       address, // to
@@ -173,7 +180,21 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.l2GasPrice, // gasPriceBid
       this.transactionSubmissionData, // data
     ];
-    return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, this.l1SubmitValue);
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      this.getL1GatewayRouter(),
+      "outboundTransfer",
+      args,
+      1,
+      this.l1SubmitValue,
+      simMode
+    );
+  }
+
+  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
+    throw new Error("Unnecessary to wrap ETH on Arbitrum");
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
@@ -190,9 +211,5 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   getL2Bridge(l1Token: SupportedL1Token): Contract {
     return new Contract(l2Gateways[l1Token], CONTRACT_ADDRESSES[42161].erc20Gateway.abi, this.getSigner(this.chainId));
-  }
-
-  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
-    return l1Token in l1Gateways && l1Token in l2Gateways;
   }
 }

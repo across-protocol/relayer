@@ -77,6 +77,13 @@ const config: HardhatUserConfig = {
       saveDeployments: true,
       accounts: { mnemonic },
     },
+    base: {
+      chainId: 8453,
+      url: "https://mainnet.base.org",
+      saveDeployments: true,
+      accounts: { mnemonic },
+      companionNetworks: { l1: "mainnet" },
+    },
   },
   gasReporter: { enabled: process.env.REPORT_GAS !== undefined, currency: "USD" },
   etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },

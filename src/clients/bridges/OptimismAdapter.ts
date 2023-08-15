@@ -1,29 +1,36 @@
 import assert from "assert";
-import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, BigNumberish, TransactionResponse } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  ZERO_ADDRESS,
+  paginatedEventQuery,
+  BigNumberish,
+  TransactionResponse,
+  compareAddressesSimple,
+  ethers,
+} from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
+import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { CHAIN_IDs } from "@across-protocol/contracts-v2";
 const { TOKEN_SYMBOLS_MAP } = constants;
-
-export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
 
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
-  private txnClient: TransactionClient;
 
   private customL1OptimismBridgeAddresses = {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge.address,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: CONTRACT_ADDRESSES[1].snxOptimismBridge,
   } as const;
 
   private customOvmBridgeAddresses = {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge.address,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: CONTRACT_ADDRESSES[10].snxOptimismBridge,
   } as const;
-
-  private atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
 
   constructor(
     logger: winston.Logger,
@@ -33,9 +40,19 @@ export class OptimismAdapter extends BaseAdapter {
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, 10, monitoredAddresses, logger);
+    super(spokePoolClients, 10, monitoredAddresses, logger, [
+      "DAI",
+      "SNX",
+      "USDC",
+      "USDT",
+      "WETH",
+      "WBTC",
+      "UMA",
+      "BAL",
+      "ACX",
+      "POOL",
+    ]);
     this.l2Gas = 200000;
-    this.txnClient = new TransactionClient(logger);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -46,18 +63,25 @@ export class OptimismAdapter extends BaseAdapter {
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of l1Tokens) {
-        const l1Method = this.isWeth(l1Token) ? "ETHDepositInitiated" : "ERC20DepositInitiated";
+        const l1Method = this.isWeth(l1Token)
+          ? "ETHDepositInitiated"
+          : this.isSNX(l1Token)
+          ? "DepositInitiated"
+          : "ERC20DepositInitiated";
         let l1SearchFilter = [l1Token, undefined, monitoredAddress];
         let l2SearchFilter = [l1Token, undefined, monitoredAddress];
         if (this.isWeth(l1Token)) {
           l1SearchFilter = [undefined, monitoredAddress];
           l2SearchFilter = [ZERO_ADDRESS, undefined, monitoredAddress];
+        } else if (this.isSNX(l1Token)) {
+          l1SearchFilter = [monitoredAddress];
+          l2SearchFilter = [monitoredAddress];
         }
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
         // Transfers might have come from the monitored address itself or another sender address (if specified).
         const senderAddress = this.senderAddress || this.atomicDepositorAddress;
-        const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
+        const adapterSearchConfig = this.isSNX(l1Token) ? [senderAddress] : [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
           paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig),
@@ -117,41 +141,40 @@ export class OptimismAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
-    const { chainId: destinationChainId, l2Gas, txnClient } = this;
-    assert(destinationChainId === 10, `chainId ${destinationChainId} is not supported`);
+    const { chainId, l2Gas } = this;
 
     const contract = this.getL1TokenGateway(l1Token);
-    const originChainId = (await contract.provider.getNetwork()).chainId;
-    assert(originChainId !== destinationChainId);
 
-    let method = "depositERC20";
-    let args = [l1Token, l2Token, amount, l2Gas, "0x"];
+    let method = this.isSNX(l1Token) ? "depositTo" : "depositERC20";
+    let args = this.isSNX(l1Token) ? [address, amount] : [l1Token, l2Token, amount, l2Gas, "0x"];
 
     // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to call bridgeWethToOvm
     // on the atomic depositor contract. Note that value is still 0 as this method will pull WETH from the caller.
     if (this.isWeth(l1Token)) {
       method = "bridgeWethToOvm";
-      args = [address, amount, l2Gas, destinationChainId];
+      args = [address, amount, l2Gas, chainId];
     }
 
     // Pad gas when bridging to Optimism: https://community.optimism.io/docs/developers/bedrock/differences
     const gasLimitMultiplier = 1.5;
-    const _txnRequest: AugmentedTransaction = { contract, chainId: originChainId, method, args, gasLimitMultiplier };
-    const { reason, succeed, transaction: txnRequest } = (await txnClient.simulate([_txnRequest]))[0];
-    if (!succeed) {
-      const message = `Failed to simulate ${method} deposit to chainId ${destinationChainId} for mainnet token ${l1Token}`;
-      this.logger.warn({ at: this.getName(), message, reason });
-      throw new Error(`${message} (${reason})`);
-    }
-
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    return (await txnClient.submit(originChainId, [txnRequest]))[0];
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      contract,
+      method,
+      args,
+      gasLimitMultiplier,
+      ethers.constants.Zero,
+      simMode
+    );
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
-    const { chainId, txnClient } = this;
+  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+    const { chainId } = this;
     assert(chainId === 10, `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[10].weth;
@@ -159,10 +182,9 @@ export class OptimismAdapter extends BaseAdapter {
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
-      const method = "deposit";
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
-      return (await txnClient.submit(chainId, [{ contract, chainId, method, args: [], value }]))[0];
+      return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
     }
     return null;
   }
@@ -177,15 +199,15 @@ export class OptimismAdapter extends BaseAdapter {
     if (this.chainId !== 10) {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
-    const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
+    const l1BridgeData = this.hasCustomL1Bridge(l1Token)
       ? this.customL1OptimismBridgeAddresses[l1Token]
-      : CONTRACT_ADDRESSES[1].ovmStandardBridge.address;
-    return new Contract(l1BridgeAddress, CONTRACT_ADDRESSES[1].daiOptimismBridge.abi, this.getSigner(1));
+      : CONTRACT_ADDRESSES[1].ovmStandardBridge;
+    return new Contract(l1BridgeData.address, l1BridgeData.abi, this.getSigner(1));
   }
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      return new Contract(this.atomicDepositorAddress, CONTRACT_ADDRESSES[1].atomicDepositor.abi, this.getSigner(1));
+      return this.getAtomicDepositor();
     } else {
       return this.getL1Bridge(l1Token);
     }
@@ -195,10 +217,14 @@ export class OptimismAdapter extends BaseAdapter {
     if (this.chainId !== 10) {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
-    const l2BridgeAddress = this.hasCustomL2Bridge(l1Token)
+    const l2BridgeData = this.hasCustomL2Bridge(l1Token)
       ? this.customOvmBridgeAddresses[l1Token]
-      : CONTRACT_ADDRESSES[10].ovmStandardBridge.address;
-    return new Contract(l2BridgeAddress, CONTRACT_ADDRESSES[10].ovmStandardBridge.abi, this.getSigner(this.chainId));
+      : CONTRACT_ADDRESSES[10].ovmStandardBridge;
+    return new Contract(l2BridgeData.address, l2BridgeData.abi, this.getSigner(this.chainId));
+  }
+
+  isSNX(l1Token: string): boolean {
+    return compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]);
   }
 
   private hasCustomL1Bridge(l1Token: string): boolean {
