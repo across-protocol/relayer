@@ -32,6 +32,7 @@ export interface EventSearchDetails {
 }
 
 export interface OpStackBridge {
+  readonly l1Gateway: string;
   constructL1ToL2Txn(
     toAddress: string,
     l1Token: string,
@@ -57,6 +58,10 @@ class DefaultERC20Bridge implements OpStackBridge {
 
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+  }
+
+  get l1Gateway() {
+    return this.l1Bridge.address;
   }
 
   constructL1ToL2Txn(
@@ -112,6 +117,10 @@ class WethBridge implements OpStackBridge {
 
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+  }
+
+  get l1Gateway() {
+    return this.atomicDepositor.address;
   }
 
   constructL1ToL2Txn(

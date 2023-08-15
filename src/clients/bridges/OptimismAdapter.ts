@@ -19,6 +19,10 @@ class DaiOptimismBridge implements OpStackBridge {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
+  get l1Gateway() {
+    return this.l1Bridge.address;
+  }
+
   constructL1ToL2Txn(
     toAddress: string,
     l1Token: string,
@@ -70,6 +74,10 @@ class SnxOptimismBridge implements OpStackBridge {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
+  get l1Gateway() {
+    return this.l1Bridge.address;
+  }
+
   constructL1ToL2Txn(
     toAddress: string,
     l1Token: string,
@@ -103,16 +111,6 @@ class SnxOptimismBridge implements OpStackBridge {
 }
 
 export class OptimismAdapter extends OpStackAdapter {
-  private customL1OptimismBridgeAddresses = {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge,
-    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: CONTRACT_ADDRESSES[1].snxOptimismBridge,
-  } as const;
-
-  private customOvmBridgeAddresses = {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge,
-    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: CONTRACT_ADDRESSES[10].snxOptimismBridge,
-  } as const;
-
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
