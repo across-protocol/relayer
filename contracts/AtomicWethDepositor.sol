@@ -106,5 +106,7 @@ contract AtomicWethDepositor {
 
     fallback() external payable {}
 
+    // Included to remove a compilation warning.
+    // NOTE: this should not affect behavior.
     receive() external payable {}
 }
