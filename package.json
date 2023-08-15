@@ -36,7 +36,6 @@
     "lodash": "^4.17.21",
     "lodash.get": "^4.4.2",
     "minimist": "^1.2.8",
-    "node-fetch": "2.6.7",
     "redis4": "npm:redis@^4.1.0",
     "ts-node": "^10.9.1",
     "winston": "^3.10.0",
