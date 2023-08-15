@@ -13,7 +13,7 @@ import {
   Provider,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
+import { AugmentedTransaction, SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
@@ -96,9 +96,8 @@ class DefaultERC20Bridge implements OpStackBridge {
       eventConfig
     );
   }
-
 }
-  
+
 
 class WethBridge implements OpStackBridge {
   private readonly l1Bridge: Contract;
@@ -157,12 +156,6 @@ class WethBridge implements OpStackBridge {
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
-  private txnClient: TransactionClient;
-
-  private readonly atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
-  private readonly atomicDepositorAbi = CONTRACT_ADDRESSES[1].atomicDepositor.abi;
-  private readonly mainnetOvmStandardBridgeAddress: string;
-  private readonly mainnetOvmStandardBridgeAbi: any[];
   private readonly defaultBridge: OpStackBridge;
 
   constructor(
@@ -178,12 +171,6 @@ export class OpStackAdapter extends BaseAdapter {
   ) {
     super(spokePoolClients, chainId, monitoredAddresses, logger, supportedTokens);
     this.l2Gas = 200000;
-    this.txnClient = new TransactionClient(logger);
-    this.mainnetOvmStandardBridgeAddress = CONTRACT_ADDRESSES[1][`ovmStandardBridge_${chainId}`].address;
-    this.mainnetOvmStandardBridgeAbi = CONTRACT_ADDRESSES[1][`ovmStandardBridge_${chainId}`].abi;
-    if (!this.mainnetOvmStandardBridgeAddress) {
-      throw new Error(`No ovmStandardBridgeAddress for chainId ${chainId}`);
-    }
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
     const wethAddress = CONTRACT_ADDRESSES[chainId]?.weth?.address;
