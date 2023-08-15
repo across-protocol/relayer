@@ -45,10 +45,7 @@ export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): 
 
 export function getTokenAddress(tokenAddress: string, chainId: number, targetChainId: number): string {
   const tokenSymbol = resolveTokenSymbols([tokenAddress], chainId)[0];
-  if (!tokenSymbol) {
-    throw new Error(`Could not resolve token symbol for token address ${tokenAddress} on chain ${chainId}`);
-  }
-  const targetAddress = TOKEN_SYMBOLS_MAP[tokenSymbol].addresses[targetChainId];
+  const targetAddress = TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[targetChainId];
   if (!targetAddress) {
     throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
   }
