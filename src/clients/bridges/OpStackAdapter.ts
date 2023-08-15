@@ -1,11 +1,159 @@
 import assert from "assert";
-import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, BigNumberish, TransactionResponse } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  ZERO_ADDRESS,
+  paginatedEventQuery,
+  BigNumberish,
+  TransactionResponse,
+  Event,
+  checkAddress,
+  Signer,
+  EventSearchConfig,
+  Provider,
+} from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
+
+export interface TransactionDetails {
+  readonly contract: Contract;
+  readonly method: string;
+  readonly args: any[];
+}
+
+export interface EventSearchDetails {
+  readonly address: string;
+  readonly eventName: string;
+  readonly queryParams: any[];
+}
+
+export interface OpStackBridge {
+  constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber,
+    l2Gas: number
+  ): TransactionDetails;
+  queryL1BridgeInitiationEvents(l1Token: string, fromAddress: string, eventConfig: EventSearchConfig): Promise<Event[]>;
+  queryL2BridgeFinalizationEvents(
+    l1Token: string,
+    fromAddress: string,
+    eventConfig: EventSearchConfig
+  ): Promise<Event[]>;
+}
+
+class DefaultERC20Bridge implements OpStackBridge {
+  private readonly l1Bridge: Contract;
+  private readonly l2Bridge: Contract;
+
+  constructor(private l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
+    this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
+
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+  }
+
+  constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber,
+    l2Gas: number
+  ): TransactionDetails {
+    return {
+      contract: this.l1Bridge,
+      method: "depositERC20",
+      args: [l1Token, l2Token, amount, l2Gas, "0x"],
+    };
+  }
+
+  queryL1BridgeInitiationEvents(
+    l1Token: string,
+    fromAddress: string,
+    eventConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    return paginatedEventQuery(
+      this.l1Bridge,
+      this.l1Bridge.filters.ETHDepositInitiated(undefined, fromAddress),
+      eventConfig
+    );
+  }
+
+  queryL2BridgeFinalizationEvents(
+    l1Token: string,
+    fromAddress: string,
+    eventConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    return paginatedEventQuery(
+      this.l2Bridge,
+      this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+      eventConfig
+    );
+  }
+
+}
+  
+
+class WethBridge implements OpStackBridge {
+  private readonly l1Bridge: Contract;
+  private readonly l2Bridge: Contract;
+  private readonly atomicDepositor: Contract;
+
+  constructor(private l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
+    this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
+
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+
+    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
+    this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+  }
+
+  constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber,
+    l2Gas: number
+  ): TransactionDetails {
+    return {
+      contract: this.atomicDepositor,
+      method: "bridgeWethToOvm",
+      args: [toAddress, amount, l2Gas, this.l2chainId],
+    };
+  }
+
+  queryL1BridgeInitiationEvents(
+    l1Token: string,
+    fromAddress: string,
+    eventConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    return paginatedEventQuery(
+      this.l1Bridge,
+      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+      eventConfig
+    );
+  }
+
+  queryL2BridgeFinalizationEvents(
+    l1Token: string,
+    fromAddress: string,
+    eventConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    return paginatedEventQuery(
+      this.l2Bridge,
+      this.l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+      eventConfig
+    );
+  }
+}
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
@@ -15,19 +163,20 @@ export class OpStackAdapter extends BaseAdapter {
   private readonly atomicDepositorAbi = CONTRACT_ADDRESSES[1].atomicDepositor.abi;
   private readonly mainnetOvmStandardBridgeAddress: string;
   private readonly mainnetOvmStandardBridgeAbi: any[];
+  private readonly defaultBridge: OpStackBridge;
 
   constructor(
     chainId: number,
-    private customL1BridgeAddresses: { [address: string]: string },
-    private customOvmBridgeAddresses: { [address: string]: string },
+    private customBridges: { [l1Address: string]: OpStackBridge },
     logger: winston.Logger,
+    supportedTokens: string[],
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[],
     // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    super(spokePoolClients, chainId, monitoredAddresses, logger);
+    super(spokePoolClients, chainId, monitoredAddresses, logger, supportedTokens);
     this.l2Gas = 200000;
     this.txnClient = new TransactionClient(logger);
     this.mainnetOvmStandardBridgeAddress = CONTRACT_ADDRESSES[1][`ovmStandardBridge_${chainId}`].address;
@@ -35,76 +184,85 @@ export class OpStackAdapter extends BaseAdapter {
     if (!this.mainnetOvmStandardBridgeAddress) {
       throw new Error(`No ovmStandardBridgeAddress for chainId ${chainId}`);
     }
+
+    // Typically, a custom WETH bridge is not provided, so use the standard one.
+    const wethAddress = CONTRACT_ADDRESSES[chainId]?.weth?.address;
+    if (wethAddress && !this.customBridges[wethAddress]) {
+      this.customBridges[wethAddress] = new WethBridge(
+        this.chainId,
+        this.hubChainId,
+        this.getSigner(this.hubChainId),
+        this.getSigner(chainId)
+      );
+    }
+
+    this.defaultBridge = new DefaultERC20Bridge(
+      this.chainId,
+      this.hubChainId,
+      this.getSigner(this.hubChainId),
+      this.getSigner(chainId)
+    );
+
+    // Before using this mapping, we need to verify that every key is a correctly checksummed address.
+    assert(
+      Object.keys(this.customBridges).every(checkAddress),
+      `Invalid or non-checksummed bridge address in customBridges keys: ${Object.keys(this.customBridges)}`
+    );
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
-    const promises = [];
-    // Fetch bridge events for all monitored addresses.
-    for (const monitoredAddress of this.monitoredAddresses) {
-      for (const l1Token of l1Tokens) {
-        const l1Method = this.isWeth(l1Token) ? "ETHDepositInitiated" : "ERC20DepositInitiated";
-        let l1SearchFilter = [l1Token, undefined, monitoredAddress];
-        let l2SearchFilter = [l1Token, undefined, monitoredAddress];
-        if (this.isWeth(l1Token)) {
-          l1SearchFilter = [undefined, monitoredAddress];
-          l2SearchFilter = [ZERO_ADDRESS, undefined, monitoredAddress];
-        }
-        const l1Bridge = this.getL1Bridge(l1Token);
-        const l2Bridge = this.getL2Bridge(l1Token);
-        // Transfers might have come from the monitored address itself or another sender address (if specified).
-        const senderAddress = this.senderAddress || this.atomicDepositorAddress;
-        const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
-        promises.push(
-          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...adapterSearchConfig), l2SearchConfig)
-        );
-      }
-    }
+    const processEvent = (event: Event) => {
+      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+        _amount: BigNumberish;
+        _to: string;
+      };
+      return {
+        amount: eventSpread["_amount"],
+        to: eventSpread["_to"],
+        ...eventSpread,
+      };
+    };
 
-    const results = await Promise.all(promises);
+    await Promise.all(
+      this.monitoredAddresses.map((monitoredAddress) =>
+        Promise.all(
+          l1Tokens.map(async (l1Token) => {
+            const bridge = this.getBridge(l1Token);
 
-    // 3 events per token.
-    const numEventsPerMonitoredAddress = 3 * l1Tokens.length;
+            const [depositInitiatedResults, depositFinalizedResults, depositFinalizedResults_DepositAdapter] =
+              await Promise.all([
+                bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, l1SearchConfig),
+                bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig),
+                // Transfers might have come from the monitored address itself or another sender address (if specified).
+                bridge.queryL2BridgeFinalizationEvents(
+                  l1Token,
+                  this.senderAddress || this.atomicDepositorAddress,
+                  l2SearchConfig
+                ),
+              ]);
 
-    // Segregate the events list by monitored address.
-    const resultsByMonitoredAddress = Object.fromEntries(
-      this.monitoredAddresses.map((monitoredAddress, index) => {
-        const start = index * numEventsPerMonitoredAddress;
-        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
-      })
+            assign(
+              this.l1DepositInitiatedEvents,
+              [monitoredAddress, l1Token],
+              depositInitiatedResults.map(processEvent)
+            );
+            assign(
+              this.l2DepositFinalizedEvents,
+              [monitoredAddress, l1Token],
+              depositFinalizedResults.map(processEvent)
+            );
+            assign(
+              this.l2DepositFinalizedEvents_DepositAdapter,
+              [monitoredAddress, l1Token],
+              depositFinalizedResults_DepositAdapter.map(processEvent)
+            );
+          })
+        )
+      )
     );
-
-    // Process events for each monitored address.
-    for (const monitoredAddress of this.monitoredAddresses) {
-      const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
-      // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents,
-      // l2DepositFinalizedEvents and l2DepositFinalizedEvents_DepositAdapter state from the BaseAdapter.
-      eventsToProcess.forEach((result, index) => {
-        const l1Token = l1Tokens[Math.floor(index / 3)];
-        const events = result.map((event) => {
-          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-            _amount: BigNumberish;
-            _to: string;
-          };
-          return {
-            amount: eventSpread["_amount"],
-            to: eventSpread["_to"],
-            ...eventSpread,
-          };
-        });
-        const eventsStorage = [
-          this.l1DepositInitiatedEvents,
-          this.l2DepositFinalizedEvents,
-          this.l2DepositFinalizedEvents_DepositAdapter,
-        ][index % 3];
-
-        assign(eventsStorage, [monitoredAddress, l1Token], events);
-      });
-    }
 
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
     this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
@@ -121,21 +279,14 @@ export class OpStackAdapter extends BaseAdapter {
     const { chainId: destinationChainId, l2Gas, txnClient } = this;
     assert(destinationChainId === this.chainId, `chainId ${destinationChainId} is not supported`);
 
-    const contract = this.getL1TokenGateway(l1Token);
+    const bridge = this.getBridge(l1Token);
+
+    const { contract, method, args } = bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, l2Gas);
+
     const originChainId = (await contract.provider.getNetwork()).chainId;
     assert(originChainId !== destinationChainId);
 
-    let method = "depositERC20";
-    let args = [l1Token, l2Token, amount, l2Gas, "0x"];
-
-    // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to call bridgeWethToOvm
-    // on the atomic depositor contract. Note that value is still 0 as this method will pull WETH from the caller.
-    if (this.isWeth(l1Token)) {
-      method = "bridgeWethToOvm";
-      args = [address, amount, l2Gas, destinationChainId];
-    }
-
-    // Pad gas when bridging to Base: https://community.optimism.io/docs/developers/bedrock/differences
+    // Pad gas when bridging to Optimism/Base: https://community.optimism.io/docs/developers/bedrock/differences
     const gasLimitMultiplier = 1.5;
     const _txnRequest: AugmentedTransaction = { contract, chainId: originChainId, method, args, gasLimitMultiplier };
     const { reason, succeed, transaction: txnRequest } = (await txnClient.simulate([_txnRequest]))[0];
@@ -172,43 +323,9 @@ export class OpStackAdapter extends BaseAdapter {
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
-  getL1Bridge(l1Token: string): Contract {
-    if (this.chainId !== this.chainId) {
-      throw new Error(`chainId ${this.chainId} is not supported`);
-    }
-    const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
-      ? this.customL1BridgeAddresses[l1Token]
-      : this.mainnetOvmStandardBridgeAddress;
-    return new Contract(l1BridgeAddress, this.mainnetOvmStandardBridgeAbi, this.getSigner(1));
-  }
-
-  getL1TokenGateway(l1Token: string): Contract {
-    if (this.isWeth(l1Token)) {
-      return new Contract(this.atomicDepositorAddress, this.atomicDepositorAbi, this.getSigner(1));
-    } else {
-      return this.getL1Bridge(l1Token);
-    }
-  }
-
-  getL2Bridge(l1Token: string): Contract {
-    if (this.chainId !== this.chainId) {
-      throw new Error(`chainId ${this.chainId} is not supported`);
-    }
-    const l2BridgeAddress = this.hasCustomL2Bridge(l1Token)
-      ? this.customOvmBridgeAddresses[l1Token]
-      : CONTRACT_ADDRESSES[this.chainId].ovmStandardBridge.address;
-    return new Contract(
-      l2BridgeAddress,
-      CONTRACT_ADDRESSES[this.chainId].ovmStandardBridge.abi,
-      this.getSigner(this.chainId)
-    );
-  }
-
-  private hasCustomL1Bridge(l1Token: string): boolean {
-    return l1Token in this.customL1BridgeAddresses;
-  }
-
-  private hasCustomL2Bridge(l1Token: string): boolean {
-    return l1Token in this.customOvmBridgeAddresses;
+  getBridge(l1Token: string): OpStackBridge {
+    // Before doing a lookup, we must verify that the address is correctly checksummed.
+    assert(checkAddress(l1Token), `Invalid or non-checksummed token address ${l1Token}`);
+    return this.customBridges[l1Token] || this.defaultBridge;
   }
 }

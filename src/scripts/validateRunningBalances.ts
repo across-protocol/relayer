@@ -364,7 +364,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
         // If chain was not active at the time of the older bundle, then set from blocks to undefined
         // which will load events since the registration block for the chain.
-        console.log("olderBundle", olderBundle, chainId, i);
         if (i >= olderBundle.bundleEvaluationBlockNumbers.length) {
           return [chainId, undefined];
         }

@@ -11,24 +11,7 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/contracts-v2@2.4.0":
-  version "2.4.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.4.0.tgz#d9a05ecab8f9507df3fdb0f609c98e276da6176c"
-  integrity sha512-I2Y7d3XQVxmMwntIlnEqAgtQ8uLehgSkiPVRrBdo9MD1cBZRWmkiI5tH0Rdz1+qujUNx5CNdKmbkjW/h9WXC3Q==
-  dependencies:
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/abstract-provider" "5.7.0"
-    "@ethersproject/abstract-signer" "5.7.0"
-    "@ethersproject/bignumber" "5.7.0"
-    "@openzeppelin/contracts" "4.9.2"
-    "@openzeppelin/contracts-upgradeable" "4.9.2"
-    "@uma/common" "^2.29.0"
-    "@uma/contracts-node" "^0.3.18"
-    "@uma/core" "^2.41.0"
-    zksync-web3 "^0.14.3"
-
-"@across-protocol/contracts-v2@^2.4.2":
+"@across-protocol/contracts-v2@2.4.2", "@across-protocol/contracts-v2@^2.4.2":
   version "2.4.2"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.4.2.tgz#4799c84abfb6fc3c9b13c48ffb9899f20ab867c2"
   integrity sha512-4KY3bNrF2YNM4RCbbdHqze+E4AxWRHvQe2Yu/UmHKOr7h3zSU1PBdjeuV4dRtnsvU9XMNRQ4jGxf/cVo1EmtlQ==
@@ -54,10 +37,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.15.12":
-  version "0.15.12"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.15.12.tgz#058cf994f1eb151f9f8a7fd84284fdc49662e0dc"
-  integrity sha512-bXmJ2mga4o6QCvdOamNKcbeMqBsCcf7d3ooXhCx+mF/767lfATX6uF8ychXvTP8DAVo5Nr+fzGJAKrs6Xjvw/Q==
+"@across-protocol/sdk-v2@0.15.16":
+  version "0.15.16"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.15.16.tgz#913c5c3eb35737af20da6e0e883459bca40d2f15"
+  integrity sha512-7UlKx8q5cdIVRC4FA+H95CkRLRsJuTUdBp3LMoy1kKIsxpmc3N9i/OQxymL4pmBeMBMX3UYm+AmaI8PVgkPJeg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/contracts-v2" "^2.4.2"
@@ -3121,7 +3104,7 @@
     "@typescript-eslint/types" "4.33.0"
     eslint-visitor-keys "^2.0.0"
 
-"@uma/common@2.33.0", "@uma/common@^2.17.0", "@uma/common@^2.28.4", "@uma/common@^2.29.0", "@uma/common@^2.33.0":
+"@uma/common@2.33.0", "@uma/common@^2.17.0", "@uma/common@^2.28.4", "@uma/common@^2.33.0":
   version "2.33.0"
   resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.33.0.tgz#25157e804228f91a52f501ca174d9432601836ad"
   integrity sha512-w6wKpfXHJzFYHN3QqYGJrCRtussgQBu2L/glmuolxIz1kFS5aGjUnqhll+XJBK9G9RDx2b3J1vBEMAlF25sTVw==
@@ -3201,11 +3184,6 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.16.tgz#47f90874800a64e046143eefee9614fcafa8ca5b"
   integrity sha512-2/0A7wTh2zEw8GjYZmydRmTtQDfUtRHrttU2E5w8dACDIMA5EYrAm+G/r67SYcrt7+cWUmsBmR9AZ0QR01zN2A==
 
-"@uma/contracts-node@^0.3.18":
-  version "0.3.18"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.18.tgz#40e053ff6bc66f7ae7ce6c5d203a3200cf9ed928"
-  integrity sha512-ENFYjvVnyplKZF1G5YxOfpm0Ob1nOKtKcwX+TtfOiQGLNMVed8azV8tTSAWlJG/5SZkekX9Y5xZSP5YfcmMj0A==
-
 "@uma/contracts-node@^0.4.0", "@uma/contracts-node@^0.4.17":
   version "0.4.17"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.17.tgz#6abd815723c8344017eb5c302f6a5b0b690eeb4e"
@@ -3216,7 +3194,7 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.16.tgz#1b4d50fae0a6a0233fb9ff7bcaacc003a80feeb2"
   integrity sha512-7x0X68m/th0ieoGkEKniKEu08ee1r/SVF0vF97QRgiD0VvdKrQ9Z8ED0HDXreh/g8Rd7LBPgJzgHrrHOpkLDyQ==
 
-"@uma/core@^2.18.0", "@uma/core@^2.41.0":
+"@uma/core@^2.18.0":
   version "2.43.2"
   resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.43.2.tgz#b4dc17594f6ff8b57720f6451043e8ee91841942"
   integrity sha512-/v+dMemV/SYvJveO2gXFfmhl/fwypjEAn/KlehcaHvGsyUKGHXT55tSLuBvE2qdtL+l8+YGXXUV98J5OR5T0Qw==

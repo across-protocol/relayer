@@ -14,11 +14,10 @@ export class BaseChainAdapter extends OpStackAdapter {
   ) {
     super(
       8453,
-      // L1 Custom bridge addresses
-      {},
-      // L2 custom bridge addresses
+      // Custom Bridges
       {},
       logger,
+      ["BAL", "DAI", "ETH", "WETH", "USDC"],
       spokePoolClients,
       monitoredAddresses,
       senderAddress
