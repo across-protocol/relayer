@@ -98,7 +98,6 @@ class DefaultERC20Bridge implements OpStackBridge {
   }
 }
 
-
 class WethBridge implements OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;

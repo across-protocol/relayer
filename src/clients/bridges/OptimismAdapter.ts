@@ -1,26 +1,9 @@
-import assert from "assert";
-import {
-  Contract,
-  BigNumber,
-  ZERO_ADDRESS,
-  paginatedEventQuery,
-  BigNumberish,
-  TransactionResponse,
-  compareAddressesSimple,
-  ethers,
-  Event,
-  EventSearchConfig,
-  Signer,
-  Provider,
-} from "../../utils";
-import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
+import { Contract, BigNumber, paginatedEventQuery, Event, EventSearchConfig, Signer, Provider } from "../../utils";
+import { winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
-import { SortableEvent } from "../../interfaces";
-import { OutstandingTransfers } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { CHAIN_IDs } from "@across-protocol/contracts-v2";
 import { OpStackAdapter, OpStackBridge, TransactionDetails } from "./OpStackAdapter";
 const { TOKEN_SYMBOLS_MAP } = constants;
 
@@ -92,6 +75,7 @@ class SnxOptimismBridge implements OpStackBridge {
     l1Token: string,
     l2Token: string,
     amount: BigNumber,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     l2Gas: number
   ): TransactionDetails {
     return {
