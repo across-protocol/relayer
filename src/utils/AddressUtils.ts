@@ -42,3 +42,12 @@ export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): 
     })
     .filter(Boolean);
 }
+
+export function getTokenAddress(tokenAddress: string, chainId: number, targetChainId: number): string {
+  const tokenSymbol = resolveTokenSymbols([tokenAddress], chainId)[0];
+  const targetAddress = TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[targetChainId];
+  if (!targetAddress) {
+    throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
+  }
+  return targetAddress;
+}
