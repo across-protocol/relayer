@@ -35,7 +35,7 @@ interface ZkSyncL1Bridge {
 
 /**
  * @notice Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain
- * bridges for OVM chains, ZkSync and Polygon. Needed as these chains only support bridging of ETH, not WETH.
+ * bridges for Optimism, Base, Boba, ZkSync, and Polygon. Needed as these chains only support bridging of ETH, not WETH.
  */
 
 contract AtomicWethDepositor {
