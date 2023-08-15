@@ -7,6 +7,7 @@ import {
   BigNumberish,
   TransactionResponse,
   compareAddressesSimple,
+  ethers,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
