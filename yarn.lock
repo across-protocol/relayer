@@ -11,10 +11,27 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/contracts-v2@2.4.2", "@across-protocol/contracts-v2@^2.4.2":
+"@across-protocol/contracts-v2@2.4.2":
   version "2.4.2"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.4.2.tgz#4799c84abfb6fc3c9b13c48ffb9899f20ab867c2"
   integrity sha512-4KY3bNrF2YNM4RCbbdHqze+E4AxWRHvQe2Yu/UmHKOr7h3zSU1PBdjeuV4dRtnsvU9XMNRQ4jGxf/cVo1EmtlQ==
+  dependencies:
+    "@defi-wonderland/smock" "^2.3.4"
+    "@eth-optimism/contracts" "^0.5.40"
+    "@ethersproject/abstract-provider" "5.7.0"
+    "@ethersproject/abstract-signer" "5.7.0"
+    "@ethersproject/bignumber" "5.7.0"
+    "@openzeppelin/contracts" "4.9.2"
+    "@openzeppelin/contracts-upgradeable" "4.9.2"
+    "@uma/common" "^2.34.0"
+    "@uma/contracts-node" "^0.4.17"
+    "@uma/core" "^2.56.0"
+    zksync-web3 "^0.14.3"
+
+"@across-protocol/contracts-v2@^2.4.3":
+  version "2.4.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.4.3.tgz#9cc0b1f52b4f819b32ca1524ef84af9dfed8687a"
+  integrity sha512-NT5zBhTMYk7jUgZ6Q+xXz0p3ukXth8F6lBTiNCIrrzFSBl5JLVrhk00+TIIIOfwtpGSiG+MGkKuwCOKWMhwOMg==
   dependencies:
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
@@ -37,13 +54,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.15.16":
-  version "0.15.16"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.15.16.tgz#913c5c3eb35737af20da6e0e883459bca40d2f15"
-  integrity sha512-7UlKx8q5cdIVRC4FA+H95CkRLRsJuTUdBp3LMoy1kKIsxpmc3N9i/OQxymL4pmBeMBMX3UYm+AmaI8PVgkPJeg==
+"@across-protocol/sdk-v2@0.15.17":
+  version "0.15.17"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.15.17.tgz#707dbbbd56279ef3ab5d7ef7985b6d22906295d4"
+  integrity sha512-f4iOMQ8QPUtlpxhfyz3zkEiKP/3vEE/qyBBT48o9suZNyhq1RYoCxdcBLBDahcXzDZxUn0Jm0pT5wgU4hZz5Fg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/contracts-v2" "^2.4.2"
+    "@across-protocol/contracts-v2" "^2.4.3"
     "@eth-optimism/sdk" "^2.1.0"
     "@pinata/sdk" "^2.1.0"
     "@uma/sdk" "^0.34.1"

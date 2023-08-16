@@ -18,6 +18,8 @@ import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { constants } from "@across-protocol/sdk-v2";
+const { TOKEN_SYMBOLS_MAP } = constants;
 
 export interface TransactionDetails {
   readonly contract: Contract;
@@ -181,7 +183,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
-    const wethAddress = CONTRACT_ADDRESSES[chainId]?.weth?.address;
+    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
     if (wethAddress && !this.customBridges[wethAddress]) {
       this.customBridges[wethAddress] = new WethBridge(
         this.chainId,
