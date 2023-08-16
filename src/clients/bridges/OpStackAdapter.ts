@@ -11,9 +11,10 @@ import {
   Signer,
   EventSearchConfig,
   Provider,
+  ethers,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
-import { AugmentedTransaction, SpokePoolClient } from "../../clients";
+import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
@@ -271,34 +272,32 @@ export class OpStackAdapter extends BaseAdapter {
     address: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
-    const { chainId: destinationChainId, l2Gas, txnClient } = this;
-    assert(destinationChainId === this.chainId, `chainId ${destinationChainId} is not supported`);
+    const { l2Gas } = this;
 
     const bridge = this.getBridge(l1Token);
 
     const { contract, method, args } = bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, l2Gas);
 
-    const originChainId = (await contract.provider.getNetwork()).chainId;
-    assert(originChainId !== destinationChainId);
-
     // Pad gas when bridging to Optimism/Base: https://community.optimism.io/docs/developers/bedrock/differences
     const gasLimitMultiplier = 1.5;
-    const _txnRequest: AugmentedTransaction = { contract, chainId: originChainId, method, args, gasLimitMultiplier };
-    const { reason, succeed, transaction: txnRequest } = (await txnClient.simulate([_txnRequest]))[0];
-    if (!succeed) {
-      const message = `Failed to simulate ${method} deposit to chainId ${destinationChainId} for mainnet token ${l1Token}`;
-      this.logger.warn({ at: this.getName(), message, reason });
-      throw new Error(`${message} (${reason})`);
-    }
-
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    return (await txnClient.submit(originChainId, [txnRequest]))[0];
+    return await this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      contract,
+      method,
+      args,
+      gasLimitMultiplier,
+      ethers.constants.Zero,
+      simMode
+    );
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
-    const { chainId, txnClient } = this;
+  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+    const { chainId } = this;
     assert(chainId === this.chainId, `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[this.chainId].weth;
@@ -306,10 +305,9 @@ export class OpStackAdapter extends BaseAdapter {
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
-      const method = "deposit";
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
-      return (await txnClient.submit(chainId, [{ contract, chainId, method, args: [], value }]))[0];
+      return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
     }
     return null;
   }
