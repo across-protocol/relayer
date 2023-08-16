@@ -9,6 +9,8 @@ import {
   assign,
   Event,
   RetryProvider,
+  ZERO_ADDRESS,
+  getTokenAddress,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import assert from "assert";
@@ -51,10 +53,12 @@ export class ZKSyncAdapter extends BaseAdapter {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
         _amount: BigNumberish;
         _to: string;
+        l1Token?: string;
       };
       return {
         amount: eventSpread["_amount"],
         to: eventSpread["_to"],
+        token: eventSpread?.l1Token ?? ZERO_ADDRESS,
         ...eventSpread,
       };
     };
@@ -84,6 +88,7 @@ export class ZKSyncAdapter extends BaseAdapter {
             ),
           ]);
         } else {
+          const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             // Filter on 'from' and 'to' address
             paginatedEventQuery(
@@ -92,12 +97,20 @@ export class ZKSyncAdapter extends BaseAdapter {
               l1SearchConfig
             ),
 
-            // Filter on `l2Receiver` address and `l1Sender` address
-            paginatedEventQuery(l2ERC20Bridge, l2ERC20Bridge.filters.FinalizeDeposit(address, address), l2SearchConfig),
+            // Filter on `l2Receiver` address, `l1Sender` address, and l2 token.
+            paginatedEventQuery(
+              l2ERC20Bridge,
+              l2ERC20Bridge.filters.FinalizeDeposit(address, address, l2Token),
+              l2SearchConfig
+            ),
           ]);
         }
 
-        assign(this.l1DepositInitiatedEvents, [address, l1TokenAddress], initiatedQueryResult.map(processEvent));
+        assign(
+          this.l1DepositInitiatedEvents,
+          [address, l1TokenAddress],
+          initiatedQueryResult.map(processEvent).filter((e) => e?.l1Token && e.l1Token === l1TokenAddress)
+        );
         assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
       });
     });

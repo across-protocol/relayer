@@ -46,6 +46,11 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
   return decimals;
 }
 
+ * Resolves a list of token symbols for a list of token addresses and a chain ID.
+ * @param tokenAddresses The token addresses to resolve the symbols for.
+ * @param chainId The chain ID to resolve the symbols for.
+ * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
+ */
 export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
   const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
   return tokenAddresses
@@ -54,4 +59,13 @@ export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): 
         ?.symbol;
     })
     .filter(Boolean);
+}
+
+export function getTokenAddress(tokenAddress: string, chainId: number, targetChainId: number): string {
+  const tokenSymbol = resolveTokenSymbols([tokenAddress], chainId)[0];
+  const targetAddress = TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[targetChainId];
+  if (!targetAddress) {
+    throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
+  }
+  return targetAddress;
 }
