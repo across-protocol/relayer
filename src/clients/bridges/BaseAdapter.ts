@@ -18,6 +18,7 @@ import {
   ZERO_ADDRESS,
   assert,
   compareAddressesSimple,
+  formatUnitsForToken,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
@@ -279,7 +280,7 @@ export abstract class BaseAdapter {
     amount: BigNumberish,
     contract: Contract,
     method: string,
-    args: any[],
+    args: unknown[],
     gasLimitMultiplier: number,
     msgValue: BigNumber,
     simMode: boolean
@@ -301,6 +302,7 @@ export abstract class BaseAdapter {
       throw new Error(`${message} (${reason})`);
     }
 
+    const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
     const message = `💌⭐️ Bridging tokens from ${this.hubChainId} to ${this.chainId}`;
     this.logger.debug({
       at: `${this.getName()}#_sendTokenToTargetChain`,
@@ -310,6 +312,7 @@ export abstract class BaseAdapter {
       amount,
       contract: contract.address,
       txnRequestData,
+      mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${this.chainId}`,
     });
     if (simMode) {
       this.logger.debug({
