@@ -5,12 +5,7 @@ import { BigNumber, Contract, ethers, Wallet } from "ethers";
 import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
-import {
-  getDeployedContract,
-  getNetworkName,
-  getNodeUrlList,
-  resolveTokenSymbols
-} from "../src/utils";
+import { getDeployedContract, getNetworkName, getNodeUrlList, resolveTokenSymbols } from "../src/utils";
 
 type ERC20 = {
   address: string;
@@ -28,12 +23,14 @@ const padding = 20;
 function formatAddress(address: string, maxWidth = 18): string {
   const separator = "...";
   const textLen = maxWidth - separator.length;
-  return address.substring(0, Math.ceil(textLen / 2)) +
+  return (
+    address.substring(0, Math.ceil(textLen / 2)) +
     "..." +
-    address.substring(address.length - Math.floor(textLen / 2), address.length);
+    address.substring(address.length - Math.floor(textLen / 2), address.length)
+  );
 }
 
-function printDeposit(log: LogDescription): void{
+function printDeposit(log: LogDescription): void {
   const originChainId = log.args.originChainId as number;
   const destinationChainId = log.args.destinationChainId as number;
   const depositor = log.args.depositor as string;
@@ -54,7 +51,7 @@ function printDeposit(log: LogDescription): void{
   );
 }
 
-function printFill(log: LogDescription): void{
+function printFill(log: LogDescription): void {
   const originChainId = log.args.originChainId as number;
   const destinationChainId = log.args.destinationChainId as number;
   const depositor = log.args.depositor as string;
@@ -225,16 +222,12 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
   return true;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function fetchTxn(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
   const { txnHash } = args;
   const chainId = Number(args.chainId);
 
-  if (
-    txnHash === undefined ||
-    typeof txnHash !== "string" ||
-    txnHash.length != 66 ||
-    !txnHash.startsWith("0x")
-  ) {
+  if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
   }
 
@@ -299,7 +292,7 @@ async function run(argv: string[]): Promise<boolean> {
       wallet: "mnemonic",
     },
     alias: {
-      "transactionHash": "txnHash",
+      transactionHash: "txnHash",
     },
     unknown: usage,
   };
