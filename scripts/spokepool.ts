@@ -323,6 +323,7 @@ async function run(argv: string[]): Promise<boolean> {
     case "fill":
       // @todo Not supported yet...
       usage(); // no return
+      break; // ...keep the linter less dissatisfied!
     default:
       usage(); // no return
   }
