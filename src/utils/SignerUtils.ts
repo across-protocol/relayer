@@ -60,3 +60,15 @@ function getMnemonicSigner(): Wallet {
   }
   return Wallet.fromMnemonic(process.env.MNEMONIC);
 }
+
+/**
+ * Clears the mnemonic and private key from the env.
+ */
+function cleanKeysFromEnvironment(): void {
+  if (process.env.MNEMONIC) {
+    delete process.env.MNEMONIC;
+  }
+  if (process.env.PRIVATE_KEY) {
+    delete process.env.PRIVATE_KEY;
+  }
+}
