@@ -33,6 +33,12 @@ export function matchTokenSymbol(tokenAddress: string, chainId: number): string[
     .map(({ symbol }) => symbol);
 }
 
+/**
+ * Resolves a list of token symbols for a list of token addresses and a chain ID.
+ * @param tokenAddresses The token addresses to resolve the symbols for.
+ * @param chainId The chain ID to resolve the symbols for.
+ * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
+ */
 export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
   const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
   return tokenAddresses
