@@ -46,6 +46,7 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
   return decimals;
 }
 
+/**
  * Resolves a list of token symbols for a list of token addresses and a chain ID.
  * @param tokenAddresses The token addresses to resolve the symbols for.
  * @param chainId The chain ID to resolve the symbols for.
