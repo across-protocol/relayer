@@ -187,7 +187,9 @@ export async function finalize(
       finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
         logger.info({
           at: "Finalizer",
-          message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
+          message: `Submitted L1 proof for ${getNetworkName(
+            withdrawal.l2ChainId
+          )} and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
           transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
