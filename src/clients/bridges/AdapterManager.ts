@@ -38,7 +38,7 @@ export class AdapterManager {
       this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[8453] !== undefined) {
-      this.adapters[324] = new BaseChainAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, monitoredAddresses);
     }
 
     logger.debug({

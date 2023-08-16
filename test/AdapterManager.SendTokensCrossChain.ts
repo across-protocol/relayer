@@ -35,7 +35,7 @@ let l1ZkSyncBridge: FakeContract;
 // Base contracts
 let l1BaseBridge: FakeContract;
 
-const enabledChainIds = [1, 10, 137, 288, 42161, 324];
+const enabledChainIds = [1, 10, 137, 288, 42161, 324, 8453];
 
 const mainnetTokens = {
   usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -253,9 +253,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // DAI should not be a custom token on base.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
-    expect(l1BaseBridge.depositTo).to.have.been.calledWith(
+    expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["dai"], // l1 token
-      getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
+      getL2TokenAddresses(mainnetTokens["dai"])[chainId], // l2 token
       amountToSend, // amount
       (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
