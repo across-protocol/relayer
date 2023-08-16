@@ -10,7 +10,7 @@ const args = minimist(process.argv.slice(2));
  * @note If cleanEnv is true, the mnemonic and private key will be cleared from the env after retrieving the signer.
  * @note This function will throw if called a second time after the first call with cleanEnv = true.
  */
-export async function getSigner(cleanEnv = true): Promise<Wallet> {
+export async function getSigner(cleanEnv = false): Promise<Wallet> {
   if (!Object.keys(args).includes("wallet")) {
     throw new Error("Must define mnemonic, privatekey or gckms for wallet");
   }
