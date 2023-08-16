@@ -2,7 +2,14 @@ import { Wallet, retrieveGckmsKeys, getGckmsConfig } from "./";
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2));
 
-export async function getSigner(): Promise<Wallet> {
+/**
+ * Retrieves a signer based on the wallet type defined in the args.
+ * @param cleanEnv If true, clears the mnemonic and private key from the env after retrieving the signer.
+ * @returns A signer.
+ * @throws If the wallet type is not defined or the mnemonic/private key is not set.
+ * @note If cleanEnv is true, the mnemonic and private key will be cleared from the env after retrieving the signer.
+ * @note This function will throw if called a second time after the first call with cleanEnv = true.
+ */
   if (!Object.keys(args).includes("wallet")) {
     throw new Error("Must define mnemonic, privatekey or gckms for wallet");
   }
@@ -17,14 +24,24 @@ export async function getSigner(): Promise<Wallet> {
   }
 }
 
-function getPrivateKeySigner() {
+/**
+ * Retrieves a signer based on the mnemonic set in the env.
+ * @returns A signer based on the mnemonic set in the env.
+ * @throws If the mnemonic is not set.
+ */
+function getPrivateKeySigner(): Wallet {
   if (!process.env.PRIVATE_KEY) {
     throw new Error("Wallet private key selected but no PRIVATE_KEY env set!");
   }
   return new Wallet(process.env.PRIVATE_KEY);
 }
 
-async function getGckmsSigner() {
+/**
+ * Retrieves a signer based on the GCKMS key set in the args.
+ * @returns A signer based on the GCKMS key set in the args.
+ * @throws If the GCKMS key is not set.
+ */
+async function getGckmsSigner(): Promise<Wallet> {
   if (!args.keys) {
     throw new Error("Wallet GCKSM selected but no keys parameter set! Set GCKMS key to use");
   }
@@ -32,7 +49,12 @@ async function getGckmsSigner() {
   return new Wallet(privateKeys[0]); // GCKMS retrieveGckmsKeys returns multiple keys. For now we only support 1.
 }
 
-function getMnemonicSigner() {
+/**
+ * Retrieves a signer based on the mnemonic set in the env.
+ * @returns A signer based on the mnemonic set in the env.
+ * @throws If the mnemonic is not set.
+ */
+function getMnemonicSigner(): Wallet {
   if (!process.env.MNEMONIC) {
     throw new Error("Wallet mnemonic selected but no MNEMONIC env set!");
   }
