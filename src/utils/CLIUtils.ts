@@ -11,7 +11,7 @@ export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
   const args = minimist(process.argv.slice(2));
   // Build out the signer options to pass to the signer utils.
   const signerOptions: SignerOptions = {
-    keyType: ((args.wallet as string) ?? process.env.WALLET_TYPE ?? "MNEMONIC").toLowerCase(),
+    keyType: ((args.wallet as string) ?? "MNEMONIC").toLowerCase(),
     gckmsKeys: args.keys,
     cleanEnv: false, // TODO: We don't want to clean the env for now. This will be changed in the future.
   };
