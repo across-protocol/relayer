@@ -23,7 +23,6 @@ import {
   Wallet,
   winston,
   config,
-  getSigner,
   Logger,
   toBN,
   fromWei,
@@ -43,6 +42,7 @@ import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUt
 import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
+import { retrieveSignerFromCLIArgs } from "../utils/CLIUtils";
 
 config();
 let logger: winston.Logger;
@@ -450,7 +450,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 }
 
 export async function run(_logger: winston.Logger): Promise<void> {
-  const baseSigner: Wallet = await getSigner();
+  const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
   await runScript(_logger, baseSigner);
   await disconnectRedisClient(logger);
 }
