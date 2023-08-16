@@ -1,6 +1,25 @@
-import { Wallet, retrieveGckmsKeys, getGckmsConfig } from "./";
-import minimist from "minimist";
-const args = minimist(process.argv.slice(2));
+import { Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined } from "./";
+
+/**
+ * Signer options for the getSigner function.
+ */
+export type SignerOptions = {
+  /*
+   * The type of wallet to use.
+   * @note If using a GCKMS wallet, the gckmsKeys parameter must be set.
+   */
+  keyType: "mnemonic" | "privateKey" | "gckms";
+  /**
+   * Whether or not to clear the mnemonic/private key from the env after retrieving the signer.
+   * @note Not including this parameter or setting it to false will not clear the mnemonic/private key from the env.
+   */
+  cleanEnv?: boolean;
+  /**
+   * The GCKMS keys to use.
+   * @note This parameter is only required if the keyType is set to gckms.
+   */
+  gckmsKeys?: string[];
+};
 
 /**
  * Retrieves a signer based on the wallet type defined in the args.
@@ -10,12 +29,9 @@ const args = minimist(process.argv.slice(2));
  * @note If cleanEnv is true, the mnemonic and private key will be cleared from the env after retrieving the signer.
  * @note This function will throw if called a second time after the first call with cleanEnv = true.
  */
-export async function getSigner(cleanEnv = false): Promise<Wallet> {
-  if (!Object.keys(args).includes("wallet")) {
-    throw new Error("Must define mnemonic, privatekey or gckms for wallet");
-  }
+export async function getSigner({ keyType, gckmsKeys, cleanEnv }: SignerOptions): Promise<Wallet> {
   let wallet: Wallet | undefined = undefined;
-  switch (args.wallet) {
+  switch (keyType) {
     case "mnemonic":
       wallet = getMnemonicSigner();
       break;
@@ -23,7 +39,7 @@ export async function getSigner(cleanEnv = false): Promise<Wallet> {
       wallet = getPrivateKeySigner();
       break;
     case "gckms":
-      wallet = await getGckmsSigner();
+      wallet = await getGckmsSigner(gckmsKeys);
       break;
     default:
       throw new Error("Must define mnemonic, privatekey or gckms for wallet");
@@ -54,11 +70,11 @@ function getPrivateKeySigner(): Wallet {
  * @returns A signer based on the GCKMS key set in the args.
  * @throws If the GCKMS key is not set.
  */
-async function getGckmsSigner(): Promise<Wallet> {
-  if (!args.keys) {
+async function getGckmsSigner(keys?: string[]): Promise<Wallet> {
+  if (!isDefined(keys)) {
     throw new Error("Wallet GCKSM selected but no keys parameter set! Set GCKMS key to use");
   }
-  const privateKeys = await retrieveGckmsKeys(getGckmsConfig([args.keys]));
+  const privateKeys = await retrieveGckmsKeys(getGckmsConfig(keys));
   return new Wallet(privateKeys[0]); // GCKMS retrieveGckmsKeys returns multiple keys. For now we only support 1.
 }
 

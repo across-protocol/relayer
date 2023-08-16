@@ -37,6 +37,7 @@ export * from "./BigNumberUtils";
 export * from "./RedisUtils";
 export * from "./UmaUtils";
 export * from "./TokenUtils";
+export * from "./CLIUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
 
