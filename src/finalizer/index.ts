@@ -123,7 +123,7 @@ export async function finalize(
       );
       finalizationsToBatch.callData.push(...finalizations.callData);
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
-    } else if (chainId === 10) {
+    } else if (chainId === 10 || chainId === 8453) {
       const crossChainMessenger = getOptimismClient(chainId, hubSigner);
       const firstBlockToFinalize = await getBlockForTimestamp(
         chainId,
