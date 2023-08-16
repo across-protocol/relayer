@@ -157,55 +157,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             }
           }
 
-          // Make sure that previous root bundle's netSendAmount has been deposited into the spoke pool. We only
-          // perform this check for chains 10, 137, 288, and 42161 because transfers from the hub pool to spoke
-          // pools on those chains can take a variable amount of time, unlike transfers to the spoke pool on
-          // mainnet. Additionally, deposits to those chains emit transfer events where the from address
-          // is the zero address, making it easy to track.
-          if ([10, 137, 288, 42161].includes(leaf.chainId)) {
-            const _followingBlockNumber =
-              clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockNumber;
-            const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
-              previousValidatedBundle,
-              _followingBlockNumber
-            );
-            const previousBundleEndBlockForChain =
-              previousValidatedBundle.bundleEvaluationBlockNumbers[
-                dataworker.chainIdListForBundleEvaluationBlockNumbers.indexOf(leaf.chainId)
-              ];
-            const previousPoolRebalanceLeaf = previousBundlePoolRebalanceLeaves.find(
-              (_leaf) => _leaf.chainId === leaf.chainId && _leaf.l1Tokens.includes(l1Token)
-            );
-            if (previousPoolRebalanceLeaf) {
-              const previousNetSendAmount =
-                previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
-              mrkdwn += `\n\t\t- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`;
-              if (previousNetSendAmount.gt(toBN(0))) {
-                // This part might fail if the token is ETH since deposits of ETH do not emit Transfer events, so
-                // in these cases the `tokenBalanceAtBundleEndBlock` might look artificially higher for this bundle.
-                const depositsToSpokePool = (
-                  await paginatedEventQuery(
-                    l2TokenContract,
-                    l2TokenContract.filters.Transfer(ZERO_ADDRESS, spokePoolClients[leaf.chainId].spokePool.address),
-                    {
-                      fromBlock: previousBundleEndBlockForChain.toNumber(),
-                      toBlock: bundleEndBlockForChain.toNumber(),
-                      maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
-                    }
-                  )
-                ).filter((e) => e.args.value.eq(previousNetSendAmount));
-                if (depositsToSpokePool.length === 0) {
-                  mrkdwn += `\n\t\t- Adding previous leaf's netSendAmount (${fromWei(
-                    previousNetSendAmount.toString(),
-                    decimals
-                  )}) to token balance because it did not arrive at spoke pool before bundle end block.`;
-                  tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.add(previousNetSendAmount);
-                }
-              }
-            }
-          }
-
           // Check if previous bundle has any slow fills that haven't executed by the time of the bundle end block.
           if (previousRelayedRootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT) {
             // Not many bundles are expected to have slow fills so we can load them as necessary.
@@ -289,11 +240,11 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 
         // NOTE: There are several ways in which excess can be incorrect:
         // - A relayer refund leaf from a bundle more than 2 bundles ago has not been executed or never
-        //   arrived at the L2.
+        //   arrived at the L2. This would make the spoke balance seem higher than expected.
         // - A slow fill from a bundle more than 2 bundles ago has not been executed and has not been replaced
-        // by a partial fill.
-        // - A deposit from HubPool to Spoke took too long to arrive and those deposits are not trackable via
-        // Transfer events where the sender is 0x0.
+        // by a partial fill. This would make the spoke balance seem higher than expected.
+        // - A deposit from HubPool to Spoke took too long to arrive and arrived after the following root bundle
+        // proposal. This would make the spoke balance seem lower than expected.
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
         if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
