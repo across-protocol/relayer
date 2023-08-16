@@ -29,7 +29,7 @@ export function compareAddressesSimple(addressA: string, addressB: string): bool
 export function matchTokenSymbol(tokenAddress: string, chainId: number): string[] {
   // We can match one l1 token address on multiple symbols in some special cases, like ETH/WETH.
   return Object.values(TOKEN_SYMBOLS_MAP)
-    .filter(({ addresses }) => addresses[chainId].toLowerCase() === tokenAddress.toLowerCase())
+    .filter(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
     .map(({ symbol }) => symbol);
 }
 
@@ -37,7 +37,7 @@ export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): 
   const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
   return tokenAddresses
     .map((tokenAddress) => {
-      return tokenSymbols.find(({ addresses }) => addresses[chainId].toLowerCase() === tokenAddress.toLowerCase())
+      return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
         ?.symbol;
     })
     .filter(Boolean);
