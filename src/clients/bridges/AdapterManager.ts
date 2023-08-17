@@ -1,18 +1,16 @@
-import {
-  BigNumber,
-  winston,
-  toBN,
-  createFormatFunction,
-  etherscanLink,
-  Signer,
-  getL2TokenAddresses,
-  TransactionResponse,
-} from "../../utils";
+import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
+import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces";
+import { utils } from "@across-protocol/sdk-v2";
 export class AdapterManager {
-  public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
+  public adapters: { [chainId: number]: BaseAdapter } = {};
+
+  // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
+  // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
+  // manager will attempt to wrap ETH on into WETH. This is not necessary for chains that receive WETH, the ERC20,
+  // over the bridge.
+  public chainsToWrapEtherOn = [10, 324];
 
   constructor(
     readonly logger: winston.Logger,
@@ -35,6 +33,23 @@ export class AdapterManager {
     if (this.spokePoolClients[42161] !== undefined) {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
     }
+    if (this.spokePoolClients[324] !== undefined) {
+      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddresses);
+    }
+
+    logger.debug({
+      at: "AdapterManager#constructor",
+      message: "Initialized AdapterManager",
+      adapterChains: Object.keys(this.adapters).map((chainId) => Number(chainId)),
+    });
+  }
+
+  /**
+   * @notice Returns list of chains we have adapters for
+   * @returns list of chain IDs we have adapters for
+   */
+  supportedChains(): number[] {
+    return Object.keys(this.adapters).map((chainId) => Number(chainId));
   }
 
   async getOutstandingCrossChainTokenTransferAmount(
@@ -49,30 +64,25 @@ export class AdapterManager {
     address: string,
     chainId: number | string,
     l1Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    simMode = false
   ): Promise<TransactionResponse> {
     chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
-    return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount);
+    return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
-  // needs to e done on Boba and Optimism as only these two chains require ETH to be sent over the canonical bridge.
-  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber): Promise<void> {
-    const optimismCall =
-      this.spokePoolClients[10] !== undefined
-        ? (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
-        : Promise.resolve(undefined);
-    const [optimismWrapTx] = await Promise.all([optimismCall]);
-
-    if (optimismWrapTx) {
-      const mrkdwn =
-        "Ether on Optimism was wrapped due to being over the threshold of " +
-        `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
-        `${`\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} `}.`;
-      this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
-    }
+  // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
+  // (not the ERC20).
+  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber, simMode = false): Promise<void> {
+    await utils.mapAsync(
+      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
+      async (chainId) => {
+        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, simMode);
+      }
+    );
   }
 
   getSigner(chainId: number): Signer {
@@ -87,7 +97,7 @@ export class AdapterManager {
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
       if (!l2TokenForL1Token) {
-        throw new Error("No L2 token found for L1 token");
+        throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
       if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) {
         throw new Error("Mismatch tokens!");
@@ -108,25 +118,12 @@ export class AdapterManager {
   async setL1TokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
-    if (this.adapters[10] !== undefined) {
-      await this.adapters[10].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10))
-      );
-    }
-
-    if (this.adapters[137] !== undefined) {
-      await this.adapters[137].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))
-      );
-    }
-
-    if (this.adapters[42161] !== undefined) {
-      await this.adapters[42161].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))
-      );
+    for (const chainId of this.supportedChains()) {
+      const adapter = this.adapters[chainId];
+      if (isDefined(adapter)) {
+        const hubTokens = l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, chainId));
+        await adapter.checkTokenApprovals(address, hubTokens);
+      }
     }
   }
 

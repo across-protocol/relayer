@@ -3,7 +3,7 @@ export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
     [contractName: string]: {
       address?: string;
-      abi?: any[];
+      abi?: unknown[];
     };
   };
 } = {
@@ -55,6 +55,18 @@ export const CONTRACT_ADDRESSES: {
           stateMutability: "payable",
           type: "function",
         },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "bytes32", name: "l2DepositHash", type: "bytes32" },
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "address", name: "l1Token", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "DepositInitiated",
+          type: "event",
+        },
       ],
     },
     daiOptimismBridge: {
@@ -74,27 +86,6 @@ export const CONTRACT_ADDRESSES: {
           type: "event",
         },
         {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "_from", type: "address" },
-            { indexed: true, internalType: "address", name: "_to", type: "address" },
-            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
-            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
-          ],
-          name: "ETHDepositInitiated",
-          type: "event",
-        },
-        {
-          inputs: [
-            { internalType: "uint32", name: "_l2Gas", type: "uint32" },
-            { internalType: "bytes", name: "_data", type: "bytes" },
-          ],
-          name: "depositETH",
-          outputs: [],
-          stateMutability: "payable",
-          type: "function",
-        },
-        {
           inputs: [
             { internalType: "address", name: "_l1Token", type: "address" },
             { internalType: "address", name: "_l2Token", type: "address" },
@@ -109,10 +100,35 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    snxOptimismBridge: {
+      address: "0x39Ea01a0298C315d149a490E34B59Dbf2EC7e48F",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "_from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "DepositInitiated",
+          type: "event",
+        },
+        {
+          inputs: [
+            { internalType: "address", name: "to", type: "address" },
+            { internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "depositTo",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ],
+    },
     // Optimism and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0x26eaf37ee5daf49174637bdcd2f7759a25206c34",
+      address: "0xaA282C4E86beFda4a1E7C9c06165869026D27852",
       abi: [
         { stateMutability: "payable", type: "fallback" },
         {
@@ -136,6 +152,29 @@ export const CONTRACT_ADDRESSES: {
           outputs: [],
           stateMutability: "nonpayable",
           type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "address", name: "to", type: "address" },
+            { internalType: "uint256", name: "amount", type: "uint256" },
+            { internalType: "uint256", name: "l2GasLimit", type: "uint256" },
+            { internalType: "uint256", name: "l2GasPerPubdataByteLimit", type: "uint256" },
+            { internalType: "address", name: "refundRecipient", type: "address" },
+          ],
+          name: "bridgeWethToZkSync",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "ZkSyncEthDepositInitiated",
+          type: "event",
         },
         { stateMutability: "payable", type: "receive" },
       ],
@@ -333,6 +372,20 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    snxOptimismBridge: {
+      address: "0x136b1EC699c62b0606854056f02dC7Bb80482d63",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "DepositFinalized",
+          type: "event",
+        },
+      ],
+    },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: [
@@ -413,6 +466,97 @@ export const CONTRACT_ADDRESSES: {
           type: "event",
         },
       ],
+    },
+  },
+  324: {
+    zkSyncDefaultErc20Bridge: {
+      address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "l1Sender", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: true, internalType: "address", name: "l2Token", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "FinalizeDeposit",
+          type: "event",
+        },
+      ],
+    },
+    eth: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "Transfer",
+          type: "event",
+        },
+      ],
+    },
+    weth: {
+      address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
+    },
+  },
+  8453: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
+            { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
+            { indexed: true, internalType: "address", name: "_from", type: "address" },
+            { indexed: false, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
+          ],
+          name: "DepositFinalized",
+          type: "event",
+        },
+      ],
+    },
+    weth: {
+      address: "0x4200000000000000000000000000000000000006",
+      abi: [
+        {
+          constant: false,
+          inputs: [{ name: "wad", type: "uint256" }],
+          name: "withdraw",
+          outputs: [],
+          payable: false,
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          constant: false,
+          inputs: [],
+          name: "deposit",
+          outputs: [],
+          payable: true,
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          constant: true,
+          inputs: [{ name: "", type: "address" }],
+          name: "balanceOf",
+          outputs: [{ name: "", type: "uint256" }],
+          payable: false,
+          stateMutability: "view",
+          type: "function",
+        },
+      ],
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   42161: {

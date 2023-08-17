@@ -8,6 +8,14 @@ export class MockUBAClient extends UBAClient {
   public readonly lpFees: { [chainId: number]: BigNumber } = {};
   public readonly flows: { [chainId: number]: { [token: string]: clients.ModifiedUBAFlow[] } } = {};
 
+  constructor(
+    tokenSymbols: string[],
+    hubPoolClient: clients.HubPoolClient,
+    spokePoolClients: { [chainId: number]: clients.SpokePoolClient }
+  ) {
+    super(new clients.UBAClientConfig(), tokenSymbols, hubPoolClient, spokePoolClients);
+  }
+
   setBalancingFee(chainId: number, fee: BigNumber): void {
     this.balancingFees[chainId] = fee;
   }

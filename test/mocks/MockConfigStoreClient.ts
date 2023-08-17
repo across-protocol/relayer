@@ -1,7 +1,7 @@
 import { clients, interfaces } from "@across-protocol/sdk-v2";
-import { CHAIN_ID_LIST_INDICES } from "../../src/common";
 import { EventSearchConfig, MakeOptional, winston } from "../../src/utils";
 import { Contract } from "../utils";
+import { CHAIN_ID_TEST_LIST } from "../constants";
 
 export const DEFAULT_CONFIG_STORE_VERSION = clients.DEFAULT_CONFIG_STORE_VERSION;
 
@@ -13,7 +13,7 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
     configStore: Contract,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     configStoreVersion = DEFAULT_CONFIG_STORE_VERSION,
-    enabledChainIds = CHAIN_ID_LIST_INDICES,
+    enabledChainIds = CHAIN_ID_TEST_LIST,
     chainId = 1,
     mockUpdate = false
   ) {
@@ -22,9 +22,9 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
       configStore,
       eventSearchConfig as EventSearchConfig,
       configStoreVersion,
-      enabledChainIds,
       chainId,
-      mockUpdate
+      mockUpdate,
+      enabledChainIds
     );
   }
 

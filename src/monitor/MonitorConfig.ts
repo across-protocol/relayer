@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, ZERO_ADDRESS } from "../utils";
+import { ethers, getEthAddressForChain } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -13,8 +13,7 @@ export interface BotModes {
 }
 
 export class MonitorConfig extends CommonConfig {
-  readonly spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> =
-    {};
+  public spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
 
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
@@ -103,7 +102,7 @@ export class MonitorConfig extends CommonConfig {
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
             // Fields that are always set to defaults:
-            token: ZERO_ADDRESS,
+            token: getEthAddressForChain(chainId),
           };
         }
       );
@@ -151,9 +150,9 @@ export class MonitorConfig extends CommonConfig {
             parsedWarnThreshold = Number(warnThreshold);
           }
 
-          const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;
+          const isNativeToken = !token || token === "0x0" || token === getEthAddressForChain(chainId);
           return {
-            token: isNativeToken ? ZERO_ADDRESS : token,
+            token: isNativeToken ? getEthAddressForChain(chainId) : token,
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
             account: ethers.utils.getAddress(account),
@@ -162,8 +161,11 @@ export class MonitorConfig extends CommonConfig {
         }
       );
     }
+  }
 
-    this.chainIdListIndices.forEach((chainId) => {
+  loadAndValidateConfigForChains(chainIdIndices: number[]): void {
+    // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.
+    chainIdIndices.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
         startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
           ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
@@ -173,6 +175,7 @@ export class MonitorConfig extends CommonConfig {
           : undefined,
       };
     });
+    super.loadAndValidateConfigForChains(chainIdIndices);
   }
 }
 

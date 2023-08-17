@@ -37,7 +37,6 @@ import {
   getRefund,
   disconnectRedisClient,
 } from "../utils";
-import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
@@ -54,7 +53,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   logger = _logger;
 
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
-  await updateDataworkerClients(clients, false);
 
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
@@ -66,7 +64,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + 4];
   const _oldestBundleEndBlocks = oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.map((x) => x.toNumber());
   const oldestBundleEndBlocks = Object.fromEntries(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
+      // If chain wasn't active at time of the bundle, set from block to undefined which will set from blocks to the
+      // spoke pool registration block this chain.
+      if (i >= oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.length) {
+        return [chainId, undefined];
+      }
       return [
         chainId,
         getBlockForChain(_oldestBundleEndBlocks, chainId, dataworker.chainIdListForBundleEvaluationBlockNumbers),
@@ -358,7 +361,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   ): Promise<{ slowFills: SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to build slow roots.
     const spokeClientFromBlocks = Object.fromEntries(
-      Object.keys(spokePoolClients).map((chainId) => {
+      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
+        // If chain was not active at the time of the older bundle, then set from blocks to undefined
+        // which will load events since the registration block for the chain.
+        if (i >= olderBundle.bundleEvaluationBlockNumbers.length) {
+          return [chainId, undefined];
+        }
         return [
           chainId,
           getBlockForChain(
@@ -370,7 +378,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       })
     );
     const spokeClientToBlocks = Object.fromEntries(
-      Object.keys(spokePoolClients).map((chainId) => {
+      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
+        // If chain was not active at the time of the future bundle, then set to blocks to undefined
+        // which will load events until latest
+        if (i >= futureBundle.bundleEvaluationBlockNumbers.length) {
+          return [chainId, undefined];
+        }
         return [
           chainId,
           getBlockForChain(
@@ -403,15 +416,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         dataworker.chainIdListForBundleEvaluationBlockNumbers
       );
       const widestPossibleExpectedBlockRange = getWidestPossibleExpectedBlockRange(
-        dataworker.chainIdListForBundleEvaluationBlockNumbers,
+        clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleEndBlock),
         spokePoolClientsForBundle,
         getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
         clients,
         bundle.blockNumber,
-        clients.configStoreClient.getEnabledChains(
-          mainnetBundleEndBlock,
-          dataworker.chainIdListForBundleEvaluationBlockNumbers
-        )
+        clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
       );
       const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
         blockRange[0],

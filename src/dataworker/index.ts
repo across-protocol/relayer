@@ -4,14 +4,13 @@ import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
-  updateDataworkerClients,
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { UBAClient } from "../clients/UBAClient";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
 
 config();
 let logger: winston.Logger;
@@ -30,7 +29,7 @@ export async function createDataworker(
   const dataworker = new Dataworker(
     _logger,
     clients,
-    config.chainIdListIndices,
+    clients.configStoreClient.getChainIdIndicesForBlock(),
     config.maxRelayerRepaymentLeafSizeOverride,
     config.maxPoolRebalanceLeafSizeOverride,
     config.tokenTransferThresholdOverride,
@@ -47,14 +46,18 @@ export async function createDataworker(
 }
 export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
+  let loopStart = Date.now();
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
+  logger.debug({
+    at: "Dataworker#index",
+    message: `Time to update non-spoke clients: ${(Date.now() - loopStart) / 1000}s`,
+  });
+  loopStart = Date.now();
+
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
-      const loopStart = Date.now();
-      await updateDataworkerClients(clients);
-
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
       //    how many bundles we want to look back from the start bundle blocks.
@@ -98,6 +101,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       );
 
       const ubaClient = new UBAClient(
+        // @dev: Consider customizing this config when using the UBAClient in prod.
+        new sdkClients.UBAClientConfig(),
         clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
         clients.hubPoolClient,
         spokePoolClients
@@ -164,7 +169,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
       await clients.multiCallerClient.executeTransactionQueue();
 
-      logger.debug({ at: "Dataworker#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
+      logger.debug({
+        at: "Dataworker#index",
+        message: `Time to update spoke pool clients and run dataworker function: ${(Date.now() - loopStart) / 1000}s`,
+      });
+      loopStart = Date.now();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;

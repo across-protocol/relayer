@@ -165,7 +165,8 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = getMultisender(1, hubSigner);
+  const hubChainId = hubPoolClient.chainId;
+  const multicall2 = getMultisender(hubChainId, hubSigner);
   const finalizationsToBatch: {
     callData: Multicall2Call[];
     withdrawals: Withdrawal[];
@@ -217,7 +218,7 @@ export async function finalize(
         const spokeChain = getNetworkName(l2ChainId);
         logger.info({
           at: "Finalizer",
-          message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🔜`,
+          message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🪃`,
           transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
@@ -307,7 +308,9 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
           commonClients.hubSigner,
           commonClients.hubPoolClient,
           spokePoolClients,
-          config.finalizerChains
+          process.env.FINALIZER_CHAINS
+            ? JSON.parse(process.env.FINALIZER_CHAINS)
+            : commonClients.configStoreClient.getChainIdIndicesForBlock()
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });

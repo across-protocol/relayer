@@ -6,6 +6,7 @@ import {
   BigNumber,
   enableRoutes,
   sampleRateModel,
+  sinon,
 } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployConfigStore } from "../utils";
@@ -34,6 +35,7 @@ async function _constructSpokePoolClientsWithLookback(
   lookbackForAllChains?: number,
   deploymentBlocks?: { [chainId: number]: number }
 ) {
+  await hubPoolClient.update();
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
     return new clients.SpokePoolClient(
@@ -41,7 +43,7 @@ async function _constructSpokePoolClientsWithLookback(
       pool.connect(signer),
       hubPoolClient,
       spokePoolChains[i],
-      deploymentBlocks && deploymentBlocks[spokePoolChains[i]],
+      deploymentBlocks?.[spokePoolChains[i]] ?? 0,
       lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
     );
   });
@@ -144,7 +146,7 @@ export async function setupDataworker(
   await hubPool.setBond(l1Token_1.address, "1"); // We set to 1 Wei since we can't set to 0.
 
   // Give dataworker final fee bond to propose roots with:
-  await setupTokensForWallet(hubPool, dataworker, [l1Token_1], null, 100);
+  await setupTokensForWallet(hubPool, dataworker, [l1Token_1], undefined, 100);
 
   const { spyLogger, spy } = createSpyLogger();
 
@@ -158,7 +160,11 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, testChainIdList);
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+  configStoreClient.setAvailableChains(testChainIdList);
+
+  await configStoreClient.update();
+
   const hubPoolClient = new clients.HubPoolClient(
     spyLogger,
     hubPool,
@@ -220,19 +226,19 @@ export async function setupDataworker(
   );
 
   // Give owner tokens to LP on HubPool with.
-  await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], null, 100); // Seed owner to LP.
+  await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], undefined, 100); // Seed owner to LP.
   await l1Token_1.approve(hubPool.address, amountToLp);
   await l1Token_2.approve(hubPool.address, amountToLp);
   await hubPool.addLiquidity(l1Token_1.address, amountToLp);
   await hubPool.addLiquidity(l1Token_2.address, amountToLp);
 
   // Give depositors the tokens they'll deposit into spoke pools:
-  await setupTokensForWallet(spokePool_1, depositor, [erc20_1, erc20_2], null, 10);
-  await setupTokensForWallet(spokePool_2, depositor, [erc20_2, erc20_1], null, 10);
+  await setupTokensForWallet(spokePool_1, depositor, [erc20_1, erc20_2], undefined, 10);
+  await setupTokensForWallet(spokePool_2, depositor, [erc20_2, erc20_1], undefined, 10);
 
   // Give relayers the tokens they'll need to relay on spoke pools:
-  await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2, l1Token_1, l1Token_2], null, 10);
-  await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2, l1Token_1, l1Token_2], null, 10);
+  await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2, l1Token_1, l1Token_2], undefined, 10);
+  await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2, l1Token_1, l1Token_2], undefined, 10);
 
   // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
   // "reasonable" block number based off the block time when looking at quote timestamps.

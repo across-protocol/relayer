@@ -26,7 +26,6 @@ import {
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
-  updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
@@ -71,7 +70,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // in the same block. This also handles the edge case where multiple disputes and proposals are in the
   // same block.
   const dvm = await getDvmContract(clients.configStoreClient.configStore.provider);
-  await updateDataworkerClients(clients, false);
 
   if (!clients.configStoreClient.hasLatestConfigStoreVersion) {
     logger.error({
@@ -176,15 +174,12 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 
   // Get widest possible block range that could be used at time of root bundle proposal.
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers,
+    clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleEndBlock),
     spokePoolClients,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
     mainnetBundleEndBlock,
-    clients.configStoreClient.getEnabledChains(
-      mainnetBundleEndBlock,
-      dataworker.chainIdListForBundleEvaluationBlockNumbers
-    )
+    clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
   );
 
   // Validate the event:

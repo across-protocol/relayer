@@ -113,10 +113,7 @@ export class BundleDataClient {
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber,
-      this.clients.configStoreClient.getEnabledChains(
-        this.clients.hubPoolClient.latestBlockNumber,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      )
+      this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockNumber)
     );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
@@ -213,9 +210,9 @@ export class BundleDataClient {
       throw new Error("HubPoolClient not updated");
     }
 
-    if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length) {
+    if (blockRangesForChains.length > this.chainIdListForBundleEvaluationBlockNumbers.length) {
       throw new Error(
-        `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
+        `Unexpected block range list length of ${blockRangesForChains.length}, should be <= ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
       );
     }
 
@@ -301,7 +298,10 @@ export class BundleDataClient {
       return isChainDisabled(blockRangeForChain);
     };
 
-    const allChainIds = Object.keys(spokePoolClients).map(Number);
+    // Infer chain ID's to load from number of block ranges passed in.
+    const allChainIds = blockRangesForChains.map(
+      (_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index]
+    );
 
     const validateRefundRequestAndSaveData = async (refundRequest: RefundRequestWithBlock): Promise<void> => {
       const result = await refundRequestIsValid(spokePoolClients, this.clients.hubPoolClient, refundRequest);

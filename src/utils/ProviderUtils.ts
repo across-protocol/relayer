@@ -222,7 +222,7 @@ class CacheProvider extends RateLimitedProvider {
   }
 }
 
-class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
+export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   readonly providers: ethers.providers.StaticJsonRpcProvider[];
   constructor(
     params: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>[],

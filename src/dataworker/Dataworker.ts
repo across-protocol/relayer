@@ -35,9 +35,9 @@ import { SpokePoolClient, UBAClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
-  getBlockForChain,
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
+  l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
 } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
@@ -47,8 +47,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
-import { isOvmChain } from "../clients/bridges";
+import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
@@ -72,8 +71,6 @@ type ProposeRootBundleReturnType = {
   slowFillLeaves: SlowFillLeaf[];
   slowFillTree: MerkleTree<SlowFillLeaf>;
 };
-
-const ovmWethTokens = [CONTRACT_ADDRESSES[10].weth.address, CONTRACT_ADDRESSES[10].eth.address];
 
 export type PoolRebalanceRoot = {
   runningBalances: RunningBalances;
@@ -110,6 +107,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#Constructor",
         message: "Dataworker constructed with overridden config store settings",
+        chainIdListForBundleEvaluationBlockNumbers,
         maxRefundCountOverride: this.maxRefundCountOverride,
         maxL1TokenCountOverride: this.maxL1TokenCountOverride,
         tokenTransferThreshold: this.tokenTransferThreshold,
@@ -299,11 +297,14 @@ export class Dataworker {
     // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    // Pass in `latest` for the mainnet bundle end block because we want to use the latest disabled chains list
-    // to construct the potential next bundle block range.
+    const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      hubPoolClient.latestBlockNumber,
+      hubPoolClient.chainId
+    );
     const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[hubPoolClient.chainId]
+      nextBundleMainnetStartBlock
     );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
@@ -377,6 +378,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Proposing Legacy root bundle",
+        blockRangesForProposal,
       });
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesForProposal,
@@ -391,7 +393,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Proposing UBA root bundle",
-        mainnetBundleStartBlock,
+        blockRangesForProposal,
       });
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
@@ -886,14 +888,15 @@ export class Dataworker {
       return;
     }
 
-    const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
-      pendingRootBundle.bundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.chainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
+    const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      mainnetBundleEndBlockForPendingRootBundle
+      // Mainnet bundle start block for pending bundle is the first entry in the first entry.
+      nextBundleMainnetStartBlock
     );
     const { valid, reason } = await this.validateRootBundle(
       hubPoolChainId,
@@ -1517,9 +1520,10 @@ export class Dataworker {
           const amountRequired = getRefund(relayData.amount.sub(amountFilled), relayData.realizedLpFeePct);
           const success = await balanceAllocator.requestBalanceAllocation(
             relayData.destinationChainId,
-            isOvmChain(relayData.destinationChainId) && ovmWethTokens.includes(relayData.destinationToken)
-              ? ovmWethTokens
-              : [relayData.destinationToken],
+            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
+              relayData.destinationToken,
+              relayData.destinationChainId
+            ),
             client.spokePool.address,
             amountRequired
           );
@@ -1621,14 +1625,14 @@ export class Dataworker {
       pendingRootBundle,
     });
 
-    const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
-      pendingRootBundle.bundleEvaluationBlockNumbers,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
+    const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      mainnetBundleEndBlockForPendingRootBundle
+      nextBundleMainnetStartBlock
     );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
@@ -1638,6 +1642,27 @@ export class Dataworker {
       earliestBlocksInSpokePoolClients,
       ubaClient
     );
+
+    if (!valid) {
+      this.logger.error({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message: "Found invalid proposal after challenge period!",
+        reason,
+        notificationPath: "across-error",
+      });
+      return;
+    }
+
+    if (valid && !expectedTrees) {
+      this.logger.error({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message:
+          "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
+        reason,
+        notificationPath: "across-error",
+      });
+      return;
+    }
 
     // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves and before
     // exiting early if challenge period isn't passed. This ensures that there is a maximum amount of time between
@@ -1662,27 +1687,6 @@ export class Dataworker {
         at: "Dataworke#executePoolRebalanceLeaves",
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
-      });
-      return;
-    }
-
-    if (!valid) {
-      this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
-        message: "Found invalid proposal after challenge period!",
-        reason,
-        notificationPath: "across-error",
-      });
-      return;
-    }
-
-    if (valid && !expectedTrees) {
-      this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
-        message:
-          "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
-        reason,
-        notificationPath: "across-error",
       });
       return;
     }
@@ -2091,9 +2095,7 @@ export class Dataworker {
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
           const success = await balanceAllocator.requestBalanceAllocation(
             leaf.chainId,
-            isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)
-              ? ovmWethTokens
-              : [leaf.l2TokenAddress],
+            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(leaf.l2TokenAddress, leaf.chainId),
             client.spokePool.address,
             totalSent
           );
@@ -2288,24 +2290,24 @@ export class Dataworker {
    * Returns widest possible block range for next bundle.
    * @param spokePoolClients SpokePool clients to query. If one is undefined then the chain ID will be treated as
    * disabled.
-   * @param mainnetBundleEndBlock Passed in to determine which disabled chain list to use (i.e. the list that is live
-   * at the time of this block).
+   * @param mainnetBundleStartBlock Passed in to determine which disabled chain list to use (i.e. the list that is live
+   * at the time of this block). Also used to determine which chain ID indices list to use which is the max
+   * set of chains we can return block ranges for.
    * @returns [number, number]: [startBlock, endBlock]
    */
   _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
-    mainnetBundleEndBlock: number
+    mainnetBundleStartBlock: number
   ): number[][] {
     return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
-      this.chainIdListForBundleEvaluationBlockNumbers,
+      // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
+      this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock),
       spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber,
-      this.clients.configStoreClient.getEnabledChains(
-        mainnetBundleEndBlock,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      )
+      // We only want to count enabled chains at the same time that we are loading chain ID indices.
+      this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock)
     );
   }
 }

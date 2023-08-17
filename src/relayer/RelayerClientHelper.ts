@@ -1,5 +1,5 @@
 import winston from "winston";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
 import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -23,7 +23,7 @@ export async function constructRelayerClients(
   baseSigner: Wallet
 ): Promise<RelayerClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
-  await updateClients(commonClients);
+  await updateClients(commonClients, config);
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
@@ -37,6 +37,7 @@ export async function constructRelayerClients(
   );
 
   const ubaClient = new UBAClient(
+    new sdkClients.UBAClientConfig(),
     commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
     commonClients.hubPoolClient,
     spokePoolClients
@@ -60,7 +61,9 @@ export async function constructRelayerClients(
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
-    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : config.chainIdListIndices
+    config.relayerDestinationChains.length > 0
+      ? config.relayerDestinationChains
+      : commonClients.configStoreClient.getChainIdIndicesForBlock()
   ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
@@ -81,7 +84,7 @@ export async function constructRelayerClients(
     logger,
     commonClients,
     spokePoolClients,
-    config.chainIdListIndices,
+    commonClients.configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
@@ -95,7 +98,8 @@ export async function constructRelayerClients(
     bundleDataClient,
     adapterManager,
     crossChainTransferClient,
-    config.bundleRefundLookback
+    config.bundleRefundLookback,
+    !config.sendingRelaysEnabled
   );
 
   return { ...commonClients, spokePoolClients, ubaClient, tokenClient, profitClient, inventoryClient, acrossApiClient };

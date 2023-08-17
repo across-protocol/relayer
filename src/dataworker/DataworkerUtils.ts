@@ -15,6 +15,7 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  isDefined,
   MerkleTree,
   winston,
 } from "../utils";
@@ -28,6 +29,8 @@ import { subtractExcessFromPreviousSlowFillsFromRunningBalances } from "./PoolRe
 import { getAmountToReturnForRelayerRefundLeaf } from "./RelayerRefundUtils";
 import { sortRefundAddresses, sortRelayerRefundLeaves } from "./RelayerRefundUtils";
 import { utils } from "@across-protocol/sdk-v2";
+import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { spokesThatHoldEthAndWeth } from "../common/Constants";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -57,20 +60,13 @@ export function blockRangesAreInvalidForSpokeClients(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
-  if (blockRanges.length !== chainIdListForBundleEvaluationBlockNumbers.length) {
-    throw new Error("DataworkerUtils#blockRangesAreInvalidForSpokeClients: Invalid bundle block range length");
-  }
-  return chainIdListForBundleEvaluationBlockNumbers.some((chainId) => {
-    const blockRangeForChain = getBlockRangeForChain(
-      blockRanges,
-      Number(chainId),
-      chainIdListForBundleEvaluationBlockNumbers
-    );
+  return blockRanges.some(([start, end], index) => {
+    const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
-    if (isNaN(blockRangeForChain[1]) || isNaN(blockRangeForChain[0])) {
+    if (isNaN(end) || isNaN(start)) {
       return true;
     }
-    if (blockRangeForChain[1] === blockRangeForChain[0]) {
+    if (start === end) {
       return false;
     }
 
@@ -81,14 +77,11 @@ export function blockRangesAreInvalidForSpokeClients(
 
     const clientLastBlockQueried =
       spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
-    const bundleRangeToBlock = blockRangeForChain[1];
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, blockRangeForChain[0]);
-    return (
-      bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
-    );
+    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, start);
+    return bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried;
   });
 }
 
@@ -359,8 +352,7 @@ export async function _buildPoolRebalanceRoot(
     clients.hubPoolClient,
     spokePoolClients,
     allValidFills,
-    allValidFillsInRange,
-    chainIdListForBundleEvaluationBlockNumbers
+    allValidFillsInRange
   );
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
@@ -397,4 +389,38 @@ export async function _buildPoolRebalanceRoot(
     leaves,
     tree: buildPoolRebalanceLeafTree(leaves),
   };
+}
+
+/**
+ * @notice Returns WETH and ETH token addresses for chain if defined, or throws an error if they're not
+ * in the hardcoded dictionary.
+ * @param chainId chain to check for WETH and ETH addresses
+ * @returns WETH and ETH addresses.
+ */
+function getWethAndEth(chainId): string[] {
+  const wethAndEth = [CONTRACT_ADDRESSES[chainId].weth.address, CONTRACT_ADDRESSES[chainId].eth.address];
+  if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
+    throw new Error(`WETH or ETH address not defined for chain ${chainId}`);
+  }
+  return wethAndEth;
+}
+/**
+ * @notice Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,
+ * so if the l2TokenAddress is WETH and the SpokePool is one such chain that holds both ETH and WETH,
+ * then it should return both ETH and WETH. For other chains, it should only return the l2TokenAddress.
+ * @param l2TokenAddress L2 token address in spoke leaf that we want to get addresses to check spoke balances for
+ * @param l2ChainId L2 chain of Spoke
+ * @returns Tokens that we should check the SpokePool balance for in order to execute a spoke leaf for
+ * `l2TokenAddress` on `l2ChainId`.
+ */
+export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
+  l2TokenAddress: string,
+  l2ChainId: number
+): string[] {
+  if (!spokesThatHoldEthAndWeth.includes(l2ChainId)) {
+    return [l2TokenAddress];
+  }
+  // If we get to here, ETH and WETH addresses should be defined, or we'll throw an error.
+  const ethAndWeth = getWethAndEth(l2ChainId);
+  return ethAndWeth.includes(l2TokenAddress) ? ethAndWeth : [l2TokenAddress];
 }

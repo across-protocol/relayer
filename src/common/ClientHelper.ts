@@ -9,6 +9,7 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   SpokePool,
+  isDefined,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -182,6 +183,13 @@ export function getSpokePoolClientsForContract(
 ): SpokePoolClientsByChain {
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ chainId, contract, registrationBlock }) => {
+    if (!isDefined(fromBlocks[chainId])) {
+      logger.debug({
+        at: "ClientHelper#getSpokePoolClientsForContract",
+        message: `No fromBlock set for spoke pool client ${chainId}, setting from block to registration block`,
+        registrationBlock,
+      });
+    }
     const spokePoolClientSearchSettings = {
       fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
       toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,
@@ -225,8 +233,7 @@ export async function constructClients(
     logger,
     configStore,
     rateModelClientSearchSettings,
-    config.maxConfigVersion,
-    config.chainIdListIndices
+    config.maxConfigVersion
   );
 
   const hubPoolClientSearchSettings = {
@@ -254,8 +261,9 @@ export async function constructClients(
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
 //      so update the ConfigStoreClient first.
-export async function updateClients(clients: Clients): Promise<void> {
+export async function updateClients(clients: Clients, config: CommonConfig): Promise<void> {
   await clients.configStoreClient.update();
+  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
   await clients.hubPoolClient.update();
 }
 
