@@ -3,7 +3,7 @@ import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces";
 import { utils } from "@across-protocol/sdk-v2";
-import { BaseChainAdapter } from "./BaseChainAdapter";
+import { BaseChainAdapter } from "./op-stack/base/BaseChainAdapter";
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
 

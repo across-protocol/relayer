@@ -1,6 +1,6 @@
-import { winston } from "../../utils";
-import { SpokePoolClient } from "../../clients";
-import { OpStackAdapter } from "./OpStackAdapter";
+import { winston } from "../../../../utils";
+import { SpokePoolClient } from "../../..";
+import { OpStackAdapter } from "../OpStackAdapter";
 
 // Note: this is called BaseChainAdapter because BaseAdapter is the name of the base class.
 export class BaseChainAdapter extends OpStackAdapter {
