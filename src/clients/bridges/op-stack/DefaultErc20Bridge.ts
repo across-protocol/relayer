@@ -1,13 +1,4 @@
-import {
-  Contract,
-  BigNumber,
-  ZERO_ADDRESS,
-  paginatedEventQuery,
-  Event,
-  Signer,
-  EventSearchConfig,
-  Provider,
-} from "../../../utils";
+import { Contract, BigNumber, paginatedEventQuery, Event, Signer, EventSearchConfig, Provider } from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { BridgeTransactionDetails, OpStackBridge } from "./OpStackBridgeInterface";
 
@@ -48,7 +39,7 @@ export class DefaultERC20Bridge implements OpStackBridge {
   ): Promise<Event[]> {
     return paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.ERC20DepositInitiated(undefined, fromAddress),
+      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
       eventConfig
     );
   }
@@ -60,7 +51,7 @@ export class DefaultERC20Bridge implements OpStackBridge {
   ): Promise<Event[]> {
     return paginatedEventQuery(
       this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+      this.l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
       eventConfig
     );
   }

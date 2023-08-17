@@ -1,4 +1,13 @@
-import { Contract, BigNumber, Event, EventSearchConfig, paginatedEventQuery, Signer, Provider } from "../../../utils";
+import {
+  Contract,
+  BigNumber,
+  Event,
+  EventSearchConfig,
+  paginatedEventQuery,
+  Signer,
+  Provider,
+  ZERO_ADDRESS,
+} from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { BridgeTransactionDetails, OpStackBridge } from "./OpStackBridgeInterface";
 
@@ -43,7 +52,7 @@ export class WethBridge implements OpStackBridge {
   ): Promise<Event[]> {
     return paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.ETHDepositInitiated(l1Token, undefined, fromAddress),
+      this.l1Bridge.filters.ETHDepositInitiated(undefined, fromAddress),
       eventConfig
     );
   }
@@ -55,7 +64,7 @@ export class WethBridge implements OpStackBridge {
   ): Promise<Event[]> {
     return paginatedEventQuery(
       this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+      this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
       eventConfig
     );
   }
