@@ -1,23 +1,81 @@
-import { clients, utils } from "@across-protocol/sdk-v2";
-import { Event, isDefined, sortEventsDescending } from "../utils";
+import { clients, constants, utils } from "@across-protocol/sdk-v2";
+import { Contract, Event, EventSearchConfig, MakeOptional, isDefined, sortEventsDescending, winston } from "../utils";
 import { Result } from "@ethersproject/abi";
 export const { UBA_MIN_CONFIG_STORE_VERSION } = utils;
 export const GLOBAL_CONFIG_STORE_KEYS = clients.GLOBAL_CONFIG_STORE_KEYS;
 
 export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
+  private readonly injectedChain:
+    | {
+        chainId: number;
+        blockNumber: number;
+      }
+    | undefined;
+
+  constructor(
+    readonly logger: winston.Logger,
+    readonly configStore: Contract,
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    readonly configStoreVersion: number
+  ) {
+    super(logger, configStore, eventSearchConfig, configStoreVersion);
+
+    const injectedChains = process.env.INJECT_CHAIN_ID_INCLUSION;
+    if (isDefined(injectedChains)) {
+      // Attempt to parse the injected chains
+      const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = JSON.parse(injectedChains);
+      // Sanity check to verify that the chain id & block number are positive integers
+      if (!utils.isPositiveInteger(injectedChainId) || !utils.isPositiveInteger(injectedBlockNumber)) {
+        this.logger.warn({
+          at: "ConfigStore[Relayer]#constructor",
+          message: `Invalid injected chain id inclusion: ${injectedChains}`,
+        });
+      }
+      this.injectedChain = {
+        chainId: injectedChainId,
+        blockNumber: injectedBlockNumber,
+      };
+    }
+  }
+
+  async update(): Promise<void> {
+    console.log("RELAHER_UPDATE");
+
+    // We know that as we move forward in time, the injected chain id inclusion will
+    // eventually outdate the latest block number. Therefore, we want to remove the
+    // injected chain id inclusion from the chain id indices updates before we call
+    // the super update function. This is to prevent the injected chain id inclusion
+    // from issuing an error. We will re-add the injected chain id inclusion after
+    // in the overloaded _.update() function.
+    if (isDefined(this.injectedChain)) {
+      // Track the initial length of the chain id indices updates
+      const initialLength = this.chainIdIndicesUpdates.length;
+      // Because this chain is `injected` we know that it doesn't occur
+      // on-chain, and therefore we just need to remove it altogether
+      // wherever an instance of it appears.
+      this.chainIdIndicesUpdates = this.chainIdIndicesUpdates.filter(
+        ({ value }) => !value.includes(this.injectedChain.chainId)
+      );
+      if (this.chainIdIndicesUpdates.length !== initialLength) {
+        this.logger.debug({
+          at: "ConfigStore[Relayer]#update",
+          message: "Removed injected chain id inclusion from chain id indices updates",
+          injectedChain: this.injectedChain,
+        });
+      }
+    }
+    await super.update();
+    console.log(this.chainIdIndicesUpdates);
+    console.log("########################&&&&&&##########################");
+  }
+
   protected async _update(): Promise<clients.ConfigStoreUpdate> {
     // We want to call the update function regardless to mimic this behavior
     const update = await super._update();
-    const injectedChains = process.env.INJECT_CHAIN_ID_INCLUSION;
     // If the update was successful & chains is defined
-    if (update.success && isDefined(injectedChains)) {
+    if (update.success && isDefined(this.injectedChain)) {
+      const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = this.injectedChain;
       try {
-        // Attempt to parse the injected chains
-        const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = JSON.parse(injectedChains);
-        // Sanity check to verify that the chain id & block number are positive integers
-        if (!utils.isPositiveInteger(injectedChainId) || !utils.isPositiveInteger(injectedBlockNumber)) {
-          throw new Error("Invalid injected chain id inclusion");
-        }
         // Sanity check to verify that the injected block number is not greater than
         // the latest block number
         const maxBlockNumber = update.latestBlockNumber;
@@ -26,29 +84,22 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
             `Injected block number ${injectedBlockNumber} is greater than the latest block number ${maxBlockNumber}`
           );
         }
+        const chainIndicesUpdates = update.events.updatedGlobalConfigEvents.filter(
+          ({ args }) => args?.key === utils.utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES)
+        );
+
         // Sanity check to verify that the injected chain id is not already included
-        if (
-          update.events.updatedGlobalConfigEvents.some(
-            ({ args }) =>
-              args?.key === utils.utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES) &&
-              args?.value.includes(injectedChainId)
-          )
-        ) {
+        if (chainIndicesUpdates.some(({ args }) => args?.value.includes(injectedChainId))) {
           throw new Error(`Injected chain id ${injectedChainId} is already included`);
         }
 
         // Resolve the last global chain update
-        const lastGlobalChainUpdate = sortEventsDescending(update.events.updatedGlobalConfigEvents).find(
-          ({ args }) => args?.key === utils.utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES)
-        );
-        const lastGlobalChainUpdateArgs = lastGlobalChainUpdate?.args;
-        // Sanity check to verify that there is a last global chain update
-        // We know that the update was successful, so this should always be defined as this is a ground truth
-        if (!isDefined(lastGlobalChainUpdate) || !isDefined(lastGlobalChainUpdateArgs)) {
-          throw new Error("No last global chain id indices update exists");
-        }
+        const lastGlobalChainUpdate = sortEventsDescending(chainIndicesUpdates)?.[0];
+
+        console.log(JSON.stringify(lastGlobalChainUpdate, null, 2));
+
         // Sanity check to verify that the injected chain is after the last global chain update
-        if (lastGlobalChainUpdate.blockNumber > maxBlockNumber) {
+        if (isDefined(lastGlobalChainUpdate) && lastGlobalChainUpdate.blockNumber > injectedBlockNumber) {
           throw new Error(
             `Injected block number ${injectedBlockNumber} is before the last global chain update ${lastGlobalChainUpdate.blockNumber}`
           );
@@ -56,7 +107,9 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
 
         // Resolve the last global chain indices
         const lastGlobalChainIndices = JSON.parse(
-          String(lastGlobalChainUpdateArgs.value).replaceAll('"', "")
+          String(
+            lastGlobalChainUpdate?.args?.value ?? JSON.stringify(constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES)
+          ).replaceAll('"', "")
         ) as number[];
 
         // Inject the chain id into the last global chain indices
@@ -88,7 +141,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       } catch (e) {
         this.logger.warn({
           at: "ConfigStore[Relayer]#_update",
-          message: `Invalid injected chain id inclusion: ${injectedChains}`,
+          message: `Invalid injected chain id inclusion: ${JSON.stringify(this.injectedChain)}`,
           e: String(e),
         });
       }
