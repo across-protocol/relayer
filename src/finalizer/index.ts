@@ -63,7 +63,7 @@ async function optimismFinalizer(
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
-    at: "Finalizer",
+    at: "Finalizer#optimismFinalizer",
     message: `Earliest TokensBridged block to attempt to submit proofs for ${getNetworkName(chainId)}`,
     earliestBlockToProve,
   });
@@ -109,7 +109,7 @@ async function polygonFinalizer(
 
   const posClient = await getPosClient(signer);
   logger.debug({
-    at: "Finalizer",
+    at: "Finalizer#polygonFinalizer",
     message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
     latestBlockToFinalize,
   });
@@ -133,7 +133,7 @@ async function arbitrumOneFinalizer(
   const { chainId } = spokePoolClient;
 
   logger.debug({
-    at: "Finalizer",
+    at: "Finalizer#arbitrumOneFinalizer",
     message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
     latestBlockToFinalize,
   });
