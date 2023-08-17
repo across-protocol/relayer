@@ -13,7 +13,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     if (update.success && isDefined(injectedChains)) {
       try {
         // Attempt to parse the injected chains
-        const { injectedChainId, injectedBlockNumber } = JSON.parse(injectedChains);
+        const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = JSON.parse(injectedChains);
         // Sanity check to verify that the chain id & block number are positive integers
         if (!utils.isPositiveInteger(injectedChainId) || !utils.isPositiveInteger(injectedBlockNumber)) {
           throw new Error("Invalid injected chain id inclusion");
@@ -55,24 +55,41 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
         }
 
         // Resolve the last global chain indices
-        const lastGlobalChainIndices = JSON.parse(lastGlobalChainUpdateArgs.value) as number[];
+        const lastGlobalChainIndices = JSON.parse(
+          String(lastGlobalChainUpdateArgs.value).replaceAll('"', "")
+        ) as number[];
+
+        // Inject the chain id into the last global chain indices
+        const injectedChainIndices = [...lastGlobalChainIndices, injectedChainId];
+
+        // Injected args to include
+        const injectedArgs = {
+          0: utils.utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+          1: JSON.stringify(injectedChainIndices),
+          key: utils.utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
+          value: JSON.stringify(injectedChainIndices),
+        };
 
         // If we made it this far, then we can safely inject the chain id into the global config store
         update.events.updatedGlobalConfigEvents.push({
           blockNumber: injectedBlockNumber,
           transactionIndex: 0,
           logIndex: 0,
-          args: {
-            ...lastGlobalChainUpdateArgs,
-            key: utils.utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.CHAIN_ID_INDICES),
-            value: JSON.stringify([...lastGlobalChainIndices, injectedChainId]),
-          } as unknown as Result,
+          args: injectedArgs as unknown as Result,
         } as Event);
+
+        // Resolve the block timestamp of the injected block number
+        const injectedBlockTimestamp = await this.configStore.provider
+          .getBlock(injectedBlockNumber)
+          .then(({ timestamp }) => timestamp);
+
+        // Inject the block timestamp into the global config store's updated times
+        update.events.globalConfigUpdateTimes.push(injectedBlockTimestamp);
       } catch (e) {
         this.logger.warn({
           at: "ConfigStore[Relayer]#_update",
           message: `Invalid injected chain id inclusion: ${injectedChains}`,
-          e,
+          e: String(e),
         });
       }
     }
