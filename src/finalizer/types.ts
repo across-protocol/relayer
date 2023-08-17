@@ -1,6 +1,7 @@
 import { Wallet } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { Multicall2Call } from "../common";
+import { winston } from "../utils";
 
 export type Withdrawal = {
   l2ChainId: number;
@@ -13,6 +14,7 @@ export type FinalizerPromise = { callData: Multicall2Call[]; withdrawals: Withdr
 
 export interface ChainFinalizer {
   (
+    logger: winston.Logger,
     signer: Wallet,
     hubPoolClient: HubPoolClient,
     spokePoolClient: SpokePoolClient,

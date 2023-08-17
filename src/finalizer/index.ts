@@ -42,6 +42,7 @@ let logger: winston.Logger;
 const oneDaySeconds = 24 * 60 * 60;
 
 async function optimismFinalizer(
+  logger: winston.Logger,
   signer: Wallet,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
@@ -98,6 +99,7 @@ async function optimismFinalizer(
 }
 
 async function polygonFinalizer(
+  logger: winston.Logger,
   signer: Wallet,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
@@ -122,6 +124,7 @@ async function polygonFinalizer(
 }
 
 async function arbitrumOneFinalizer(
+  logger: winston.Logger,
   signer: Wallet,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
@@ -163,9 +166,11 @@ export async function finalize(
     42161: optimisticRollupFinalizationWindow,
   };
 
+  const hubChainId = hubPoolClient.chainId;
+  const hubChain = getNetworkName(hubChainId);
+
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const hubChainId = hubPoolClient.chainId;
   const multicall2 = getMultisender(hubChainId, hubSigner);
   const finalizationsToBatch: {
     callData: Multicall2Call[];
@@ -198,15 +203,22 @@ export async function finalize(
 
     const latestBlockToFinalize = await getBlockForTimestamp(chainId, getCurrentTime() - finalizationWindow);
 
-    const { callData, withdrawals } = await chainFinalizer(hubSigner, hubPoolClient, client, latestBlockToFinalize);
+    const network = getNetworkName(chainId);
+    logger.debug({ at: "finalize", message: `Spawning ${network} finalizer.`, latestBlockToFinalize });
+    const { callData, withdrawals } = await chainFinalizer(
+      logger,
+      hubSigner,
+      hubPoolClient,
+      client,
+      latestBlockToFinalize
+    );
+    logger.info({ at: "finalize", message: `Found ${callData.length} ${network} withdrawals for finalization.` });
+
     finalizationsToBatch.callData.push(...callData);
     finalizationsToBatch.withdrawals.push(...withdrawals);
   }
 
   if (finalizationsToBatch.callData.length > 0) {
-    const hubChainId = hubPoolClient.chainId;
-    const hubChain = getNetworkName(hubChainId);
-
     try {
       // Note: We might want to slice these up in the future but I don't forsee us including enough events
       // to approach the block gas limit.
