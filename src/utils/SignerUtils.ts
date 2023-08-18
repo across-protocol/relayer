@@ -8,7 +8,7 @@ export type SignerOptions = {
    * The type of wallet to use.
    * @note If using a GCKMS wallet, the gckmsKeys parameter must be set.
    */
-  keyType: string;
+  keyType: "mnemonic" | "privateKey" | "gckms";
   /**
    * Whether or not to clear the mnemonic/private key from the env after retrieving the signer.
    * @note Not including this parameter or setting it to false will not clear the mnemonic/private key from the env.
