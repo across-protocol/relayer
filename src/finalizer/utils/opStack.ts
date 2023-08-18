@@ -5,7 +5,7 @@ import { L1Token, TokensBridged } from "../../interfaces";
 import { BigNumber, convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 import { Multicall2Call } from "../../common";
 
-type OVM_CHAIN_ID = 10;
+type OVM_CHAIN_ID = 10 | 8453;
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
@@ -14,7 +14,7 @@ export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM
     l1ChainId: 1,
     l2ChainId: chainId,
     l1SignerOrProvider: hubSigner.connect(getCachedProvider(1, true)),
-    l2SignerOrProvider: hubSigner.connect(getCachedProvider(10, true)),
+    l2SignerOrProvider: hubSigner.connect(getCachedProvider(chainId, true)),
   });
 }
 
