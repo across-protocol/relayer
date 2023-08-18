@@ -92,7 +92,9 @@ export class DataworkerConfig extends CommonConfig {
     this.forcePropose = FORCE_PROPOSAL === "true";
 
     // We NEVER want to force propose if the proposer is enabled.
-    assert(this.sendingProposalsEnabled && !this.forcePropose, "Cannot force propose if sending proposals is enabled");
+    if (this.sendingProposalsEnabled) {
+      assert(!this.forcePropose, "Cannot force propose if sending proposals is enabled");
+    }
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
     // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
