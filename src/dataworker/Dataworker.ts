@@ -1645,7 +1645,7 @@ export class Dataworker {
 
     if (!valid) {
       this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
+        at: "Dataworker#executePoolRebalanceLeaves",
         message: "Found invalid proposal after challenge period!",
         reason,
         notificationPath: "across-error",
@@ -1655,7 +1655,7 @@ export class Dataworker {
 
     if (valid && !expectedTrees) {
       this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
+        at: "Dataworker#executePoolRebalanceLeaves",
         message:
           "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
         reason,
@@ -1684,7 +1684,7 @@ export class Dataworker {
     // Exit early if challenge period timestamp has not passed:
     if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
       this.logger.debug({
-        at: "Dataworke#executePoolRebalanceLeaves",
+        at: "Dataworker#executePoolRebalanceLeaves",
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
