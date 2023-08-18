@@ -96,7 +96,8 @@ export class Dataworker {
     readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0,
-    readonly bufferToPropose = 0
+    readonly bufferToPropose = 0,
+    readonly forceProposal = false
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -438,7 +439,7 @@ export class Dataworker {
     // slow fills, and return funds to the HubPool. Can use logic similar to /src/scripts/validateRunningbalances.ts
 
     const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock);
-    if (shouldWaitToPropose.shouldWait) {
+    if (!this.forceProposal && shouldWaitToPropose.shouldWait) {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Waiting to propose new bundle",
