@@ -123,7 +123,7 @@ export async function finalize(
       );
       finalizationsToBatch.callData.push(...finalizations.callData);
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
-    } else if (chainId === 10) {
+    } else if (chainId === 10 || chainId === 8453) {
       const crossChainMessenger = getOptimismClient(chainId, hubSigner);
       const firstBlockToFinalize = await getBlockForTimestamp(
         chainId,
@@ -187,7 +187,9 @@ export async function finalize(
       finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
         logger.info({
           at: "Finalizer",
-          message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
+          message: `Submitted L1 proof for ${getNetworkName(
+            withdrawal.l2ChainId
+          )} and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
           transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
