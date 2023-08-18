@@ -278,7 +278,7 @@ export class Dataworker {
     if (!hubPoolClient.isUpdated || !hubPoolClient.latestBlockNumber) {
       throw new Error("HubPoolClient not updated");
     }
-    if (hubPoolClient.hasPendingProposal()) {
+    if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
       this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
       return;
     }
@@ -439,7 +439,7 @@ export class Dataworker {
     // slow fills, and return funds to the HubPool. Can use logic similar to /src/scripts/validateRunningbalances.ts
 
     const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock);
-    if (!this.forceProposal && shouldWaitToPropose.shouldWait) {
+    if (shouldWaitToPropose.shouldWait) {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Waiting to propose new bundle",
