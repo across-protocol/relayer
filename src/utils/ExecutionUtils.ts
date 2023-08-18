@@ -25,6 +25,7 @@ export async function processCrash(
   logger.error({
     at: `${fileName}#index`,
     message: `There was an execution error! ${pollingDelay != 0 ? "Re-running loop" : ""}`,
+    reason,
     e: error,
     notificationPath: "across-error",
   });
