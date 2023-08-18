@@ -58,6 +58,6 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
-export function checkAddress(tokenAddress: string): boolean {
+export function checkAddressChecksum(tokenAddress: string): boolean {
   return ethers.utils.getAddress(tokenAddress) === tokenAddress;
 }

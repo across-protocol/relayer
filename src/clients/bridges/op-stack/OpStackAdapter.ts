@@ -1,5 +1,13 @@
 import assert from "assert";
-import { Contract, BigNumber, BigNumberish, TransactionResponse, Event, checkAddress, ethers } from "../../../utils";
+import {
+  Contract,
+  BigNumber,
+  BigNumberish,
+  TransactionResponse,
+  Event,
+  checkAddressChecksum,
+  ethers,
+} from "../../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../../utils";
 import { SpokePoolClient } from "../..";
 import { BaseAdapter } from "..";
@@ -51,7 +59,7 @@ export class OpStackAdapter extends BaseAdapter {
 
     // Before using this mapping, we need to verify that every key is a correctly checksummed address.
     assert(
-      Object.keys(this.customBridges).every(checkAddress),
+      Object.keys(this.customBridges).every(checkAddressChecksum),
       `Invalid or non-checksummed bridge address in customBridges keys: ${Object.keys(this.customBridges)}`
     );
   }
@@ -168,7 +176,7 @@ export class OpStackAdapter extends BaseAdapter {
 
   getBridge(l1Token: string): OpStackBridge {
     // Before doing a lookup, we must verify that the address is correctly checksummed.
-    assert(checkAddress(l1Token), `Invalid or non-checksummed token address ${l1Token}`);
+    assert(checkAddressChecksum(l1Token), `Invalid or non-checksummed token address ${l1Token}`);
     return this.customBridges[l1Token] || this.defaultBridge;
   }
 }
