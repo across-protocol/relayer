@@ -14,6 +14,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { clients } from "@across-protocol/sdk-v2";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -102,7 +103,7 @@ export async function constructSpokePoolClientsWithLookback(
  * @returns number[] List of enabled spoke pool chains.
  */
 function getEnabledChainsInBlockRange(
-  configStoreClient: ConfigStoreClient,
+  configStoreClient: clients.AcrossConfigStoreClient,
   spokePoolChainsOverride: number[],
   mainnetStartBlock: number,
   mainnetEndBlock?: number

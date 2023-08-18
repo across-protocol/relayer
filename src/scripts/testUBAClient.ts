@@ -27,6 +27,7 @@ import * as sdk from "@across-protocol/sdk-v2";
 import { isDefined } from "@uma/financial-templates-lib/dist/types";
 import { createDataworker } from "../dataworker";
 import { RedisCache } from "../caching/RedisCache";
+import { ConfigStoreClient } from "../clients";
 
 config();
 let logger: winston.Logger;
@@ -75,7 +76,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
       configStoreClient.getEnabledChains()
     );
     mockConfigStoreClient.setUBAActivationBlock(mockedUBAActivationBlock);
-    clients.configStoreClient = mockConfigStoreClient;
+    clients.configStoreClient = mockConfigStoreClient as unknown as ConfigStoreClient;
     clients.hubPoolClient.configStoreClient = mockConfigStoreClient;
   }
   await updateClients(clients, config);

@@ -1,5 +1,5 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
-import { BigNumber } from ".";
+import { BigNumber, ethers } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
   // Convert address strings to BigNumbers and then sort numerical value of the BigNumber, which sorts the addresses
@@ -56,4 +56,8 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
     throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
   }
   return targetAddress;
+}
+
+export function checkAddressChecksum(tokenAddress: string): boolean {
+  return ethers.utils.getAddress(tokenAddress) === tokenAddress;
 }

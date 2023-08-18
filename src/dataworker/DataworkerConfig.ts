@@ -14,6 +14,10 @@ export class DataworkerConfig extends CommonConfig {
   readonly executorEnabled: boolean;
   readonly finalizerEnabled: boolean;
 
+  // This variable can be toggled to bypass the proposer logic and always attempt to propose
+  // a bundle. This is useful for testing the disputer logic.
+  readonly forcePropose: boolean;
+
   // These variables can be toggled to choose whether the bot will submit transactions created
   // by each function. For example, setting `sendingDisputesEnabled=false` but `disputerEnabled=true`
   // means that the disputer logic will be run but won't send disputes on-chain.
@@ -46,6 +50,7 @@ export class DataworkerConfig extends CommonConfig {
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_START_BUNDLE,
+      FORCE_PROPOSAL,
     } = env;
     super(env);
 
@@ -83,6 +88,13 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
+
+    this.forcePropose = FORCE_PROPOSAL === "true";
+
+    // We NEVER want to force propose if the proposer is enabled.
+    if (this.sendingProposalsEnabled) {
+      assert(!this.forcePropose, "Cannot force propose if sending proposals is enabled");
+    }
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
     // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.

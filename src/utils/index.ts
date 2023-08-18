@@ -7,7 +7,7 @@ export { Logger } from "@uma/financial-templates-lib";
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, BigNumberish } from "ethers";
 export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
 export { ethers, providers } from "ethers";
-export type { Block, TransactionResponse, TransactionReceipt } from "@ethersproject/abstract-provider";
+export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@ethersproject/abstract-provider";
 export { config } from "dotenv";
 
 // Utils specifically for this bot.
