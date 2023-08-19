@@ -11,7 +11,7 @@ export class AdapterManager {
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
   // manager will attempt to wrap ETH on into WETH. This is not necessary for chains that receive WETH, the ERC20,
   // over the bridge.
-  public chainsToWrapEtherOn = [10, 324];
+  public chainsToWrapEtherOn = [10, 324, 8453];
 
   constructor(
     readonly logger: winston.Logger,
