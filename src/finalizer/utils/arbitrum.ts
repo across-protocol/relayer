@@ -2,8 +2,8 @@ import { Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract, get
 import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, L2ToL1MessageWriter } from "@arbitrum/sdk";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
-import { Withdrawal } from "..";
 import { Multicall2Call } from "../../common";
+import { Withdrawal } from "../types";
 
 const CHAIN_ID = 42161;
 
@@ -23,11 +23,14 @@ export async function multicallArbitrumFinalizations(
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(message.info.amountToReturn.toString(), l1TokenInfo.decimals);
-    return {
+    const withdrawal: Withdrawal = {
       l2ChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
+      type: "withdrawal",
     };
+
+    return withdrawal;
   });
   return {
     callData,
