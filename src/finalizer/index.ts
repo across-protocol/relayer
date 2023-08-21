@@ -20,6 +20,7 @@ import {
   multicallPolygonFinalizations,
   multicallArbitrumFinalizations,
   multicallOptimismL1Proofs,
+  isOVMChainId,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../clients";
@@ -49,9 +50,9 @@ async function optimismFinalizer(
   latestBlockToFinalize: number
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
-  assert(chainId === 10, `Chain ID mismatch: ${chainId} != 10`);
+  assert(isOVMChainId(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
 
-  const crossChainMessenger = getOptimismClient(10, signer);
+  const crossChainMessenger = getOptimismClient(chainId, signer);
 
   // Sort tokensBridged events by their age. Submit proofs for recent events, and withdrawals for older events.
   const earliestBlockToProve = latestBlockToFinalize + 1;
