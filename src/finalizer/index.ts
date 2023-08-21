@@ -46,6 +46,8 @@ const oneDaySeconds = 24 * 60 * 60;
 const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   10: opStackFinalizer,
   137: polygonFinalizer,
+  280: zkSyncFinalizer,
+  324: zkSyncFinalizer,
   8453: opStackFinalizer,
   42161: arbitrumOneFinalizer,
 };

@@ -4,7 +4,8 @@ import { groupBy } from "lodash";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { convertEthersRPCToZKSyncRPC, convertFromWei, getEthAddressForChain, winston } from "../../utils";
+import { convertFromWei, getEthAddressForChain, winston } from "../../utils";
+import { zkSync as zkSyncUtils } from "../../utils";
 import { FinalizerPromise, Withdrawal } from "../types";
 
 type Provider = ethers.providers.Provider;
@@ -35,7 +36,7 @@ export async function zkSyncFinalizer(
   const { chainId: l2ChainId } = spokePoolClient;
 
   const l1Provider = hubPoolClient.hubPool.provider;
-  const l2Provider = convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
+  const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
   // Any block younger than latestBlockToFinalize is ignored.
