@@ -1,8 +1,8 @@
 import assert from "assert";
 import { providers as ethersProviders } from "ethers";
 import { Provider as ZKSyncProvider } from "zksync-web3";
-import { RetryProvider } from "./ProviderUtils";
-import { isDefined } from "./TypeGuards";
+import { RetryProvider } from "../ProviderUtils";
+import { isDefined } from "../TypeGuards";
 
 /**
  * Converts a valid Ethers Provider into a ZKSync Provider
