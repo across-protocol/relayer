@@ -117,10 +117,7 @@ async function filterMessageLogs(
   // Filter transaction hashes for duplicates, then request receipts for each hash.
   const txnHashes = [...new Set(tokensBridged.map(({ transactionHash }) => transactionHash))];
   const txnReceipts = Object.fromEntries(
-    await sdkUtils.mapAsync(
-      txnHashes,
-      async (txnHash) => [txnHash, await l2Provider.getTransactionReceipt(txnHash)]
-    )
+    await sdkUtils.mapAsync(txnHashes, async (txnHash) => [txnHash, await l2Provider.getTransactionReceipt(txnHash)])
   );
 
   // Extract the relevant L1MessageSent events from the transaction.
