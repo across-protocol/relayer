@@ -69,14 +69,14 @@ export async function zkSyncFinalizer(
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
-    const _withdrawal: Withdrawal = {
+    const withdrawal: Withdrawal = {
       l2ChainId,
       l1TokenSymbol,
       amount: amountFromWei,
       type: "withdrawal",
     };
 
-    return _withdrawal;
+    return withdrawal;
   });
 
   return { callData: txns, withdrawals };
