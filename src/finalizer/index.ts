@@ -167,8 +167,8 @@ export async function finalize(
   const finalizationWindows: { [chainId: number]: number } = {
     10: optimisticRollupFinalizationWindow,
     137: polygonFinalizationWindow,
-    280: oneDaySeconds * 4,
-    324: oneDaySeconds,
+    280: oneDaySeconds * 8,
+    324: oneDaySeconds * 4,
     42161: optimisticRollupFinalizationWindow,
   };
 

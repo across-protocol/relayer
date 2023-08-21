@@ -1,4 +1,3 @@
-import assert from "assert";
 import { Contract, ethers, Wallet } from "ethers";
 import { Provider as zksProvider, types as zkTypes, utils as zkUtils, Wallet as zkWallet } from "zksync-web3";
 import { groupBy } from "lodash";
@@ -30,8 +29,7 @@ export async function zkSyncFinalizer(
   signer: Wallet,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _latestBlockToFinalize: number
+  oldestBlockToFinalize: number
 ): Promise<FinalizerPromise> {
   const { chainId: l1ChainId } = hubPoolClient;
   const { chainId: l2ChainId } = spokePoolClient;
@@ -40,8 +38,11 @@ export async function zkSyncFinalizer(
   const l2Provider = new zksProvider(getNodeUrlList(l2ChainId, 1)[0]);
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
-  const tokensBridged = spokePoolClient.getTokensBridged();
-  const { committed: l2Committed, finalized: l2Finalized } = await sortWithdrawals(l2Provider, tokensBridged);
+  // Any block younger than latestBlockToFinalize is ignored.
+  const withdrawalsToQuery = spokePoolClient
+    .getTokensBridged()
+    .filter(({ blockNumber }) => blockNumber > oldestBlockToFinalize);
+  const { committed: l2Committed, finalized: l2Finalized } = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const candidates = await filterMessageLogs(wallet, l2Provider, l2Finalized);
   const withdrawalParams = await getWithdrawalParams(wallet, candidates);
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
@@ -68,13 +69,12 @@ export async function zkSyncFinalizer(
     at: "zkSyncFinalizer",
     message: "zkSync withdrawal status.",
     statusesGrouped: {
-      withdrawalPending: l2Committed.length,
+      withdrawalPending: withdrawalsToQuery.length - l2Finalized.length,
       withdrawalReady: candidates.length,
       withdrawalFinalized: l2Finalized.length - candidates.length,
     },
     committed: l2Committed,
   });
-  assert(l2Committed.length + l2Finalized.length === tokensBridged.length);
 
   return { callData: txns, withdrawals };
 }
