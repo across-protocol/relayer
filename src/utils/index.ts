@@ -23,6 +23,7 @@ export * from "./TransactionPropBuilder";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
 export * from "./NetworkUtils";
+export * from "./RPCUtils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";

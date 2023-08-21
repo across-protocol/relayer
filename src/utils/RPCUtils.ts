@@ -1,7 +1,8 @@
 import assert from "assert";
+import { providers as ethersProviders } from "ethers";
 import { Provider as ZKSyncProvider } from "zksync-web3";
-import { isDefined } from "./TypeGuards";
 import { RetryProvider } from "./ProviderUtils";
+import { isDefined } from "./TypeGuards";
 
 /**
  * Converts a valid Ethers Provider into a ZKSync Provider
@@ -9,8 +10,8 @@ import { RetryProvider } from "./ProviderUtils";
  * @returns A ZKSync Provider
  * @throws If the provider is not a valid JsonRpcProvider
  */
-export function convertEthersRPCToZKSyncRPC(ethersProvider: RetryProvider): ZKSyncProvider {
+export function convertEthersRPCToZKSyncRPC(ethersProvider: ethersProviders.Provider): ZKSyncProvider {
   const url = (ethersProvider as RetryProvider).providers[0].connection.url;
-  assert(isDefined(url), "Provider must be of type JsonRpcProvider");
+  assert(isDefined(url), "Provider must be of type RetryProvider");
   return new ZKSyncProvider(url);
 }
