@@ -96,7 +96,8 @@ export class Dataworker {
     readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0,
-    readonly bufferToPropose = 0
+    readonly bufferToPropose = 0,
+    readonly forceProposal = false
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -277,7 +278,7 @@ export class Dataworker {
     if (!hubPoolClient.isUpdated || !hubPoolClient.latestBlockNumber) {
       throw new Error("HubPoolClient not updated");
     }
-    if (hubPoolClient.hasPendingProposal()) {
+    if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
       this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
       return;
     }
@@ -1645,9 +1646,10 @@ export class Dataworker {
 
     if (!valid) {
       this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
+        at: "Dataworker#executePoolRebalanceLeaves",
         message: "Found invalid proposal after challenge period!",
         reason,
+        e: reason,
         notificationPath: "across-error",
       });
       return;
@@ -1655,7 +1657,7 @@ export class Dataworker {
 
     if (valid && !expectedTrees) {
       this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
+        at: "Dataworker#executePoolRebalanceLeaves",
         message:
           "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
         reason,
@@ -1684,7 +1686,7 @@ export class Dataworker {
     // Exit early if challenge period timestamp has not passed:
     if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
       this.logger.debug({
-        at: "Dataworke#executePoolRebalanceLeaves",
+        at: "Dataworker#executePoolRebalanceLeaves",
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });

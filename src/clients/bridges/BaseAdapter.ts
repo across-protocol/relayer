@@ -39,6 +39,7 @@ interface Events {
 
 const { TOKEN_SYMBOLS_MAP } = sdkConstants;
 
+// TODO: make these generic arguments to BaseAdapter.
 type SupportedL1Token = string;
 type SupportedTokenSymbol = string;
 

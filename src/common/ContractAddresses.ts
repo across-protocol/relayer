@@ -125,7 +125,7 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
-    // Optimism and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+    // OVM, ZkSync and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
       address: "0xaA282C4E86beFda4a1E7C9c06165869026D27852",
@@ -179,8 +179,64 @@ export const CONTRACT_ADDRESSES: {
         { stateMutability: "payable", type: "receive" },
       ],
     },
-    ovmStandardBridge: {
+    // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
+    // Stack chain to the name to differentiate. This one is for Optimism.
+    ovmStandardBridge_10: {
       address: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
+            { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
+            { indexed: true, internalType: "address", name: "_from", type: "address" },
+            { indexed: false, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
+          ],
+          name: "ERC20DepositInitiated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "_from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
+          ],
+          name: "ETHDepositInitiated",
+          type: "event",
+        },
+        {
+          inputs: [
+            { internalType: "uint32", name: "_l2Gas", type: "uint32" },
+            { internalType: "bytes", name: "_data", type: "bytes" },
+          ],
+          name: "depositETH",
+          outputs: [],
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "address", name: "_l1Token", type: "address" },
+            { internalType: "address", name: "_l2Token", type: "address" },
+            { internalType: "uint256", name: "_amount", type: "uint256" },
+            { internalType: "uint32", name: "_l2Gas", type: "uint32" },
+            { internalType: "bytes", name: "_data", type: "bytes" },
+          ],
+          name: "depositERC20",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ],
+    },
+    // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
+    // Stack chain to the name to differentiate. This one is for Base.
+    ovmStandardBridge_8453: {
+      address: "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",
       abi: [
         {
           anonymous: false,

@@ -29,6 +29,12 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: { accounts: { accountsBalance: "1000000000000000000000000" } },
+    mainnet: {
+      url: getNodeUrl("mainnet", true, 1),
+      accounts: { mnemonic },
+      saveDeployments: true,
+      chainId: 1,
+    },
     kovan: {
       url: getNodeUrl("kovan", true, 42),
       accounts: { mnemonic },

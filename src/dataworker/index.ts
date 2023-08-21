@@ -35,7 +35,8 @@ export async function createDataworker(
     config.tokenTransferThresholdOverride,
     config.blockRangeEndBlockBuffer,
     config.spokeRootsLookbackCount,
-    config.bufferToPropose
+    config.bufferToPropose,
+    config.forcePropose
   );
 
   return {
