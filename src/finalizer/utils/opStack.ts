@@ -5,8 +5,12 @@ import { BigNumber, convertFromWei, getCachedProvider, groupObjectCountsByProp, 
 import { Multicall2Call } from "../../common";
 import { Withdrawal } from "../types";
 
-type OVM_CHAIN_ID = 10;
+export type OVM_CHAIN_ID = 10 | 8453;
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
+
+export function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
+  return [10, 8453].includes(chainId);
+}
 
 export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
   return new optimismSDK.CrossChainMessenger({
@@ -14,7 +18,7 @@ export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM
     l1ChainId: 1,
     l2ChainId: chainId,
     l1SignerOrProvider: hubSigner.connect(getCachedProvider(1, true)),
-    l2SignerOrProvider: hubSigner.connect(getCachedProvider(10, true)),
+    l2SignerOrProvider: hubSigner.connect(getCachedProvider(chainId, true)),
   });
 }
 
