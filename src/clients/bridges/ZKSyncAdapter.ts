@@ -8,7 +8,6 @@ import {
   spreadEventWithBlockNumber,
   assign,
   Event,
-  RetryProvider,
   ZERO_ADDRESS,
   getTokenAddress,
 } from "../../utils";
@@ -148,7 +147,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     const l2Provider = this.spokePoolClients[this.chainId].spokePool.provider;
     let zkProvider;
     try {
-      zkProvider = convertEthersRPCToZKSyncRPC(l2Provider as RetryProvider);
+      zkProvider = convertEthersRPCToZKSyncRPC(l2Provider);
     } catch (error) {
       this.logger.warn({
         at: "ZkSyncClient#sendTokenToTargetChain",
