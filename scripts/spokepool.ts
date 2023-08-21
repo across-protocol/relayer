@@ -93,6 +93,16 @@ function getTokenAddress(symbol: string, chainId: number): ERC20 {
   return { address: addresses[chainId], decimals, symbol };
 }
 
+function getTokenSymbol(address: string, chainId: number): ERC20 {
+  const token = Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === address);
+  if (token === undefined) {
+    throw new Error(`Token ${address} unrecognised`);
+  }
+
+  const { addresses, decimals, symbol } = token;
+  return { address: addresses[chainId], decimals, symbol };
+}
+
 function resolveHubChainId(spokeChainId: number): number {
   if (chains.includes(spokeChainId)) {
     return 1;
@@ -125,13 +135,19 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const toChainId = Number(args.to);
   const recipient = args.recipient ?? depositor;
   const baseAmount = Number(args.amount);
-  const tokenSymbol = (args.token as string).toUpperCase();
+  const rawToken = args.token;
+
+  const token = (ethers.utils.isAddress(String(args.token)) ? getTokenSymbol : getTokenAddress)(
+    rawToken as string,
+    fromChainId
+  );
+
+  const tokenSymbol = token.symbol.toUpperCase();
 
   const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(fromChainId, 1)[0]);
   signer = signer.connect(provider);
   const spokePool = (await getSpokePoolContract(fromChainId)).connect(signer);
 
-  const token = getTokenAddress(tokenSymbol, fromChainId);
   const amount = ethers.utils.parseUnits(
     baseAmount.toString(),
     utils.isDefined(args["infer-units"]) ? token.decimals : 0
