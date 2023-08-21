@@ -116,23 +116,35 @@ async function filterMessageLogs(
 ): Promise<(TokensBridged & { withdrawalIdx: number })[]> {
   const l1MessageSent = zkUtils.L1_MESSENGER.getEventTopic("L1MessageSent");
 
-  // Extract the relevant L1MessageSent events from the transaction.
-  const logs = await sdkUtils.mapAsync(tokensBridged, async (tokenBridged) => {
-    const { transactionHash, logIndex } = tokenBridged;
-    const txnReceipt = await l2Provider.getTransactionReceipt(transactionHash);
+  // Filter transaction hashes for duplicates, then request receipts for each hash.
+  const txnHashes = [ ...new Set(
+    tokensBridged.map(({ transactionHash }) => transactionHash)
+  )];
+  const _txnReceipts = await sdkUtils.mapAsync(txnHashes, async (txnHash) =>
+    await l2Provider.getTransactionReceipt(txnHash)
+  );
+  const txnReceipts = Object.fromEntries(
+    txnHashes.map((txnHash, idx) => [txnHash, _txnReceipts[idx]])
+  );
 
-    // Search backwards from the TokensBridged for the first L1MessageSent event.
+  // Extract the relevant L1MessageSent events from the transaction.
+  const withdrawals = tokensBridged.map((tokenBridged) => {
+    const { transactionHash, logIndex } = tokenBridged;
+    const txnReceipt = txnReceipts[transactionHash];
+
+    // Search backwards from the TokensBridged log index for the corresponding L1MessageSent event.
+    // @dev Array.findLast() would be an improvement but tsc doesn't currently allow it.
     const txnLogs = txnReceipt.logs.slice(0, logIndex).reverse();
     const withdrawal = txnLogs.find((log) => log.topics[0] === l1MessageSent);
 
-    // @dev idx is the "withdrawal number" within the transaction, _not_ the index of the log.
+    // @dev withdrawalIdx is the "withdrawal number" within the transaction, _not_ the index of the log.
     const l1MessagesSent = txnReceipt.logs.filter((log) => log.topics[0] === l1MessageSent);
     const withdrawalIdx = l1MessagesSent.indexOf(withdrawal);
     return { ...tokenBridged, withdrawalIdx };
   });
 
   const ready = await sdkUtils.filterAsync(
-    logs.flat(),
+    withdrawals,
     async ({ transactionHash, withdrawalIdx }) => !(await wallet.isWithdrawalFinalized(transactionHash, withdrawalIdx))
   );
 
