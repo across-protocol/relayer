@@ -220,7 +220,7 @@ export async function finalize(
       client,
       latestBlockToFinalize
     );
-    logger.info({ at: "finalize", message: `Found ${callData.length} ${network} withdrawals for finalization.` });
+    logger.debug({ at: "finalize", message: `Found ${callData.length} ${network} withdrawals for finalization.` });
 
     finalizationsToBatch.callData.push(...callData);
     finalizationsToBatch.withdrawals.push(...withdrawals);
