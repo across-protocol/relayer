@@ -6,6 +6,7 @@ import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { getDeployedContract, getNetworkName, getNodeUrlList, resolveTokenSymbols } from "../src/utils";
+import { utils } from "@across-protocol/sdk-v2";
 
 type ERC20 = {
   address: string;
@@ -131,7 +132,10 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const spokePool = (await getSpokePoolContract(fromChainId)).connect(signer);
 
   const token = getTokenAddress(tokenSymbol, fromChainId);
-  const amount = ethers.utils.parseUnits(baseAmount.toString(), token.decimals);
+  const amount = ethers.utils.parseUnits(
+    baseAmount.toString(),
+    utils.isDefined(args["infer-units"]) ? token.decimals : 0
+  );
 
   const erc20 = new Contract(token.address, contracts.ExpandedERC20__factory.abi, signer);
   const allowance = await erc20.allowance(depositor, spokePool.address);
@@ -261,7 +265,9 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Wallet):
 function usage(badInput?: string): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
   const walletOpts = "mnemonic|privateKey";
-  const depositArgs = "--from <originChainId> --to <destinationChainId>" + " --token <tokenSymbol> --amount <amount>";
+  const depositArgs =
+    "--from <originChainId> --to <destinationChainId>" +
+    " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--units base | decimal]";
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> --txnHash <txnHash>";
   const fillArgs = "--from <originChainId> --hash <depositHash>";
@@ -283,7 +289,7 @@ function usage(badInput?: string): boolean {
 
 async function run(argv: string[]): Promise<boolean> {
   const configOpts = ["chainId"];
-  const depositOpts = ["from", "to", "token", "amount", "recipient"];
+  const depositOpts = ["from", "to", "token", "amount", "recipient", "infer-units"];
   const fetchOpts = ["chainId", "transactionHash"];
   const fillOpts = [];
   const opts = {
