@@ -1,1 +1,1 @@
-export * as zkSync from "./zkSync"
+export * as zkSync from "./zkSync";
