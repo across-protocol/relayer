@@ -43,7 +43,14 @@ let logger: winston.Logger;
 // Filter for optimistic rollups
 const oneDaySeconds = 24 * 60 * 60;
 
-async function optimismFinalizer(
+const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
+  10: opStackFinalizer,
+  137: polygonFinalizer,
+  8453: opStackFinalizer,
+  42161: arbitrumOneFinalizer,
+};
+
+async function opStackFinalizer(
   logger: winston.Logger,
   signer: Wallet,
   hubPoolClient: HubPoolClient,
@@ -147,14 +154,6 @@ async function arbitrumOneFinalizer(
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
 
-const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
-  10: optimismFinalizer,
-  137: polygonFinalizer,
-  280: zkSyncFinalizer,
-  324: zkSyncFinalizer,
-  42161: arbitrumOneFinalizer,
-};
-
 export async function finalize(
   logger: winston.Logger,
   hubSigner: Wallet,
@@ -169,6 +168,7 @@ export async function finalize(
     137: polygonFinalizationWindow,
     280: oneDaySeconds * 8,
     324: oneDaySeconds * 4,
+    8453: optimisticRollupFinalizationWindow,
     42161: optimisticRollupFinalizationWindow,
   };
 
@@ -236,7 +236,7 @@ export async function finalize(
         const spokeChain = getNetworkName(l2ChainId);
         logger.info({
           at: "Finalizer",
-          message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🪃`,
+          message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🔜`,
           transactionHash: etherscanLink(txn.transactionHash, hubChainId),
         });
       });
