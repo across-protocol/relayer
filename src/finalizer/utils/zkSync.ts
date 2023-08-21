@@ -117,15 +117,12 @@ async function filterMessageLogs(
   const l1MessageSent = zkUtils.L1_MESSENGER.getEventTopic("L1MessageSent");
 
   // Filter transaction hashes for duplicates, then request receipts for each hash.
-  const txnHashes = [ ...new Set(
-    tokensBridged.map(({ transactionHash }) => transactionHash)
-  )];
-  const _txnReceipts = await sdkUtils.mapAsync(txnHashes, async (txnHash) =>
-    await l2Provider.getTransactionReceipt(txnHash)
+  const txnHashes = [...new Set(tokensBridged.map(({ transactionHash }) => transactionHash))];
+  const _txnReceipts = await sdkUtils.mapAsync(
+    txnHashes,
+    async (txnHash) => await l2Provider.getTransactionReceipt(txnHash)
   );
-  const txnReceipts = Object.fromEntries(
-    txnHashes.map((txnHash, idx) => [txnHash, _txnReceipts[idx]])
-  );
+  const txnReceipts = Object.fromEntries(txnHashes.map((txnHash, idx) => [txnHash, _txnReceipts[idx]]));
 
   // Extract the relevant L1MessageSent events from the transaction.
   const withdrawals = tokensBridged.map((tokenBridged) => {
