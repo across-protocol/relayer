@@ -1,3 +1,4 @@
+import assert from "assert";
 import { Contract, ethers, Wallet } from "ethers";
 import { Provider as zksProvider, types as zkTypes, utils as zkUtils, Wallet as zkWallet } from "zksync-web3";
 import { groupBy } from "lodash";
@@ -40,24 +41,8 @@ export async function zkSyncFinalizer(
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
   const tokensBridged = spokePoolClient.getTokensBridged();
-  const { ready, pending } = await sortWithdrawals(l2Provider, tokensBridged);
-  if (pending.length > 0) {
-    logger.debug({
-      at: "zkSyncFinalizer",
-      message: `Found ${pending.length} pending withdrawal transactions.`,
-      pending,
-    });
-  }
-
-  const candidates = await filterMessageLogs(wallet, l2Provider, ready);
-  if (candidates.length > 0) {
-    logger.debug({
-      at: "zkSyncFinalizer",
-      message: `Found ${candidates.length} withdrawals ready to be finalized.`,
-      candidates,
-    });
-  }
-
+  const { committed: l2Committed, finalized: l2Finalized } = await sortWithdrawals(l2Provider, tokensBridged);
+  const candidates = await filterMessageLogs(wallet, l2Provider, l2Finalized);
   const withdrawalParams = await getWithdrawalParams(wallet, candidates);
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
 
@@ -79,10 +64,23 @@ export async function zkSyncFinalizer(
     return withdrawal;
   });
 
+  logger.debug({
+    at: "zkSyncFinalizer",
+    message: "zkSync withdrawal status.",
+    statusesGrouped: {
+      withdrawalPending: l2Committed.length,
+      withdrawalReady: candidates.length,
+      withdrawalFinalized: l2Finalized.length - candidates.length,
+    },
+    committed: l2Committed,
+  });
+  assert(l2Committed.length + l2Finalized.length === tokensBridged.length);
+
   return { callData: txns, withdrawals };
 }
 
 /**
+ * @dev For L2 transactions, status "finalized" is required before any contained messages can be executed on the L1.
  * @param provider zkSync L2 provider instance (must be of type zksync-web3.Provider).
  * @param tokensBridged Array of TokensBridged events to evaluate for finalization.
  * @returns TokensBridged events sorted according to pending and ready for finalization.
@@ -90,17 +88,17 @@ export async function zkSyncFinalizer(
 async function sortWithdrawals(
   provider: zksProvider,
   tokensBridged: TokensBridged[]
-): Promise<{ pending: TokensBridged[]; ready: TokensBridged[] }> {
+): Promise<{ committed: TokensBridged[]; finalized: TokensBridged[] }> {
   const txnStatus = await Promise.all(
     tokensBridged.map(({ transactionHash }) => provider.getTransactionStatus(transactionHash))
   );
 
   let idx = 0; // @dev Possible to infer the loop index in groupBy ??
-  const { pending = [], ready = [] } = groupBy(tokensBridged, () =>
-    txnStatus[idx++] === TransactionStatus.Finalized ? "ready" : "pending"
+  const { committed = [], finalized = [] } = groupBy(tokensBridged, () =>
+    txnStatus[idx++] === TransactionStatus.Finalized ? "finalized" : "committed"
   );
 
-  return { ready, pending };
+  return { committed, finalized };
 }
 
 /**
