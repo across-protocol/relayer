@@ -21,6 +21,7 @@ import {
   multicallArbitrumFinalizations,
   multicallOptimismL1Proofs,
   isOVMChainId,
+  zkSyncFinalizer,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../clients";
@@ -45,6 +46,8 @@ const oneDaySeconds = 24 * 60 * 60;
 const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   10: opStackFinalizer,
   137: polygonFinalizer,
+  280: zkSyncFinalizer,
+  324: zkSyncFinalizer,
   8453: opStackFinalizer,
   42161: arbitrumOneFinalizer,
 };
@@ -165,6 +168,8 @@ export async function finalize(
   const finalizationWindows: { [chainId: number]: number } = {
     10: optimisticRollupFinalizationWindow,
     137: polygonFinalizationWindow,
+    280: oneDaySeconds * 8,
+    324: oneDaySeconds * 4,
     8453: optimisticRollupFinalizationWindow,
     42161: optimisticRollupFinalizationWindow,
   };
@@ -215,7 +220,7 @@ export async function finalize(
       client,
       latestBlockToFinalize
     );
-    logger.info({ at: "finalize", message: `Found ${callData.length} ${network} withdrawals for finalization.` });
+    logger.debug({ at: "finalize", message: `Found ${callData.length} ${network} withdrawals for finalization.` });
 
     finalizationsToBatch.callData.push(...callData);
     finalizationsToBatch.withdrawals.push(...withdrawals);
