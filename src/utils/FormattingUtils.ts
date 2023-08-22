@@ -34,14 +34,7 @@ export function etherscanLink(txHashOrAddress: string, chainId: number | string)
 
 // Generate an etherscan link prefix. If a networkId is provided then the URL will point to this network. Else, assume mainnet.
 export function createEtherscanLinkFromTx(networkId: number): string {
-  let url;
-  if (constants.PUBLIC_NETWORKS[networkId]) {
-    url = `${constants.PUBLIC_NETWORKS[networkId].etherscan}`;
-  } else {
-    url = "https://etherscan.io";
-  }
-
-  return url;
+  return constants.PUBLIC_NETWORKS[networkId]?.etherscan ?? "https://etherscan.io";
 }
 
 // Convert either an address or transaction to a shorter version.
