@@ -3,6 +3,7 @@ import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
   convertFromWei,
   getDeployedContract,
+  getNetworkName,
   groupObjectCountsByProp,
   Wallet,
   winston,
@@ -10,9 +11,9 @@ import {
   getCachedProvider,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
-import { HubPoolClient } from "../../clients";
+import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Multicall2Call } from "../../common";
-import { Withdrawal } from "../types";
+import { FinalizerPromise, Withdrawal } from "../types";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -32,7 +33,32 @@ export interface PolygonTokensBridged extends TokensBridged {
   payload: string;
 }
 
-export async function getPosClient(mainnetSigner: Wallet): Promise<POSClient> {
+export async function polygonFinalizer(
+  logger: winston.Logger,
+  signer: Wallet,
+  hubPoolClient: HubPoolClient,
+  spokePoolClient: SpokePoolClient,
+  latestBlockToFinalize: number
+): Promise<FinalizerPromise> {
+  const { chainId } = spokePoolClient;
+
+  const posClient = await getPosClient(signer);
+  logger.debug({
+    at: "Finalizer#polygonFinalizer",
+    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    latestBlockToFinalize,
+  });
+
+  // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
+  // that are older than 1 day old:
+  const recentTokensBridgedEvents = spokePoolClient
+    .getTokensBridged()
+    .filter((e) => e.blockNumber >= latestBlockToFinalize);
+
+  return await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
+}
+
+async function getPosClient(mainnetSigner: Wallet): Promise<POSClient> {
   // Following from https://maticnetwork.github.io/matic.js/docs/pos
   use(Web3ClientPlugin);
   setProofApi("https://apis.matic.network/");
@@ -55,7 +81,7 @@ export async function getPosClient(mainnetSigner: Wallet): Promise<POSClient> {
   });
 }
 
-export async function getFinalizableTransactions(
+async function getFinalizableTransactions(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   posClient: POSClient
@@ -131,7 +157,7 @@ export async function getFinalizableTransactions(
   return finalizableMessages;
 }
 
-export async function finalizePolygon(posClient: POSClient, event: PolygonTokensBridged): Promise<Multicall2Call> {
+async function finalizePolygon(posClient: POSClient, event: PolygonTokensBridged): Promise<Multicall2Call> {
   const { payload } = event;
   const rootChainManager = await posClient.rootChainManager.getContract();
   const callData = rootChainManager.method("exit", payload).encodeABI();
@@ -141,7 +167,7 @@ export async function finalizePolygon(posClient: POSClient, event: PolygonTokens
   };
 }
 
-export async function multicallPolygonFinalizations(
+async function multicallPolygonFinalizations(
   tokensBridged: TokensBridged[],
   posClient: POSClient,
   hubSigner: Wallet,
@@ -185,11 +211,11 @@ export async function multicallPolygonFinalizations(
   };
 }
 
-export function getMainnetTokenBridger(mainnetSigner: Wallet): Contract {
+function getMainnetTokenBridger(mainnetSigner: Wallet): Contract {
   return getDeployedContract("PolygonTokenBridger", 1, mainnetSigner);
 }
 
-export async function retrieveTokenFromMainnetTokenBridger(
+async function retrieveTokenFromMainnetTokenBridger(
   l2Token: string,
   mainnetSigner: Wallet,
   hubPoolClient: HubPoolClient
@@ -203,7 +229,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
   };
 }
 
-export function getL2TokensToFinalize(events: TokensBridged[]): string[] {
+function getL2TokensToFinalize(events: TokensBridged[]): string[] {
   const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
     l2TokenDictionary[event.l2TokenAddress] = true;
     return l2TokenDictionary;

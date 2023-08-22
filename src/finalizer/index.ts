@@ -13,13 +13,7 @@ import {
   getMultisender,
   winston,
 } from "../utils";
-import {
-  getPosClient,
-  opStackFinalizer,
-  multicallPolygonFinalizations,
-  multicallArbitrumFinalizations,
-  zkSyncFinalizer,
-} from "./utils";
+import { opStackFinalizer, polygonFinalizer, multicallArbitrumFinalizations, zkSyncFinalizer } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
@@ -48,31 +42,6 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   8453: opStackFinalizer,
   42161: arbitrumOneFinalizer,
 };
-
-async function polygonFinalizer(
-  logger: winston.Logger,
-  signer: Wallet,
-  hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
-): Promise<FinalizerPromise> {
-  const { chainId } = spokePoolClient;
-
-  const posClient = await getPosClient(signer);
-  logger.debug({
-    at: "Finalizer#polygonFinalizer",
-    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
-  });
-
-  // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
-  // that are older than 1 day old:
-  const recentTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter((e) => e.blockNumber >= latestBlockToFinalize);
-
-  return await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
-}
 
 async function arbitrumOneFinalizer(
   logger: winston.Logger,
