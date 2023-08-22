@@ -16,9 +16,10 @@ type ERC20 = {
 const { MaxUint256, Zero } = ethers.constants;
 
 const testChains = [5, 280];
-const chains = [1, 10, 137, 324, 42161];
+const chains = [1, 10, 137, 324, 8453, 42161];
 
-const padding = 20;
+const padLeft = 20;
+const padRight = 25;
 
 function formatAddress(address: string, maxWidth = 18): string {
   const separator = "...";
@@ -41,13 +42,13 @@ function printDeposit(log: LogDescription): void {
   const tokenSymbol = resolveTokenSymbols([originToken], originChainId)[0];
   console.log(
     `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
-      `\t${"Depositor".padEnd(padding)}: ${formatAddress(depositor, 18)}\n` +
-      `\t${"Recipient".padEnd(padding)}: ${formatAddress(recipient, 18)}\n` +
-      `\t${"Origin chain".padEnd(padding)}: ${getNetworkName(originChainId).toString().padStart(18)}\n` +
-      `\t${"Destination chain".padEnd(padding)}: ${getNetworkName(destinationChainId).padStart(18)}\n` +
-      `\t${"Token".padEnd(padding)}: ${tokenSymbol.padStart(18)}\n` +
-      `\t${"Amount".padEnd(padding)}: ${amount.toString().padStart(18)}\n` +
-      `\t${"Relayer Fee".padEnd(padding)}: ${log.args.relayerFeePct.toString().padStart(18)}\n`
+      `\t${"Depositor".padEnd(padLeft)}: ${formatAddress(depositor, padRight)}\n` +
+      `\t${"Recipient".padEnd(padLeft)}: ${formatAddress(recipient, padRight)}\n` +
+      `\t${"Origin chain".padEnd(padLeft)}: ${getNetworkName(originChainId).toString().padStart(padRight)}\n` +
+      `\t${"Destination chain".padEnd(padLeft)}: ${getNetworkName(destinationChainId).padStart(padRight)}\n` +
+      `\t${"Token".padEnd(padLeft)}: ${tokenSymbol.padStart(padRight)}\n` +
+      `\t${"Amount".padEnd(padLeft)}: ${amount.toString().padStart(padRight)}\n` +
+      `\t${"Relayer Fee".padEnd(padLeft)}: ${log.args.relayerFeePct.toString().padStart(padRight)}\n`
   );
 }
 
@@ -64,16 +65,16 @@ function printFill(log: LogDescription): void {
   const totalFilledPct = `${totalFilledAmount.mul(100).div(amount)} %`;
   console.log(
     `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
-      `\t${"Depositor".padEnd(padding)}: ${formatAddress(depositor, 18)}\n` +
-      `\t${"Recipient".padEnd(padding)}: ${formatAddress(recipient, 18)}\n` +
-      `\t${"Origin chain".padEnd(padding)}: ${getNetworkName(originChainId).toString().padStart(18)}\n` +
-      `\t${"Destination chain".padEnd(padding)}: ${getNetworkName(destinationChainId).padStart(18)}\n` +
-      `\t${"Token".padEnd(padding)}: ${tokenSymbol.padStart(18)}\n` +
-      `\t${"Amount".padEnd(padding)}: ${amount.toString().padStart(18)}\n` +
-      `\t${"Fill Amount".padEnd(padding)}: ${log.args.fillAmount.toString().padStart(18)}\n` +
-      `\t${"Relayer Fee".padEnd(padding)}: ${log.args.relayerFeePct.toString().padStart(18)}\n` +
-      `\t${"LP Fee".padEnd(padding)}: ${log.args.realizedLpFeePct.toString().padStart(18)}\n` +
-      `\t${"Filled".padEnd(padding)}: ${totalFilledPct.padStart(18)}\n`
+      `\t${"Depositor".padEnd(padLeft)}: ${formatAddress(depositor, padRight)}\n` +
+      `\t${"Recipient".padEnd(padLeft)}: ${formatAddress(recipient, padRight)}\n` +
+      `\t${"Origin chain".padEnd(padLeft)}: ${getNetworkName(originChainId).toString().padStart(padRight)}\n` +
+      `\t${"Destination chain".padEnd(padLeft)}: ${getNetworkName(destinationChainId).padStart(padRight)}\n` +
+      `\t${"Token".padEnd(padLeft)}: ${tokenSymbol.padStart(padRight)}\n` +
+      `\t${"Amount".padEnd(padLeft)}: ${amount.toString().padStart(padRight)}\n` +
+      `\t${"Fill Amount".padEnd(padLeft)}: ${log.args.fillAmount.toString().padStart(padRight)}\n` +
+      `\t${"Relayer Fee".padEnd(padLeft)}: ${log.args.relayerFeePct.toString().padStart(padRight)}\n` +
+      `\t${"LP Fee".padEnd(padLeft)}: ${log.args.realizedLpFeePct.toString().padStart(padRight)}\n` +
+      `\t${"Filled".padEnd(padLeft)}: ${totalFilledPct.padStart(padRight)}\n`
   );
 }
 
@@ -149,12 +150,12 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
 
   console.log(
     `Submitting deposit on chain ID ${fromChainId}\n` +
-      `\t${"originChainId".padEnd(padding)}: ${fromChainId}\n` +
-      `\t${"destinationChainId".padEnd(padding)}: ${toChainId}\n` +
-      `\t${"depositor".padEnd(padding)}: ${depositor}\n` +
-      `\t${"recipient".padEnd(padding)}: ${recipient}\n` +
-      `\t${"relayerFeePct".padEnd(padding)}: ${relayerFeePct}\n` +
-      `\t${"quoteTimestamp".padEnd(padding)}: ${quoteTimestamp}\n`
+      `\t${"originChainId".padEnd(padLeft)}: ${fromChainId}\n` +
+      `\t${"destinationChainId".padEnd(padLeft)}: ${toChainId}\n` +
+      `\t${"depositor".padEnd(padLeft)}: ${depositor}\n` +
+      `\t${"recipient".padEnd(padLeft)}: ${recipient}\n` +
+      `\t${"relayerFeePct".padEnd(padLeft)}: ${relayerFeePct}\n` +
+      `\t${"quoteTimestamp".padEnd(padLeft)}: ${quoteTimestamp}\n`
   );
   const deposit = await spokePool.deposit(
     recipient,
@@ -173,8 +174,8 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     .forEach((_log) => {
       const log = spokePool.interface.parseLog(_log);
       console.log(
-        `\t${"depositId".padEnd(padding)}: ${log.args.depositId}\n` +
-          `\t${"transactionHash".padEnd(padding)}: ${_log.transactionHash}\n`
+        `\t${"depositId".padEnd(padLeft)}: ${log.args.depositId}\n` +
+          `\t${"transactionHash".padEnd(padLeft)}: ${_log.transactionHash}\n`
       );
     });
 
@@ -211,12 +212,12 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
 
   console.log(
     `Dumping chain ${chainId} SpokePool config:\n` +
-      `\t${"HubPool chain ID".padEnd(padding)}: ${hubChainId}\n` +
-      `\t${"HubPool address".padEnd(padding)}: ${hubPoolAddress}\n` +
-      `\t${"Cross-domain admin".padEnd(padding)}: ${admin}\n` +
-      `\t${"Cross-domain alias".padEnd(padding)}: ${adminAlias}\n` +
-      `\t${"WETH".padEnd(padding)}: ${wethAddress}\n` +
-      `\t${"Current time".padEnd(padding)}: ${currentTimeStr} (${currentTime})\n`
+      `\t${"HubPool chain ID".padEnd(padLeft)}: ${hubChainId}\n` +
+      `\t${"HubPool address".padEnd(padLeft)}: ${hubPoolAddress}\n` +
+      `\t${"Cross-domain admin".padEnd(padLeft)}: ${admin}\n` +
+      `\t${"Cross-domain alias".padEnd(padLeft)}: ${adminAlias}\n` +
+      `\t${"WETH".padEnd(padLeft)}: ${wethAddress}\n` +
+      `\t${"Current time".padEnd(padLeft)}: ${currentTimeStr} (${currentTime})\n`
   );
 
   return true;
