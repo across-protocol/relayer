@@ -1,18 +1,95 @@
+import assert from "assert";
+import { groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
-import { BigNumber, convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import {
+  BigNumber,
+  convertFromWei,
+  getCachedProvider,
+  getNetworkName,
+  groupObjectCountsByProp,
+  Wallet,
+  winston,
+} from "../../utils";
 import { Multicall2Call } from "../../common";
-import { Withdrawal } from "../types";
+import { FinalizerPromise, Withdrawal } from "../types";
 
-export type OVM_CHAIN_ID = 10 | 8453;
+interface CrossChainMessageWithEvent {
+  event: TokensBridged;
+  message: optimismSDK.MessageLike;
+}
+
+interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
+  status: string;
+  logIndex: number;
+}
+
+type OVM_CHAIN_ID = 10 | 8453;
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
-export function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
+export async function opStackFinalizer(
+  logger: winston.Logger,
+  signer: Wallet,
+  hubPoolClient: HubPoolClient,
+  spokePoolClient: SpokePoolClient,
+  latestBlockToFinalize: number
+): Promise<FinalizerPromise> {
+  const { chainId } = spokePoolClient;
+  assert(isOVMChainId(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
+
+  const crossChainMessenger = getOptimismClient(chainId, signer);
+
+  // Sort tokensBridged events by their age. Submit proofs for recent events, and withdrawals for older events.
+  const earliestBlockToProve = latestBlockToFinalize + 1;
+  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
+    spokePoolClient.getTokensBridged(),
+    (e) => (e.blockNumber >= earliestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
+  );
+
+  // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
+  // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
+  logger.debug({
+    at: "Finalizer#optimismFinalizer",
+    message: `Earliest TokensBridged block to attempt to submit proofs for ${getNetworkName(chainId)}`,
+    earliestBlockToProve,
+  });
+
+  const proofs = await multicallOptimismL1Proofs(
+    chainId,
+    recentTokensBridgedEvents,
+    crossChainMessenger,
+    hubPoolClient,
+    logger
+  );
+
+  // Next finalize withdrawals that have passed challenge period.
+  // Skip events that are likely not past the seven day challenge period.
+  logger.debug({
+    at: "Finalizer",
+    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    latestBlockToFinalize,
+  });
+
+  const finalizations = await multicallOptimismFinalizations(
+    chainId,
+    olderTokensBridgedEvents,
+    crossChainMessenger,
+    hubPoolClient,
+    logger
+  );
+
+  const callData = [...proofs.callData, ...finalizations.callData];
+  const withdrawals = [...proofs.withdrawals, ...finalizations.withdrawals];
+
+  return { callData, withdrawals };
+}
+
+function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
   return [10, 8453].includes(chainId);
 }
 
-export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
+function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
     l1ChainId: 1,
@@ -22,11 +99,7 @@ export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM
   });
 }
 
-export interface CrossChainMessageWithEvent {
-  event: TokensBridged;
-  message: optimismSDK.MessageLike;
-}
-export async function getCrossChainMessages(
+async function getCrossChainMessages(
   _chainId: OVM_CHAIN_ID,
   tokensBridged: TokensBridged[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
@@ -61,11 +134,7 @@ export async function getCrossChainMessages(
   });
 }
 
-export interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
-  status: string;
-  logIndex: number;
-}
-export async function getMessageStatuses(
+async function getMessageStatuses(
   _chainId: OVM_CHAIN_ID,
   crossChainMessages: CrossChainMessageWithEvent[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
@@ -99,7 +168,7 @@ export async function getMessageStatuses(
   });
 }
 
-export async function getOptimismFinalizableMessages(
+async function getOptimismFinalizableMessages(
   chainId: OVM_CHAIN_ID,
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
@@ -136,18 +205,14 @@ export async function getOptimismFinalizableMessages(
   );
 }
 
-export function getL1TokenInfoForOptimismToken(
-  chainId: OVM_CHAIN_ID,
-  hubPoolClient: HubPoolClient,
-  l2Token: string
-): L1Token {
+function getL1TokenInfoForOptimismToken(chainId: OVM_CHAIN_ID, hubPoolClient: HubPoolClient, l2Token: string): L1Token {
   return hubPoolClient.getL1TokenInfoForL2Token(
     SpokePoolClient.getExecutedRefundLeafL2Token(chainId, l2Token),
     chainId
   );
 }
 
-export async function finalizeOptimismMessage(
+async function finalizeOptimismMessage(
   _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   message: CrossChainMessageWithStatus,
@@ -164,7 +229,7 @@ export async function finalizeOptimismMessage(
   };
 }
 
-export async function proveOptimismMessage(
+async function proveOptimismMessage(
   _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   message: CrossChainMessageWithStatus,
@@ -181,7 +246,7 @@ export async function proveOptimismMessage(
   };
 }
 
-export async function multicallOptimismFinalizations(
+async function multicallOptimismFinalizations(
   chainId: OVM_CHAIN_ID,
   tokensBridgedEvents: TokensBridged[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
@@ -214,7 +279,7 @@ export async function multicallOptimismFinalizations(
   };
 }
 
-export async function multicallOptimismL1Proofs(
+async function multicallOptimismL1Proofs(
   chainId: OVM_CHAIN_ID,
   tokensBridgedEvents: TokensBridged[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
