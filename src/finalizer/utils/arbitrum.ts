@@ -41,8 +41,8 @@ export async function multicallArbitrumFinalizations(
 export async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(CHAIN_ID, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const outboxAbi = CONTRACT_ADDRESSES[CHAIN_ID].outbox.abi;
-  const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi);
+  const { address, abi } = CONTRACT_ADDRESSES[CHAIN_ID].outbox;
+  const outbox = new Contract(address, abi);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
   // L2ToL1MessageWriter class, which we need to form the calldata so unfortunately we must cast to `any`.
