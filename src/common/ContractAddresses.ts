@@ -678,7 +678,7 @@ export const CONTRACT_ADDRESSES: {
       ],
     },
     outbox: {
-      address: "0x0b9857ae2d4a3dbe74ffe1d7df045bb7f96e4840",
+      address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
       abi: [
         {
           inputs: [
