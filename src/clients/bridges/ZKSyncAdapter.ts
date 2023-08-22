@@ -8,7 +8,6 @@ import {
   spreadEventWithBlockNumber,
   assign,
   Event,
-  RetryProvider,
   ZERO_ADDRESS,
   getTokenAddress,
 } from "../../utils";
@@ -19,7 +18,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
-import { convertEthersRPCToZKSyncRPC } from "../../utils/RPCUtils";
+import { zkSync as zkSyncUtils } from "../../utils/chains";
 import { BigNumberish } from "../../utils/FormattingUtils";
 
 /**
@@ -146,9 +145,9 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Next, load estimated executed L1 gas price of the message transaction and the L2 gas limit.
     const l1Provider = this.getProvider(this.hubChainId);
     const l2Provider = this.spokePoolClients[this.chainId].spokePool.provider;
-    let zkProvider;
+    let zkProvider: zksync.Provider;
     try {
-      zkProvider = convertEthersRPCToZKSyncRPC(l2Provider as RetryProvider);
+      zkProvider = zkSyncUtils.convertEthersRPCToZKSyncRPC(l2Provider);
     } catch (error) {
       this.logger.warn({
         at: "ZkSyncClient#sendTokenToTargetChain",
@@ -158,7 +157,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     }
     // If zkSync provider can't be created for some reason, default to a very conservative 2mil L2 gas limit
     // which should be sufficient for this transaction.
-    const l2GasLimit = (await isDefined(zkProvider))
+    const l2GasLimit = isDefined(zkProvider)
       ? await zksync.utils.estimateDefaultBridgeDepositL2Gas(
           l1Provider,
           zkProvider,

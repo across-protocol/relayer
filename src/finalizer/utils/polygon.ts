@@ -11,8 +11,8 @@ import {
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
-import { Withdrawal } from "..";
 import { Multicall2Call } from "../../common";
+import { Withdrawal } from "../types";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -171,11 +171,13 @@ export async function multicallPolygonFinalizations(
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(message.amountToReturn.toString(), l1TokenInfo.decimals);
-    return {
+    const withdrawal: Withdrawal = {
       l2ChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
+      type: "withdrawal",
     };
+    return withdrawal;
   });
   return {
     callData,

@@ -11,6 +11,7 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 export { config } from "dotenv";
 
 // Utils specifically for this bot.
+export * from "./chains";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./DepositUtils";
