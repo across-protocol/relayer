@@ -13,9 +13,9 @@ import {
   getMultisender,
   winston,
 } from "../utils";
-import { opStackFinalizer, polygonFinalizer, multicallArbitrumFinalizations, zkSyncFinalizer } from "./utils";
+import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient, SpokePoolClient } from "../clients";
+import { HubPoolClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -26,7 +26,7 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
 } from "../common";
-import { ChainFinalizer, FinalizerPromise, Withdrawal } from "./types";
+import { ChainFinalizer, Withdrawal } from "./types";
 
 config();
 let logger: winston.Logger;
@@ -42,28 +42,6 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   8453: opStackFinalizer,
   42161: arbitrumOneFinalizer,
 };
-
-async function arbitrumOneFinalizer(
-  logger: winston.Logger,
-  signer: Wallet,
-  hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
-): Promise<FinalizerPromise> {
-  const { chainId } = spokePoolClient;
-
-  logger.debug({
-    at: "Finalizer#arbitrumOneFinalizer",
-    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
-  });
-  // Skip events that are likely not past the seven day challenge period.
-  const olderTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter((e) => e.blockNumber < latestBlockToFinalize);
-
-  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
-}
 
 export async function finalize(
   logger: winston.Logger,

@@ -1,13 +1,43 @@
-import { Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract, getCachedProvider } from "../../utils";
 import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "@arbitrum/sdk";
+import {
+  Wallet,
+  winston,
+  convertFromWei,
+  getNetworkName,
+  groupObjectCountsByProp,
+  Contract,
+  getCachedProvider,
+} from "../../utils";
 import { TokensBridged } from "../../interfaces";
-import { HubPoolClient } from "../../clients";
+import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { Withdrawal } from "../types";
+import { FinalizerPromise, Withdrawal } from "../types";
 
 const CHAIN_ID = 42161;
 
-export async function multicallArbitrumFinalizations(
+export async function arbitrumOneFinalizer(
+  logger: winston.Logger,
+  signer: Wallet,
+  hubPoolClient: HubPoolClient,
+  spokePoolClient: SpokePoolClient,
+  latestBlockToFinalize: number
+): Promise<FinalizerPromise> {
+  const { chainId } = spokePoolClient;
+
+  logger.debug({
+    at: "Finalizer#arbitrumOneFinalizer",
+    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    latestBlockToFinalize,
+  });
+  // Skip events that are likely not past the seven day challenge period.
+  const olderTokensBridgedEvents = spokePoolClient
+    .getTokensBridged()
+    .filter((e) => e.blockNumber < latestBlockToFinalize);
+
+  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
+}
+
+async function multicallArbitrumFinalizations(
   tokensBridged: TokensBridged[],
   hubSigner: Wallet,
   hubPoolClient: HubPoolClient,
@@ -38,7 +68,7 @@ export async function multicallArbitrumFinalizations(
   };
 }
 
-export async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
+async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(CHAIN_ID, true);
   const proof = await message.getOutboxProof(l2Provider);
   const { address, abi } = CONTRACT_ADDRESSES[CHAIN_ID].outbox;
@@ -64,7 +94,7 @@ export async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Mu
   };
 }
 
-export async function getFinalizableMessages(
+async function getFinalizableMessages(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   l1Signer: Wallet
@@ -88,7 +118,7 @@ export async function getFinalizableMessages(
   return allMessagesWithStatuses.filter((x) => x.status === L2ToL1MessageStatus[L2ToL1MessageStatus.CONFIRMED]);
 }
 
-export async function getAllMessageStatuses(
+async function getAllMessageStatuses(
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
   mainnetSigner: Wallet
@@ -122,7 +152,8 @@ export async function getAllMessageStatuses(
     })
     .filter((result) => result.message !== undefined);
 }
-export async function getMessageOutboxStatusAndProof(
+
+async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Wallet,
