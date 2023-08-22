@@ -78,6 +78,12 @@ function printFill(log: LogDescription): void {
   );
 }
 
+/**
+ * Resolves an ERC20 type from a symbol and chain ID.
+ * @param symbol The symbol of the token to resolve.
+ * @param chainId The chain ID to resolve the token on.
+ * @returns The ERC20 type of the token.
+ */
 function getTokenAddress(symbol: string, chainId: number): ERC20 {
   const token = contracts.TOKEN_SYMBOLS_MAP[symbol];
   if (token === undefined) {
@@ -93,6 +99,12 @@ function getTokenAddress(symbol: string, chainId: number): ERC20 {
   return { address: addresses[chainId], decimals, symbol };
 }
 
+/**
+ * Resolves an ERC20 type from an address and chain ID.
+ * @param address The address of the token to resolve.
+ * @param chainId The chain ID to resolve the token on.
+ * @returns The ERC20 type of the token.
+ */
 function getTokenSymbol(address: string, chainId: number): ERC20 {
   const token = Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === address);
   if (token === undefined) {
@@ -137,6 +149,8 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const baseAmount = Number(args.amount);
   const rawToken = args.token;
 
+  // Depending on whether or not the passed in token argument is a symbol or an address,
+  // we need to call either `getTokenSymbol` or `getTokenAddress`.
   const token = (ethers.utils.isAddress(String(args.token)) ? getTokenSymbol : getTokenAddress)(
     rawToken as string,
     fromChainId
