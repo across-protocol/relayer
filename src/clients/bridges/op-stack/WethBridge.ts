@@ -50,7 +50,11 @@ export class WethBridge implements OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<Event[]> {
-    return paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.ETHDepositInitiated(fromAddress), eventConfig);
+    return paginatedEventQuery(
+      this.l1Bridge,
+      this.l1Bridge.filters.ETHDepositInitiated(undefined, fromAddress),
+      eventConfig
+    );
   }
 
   queryL2BridgeFinalizationEvents(
