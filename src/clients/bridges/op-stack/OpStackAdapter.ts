@@ -83,11 +83,10 @@ export class OpStackAdapter extends BaseAdapter {
           l1Tokens.map(async (l1Token) => {
             const bridge = this.getBridge(l1Token);
 
-            const [depositInitiatedResults, depositFinalizedResults] =
-              await Promise.all([
-                bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, l1SearchConfig),
-                bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig)
-              ]);
+            const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
+              bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, l1SearchConfig),
+              bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig),
+            ]);
 
             assign(
               this.l1DepositInitiatedEvents,

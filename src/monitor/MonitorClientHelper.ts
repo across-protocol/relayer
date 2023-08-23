@@ -47,12 +47,11 @@ export async function constructMonitorClients(
 
   // Need to update HubPoolClient to get latest tokens.
   const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
-  const adapterManager = new AdapterManager(
-    logger,
-    spokePoolClients,
-    commonClients.hubPoolClient,
-    [baseSigner.address, commonClients.hubPoolClient.hubPool.address, ...spokePoolAddresses]
-  );
+  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
+    baseSigner.address,
+    commonClients.hubPoolClient.hubPool.address,
+    ...spokePoolAddresses,
+  ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
     spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])

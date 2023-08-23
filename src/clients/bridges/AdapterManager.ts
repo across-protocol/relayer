@@ -18,7 +18,7 @@ export class AdapterManager {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly monitoredAddresses: string[],
+    readonly monitoredAddresses: string[]
   ) {
     if (!spokePoolClients) {
       return;
