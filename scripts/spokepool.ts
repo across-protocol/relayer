@@ -106,7 +106,8 @@ function getTokenAddress(symbol: string, chainId: number): ERC20 {
  * @returns The ERC20 type of the token.
  */
 function getTokenSymbol(address: string, chainId: number): ERC20 {
-  const token = Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === address);
+  const _address = ethers.utils.getAddress(address);
+  const token = Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === _address);
   if (token === undefined) {
     throw new Error(`Token ${address} unrecognised`);
   }
