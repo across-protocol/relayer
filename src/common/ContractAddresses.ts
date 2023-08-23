@@ -677,5 +677,27 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    outbox: {
+      address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
+      abi: [
+        {
+          inputs: [
+            { internalType: "bytes32[]", name: "proof", type: "bytes32[]" },
+            { internalType: "uint256", name: "index", type: "uint256" },
+            { internalType: "address", name: "l2Sender", type: "address" },
+            { internalType: "address", name: "to", type: "address" },
+            { internalType: "uint256", name: "l2Block", type: "uint256" },
+            { internalType: "uint256", name: "l1Block", type: "uint256" },
+            { internalType: "uint256", name: "l2Timestamp", type: "uint256" },
+            { internalType: "uint256", name: "value", type: "uint256" },
+            { internalType: "bytes", name: "data", type: "bytes" },
+          ],
+          name: "executeTransaction",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ],
+    },
   },
 };
