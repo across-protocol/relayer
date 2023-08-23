@@ -19,15 +19,12 @@ export class AdapterManager {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
     readonly monitoredAddresses: string[],
-    // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
-    // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
-    readonly senderAddress?: string
   ) {
     if (!spokePoolClients) {
       return;
     }
     if (this.spokePoolClients[10] !== undefined) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, senderAddress);
+      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[137] !== undefined) {
       this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);

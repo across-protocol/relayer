@@ -51,8 +51,7 @@ export async function constructMonitorClients(
     logger,
     spokePoolClients,
     commonClients.hubPoolClient,
-    [baseSigner.address, ...spokePoolAddresses],
-    commonClients.hubPoolClient.hubPool.address
+    [baseSigner.address, commonClients.hubPoolClient.hubPool.address, ...spokePoolAddresses]
   );
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
