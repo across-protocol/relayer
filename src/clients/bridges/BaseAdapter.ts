@@ -56,7 +56,6 @@ export abstract class BaseAdapter {
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
-  l2DepositFinalizedEvents_DepositAdapter: Events = {};
 
   txnClient: TransactionClient;
 
@@ -183,20 +182,7 @@ export abstract class BaseAdapter {
         if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
           this.l2DepositFinalizedEvents[monitoredAddress][l1Token] = [];
         }
-        let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
-        if (this.isWeth(l1Token)) {
-          let depositFinalizedEventsForL1 =
-            this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token] || [];
-          depositFinalizedEventsForL1 = depositFinalizedEventsForL1.filter((event) => event.to === monitoredAddress);
-          if (depositFinalizedEventsForL1.length > 0) {
-            // If this is WETH and there are atomic depositor events then consider the union as the full set of
-            // finalization events. We do this as the output event on L2 will show the Atomic depositor as the sender,
-            // not the original sender (monitored address).
-            l2FinalizationSet = [...l2FinalizationSet, ...depositFinalizedEventsForL1].sort(
-              (a, b) => a.blockNumber - b.blockNumber
-            );
-          }
-        }
+        const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
 
         // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
         // should be unlikely.

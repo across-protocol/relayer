@@ -47,6 +47,9 @@ export async function constructMonitorClients(
 
   // Need to update HubPoolClient to get latest tokens.
   const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+
+  // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
+  // track both.
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
     commonClients.hubPoolClient.hubPool.address,
