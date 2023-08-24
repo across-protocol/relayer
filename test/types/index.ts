@@ -10,7 +10,6 @@ export type SpyLoggerResult = {
 };
 
 export type SpokePoolDeploymentResult = {
-  timer: any;
   weth: utils.Contract;
   erc20: utils.Contract;
   spokePool: utils.Contract;

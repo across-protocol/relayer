@@ -25,7 +25,7 @@ import chaiExclude from "chai-exclude";
 import _ from "lodash";
 import { AcrossConfigStore } from "@across-protocol/contracts-v2";
 import { constants } from "@across-protocol/sdk-v2";
-import { SpyLoggerResult } from "../types";
+import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
 chai.use(chaiExclude);
 export { winston, sinon };
 
@@ -98,8 +98,12 @@ export function createSpyLogger(): SpyLoggerResult {
   return { spy, spyLogger };
 }
 
-export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, enableRoute = true) {
-  const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
+export async function deploySpokePoolWithToken(
+  fromChainId = 0,
+  toChainId = 0,
+  enableRoute = true
+): Promise<SpokePoolDeploymentResult> {
+  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
@@ -110,7 +114,7 @@ export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, e
       { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
     ]);
   }
-  return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
+  return { weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
 }
 
 export async function deployConfigStore(
