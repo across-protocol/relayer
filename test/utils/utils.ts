@@ -1,5 +1,6 @@
 import { constants as ethersConstants } from "ethers";
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
+
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
@@ -24,13 +25,18 @@ import chaiExclude from "chai-exclude";
 import _ from "lodash";
 import { AcrossConfigStore } from "@across-protocol/contracts-v2";
 import { constants } from "@across-protocol/sdk-v2";
+import { SpyLoggerResult } from "../types";
 chai.use(chaiExclude);
 export { winston, sinon };
 
 const assert = chai.assert;
 export { chai, assert };
 
-export function deepEqualsWithBigNumber(x: any, y: any, omitKeys: string[] = []): boolean {
+export function deepEqualsWithBigNumber(
+  x: Iterable<unknown> | Record<string | number, unknown>,
+  y: Iterable<unknown> | Record<string | number, unknown>,
+  omitKeys: string[] = []
+): boolean {
   const sortedKeysX = Object.fromEntries(
     Object.keys(x)
       .sort()
@@ -50,7 +56,8 @@ export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: st
   try {
     await promise;
     throw new Error(SPECIAL_ERROR_MESSAGE);
-  } catch (err) {
+  } catch (e: unknown) {
+    const err: Error = e as Error;
     if (err.message.includes(SPECIAL_ERROR_MESSAGE)) {
       throw err;
     }
@@ -65,7 +72,7 @@ export async function setupTokensForWallet(
   tokens: utils.Contract[],
   weth?: utils.Contract,
   seedMultiplier = 1
-) {
+): Promise<void> {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(
     tokens.map((token) =>
@@ -77,7 +84,7 @@ export async function setupTokensForWallet(
   }
 }
 
-export function createSpyLogger() {
+export function createSpyLogger(): SpyLoggerResult {
   const spy = sinon.spy();
   const spyLogger = winston.createLogger({
     level: "debug",
