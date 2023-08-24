@@ -25,6 +25,7 @@ import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
+import { EthersTestLibrary } from "../types";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
@@ -51,7 +52,7 @@ async function _constructSpokePoolClientsWithLookback(
 // Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
 export async function setupDataworker(
-  ethers: any,
+  ethers: EthersTestLibrary,
   maxRefundPerRelayerRefundLeaf: number,
   maxL1TokensPerPoolRebalanceLeaf: number,
   defaultPoolRebalanceTokenTransferThreshold: BigNumber,
@@ -286,7 +287,7 @@ export async function setupDataworker(
 
 // Set up Dataworker with SpokePoolClients with custom lookbacks. All other params are set to defaults.
 export async function setupFastDataworker(
-  ethers: any,
+  ethers: EthersTestLibrary,
   lookbackForAllChains?: number
 ): Promise<{
   hubPool: Contract;
