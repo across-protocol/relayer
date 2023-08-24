@@ -14,6 +14,7 @@ type ERC20 = {
 };
 
 const { MaxUint256, Zero } = ethers.constants;
+const { getAddress, isAddress } = ethers.utils;
 
 const testChains = [5, 280];
 const chains = [1, 10, 137, 324, 8453, 42161];
@@ -78,19 +79,30 @@ function printFill(log: LogDescription): void {
   );
 }
 
-function getTokenAddress(symbol: string, chainId: number): ERC20 {
-  const token = contracts.TOKEN_SYMBOLS_MAP[symbol];
-  if (token === undefined) {
-    throw new Error(`Token ${symbol} unrecognised`);
+/**
+ * Resolves an ERC20 type from a chain ID, and symbol or address.
+ * @param token The address or symbol of the token to resolve.
+ * @param chainId The chain ID to resolve the token on.
+ * @returns The ERC20 attributes of the token.
+ */
+function resolveToken(token: string, chainId: number): ERC20 {
+  // `token` may be an address or a symbol. Normalise it to a symbol for easy lookup.
+  const symbol = !isAddress(token)
+    ? token.toUpperCase()
+    : Object.values(contracts.TOKEN_SYMBOLS_MAP)
+        .find(({ addresses }) => addresses[chainId] === token)
+        ?.symbol;
+
+  const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
+  if (_token === undefined) {
+    throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
   }
 
-  const { addresses, decimals } = token;
-  const address = addresses[chainId];
-  if (address === undefined) {
-    throw new Error(`Token ${symbol} not supported on chain ID ${chainId}`);
-  }
-
-  return { address: addresses[chainId], decimals, symbol };
+  return {
+    address: _token.addresses[chainId],
+    decimals: _token.decimals,
+    symbol: _token.symbol
+  };
 }
 
 function resolveHubChainId(spokeChainId: number): number {
@@ -125,14 +137,17 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const toChainId = Number(args.to);
   const recipient = args.recipient ?? depositor;
   const baseAmount = Number(args.amount);
-  const tokenSymbol = (args.token as string).toUpperCase();
+
+  const token = resolveToken(args.token as string, fromChainId);
+  const tokenSymbol = token.symbol.toUpperCase();
+  const amount = ethers.utils.parseUnits(
+    baseAmount.toString(),
+    args.decimals ? 0 : token.decimals
+  );
 
   const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(fromChainId, 1)[0]);
   signer = signer.connect(provider);
   const spokePool = (await getSpokePoolContract(fromChainId)).connect(signer);
-
-  const token = getTokenAddress(tokenSymbol, fromChainId);
-  const amount = ethers.utils.parseUnits(baseAmount.toString(), token.decimals);
 
   const erc20 = new Contract(token.address, contracts.ExpandedERC20__factory.abi, signer);
   const allowance = await erc20.allowance(depositor, spokePool.address);
@@ -262,7 +277,9 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Wallet):
 function usage(badInput?: string): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
   const walletOpts = "mnemonic|privateKey";
-  const depositArgs = "--from <originChainId> --to <destinationChainId>" + " --token <tokenSymbol> --amount <amount>";
+  const depositArgs =
+    "--from <originChainId> --to <destinationChainId>" +
+    " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> --txnHash <txnHash>";
   const fillArgs = "--from <originChainId> --hash <depositHash>";
@@ -289,8 +306,10 @@ async function run(argv: string[]): Promise<boolean> {
   const fillOpts = [];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts],
+    boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "mnemonic",
+      decimals: false,
     },
     alias: {
       transactionHash: "txnHash",
