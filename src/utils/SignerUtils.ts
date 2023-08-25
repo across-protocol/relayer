@@ -81,7 +81,7 @@ async function getGckmsSigner(keys?: string[]): Promise<Wallet> {
 /**
  * Retrieves a signer based on the mnemonic set in the env.
  * @returns A signer based on the mnemonic set in the env.
- * @throws If the mnemonic is not set.
+ * @throws If a valid mnemonic is not defined in the environment.
  */
 function getMnemonicSigner(): Wallet {
   if (!process.env.MNEMONIC) {
