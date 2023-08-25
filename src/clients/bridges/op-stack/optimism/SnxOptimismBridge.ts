@@ -41,19 +41,21 @@ export class SnxOptimismBridge implements OpStackBridge {
     };
   }
 
-  queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    eventConfig: EventSearchConfig
-  ): Promise<Event[]> {
-    return paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.DepositInitiated(fromAddress), eventConfig);
+  queryL1BridgeInitiationEvents(l1Token: string, toAddress: string, eventConfig: EventSearchConfig): Promise<Event[]> {
+    // @dev For the SnxBridge, only the `toAddress` is indexed on the L2 event so we treat the `fromAddress` as the
+    // toAddress when fetching the L1 event.
+    return paginatedEventQuery(
+      this.l1Bridge,
+      this.l1Bridge.filters.DepositInitiated(undefined, toAddress),
+      eventConfig
+    );
   }
 
   queryL2BridgeFinalizationEvents(
     l1Token: string,
-    fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<Event[]> {
-    return paginatedEventQuery(this.l2Bridge, this.l2Bridge.filters.DepositFinalized(fromAddress), eventConfig);
+    return paginatedEventQuery(this.l2Bridge, this.l2Bridge.filters.DepositFinalized(toAddress), eventConfig);
   }
 }

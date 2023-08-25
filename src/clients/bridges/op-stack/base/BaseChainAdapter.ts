@@ -7,10 +7,7 @@ export class BaseChainAdapter extends OpStackAdapter {
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    monitoredAddresses: string[],
-    // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
-    // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
-    readonly senderAddress?: string
+    monitoredAddresses: string[]
   ) {
     super(
       8453,
@@ -19,8 +16,7 @@ export class BaseChainAdapter extends OpStackAdapter {
       logger,
       ["BAL", "DAI", "ETH", "WETH", "USDC"],
       spokePoolClients,
-      monitoredAddresses,
-      senderAddress
+      monitoredAddresses
     );
   }
 }
