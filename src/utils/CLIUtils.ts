@@ -18,7 +18,7 @@ export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
   // Build out the signer options to pass to the signer utils.
   const signerOptions: SignerOptions = {
     keyType,
-    gckmsKeys: args.keys,
+    gckmsKeys: [args.keys],
     cleanEnv: false, // TODO: We don't want to clean the env for now. This will be changed in the future.
   };
   // Return the signer.
