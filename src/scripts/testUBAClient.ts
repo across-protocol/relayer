@@ -12,7 +12,7 @@ import {
   Wallet,
   winston,
   config,
-  retrieveSignerFromCLIArgs,
+  getSigner,
   Logger,
   getBlockForTimestamp,
   disconnectRedisClient,
@@ -140,7 +140,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
 }
 
 export async function run(_logger: winston.Logger): Promise<void> {
-  const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+  const baseSigner: Wallet = await getSigner();
   await testUBAClient(_logger, baseSigner);
   await disconnectRedisClient(logger);
 }

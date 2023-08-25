@@ -1,4 +1,4 @@
-import { ethers, retrieveSignerFromCLIArgs, getProvider, WETH9, toBN, isKeyOf, getNetworkName } from "../src/utils";
+import { ethers, getSigner, getProvider, WETH9, toBN, isKeyOf, getNetworkName } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 
@@ -32,7 +32,7 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("amount")) {
     throw new Error("Define `amount` as how much you want to unwrap");
   }
-  const baseSigner = await retrieveSignerFromCLIArgs();
+  const baseSigner = await getSigner();
   const chainId = Number(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
   if (!isKeyOf(chainId, WETH_ADDRESSES)) {

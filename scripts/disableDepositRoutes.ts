@@ -1,5 +1,5 @@
 /* eslint-disable no-process-exit */
-import { retrieveSignerFromCLIArgs, winston, Logger, assert } from "../src/utils";
+import { getSigner, winston, Logger, assert } from "../src/utils";
 import { CommonConfig, constructClients, constructSpokePoolClientsWithStartBlocks, updateClients } from "../src/common";
 
 import minimist from "minimist";
@@ -19,7 +19,7 @@ export async function run(logger: winston.Logger): Promise<void> {
     message: "Constructing data to disable all deposits to or from the following chains",
     chainsToDisable,
   });
-  const baseSigner = await retrieveSignerFromCLIArgs();
+  const baseSigner = await getSigner();
   const config = new CommonConfig(process.env);
 
   // Get all deposit routes involving chainId and token
