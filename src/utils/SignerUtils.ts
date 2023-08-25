@@ -71,7 +71,7 @@ function getPrivateKeySigner(): Wallet {
  * @throws If the GCKMS key is not set.
  */
 async function getGckmsSigner(keys?: string[]): Promise<Wallet> {
-  if (!isDefined(keys)) {
+  if (!isDefined(keys) || keys.length === 0) {
     throw new Error("Wallet GCKSM selected but no keys parameter set! Set GCKMS key to use");
   }
   const privateKeys = await retrieveGckmsKeys(getGckmsConfig(keys));
