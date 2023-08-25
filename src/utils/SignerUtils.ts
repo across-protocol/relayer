@@ -56,7 +56,7 @@ export async function getSigner({ keyType, gckmsKeys, cleanEnv }: SignerOptions)
 /**
  * Retrieves a signer based on the mnemonic set in the env.
  * @returns A signer based on the mnemonic set in the env.
- * @throws If the mnemonic is not set.
+ * @throws If a valid private key is not defined in the environment.
  */
 function getPrivateKeySigner(): Wallet {
   if (!process.env.PRIVATE_KEY) {
