@@ -1,4 +1,4 @@
-import { ethers, getSigner, getProvider, ERC20, ZERO_ADDRESS, toBN, getGasPrice } from "../src/utils";
+import { ethers, retrieveSignerFromCLIArgs, getProvider, ERC20, ZERO_ADDRESS, toBN, getGasPrice } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
@@ -27,7 +27,7 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("chainId")) {
     throw new Error("Define `chainId` as the chain you want to connect on");
   }
-  const baseSigner = await getSigner();
+  const baseSigner = await retrieveSignerFromCLIArgs();
   const connectedSigner = baseSigner.connect(await getProvider(Number(args.chainId)));
   console.log("Connected to account", connectedSigner.address);
   const recipient = args.to;
