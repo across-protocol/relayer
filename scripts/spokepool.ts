@@ -5,7 +5,7 @@ import { BigNumber, Contract, ethers, Wallet } from "ethers";
 import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
-import { getDeployedContract, getNetworkName, getNodeUrlList, resolveTokenSymbols } from "../src/utils";
+import { getDeployedContract, getNetworkName, getNodeUrlList, getSigner, resolveTokenSymbols } from "../src/utils";
 
 type ERC20 = {
   address: string;
@@ -321,17 +321,11 @@ async function run(argv: string[]): Promise<boolean> {
   config();
 
   let signer: Wallet;
-  switch (args.wallet) {
-    case "mnemonic":
-      signer = Wallet.fromMnemonic(process.env.MNEMONIC);
-      break;
-    case "privateKey":
-      signer = new Wallet(process.env.PRIVATE_KEY);
-      break;
-    default:
-      usage(args.wallet); // no return
+  try {
+    signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
+  } catch (err) {
+    usage(args.wallet); // no return
   }
-  ["MNEMONIC", "PRIVATE_KEY"].forEach((envVar) => (process.env[envVar] = ""));
 
   switch (argv[0]) {
     case "deposit":
