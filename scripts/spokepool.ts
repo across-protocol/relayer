@@ -14,7 +14,7 @@ type ERC20 = {
 };
 
 const { MaxUint256, Zero } = ethers.constants;
-const { getAddress, isAddress } = ethers.utils;
+const { isAddress } = ethers.utils;
 
 const testChains = [5, 280];
 const chains = [1, 10, 137, 324, 8453, 42161];
@@ -89,9 +89,7 @@ function resolveToken(token: string, chainId: number): ERC20 {
   // `token` may be an address or a symbol. Normalise it to a symbol for easy lookup.
   const symbol = !isAddress(token)
     ? token.toUpperCase()
-    : Object.values(contracts.TOKEN_SYMBOLS_MAP)
-        .find(({ addresses }) => addresses[chainId] === token)
-        ?.symbol;
+    : Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
 
   const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
   if (_token === undefined) {
@@ -101,7 +99,7 @@ function resolveToken(token: string, chainId: number): ERC20 {
   return {
     address: _token.addresses[chainId],
     decimals: _token.decimals,
-    symbol: _token.symbol
+    symbol: _token.symbol,
   };
 }
 
@@ -140,10 +138,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
 
   const token = resolveToken(args.token as string, fromChainId);
   const tokenSymbol = token.symbol.toUpperCase();
-  const amount = ethers.utils.parseUnits(
-    baseAmount.toString(),
-    args.decimals ? 0 : token.decimals
-  );
+  const amount = ethers.utils.parseUnits(baseAmount.toString(), args.decimals ? 0 : token.decimals);
 
   const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(fromChainId, 1)[0]);
   signer = signer.connect(provider);
