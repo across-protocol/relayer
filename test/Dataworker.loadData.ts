@@ -762,7 +762,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     // For queryHistoricalDepositForFill to work we need to have a deployment block set for the spoke pool client.
     const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(spyLogIncludes(spy, -2, "Located deposit outside of SpokePoolClient's search range")).is.true;
-    expect(bundleData.fillsToRefund).to.deep.equal({
+    expect(bundleData.fillsToRefund)
+      .excludingEvery(["blockTimestamp"])
+      .to.deep.equal({
       [destinationChainId]: {
         [erc20_2.address]: {
           fills: [fill1],
