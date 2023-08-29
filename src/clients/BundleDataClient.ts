@@ -371,17 +371,18 @@ export class BundleDataClient {
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
-        await Promise.all(
-          fillsForOriginChain.map(async (fill) => {
-            // In the UBA model, fills that request repayment on another chain must send a separate refund request
-            // in order to mark their place in the outflow queue for that chain. This is because the UBA determines
-            // fees based on sequencing of events. Pre-UBA, the fee model treats each fill independently so there
-            // is no need to mark a fill's place in line on the repayment chain.
-            if (!isUBA || fill.destinationChainId === fill.repaymentChainId) {
-              validateFillAndSaveData(fill, blockRangeForChain);
-            }
-          })
-        );
+        if (!isUBA) {
+          // In the UBA model, fills that request repayment on another chain must send a separate refund request
+          // in order to mark their place in the outflow queue for that chain. This is because the UBA determines
+          // fees based on sequencing of events. Pre-UBA, the fee model treats each fill independently so there
+          // is no need to mark a fill's place in line on the repayment chain.
+
+          await Promise.all(
+            fillsForOriginChain
+              .filter((fill) => fill.destinationChainId === fill.repaymentChainId)
+              .map((fill) => validateFillAndSaveData(fill, blockRangeForChain))
+          );
+        }
       }
 
       // Handle fills that requested repayment on a different chain and submitted a refund request.
