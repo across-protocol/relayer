@@ -18,6 +18,12 @@ export class DataworkerConfig extends CommonConfig {
   // a bundle. This is useful for testing the disputer logic.
   readonly forcePropose: boolean;
 
+  // This variable can be used to simulate a bundle range that a proposal will be created for.
+  // This is useful for testing the disputer and proposer logic. The format is:
+  // [number, number][] where the two numbers are the start and end bundle ranges and the array
+  // represents the bundle ranges that will be proposed per the chain id indices.
+  readonly forceProposalBundleRange?: [number, number][];
+
   // These variables can be toggled to choose whether the bot will submit transactions created
   // by each function. For example, setting `sendingDisputesEnabled=false` but `disputerEnabled=true`
   // means that the disputer logic will be run but won't send disputes on-chain.
@@ -51,6 +57,7 @@ export class DataworkerConfig extends CommonConfig {
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_START_BUNDLE,
       FORCE_PROPOSAL,
+      FORCE_PROPOSAL_BUNDLE_RANGE,
     } = env;
     super(env);
 
@@ -91,9 +98,37 @@ export class DataworkerConfig extends CommonConfig {
 
     this.forcePropose = FORCE_PROPOSAL === "true";
 
+    // If FORCE_PROPOSAL_BUNDLE_RANGE is set, then we want to force a specific bundle range.
+    if (FORCE_PROPOSAL_BUNDLE_RANGE) {
+      // The format is [number, number][] where the two numbers are the start and end bundle ranges and the array
+      // represents the bundle ranges that will be proposed per the chain id indices.
+      this.forceProposalBundleRange = JSON.parse(FORCE_PROPOSAL_BUNDLE_RANGE);
+      // We need to ensure that the bundle ranges are valid. A valid bundle range
+      // is an array of [start, end] where both start and end are numeric and
+      // positive whole numbers and start < end.
+      this.forceProposalBundleRange.forEach((bundleRange, index) => {
+        assert(Array.isArray(bundleRange), `forceProposalBundleRange[${index}] is not an array`);
+        assert(bundleRange.length === 2, `forceProposalBundleRange[${index}] does not have length 2`);
+        const [start, end] = bundleRange;
+        assert(typeof start === "number", `forceProposalBundleRange[${index}][start] is not a number`);
+        assert(typeof end === "number", `forceProposalBundleRange[${index}][end] is not a number`);
+        assert(start > 0, `forceProposalBundleRange[${index}][start] is not positive`);
+        assert(end > 0, `forceProposalBundleRange[${index}][end] is not positive`);
+        assert(start < end, `forceProposalBundleRange[${index}][start] >= forceProposalBundleRange[${index}][end]`);
+      });
+    } else {
+      // If FORCE_PROPOSAL_BUNDLE_RANGE is not set, then we don't want to force a specific bundle range.
+      this.forceProposalBundleRange = undefined;
+    }
+
     // We NEVER want to force propose if the proposer is enabled.
     if (this.sendingProposalsEnabled) {
       assert(!this.forcePropose, "Cannot force propose if sending proposals is enabled");
+    }
+
+    // We NEVER want to force a bundle range if the proposer OR disputer is enabled.
+    if (this.sendingDisputesEnabled || this.sendingProposalsEnabled) {
+      assert(!this.forceProposalBundleRange, "Cannot force bundle range if sending proposals or disputes is enabled");
     }
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
