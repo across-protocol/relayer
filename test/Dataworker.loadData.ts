@@ -765,15 +765,15 @@ describe("Dataworker: Load data used in all functions", async function () {
     expect(bundleData.fillsToRefund)
       .excludingEvery(["blockTimestamp"])
       .to.deep.equal({
-      [destinationChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        [destinationChainId]: {
+          [erc20_2.address]: {
+            fills: [fill1],
+            refunds: { [relayer.address]: getRefundForFills([fill1]) },
+            totalRefundAmount: getRefundForFills([fill1]),
+            realizedLpFees: getRealizedLpFeeForFills([fill1]),
+          },
         },
-      },
-    });
+      });
     expect(bundleData.deposits).to.deep.equal([]);
     expect(bundleData.allValidFills.length).to.equal(1);
     expect(bundleData.unfilledDeposits)
