@@ -732,7 +732,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       (await dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients)).deposits
     ).to.deep.equal([]);
   });
-  it.skip("Can fetch historical deposits not found in spoke pool client's memory", async function () {
+
+  it("Can fetch historical deposits not found in spoke pool client's memory", async function () {
     // Send a deposit.
     await updateAllClients();
     const deposit1 = await buildDeposit(
