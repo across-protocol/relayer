@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
-import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import {
   toBN,
@@ -19,14 +19,14 @@ import {
   assert,
   compareAddressesSimple,
   formatUnitsForToken,
+  createFormatFunction,
+  BigNumberish,
 } from "../../utils";
-import { BigNumberish, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
+import { blockExplorerLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import { TransactionResponse } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-
-const { blockExplorerLink, createFormatFunction } = sdkUtils;
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;

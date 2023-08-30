@@ -6,12 +6,12 @@ import {
   Contract,
   runTransaction,
   BigNumber,
+  blockExplorerLink,
+  toBNWei,
   TransactionResponse,
   TransactionSimulationResult,
   willSucceed,
 } from "../utils";
-
-const { toBNWei, blockExplorerLink } = sdkUtils;
 
 export interface AugmentedTransaction {
   contract: Contract;

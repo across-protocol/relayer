@@ -15,17 +15,22 @@ import {
   assign,
   BigNumber,
   Contract,
+  convertFromWei,
+  createFormatFunction,
   ERC20,
   ethers,
+  blockExplorerLink,
+  blockExplorerLinks,
   getEthAddressForChain,
   getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
   providers,
+  toBN,
+  toWei,
   winston,
 } from "../utils";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -120,22 +125,18 @@ export class Monitor {
           l1Token: l1Token.address,
           chainId: this.monitorConfig.hubPoolChainId,
           poolCollateralSymbol: this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token.address).symbol,
-          utilization: sdkUtils.toBN(utilization.toString()),
+          utilization: toBN(utilization.toString()),
         };
       })
     );
     // Send notification if pool utilization is above configured threshold.
     for (const l1TokenUtilization of l1TokenUtilizations) {
-      if (
-        l1TokenUtilization.utilization.gt(
-          sdkUtils.toBN(this.monitorConfig.utilizationThreshold).mul(sdkUtils.toBN(sdkUtils.toWei("0.01")))
-        )
-      ) {
+      if (l1TokenUtilization.utilization.gt(toBN(this.monitorConfig.utilizationThreshold).mul(toBN(toWei("0.01"))))) {
         const utilizationString = l1TokenUtilization.utilization.mul(100).toString();
         const mrkdwn = `${l1TokenUtilization.poolCollateralSymbol} pool token at \
-          ${sdkUtils.blockExplorerLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
+          ${blockExplorerLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
-          ${sdkUtils.createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
+          ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
         this.logger.debug({ at: "Monitor#checkUtilization", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
@@ -183,11 +184,8 @@ export class Monitor {
         }
 
         const mrkdwn =
-          `An unknown relayer ${sdkUtils.blockExplorerLink(fill.relayer, chainId)}` +
-          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${sdkUtils.blockExplorerLink(
-            fill.transactionHash,
-            chainId
-          )}`;
+          `An unknown relayer ${blockExplorerLink(fill.relayer, chainId)}` +
+          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${blockExplorerLink(fill.transactionHash, chainId)}`;
         this.logger.warn({ at: "Monitor#checkUnknownRelayers", message: "Unknown relayer 🛺", mrkdwn });
       }
     }
@@ -206,7 +204,7 @@ export class Monitor {
       const chainId = deposit.deposit.destinationChainId;
       const tokenAddress = deposit.deposit.destinationToken;
       if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][tokenAddress]) {
-        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], sdkUtils.toBN(0));
+        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], toBN(0));
       }
       unfilledAmountByChainAndToken[chainId][tokenAddress] = unfilledAmountByChainAndToken[chainId][tokenAddress].add(
         deposit.unfilledAmount
@@ -225,7 +223,7 @@ export class Monitor {
       for (const tokenAddress of Object.keys(amountByToken)) {
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
         // Convert to number of tokens for readability.
-        const unfilledAmount = sdkUtils.convertFromWei(amountByToken[tokenAddress].toString(), tokenInfo.decimals);
+        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), tokenInfo.decimals);
         mrkdwn += `${tokenInfo.symbol}: ${unfilledAmount}\n`;
       }
     }
@@ -254,10 +252,10 @@ export class Monitor {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(sdkUtils.toBN(0)))) {
+          if (balancesBN.find((b) => b.gt(toBN(0)))) {
             // Human-readable balances
             const balances = balancesBN.map((balance) =>
-              balance.gt(sdkUtils.toBN(0)) ? sdkUtils.convertFromWei(balance.toString(), token.decimals) : "0"
+              balance.gt(toBN(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
             );
             tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
           } else {
@@ -268,9 +266,9 @@ export class Monitor {
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        if (totalBalance.gt(sdkUtils.toBN(0))) {
+        if (totalBalance.gt(toBN(0))) {
           mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
-          summaryMrkdwn += `${token.symbol}: ${sdkUtils.convertFromWei(totalBalance.toString(), token.decimals)}\n`;
+          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
         } else {
           summaryMrkdwn += `${token.symbol}: 0\n`;
         }
@@ -362,7 +360,7 @@ export class Monitor {
                     ).symbol();
               return {
                 level: trippedThreshold.level,
-                text: `  ${getNetworkName(chainId)} ${symbol} balance for ${sdkUtils.blockExplorerLink(
+                text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
                   account,
                   chainId
                 )} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
@@ -467,7 +465,7 @@ export class Monitor {
                   deficit,
                   decimals
                 )} ${nativeSymbolForChain} for ${account} from ${signerAddress} 🫡!`,
-                transactionHash: sdkUtils.blockExplorerLink(receipt.transactionHash, chainId),
+                transactionHash: blockExplorerLink(receipt.transactionHash, chainId),
               });
             }
           } else {
@@ -543,7 +541,7 @@ export class Monitor {
           chainId,
           l1Token.address
         );
-        const outstandingDepositTxs = sdkUtils.blockExplorerLinks(
+        const outstandingDepositTxs = blockExplorerLinks(
           this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
             spokePoolAddress,
             chainId,
@@ -593,7 +591,7 @@ export class Monitor {
           l1Token.address
         );
 
-        if (transferBalance.gt(sdkUtils.toBN(0))) {
+        if (transferBalance.gt(toBN(0))) {
           this.updateRelayerBalanceTable(
             relayerBalanceTable,
             l1Token.symbol,
@@ -630,7 +628,7 @@ export class Monitor {
             continue;
           }
 
-          let totalOutgoingAmount = sdkUtils.toBN(0);
+          let totalOutgoingAmount = toBN(0);
           // Filter v2 fills and bond payments from outgoing transfers.
           const fillTransactionHashes = spokePoolClient.getFillsForRelayer(relayer).map((fill) => fill.transactionHash);
           const outgoingTransfers = this.categorizeUnknownTransfers(transfers.outgoing, fillTransactionHashes);
@@ -640,7 +638,7 @@ export class Monitor {
             currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, tokenInfo.decimals, chainId);
           }
 
-          let totalIncomingAmount = sdkUtils.toBN(0);
+          let totalIncomingAmount = toBN(0);
           // Filter v2 refunds and bond repayments from incoming transfers.
           const refundTransactionHashes = spokePoolClient
             .getRelayerRefundExecutions()
@@ -654,8 +652,8 @@ export class Monitor {
 
           // Record if there are net outgoing transfers.
           const netTransfersAmount = totalIncomingAmount.sub(totalOutgoingAmount);
-          if (!netTransfersAmount.eq(sdkUtils.toBN(0))) {
-            const netAmount = sdkUtils.convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
+          if (!netTransfersAmount.eq(toBN(0))) {
+            const netAmount = convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
             currentTokenMrkdwn = `*${tokenInfo.symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
             currentChainMrkdwn += currentTokenMrkdwn;
 
@@ -672,7 +670,7 @@ export class Monitor {
               tokenInfo.symbol,
               UNKNOWN_TRANSFERS_NAME,
               BalanceType.PENDING,
-              totalOutgoingAmount.mul(sdkUtils.toBN(-1))
+              totalOutgoingAmount.mul(toBN(-1))
             );
             this.incrementBalance(
               report,
@@ -737,7 +735,7 @@ export class Monitor {
     }
 
     const totalAmount = this.getTotalTransferAmount(transfers);
-    return `${transferType}: ${sdkUtils.convertFromWei(totalAmount.toString(), decimals)}\n`;
+    return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
   }
 
   formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number): string {
@@ -746,9 +744,9 @@ export class Monitor {
     }
 
     const totalAmount = this.getTotalTransferAmount(transfers);
-    let mrkdwn = `other: ${sdkUtils.convertFromWei(totalAmount.toString(), decimals)}\n`;
+    let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
     const transactionHashes = [...new Set(transfers.map((transfer) => transfer.transactionHash))];
-    mrkdwn += sdkUtils.blockExplorerLinks(transactionHashes, chainId);
+    mrkdwn += blockExplorerLinks(transactionHashes, chainId);
     return mrkdwn;
   }
 
@@ -765,7 +763,7 @@ export class Monitor {
         for (const chainName of allChainNames) {
           reports[relayer][token.symbol][chainName] = {};
           for (const balanceType of ALL_BALANCE_TYPES) {
-            reports[relayer][token.symbol][chainName][balanceType] = sdkUtils.toBN(0);
+            reports[relayer][token.symbol][chainName][balanceType] = toBN(0);
           }
         }
       }
@@ -795,7 +793,7 @@ export class Monitor {
 
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
-        const amount = totalRefundAmount || sdkUtils.toBN(0);
+        const amount = totalRefundAmount || toBN(0);
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
           tokenInfo.symbol,
@@ -854,13 +852,13 @@ export class Monitor {
     }
 
     const mrkdwn =
-      `An unknown EOA ${sdkUtils.blockExplorerLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
-      `\ntx: ${sdkUtils.blockExplorerLink(transactionHash, 1)}`;
+      `An unknown EOA ${blockExplorerLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
+      `\ntx: ${blockExplorerLink(transactionHash, 1)}`;
     this.logger.error({
       at: "Monitor#notifyIfUnknownCaller",
       message: `Unknown bundle caller (${action}) ${emoji}${
         action === BundleAction.PROPOSED
-          ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${sdkUtils.blockExplorerLink(
+          ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${blockExplorerLink(
               this.clients.hubPoolClient.hubPool.address,
               1
             )}. Note that you will need to approve the HubPool to transfer 0.4 WETH from your wallet as a dispute bond.`

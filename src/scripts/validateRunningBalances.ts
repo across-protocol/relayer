@@ -24,6 +24,8 @@ import {
   winston,
   config,
   Logger,
+  toBN,
+  fromWei,
   Contract,
   ERC20,
   getProvider,
@@ -33,7 +35,6 @@ import {
   ZERO_ADDRESS,
   getRefund,
   disconnectRedisClient,
-  retrieveSignerFromCLIArgs,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
@@ -41,8 +42,7 @@ import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUt
 import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-const { toBN, fromWei } = sdkUtils;
+import { retrieveSignerFromCLIArgs } from "../utils/CLIUtils";
 
 config();
 let logger: winston.Logger;

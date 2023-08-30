@@ -1,7 +1,10 @@
 import {
   BigNumber,
   winston,
+  toBN,
   getNetworkName,
+  createFormatFunction,
+  blockExplorerLink,
   Contract,
   runTransaction,
   isDefined,
@@ -9,7 +12,6 @@ import {
   TransactionResponse,
   AnyObject,
 } from "../utils";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
@@ -21,7 +23,7 @@ type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: Big
 export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
-  private readonly formatWei: ReturnType<typeof sdkUtils.createFormatFunction>;
+  private readonly formatWei: ReturnType<typeof createFormatFunction>;
 
   constructor(
     readonly relayer: string,
@@ -36,15 +38,15 @@ export class InventoryClient {
     readonly bundleRefundLookback = 2,
     readonly simMode = false
   ) {
-    this.scalar = sdkUtils.toBN(10).pow(18);
-    this.formatWei = sdkUtils.createFormatFunction(2, 4, false, 18);
+    this.scalar = toBN(10).pow(18);
+    this.formatWei = createFormatFunction(2, 4, false, 18);
   }
 
   // Get the total balance across all chains, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getCumulativeBalance(l1Token: string): BigNumber {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChainForL1Token(chainId, l1Token))
-      .reduce((acc, curr) => acc.add(curr), sdkUtils.toBN(0));
+      .reduce((acc, curr) => acc.add(curr), toBN(0));
   }
 
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
@@ -55,12 +57,12 @@ export class InventoryClient {
       chainId !== this.hubPoolClient.chainId &&
       this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined
     ) {
-      return sdkUtils.toBN(0);
+      return toBN(0);
     }
 
     // If the chain does not have this token (EG BOBA on Optimism) then 0.
     const balance =
-      this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || sdkUtils.toBN(0);
+      this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || toBN(0);
 
     // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
     return balance.add(
@@ -94,10 +96,10 @@ export class InventoryClient {
     // If there is nothing over all chains, return early.
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     if (cumulativeBalance.eq(0)) {
-      return sdkUtils.toBN(0);
+      return toBN(0);
     }
 
-    const shortfall = this.getTokenShortFall(l1Token, chainId) || sdkUtils.toBN(0);
+    const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
     const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -208,10 +210,7 @@ export class InventoryClient {
     );
     // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
     // equivalents of l1Token on all chains.
-    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce(
-      (acc, curr) => acc.add(curr),
-      sdkUtils.toBN(0)
-    );
+    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), toBN(0));
     cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
 
     const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(amount);
@@ -223,7 +222,7 @@ export class InventoryClient {
 
     // If the post relay allocation, considering funds in transit, is larger than the target threshold then refund on L1
     // Else, refund on destination chian to keep funds within the target.
-    const targetPct = sdkUtils.toBN(this.inventoryConfig.tokenConfig[l1Token][destinationChainId].targetPct);
+    const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][destinationChainId].targetPct);
     const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? this.hubPoolClient.chainId : destinationChainId;
 
     this.log("Evaluated refund Chain", {
@@ -354,7 +353,7 @@ export class InventoryClient {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
           }
           const { symbol, decimals } = tokenInfo;
-          const formatter = sdkUtils.createFormatFunction(2, 4, false, decimals);
+          const formatter = createFormatFunction(2, 4, false, decimals);
           mrkdwn +=
             ` - ${formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
             `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
@@ -363,7 +362,7 @@ export class InventoryClient {
               cumulativeBalance.toString()
             )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
             `${formatter(this.getTokenShortFall(l1Token, chainId).toString())} ${symbol} ` +
-            `tx: ${sdkUtils.blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
+            `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
         }
       }
 
@@ -377,7 +376,7 @@ export class InventoryClient {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
           }
           const { symbol, decimals } = tokenInfo;
-          const formatter = sdkUtils.createFormatFunction(2, 4, false, decimals);
+          const formatter = createFormatFunction(2, 4, false, decimals);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
             `${formatter(amount.toString())} but relayer has ` +
@@ -497,19 +496,19 @@ export class InventoryClient {
       for (const { chainInfo, amount, hash } of executedTransactions) {
         const { chainId, unwrapWethTarget, unwrapWethThreshold, balance } = chainInfo;
         mrkdwn += `*Unwraps sent to ${getNetworkName(chainId)}:*\n`;
-        const formatter = sdkUtils.createFormatFunction(2, 4, false, 18);
+        const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
           ` - ${formatter(amount.toString())} WETH rebalanced. This meets target ETH balance of ` +
           `${this.formatWei(unwrapWethTarget.toString())} (trigger of ` +
           `${this.formatWei(unwrapWethThreshold.toString())} ETH), ` +
           `current balance of ${this.formatWei(balance.toString())} ` +
-          `tx: ${sdkUtils.blockExplorerLink(hash, chainId)}\n`;
+          `tx: ${blockExplorerLink(hash, chainId)}\n`;
       }
 
       for (const { chainInfo, amount } of unexecutedUnwraps) {
         const { chainId } = chainInfo;
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
-        const formatter = sdkUtils.createFormatFunction(2, 4, false, 18);
+        const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
           "- WETH unwrap blocked. Required to send " +
           `${formatter(amount.toString())} but relayer has ` +
@@ -554,7 +553,7 @@ export class InventoryClient {
       if (!logData[symbol]) {
         logData[symbol] = {};
       }
-      const formatter = sdkUtils.createFormatFunction(2, 4, false, decimals);
+      const formatter = createFormatFunction(2, 4, false, decimals);
       cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(l1Token).toString());
       Object.entries(distributionForToken).forEach(([_chainId, amount]) => {
         const chainId = Number(_chainId);

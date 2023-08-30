@@ -1,9 +1,7 @@
-import { BigNumber, assert, replaceAddressCase, ethers } from "../utils";
+import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-const { toBN, toBNWei } = sdkUtils;
 
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;

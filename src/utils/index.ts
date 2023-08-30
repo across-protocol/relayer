@@ -1,12 +1,9 @@
 // Utils from other packages.
 import winston from "winston";
 import assert from "assert";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 export { winston, assert };
 export { Logger } from "@uma/financial-templates-lib";
-export const { toBN, bnToHex, toWei, toBNWei, formatFeePct, shortenHexStrings, convertFromWei, min, utf8ToHex } =
-  sdkUtils;
 
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, BigNumberish } from "ethers";
 export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
@@ -15,6 +12,7 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 export { config } from "dotenv";
 
 // Utils specifically for this bot.
+export * from "./SDKUtils";
 export * from "./chains";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";

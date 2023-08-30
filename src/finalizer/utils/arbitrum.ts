@@ -1,11 +1,17 @@
 import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "@arbitrum/sdk";
-import { Wallet, winston, getNetworkName, groupObjectCountsByProp, Contract, getCachedProvider } from "../../utils";
+import {
+  Wallet,
+  winston,
+  convertFromWei,
+  getNetworkName,
+  groupObjectCountsByProp,
+  Contract,
+  getCachedProvider,
+} from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, Withdrawal } from "../types";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-const { convertFromWei } = sdkUtils;
 
 const CHAIN_ID = 42161;
 

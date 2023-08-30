@@ -16,6 +16,7 @@ import {
   BigNumber,
   compareAddresses,
   convertFromWei,
+  shortenHexString,
   shortenHexStrings,
   toBN,
   MerkleTree,
@@ -28,7 +29,6 @@ import {
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
 import { Clients } from "../common";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
@@ -511,10 +511,10 @@ export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle)
   return (
     "Disputed pending root bundle:" +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
-    `\n\tPoolRebalance root: ${sdkUtils.createShortHexString(pendingRootBundle.poolRebalanceRoot)}` +
-    `\n\tRelayerRefund root: ${sdkUtils.createShortHexString(pendingRootBundle.relayerRefundRoot)}` +
-    `\n\tSlowRelay root: ${sdkUtils.createShortHexString(pendingRootBundle.slowRelayRoot)}` +
-    `\n\tProposer: ${sdkUtils.createShortHexString(pendingRootBundle.proposer)}`
+    `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
+    `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +
+    `\n\tSlowRelay root: ${shortenHexString(pendingRootBundle.slowRelayRoot)}` +
+    `\n\tProposer: ${shortenHexString(pendingRootBundle.proposer)}`
   );
 }
 
@@ -601,8 +601,8 @@ export function generateMarkdownForRootBundle(
     // Shorten keys for ease of reading from Slack.
     leaf.relayData.originChain = leaf.relayData.originChainId;
     leaf.relayData.destinationChain = leaf.relayData.destinationChainId;
-    leaf.relayData.depositor = sdkUtils.createShortHexString(leaf.relayData.depositor);
-    leaf.relayData.recipient = sdkUtils.createShortHexString(leaf.relayData.recipient);
+    leaf.relayData.depositor = shortenHexString(leaf.relayData.depositor);
+    leaf.relayData.recipient = shortenHexString(leaf.relayData.recipient);
     leaf.relayData.destToken = convertTokenAddressToSymbol(
       leaf.relayData.destinationChainId,
       leaf.relayData.destinationToken
@@ -622,16 +622,14 @@ export function generateMarkdownForRootBundle(
   });
 
   const slowRelayMsg = slowRelayLeavesPretty
-    ? `root:${sdkUtils.createShortHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+    ? `root:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
     : "No slow relay leaves";
   return (
     `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
-    `\n\t*PoolRebalance*:\n\t\troot:${sdkUtils.createShortHexString(
+    `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
       poolRebalanceRoot
     )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
-    `\n\t*RelayerRefund*\n\t\troot:${sdkUtils.createShortHexString(
-      relayerRefundRoot
-    )}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
+    `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
     `\n\t*SlowRelay*\n\t${slowRelayMsg}`
   );
 }

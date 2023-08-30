@@ -1,10 +1,7 @@
-import { BigNumber, winston, assign, ERC20, Contract, MAX_SAFE_ALLOWANCE } from "../utils";
-import { runTransaction, getNetworkName, MAX_UINT_VAL } from "../utils";
+import { BigNumber, winston, assign, ERC20, Contract, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
+import { runTransaction, getNetworkName, blockExplorerLink, MAX_UINT_VAL } from "../utils";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-
-const { toBN, blockExplorerLink } = sdkUtils;
 
 type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {

@@ -1,6 +1,7 @@
 import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
+  convertFromWei,
   getDeployedContract,
   getNetworkName,
   groupObjectCountsByProp,
@@ -13,8 +14,6 @@ import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Multicall2Call } from "../../common";
 import { FinalizerPromise, Withdrawal } from "../types";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-const { convertFromWei } = sdkUtils;
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
