@@ -14,7 +14,7 @@ import {
   isDepositSpedUp,
   RelayerUnfilledDeposit,
 } from "../utils";
-import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
+import { createFormatFunction, blockExplorerLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
@@ -619,9 +619,9 @@ export class Relayer {
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);
-        const depositEtherscanLink = etherscanLink(deposit.transactionHash, deposit.originChainId);
+        const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, deposit.originChainId);
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} (tx: ${depositEtherscanLink}) of amount ${formatFunction(
+          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${formatFunction(
             deposit.amount.toString()
           )} ${symbol}` +
           ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% and gas cost ${gasFormatFunction(gasCost)}` +
@@ -658,7 +658,7 @@ export class Relayer {
       `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)} ` +
       `to ${getNetworkName(deposit.destinationChainId)} of ` +
       `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
-      `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
+      `with depositor ${blockExplorerLink(deposit.depositor, deposit.originChainId)}. ` +
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
       `relayerFee ${formatFeePct(deposit.relayerFeePct)}% & ` +
       `realizedLpFee ${formatFeePct(deposit.realizedLpFeePct)}%. `

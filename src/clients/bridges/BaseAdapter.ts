@@ -19,13 +19,14 @@ import {
   assert,
   compareAddressesSimple,
   formatUnitsForToken,
+  createFormatFunction,
+  BigNumberish,
 } from "../../utils";
-import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
+import { blockExplorerLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import { TransactionResponse } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BigNumberish, createFormatFunction } from "../../utils/FormattingUtils";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
@@ -149,9 +150,9 @@ export abstract class BaseAdapter {
       const hubNetwork = getNetworkName(hubChainId);
       const spokeNetwork = getNetworkName(this.chainId);
       mrkdwn +=
-        ` - Approved canonical ${spokeNetwork} token bridge ${etherscanLink(targetContract, hubChainId)} ` +
-        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-        `tx: ${etherscanLink(receipt.transactionHash, hubChainId)}\n`;
+        ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(targetContract, hubChainId)} ` +
+        `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
+        `tx: ${blockExplorerLink(receipt.transactionHash, hubChainId)}\n`;
     }
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }

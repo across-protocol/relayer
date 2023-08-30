@@ -9,8 +9,8 @@ import {
   getRefundForFills,
   isDefined,
   sortEventsDescending,
-  toBN,
   sortEventsAscending,
+  toBN,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { clients } from "@across-protocol/sdk-v2";
