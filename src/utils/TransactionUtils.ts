@@ -1,13 +1,12 @@
-import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, typeguards } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, ethers, Wallet } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
-import { BigNumber, TransactionResponse } from "../utils";
+import { toBNWei, BigNumber, toBN, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
 import { FeeData } from "@ethersproject/abstract-provider";
 import { EthersError } from "../interfaces";
-
 dotenv.config();
 
 export type TransactionSimulationResult = {
@@ -40,7 +39,7 @@ export async function runTransaction(
   contract: Contract,
   method: string,
   args: unknown,
-  value: BigNumber = sdkUtils.toBN(0),
+  value: BigNumber = toBN(0),
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retriesRemaining = 2
@@ -186,5 +185,5 @@ export function getTarget(targetAddress: string):
 }
 
 function scaleByNumber(amount: ethers.BigNumber, scaling: number) {
-  return amount.mul(sdkUtils.toBNWei(scaling)).div(sdkUtils.toBNWei("1"));
+  return amount.mul(toBNWei(scaling)).div(toBNWei("1"));
 }
