@@ -19,8 +19,8 @@ import {
   createFormatFunction,
   ERC20,
   ethers,
-  etherscanLink,
-  etherscanLinks,
+  blockExplorerLink,
+  blockExplorerLinks,
   getEthAddressForChain,
   getGasPrice,
   getNativeTokenSymbol,
@@ -134,7 +134,7 @@ export class Monitor {
       if (l1TokenUtilization.utilization.gt(toBN(this.monitorConfig.utilizationThreshold).mul(toBN(toWei("0.01"))))) {
         const utilizationString = l1TokenUtilization.utilization.mul(100).toString();
         const mrkdwn = `${l1TokenUtilization.poolCollateralSymbol} pool token at \
-          ${etherscanLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
+          ${blockExplorerLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
           ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
         this.logger.debug({ at: "Monitor#checkUtilization", message: "High pool utilization warning 🏊", mrkdwn });
@@ -184,8 +184,8 @@ export class Monitor {
         }
 
         const mrkdwn =
-          `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
-          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(fill.transactionHash, chainId)}`;
+          `An unknown relayer ${blockExplorerLink(fill.relayer, chainId)}` +
+          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${blockExplorerLink(fill.transactionHash, chainId)}`;
         this.logger.warn({ at: "Monitor#checkUnknownRelayers", message: "Unknown relayer 🛺", mrkdwn });
       }
     }
@@ -360,7 +360,7 @@ export class Monitor {
                     ).symbol();
               return {
                 level: trippedThreshold.level,
-                text: `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(
+                text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
                   account,
                   chainId
                 )} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
@@ -465,7 +465,7 @@ export class Monitor {
                   deficit,
                   decimals
                 )} ${nativeSymbolForChain} for ${account} from ${signerAddress} 🫡!`,
-                transactionHash: etherscanLink(receipt.transactionHash, chainId),
+                transactionHash: blockExplorerLink(receipt.transactionHash, chainId),
               });
             }
           } else {
@@ -541,7 +541,7 @@ export class Monitor {
           chainId,
           l1Token.address
         );
-        const outstandingDepositTxs = etherscanLinks(
+        const outstandingDepositTxs = blockExplorerLinks(
           this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
             spokePoolAddress,
             chainId,
@@ -746,7 +746,7 @@ export class Monitor {
     const totalAmount = this.getTotalTransferAmount(transfers);
     let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
     const transactionHashes = [...new Set(transfers.map((transfer) => transfer.transactionHash))];
-    mrkdwn += etherscanLinks(transactionHashes, chainId);
+    mrkdwn += blockExplorerLinks(transactionHashes, chainId);
     return mrkdwn;
   }
 
@@ -852,13 +852,13 @@ export class Monitor {
     }
 
     const mrkdwn =
-      `An unknown EOA ${etherscanLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
-      `\ntx: ${etherscanLink(transactionHash, 1)}`;
+      `An unknown EOA ${blockExplorerLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
+      `\ntx: ${blockExplorerLink(transactionHash, 1)}`;
     this.logger.error({
       at: "Monitor#notifyIfUnknownCaller",
       message: `Unknown bundle caller (${action}) ${emoji}${
         action === BundleAction.PROPOSED
-          ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${etherscanLink(
+          ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${blockExplorerLink(
               this.clients.hubPoolClient.hubPool.address,
               1
             )}. Note that you will need to approve the HubPool to transfer 0.4 WETH from your wallet as a dispute bond.`
