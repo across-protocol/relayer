@@ -1,5 +1,5 @@
 import { BigNumber, winston, assign, ERC20, Contract, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
-import { runTransaction, getNetworkName, etherscanLink, MAX_UINT_VAL } from "../utils";
+import { runTransaction, getNetworkName, blockExplorerLink, MAX_UINT_VAL } from "../utils";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 
@@ -133,9 +133,9 @@ export class TokenClient {
       const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
       const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
       mrkdwn +=
-        ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
-        `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
-        `tx: ${etherscanLink(tx.hash, chainId)}\n`;
+        ` - Approved SpokePool ${blockExplorerLink(targetSpokePool.address, chainId)} ` +
+        `to spend ${await contract.symbol()} ${blockExplorerLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
+        `tx: ${blockExplorerLink(tx.hash, chainId)}\n`;
     }
     this.logger.info({ at: "TokenBalanceClient", message: "Approved whitelisted tokens! 💰", mrkdwn });
   }
@@ -155,9 +155,9 @@ export class TokenClient {
         MAX_UINT_VAL,
       ]);
       const mrkdwn =
-        ` - Approved HubPool ${etherscanLink(this.hubPoolClient.hubPool.address, 1)} ` +
-        `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
-        `tx ${etherscanLink(tx.hash, 1)}\n`;
+        ` - Approved HubPool ${blockExplorerLink(this.hubPoolClient.hubPool.address, 1)} ` +
+        `to spend ${await this.bondToken.symbol()} ${blockExplorerLink(this.bondToken.address, 1)}. ` +
+        `tx ${blockExplorerLink(tx.hash, 1)}\n`;
       this.logger.info({ at: "hubPoolClient", message: "Approved bond tokens! 💰", mrkdwn });
     } else {
       this.logger.debug({ at: "hubPoolClient", message: "Bond token approval set" });
