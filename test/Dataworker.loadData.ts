@@ -732,7 +732,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       (await dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients)).deposits
     ).to.deep.equal([]);
   });
-  it.skip("Can fetch historical deposits not found in spoke pool client's memory", async function () {
+
+  it("Can fetch historical deposits not found in spoke pool client's memory", async function () {
     // Send a deposit.
     await updateAllClients();
     const deposit1 = await buildDeposit(
@@ -761,16 +762,18 @@ describe("Dataworker: Load data used in all functions", async function () {
     // For queryHistoricalDepositForFill to work we need to have a deployment block set for the spoke pool client.
     const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(spyLogIncludes(spy, -2, "Located deposit outside of SpokePoolClient's search range")).is.true;
-    expect(bundleData.fillsToRefund).to.deep.equal({
-      [destinationChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+    expect(bundleData.fillsToRefund)
+      .excludingEvery(["blockTimestamp"])
+      .to.deep.equal({
+        [destinationChainId]: {
+          [erc20_2.address]: {
+            fills: [fill1],
+            refunds: { [relayer.address]: getRefundForFills([fill1]) },
+            totalRefundAmount: getRefundForFills([fill1]),
+            realizedLpFees: getRealizedLpFeeForFills([fill1]),
+          },
         },
-      },
-    });
+      });
     expect(bundleData.deposits).to.deep.equal([]);
     expect(bundleData.allValidFills.length).to.equal(1);
     expect(bundleData.unfilledDeposits)
