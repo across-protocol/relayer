@@ -1,33 +1,44 @@
 import {
-  expect,
-  ethers,
-  Contract,
-  getDefaultBlockRange,
-  buildFillForRepaymentChain,
-  getLastBlockNumber,
-  assertPromiseError,
-  spyLogIncludes,
-  buildRefundRequest,
-  sinon,
-} from "./utils";
-import { SignerWithAddress, buildSlowRelayTree } from "./utils";
-import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  ConfigStoreClient,
-  BundleDataClient,
-  MultiCallerClient,
   BalanceAllocator,
+  BundleDataClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
 } from "../src/clients";
-import { amountToDeposit, repaymentChainId, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } from "./constants";
-import { IMPOSSIBLE_BLOCK_RANGE } from "./constants";
+import {
+  CHAIN_ID_TEST_LIST,
+  IMPOSSIBLE_BLOCK_RANGE,
+  amountToDeposit,
+  destinationChainId,
+  originChainId,
+  repaymentChainId,
+} from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import {
+  Contract,
+  SignerWithAddress,
+  assertPromiseError,
+  buildDeposit,
+  buildFill,
+  buildFillForRepaymentChain,
+  buildModifiedFill,
+  buildRefundRequest,
+  buildSlowFill,
+  buildSlowRelayLeaves,
+  buildSlowRelayTree,
+  ethers,
+  expect,
+  getDefaultBlockRange,
+  getLastBlockNumber,
+  sinon,
+  spyLogIncludes,
+} from "./utils";
 
-import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/common";
+import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { DepositWithBlock, Fill } from "../src/interfaces";
+import { MAX_UINT_VAL, getRealizedLpFeeForFills, getRefundForFills, toBN } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;

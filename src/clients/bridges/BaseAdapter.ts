@@ -19,11 +19,14 @@ import {
   assert,
   compareAddressesSimple,
   formatUnitsForToken,
+  etherscanLink,
+  getNetworkName,
+  MAX_UINT_VAL,
+  TransactionResponse,
+  runTransaction,
 } from "../../utils";
-import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
-import { TransactionResponse } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BigNumberish, createFormatFunction } from "../../utils/FormattingUtils";
 interface DepositEvent extends SortableEvent {

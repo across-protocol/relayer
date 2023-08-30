@@ -1,4 +1,3 @@
-import { winston, BigNumber, toBN } from "../utils";
 import * as _ from "lodash";
 import {
   DepositWithBlock,
@@ -11,12 +10,13 @@ import {
 } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import {
+  winston,
+  BigNumber,
+  toBN,
   assignValidFillToFillsToRefund,
   getRefundInformationFromFill,
   updateTotalRefundAmount,
   updateTotalRealizedLpFeePct,
-} from "../utils";
-import {
   flattenAndFilterUnfilledDepositsByOriginChain,
   updateUnfilledDepositsWithMatchedDeposit,
   getUniqueDepositsInRange,

@@ -1,34 +1,36 @@
-import { constants as ethersConstants } from "ethers";
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
-export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
-import {
-  sampleRateModel,
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
-  DEFAULT_BLOCK_RANGE_FOR_CHAIN,
-} from "../constants";
-import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAddress } from "../constants";
-import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
-import { HubPoolClient, ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
-import { SpokePoolClient } from "../../src/clients";
-import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
+import { constants as ethersConstants, providers } from "ethers";
+import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient, SpokePoolClient } from "../../src/clients";
 import { Deposit, Fill, FillWithBlock, RunningBalances } from "../../src/interfaces";
-import { buildRelayerRefundTree, toBN, toBNWei, TransactionResponse, utf8ToHex } from "../../src/utils";
-import { providers } from "ethers";
+import { TransactionResponse, buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
+import {
+  DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  amountToDeposit,
+  depositRelayerFeePct,
+  l1TokenTransferThreshold,
+  sampleRateModel,
+  zeroAddress,
+} from "../constants";
+import { BigNumber, Contract, SignerWithAddress, deposit } from "./index";
+export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
+export { sinon, winston };
 
-import winston from "winston";
-import sinon from "sinon";
+import { AcrossConfigStore } from "@across-protocol/contracts-v2";
+import { constants } from "@across-protocol/sdk-v2";
 import chai from "chai";
 import chaiExclude from "chai-exclude";
 import _ from "lodash";
-import { AcrossConfigStore } from "@across-protocol/contracts-v2";
-import { constants } from "@across-protocol/sdk-v2";
+import sinon from "sinon";
+import winston from "winston";
 chai.use(chaiExclude);
-export { winston, sinon };
 
 const assert = chai.assert;
-export { chai, assert };
+export { assert, chai };
 
 export function deepEqualsWithBigNumber(x: any, y: any, omitKeys: string[] = []): boolean {
   const sortedKeysX = Object.fromEntries(

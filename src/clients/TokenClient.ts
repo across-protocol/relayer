@@ -1,5 +1,16 @@
-import { BigNumber, winston, assign, ERC20, Contract, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
-import { runTransaction, getNetworkName, etherscanLink, MAX_UINT_VAL } from "../utils";
+import {
+  BigNumber,
+  winston,
+  assign,
+  ERC20,
+  Contract,
+  toBN,
+  MAX_SAFE_ALLOWANCE,
+  runTransaction,
+  getNetworkName,
+  etherscanLink,
+  MAX_UINT_VAL,
+} from "../utils";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 

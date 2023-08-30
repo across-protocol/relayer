@@ -1,12 +1,21 @@
 import { gasPriceOracle, typeguards } from "@across-protocol/sdk-v2";
-import { AugmentedTransaction } from "../clients";
-import { winston, Contract, getContractInfoFromAddress, ethers, Wallet } from "../utils";
-import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
-import { toBNWei, BigNumber, toBN, TransactionResponse } from "../utils";
+import { FeeData } from "@ethersproject/abstract-provider";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
-import { FeeData } from "@ethersproject/abstract-provider";
+import { AugmentedTransaction } from "../clients";
+import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
 import { EthersError } from "../interfaces";
+import {
+  BigNumber,
+  Contract,
+  TransactionResponse,
+  Wallet,
+  ethers,
+  getContractInfoFromAddress,
+  toBN,
+  toBNWei,
+  winston,
+} from "../utils";
 dotenv.config();
 
 export type TransactionSimulationResult = {
