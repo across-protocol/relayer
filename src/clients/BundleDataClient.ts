@@ -1,5 +1,6 @@
-import { winston, BigNumber, toBN } from "../utils";
+import { winston, BigNumber } from "../utils";
 import * as _ from "lodash";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   DepositWithBlock,
   FillsToRefund,
@@ -142,7 +143,9 @@ export class BundleDataClient {
           // refunds in the bundle calculation. If relayer refund leaves are executed later and all the executions are
           // within the lookback period but the corresponding deposits/fills are not, we can run into cases where
           // executedAmount > refunds[relayer].
-          refunds[relayer] = executedAmount.gt(refunds[relayer]) ? toBN(0) : refunds[relayer].sub(executedAmount);
+          refunds[relayer] = executedAmount.gt(refunds[relayer])
+            ? sdkUtils.toBN(0)
+            : refunds[relayer].sub(executedAmount);
         }
       }
     }
@@ -160,7 +163,7 @@ export class BundleDataClient {
   getTotalRefund(refunds: FillsToRefund[], relayer: string, chainId: number, refundToken: string): BigNumber {
     return refunds.reduce((totalRefund, refunds) => {
       return totalRefund.add(this.getRefundsFor(refunds, relayer, chainId, refundToken));
-    }, toBN(0));
+    }, sdkUtils.toBN(0));
   }
 
   // Common data re-formatting logic shared across all data worker public functions.

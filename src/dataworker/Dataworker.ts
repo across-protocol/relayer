@@ -9,8 +9,9 @@ import {
   isDefined,
   buildPoolRebalanceLeafTree,
   updateTotalRefundAmountRaw,
+  getFillsInRange,
+  ZERO_ADDRESS,
 } from "../utils";
-import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
   DepositWithBlock,
   FillsToRefund,
@@ -2261,12 +2262,12 @@ export class Dataworker {
     //    signified by groupIndex === 0.
     // 2. Any netSendAmount > 0 triggers an L1 -> L2 token send, which costs 0.02 ETH.
     let requiredAmount = leaf.netSendAmounts.reduce(
-      (acc, curr) => (curr.gt(0) ? acc.add(toBNWei("0.02")) : acc),
+      (acc, curr) => (curr.gt(0) ? acc.add(sdk.utils.toBNWei("0.02")) : acc),
       BigNumber.from(0)
     );
 
     if (leaf.groupIndex === 0) {
-      requiredAmount = requiredAmount.add(toBNWei("0.02"));
+      requiredAmount = requiredAmount.add(sdk.utils.toBNWei("0.02"));
     }
     return requiredAmount;
   }

@@ -14,7 +14,6 @@ import {
   isDepositSpedUp,
   RelayerUnfilledDeposit,
 } from "../utils";
-import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
@@ -74,7 +73,7 @@ export class Relayer {
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
       const unfilledAmountUsd = profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
       if (!agg[curr.deposit.originChainId]) {
-        agg[curr.deposit.originChainId] = toBN(0);
+        agg[curr.deposit.originChainId] = sdkUtils.toBN(0);
       }
       agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
       return agg;
@@ -90,7 +89,7 @@ export class Relayer {
     const mdcPerChain = Object.fromEntries(
       Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
         const usdThreshold = minimumDepositConfirmationThresholds.find((_usdThreshold) => {
-          return toBNWei(_usdThreshold).gte(unfilledAmount);
+          return sdkUtils.toBNWei(_usdThreshold).gte(unfilledAmount);
         });
         // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
         return [chainId, config.minDepositConfirmations[usdThreshold ?? "default"][chainId]];
@@ -285,7 +284,7 @@ export class Relayer {
           : "Instantly completed relay with modified fee 📫", // message sent to logger.
         mrkdwn:
           this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount) +
-          `Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`, // message details mrkdwn
+          `Modified relayer fee: ${sdkUtils.formatFeePct(deposit.newRelayerFeePct)}%.`, // message details mrkdwn
       });
     } else {
       // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
@@ -463,7 +462,7 @@ export class Relayer {
   zeroFillDeposit(deposit: Deposit): void {
     // We can only overwrite repayment chain ID if we can fully fill the deposit.
     const repaymentChainId = deposit.destinationChainId;
-    const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
+    const fillAmount = sdkUtils.toBN(1); // 1 wei; smallest fill size possible.
     this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });
     try {
       // Note: Ignore deposit.newRelayerFeePct because slow relay leaves use a 0% relayer fee if executed.
@@ -552,7 +551,7 @@ export class Relayer {
 
   protected computeRefundFee(version: number, deposit: DepositWithBlock): BigNumber {
     if (!sdkUtils.isUBA(version)) {
-      return toBN(0);
+      return sdkUtils.toBN(0);
     }
     const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
       deposit.originToken,
@@ -575,7 +574,7 @@ export class Relayer {
       mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
-        const formatter = createFormatFunction(2, 4, false, decimals);
+        const formatter = sdkUtils.createFormatFunction(2, 4, false, decimals);
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
@@ -617,14 +616,16 @@ export class Relayer {
 
         const gasCost = this.clients.profitClient.getTotalGasCost(deposit.destinationChainId).toString();
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
-        const formatFunction = createFormatFunction(2, 4, false, decimals);
-        const gasFormatFunction = createFormatFunction(2, 10, false, 18);
-        const depositEtherscanLink = etherscanLink(deposit.transactionHash, deposit.originChainId);
+        const formatFunction = sdkUtils.createFormatFunction(2, 4, false, decimals);
+        const gasFormatFunction = sdkUtils.createFormatFunction(2, 10, false, 18);
+        const depositEtherscanLink = sdkUtils.blockExplorerLink(deposit.transactionHash, deposit.originChainId);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositEtherscanLink}) of amount ${formatFunction(
             deposit.amount.toString()
           )} ${symbol}` +
-          ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% and gas cost ${gasFormatFunction(gasCost)}` +
+          ` with a relayerFeePct ${sdkUtils.formatFeePct(deposit.relayerFeePct)}% and gas cost ${gasFormatFunction(
+            gasCost
+          )}` +
           ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
       });
@@ -647,7 +648,7 @@ export class Relayer {
 
   private constructZeroSizeFilledMrkdwn(deposit: Deposit): string {
     return (
-      this.constructBaseFillMarkdown(deposit, toBN(0)) +
+      this.constructBaseFillMarkdown(deposit, sdkUtils.toBN(0)) +
       "Has been relayed with 0 size due to a token shortfall! This will initiate a slow relay for this deposit."
     );
   }
@@ -657,11 +658,11 @@ export class Relayer {
     return (
       `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)} ` +
       `to ${getNetworkName(deposit.destinationChainId)} of ` +
-      `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
-      `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
-      `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
-      `relayerFee ${formatFeePct(deposit.relayerFeePct)}% & ` +
-      `realizedLpFee ${formatFeePct(deposit.realizedLpFeePct)}%. `
+      `${sdkUtils.createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
+      `with depositor ${sdkUtils.blockExplorerLink(deposit.depositor, deposit.originChainId)}. ` +
+      `Fill amount of ${sdkUtils.createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
+      `relayerFee ${sdkUtils.formatFeePct(deposit.relayerFeePct)}% & ` +
+      `realizedLpFee ${sdkUtils.formatFeePct(deposit.realizedLpFeePct)}%. `
     );
   }
 
@@ -675,11 +676,11 @@ export class Relayer {
     const originChain = getNetworkName(fill.originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
-    const _fillAmount = createFormatFunction(2, 4, false, decimals)(fill.fillAmount.toString());
+    const _fillAmount = sdkUtils.createFormatFunction(2, 4, false, decimals)(fill.fillAmount.toString());
 
     return (
       `🌈 Requested refund on ${refundChain} for ${_fillAmount} ${symbol} for ${originChain} depositId ${depositId},` +
-      ` filled on ${destinationChain}, with relayerFee ${formatFeePct(fill.relayerFeePct)}%.`
+      ` filled on ${destinationChain}, with relayerFee ${sdkUtils.formatFeePct(fill.relayerFeePct)}%.`
     );
   }
 }

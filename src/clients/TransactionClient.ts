@@ -6,12 +6,12 @@ import {
   Contract,
   runTransaction,
   BigNumber,
-  etherscanLink,
-  toBNWei,
   TransactionResponse,
   TransactionSimulationResult,
   willSucceed,
 } from "../utils";
+
+const { toBNWei, blockExplorerLink } = sdkUtils;
 
 export interface AugmentedTransaction {
   contract: Contract;
@@ -102,7 +102,7 @@ export class TransactionClient {
       }
 
       nonce = response.nonce + 1;
-      const blockExplorer = etherscanLink(response.hash, txn.chainId);
+      const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
     }

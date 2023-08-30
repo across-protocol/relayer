@@ -7,10 +7,9 @@ import {
   buildRelayerRefundTree,
   EMPTY_MERKLE_ROOT,
   SpokePool,
-  toBNWei,
-  toBN,
   buildPoolRebalanceLeafTree,
 } from "../src/utils";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 function prettyRelayerRefundLeaf(leaves: RelayerRefundLeaf[]) {
   return leaves.map((leaf) => {
@@ -38,7 +37,7 @@ export async function run(): Promise<void> {
   // 1. Construct relayer refund leaves
   const relayerRefundLeaves: RelayerRefundLeaf[] = [
     {
-      amountToReturn: toBNWei("500"),
+      amountToReturn: sdkUtils.toBNWei("500"),
       chainId: 10,
       refundAmounts: [],
       leafId: 0,
@@ -68,9 +67,9 @@ export async function run(): Promise<void> {
   const poolRebalanceLeaves: PoolRebalanceLeaf[] = [
     {
       chainId: 1,
-      bundleLpFees: [toBN("124122273836729709").sub(toBN("123603942018663986"))],
-      netSendAmounts: [toBN("120200463420953608591").sub(toBN("119648808743556644079"))],
-      runningBalances: [toBN(0)],
+      bundleLpFees: [sdkUtils.toBN("124122273836729709").sub(sdkUtils.toBN("123603942018663986"))],
+      netSendAmounts: [sdkUtils.toBN("120200463420953608591").sub(sdkUtils.toBN("119648808743556644079"))],
+      runningBalances: [sdkUtils.toBN(0)],
       groupIndex: 0,
       leafId: 0,
       l1Tokens: ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"],
@@ -78,9 +77,9 @@ export async function run(): Promise<void> {
   ];
   const relayerRefundLeaves2: RelayerRefundLeaf[] = [
     {
-      amountToReturn: toBN(0),
+      amountToReturn: sdkUtils.toBN(0),
       chainId: 1,
-      refundAmounts: [toBN("132101928812168900443").sub(toBN("131550274134771935931"))],
+      refundAmounts: [sdkUtils.toBN("132101928812168900443").sub(sdkUtils.toBN("131550274134771935931"))],
       leafId: 0,
       l2TokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       refundAddresses: ["0x428AB2BA90Eba0a4Be7aF34C9Ac451ab061AC010"],

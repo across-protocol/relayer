@@ -9,11 +9,10 @@ import {
   getRefundForFills,
   isDefined,
   sortEventsDescending,
-  toBN,
   sortEventsAscending,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { UBA_MIN_CONFIG_STORE_VERSION } from "../common";
 
 export function getRefundInformationFromFill(
@@ -108,7 +107,7 @@ export function updateTotalRefundAmountRaw(
 }
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
-  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
+  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(sdkUtils.toBN(0));
 }
 
 export function filledSameDeposit(fillA: Fill, fillB: Fill): boolean {

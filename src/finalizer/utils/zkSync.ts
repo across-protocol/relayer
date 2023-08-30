@@ -4,9 +4,9 @@ import { groupBy } from "lodash";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { convertFromWei, getEthAddressForChain, winston } from "../../utils";
-import { zkSync as zkSyncUtils } from "../../utils";
+import { zkSync as zkSyncUtils, getEthAddressForChain, winston } from "../../utils";
 import { FinalizerPromise, Withdrawal } from "../types";
+const { convertFromWei } = sdkUtils;
 
 type Provider = ethers.providers.Provider;
 type TokensBridged = interfaces.TokensBridged;

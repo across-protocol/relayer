@@ -6,13 +6,13 @@ import {
   startupLogLevel,
   processEndPollingLoop,
   getNetworkName,
-  etherscanLink,
   getBlockForTimestamp,
   getCurrentTime,
   disconnectRedisClient,
   getMultisender,
   winston,
 } from "../utils";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
@@ -126,7 +126,7 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🔜`,
-          transactionHash: etherscanLink(txn.transactionHash, hubChainId),
+          transactionHash: sdkUtils.blockExplorerLink(txn.transactionHash, hubChainId),
         });
       });
       withdrawals.forEach(({ l2ChainId, amount, l1TokenSymbol: symbol }) => {
@@ -134,7 +134,7 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Finalized ${spokeChain} withdrawal for ${amount} ${symbol} 🪃`,
-          transactionHash: etherscanLink(txn.transactionHash, hubChainId),
+          transactionHash: sdkUtils.blockExplorerLink(txn.transactionHash, hubChainId),
         });
       });
     } catch (_error) {

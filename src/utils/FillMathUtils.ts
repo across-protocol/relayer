@@ -1,5 +1,7 @@
 import { Fill } from "../interfaces";
-import { toBNWei, BigNumber, toBN } from ".";
+import { BigNumber } from ".";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+const { toBN, toBNWei } = sdkUtils;
 
 export function _getRefundForFill(fill: Fill): BigNumber {
   return fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));

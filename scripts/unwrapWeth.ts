@@ -1,6 +1,7 @@
-import { ethers, retrieveSignerFromCLIArgs, getProvider, WETH9, toBN, isKeyOf, getNetworkName } from "../src/utils";
+import { ethers, retrieveSignerFromCLIArgs, getProvider, WETH9, isKeyOf, getNetworkName } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 const args = minimist(process.argv.slice(2), {
   string: ["amount", "chainId"],
@@ -53,7 +54,7 @@ export async function run(): Promise<void> {
     console.log(
       `Current ETH balance for account ${baseSigner.address} on ${getNetworkName(chainId)}: ${currentBalance}`
     );
-    if ((await connectedSigner.provider.getBalance(baseSigner.address)).lt(toBN(args.amount))) {
+    if ((await connectedSigner.provider.getBalance(baseSigner.address)).lt(sdkUtils.toBN(args.amount))) {
       console.log(`ETH balance < ${amountFromWei}, exiting`);
       return;
     }
@@ -70,7 +71,7 @@ export async function run(): Promise<void> {
     console.log("Unwrapping WETH 🎊");
     const currentBalance = ethers.utils.formatUnits(await weth.balanceOf(baseSigner.address), decimals);
     console.log(`Current WETH balance for account ${baseSigner.address} on Mainnet: ${currentBalance}`);
-    if ((await weth.balanceOf(baseSigner.address)).lt(toBN(args.amount))) {
+    if ((await weth.balanceOf(baseSigner.address)).lt(sdkUtils.toBN(args.amount))) {
       console.log(`WETH balance < ${amountFromWei}, exiting`);
       return;
     }

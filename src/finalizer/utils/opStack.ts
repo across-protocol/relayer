@@ -3,17 +3,11 @@ import { groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
-import {
-  BigNumber,
-  convertFromWei,
-  getCachedProvider,
-  getNetworkName,
-  groupObjectCountsByProp,
-  Wallet,
-  winston,
-} from "../../utils";
+import { BigNumber, getCachedProvider, getNetworkName, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 import { Multicall2Call } from "../../common";
 import { FinalizerPromise, Withdrawal } from "../types";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+const { convertFromWei } = sdkUtils;
 
 interface CrossChainMessageWithEvent {
   event: TokensBridged;

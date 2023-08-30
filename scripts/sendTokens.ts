@@ -1,5 +1,6 @@
-import { ethers, retrieveSignerFromCLIArgs, getProvider, ERC20, ZERO_ADDRESS, toBN, getGasPrice } from "../src/utils";
+import { ethers, retrieveSignerFromCLIArgs, getProvider, ERC20, ZERO_ADDRESS, getGasPrice } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId"],
@@ -45,7 +46,7 @@ export async function run(): Promise<void> {
     }
     console.log("sending...");
     const gas = await getGasPrice(connectedSigner.provider);
-    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount), ...gas });
+    const tx = await connectedSigner.sendTransaction({ to: recipient, value: sdkUtils.toBN(args.amount), ...gas });
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }

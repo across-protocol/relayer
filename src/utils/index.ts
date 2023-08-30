@@ -1,8 +1,11 @@
 // Utils from other packages.
 import winston from "winston";
 import assert from "assert";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+
 export { winston, assert };
 export { Logger } from "@uma/financial-templates-lib";
+export const { toBN, bnToHex, toWei, toBNWei, formatFeePct, shortenHexStrings, convertFromWei, min } = sdkUtils;
 
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, BigNumberish } from "ethers";
 export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
@@ -19,7 +22,6 @@ export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
 export * from "./ObjectUtils";
-export * from "./FormattingUtils";
 export * from "./TransactionPropBuilder";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
@@ -34,7 +36,6 @@ export * from "./TypeGuards";
 export * from "./Help";
 export * from "./LogUtils";
 export * from "./TypeUtils";
-export * from "./BigNumberUtils";
 export * from "./RedisUtils";
 export * from "./UmaUtils";
 export * from "./TokenUtils";
