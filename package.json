@@ -24,7 +24,7 @@
     "@maticnetwork/maticjs-ethers": "^1.0.3",
     "@openzeppelin/hardhat-upgrades": "^1.28.0",
     "@uma/common": "2.33.0",
-    "@uma/contracts-node": "^0.4.16",
+    "@uma/contracts-node": "^0.4.17",
     "@uma/financial-templates-lib": "^2.32.11",
     "@uma/sdk": "^0.34.0",
     "async": "^3.2.4",
