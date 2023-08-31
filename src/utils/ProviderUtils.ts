@@ -90,6 +90,7 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
     // We've seen some RPC's like QuickNode add in transactionLogIndex which isn't in the
     // JSON RPC spec: https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterchanges
     // Additional reference: https://github.com/ethers-io/ethers.js/issues/1721
+    // 2023-08-31 Added blockHash because of upstream zkSync provider disagreements. Consider removing later.
     return compareResultsAndFilterIgnoredKeys(["blockHash", "transactionLogIndex"], rpcResultA, rpcResultB);
   } else {
     return lodash.isEqual(rpcResultA, rpcResultB);
