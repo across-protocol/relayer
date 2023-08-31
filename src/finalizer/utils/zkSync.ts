@@ -1,11 +1,10 @@
-import { Contract, ethers, Wallet } from "ethers";
-import { Provider as zksProvider, types as zkTypes, utils as zkUtils, Wallet as zkWallet } from "zksync-web3";
-import { groupBy } from "lodash";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { Contract, ethers, Wallet } from "ethers";
+import { groupBy } from "lodash";
+import { Provider as zksProvider, types as zkTypes, utils as zkUtils, Wallet as zkWallet } from "zksync-web3";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { convertFromWei, getEthAddressForChain, winston } from "../../utils";
-import { zkSync as zkSyncUtils } from "../../utils";
+import { convertFromWei, getEthAddressForChain, winston, zkSync as zkSyncUtils } from "../../utils";
 import { FinalizerPromise, Withdrawal } from "../types";
 
 type Provider = ethers.providers.Provider;

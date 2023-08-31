@@ -1,36 +1,49 @@
+import { utils } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
+import { spokesThatHoldEthAndWeth } from "../common/Constants";
+import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   BigNumberForToken,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
   PoolRebalanceLeaf,
+  RelayerRefundLeaf,
+  RelayerRefundLeafWithGroup,
+  RunningBalances,
   SlowFillLeaf,
   SpokePoolClientsByChain,
+  UnfilledDeposit,
 } from "../interfaces";
-import { RelayerRefundLeaf } from "../interfaces";
-import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
 import {
   AnyObject,
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  getDepositPath,
+  getFillsInRange,
+  groupObjectCountsByProp,
+  groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
+  toBN,
   winston,
 } from "../utils";
-import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { PoolRebalanceRoot } from "./Dataworker";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
-import { addLastRunningBalance, constructPoolRebalanceLeaves } from "./PoolRebalanceUtils";
-import { updateRunningBalanceForDeposit } from "./PoolRebalanceUtils";
-import { subtractExcessFromPreviousSlowFillsFromRunningBalances } from "./PoolRebalanceUtils";
-import { getAmountToReturnForRelayerRefundLeaf } from "./RelayerRefundUtils";
-import { sortRefundAddresses, sortRelayerRefundLeaves } from "./RelayerRefundUtils";
-import { utils } from "@across-protocol/sdk-v2";
-import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
-import { spokesThatHoldEthAndWeth } from "../common/Constants";
+import {
+  addLastRunningBalance,
+  addSlowFillsToRunningBalances,
+  constructPoolRebalanceLeaves,
+  initializeRunningBalancesFromRelayerRepayments,
+  subtractExcessFromPreviousSlowFillsFromRunningBalances,
+  updateRunningBalanceForDeposit,
+} from "./PoolRebalanceUtils";
+import {
+  getAmountToReturnForRelayerRefundLeaf,
+  sortRefundAddresses,
+  sortRelayerRefundLeaves,
+} from "./RelayerRefundUtils";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(

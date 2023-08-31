@@ -1,15 +1,18 @@
-import { buildFillForRepaymentChain } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { amountToDeposit, destinationChainId } from "./constants";
-import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL } from "../src/utils";
+import {
+  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  amountToDeposit,
+  destinationChainId,
+} from "./constants";
+import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import { Contract, SignerWithAddress, buildDeposit, buildFillForRepaymentChain, ethers, expect } from "./utils";
 
 // Tested
-import { Dataworker } from "../src/dataworker/Dataworker";
-import { spokePoolClientsToProviders } from "../src/common";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
+import { spokePoolClientsToProviders } from "../src/common";
+import { Dataworker } from "../src/dataworker/Dataworker";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;

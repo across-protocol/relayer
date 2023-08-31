@@ -1,7 +1,18 @@
-import { BigNumber, winston, assign, ERC20, Contract, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
-import { runTransaction, getNetworkName, blockExplorerLink, MAX_UINT_VAL } from "../utils";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
+import {
+  BigNumber,
+  Contract,
+  ERC20,
+  MAX_SAFE_ALLOWANCE,
+  MAX_UINT_VAL,
+  assign,
+  blockExplorerLink,
+  getNetworkName,
+  runTransaction,
+  toBN,
+  winston,
+} from "../utils";
 
 type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {

@@ -1,32 +1,35 @@
 /* eslint-disable @typescript-eslint/ban-types */
+import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
-import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import {
-  toBN,
-  MAX_SAFE_ALLOWANCE,
-  Contract,
-  ERC20,
-  winston,
-  EventSearchConfig,
-  DefaultLogLevels,
-  MakeOptional,
   AnyObject,
   BigNumber,
-  matchTokenSymbol,
+  Contract,
+  DefaultLogLevels,
+  ERC20,
+  EventSearchConfig,
+  MAX_SAFE_ALLOWANCE,
+  MAX_UINT_VAL,
+  MakeOptional,
+  TransactionResponse,
   ZERO_ADDRESS,
   assert,
+  blockExplorerLink,
   compareAddressesSimple,
   formatUnitsForToken,
+  getNetworkName,
+  matchTokenSymbol,
+  runTransaction,
+  toBN,
+  winston,
   createFormatFunction,
   BigNumberish,
 } from "../../utils";
-import { blockExplorerLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
-import { OutstandingTransfers, SortableEvent } from "../../interfaces";
-import { TransactionResponse } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
