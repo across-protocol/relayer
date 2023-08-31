@@ -1,34 +1,34 @@
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
+import { Clients } from "../common";
 import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
+  PendingRootBundle,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
-  PendingRootBundle,
   RunningBalances,
-  UnfilledDeposit,
-  SpokePoolTargetBalance,
-  SpokePoolClientsByChain,
   SlowFillLeaf,
+  SpokePoolClientsByChain,
+  SpokePoolTargetBalance,
+  UnfilledDeposit,
 } from "../interfaces";
 import {
-  assign,
+  AnyObject,
   BigNumber,
+  MerkleTree,
+  assign,
   compareAddresses,
   convertFromWei,
+  formatFeePct,
+  getFillDataForSlowFillFromPreviousRootBundle,
+  getRefund,
   shortenHexString,
   shortenHexStrings,
   toBN,
-  MerkleTree,
-  winston,
   toBNWei,
-  formatFeePct,
-  getRefund,
-  AnyObject,
+  winston,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
-import { Clients } from "../common";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,

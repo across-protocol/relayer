@@ -1,15 +1,20 @@
 import {
-  deploySpokePoolWithToken,
-  expect,
-  ethers,
   Contract,
   SignerWithAddress,
+  createSpyLogger,
   deepEqualsWithBigNumber,
+  deployAndConfigureHubPool,
+  deploySpokePoolWithToken,
+  destinationChainId,
+  ethers,
+  expect,
+  originChainId,
+  toBNWei,
+  winston,
+  zeroAddress,
 } from "./utils";
-import { createSpyLogger, winston, originChainId, destinationChainId, toBNWei } from "./utils";
-import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 
-import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients"; // Tested
+import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;

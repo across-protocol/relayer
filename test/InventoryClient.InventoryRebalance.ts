@@ -1,10 +1,23 @@
-import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, lastSpyLogIncludes } from "./utils";
-import { deployConfigStore, hubPoolFixture, toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
+import {
+  BigNumber,
+  SignerWithAddress,
+  createSpyLogger,
+  deployConfigStore,
+  ethers,
+  expect,
+  hubPoolFixture,
+  lastSpyLogIncludes,
+  randomAddress,
+  spyLogIncludes,
+  toBN,
+  toWei,
+  winston,
+} from "./utils";
 
-import { InventoryConfig } from "../src/interfaces";
-import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks/";
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
+import { InventoryConfig } from "../src/interfaces";
+import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 

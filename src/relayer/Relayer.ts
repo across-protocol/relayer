@@ -1,22 +1,26 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { constants as ethersConstants } from "ethers";
 import { groupBy } from "lodash";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import {
   BigNumber,
-  isDefined,
-  winston,
-  buildFillRelayProps,
-  getNetworkName,
-  getBlockForTimestamp,
-  getUnfilledDeposits,
-  getCurrentTime,
-  buildFillRelayWithUpdatedFeeProps,
-  isDepositSpedUp,
   RelayerUnfilledDeposit,
+  blockExplorerLink,
+  buildFillRelayProps,
+  buildFillRelayWithUpdatedFeeProps,
+  createFormatFunction,
+  formatFeePct,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getNetworkName,
+  getUnfilledDeposits,
+  isDefined,
+  isDepositSpedUp,
+  toBN,
+  toBNWei,
+  winston,
 } from "../utils";
-import { createFormatFunction, blockExplorerLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
-import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
