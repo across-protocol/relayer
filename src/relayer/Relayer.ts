@@ -39,7 +39,7 @@ export class Relayer {
 
   /**
    * @description Retrieve the complete array of unfilled deposits.
-   * @returns An array of RelayerUnfilledDeposit objects, filtered by the maximum current supported config version.
+   * @returns An array of RelayerUnfilledDeposit objects, filtered by the supported version and deposit routes.
    */
   public async getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
     const { configStoreClient, hubPoolClient, spokePoolClients } = this.clients;
@@ -49,7 +49,7 @@ export class Relayer {
     const {
       supportedDeposits = [],
       unsupportedDeposits = [],
-      ignoredDeposits = []
+      ignoredDeposits = [],
     } = groupBy(unfilledDeposits, ({ deposit, version }) => {
       const { originChainId, destinationChainId } = deposit;
       if (version > maxVersion) {
@@ -74,11 +74,10 @@ export class Relayer {
     }
 
     if (ignoredDeposits.length > 0) {
-      const deposits = ignoredDeposits
-        .map(({ deposit }) => {
-          const { originChainId, destinationChainId, depositId, originToken, amount, transactionHash } = deposit;
-          return { originChainId, destinationChainId, depositId, originToken, amount, transactionHash };
-        });
+      const deposits = ignoredDeposits.map(({ deposit }) => {
+        const { originChainId, destinationChainId, depositId, originToken, amount, transactionHash } = deposit;
+        return { originChainId, destinationChainId, depositId, originToken, amount, transactionHash };
+      });
       this.logger.debug({
         at: "Relayer::getUnfilledDeposits",
         message: `Skipping ${deposits.length} deposits from or to disabled chains.`,
@@ -89,6 +88,12 @@ export class Relayer {
     return supportedDeposits;
   }
 
+  /**
+   * @description Validate whether the origin and destination chain combination is permitted by relayer config.
+   * @param originChainId chain ID for the deposit.
+   * @param destinationChainId Chain ID of a prospective fill.
+   * @returns True if the route is permitted by config (or enabled by default), otherwise false.
+   */
   routeEnabled(originChainId: number, destinationChainId: number): boolean {
     const { relayerOriginChains: originChains, relayerDestinationChains: destinationChains } = this.config;
 
