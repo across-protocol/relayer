@@ -46,8 +46,17 @@ export class Relayer {
     const maxVersion = configStoreClient.configStoreVersion;
 
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
-    const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, ({ version }) => {
-      return version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits";
+    const {
+      supportedDeposits = [],
+      unsupportedDeposits = [],
+      ignoredDeposits = []
+    } = groupBy(unfilledDeposits, ({ deposit, version }) => {
+      const { originChainId, destinationChainId } = deposit;
+      if (version > maxVersion) {
+        return "unsupportedDeposits";
+      }
+
+      return this.routeEnabled(originChainId, destinationChainId) ? "supportedDeposits" : "ignoredDeposits";
     });
 
     if (unsupportedDeposits.length > 0) {
@@ -56,10 +65,23 @@ export class Relayer {
         return { originChainId, depositId, version, transactionHash };
       });
       this.logger.warn({
-        at: "Relayer::checkForUnfilledDepositsAndFill",
+        at: "Relayer::getUnfilledDeposits",
         message: "Skipping deposits that are not supported by this relayer version.",
         latestVersionSupported: maxVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
+        deposits,
+      });
+    }
+
+    if (ignoredDeposits.length > 0) {
+      const deposits = ignoredDeposits
+        .map(({ deposit }) => {
+          const { originChainId, destinationChainId, depositId, originToken, amount, transactionHash } = deposit;
+          return { originChainId, destinationChainId, depositId, originToken, amount, transactionHash };
+        });
+      this.logger.debug({
+        at: "Relayer::getUnfilledDeposits",
+        message: `Skipping ${deposits.length} deposits from or to disabled chains.`,
         deposits,
       });
     }
@@ -156,15 +178,6 @@ export class Relayer {
 
       const { originChainId, destinationChainId, originToken } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
-
-      if (!this.routeEnabled(originChainId, destinationChainId)) {
-        this.logger.debug({
-          at: "Relayer",
-          message: "Skipping deposit for unsupported origin or destination chain",
-          deposit,
-        });
-        continue;
-      }
 
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
