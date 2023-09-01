@@ -599,7 +599,7 @@ export class Dataworker {
     // refund requests in the fills to refund list.
     const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient._loadData(
       blockRangesForProposal,
-      ubaClient.spokePoolClients,
+      ubaClient.spokePoolClients as SpokePoolClientsByChain,
       true,
       logData
     );
