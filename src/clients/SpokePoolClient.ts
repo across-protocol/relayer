@@ -27,7 +27,7 @@ export class SpokePoolClient extends clients.SpokePoolClient {
       } catch (err) {
         this.logger.info({
           at: "SpokePoolClient::_update",
-          message: `Caught unhandled exception in SpokePoolClient::_update() try ${i + 1}/${maxTries}}`,
+          message: `Caught unhandled exception in SpokePoolClient::_update() on try ${i + 1}/${maxTries}}`,
           error: typeguards.isError(err) ? (err as Error).message : "Unknown error",
         });
       }
