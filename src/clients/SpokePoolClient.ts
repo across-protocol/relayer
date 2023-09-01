@@ -15,7 +15,7 @@ type _SpokePoolUpdate = {
 };
 type SpokePoolUpdate = { success: false } | _SpokePoolUpdate;
 
-const maxTries = 3;
+const maxTries = 5;
 
 export class SpokePoolClient extends clients.SpokePoolClient {
   protected override async _update(eventsToQuery: string[]): Promise<SpokePoolUpdate> {
@@ -27,7 +27,7 @@ export class SpokePoolClient extends clients.SpokePoolClient {
       } catch (err) {
         this.logger.info({
           at: "SpokePoolClient::_update",
-          message: `Caught unhandled exception in SpokePoolClient::_update() on try ${i + 1}/${maxTries}}`,
+          message: `Caught unhandled exception in SpokePoolClient::_update() on try ${i + 1}/${maxTries}.`,
           error: typeguards.isError(err) ? (err as Error).message : "Unknown error",
         });
       }
