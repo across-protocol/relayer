@@ -17,7 +17,7 @@ type SpokePoolUpdate = { success: false } | _SpokePoolUpdate;
 
 const maxTries = 3;
 
-class SpokePoolClient extends clients.SpokePoolClient {
+export class SpokePoolClient extends clients.SpokePoolClient {
   protected override async _update(eventsToQuery: string[]): Promise<SpokePoolUpdate> {
     const network = getNetworkName(this.chainId);
     let i: number;
@@ -36,4 +36,3 @@ class SpokePoolClient extends clients.SpokePoolClient {
     throw new Error(`Unable to update ${network} SpokePoolClient after ${i} attempts`);
   }
 }
-export { SpokePoolClient };
