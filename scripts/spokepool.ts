@@ -22,17 +22,6 @@ const chains = [1, 10, 137, 324, 8453, 42161];
 const padLeft = 20;
 const padRight = 25;
 
-// @todo: Use SDK-v2 createShortHexString() after bumping version.
-function formatAddress(address: string, maxWidth = 18): string {
-  const separator = "...";
-  const textLen = maxWidth - separator.length;
-  return (
-    address.substring(0, Math.ceil(textLen / 2)) +
-    "..." +
-    address.substring(address.length - Math.floor(textLen / 2), address.length)
-  );
-}
-
 function validateChainIds(chainIds: number[]): boolean {
   const knownChainIds = [...chains, ...testChains];
   return chainIds.every((chainId) => {
@@ -45,49 +34,33 @@ function validateChainIds(chainIds: number[]): boolean {
 }
 
 function printDeposit(log: LogDescription): void {
-  const originChainId = log.args.originChainId as number;
-  const destinationChainId = log.args.destinationChainId as number;
-  const depositor = log.args.depositor as string;
-  const recipient = log.args.depositor as string;
-  const originToken = log.args.originToken;
-  const amount = log.args.amount as BigNumber;
+  const { originChainId, originToken }  = log.args;
+  const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
+  const padLeft = eventArgs.reduce((acc, cur) => cur.length > acc ? cur.length : acc, 0);
 
-  const tokenSymbol = resolveTokenSymbols([originToken], originChainId)[0];
+  const fields = {
+    tokenSymbol: resolveTokenSymbols([originToken], originChainId)[0],
+    ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+  };
   console.log(
-    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
-      `\t${"Depositor".padEnd(padLeft)}: ${formatAddress(depositor, padRight)}\n` +
-      `\t${"Recipient".padEnd(padLeft)}: ${formatAddress(recipient, padRight)}\n` +
-      `\t${"Origin chain".padEnd(padLeft)}: ${getNetworkName(originChainId).toString().padStart(padRight)}\n` +
-      `\t${"Destination chain".padEnd(padLeft)}: ${getNetworkName(destinationChainId).padStart(padRight)}\n` +
-      `\t${"Token".padEnd(padLeft)}: ${tokenSymbol.padStart(padRight)}\n` +
-      `\t${"Amount".padEnd(padLeft)}: ${amount.toString().padStart(padRight)}\n` +
-      `\t${"Relayer Fee".padEnd(padLeft)}: ${log.args.relayerFeePct.toString().padStart(padRight)}\n`
+    `Deposit # ${log.args.depositId} on ${getNetworkName(originChainId)}:\n` +
+    Object.entries(fields).map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`).join("\n") + "\n"
   );
 }
 
 function printFill(log: LogDescription): void {
-  const originChainId = log.args.originChainId as number;
-  const destinationChainId = log.args.destinationChainId as number;
-  const depositor = log.args.depositor as string;
-  const recipient = log.args.depositor as string;
-  const destinationToken = log.args.destinationToken;
-  const amount = log.args.amount as BigNumber;
-  const totalFilledAmount = log.args.totalFilledAmount as BigNumber;
+  const { originChainId, destinationChainId, destinationToken, amount, totalFilledAmount }  = log.args;
+  const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
+  const padLeft = eventArgs.reduce((acc, cur) => cur.length > acc ? cur.length : acc, 0);
 
-  const tokenSymbol = resolveTokenSymbols([destinationToken], destinationChainId)[0];
-  const totalFilledPct = `${totalFilledAmount.mul(100).div(amount)} %`;
+  const fields = {
+    tokenSymbol: resolveTokenSymbols([destinationToken], destinationChainId)[0],
+    totalFilledPct: `${totalFilledAmount.mul(100).div(amount)} %`,
+    ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+  };
   console.log(
-    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
-      `\t${"Depositor".padEnd(padLeft)}: ${formatAddress(depositor, padRight)}\n` +
-      `\t${"Recipient".padEnd(padLeft)}: ${formatAddress(recipient, padRight)}\n` +
-      `\t${"Origin chain".padEnd(padLeft)}: ${getNetworkName(originChainId).toString().padStart(padRight)}\n` +
-      `\t${"Destination chain".padEnd(padLeft)}: ${getNetworkName(destinationChainId).padStart(padRight)}\n` +
-      `\t${"Token".padEnd(padLeft)}: ${tokenSymbol.padStart(padRight)}\n` +
-      `\t${"Amount".padEnd(padLeft)}: ${amount.toString().padStart(padRight)}\n` +
-      `\t${"Fill Amount".padEnd(padLeft)}: ${log.args.fillAmount.toString().padStart(padRight)}\n` +
-      `\t${"Relayer Fee".padEnd(padLeft)}: ${log.args.relayerFeePct.toString().padStart(padRight)}\n` +
-      `\t${"LP Fee".padEnd(padLeft)}: ${log.args.realizedLpFeePct.toString().padStart(padRight)}\n` +
-      `\t${"Filled".padEnd(padLeft)}: ${totalFilledPct.padStart(padRight)}\n`
+    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
+    Object.entries(fields).map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`).join("\n") + "\n"
   );
 }
 
