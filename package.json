@@ -54,6 +54,7 @@
     "test": "hardhat test",
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
+    "build:test": "tsc --project tsconfig.test.json",
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
     "reinstall": "yarn clean && yarn install && yarn build",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
