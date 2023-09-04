@@ -96,7 +96,9 @@ export class TransactionClient {
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
-          error: isError(error) ? (error as Error).message : "Unknown error",
+          // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
+          errorMessage: isError(error) ? (error as Error).message : undefined,
+          error,
           notificationPath: "across-error",
         });
         return txnResponses;
