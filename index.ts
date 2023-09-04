@@ -1,6 +1,16 @@
 import minimist from "minimist";
 import { CommonConfig } from "./src/common";
-import { AnyObject, config, delay, getSigner, help, Logger, processCrash, usage, winston } from "./src/utils";
+import {
+  AnyObject,
+  config,
+  delay,
+  retrieveSignerFromCLIArgs,
+  help,
+  Logger,
+  processCrash,
+  usage,
+  winston,
+} from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -37,7 +47,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
   } else {
-    const signer = await getSigner();
+    const signer = await retrieveSignerFromCLIArgs();
     do {
       try {
         // One global signer for use with a specific per-chain provider.

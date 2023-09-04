@@ -7,12 +7,13 @@ import {
   Event,
   checkAddressChecksum,
   ethers,
+  spreadEventWithBlockNumber,
+  assign,
+  winston,
 } from "../../../utils";
-import { spreadEventWithBlockNumber, assign, winston } from "../../../utils";
 import { SpokePoolClient } from "../..";
 import { BaseAdapter } from "..";
-import { SortableEvent } from "../../../interfaces";
-import { OutstandingTransfers } from "../../../interfaces";
+import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { constants } from "@across-protocol/sdk-v2";
 import { OpStackBridge } from "./OpStackBridgeInterface";
@@ -31,10 +32,7 @@ export class OpStackAdapter extends BaseAdapter {
     logger: winston.Logger,
     supportedTokens: string[],
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    monitoredAddresses: string[],
-    // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
-    // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
-    readonly senderAddress?: string
+    monitoredAddresses: string[]
   ) {
     super(spokePoolClients, chainId, monitoredAddresses, logger, supportedTokens);
     this.l2Gas = 200000;
@@ -86,17 +84,10 @@ export class OpStackAdapter extends BaseAdapter {
           l1Tokens.map(async (l1Token) => {
             const bridge = this.getBridge(l1Token);
 
-            const [depositInitiatedResults, depositFinalizedResults, depositFinalizedResults_DepositAdapter] =
-              await Promise.all([
-                bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, l1SearchConfig),
-                bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig),
-                // Transfers might have come from the monitored address itself or another sender address (if specified).
-                bridge.queryL2BridgeFinalizationEvents(
-                  l1Token,
-                  this.senderAddress || this.atomicDepositorAddress,
-                  l2SearchConfig
-                ),
-              ]);
+            const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
+              bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, l1SearchConfig),
+              bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig),
+            ]);
 
             assign(
               this.l1DepositInitiatedEvents,
@@ -107,11 +98,6 @@ export class OpStackAdapter extends BaseAdapter {
               this.l2DepositFinalizedEvents,
               [monitoredAddress, l1Token],
               depositFinalizedResults.map(processEvent)
-            );
-            assign(
-              this.l2DepositFinalizedEvents_DepositAdapter,
-              [monitoredAddress, l1Token],
-              depositFinalizedResults_DepositAdapter.map(processEvent)
             );
           })
         )

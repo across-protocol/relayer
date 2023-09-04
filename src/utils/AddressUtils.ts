@@ -29,8 +29,21 @@ export function compareAddressesSimple(addressA: string, addressB: string): bool
 export function matchTokenSymbol(tokenAddress: string, chainId: number): string[] {
   // We can match one l1 token address on multiple symbols in some special cases, like ETH/WETH.
   return Object.values(TOKEN_SYMBOLS_MAP)
-    .filter(({ addresses }) => addresses[chainId].toLowerCase() === tokenAddress.toLowerCase())
+    .filter(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
     .map(({ symbol }) => symbol);
+}
+
+/**
+ * Match the token decimals for a given token symbol.
+ * @param tokenSymbol Symbol of the token to query.
+ * @returns The number of ERC20 decimals configured for the requested token.
+ */
+export function resolveTokenDecimals(tokenSymbol: string): number {
+  const decimals = TOKEN_SYMBOLS_MAP[tokenSymbol]?.decimals;
+  if (decimals === undefined) {
+    throw new Error(`Unrecognized token symbol: ${tokenSymbol}`);
+  }
+  return decimals;
 }
 
 /**
@@ -43,7 +56,7 @@ export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): 
   const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
   return tokenAddresses
     .map((tokenAddress) => {
-      return tokenSymbols.find(({ addresses }) => addresses[chainId].toLowerCase() === tokenAddress.toLowerCase())
+      return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
         ?.symbol;
     })
     .filter(Boolean);

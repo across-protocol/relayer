@@ -1,12 +1,27 @@
 import hre from "hardhat";
-import { buildFillForRepaymentChain, lastSpyLogIncludes, spyLogIncludes, lastSpyLogLevel } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER, createRandomBytes32 } from "./constants";
-import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
+import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, utf8ToHex } from "../src/utils";
+import {
+  BUNDLE_END_BLOCK_BUFFER,
+  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  amountToDeposit,
+  createRandomBytes32,
+  destinationChainId,
+} from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
+import {
+  Contract,
+  SignerWithAddress,
+  buildDeposit,
+  buildFillForRepaymentChain,
+  ethers,
+  expect,
+  lastSpyLogIncludes,
+  lastSpyLogLevel,
+  spyLogIncludes,
+} from "./utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

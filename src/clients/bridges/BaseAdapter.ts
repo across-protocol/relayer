@@ -1,31 +1,35 @@
 /* eslint-disable @typescript-eslint/ban-types */
+import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
-import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import {
-  toBN,
-  MAX_SAFE_ALLOWANCE,
-  Contract,
-  ERC20,
-  winston,
-  EventSearchConfig,
-  DefaultLogLevels,
-  MakeOptional,
   AnyObject,
   BigNumber,
-  matchTokenSymbol,
+  Contract,
+  DefaultLogLevels,
+  ERC20,
+  EventSearchConfig,
+  MAX_SAFE_ALLOWANCE,
+  MAX_UINT_VAL,
+  MakeOptional,
+  TransactionResponse,
   ZERO_ADDRESS,
   assert,
+  blockExplorerLink,
   compareAddressesSimple,
   formatUnitsForToken,
+  getNetworkName,
+  matchTokenSymbol,
+  runTransaction,
+  toBN,
+  winston,
+  createFormatFunction,
+  BigNumberish,
 } from "../../utils";
-import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
-import { OutstandingTransfers, SortableEvent } from "../../interfaces";
-import { TransactionResponse } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BigNumberish, createFormatFunction } from "../../utils/FormattingUtils";
+import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
@@ -56,7 +60,6 @@ export abstract class BaseAdapter {
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
-  l2DepositFinalizedEvents_DepositAdapter: Events = {};
 
   txnClient: TransactionClient;
 
@@ -150,9 +153,9 @@ export abstract class BaseAdapter {
       const hubNetwork = getNetworkName(hubChainId);
       const spokeNetwork = getNetworkName(this.chainId);
       mrkdwn +=
-        ` - Approved canonical ${spokeNetwork} token bridge ${etherscanLink(targetContract, hubChainId)} ` +
-        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-        `tx: ${etherscanLink(receipt.transactionHash, hubChainId)}\n`;
+        ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(targetContract, hubChainId)} ` +
+        `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
+        `tx: ${blockExplorerLink(receipt.transactionHash, hubChainId)}\n`;
     }
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
@@ -183,20 +186,7 @@ export abstract class BaseAdapter {
         if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
           this.l2DepositFinalizedEvents[monitoredAddress][l1Token] = [];
         }
-        let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
-        if (this.isWeth(l1Token)) {
-          let depositFinalizedEventsForL1 =
-            this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token] || [];
-          depositFinalizedEventsForL1 = depositFinalizedEventsForL1.filter((event) => event.to === monitoredAddress);
-          if (depositFinalizedEventsForL1.length > 0) {
-            // If this is WETH and there are atomic depositor events then consider the union as the full set of
-            // finalization events. We do this as the output event on L2 will show the Atomic depositor as the sender,
-            // not the original sender (monitored address).
-            l2FinalizationSet = [...l2FinalizationSet, ...depositFinalizedEventsForL1].sort(
-              (a, b) => a.blockNumber - b.blockNumber
-            );
-          }
-        }
+        const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
 
         // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
         // should be unlikely.

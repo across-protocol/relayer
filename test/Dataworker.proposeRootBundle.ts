@@ -1,14 +1,21 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes, lastSpyLogLevel } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
-import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
-import { CHAIN_ID_TEST_LIST } from "./constants";
+import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
+import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
-import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
+import {
+  Contract,
+  SignerWithAddress,
+  buildDeposit,
+  buildFillForRepaymentChain,
+  ethers,
+  expect,
+  lastSpyLogIncludes,
+  lastSpyLogLevel,
+  toBNWei,
+} from "./utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { getDepositPath } from "../src/utils";
 import { FillWithBlock } from "../src/interfaces";
 import { MockConfigStoreClient } from "./mocks";
 

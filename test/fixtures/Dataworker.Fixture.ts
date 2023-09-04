@@ -6,10 +6,14 @@ import {
   BigNumber,
   enableRoutes,
   sampleRateModel,
-  sinon,
+  createSpyLogger,
+  winston,
+  deployAndConfigureHubPool,
+  deployConfigStore,
+  SignerWithAddress,
+  setupTokensForWallet,
+  getLastBlockTime,
 } from "../utils";
-import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
-import { createSpyLogger, winston, deployAndConfigureHubPool, deployConfigStore } from "../utils";
 import * as clients from "../../src/clients";
 import {
   amountToLp,

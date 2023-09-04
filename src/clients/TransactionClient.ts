@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, typeguards } from "@across-protocol/sdk-v2";
 import {
   winston,
   getNetworkName,
   Contract,
   runTransaction,
   BigNumber,
-  etherscanLink,
+  blockExplorerLink,
   toBNWei,
   TransactionResponse,
   TransactionSimulationResult,
@@ -29,6 +29,7 @@ export interface AugmentedTransaction {
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+const { isError } = typeguards;
 
 const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
 
@@ -95,6 +96,8 @@ export class TransactionClient {
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
+          // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
+          errorMessage: isError(error) ? (error as Error).message : undefined,
           error,
           notificationPath: "across-error",
         });
@@ -102,7 +105,7 @@ export class TransactionClient {
       }
 
       nonce = response.nonce + 1;
-      const blockExplorer = etherscanLink(response.hash, txn.chainId);
+      const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
     }
