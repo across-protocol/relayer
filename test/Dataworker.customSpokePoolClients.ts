@@ -1,10 +1,8 @@
-import { lastSpyLogIncludes, lastSpyLogLevel, spyLogIncludes, spyLogLevel } from "./utils";
-import { expect, ethers, Contract } from "./utils";
-import { SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { utf8ToHex } from "./constants";
-import { CHAIN_ID_TEST_LIST } from "./constants";
-import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
+import { MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { MAX_UINT_VAL } from "../src/utils";
+import { CHAIN_ID_TEST_LIST, utf8ToHex } from "./constants";
+import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
+import { Contract, ethers, expect, lastSpyLogIncludes, lastSpyLogLevel, spyLogIncludes, spyLogLevel } from "./utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

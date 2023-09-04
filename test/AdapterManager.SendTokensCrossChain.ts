@@ -1,12 +1,23 @@
-import { expect, ethers, SignerWithAddress, createSpyLogger, winston } from "./utils";
-import { BigNumber, deployConfigStore, FakeContract, hubPoolFixture, smock, toBN } from "./utils";
-import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
-import { bnToHex, getL2TokenAddresses, toBNWei } from "../src/utils";
+import { constants } from "@across-protocol/sdk-v2";
+import * as zksync from "zksync-web3";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
-import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../src/common";
-import * as zksync from "zksync-web3";
+import { bnToHex, getL2TokenAddresses, toBNWei } from "../src/utils";
+import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+import {
+  BigNumber,
+  FakeContract,
+  SignerWithAddress,
+  createSpyLogger,
+  deployConfigStore,
+  ethers,
+  expect,
+  hubPoolFixture,
+  smock,
+  toBN,
+  winston,
+} from "./utils";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 let hubPoolClient: MockHubPoolClient;

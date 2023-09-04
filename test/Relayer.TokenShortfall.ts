@@ -1,7 +1,14 @@
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, originChainId, sinon } from "./utils";
-import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
-import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
-import { deployAndConfigureHubPool, winston } from "./utils";
+import {
+  AcrossApiClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  TokenClient,
+} from "../src/clients";
+import { CONFIG_STORE_VERSION } from "../src/common";
+import { Relayer } from "../src/relayer/Relayer";
+import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -9,19 +16,28 @@ import {
   defaultTokenConfig,
   repaymentChainId,
 } from "./constants";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  ConfigStoreClient,
-  MultiCallerClient,
-  AcrossApiClient,
-  TokenClient,
-} from "../src/clients";
-import { CONFIG_STORE_VERSION } from "../src/common";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
-import { Relayer } from "../src/relayer/Relayer";
-import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import {
+  Contract,
+  SignerWithAddress,
+  createSpyLogger,
+  deployAndConfigureHubPool,
+  deployConfigStore,
+  deploySpokePoolWithToken,
+  deposit,
+  destinationChainId,
+  enableRoutesOnHubPool,
+  ethers,
+  expect,
+  getLastBlockTime,
+  lastSpyLogIncludes,
+  originChainId,
+  setupTokensForWallet,
+  sinon,
+  toBNWei,
+  winston,
+} from "./utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;

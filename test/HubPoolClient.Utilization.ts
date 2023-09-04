@@ -1,8 +1,6 @@
-import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
-import { deployConfigStore, hubPoolFixture, toBN } from "./utils";
+import { HubPoolClient } from "../src/clients";
 import {
+  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
   amountToLp,
   destinationChainId,
   mockTreeRoot,
@@ -10,9 +8,25 @@ import {
   refundProposalLiveness,
   totalBond,
 } from "./constants";
-import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { HubPoolClient } from "../src/clients";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
+import {
+  Contract,
+  SignerWithAddress,
+  buildPoolRebalanceLeafTree,
+  buildPoolRebalanceLeaves,
+  createSpyLogger,
+  deployConfigStore,
+  deploySpokePoolWithToken,
+  ethers,
+  expect,
+  hubPoolFixture,
+  originChainId,
+  repaymentChainId,
+  setupTokensForWallet,
+  toBN,
+  toBNWei,
+  toWei,
+} from "./utils";
 
 let configStore: Contract, hubPool: Contract;
 let l1Token: Contract, l2Token: Contract, timer: Contract, weth: Contract;

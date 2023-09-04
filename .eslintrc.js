@@ -34,6 +34,7 @@ module.exports = {
     // Disable warnings for { a, b, ...rest } variables, since this is typically used to remove variables.
     "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
     "chai-expect/missing-assertion": 2,
+    "no-duplicate-imports": "error",
   },
   settings: {
     node: {

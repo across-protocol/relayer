@@ -9,13 +9,14 @@ import {
   BigNumberish,
   TransactionResponse,
   resolveTokenSymbols,
+  ZERO_ADDRESS,
+  spreadEventWithBlockNumber,
+  paginatedEventQuery,
 } from "../../utils";
-import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
-import { SortableEvent } from "../../interfaces";
+import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
-import { OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 

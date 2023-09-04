@@ -1,8 +1,7 @@
-import { expect, createSpyLogger } from "./utils";
-import { toBN } from "./utils";
-import { BaseAdapter } from "../src/clients/bridges";
 import { SpokePoolClient } from "../src/clients";
+import { BaseAdapter } from "../src/clients/bridges";
 import { OutstandingTransfers } from "../src/interfaces";
+import { createSpyLogger, expect, toBN } from "./utils";
 
 class TestAdapter extends BaseAdapter {
   constructor() {

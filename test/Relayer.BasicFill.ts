@@ -1,17 +1,16 @@
 import { random } from "lodash";
 import {
-  expect,
-  deposit,
-  ethers,
-  Contract,
-  SignerWithAddress,
-  setupTokensForWallet,
-  getLastBlockTime,
-  buildDeposit,
-} from "./utils";
-import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
-import { originChainId, sinon, toBNWei } from "./utils";
+  AcrossApiClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  TokenClient,
+} from "../src/clients";
+import { CONFIG_STORE_VERSION, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
+import { Deposit } from "../src/interfaces";
+import { Relayer } from "../src/relayer/Relayer";
+import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
   amountToLp,
   defaultMinDepositConfirmations,
@@ -21,20 +20,29 @@ import {
   repaymentChainId,
   utf8ToHex,
 } from "./constants";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  ConfigStoreClient,
-  MultiCallerClient,
-  AcrossApiClient,
-  TokenClient,
-} from "../src/clients";
-import { CONFIG_STORE_VERSION, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 import { MockConfigStoreClient, MockInventoryClient, MockProfitClient, MockUBAClient } from "./mocks";
-import { Relayer } from "../src/relayer/Relayer";
-import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
-import { Deposit } from "../src/interfaces";
+import {
+  Contract,
+  SignerWithAddress,
+  buildDeposit,
+  createSpyLogger,
+  deployAndConfigureHubPool,
+  deployConfigStore,
+  deploySpokePoolWithToken,
+  deposit,
+  destinationChainId,
+  enableRoutesOnHubPool,
+  ethers,
+  expect,
+  getLastBlockTime,
+  lastSpyLogIncludes,
+  originChainId,
+  setupTokensForWallet,
+  sinon,
+  toBNWei,
+  winston,
+} from "./utils";
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
