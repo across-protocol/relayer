@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, typeguards } from "@across-protocol/sdk-v2";
 import {
   winston,
   getNetworkName,
@@ -29,6 +29,7 @@ export interface AugmentedTransaction {
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+const { isError } = typeguards;
 
 const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
 
@@ -95,6 +96,8 @@ export class TransactionClient {
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
+          // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
+          errorMessage: isError(error) ? (error as Error).message : undefined,
           error,
           notificationPath: "across-error",
         });
