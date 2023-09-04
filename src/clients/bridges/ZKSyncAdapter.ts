@@ -1,4 +1,4 @@
-import { BigNumber, Contract } from "ethers";
+import { BigNumber, BigNumberish, Contract } from "ethers";
 import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import {
@@ -19,7 +19,6 @@ import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
-import { BigNumberish } from "../../utils/FormattingUtils";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era

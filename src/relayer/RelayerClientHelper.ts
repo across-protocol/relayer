@@ -1,12 +1,18 @@
+import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import winston from "winston";
-import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
-import { Wallet } from "../utils";
-import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
+import { AcrossApiClient, BundleDataClient, InventoryClient, ProfitClient, TokenClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
-import { RelayerConfig } from "./RelayerConfig";
-import { CONTRACT_ADDRESSES, Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
+import {
+  CONTRACT_ADDRESSES,
+  Clients,
+  constructClients,
+  constructSpokePoolClientsWithLookback,
+  updateClients,
+  updateSpokePoolClients,
+} from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { constructSpokePoolClientsWithLookback } from "../common";
+import { Wallet } from "../utils";
+import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;

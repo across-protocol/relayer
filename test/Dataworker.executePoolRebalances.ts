@@ -1,16 +1,18 @@
-import { buildFillForRepaymentChain } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { amountToDeposit } from "./constants";
-import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL } from "../src/utils";
+import {
+  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  amountToDeposit,
+} from "./constants";
+import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import { Contract, SignerWithAddress, buildDeposit, buildFillForRepaymentChain, ethers, expect } from "./utils";
 
 // Tested
-import { Dataworker } from "../src/dataworker/Dataworker";
-import { spokePoolClientsToProviders } from "../src/common";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
+import { spokePoolClientsToProviders } from "../src/common";
+import { Dataworker } from "../src/dataworker/Dataworker";
 
 // Set to arbitrum to test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message transfers.
 const destinationChainId = 42161;

@@ -1,6 +1,17 @@
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet, createSpyLogger } from "./utils";
-import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, destinationChainId } from "./utils";
 import { SpokePoolClient } from "../src/clients";
+import {
+  Contract,
+  SignerWithAddress,
+  createSpyLogger,
+  deploySpokePoolWithToken,
+  destinationChainId,
+  enableRoutes,
+  ethers,
+  expect,
+  originChainId,
+  setupTokensForWallet,
+  simpleDeposit,
+} from "./utils";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let depositor1: SignerWithAddress, depositor2: SignerWithAddress;

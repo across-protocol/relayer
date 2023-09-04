@@ -1,8 +1,23 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL } from "./utils";
-import { createSpyLogger, winston, originChainId, destinationChainId, lastSpyLogIncludes } from "./utils";
-import { deployAndConfigureHubPool, zeroAddress, getContractFactory, utf8ToHex, toBNWei } from "./utils";
-import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";
 import { interfaceName } from "@uma/common";
+import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
+import {
+  Contract,
+  MAX_UINT_VAL,
+  SignerWithAddress,
+  createSpyLogger,
+  deployAndConfigureHubPool,
+  deploySpokePoolWithToken,
+  destinationChainId,
+  ethers,
+  expect,
+  getContractFactory,
+  lastSpyLogIncludes,
+  originChainId,
+  toBNWei,
+  utf8ToHex,
+  winston,
+  zeroAddress,
+} from "./utils";
 
 let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract, l1Token_1: Contract;

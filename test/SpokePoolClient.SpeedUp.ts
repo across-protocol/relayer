@@ -1,14 +1,18 @@
+import { depositRelayerFeePct, destinationChainId, modifyRelayHelper } from "./constants";
 import {
-  expect,
-  ethers,
   Contract,
   SignerWithAddress,
-  setupTokensForWallet,
-  toBNWei,
+  createSpyLogger,
   deepEqualsWithBigNumber,
+  deploySpokePoolWithToken,
+  enableRoutes,
+  ethers,
+  expect,
+  originChainId,
+  setupTokensForWallet,
+  simpleDeposit,
+  toBNWei,
 } from "./utils";
-import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, createSpyLogger } from "./utils";
-import { depositRelayerFeePct, destinationChainId, modifyRelayHelper } from "./constants";
 
 import { SpokePoolClient } from "../src/clients";
 import { DepositWithBlock } from "../src/interfaces";

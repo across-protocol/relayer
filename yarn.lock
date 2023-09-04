@@ -37,10 +37,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.15.18":
-  version "0.15.18"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.15.18.tgz#5334e36fda7cf1cab753549fd309ff2595155950"
-  integrity sha512-Wcf6A/zy8SG+UXcGDsDI2k5jVMbvlHLqG/iJ3H9YgQ5A5KeRdw5H8mLTdXavTN86aIZCD1Ls5RskCVT6SujoIA==
+"@across-protocol/sdk-v2@0.15.20":
+  version "0.15.20"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.15.20.tgz#35e3faf01069bb6e82522efecef8c97ad8863462"
+  integrity sha512-LjnL9lwEoCA80XpOh6JwBPYys1aI7HP7XhDe3vkzBU7u86P7MY2oMDc4p2AErr7w+iR0mkUD727eYCSl10zfRg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/contracts-v2" "^2.4.3"
@@ -443,7 +443,7 @@
     "@ethersproject/abstract-provider" "^5.7.0"
     "@ethersproject/abstract-signer" "^5.7.0"
 
-"@eth-optimism/core-utils@0.12.0", "@eth-optimism/core-utils@^0.12.0":
+"@eth-optimism/core-utils@0.12.0":
   version "0.12.0"
   resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.12.0.tgz#6337e4599a34de23f8eceb20378de2a2de82b0ea"
   integrity sha512-qW+7LZYCz7i8dRa7SRlUKIo1VBU8lvN0HeXCxJR+z+xtMzMQpPds20XJNCMclszxYQHkXY00fOT6GvFw9ZL6nw==
@@ -465,7 +465,7 @@
     bufio "^1.0.7"
     chai "^4.3.4"
 
-"@eth-optimism/core-utils@0.12.2":
+"@eth-optimism/core-utils@0.12.2", "@eth-optimism/core-utils@^0.12.0":
   version "0.12.2"
   resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.12.2.tgz#cacf8c488e8c9bf75b193a08763043294a4882fa"
   integrity sha512-rJjsRF//hegpfeWzcWRVO+SJ7XK+uwpidUGECQ5/aGfO+o0/J0kaiRhvGtUvJHsY5D2+gThqQkkx+ZwlGuBeuQ==
@@ -3179,20 +3179,15 @@
     web3 "^1.6.0"
     winston "^3.2.1"
 
-"@uma/contracts-frontend@^0.4.16":
-  version "0.4.16"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.16.tgz#47f90874800a64e046143eefee9614fcafa8ca5b"
-  integrity sha512-2/0A7wTh2zEw8GjYZmydRmTtQDfUtRHrttU2E5w8dACDIMA5EYrAm+G/r67SYcrt7+cWUmsBmR9AZ0QR01zN2A==
+"@uma/contracts-frontend@^0.4.17":
+  version "0.4.17"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.17.tgz#27f5292e8ec5e02f5ac467f384601a56c27ff4c6"
+  integrity sha512-g6+1PnHGvos4zcAPaBHAHQcK6tSNvEaiy/36Q8vzp4pX0IV8lrwfBKJtXjqLgjyK2okSSQgZKuT+quVPO9h4Cg==
 
-"@uma/contracts-node@^0.4.0", "@uma/contracts-node@^0.4.17":
+"@uma/contracts-node@^0.4.0", "@uma/contracts-node@^0.4.16", "@uma/contracts-node@^0.4.17":
   version "0.4.17"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.17.tgz#6abd815723c8344017eb5c302f6a5b0b690eeb4e"
   integrity sha512-e7cVJr3yhKrPZn1TAo/CCOt+QacJON6Mj71lcwHq/rnx+tgjujK2MsOhihytmb79ejPTKg1b5+2GIDL02ttrrQ==
-
-"@uma/contracts-node@^0.4.16":
-  version "0.4.16"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.16.tgz#1b4d50fae0a6a0233fb9ff7bcaacc003a80feeb2"
-  integrity sha512-7x0X68m/th0ieoGkEKniKEu08ee1r/SVF0vF97QRgiD0VvdKrQ9Z8ED0HDXreh/g8Rd7LBPgJzgHrrHOpkLDyQ==
 
 "@uma/core@^2.18.0":
   version "2.43.2"
@@ -3269,18 +3264,18 @@
     mocha "^8.3.0"
     node-fetch "^2.6.1"
 
-"@uma/sdk@^0.34.0", "@uma/sdk@^0.34.1":
-  version "0.34.1"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.34.1.tgz#cbd38640c3c3a976eb369c26abd86d7263271fba"
-  integrity sha512-ZyUqdAYD/+mkw18b7VVmlsNbfOgPxOnf0vVVbHEDQjV1GCRDKeMxojJAVPOPLQT9X3+ycATZLHu5tYxeXRxrzg==
+"@uma/sdk@^0.34.1", "@uma/sdk@^0.34.2":
+  version "0.34.2"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.34.2.tgz#b433b437f750c4afaf2f110209c80c513437eb94"
+  integrity sha512-49akhv4eOLjoWvxawciNI9OztfDp2IyuJEuU8ME3BWAaQM+RYurPylKyxCPSzrmlCbx1KSQU97FXDOeH7hP4gg==
   dependencies:
     "@eth-optimism/core-utils" "^0.7.7"
     "@ethersproject/abstract-signer" "^5.4.0"
     "@ethersproject/providers" "^5.4.2"
     "@google-cloud/datastore" "^7.0.0"
     "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.4.16"
-    "@uma/contracts-node" "^0.4.16"
+    "@uma/contracts-frontend" "^0.4.17"
+    "@uma/contracts-node" "^0.4.17"
     axios "^0.24.0"
     bluebird "^3.7.2"
     bn.js "^4.11.9"

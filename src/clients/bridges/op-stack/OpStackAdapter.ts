@@ -7,12 +7,13 @@ import {
   Event,
   checkAddressChecksum,
   ethers,
+  spreadEventWithBlockNumber,
+  assign,
+  winston,
 } from "../../../utils";
-import { spreadEventWithBlockNumber, assign, winston } from "../../../utils";
 import { SpokePoolClient } from "../..";
 import { BaseAdapter } from "..";
-import { SortableEvent } from "../../../interfaces";
-import { OutstandingTransfers } from "../../../interfaces";
+import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { constants } from "@across-protocol/sdk-v2";
 import { OpStackBridge } from "./OpStackBridgeInterface";

@@ -1,13 +1,26 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import hre from "hardhat";
 import { random } from "lodash";
-import { buildPoolRebalanceLeafTree, buildPoolRebalanceLeaves, createSpyLogger, randomAddress, winston } from "./utils";
-import { deployConfigStore, SignerWithAddress, expect, ethers, Contract, toBNWei, toBN, BigNumber } from "./utils";
 import { ConfigStoreClient, HubPoolClient, UBA_MIN_CONFIG_STORE_VERSION } from "../src/clients";
+import { ProposedRootBundle } from "../src/interfaces";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { ProposedRootBundle } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+import {
+  BigNumber,
+  Contract,
+  SignerWithAddress,
+  buildPoolRebalanceLeafTree,
+  buildPoolRebalanceLeaves,
+  createSpyLogger,
+  deployConfigStore,
+  ethers,
+  expect,
+  randomAddress,
+  toBN,
+  toBNWei,
+  winston,
+} from "./utils";
 
 let hubPool: Contract, timer: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;

@@ -9,8 +9,10 @@ import {
   isDefined,
   buildPoolRebalanceLeafTree,
   updateTotalRefundAmountRaw,
+  toBNWei,
+  getFillsInRange,
+  ZERO_ADDRESS,
 } from "../utils";
-import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
   DepositWithBlock,
   FillsToRefund,
@@ -22,8 +24,6 @@ import {
   SlowFillLeaf,
   SpokePoolClientsByChain,
   UnfilledDeposit,
-} from "../interfaces";
-import {
   PendingRootBundle,
   RunningBalances,
   PoolRebalanceLeaf,
@@ -31,7 +31,7 @@ import {
   BigNumberForToken,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient, UBAClient } from "../clients";
+import { SpokePoolClient, UBAClient, BalanceAllocator } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -45,7 +45,6 @@ import {
   _buildRelayerRefundRoot,
   _buildSlowRelayRoot,
 } from "./DataworkerUtils";
-import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
