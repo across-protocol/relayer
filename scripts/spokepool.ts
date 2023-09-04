@@ -22,6 +22,7 @@ const chains = [1, 10, 137, 324, 8453, 42161];
 const padLeft = 20;
 const padRight = 25;
 
+// @todo: Use SDK-v2 createShortHexString() after bumping version.
 function formatAddress(address: string, maxWidth = 18): string {
   const separator = "...";
   const textLen = maxWidth - separator.length;
@@ -30,6 +31,17 @@ function formatAddress(address: string, maxWidth = 18): string {
     "..." +
     address.substring(address.length - Math.floor(textLen / 2), address.length)
   );
+}
+
+function validateChainIds(chainIds: number[]): boolean {
+  const knownChainIds = [...chains, ...testChains];
+  return chainIds.every((chainId) => {
+    const ok = knownChainIds.includes(chainId);
+    if (!ok) {
+      console.log(`Invalid chain ID: ${chainId}`);
+    }
+    return ok;
+  });
 }
 
 function printDeposit(log: LogDescription): void {
@@ -131,10 +143,17 @@ async function getSpokePoolContract(chainId: number): Promise<Contract> {
 
 async function deposit(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
   const depositor = await signer.getAddress();
-  const fromChainId = Number(args.from);
-  const toChainId = Number(args.to);
-  const recipient = args.recipient ?? depositor;
-  const baseAmount = Number(args.amount);
+  const [fromChainId , toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
+  const recipient = args.recipient as string ?? depositor;
+
+  if (!validateChainIds([fromChainId, toChainId])) {
+    usage(); // no return
+  }
+
+  if (!isAddress(recipient)) {
+    console.log(`Invalid recipient address (${recipient})`);
+    usage(); // no return
+  }
 
   const token = resolveToken(args.token as string, fromChainId);
   const tokenSymbol = token.symbol.toUpperCase();
@@ -237,6 +256,10 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
 async function fetchTxn(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
   const { txnHash } = args;
   const chainId = Number(args.chainId);
+
+  if (!validateChainIds([chainId])) {
+    usage(); // no return
+  }
 
   if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
