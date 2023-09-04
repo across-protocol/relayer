@@ -1,7 +1,7 @@
 import assert from "assert";
 import * as contracts from "@across-protocol/contracts-v2";
 import { LogDescription } from "@ethersproject/abi";
-import { BigNumber, Contract, ethers, Wallet } from "ethers";
+import { Contract, ethers, Wallet } from "ethers";
 import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
@@ -19,9 +19,6 @@ const { isAddress } = ethers.utils;
 const testChains = [5, 280];
 const chains = [1, 10, 137, 324, 8453, 42161];
 
-const padLeft = 20;
-const padRight = 25;
-
 function validateChainIds(chainIds: number[]): boolean {
   const knownChainIds = [...chains, ...testChains];
   return chainIds.every((chainId) => {
@@ -34,9 +31,9 @@ function validateChainIds(chainIds: number[]): boolean {
 }
 
 function printDeposit(log: LogDescription): void {
-  const { originChainId, originToken }  = log.args;
+  const { originChainId, originToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
-  const padLeft = eventArgs.reduce((acc, cur) => cur.length > acc ? cur.length : acc, 0);
+  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
     tokenSymbol: resolveTokenSymbols([originToken], originChainId)[0],
@@ -44,14 +41,17 @@ function printDeposit(log: LogDescription): void {
   };
   console.log(
     `Deposit # ${log.args.depositId} on ${getNetworkName(originChainId)}:\n` +
-    Object.entries(fields).map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`).join("\n") + "\n"
+      Object.entries(fields)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
   );
 }
 
 function printFill(log: LogDescription): void {
-  const { originChainId, destinationChainId, destinationToken, amount, totalFilledAmount }  = log.args;
+  const { originChainId, destinationChainId, destinationToken, amount, totalFilledAmount } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
-  const padLeft = eventArgs.reduce((acc, cur) => cur.length > acc ? cur.length : acc, 0);
+  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
     tokenSymbol: resolveTokenSymbols([destinationToken], destinationChainId)[0],
@@ -60,7 +60,10 @@ function printFill(log: LogDescription): void {
   };
   console.log(
     `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
-    Object.entries(fields).map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`).join("\n") + "\n"
+      Object.entries(fields)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
   );
 }
 
@@ -116,12 +119,13 @@ async function getSpokePoolContract(chainId: number): Promise<Contract> {
 
 async function deposit(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
   const depositor = await signer.getAddress();
-  const [fromChainId , toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
-  const recipient = args.recipient as string ?? depositor;
+  const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
+  const recipient = (args.recipient as string) ?? depositor;
 
   if (!validateChainIds([fromChainId, toChainId])) {
     usage(); // no return
   }
+  const network = getNetworkName(fromChainId);
 
   if (!isAddress(recipient)) {
     console.log(`Invalid recipient address (${recipient})`);
@@ -146,19 +150,10 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     console.log("Approval complete...");
   }
 
-  const relayerFeePct = Zero;
+  const relayerFeePct = Zero; // @todo: Make configurable.
   const maxCount = MaxUint256;
   const quoteTimestamp = Math.round(Date.now() / 1000);
 
-  console.log(
-    `Submitting deposit on chain ID ${fromChainId}\n` +
-      `\t${"originChainId".padEnd(padLeft)}: ${fromChainId}\n` +
-      `\t${"destinationChainId".padEnd(padLeft)}: ${toChainId}\n` +
-      `\t${"depositor".padEnd(padLeft)}: ${depositor}\n` +
-      `\t${"recipient".padEnd(padLeft)}: ${recipient}\n` +
-      `\t${"relayerFeePct".padEnd(padLeft)}: ${relayerFeePct}\n` +
-      `\t${"quoteTimestamp".padEnd(padLeft)}: ${quoteTimestamp}\n`
-  );
   const deposit = await spokePool.deposit(
     recipient,
     token.address,
@@ -169,17 +164,13 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     "0x",
     maxCount
   );
-  console.log("Submitted deposit:");
+  const { hash: transactionHash } = deposit;
+  console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}.`);
   const receipt = await deposit.wait();
+
   receipt.logs
     .filter((log) => log.address === spokePool.address)
-    .forEach((_log) => {
-      const log = spokePool.interface.parseLog(_log);
-      console.log(
-        `\t${"depositId".padEnd(padLeft)}: ${log.args.depositId}\n` +
-          `\t${"transactionHash".padEnd(padLeft)}: ${_log.transactionHash}\n`
-      );
-    });
+    .forEach((log) => printDeposit(spokePool.interface.parseLog(log)));
 
   return true;
 }
@@ -193,7 +184,7 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
   const spokeProvider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(chainId, 1)[0]);
   const spokePool = _spokePool.connect(spokeProvider);
 
-  const [spokePoolChainId, hubPoolAddress, admin, wethAddress, _currentTime] = await Promise.all([
+  const [spokePoolChainId, hubPool, crossDomainAdmin, weth, _currentTime] = await Promise.all([
     spokePool.chainId(),
     spokePool.hubPool(),
     spokePool.crossDomainAdmin(),
@@ -201,25 +192,29 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
     spokePool.getCurrentTime(),
   ]);
 
-  // deploymentBlock = deployments[chainId.toString()].SpokePool.blockNumber;
-  // const adminAlias = ethers.utils.getAddress(ethers.BigNumber.from(admin).add(zkUtils.L1_TO_L2_ALIAS_OFFSET).toHexString());
-
   if (chainId !== Number(spokePoolChainId)) {
     throw new Error(`Chain ${chainId} SpokePool mismatch: ${spokePoolChainId} != ${chainId} (${spokePool.address})`);
   }
 
-  const adminAlias = "...tbd";
-  const currentTime = Number(_currentTime);
-  const currentTimeStr = new Date(Number(currentTime) * 1000).toUTCString();
+  const currentTime = `${_currentTime} (${new Date(Number(_currentTime) * 1000).toUTCString()})`;
 
+  const fields = {
+    hubChainId,
+    hubPool,
+    crossDomainAdmin,
+    weth,
+    currentTime,
+  };
+
+  // @todo: Support handlers for chain-specific configuration (i.e. address of bridge to L1).
+
+  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
   console.log(
-    `Dumping chain ${chainId} SpokePool config:\n` +
-      `\t${"HubPool chain ID".padEnd(padLeft)}: ${hubChainId}\n` +
-      `\t${"HubPool address".padEnd(padLeft)}: ${hubPoolAddress}\n` +
-      `\t${"Cross-domain admin".padEnd(padLeft)}: ${admin}\n` +
-      `\t${"Cross-domain alias".padEnd(padLeft)}: ${adminAlias}\n` +
-      `\t${"WETH".padEnd(padLeft)}: ${wethAddress}\n` +
-      `\t${"Current time".padEnd(padLeft)}: ${currentTimeStr} (${currentTime})\n`
+    `${getNetworkName(chainId)} SpokePool configuration:\n` +
+      Object.entries(fields)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
   );
 
   return true;
