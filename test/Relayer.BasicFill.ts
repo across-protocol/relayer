@@ -37,6 +37,7 @@ import {
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
+  spyLogIncludes,
   originChainId,
   setupTokensForWallet,
   sinon,
@@ -459,7 +460,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping deposit for unsupported origin or destination chain")).to.be.true;
+    expect(spyLogIncludes(spy, -3, "Skipping 1 deposits from or to disabled chains.")).to.be.true;
   });
 
   it("UBA: Doesn't crash if client cannot support version bump", async function () {
