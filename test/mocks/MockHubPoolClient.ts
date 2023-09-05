@@ -1,6 +1,7 @@
 import { clients } from "@across-protocol/sdk-v2";
 import { Contract, winston } from "../utils";
 import { ConfigStoreClient } from "../../src/clients";
+import { MockConfigStoreClient } from "./MockConfigStoreClient";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
@@ -9,7 +10,7 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   constructor(
     logger: winston.Logger,
     hubPool: Contract,
-    configStoreClient: ConfigStoreClient,
+    configStoreClient: ConfigStoreClient | MockConfigStoreClient,
     deploymentBlock = 0,
     chainId = 1
   ) {
