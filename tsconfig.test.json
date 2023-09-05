@@ -3,5 +3,5 @@
   "compilerOptions": {
     "strict": false
   },
-  "include": ["./test"]
+  "include": ["./test", "./src"]
 }
