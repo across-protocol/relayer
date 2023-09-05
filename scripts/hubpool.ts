@@ -78,7 +78,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
   const avgBlockTime = 12.5; // @todo import
   const fromBlock = Math.floor(latestBlock.number - (liveness - avgBlockTime));
 
-  const bondToken = WETH9.connect(bondTokenAddress, hubPool.provider).connect(signer);
+  const bondToken = WETH9.connect(bondTokenAddress, hubPool.provider);
   const [bondBalance, decimals, symbol, allowance, proposals] = await Promise.all([
     bondToken.balanceOf(signer.address),
     bondToken.decimals(),
@@ -107,7 +107,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
 
   if (allowance.lt(bondAmount)) {
     console.log(`Approving ${network} HubPool @ ${hubPool.address} to transfer ${symbol}.`);
-    const approval = await bondToken.approve(hubPool.address, MaxUint256);
+    const approval = await bondToken.connect(signer).approve(hubPool.address, MaxUint256);
     console.log(`Approval: ${approval.hash}...`);
     await approval.wait();
   }
