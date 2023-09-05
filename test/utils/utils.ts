@@ -187,12 +187,6 @@ export async function deployAndConfigureHubPool(
   return { hubPool, mockAdapter, l1Token_1, l1Token_2, hubPoolDeploymentBlock: receipt.blockNumber };
 }
 
-export async function deployNewToken(owner) {
-  const l2Token = await (await utils.getContractFactory("ExpandedERC20", owner)).deploy("L2 Token", "L2", 18);
-  await l2Token.addMember(TokenRolesEnum.MINTER, l2Token.address);
-  return l2Token;
-}
-
 export async function deployNewTokenMapping(
   l2TokenHolder: utils.SignerWithAddress,
   l1TokenHolder: utils.SignerWithAddress,
@@ -284,43 +278,6 @@ export async function simpleDeposit(
   };
 }
 
-// Deploy, enable route and set pool rebalance route a new token over all spoke pools.
-export async function deploySingleTokenAcrossSetOfChains(
-  signer: utils.SignerWithAddress,
-  spokePools: { contract: utils.Contract; chainId: number }[],
-
-  hubPool: utils.Contract,
-  associatedL1Token: utils.Contract
-) {
-  // Deploy one token per spoke pool. This of this as deploying USDC on all chains.
-  const tokens = [];
-  for (let i = 0; i < spokePools.length; i++) {
-    const erc20 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Yeet Coin", "Coin", 18);
-    await erc20.addMember(TokenRolesEnum.MINTER, signer.address);
-    tokens.push(erc20);
-  }
-
-  // For each spokePool, whitelist the associated token above as an 'origin' token to all other destination chains. Also,
-  // enable the pool rebalance route for the l1Token and newly deployed token.
-  for (const [index, spokePool] of spokePools.entries()) {
-    for (const otherSpokePool of spokePools) {
-      if (spokePool === otherSpokePool) {
-        continue;
-      }
-      await utils.enableRoutes(spokePool.contract, [
-        { originToken: tokens[index].address, destinationChainId: await otherSpokePool.chainId },
-      ]);
-    }
-
-    await hubPool.setPoolRebalanceRoute(spokePool.chainId, associatedL1Token.address, tokens[index].address);
-  }
-  return tokens;
-}
-
-export function appendPropsToDeposit(deposit) {
-  return { ...deposit, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
-}
-
 /**
  * Takes as input a body and returns a new object with the body and a message property. Used to appease the typescript
  * compiler when we want to return a type that doesn't have a message property.
@@ -345,15 +302,6 @@ export async function addLiquidity(
   await l1Token.connect(signer).approve(hubPool.address, amount);
   await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
   await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
-}
-
-export async function contractAt(contractName: string, signer: utils.Signer, address: string) {
-  try {
-    const artifactInterface = (await utils.getContractFactory(contractName, signer)).interface;
-    return new utils.Contract(address, artifactInterface, signer);
-  } catch (error) {
-    throw new Error(`Could not find the artifact for ${contractName}! \n${error}`);
-  }
 }
 
 // Submits a deposit transaction and returns the Deposit struct that that clients interact with.
