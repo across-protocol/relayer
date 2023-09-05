@@ -94,6 +94,12 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
       args.slowRelayRoot === slowRelayRoot
     );
   });
+  if (rootBundleProposal === undefined) {
+    console.log(
+      `No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
+    );
+    return false;
+  }
 
   const _bal = formatUnits(bondBalance, decimals);
   const _bond = formatUnits(bondAmount, decimals);
