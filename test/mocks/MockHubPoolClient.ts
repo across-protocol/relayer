@@ -6,8 +6,6 @@ import { ConfigStoreClient } from "../../src/clients";
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   public latestBundleEndBlocks: { [chainId: number]: number } = {};
 
-  public chainId: number;
-
   constructor(
     logger: winston.Logger,
     hubPool: Contract,
@@ -15,8 +13,7 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     deploymentBlock = 0,
     chainId = 1
   ) {
-    super(logger, hubPool, configStoreClient, deploymentBlock);
-    this.chainId = chainId;
+    super(logger, hubPool, configStoreClient, deploymentBlock, chainId);
   }
 
   setLatestBundleEndBlockForChain(chainId: number, latestBundleEndBlock: number): void {
