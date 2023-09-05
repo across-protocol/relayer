@@ -1,12 +1,11 @@
 import assert from "assert";
 import * as contracts from "@across-protocol/contracts-v2";
 import { LogDescription } from "@ethersproject/abi";
-import { BigNumber, Contract, ethers, Wallet } from "ethers";
+import { Contract, ethers, Wallet } from "ethers";
 import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
-import { getDeployedContract, getNetworkName, getNodeUrlList, resolveTokenSymbols } from "../src/utils";
-import { utils } from "@across-protocol/sdk-v2";
+import { getDeployedContract, getNetworkName, getNodeUrlList, getSigner, resolveTokenSymbols } from "../src/utils";
 
 type ERC20 = {
   address: string;
@@ -15,105 +14,81 @@ type ERC20 = {
 };
 
 const { MaxUint256, Zero } = ethers.constants;
+const { isAddress } = ethers.utils;
 
 const testChains = [5, 280];
-const chains = [1, 10, 137, 324, 42161];
+const chains = [1, 10, 137, 324, 8453, 42161];
 
-const padding = 20;
-
-function formatAddress(address: string, maxWidth = 18): string {
-  const separator = "...";
-  const textLen = maxWidth - separator.length;
-  return (
-    address.substring(0, Math.ceil(textLen / 2)) +
-    "..." +
-    address.substring(address.length - Math.floor(textLen / 2), address.length)
-  );
+function validateChainIds(chainIds: number[]): boolean {
+  const knownChainIds = [...chains, ...testChains];
+  return chainIds.every((chainId) => {
+    const ok = knownChainIds.includes(chainId);
+    if (!ok) {
+      console.log(`Invalid chain ID: ${chainId}`);
+    }
+    return ok;
+  });
 }
 
 function printDeposit(log: LogDescription): void {
-  const originChainId = log.args.originChainId as number;
-  const destinationChainId = log.args.destinationChainId as number;
-  const depositor = log.args.depositor as string;
-  const recipient = log.args.depositor as string;
-  const originToken = log.args.originToken;
-  const amount = log.args.amount as BigNumber;
+  const { originChainId, originToken } = log.args;
+  const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
+  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
-  const tokenSymbol = resolveTokenSymbols([originToken], originChainId)[0];
+  const fields = {
+    tokenSymbol: resolveTokenSymbols([originToken], originChainId)[0],
+    ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+  };
   console.log(
-    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
-      `\t${"Depositor".padEnd(padding)}: ${formatAddress(depositor, 18)}\n` +
-      `\t${"Recipient".padEnd(padding)}: ${formatAddress(recipient, 18)}\n` +
-      `\t${"Origin chain".padEnd(padding)}: ${getNetworkName(originChainId).toString().padStart(18)}\n` +
-      `\t${"Destination chain".padEnd(padding)}: ${getNetworkName(destinationChainId).padStart(18)}\n` +
-      `\t${"Token".padEnd(padding)}: ${tokenSymbol.padStart(18)}\n` +
-      `\t${"Amount".padEnd(padding)}: ${amount.toString().padStart(18)}\n` +
-      `\t${"Relayer Fee".padEnd(padding)}: ${log.args.relayerFeePct.toString().padStart(18)}\n`
+    `Deposit # ${log.args.depositId} on ${getNetworkName(originChainId)}:\n` +
+      Object.entries(fields)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
   );
 }
 
 function printFill(log: LogDescription): void {
-  const originChainId = log.args.originChainId as number;
-  const destinationChainId = log.args.destinationChainId as number;
-  const depositor = log.args.depositor as string;
-  const recipient = log.args.depositor as string;
-  const destinationToken = log.args.destinationToken;
-  const amount = log.args.amount as BigNumber;
-  const totalFilledAmount = log.args.totalFilledAmount as BigNumber;
+  const { originChainId, destinationChainId, destinationToken, amount, totalFilledAmount } = log.args;
+  const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
+  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
-  const tokenSymbol = resolveTokenSymbols([destinationToken], destinationChainId)[0];
-  const totalFilledPct = `${totalFilledAmount.mul(100).div(amount)} %`;
+  const fields = {
+    tokenSymbol: resolveTokenSymbols([destinationToken], destinationChainId)[0],
+    totalFilledPct: `${totalFilledAmount.mul(100).div(amount)} %`,
+    ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+  };
   console.log(
-    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}\n` +
-      `\t${"Depositor".padEnd(padding)}: ${formatAddress(depositor, 18)}\n` +
-      `\t${"Recipient".padEnd(padding)}: ${formatAddress(recipient, 18)}\n` +
-      `\t${"Origin chain".padEnd(padding)}: ${getNetworkName(originChainId).toString().padStart(18)}\n` +
-      `\t${"Destination chain".padEnd(padding)}: ${getNetworkName(destinationChainId).padStart(18)}\n` +
-      `\t${"Token".padEnd(padding)}: ${tokenSymbol.padStart(18)}\n` +
-      `\t${"Amount".padEnd(padding)}: ${amount.toString().padStart(18)}\n` +
-      `\t${"Fill Amount".padEnd(padding)}: ${log.args.fillAmount.toString().padStart(18)}\n` +
-      `\t${"Relayer Fee".padEnd(padding)}: ${log.args.relayerFeePct.toString().padStart(18)}\n` +
-      `\t${"LP Fee".padEnd(padding)}: ${log.args.realizedLpFeePct.toString().padStart(18)}\n` +
-      `\t${"Filled".padEnd(padding)}: ${totalFilledPct.padStart(18)}\n`
+    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
+      Object.entries(fields)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
   );
 }
 
 /**
- * Resolves an ERC20 type from a symbol and chain ID.
- * @param symbol The symbol of the token to resolve.
+ * Resolves an ERC20 type from a chain ID, and symbol or address.
+ * @param token The address or symbol of the token to resolve.
  * @param chainId The chain ID to resolve the token on.
- * @returns The ERC20 type of the token.
+ * @returns The ERC20 attributes of the token.
  */
-function getTokenAddress(symbol: string, chainId: number): ERC20 {
-  const token = contracts.TOKEN_SYMBOLS_MAP[symbol];
-  if (token === undefined) {
-    throw new Error(`Token ${symbol} unrecognised`);
+function resolveToken(token: string, chainId: number): ERC20 {
+  // `token` may be an address or a symbol. Normalise it to a symbol for easy lookup.
+  const symbol = !isAddress(token)
+    ? token.toUpperCase()
+    : Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
+
+  const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
+  if (_token === undefined) {
+    throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
   }
 
-  const { addresses, decimals } = token;
-  const address = addresses[chainId];
-  if (address === undefined) {
-    throw new Error(`Token ${symbol} not supported on chain ID ${chainId}`);
-  }
-
-  return { address: addresses[chainId], decimals, symbol };
-}
-
-/**
- * Resolves an ERC20 type from an address and chain ID.
- * @param address The address of the token to resolve.
- * @param chainId The chain ID to resolve the token on.
- * @returns The ERC20 type of the token.
- */
-function getTokenSymbol(address: string, chainId: number): ERC20 {
-  const _address = ethers.utils.getAddress(address);
-  const token = Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === _address);
-  if (token === undefined) {
-    throw new Error(`Token ${address} unrecognised`);
-  }
-
-  const { addresses, decimals, symbol } = token;
-  return { address: addresses[chainId], decimals, symbol };
+  return {
+    address: _token.addresses[chainId],
+    decimals: _token.decimals,
+    symbol: _token.symbol,
+  };
 }
 
 function resolveHubChainId(spokeChainId: number): number {
@@ -144,29 +119,26 @@ async function getSpokePoolContract(chainId: number): Promise<Contract> {
 
 async function deposit(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
   const depositor = await signer.getAddress();
-  const fromChainId = Number(args.from);
-  const toChainId = Number(args.to);
-  const recipient = args.recipient ?? depositor;
-  const baseAmount = Number(args.amount);
-  const rawToken = args.token;
+  const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
+  const recipient = (args.recipient as string) ?? depositor;
 
-  // Depending on whether or not the passed in token argument is a symbol or an address,
-  // we need to call either `getTokenSymbol` or `getTokenAddress`.
-  const token = (ethers.utils.isAddress(String(args.token)) ? getTokenSymbol : getTokenAddress)(
-    rawToken as string,
-    fromChainId
-  );
+  if (!validateChainIds([fromChainId, toChainId])) {
+    usage(); // no return
+  }
+  const network = getNetworkName(fromChainId);
 
+  if (!isAddress(recipient)) {
+    console.log(`Invalid recipient address (${recipient})`);
+    usage(); // no return
+  }
+
+  const token = resolveToken(args.token as string, fromChainId);
   const tokenSymbol = token.symbol.toUpperCase();
+  const amount = ethers.utils.parseUnits(baseAmount.toString(), args.decimals ? 0 : token.decimals);
 
   const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(fromChainId, 1)[0]);
   signer = signer.connect(provider);
   const spokePool = (await getSpokePoolContract(fromChainId)).connect(signer);
-
-  const amount = ethers.utils.parseUnits(
-    baseAmount.toString(),
-    utils.isDefined(args["infer-units"]) ? token.decimals : 0
-  );
 
   const erc20 = new Contract(token.address, contracts.ExpandedERC20__factory.abi, signer);
   const allowance = await erc20.allowance(depositor, spokePool.address);
@@ -178,19 +150,10 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     console.log("Approval complete...");
   }
 
-  const relayerFeePct = Zero;
+  const relayerFeePct = Zero; // @todo: Make configurable.
   const maxCount = MaxUint256;
   const quoteTimestamp = Math.round(Date.now() / 1000);
 
-  console.log(
-    `Submitting deposit on chain ID ${fromChainId}\n` +
-      `\t${"originChainId".padEnd(padding)}: ${fromChainId}\n` +
-      `\t${"destinationChainId".padEnd(padding)}: ${toChainId}\n` +
-      `\t${"depositor".padEnd(padding)}: ${depositor}\n` +
-      `\t${"recipient".padEnd(padding)}: ${recipient}\n` +
-      `\t${"relayerFeePct".padEnd(padding)}: ${relayerFeePct}\n` +
-      `\t${"quoteTimestamp".padEnd(padding)}: ${quoteTimestamp}\n`
-  );
   const deposit = await spokePool.deposit(
     recipient,
     token.address,
@@ -201,17 +164,13 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     "0x",
     maxCount
   );
-  console.log("Submitted deposit:");
+  const { hash: transactionHash } = deposit;
+  console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}.`);
   const receipt = await deposit.wait();
+
   receipt.logs
     .filter((log) => log.address === spokePool.address)
-    .forEach((_log) => {
-      const log = spokePool.interface.parseLog(_log);
-      console.log(
-        `\t${"depositId".padEnd(padding)}: ${log.args.depositId}\n` +
-          `\t${"transactionHash".padEnd(padding)}: ${_log.transactionHash}\n`
-      );
-    });
+    .forEach((log) => printDeposit(spokePool.interface.parseLog(log)));
 
   return true;
 }
@@ -225,7 +184,7 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
   const spokeProvider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(chainId, 1)[0]);
   const spokePool = _spokePool.connect(spokeProvider);
 
-  const [spokePoolChainId, hubPoolAddress, admin, wethAddress, _currentTime] = await Promise.all([
+  const [spokePoolChainId, hubPool, crossDomainAdmin, weth, _currentTime] = await Promise.all([
     spokePool.chainId(),
     spokePool.hubPool(),
     spokePool.crossDomainAdmin(),
@@ -233,25 +192,29 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
     spokePool.getCurrentTime(),
   ]);
 
-  // deploymentBlock = deployments[chainId.toString()].SpokePool.blockNumber;
-  // const adminAlias = ethers.utils.getAddress(ethers.BigNumber.from(admin).add(zkUtils.L1_TO_L2_ALIAS_OFFSET).toHexString());
-
   if (chainId !== Number(spokePoolChainId)) {
     throw new Error(`Chain ${chainId} SpokePool mismatch: ${spokePoolChainId} != ${chainId} (${spokePool.address})`);
   }
 
-  const adminAlias = "...tbd";
-  const currentTime = Number(_currentTime);
-  const currentTimeStr = new Date(Number(currentTime) * 1000).toUTCString();
+  const currentTime = `${_currentTime} (${new Date(Number(_currentTime) * 1000).toUTCString()})`;
 
+  const fields = {
+    hubChainId,
+    hubPool,
+    crossDomainAdmin,
+    weth,
+    currentTime,
+  };
+
+  // @todo: Support handlers for chain-specific configuration (i.e. address of bridge to L1).
+
+  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
   console.log(
-    `Dumping chain ${chainId} SpokePool config:\n` +
-      `\t${"HubPool chain ID".padEnd(padding)}: ${hubChainId}\n` +
-      `\t${"HubPool address".padEnd(padding)}: ${hubPoolAddress}\n` +
-      `\t${"Cross-domain admin".padEnd(padding)}: ${admin}\n` +
-      `\t${"Cross-domain alias".padEnd(padding)}: ${adminAlias}\n` +
-      `\t${"WETH".padEnd(padding)}: ${wethAddress}\n` +
-      `\t${"Current time".padEnd(padding)}: ${currentTimeStr} (${currentTime})\n`
+    `${getNetworkName(chainId)} SpokePool configuration:\n` +
+      Object.entries(fields)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
   );
 
   return true;
@@ -261,6 +224,10 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
 async function fetchTxn(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
   const { txnHash } = args;
   const chainId = Number(args.chainId);
+
+  if (!validateChainIds([chainId])) {
+    usage(); // no return
+  }
 
   if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
@@ -298,7 +265,7 @@ function usage(badInput?: string): boolean {
   const walletOpts = "mnemonic|privateKey";
   const depositArgs =
     "--from <originChainId> --to <destinationChainId>" +
-    " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--units base | decimal]";
+    " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> --txnHash <txnHash>";
   const fillArgs = "--from <originChainId> --hash <depositHash>";
@@ -320,13 +287,15 @@ function usage(badInput?: string): boolean {
 
 async function run(argv: string[]): Promise<boolean> {
   const configOpts = ["chainId"];
-  const depositOpts = ["from", "to", "token", "amount", "recipient", "infer-units"];
+  const depositOpts = ["from", "to", "token", "amount", "recipient"];
   const fetchOpts = ["chainId", "transactionHash"];
   const fillOpts = [];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts],
+    boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "mnemonic",
+      decimals: false,
     },
     alias: {
       transactionHash: "txnHash",
@@ -338,17 +307,11 @@ async function run(argv: string[]): Promise<boolean> {
   config();
 
   let signer: Wallet;
-  switch (args.wallet) {
-    case "mnemonic":
-      signer = Wallet.fromMnemonic(process.env.MNEMONIC);
-      break;
-    case "privateKey":
-      signer = new Wallet(process.env.PRIVATE_KEY);
-      break;
-    default:
-      usage(args.wallet); // no return
+  try {
+    signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
+  } catch (err) {
+    usage(args.wallet); // no return
   }
-  ["MNEMONIC", "PRIVATE_KEY"].forEach((envVar) => (process.env[envVar] = ""));
 
   switch (argv[0]) {
     case "deposit":

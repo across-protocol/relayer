@@ -37,6 +37,29 @@ export const CONTRACT_ADDRESSES: {
           stateMutability: "pure",
           type: "function",
         },
+        {
+          inputs: [
+            { internalType: "uint256", name: "_l2BlockNumber", type: "uint256" },
+            { internalType: "uint256", name: "_l2MessageIndex", type: "uint256" },
+            { internalType: "uint16", name: "_l2TxNumberInBlock", type: "uint16" },
+            { internalType: "bytes", name: "_message", type: "bytes" },
+            { internalType: "bytes32[]", name: "_merkleProof", type: "bytes32[]" },
+          ],
+          name: "finalizeEthWithdrawal",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "uint256", name: "_l2BlockNumber", type: "uint256" },
+            { internalType: "uint256", name: "_l2MessageIndex", type: "uint256" },
+          ],
+          name: "isEthWithdrawalFinalized",
+          outputs: [{ internalType: "bool", name: "", type: "bool" }],
+          stateMutability: "view",
+          type: "function",
+        },
       ],
     },
     zkSyncDefaultErc20Bridge: {
@@ -53,6 +76,29 @@ export const CONTRACT_ADDRESSES: {
           name: "deposit",
           outputs: [{ internalType: "bytes32", name: "l2TxHash", type: "bytes32" }],
           stateMutability: "payable",
+          type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "uint256", name: "_l2BlockNumber", type: "uint256" },
+            { internalType: "uint256", name: "_l2MessageIndex", type: "uint256" },
+            { internalType: "uint16", name: "_l2TxNumberInBlock", type: "uint16" },
+            { internalType: "bytes", name: "_message", type: "bytes" },
+            { internalType: "bytes32[]", name: "_merkleProof", type: "bytes32[]" },
+          ],
+          name: "finalizeWithdrawal",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "uint256", name: "_l2BlockNumber", type: "uint256" },
+            { internalType: "uint256", name: "_l2MessageIndex", type: "uint256" },
+          ],
+          name: "isWithdrawalFinalized",
+          outputs: [{ internalType: "bool", name: "", type: "bool" }],
+          stateMutability: "view",
           type: "function",
         },
         {
@@ -628,6 +674,28 @@ export const CONTRACT_ADDRESSES: {
           ],
           name: "DepositFinalized",
           type: "event",
+        },
+      ],
+    },
+    outbox: {
+      address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
+      abi: [
+        {
+          inputs: [
+            { internalType: "bytes32[]", name: "proof", type: "bytes32[]" },
+            { internalType: "uint256", name: "index", type: "uint256" },
+            { internalType: "address", name: "l2Sender", type: "address" },
+            { internalType: "address", name: "to", type: "address" },
+            { internalType: "uint256", name: "l2Block", type: "uint256" },
+            { internalType: "uint256", name: "l1Block", type: "uint256" },
+            { internalType: "uint256", name: "l2Timestamp", type: "uint256" },
+            { internalType: "uint256", name: "value", type: "uint256" },
+            { internalType: "bytes", name: "data", type: "bytes" },
+          ],
+          name: "executeTransaction",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
         },
       ],
     },

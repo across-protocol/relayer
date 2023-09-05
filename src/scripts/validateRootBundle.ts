@@ -13,7 +13,7 @@ import {
   Wallet,
   winston,
   config,
-  getSigner,
+  retrieveSignerFromCLIArgs,
   startupLogLevel,
   Logger,
   getDvmContract,
@@ -201,7 +201,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 }
 
 export async function run(_logger: winston.Logger): Promise<void> {
-  const baseSigner: Wallet = await getSigner();
+  const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
   await validate(_logger, baseSigner);
   await disconnectRedisClient(logger);
 }

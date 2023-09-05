@@ -1,20 +1,28 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
 import {
-  expect,
+  ConfigStoreClient,
+  FillProfit,
+  GAS_TOKEN_BY_CHAIN_ID,
+  MATIC,
+  SpokePoolClient,
+  USDC,
+  WBTC,
+  WETH,
+} from "../src/clients";
+import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
+import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
+import { MockHubPoolClient, MockProfitClient } from "./mocks";
+import {
   createSpyLogger,
   deployConfigStore,
-  hubPoolFixture,
-  winston,
-  ethers,
   deploySpokePoolWithToken,
-  originChainId,
   destinationChainId,
+  ethers,
+  expect,
+  hubPoolFixture,
+  originChainId,
+  winston,
 } from "./utils";
-import { MockHubPoolClient, MockProfitClient } from "./mocks";
-import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
-import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WBTC, WETH } from "../src/clients";
-import { ConfigStoreClient } from "../src/clients";
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { formatEther } = ethers.utils;

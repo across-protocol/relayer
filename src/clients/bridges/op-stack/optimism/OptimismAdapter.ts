@@ -11,10 +11,7 @@ export class OptimismAdapter extends OpStackAdapter {
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    monitoredAddresses: string[],
-    // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
-    // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
-    readonly senderAddress?: string
+    monitoredAddresses: string[]
   ) {
     const hubChainId = BaseAdapter.HUB_CHAIN_ID;
     const l2ChainId = 10;
@@ -31,8 +28,7 @@ export class OptimismAdapter extends OpStackAdapter {
       logger,
       ["DAI", "SNX", "USDC", "USDT", "WETH", "WBTC", "UMA", "BAL", "ACX", "POOL"],
       spokePoolClients,
-      monitoredAddresses,
-      senderAddress
+      monitoredAddresses
     );
   }
 }

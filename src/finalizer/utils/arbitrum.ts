@@ -1,13 +1,43 @@
-import { Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract, getCachedProvider } from "../../utils";
-import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, L2ToL1MessageWriter } from "@arbitrum/sdk";
+import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "@arbitrum/sdk";
+import {
+  Wallet,
+  winston,
+  convertFromWei,
+  getNetworkName,
+  groupObjectCountsByProp,
+  Contract,
+  getCachedProvider,
+} from "../../utils";
 import { TokensBridged } from "../../interfaces";
-import { HubPoolClient } from "../../clients";
-import { Multicall2Call } from "../../common";
-import { Withdrawal } from "../types";
+import { HubPoolClient, SpokePoolClient } from "../../clients";
+import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
+import { FinalizerPromise, Withdrawal } from "../types";
 
 const CHAIN_ID = 42161;
 
-export async function multicallArbitrumFinalizations(
+export async function arbitrumOneFinalizer(
+  logger: winston.Logger,
+  signer: Wallet,
+  hubPoolClient: HubPoolClient,
+  spokePoolClient: SpokePoolClient,
+  latestBlockToFinalize: number
+): Promise<FinalizerPromise> {
+  const { chainId } = spokePoolClient;
+
+  logger.debug({
+    at: "Finalizer#arbitrumOneFinalizer",
+    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    latestBlockToFinalize,
+  });
+  // Skip events that are likely not past the seven day challenge period.
+  const olderTokensBridgedEvents = spokePoolClient
+    .getTokensBridged()
+    .filter((e) => e.blockNumber < latestBlockToFinalize);
+
+  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
+}
+
+async function multicallArbitrumFinalizations(
   tokensBridged: TokensBridged[],
   hubSigner: Wallet,
   hubPoolClient: HubPoolClient,
@@ -38,10 +68,11 @@ export async function multicallArbitrumFinalizations(
   };
 }
 
-export async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
+async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(CHAIN_ID, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi);
+  const { address, abi } = CONTRACT_ADDRESSES[CHAIN_ID].outbox;
+  const outbox = new Contract(address, abi);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
   // L2ToL1MessageWriter class, which we need to form the calldata so unfortunately we must cast to `any`.
@@ -63,7 +94,7 @@ export async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Mu
   };
 }
 
-export async function getFinalizableMessages(
+async function getFinalizableMessages(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   l1Signer: Wallet
@@ -87,7 +118,7 @@ export async function getFinalizableMessages(
   return allMessagesWithStatuses.filter((x) => x.status === L2ToL1MessageStatus[L2ToL1MessageStatus.CONFIRMED]);
 }
 
-export async function getAllMessageStatuses(
+async function getAllMessageStatuses(
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
   mainnetSigner: Wallet
@@ -121,7 +152,8 @@ export async function getAllMessageStatuses(
     })
     .filter((result) => result.message !== undefined);
 }
-export async function getMessageOutboxStatusAndProof(
+
+async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Wallet,
@@ -181,59 +213,3 @@ export async function getMessageOutboxStatusAndProof(
     };
   }
 }
-
-const outboxAbi = [
-  {
-    inputs: [
-      {
-        internalType: "bytes32[]",
-        name: "proof",
-        type: "bytes32[]",
-      },
-      {
-        internalType: "uint256",
-        name: "index",
-        type: "uint256",
-      },
-      {
-        internalType: "address",
-        name: "l2Sender",
-        type: "address",
-      },
-      {
-        internalType: "address",
-        name: "to",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "l2Block",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "l1Block",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "l2Timestamp",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "value",
-        type: "uint256",
-      },
-      {
-        internalType: "bytes",
-        name: "data",
-        type: "bytes",
-      },
-    ],
-    name: "executeTransaction",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-];

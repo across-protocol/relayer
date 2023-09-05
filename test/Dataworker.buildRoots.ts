@@ -1,33 +1,53 @@
+import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
+import { Deposit, Fill, RunningBalances } from "../src/interfaces";
 import {
-  buildSlowRelayTree,
-  buildSlowRelayLeaves,
-  buildFillForRepaymentChain,
-  enableRoutesOnHubPool,
-  createSpyLogger,
-  lastSpyLogIncludes,
-  deepEqualsWithBigNumber,
-  buildRefundRequest,
-} from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
-import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
-import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
-import { buildPoolRebalanceLeafTree, sampleRateModel, getDefaultBlockRange } from "./utils";
-import { HubPoolClient, ConfigStoreClient, SpokePoolClient } from "../src/clients";
+  EMPTY_MERKLE_ROOT,
+  compareAddresses,
+  getRealizedLpFeeForFills,
+  getRefund,
+  getRefundForFills,
+} from "../src/utils";
 import {
+  CHAIN_ID_TEST_LIST,
+  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
-  destinationChainId,
-  originChainId,
-  mockTreeRoot,
   buildPoolRebalanceLeaves,
+  destinationChainId,
+  mockTreeRoot,
   modifyRelayHelper,
+  originChainId,
+  refundProposalLiveness,
   repaymentChainId,
 } from "./constants";
-import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
-import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
-import { compareAddresses } from "../src/utils";
+import {
+  BigNumber,
+  Contract,
+  SignerWithAddress,
+  buildDeposit,
+  buildFill,
+  buildFillForRepaymentChain,
+  buildPoolRebalanceLeafTree,
+  buildRefundRequest,
+  buildRelayerRefundTreeWithUnassignedLeafIds,
+  buildSlowFill,
+  buildSlowRelayLeaves,
+  buildSlowRelayTree,
+  constructPoolRebalanceTree,
+  createSpyLogger,
+  deepEqualsWithBigNumber,
+  deployNewTokenMapping,
+  enableRoutesOnHubPool,
+  ethers,
+  expect,
+  getDefaultBlockRange,
+  lastSpyLogIncludes,
+  sampleRateModel,
+  setupTokensForWallet,
+  toBN,
+  toBNWei,
+} from "./utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

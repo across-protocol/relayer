@@ -1,30 +1,39 @@
-import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes, toBNWei } from "./utils";
-import { Contract, SignerWithAddress, ethers, expect } from "./utils";
 import {
-  ConfigStoreClient,
-  BundleDataClient,
-  HubPoolClient,
-  SpokePoolClient,
-  MultiCallerClient,
-  TokenTransferClient,
   BalanceAllocator,
+  BundleDataClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  TokenTransferClient,
 } from "../src/clients";
 import { CrossChainTransferClient } from "../src/clients/bridges";
+import { spokePoolClientsToProviders } from "../src/common";
+import { Dataworker } from "../src/dataworker/Dataworker";
+import { BalanceType } from "../src/interfaces";
 import {
-  Monitor,
   ALL_CHAINS_NAME,
-  UNKNOWN_TRANSFERS_NAME,
+  Monitor,
   REBALANCE_FINALIZE_GRACE_PERIOD,
+  UNKNOWN_TRANSFERS_NAME,
 } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
+import { MAX_UINT_VAL, getNetworkName, getRefundForFills, toBN } from "../src/utils";
 import * as constants from "./constants";
+import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Dataworker } from "../src/dataworker/Dataworker";
-import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
-import { spokePoolClientsToProviders } from "../src/common";
 import { MockAdapterManager } from "./mocks";
-import { BalanceType } from "../src/interfaces";
+import {
+  Contract,
+  SignerWithAddress,
+  buildDeposit,
+  buildFillForRepaymentChain,
+  createSpyLogger,
+  ethers,
+  expect,
+  lastSpyLogIncludes,
+  toBNWei,
+} from "./utils";
 
 let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
 let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;

@@ -4,7 +4,7 @@ import {
   toBN,
   getNetworkName,
   createFormatFunction,
-  etherscanLink,
+  blockExplorerLink,
   Contract,
   runTransaction,
   isDefined,
@@ -362,7 +362,7 @@ export class InventoryClient {
               cumulativeBalance.toString()
             )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
             `${formatter(this.getTokenShortFall(l1Token, chainId).toString())} ${symbol} ` +
-            `tx: ${etherscanLink(hash, this.hubPoolClient.chainId)}\n`;
+            `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
         }
       }
 
@@ -502,7 +502,7 @@ export class InventoryClient {
           `${this.formatWei(unwrapWethTarget.toString())} (trigger of ` +
           `${this.formatWei(unwrapWethThreshold.toString())} ETH), ` +
           `current balance of ${this.formatWei(balance.toString())} ` +
-          `tx: ${etherscanLink(hash, chainId)}\n`;
+          `tx: ${blockExplorerLink(hash, chainId)}\n`;
       }
 
       for (const { chainInfo, amount } of unexecutedUnwraps) {

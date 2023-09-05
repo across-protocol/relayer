@@ -1,7 +1,7 @@
 import { AugmentedTransaction, TransactionClient } from "../src/clients";
 import {
   ethers,
-  getSigner,
+  retrieveSignerFromCLIArgs,
   getProvider,
   ERC20,
   ZERO_ADDRESS,
@@ -34,7 +34,7 @@ export async function run(): Promise<void> {
     }
   });
 
-  const baseSigner = await getSigner();
+  const baseSigner = await retrieveSignerFromCLIArgs();
   const l1ChainId = Number(args.chainId);
   const l1Provider = await getProvider(l1ChainId);
   const connectedSigner = baseSigner.connect(l1Provider);

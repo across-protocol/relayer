@@ -1,6 +1,7 @@
 // Utils from other packages.
 import winston from "winston";
 import assert from "assert";
+
 export { winston, assert };
 export { Logger } from "@uma/financial-templates-lib";
 
@@ -11,6 +12,8 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 export { config } from "dotenv";
 
 // Utils specifically for this bot.
+export * from "./SDKUtils";
+export * from "./chains";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./DepositUtils";
@@ -18,7 +21,6 @@ export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
 export * from "./ObjectUtils";
-export * from "./FormattingUtils";
 export * from "./TransactionPropBuilder";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
@@ -33,10 +35,10 @@ export * from "./TypeGuards";
 export * from "./Help";
 export * from "./LogUtils";
 export * from "./TypeUtils";
-export * from "./BigNumberUtils";
 export * from "./RedisUtils";
 export * from "./UmaUtils";
 export * from "./TokenUtils";
+export * from "./CLIUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
 

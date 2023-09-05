@@ -1,26 +1,42 @@
-import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
-import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, spyLogIncludes } from "./utils";
-import { originChainId, sinon } from "./utils";
 import {
-  amountToLp,
-  defaultTokenConfig,
-  amountToDeposit,
-  defaultMinDepositConfirmations,
-  CHAIN_ID_TEST_LIST,
-  repaymentChainId,
-} from "./constants";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  ConfigStoreClient,
-  MultiCallerClient,
   AcrossApiClient,
-  TokenClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
   ProfitClient,
+  SpokePoolClient,
+  TokenClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
+import {
+  CHAIN_ID_TEST_LIST,
+  amountToDeposit,
+  amountToLp,
+  defaultMinDepositConfirmations,
+  defaultTokenConfig,
+  repaymentChainId,
+} from "./constants";
 import { MockInventoryClient } from "./mocks";
+import {
+  Contract,
+  SignerWithAddress,
+  createSpyLogger,
+  deployAndConfigureHubPool,
+  deployConfigStore,
+  deploySpokePoolWithToken,
+  deposit,
+  destinationChainId,
+  enableRoutesOnHubPool,
+  ethers,
+  expect,
+  getLastBlockTime,
+  lastSpyLogIncludes,
+  originChainId,
+  setupTokensForWallet,
+  sinon,
+  spyLogIncludes,
+  winston,
+} from "./utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested

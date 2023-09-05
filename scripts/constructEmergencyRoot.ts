@@ -1,7 +1,7 @@
 import { PoolRebalanceLeaf } from "../src/interfaces";
 import {
   ethers,
-  getSigner,
+  retrieveSignerFromCLIArgs,
   RelayerRefundLeaf,
   MerkleTree,
   buildRelayerRefundTree,
@@ -33,7 +33,7 @@ function prettyPoolRebalanceLeaf(leaves: PoolRebalanceLeaf[]) {
 }
 // This script can be used to generate a manual merkle root and is filled with example data.
 export async function run(): Promise<void> {
-  const baseSigner = await getSigner();
+  const baseSigner = await retrieveSignerFromCLIArgs();
 
   // 1. Construct relayer refund leaves
   const relayerRefundLeaves: RelayerRefundLeaf[] = [
