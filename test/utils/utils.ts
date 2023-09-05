@@ -36,10 +36,13 @@ const assert = chai.assert;
 export { assert, chai };
 
 export function deepEqualsWithBigNumber(
-  x: Iterable<unknown> | Record<string | number, unknown>,
-  y: Iterable<unknown> | Record<string | number, unknown>,
+  x?: Iterable<unknown> | Record<string | number, unknown>,
+  y?: Iterable<unknown> | Record<string | number, unknown>,
   omitKeys: string[] = []
 ): boolean {
+  if (x === undefined || y === undefined) {
+    return false;
+  }
   const sortedKeysX = Object.fromEntries(
     Object.keys(x)
       .sort()
