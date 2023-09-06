@@ -59,7 +59,8 @@
     "reinstall": "yarn clean && yarn install && yarn build",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "relay": "HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --relayer",
-    "deposit": "yarn ts-node ./scripts/spokepool.ts deposit"
+    "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
+    "dispute": "yarn ts-node ./scripts/hubpool.ts dispute"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.2.3",
