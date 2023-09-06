@@ -24,6 +24,7 @@ import {
   mineRandomBlocks,
   winston,
   lastSpyLogIncludes,
+  sinon,
 } from "./utils";
 
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
@@ -71,7 +72,13 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
-    configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
+    configStoreClient = new MockConfigStoreClient(
+      spyLogger,
+      configStore,
+      undefined,
+      undefined,
+      CHAIN_ID_TEST_LIST
+    ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);

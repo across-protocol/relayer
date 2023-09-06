@@ -20,6 +20,7 @@ import {
   expect,
   lastSpyLogIncludes,
   lastSpyLogLevel,
+  sinon,
   spyLogIncludes,
 } from "./utils";
 
@@ -45,7 +46,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       spokePool_1,
       erc20_1,
       spokePool_2,
-      configStoreClient,
+      mockedConfigStoreClient: configStoreClient,
       configStore,
       hubPoolClient,
       l1Token_1,

@@ -1,5 +1,5 @@
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { Deposit, Fill, RunningBalances } from "../src/interfaces";
+import { Deposit, DepositWithBlock, Fill, RunningBalances } from "../src/interfaces";
 import {
   EMPTY_MERKLE_ROOT,
   compareAddresses,
@@ -45,6 +45,7 @@ import {
   lastSpyLogIncludes,
   sampleRateModel,
   setupTokensForWallet,
+  sinon,
   toBN,
   toBNWei,
 } from "./utils";
@@ -67,6 +68,8 @@ let updateAllClients: () => Promise<void>;
 
 describe("Dataworker: Build merkle roots", async function () {
   beforeEach(async function () {
+    const fastDataworkerResult = await setupFastDataworker(ethers);
+    configStoreClient = fastDataworkerResult.configStoreClient as unknown as ConfigStoreClient;
     ({
       hubPool,
       spokePool_1,
@@ -74,7 +77,6 @@ describe("Dataworker: Build merkle roots", async function () {
       spokePool_2,
       erc20_2,
       configStore,
-      configStoreClient,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -87,7 +89,7 @@ describe("Dataworker: Build merkle roots", async function () {
       spokePoolClient_1,
       spokePoolClient_2,
       updateAllClients,
-    } = await setupFastDataworker(ethers));
+    } = fastDataworkerResult);
   });
   it("Build slow relay root", async function () {
     await updateAllClients();
@@ -150,8 +152,8 @@ describe("Dataworker: Build merkle roots", async function () {
     const newRelayerFeePct = toBNWei(0.1337);
     const speedUpSignature = await modifyRelayHelper(
       newRelayerFeePct,
-      deposit1.depositId,
-      deposit1.originChainId!.toString(),
+      deposit1.depositId.toString(),
+      deposit1.originChainId.toString(),
       depositor,
       deposit1.recipient,
       "0x"
@@ -903,7 +905,7 @@ describe("Dataworker: Build merkle roots", async function () {
       const destinationChainSpokePoolClient = new SpokePoolClient(
         createSpyLogger().spyLogger,
         spokePool_2,
-        configStoreClient,
+        hubPoolClient,
         destinationChainId,
         spokePoolClients[destinationChainId].deploymentBlock,
         { fromBlock: fill2Block + 1 }
@@ -1446,6 +1448,7 @@ describe("Dataworker: Build merkle roots", async function () {
           {
             flow: {
               ...spokePoolClient_1.getFills()[0],
+              matchedDeposit: {} as unknown as DepositWithBlock,
             },
             runningBalance: toBNWei("2"),
             incentiveBalance: toBNWei("2"),
@@ -1456,6 +1459,7 @@ describe("Dataworker: Build merkle roots", async function () {
           {
             flow: {
               ...spokePoolClient_1.getFills()[0],
+              matchedDeposit: {} as unknown as DepositWithBlock,
             },
             runningBalance: toBNWei("1"),
             incentiveBalance: toBNWei("1"),
@@ -1508,7 +1512,7 @@ describe("Dataworker: Build merkle roots", async function () {
       it("amountToReturn is 0", async function () {
         await updateAllClients();
         // No UBA flows in this test so all amounts to return will be 0
-        const { poolRebalanceLeaves } = await dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
           getDefaultBlockRange(0),
           [originChainId, destinationChainId],
           ubaClient
@@ -1519,14 +1523,12 @@ describe("Dataworker: Build merkle roots", async function () {
           true
         );
         expect(
-          (
-            await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-              data1.fillsToRefund,
-              poolRebalanceLeaves,
-              getDefaultBlockRange(0),
-              [originChainId, destinationChainId],
-              ubaClient
-            )
+          dataworkerInstance._UBA_buildRelayerRefundLeaves(
+            data1.fillsToRefund,
+            poolRebalanceLeaves,
+            getDefaultBlockRange(0),
+            [originChainId, destinationChainId],
+            ubaClient
           ).leaves
         ).to.deep.equal([]);
 
@@ -1580,7 +1582,7 @@ describe("Dataworker: Build merkle roots", async function () {
           spokePoolClients,
           true
         );
-        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+        const relayerRefundLeaves1 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data2.fillsToRefund,
           poolRebalanceLeaves,
           getDefaultBlockRange(1),
@@ -1619,7 +1621,7 @@ describe("Dataworker: Build merkle roots", async function () {
           spokePoolClients,
           true
         );
-        const relayerRefundLeaves3 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+        const relayerRefundLeaves3 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data4.fillsToRefund,
           poolRebalanceLeaves,
           getDefaultBlockRange(3),
@@ -1661,7 +1663,6 @@ describe("Dataworker: Build merkle roots", async function () {
               ...spokePoolClient_1.getFills()[0],
               matchedDeposit: spokePoolClient_2.getDeposits()[0],
             },
-            balancingFee: toBNWei("0.2"),
             lpFee: toBNWei("0.5"),
             balancingFee: toBNWei("0.2"),
             runningBalance: toBNWei("1"),
@@ -1756,7 +1757,7 @@ describe("Dataworker: Build merkle roots", async function () {
           spokePoolClients,
           true
         );
-        const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+        const relayerRefundLeaves2 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data1.fillsToRefund,
           poolRebalanceLeaves,
           getDefaultBlockRange(1),
@@ -1769,7 +1770,7 @@ describe("Dataworker: Build merkle roots", async function () {
       });
       it("Refunds are included in UBA mode", async function () {
         await updateAllClients();
-        const { poolRebalanceLeaves } = await dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
           getDefaultBlockRange(0),
           [originChainId, destinationChainId],
           ubaClient
@@ -1805,7 +1806,7 @@ describe("Dataworker: Build merkle roots", async function () {
           spokePoolClients,
           true
         );
-        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+        const relayerRefundLeaves1 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data1.fillsToRefund,
           poolRebalanceLeaves,
           getDefaultBlockRange(1),
@@ -1822,7 +1823,7 @@ describe("Dataworker: Build merkle roots", async function () {
           spokePoolClients,
           true
         );
-        const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+        const relayerRefundLeaves2 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data2.fillsToRefund,
           poolRebalanceLeaves,
           getDefaultBlockRange(2),
@@ -1971,7 +1972,7 @@ describe("Dataworker: Build merkle roots", async function () {
           },
         ]);
 
-        const relayerRefundLeaves3 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+        const relayerRefundLeaves3 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
           {},
           poolRebalanceLeaves,
           blockRanges,
@@ -2031,6 +2032,7 @@ describe("Dataworker: Build merkle roots", async function () {
           {
             flow: {
               ...spokePoolClient_2.getFills()[0],
+              matchedDeposit: {} as unknown as DepositWithBlock, // Not used in this test.
             },
             lpFee: toBNWei("0.5"),
             balancingFee: expectedRelayerBalancingFee,

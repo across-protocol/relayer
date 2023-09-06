@@ -13,6 +13,7 @@ import {
   getContractFactory,
   lastSpyLogIncludes,
   originChainId,
+  sinon,
   toBNWei,
   utf8ToHex,
   winston,
@@ -70,7 +71,7 @@ describe("TokenClient: Origin token approval", async function () {
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 

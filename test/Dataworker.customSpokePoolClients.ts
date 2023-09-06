@@ -2,7 +2,16 @@ import { MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { MAX_UINT_VAL } from "../src/utils";
 import { CHAIN_ID_TEST_LIST, utf8ToHex } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, ethers, expect, lastSpyLogIncludes, lastSpyLogLevel, spyLogIncludes, spyLogLevel } from "./utils";
+import {
+  Contract,
+  ethers,
+  expect,
+  lastSpyLogIncludes,
+  lastSpyLogLevel,
+  sinon,
+  spyLogIncludes,
+  spyLogLevel,
+} from "./utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

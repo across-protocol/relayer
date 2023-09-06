@@ -1,5 +1,6 @@
+import { TransactionResponse } from "@ethersproject/abstract-provider";
 import { SpokePoolClient } from "../src/clients";
-import { BaseAdapter } from "../src/clients/bridges";
+import { BaseAdapter, DepositEvent } from "../src/clients/bridges";
 import { OutstandingTransfers } from "../src/interfaces";
 import { createSpyLogger, expect, toBN } from "./utils";
 
@@ -11,7 +12,8 @@ class TestAdapter extends BaseAdapter {
       },
       1,
       ["0xmonitored"],
-      createSpyLogger().spyLogger
+      createSpyLogger().spyLogger,
+      []
     );
   }
 
@@ -19,14 +21,27 @@ class TestAdapter extends BaseAdapter {
     const deposits = amounts.map((amount) => {
       return { amount: toBN(amount) };
     });
-    this.l1DepositInitiatedEvents = { "0xmonitored": { token: deposits } };
+    this.l1DepositInitiatedEvents = { "0xmonitored": { token: deposits as unknown as DepositEvent[] } };
   }
 
   public setFinalizationEvents(amounts: number[]) {
     const deposits = amounts.map((amount) => {
       return { amount: toBN(amount) };
     });
-    this.l2DepositFinalizedEvents = { "0xmonitored": { token: deposits } };
+    this.l2DepositFinalizedEvents = { "0xmonitored": { token: deposits as unknown as DepositEvent[] } };
+  }
+
+  getOutstandingCrossChainTransfers(): Promise<OutstandingTransfers> {
+    throw new Error("This Test Adapter has not implemented this FN.");
+  }
+  sendTokenToTargetChain(): Promise<TransactionResponse> {
+    throw new Error("This Test Adapter has not implemented this FN.");
+  }
+  checkTokenApprovals(): Promise<void> {
+    throw new Error("This Test Adapter has not implemented this FN.");
+  }
+  wrapEthIfAboveThreshold(): Promise<TransactionResponse> {
+    throw new Error("This Test Adapter has not implemented this FN.");
   }
 }
 

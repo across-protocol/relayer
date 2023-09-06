@@ -96,7 +96,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       [originChainId, destinationChainId],
       originChainId,
       false
-    );
+    ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -293,8 +293,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const newRecipient = randomAddress();
     const speedUpSignature = await modifyRelayHelper(
       newRelayerFeePct,
-      deposit1.depositId,
-      deposit1.originChainId!.toString(),
+      deposit1.depositId.toString(),
+      deposit1.originChainId.toString(),
       depositor,
       newRecipient,
       newMessage
@@ -307,8 +307,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     };
     const unusedSpeedUpSignature = await modifyRelayHelper(
       unusedSpeedUp.relayerFeePct,
-      deposit1.depositId,
-      deposit1.originChainId!.toString(),
+      deposit1.depositId.toString(),
+      deposit1.originChainId.toString(),
       depositor,
       unusedSpeedUp.recipient,
       unusedSpeedUp.message
@@ -351,8 +351,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     };
     const emptyMessageSpeedUpSignature = await modifyRelayHelper(
       emptyMessageSpeedUp.relayerFeePct,
-      deposit1.depositId,
-      deposit1.originChainId!.toString(),
+      deposit1.depositId.toString(),
+      deposit1.originChainId.toString(),
       depositor,
       emptyMessageSpeedUp.recipient,
       emptyMessageSpeedUp.message

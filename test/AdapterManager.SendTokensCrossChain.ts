@@ -56,6 +56,14 @@ const mainnetTokens = {
   snx: "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F",
 };
 
+const addAttrib = (obj: unknown) =>
+  obj as {
+    l2Gas: number;
+    l2GasLimit: number;
+    l2GasPrice: number;
+    transactionSubmissionData: number;
+  };
+
 describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
     [relayer, owner] = await ethers.getSigners();
@@ -110,7 +118,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["usdc"], // l1 token
       getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -127,7 +135,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["dai"], // l1 token
       getL2TokenAddresses(mainnetTokens["dai"])[chainId], // l2 token
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any)?.l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -136,7 +144,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       chainId // chainId
     );
   });
@@ -181,27 +189,27 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["usdc"], // token
       relayer.address, // to
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
-      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
-      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
+      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
+      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
+      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
     );
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["wbtc"], // token
       relayer.address, // to
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
-      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
-      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
+      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
+      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
+      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
     );
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["dai"], // token
       relayer.address, // to
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
-      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
-      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
+      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
+      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
+      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
     );
     // Weth can be bridged like a standard ERC20 token to arbitrum.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
@@ -209,9 +217,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["weth"], // token
       relayer.address, // to
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
-      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
-      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
+      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
+      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
+      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
     );
   });
 
@@ -248,7 +256,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT,
       relayer.address
     );
-    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWithValue(0);
+    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWithValue(toBN(0));
   });
   it("Correctly sends tokens to chain: Base", async function () {
     const chainId = 8453; // Base ChainId
@@ -258,7 +266,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["usdc"], // l1 token
       getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -268,7 +276,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["dai"], // l1 token
       getL2TokenAddresses(mainnetTokens["dai"])[chainId], // l2 token
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -277,7 +285,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       chainId // chainId
     );
   });
@@ -304,31 +312,31 @@ async function seedMocks() {
 
 async function constructChainSpecificFakes() {
   // Shared contracts.
-  l1AtomicDepositor = await makeFake("atomicDepositor", CONTRACT_ADDRESSES[1].atomicDepositor.address!);
+  l1AtomicDepositor = await makeFake("atomicDepositor", CONTRACT_ADDRESSES[1].atomicDepositor.address);
 
   // Optimism contracts
-  l1OptimismBridge = await makeFake("ovmStandardBridge_10", CONTRACT_ADDRESSES[1].ovmStandardBridge_10.address!);
-  l1OptimismDaiBridge = await makeFake("daiOptimismBridge", CONTRACT_ADDRESSES[1].daiOptimismBridge.address!);
-  l1OptimismSnxBridge = await makeFake("snxOptimismBridge", CONTRACT_ADDRESSES[1].snxOptimismBridge.address!);
+  l1OptimismBridge = await makeFake("ovmStandardBridge_10", CONTRACT_ADDRESSES[1].ovmStandardBridge_10.address);
+  l1OptimismDaiBridge = await makeFake("daiOptimismBridge", CONTRACT_ADDRESSES[1].daiOptimismBridge.address);
+  l1OptimismSnxBridge = await makeFake("snxOptimismBridge", CONTRACT_ADDRESSES[1].snxOptimismBridge.address);
 
   // Polygon contracts
   l1PolygonRootChainManager = await makeFake(
     "polygonRootChainManager",
-    CONTRACT_ADDRESSES[1].polygonRootChainManager.address!
+    CONTRACT_ADDRESSES[1].polygonRootChainManager.address
   );
 
   // Arbitrum contracts
   l1ArbitrumBridge = await makeFake(
     "arbitrumErc20GatewayRouter",
-    CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address!
+    CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address
   );
 
   // zkSync contracts
-  l1ZkSyncBridge = await makeFake("zkSyncDefaultErc20Bridge", CONTRACT_ADDRESSES[1].zkSyncDefaultErc20Bridge.address!);
-  l1MailboxContract = await makeFake("zkSyncMailbox", CONTRACT_ADDRESSES[1].zkSyncMailbox.address!);
+  l1ZkSyncBridge = await makeFake("zkSyncDefaultErc20Bridge", CONTRACT_ADDRESSES[1].zkSyncDefaultErc20Bridge.address);
+  l1MailboxContract = await makeFake("zkSyncMailbox", CONTRACT_ADDRESSES[1].zkSyncMailbox.address);
 
   // Base contracts
-  l1BaseBridge = await makeFake("ovmStandardBridge_8453", CONTRACT_ADDRESSES[1].ovmStandardBridge_8453.address!);
+  l1BaseBridge = await makeFake("ovmStandardBridge_8453", CONTRACT_ADDRESSES[1].ovmStandardBridge_8453.address);
 }
 
 async function makeFake(contractName: string, address: string) {

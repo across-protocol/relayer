@@ -13,6 +13,7 @@ import {
   SignerWithAddress,
   setupTokensForWallet,
   getLastBlockTime,
+  sinon,
 } from "../utils";
 import * as clients from "../../src/clients";
 import {
@@ -29,6 +30,7 @@ import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
+import { EthersTestLibrary } from "../types";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
@@ -55,7 +57,7 @@ async function _constructSpokePoolClientsWithLookback(
 // Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
 export async function setupDataworker(
-  ethers: any,
+  ethers: EthersTestLibrary,
   maxRefundPerRelayerRefundLeaf: number,
   maxL1TokensPerPoolRebalanceLeaf: number,
   defaultPoolRebalanceTokenTransferThreshold: BigNumber,
@@ -78,7 +80,8 @@ export async function setupDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: MockConfigStoreClient;
+  mockedConfigStoreClient: MockConfigStoreClient;
+  configStoreClient: clients.ConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
@@ -203,7 +206,7 @@ export async function setupDataworker(
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
-      configStoreClient,
+      configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
       multiCallerClient,
       hubPoolClient,
     },
@@ -216,7 +219,7 @@ export async function setupDataworker(
     tokenClient,
     hubPoolClient,
     multiCallerClient,
-    configStoreClient,
+    configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
     profitClient,
   };
   const dataworkerInstance = new Dataworker(
@@ -264,7 +267,8 @@ export async function setupDataworker(
     spokePoolClient_3,
     spokePoolClient_4,
     spokePoolClients,
-    configStoreClient,
+    configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
+    mockedConfigStoreClient: configStoreClient,
     hubPoolClient,
     dataworkerInstance,
     spyLogger,
@@ -290,7 +294,7 @@ export async function setupDataworker(
 
 // Set up Dataworker with SpokePoolClients with custom lookbacks. All other params are set to defaults.
 export async function setupFastDataworker(
-  ethers: any,
+  ethers: EthersTestLibrary,
   lookbackForAllChains?: number
 ): Promise<{
   hubPool: Contract;
@@ -307,7 +311,8 @@ export async function setupFastDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: MockConfigStoreClient;
+  mockedConfigStoreClient: MockConfigStoreClient;
+  configStoreClient: clients.ConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;

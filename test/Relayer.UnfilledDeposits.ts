@@ -1,4 +1,12 @@
-import { AcrossApiClient, HubPoolClient, MultiCallerClient, SpokePoolClient, TokenClient } from "../src/clients";
+import {
+  AcrossApiClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  TokenClient,
+  UBAClient,
+} from "../src/clients";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -47,7 +55,7 @@ let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 let relayerInstance: Relayer;
 let unfilledDeposits: RelayerUnfilledDeposit[] = [];
 
-let _getUnfilledDeposits: Promise<RelayerUnfilledDeposit[]>;
+let _getUnfilledDeposits: () => Promise<RelayerUnfilledDeposit[]>;
 
 describe("Relayer: Unfilled Deposits", async function () {
   const sortableEventFields = [
@@ -115,12 +123,13 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         spokePoolClients,
         hubPoolClient,
-        configStoreClient,
+        configStoreClient: configStoreClient as unknown as ConfigStoreClient,
         profitClient,
         tokenClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
+        ubaClient: {} as unknown as UBAClient, // We don't need this for this test.
       },
       {
         relayerTokens: [],
@@ -339,8 +348,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     for (const deposit of [deposit1, deposit2]) {
       const speedUpSignature = await modifyRelayHelper(
         newRelayFeePct,
-        deposit.depositId,
-        deposit.originChainId!.toString(),
+        deposit.depositId.toString(),
+        deposit.originChainId.toString(),
         depositor,
         deposit.recipient,
         "0x"
@@ -400,8 +409,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const newRelayerFeePct = toBNWei(0.1337);
     const speedUpSignature = await modifyRelayHelper(
       newRelayerFeePct,
-      deposit1.depositId,
-      deposit1.originChainId!.toString(),
+      deposit1.depositId.toString(),
+      deposit1.originChainId.toString(),
       depositor,
       deposit1.recipient,
       "0x"

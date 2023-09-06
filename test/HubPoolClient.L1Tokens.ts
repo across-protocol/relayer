@@ -9,6 +9,7 @@ import {
   createSpyLogger,
 } from "./utils";
 import { ConfigStoreClient, HubPoolClient } from "../src/clients";
+import { CONFIG_STORE_VERSION } from "./constants";
 
 let hubPool: Contract, lpTokenFactory: Contract;
 let owner: SignerWithAddress;
@@ -27,7 +28,7 @@ describe("HubPoolClient: L1Tokens", async function () {
     const logger = createSpyLogger().spyLogger;
     const { configStore } = await deployConfigStore(owner, []);
 
-    const configStoreClient = new ConfigStoreClient(logger, configStore);
+    const configStoreClient = new ConfigStoreClient(logger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
     hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);

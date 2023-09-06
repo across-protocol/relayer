@@ -8,6 +8,7 @@ import {
   hubPoolFixture,
   lastSpyLogIncludes,
   randomAddress,
+  sinon,
   spyLogIncludes,
   toBN,
   toWei,
@@ -78,7 +79,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const { hubPool, dai: l1Token } = await hubPoolFixture();
     const { configStore } = await deployConfigStore(owner, [l1Token]);
 
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, 0);
     await configStoreClient.update();
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
