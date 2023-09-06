@@ -80,7 +80,7 @@ for route in "${ORIGIN_ROUTES[@]}" "${DESTINATION_ROUTES[@]}"; do
         echo "Sending a deposit from $from_chain_id to $to_chain_id on token $origin_token_address"
 
         # Call yarn deposit with the correct arguments
-        echo $(yarn deposit --from $from_chain_id --to $to_chain_id --token $origin_token_address --amount 1 --wallet)
+        echo $(yarn deposit --from $from_chain_id --to $to_chain_id --token $origin_token_address --amount 1)
 
     done
 
