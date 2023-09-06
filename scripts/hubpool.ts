@@ -78,20 +78,56 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     hubPool.queryFilter(filter, fromBlock, latestBlock.number),
   ]);
 
+  /* Resolve the existing proposal and determine whether it can still be disputed. */
+  const {
+    poolRebalanceRoot,
+    relayerRefundRoot,
+    slowRelayRoot,
+    challengePeriodEndTimestamp,
+  } = proposal;
+  const rootBundleProposal = proposals.find(({ args }) => {
+    return (
+      args.poolRebalanceRoot === poolRebalanceRoot &&
+      args.relayerRefundRoot === relayerRefundRoot &&
+      args.slowRelayRoot === slowRelayRoot
+    );
+  });
   const fields = {
     address: bondToken.address,
     symbol,
     amount: formatUnits(bondAmount, decimals),
     balance: formatUnits(bondBalance, decimals),
   };
-  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+
+  // @dev This works fine but is hackish. Might be nice to refactor later.
+  const proposalKeys = Object.keys(proposal).filter((key) => isNaN(Number(key)));
+  const _proposal = {
+    blockNumber: rootBundleProposal?.blockNumber,
+    transactionHash: rootBundleProposal?.transactionHash,
+    ...Object.fromEntries(proposalKeys.map((k) => [k, proposal[k]])),
+  };
+
+  const padLeft = [ ...Object.keys(fields), ...Object.keys(_proposal) ]
+    .reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
   console.log(
     `${network} HubPool Dispute Bond:\n` +
     Object.entries(fields)
       .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
-      .join("\n") +
-    "\n"
+      .join("\n") + "\n"
   );
+
+  if (rootBundleProposal === undefined) {
+    console.log(
+      `Warning: No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
+    );
+  } else {
+    console.log(
+      `${network} Root Bundle Proposal:\n` +
+      Object.entries(_proposal)
+        .map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") + "\n"
+    );
+  }
 
   if (allowance.lt(bondAmount)) {
     console.log(`Approving ${network} HubPool @ ${hubPool.address} to transfer ${symbol}.`);
@@ -117,22 +153,6 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     console.log(`Deposit: ${deposit.hash}...`);
     await deposit.wait();
   }
-
-  /* Resolve the existing proposal and determine whether it can still be disputed. */
-  const { poolRebalanceRoot, relayerRefundRoot, slowRelayRoot, challengePeriodEndTimestamp } = proposal;
-  const rootBundleProposal = proposals.find(({ args }) => {
-    return (
-      args.poolRebalanceRoot === poolRebalanceRoot &&
-      args.relayerRefundRoot === relayerRefundRoot &&
-      args.slowRelayRoot === slowRelayRoot
-    );
-  });
-  if (rootBundleProposal === undefined) {
-    console.log(
-      `Warning: No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
-    );
-  }
-
   if (latestBlock.timestamp >= challengePeriodEndTimestamp && !force) {
     console.log("Nothing to dispute: no active propopsal.");
     return txnHash === undefined;
