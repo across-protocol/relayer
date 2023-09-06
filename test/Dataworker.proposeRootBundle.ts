@@ -1,5 +1,5 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { AnyObject, EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
+import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
 import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -58,8 +58,8 @@ describe("Dataworker: Propose root bundle", async function () {
     const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
       return spy
         .getCalls()
-        .sort((logA: { callId: number }, logB: { callId: number }) => logB.callId - logA.callId) // Sort by callId in descending order
-        .find((log: AnyObject) => log.lastArg["message"].includes(message)).lastArg;
+        .sort((logA: unknown, logB: unknown) => logB["callId"] - logA["callId"]) // Sort by callId in descending order
+        .find((log: unknown) => log["lastArg"]["message"].includes(message)).lastArg;
     };
 
     // TEST 1:
