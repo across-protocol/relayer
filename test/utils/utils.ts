@@ -3,7 +3,7 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
 import { constants as ethersConstants, providers } from "ethers";
-import { GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
+import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
 import { Deposit, Fill, FillWithBlock, RelayerRefundLeaf, RunningBalances } from "../../src/interfaces";
 import { TransactionResponse, buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 import {
@@ -28,18 +28,14 @@ import chaiExclude from "chai-exclude";
 import _ from "lodash";
 import sinon from "sinon";
 import winston from "winston";
-import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
+import { ContractsV2SlowFill, SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
 
 chai.use(chaiExclude);
 
 const assert = chai.assert;
 export { assert, chai };
 
-export function deepEqualsWithBigNumber(
-  x?: Iterable<unknown> | Record<string | number, unknown>,
-  y?: Iterable<unknown> | Record<string | number, unknown>,
-  omitKeys: string[] = []
-): boolean {
+export function deepEqualsWithBigNumber(x: unknown, y: unknown, omitKeys: string[] = []): boolean {
   if (x === undefined || y === undefined) {
     return false;
   }
@@ -602,21 +598,7 @@ export async function buildRefundRequest(
 export function buildSlowRelayLeaves(
   deposits: Deposit[],
   payoutAdjustmentPcts: BigNumber[] = []
-): {
-  relayData: {
-    depositor: string;
-    recipient: string;
-    destinationToken: string;
-    amount: utils.BigNumber;
-    originChainId: string;
-    destinationChainId: string;
-    realizedLpFeePct: utils.BigNumber;
-    relayerFeePct: utils.BigNumber;
-    depositId: string;
-    message: string;
-  };
-  payoutAdjustmentPct: string;
-}[] {
+): ContractsV2SlowFill[] {
   return deposits
     .map((_deposit, i) => {
       return {
@@ -632,7 +614,7 @@ export function buildSlowRelayLeaves(
           depositId: _deposit.depositId.toString(),
           message: _deposit.message,
         },
-        payoutAdjustmentPct: payoutAdjustmentPcts[i]?.toString() ?? "0",
+        payoutAdjustmentPct: BigNumber.from(payoutAdjustmentPcts[i]?.toString() ?? "0"),
       };
     }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
     .sort(({ relayData: relayA }, { relayData: relayB }) => {
@@ -757,4 +739,8 @@ export function createRefunds(
  */
 export function getLastBlockNumber(): Promise<number> {
   return (utils.ethers.provider as providers.Provider).getBlockNumber();
+}
+
+export function convertMockedConfigClient(client: unknown): client is ConfigStoreClient {
+  return true;
 }

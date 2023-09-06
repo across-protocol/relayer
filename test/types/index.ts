@@ -18,3 +18,21 @@ export type SpokePoolDeploymentResult = {
   destErc20: utils.Contract;
   deploymentBlock: number;
 };
+
+export type ContractsV2SlowFillRelayData = {
+  depositor: string;
+  recipient: string;
+  destinationToken: string;
+  amount: utils.BigNumber;
+  realizedLpFeePct: utils.BigNumber;
+  relayerFeePct: utils.BigNumber;
+  depositId: string;
+  originChainId: string;
+  destinationChainId: string;
+  message: string;
+};
+
+export type ContractsV2SlowFill = {
+  relayData: ContractsV2SlowFillRelayData;
+  payoutAdjustmentPct: utils.BigNumber;
+};
