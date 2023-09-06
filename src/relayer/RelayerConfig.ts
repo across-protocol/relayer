@@ -14,7 +14,8 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingSlowRelaysEnabled: boolean;
   readonly sendingRefundRequestsEnabled: boolean;
   readonly relayerTokens: string[];
-  readonly relayerDestinationChains: number[];
+  readonly relayerOriginChains: number[] = [];
+  readonly relayerDestinationChains: number[] = [];
   readonly relayerGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
@@ -35,6 +36,7 @@ export class RelayerConfig extends CommonConfig {
 
   constructor(env: ProcessEnv) {
     const {
+      RELAYER_ORIGIN_CHAINS,
       RELAYER_DESTINATION_CHAINS,
       SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
@@ -53,7 +55,9 @@ export class RelayerConfig extends CommonConfig {
     super(env);
 
     // Empty means all chains.
-    this.relayerDestinationChains = RELAYER_DESTINATION_CHAINS ? JSON.parse(RELAYER_DESTINATION_CHAINS) : [];
+    this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
+    this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
+
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS
       ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))

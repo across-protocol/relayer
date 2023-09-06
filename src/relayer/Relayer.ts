@@ -39,15 +39,24 @@ export class Relayer {
 
   /**
    * @description Retrieve the complete array of unfilled deposits.
-   * @returns An array of RelayerUnfilledDeposit objects, filtered by the maximum current supported config version.
+   * @returns An array of RelayerUnfilledDeposit objects, filtered by the supported version and deposit routes.
    */
   public async getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
     const { configStoreClient, hubPoolClient, spokePoolClients } = this.clients;
     const maxVersion = configStoreClient.configStoreVersion;
 
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
-    const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, ({ version }) => {
-      return version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits";
+    const {
+      supportedDeposits = [],
+      unsupportedDeposits = [],
+      ignoredDeposits = [],
+    } = groupBy(unfilledDeposits, ({ deposit, version }) => {
+      const { originChainId, destinationChainId } = deposit;
+      if (version > maxVersion) {
+        return "unsupportedDeposits";
+      }
+
+      return this.routeEnabled(originChainId, destinationChainId) ? "supportedDeposits" : "ignoredDeposits";
     });
 
     if (unsupportedDeposits.length > 0) {
@@ -56,7 +65,7 @@ export class Relayer {
         return { originChainId, depositId, version, transactionHash };
       });
       this.logger.warn({
-        at: "Relayer::checkForUnfilledDepositsAndFill",
+        at: "Relayer::getUnfilledDeposits",
         message: "Skipping deposits that are not supported by this relayer version.",
         latestVersionSupported: maxVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
@@ -64,7 +73,39 @@ export class Relayer {
       });
     }
 
+    if (ignoredDeposits.length > 0) {
+      const deposits = ignoredDeposits.map(({ deposit }) => {
+        const { originChainId, destinationChainId, depositId, originToken, amount, transactionHash } = deposit;
+        return { originChainId, destinationChainId, depositId, originToken, amount, transactionHash };
+      });
+      this.logger.debug({
+        at: "Relayer::getUnfilledDeposits",
+        message: `Skipping ${deposits.length} deposits from or to disabled chains.`,
+        deposits,
+      });
+    }
+
     return supportedDeposits;
+  }
+
+  /**
+   * @description Validate whether the origin and destination chain combination is permitted by relayer config.
+   * @param originChainId chain ID for the deposit.
+   * @param destinationChainId Chain ID of a prospective fill.
+   * @returns True if the route is permitted by config (or enabled by default), otherwise false.
+   */
+  routeEnabled(originChainId: number, destinationChainId: number): boolean {
+    const { relayerOriginChains: originChains, relayerDestinationChains: destinationChains } = this.config;
+
+    if (originChains?.length > 0 && !originChains.includes(originChainId)) {
+      return false;
+    }
+
+    if (destinationChains?.length > 0 && !destinationChains.includes(destinationChainId)) {
+      return false;
+    }
+
+    return true;
   }
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
@@ -138,29 +179,20 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, version, unfilledAmount, fillCount, invalidFills } of confirmedUnfilledDeposits) {
-      const { relayerDestinationChains, relayerTokens, slowDepositors } = config;
+      const { relayerTokens, slowDepositors } = config;
+
+      const { originChainId, destinationChainId, originToken } = deposit;
+      const destinationChain = getNetworkName(destinationChainId);
 
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
       if (
         relayerTokens.length > 0 &&
         !relayerTokens.includes(l1Token.address) &&
         !relayerTokens.includes(l1Token.address.toLowerCase())
       ) {
         this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
-        continue;
-      }
-
-      const destinationChainId = deposit.destinationChainId;
-      const destinationChain = getNetworkName(destinationChainId);
-      if (relayerDestinationChains.length > 0 && !relayerDestinationChains.includes(destinationChainId)) {
-        this.logger.debug({
-          at: "Relayer",
-          message: "Skipping deposit for unsupported destination chain",
-          deposit,
-          destinationChain,
-        });
         continue;
       }
 
