@@ -30,7 +30,7 @@ import {
 
 import { CONTRACT_ADDRESSES } from "../../common";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
-interface DepositEvent extends SortableEvent {
+export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   to: string;
 }
