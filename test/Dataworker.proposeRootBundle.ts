@@ -1,5 +1,5 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
+import { AnyObject, EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
 import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -11,6 +11,7 @@ import {
   expect,
   lastSpyLogIncludes,
   lastSpyLogLevel,
+  sinon,
   toBNWei,
 } from "./utils";
 
@@ -38,7 +39,7 @@ describe("Dataworker: Propose root bundle", async function () {
       erc20_1,
       spokePool_2,
       erc20_2,
-      configStoreClient,
+      mockedConfigStoreClient: configStoreClient,
       configStore,
       hubPoolClient,
       l1Token_1,
@@ -57,8 +58,8 @@ describe("Dataworker: Propose root bundle", async function () {
     const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
       return spy
         .getCalls()
-        .sort((logA: any, logB: any) => logB.callId - logA.callId) // Sort by callId in descending order
-        .find((log: any) => log.lastArg.message.includes(message)).lastArg;
+        .sort((logA: { callId: number }, logB: { callId: number }) => logB.callId - logA.callId) // Sort by callId in descending order
+        .find((log: AnyObject) => log.lastArg["message"].includes(message)).lastArg;
     };
 
     // TEST 1:

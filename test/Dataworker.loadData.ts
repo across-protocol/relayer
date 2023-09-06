@@ -75,7 +75,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePoolClient_1,
       spokePoolClient_2,
       spokePoolClients,
-      configStoreClient,
       updateAllClients,
       spy,
     } = await setupDataworker(ethers, 25, 25, toBN(0), 0));
@@ -729,7 +728,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     );
     const blockNumber = await spokePool_2.provider.getBlockNumber();
     const blockTimestamp = (await spokePool_2.provider.getBlock(blockNumber)).timestamp;
-    const realizedLpFeePctData = await hubPoolClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
+    const realizedLpFeePctData = await hubPoolClient.computeRealizedLpFeePct(
+      { ...deposit1, blockNumber },
+      l1Token_1.address
+    );
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();

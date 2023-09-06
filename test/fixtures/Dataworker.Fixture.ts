@@ -13,6 +13,7 @@ import {
   SignerWithAddress,
   setupTokensForWallet,
   getLastBlockTime,
+  sinon,
 } from "../utils";
 import * as clients from "../../src/clients";
 import {
@@ -79,7 +80,8 @@ export async function setupDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: MockConfigStoreClient;
+  mockedConfigStoreClient: MockConfigStoreClient;
+  configStoreClient: clients.ConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
@@ -204,7 +206,7 @@ export async function setupDataworker(
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
-      configStoreClient,
+      configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
       multiCallerClient,
       hubPoolClient,
     },
@@ -217,7 +219,7 @@ export async function setupDataworker(
     tokenClient,
     hubPoolClient,
     multiCallerClient,
-    configStoreClient,
+    configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
     profitClient,
   };
   const dataworkerInstance = new Dataworker(
@@ -265,7 +267,8 @@ export async function setupDataworker(
     spokePoolClient_3,
     spokePoolClient_4,
     spokePoolClients,
-    configStoreClient,
+    configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
+    mockedConfigStoreClient: configStoreClient,
     hubPoolClient,
     dataworkerInstance,
     spyLogger,
@@ -308,7 +311,8 @@ export async function setupFastDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: MockConfigStoreClient;
+  mockedConfigStoreClient: MockConfigStoreClient;
+  configStoreClient: clients.ConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;

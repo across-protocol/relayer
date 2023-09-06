@@ -121,7 +121,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
       [originChainId, destinationChainId],
       originChainId,
       false
-    );
+    ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
