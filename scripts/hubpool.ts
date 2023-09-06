@@ -79,12 +79,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
   ]);
 
   /* Resolve the existing proposal and determine whether it can still be disputed. */
-  const {
-    poolRebalanceRoot,
-    relayerRefundRoot,
-    slowRelayRoot,
-    challengePeriodEndTimestamp,
-  } = proposal;
+  const { poolRebalanceRoot, relayerRefundRoot, slowRelayRoot, challengePeriodEndTimestamp } = proposal;
   const rootBundleProposal = proposals.find(({ args }) => {
     return (
       args.poolRebalanceRoot === poolRebalanceRoot &&
@@ -107,13 +102,16 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     ...Object.fromEntries(proposalKeys.map((k) => [k, proposal[k]])),
   };
 
-  const padLeft = [ ...Object.keys(fields), ...Object.keys(_proposal) ]
-    .reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const padLeft = [...Object.keys(fields), ...Object.keys(_proposal)].reduce(
+    (acc, cur) => (cur.length > acc ? cur.length : acc),
+    0
+  );
   console.log(
     `${network} HubPool Dispute Bond:\n` +
-    Object.entries(fields)
-      .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
-      .join("\n") + "\n"
+      Object.entries(fields)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
   );
 
   if (rootBundleProposal === undefined) {
@@ -123,9 +121,10 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
   } else {
     console.log(
       `${network} Root Bundle Proposal:\n` +
-      Object.entries(_proposal)
-        .map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`)
-        .join("\n") + "\n"
+        Object.entries(_proposal)
+          .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+          .join("\n") +
+        "\n"
     );
   }
 
@@ -142,8 +141,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     if (ethBalance.lt(bondAmount.add(buffer))) {
       const minDeposit = bondAmount.add(buffer).sub(ethBalance).sub(bondBalance);
       console.log(
-        `Cannot dispute - insufficient ${symbol} balance.` +
-        ` Deposit at least ${formatUnits(minDeposit, 18)} ETH.`
+        `Cannot dispute - insufficient ${symbol} balance.` + ` Deposit at least ${formatUnits(minDeposit, 18)} ETH.`
       );
       return false;
     }
