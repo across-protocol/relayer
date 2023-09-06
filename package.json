@@ -57,7 +57,8 @@
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
     "reinstall": "yarn clean && yarn install && yarn build",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
-    "relay": "HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --relayer"
+    "relay": "HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --relayer",
+    "deposit": "yarn ts-node ./scripts/spokepool.ts deposit"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.2.3",
