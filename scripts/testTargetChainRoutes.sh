@@ -49,7 +49,7 @@ BASE_DOMAIN=$2
 
 # Verify that the target chain ID and the base domain were provided
 if [ -z "$TARGET_CHAIN_ID" ] || [ -z "$BASE_DOMAIN" ]; then
-    echo "Usage: ./testTargetChainRoutes.sh <target chain ID> <base domain>"
+    echo "Usage: $0 <target chain ID> <base domain>"
     exit 1
 fi
 
