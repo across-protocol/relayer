@@ -53,7 +53,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
   const ethBuffer = "0.1"; // Spare ether required to pay for gas.
 
   const chainId = Number(args.chainId);
-  const { txnHash } = args;
+  const { force, txnHash } = args;
 
   const network = getNetworkName(chainId);
   const hubPool = await getHubPoolContract(chainId);
@@ -66,18 +66,9 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     hubPool.provider.getBlock("latest"),
   ]);
 
-  // @todo Resolve by name, not index.
-  const [poolRebalanceRoot, relayerRefundRoot, slowRelayRoot] = proposal;
-  const challengePeriodEndTimestamp = proposal.at(-1);
-  if (latestBlock.timestamp >= challengePeriodEndTimestamp) {
-    console.log("Nothing to dispute: no active propopsal.");
-    return txnHash === undefined;
-  }
-
   const filter = hubPool.filters.ProposeRootBundle();
   const avgBlockTime = 12.5; // @todo import
   const fromBlock = Math.floor(latestBlock.number - (liveness - avgBlockTime));
-
   const bondToken = WETH9.connect(bondTokenAddress, hubPool.provider);
   const [bondBalance, decimals, symbol, allowance, proposals] = await Promise.all([
     bondToken.balanceOf(signer.address),
@@ -87,28 +78,19 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     hubPool.queryFilter(filter, fromBlock, latestBlock.number),
   ]);
 
-  const rootBundleProposal = proposals.find(({ args }) => {
-    return (
-      args.poolRebalanceRoot === poolRebalanceRoot &&
-      args.relayerRefundRoot === relayerRefundRoot &&
-      args.slowRelayRoot === slowRelayRoot
-    );
-  });
-  if (rootBundleProposal === undefined) {
-    console.log(
-      `No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
-    );
-    return false;
-  }
-
-  const _bal = formatUnits(bondBalance, decimals);
-  const _bond = formatUnits(bondAmount, decimals);
-
-  const padLeft = 15;
+  const fields = {
+    address: bondToken.address,
+    symbol,
+    amount: formatUnits(bondAmount, decimals),
+    balance: formatUnits(bondBalance, decimals),
+  };
+  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
   console.log(
-    `${"Bond token".padEnd(padLeft)}: ${symbol} (${bondToken.address})\n` +
-      `${"Bond amount".padEnd(padLeft)}: ${_bond} ${symbol}\n` +
-      `${"Bond balance".padEnd(padLeft)}: ${_bal} ${symbol}\n`
+    `${network} HubPool Dispute Bond:\n` +
+    Object.entries(fields)
+      .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+      .join("\n") +
+    "\n"
   );
 
   if (allowance.lt(bondAmount)) {
@@ -122,19 +104,43 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     const buffer = ethers.utils.parseEther(ethBuffer);
     const ethBalance = await signer.getBalance();
     if (ethBalance.lt(bondAmount.add(buffer))) {
-      console.log(`Insufficient ${symbol} balance to dispute (have ${_bal}, need ${_bond}).`);
+      const minDeposit = bondAmount.add(buffer).sub(ethBalance).sub(bondBalance);
+      console.log(
+        `Cannot dispute - insufficient ${symbol} balance.` +
+        ` Deposit at least ${formatUnits(minDeposit, 18)} ETH.`
+      );
       return false;
     }
     const depositAmount = bnMax(bondAmount.sub(bondBalance), bnOne); // Enforce minimum 1 Wei for test.
     console.log(`Depositing ${formatEther(depositAmount)} @ ${bondToken.address}.`);
-    const deposit = await bondToken.deposit({ value: depositAmount });
+    const deposit = await bondToken.connect(signer).deposit({ value: depositAmount });
     console.log(`Deposit: ${deposit.hash}...`);
     await deposit.wait();
   }
 
+  /* Resolve the existing proposal and determine whether it can still be disputed. */
+  const { poolRebalanceRoot, relayerRefundRoot, slowRelayRoot, challengePeriodEndTimestamp } = proposal;
+  const rootBundleProposal = proposals.find(({ args }) => {
+    return (
+      args.poolRebalanceRoot === poolRebalanceRoot &&
+      args.relayerRefundRoot === relayerRefundRoot &&
+      args.slowRelayRoot === slowRelayRoot
+    );
+  });
+  if (rootBundleProposal === undefined) {
+    console.log(
+      `Warning: No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
+    );
+  }
+
+  if (latestBlock.timestamp >= challengePeriodEndTimestamp && !force) {
+    console.log("Nothing to dispute: no active propopsal.");
+    return txnHash === undefined;
+  }
+
   // The txn hash of the proposal must be supplied in order to dispute.
   // If no hash was supplied, request the user to re-run with the applicable hash.
-  if (txnHash !== rootBundleProposal.transactionHash) {
+  if (txnHash !== rootBundleProposal.transactionHash && !force) {
     if (txnHash !== undefined) {
       console.log(`Invalid proposal transaction hash supplied: ${txnHash}.`);
     }
@@ -226,11 +232,12 @@ function usage(badInput?: string): boolean {
 async function run(argv: string[]): Promise<number> {
   const opts = {
     string: ["chainId", "transactionHash", "event", "fromBlock", "toBlock", "wallet"],
-    boolean: ["really"],
+    boolean: ["force"],
     default: {
+      chainId: 1,
       event: "ProposeRootBundle",
       wallet: "mnemonic",
-      really: false,
+      force: false,
     },
     alias: {
       transactionHash: "txnHash",
