@@ -37,6 +37,7 @@ import {
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
+  spyLogIncludes,
   originChainId,
   setupTokensForWallet,
   sinon,
@@ -154,7 +155,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [originChainId, destinationChainId],
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
@@ -233,7 +233,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [originChainId, destinationChainId],
         minDepositConfirmations: {
           default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
         },
@@ -270,7 +269,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [originChainId, destinationChainId],
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 100,
         sendingRelaysEnabled: false,
@@ -421,7 +419,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1); // no Transactions to send.
   });
 
-  it("Skip unwhitelisted chains", async function () {
+  it("Respects configured relayer routes", async function () {
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -438,20 +436,31 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
+        relayerOriginChains: [destinationChainId],
         relayerDestinationChains: [originChainId],
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
     );
 
+    // Test the underlying route validation logic.
+    const routes = [
+      { from: originChainId, to: destinationChainId, enabled: false },
+      { from: originChainId, to: originChainId, enabled: false },
+      { from: destinationChainId, to: originChainId, enabled: true },
+      { from: destinationChainId, to: destinationChainId, enabled: false },
+    ];
+    routes.forEach(({ from, to, enabled }) => expect(relayerInstance.routeEnabled(from, to)).to.equal(enabled));
+
+    // Verify that the relayer adheres to route validation.
     // Deposit is not on a whitelisted destination chain so relayer shouldn't fill it.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
-    // Check that no transaction was sent.
+    // Deposit on originChainId, destined for destinationChainId => expect ignored.
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping deposit for unsupported destination chain")).to.be.true;
+    expect(spyLogIncludes(spy, -3, "Skipping 1 deposits from or to disabled chains.")).to.be.true;
   });
 
   it("UBA: Doesn't crash if client cannot support version bump", async function () {
