@@ -11,7 +11,7 @@
     "strictNullChecks": false,
     "noImplicitAny": false
   },
-  "include": ["./src", "index.ts", "./scripts", "./test"],
+  "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],
   "watchOptions": {
     "watchFile": "useFsEventsOnParentDirectory",

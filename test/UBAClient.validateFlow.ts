@@ -422,11 +422,11 @@ describe("UBAClient: Flow validation", function () {
           // Don't add inflow to uba bundle state.
 
           // Throws errors if inflow is before, after, or in same bundle as outflow.
-          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find matched deposit in same bundle");
+          void assertPromiseError(ubaClient.validateFlow(outflow), "Could not find matched deposit in same bundle");
           outflow.matchedDeposit.blockNumber = expectedBlockRanges[originChainId][0].start - 1;
-          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
+          void assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
           outflow.matchedDeposit.blockNumber = expectedBlockRanges[originChainId][0].end + 1;
-          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
+          void assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
         });
       });
     });

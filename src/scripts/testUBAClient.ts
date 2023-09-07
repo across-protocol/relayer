@@ -146,4 +146,4 @@ export async function run(_logger: winston.Logger): Promise<void> {
 }
 
 // eslint-disable-next-line no-process-exit
-run(Logger).then(async () => process.exit(0));
+void run(Logger).then(async () => process.exit(0));
