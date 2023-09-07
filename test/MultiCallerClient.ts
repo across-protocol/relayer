@@ -50,7 +50,7 @@ class DummyMultiCallerClient extends MockedMultiCallerClient {
 }
 
 // encodeFunctionData is called from within MultiCallerClient.buildMultiCallBundle.
-function encodeFunctionData(_method: string, args: ReadonlyArray<any> = []): string {
+function encodeFunctionData(_method: string, args: ReadonlyArray<unknown> = []): string {
   return args.join(" ");
 }
 
