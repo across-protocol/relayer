@@ -383,7 +383,7 @@ describe("UBAClientUtilities", function () {
       spokePoolClient.addEvent(event);
       await spokePoolClient.update();
 
-      assertPromiseError(
+      void assertPromiseError(
         clients.getUBAFlows(tokenSymbol, chainId, spokePoolClients, hubPoolClient),
         "Found a UBA deposit with a defined realizedLpFeePct"
       );
