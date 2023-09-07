@@ -31,7 +31,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Propose root bundle", async function () {
+describe("Dataworker: Propose root bundle", function () {
   beforeEach(async function () {
     ({
       hubPool,
@@ -55,11 +55,15 @@ describe("Dataworker: Propose root bundle", async function () {
   it("Simple lifecycle", async function () {
     await updateAllClients();
 
-    const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
-      return spy
-        .getCalls()
-        .sort((logA: unknown, logB: unknown) => logB["callId"] - logA["callId"]) // Sort by callId in descending order
-        .find((log: unknown) => log["lastArg"]["message"].includes(message)).lastArg;
+    const getMostRecentLog = (spy: sinon.SinonSpy, message: string) => {
+      const calls = spy.getCalls();
+      const matchingLog = calls
+        .sort((logA: sinon.SinonSpyCall, logB: sinon.SinonSpyCall) => logB["callId"] - logA["callId"])
+        .find((log: sinon.SinonSpyCall) => log.lastArg?.message?.includes(message));
+      if (matchingLog) {
+        return matchingLog.lastArg;
+      }
+      return null;
     };
 
     // TEST 1:

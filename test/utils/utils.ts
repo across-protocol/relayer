@@ -27,7 +27,7 @@ import chai, { expect } from "chai";
 import chaiExclude from "chai-exclude";
 import _ from "lodash";
 import sinon from "sinon";
-import winston from "winston";
+import winston, { transport } from "winston";
 import { ContractsV2SlowFill, SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
 
 chai.use(chaiExclude);
@@ -36,7 +36,7 @@ const assert = chai.assert;
 export { assert, chai };
 
 export function deepEqualsWithBigNumber(x: unknown, y: unknown, omitKeys: string[] = []): boolean {
-  if (x === undefined || y === undefined) {
+  if (x === undefined || y === undefined || x === null || y === null) {
     return false;
   }
   const sortedKeysX = Object.fromEntries(
@@ -93,8 +93,8 @@ export function createSpyLogger(): SpyLoggerResult {
     format: winston.format.combine(winston.format(bigNumberFormatter)(), winston.format.json()),
     transports: [
       new SpyTransport({ level: "debug" }, { spy }),
-      process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
-    ].filter((n) => n),
+      process.env.LOG_IN_TEST ? new winston.transports.Console() : undefined,
+    ].filter((n) => n) as transport[],
   });
 
   return { spy, spyLogger };
@@ -237,8 +237,8 @@ export async function deployNewTokenMapping(
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);
-  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], null, 100);
-  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], null, 100);
+  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], undefined, 100);
+  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], undefined, 100);
 
   // Set time to provider time so blockfinder can find block for deposit quote time.
   await spokePool.setCurrentTime(await getLastBlockTime(spokePool.provider));
@@ -306,7 +306,7 @@ export async function addLiquidity(
   l1Token: utils.Contract,
   amount: utils.BigNumber
 ): Promise<void> {
-  await utils.seedWallet(signer, [l1Token], null, amount);
+  await utils.seedWallet(signer, [l1Token], undefined, amount);
   await l1Token.connect(signer).approve(hubPool.address, amount);
   await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
   await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
@@ -627,7 +627,7 @@ export function buildSlowRelayLeaves(
 }
 
 // Adds `leafId` to incomplete input `leaves` and then constructs a relayer refund leaf tree.
-export async function buildRelayerRefundTreeWithUnassignedLeafIds(
+export function buildRelayerRefundTreeWithUnassignedLeafIds(
   leaves: {
     chainId: number;
     amountToReturn: BigNumber;
@@ -635,7 +635,7 @@ export async function buildRelayerRefundTreeWithUnassignedLeafIds(
     refundAddresses: string[];
     refundAmounts: BigNumber[];
   }[]
-): Promise<MerkleTree<RelayerRefundLeaf>> {
+): MerkleTree<RelayerRefundLeaf> {
   return buildRelayerRefundTree(
     leaves.map((leaf, id) => {
       return { ...leaf, leafId: id };

@@ -57,7 +57,7 @@ let updateAllClients: () => Promise<void>;
 const ignoredDepositParams = ["logIndex", "transactionHash", "transactionIndex", "blockTimestamp"];
 
 // TODO: Rename this file to BundleDataClient
-describe("Dataworker: Load data used in all functions", async function () {
+describe("Dataworker: Load data used in all functions", function () {
   beforeEach(async function () {
     ({
       hubPool,

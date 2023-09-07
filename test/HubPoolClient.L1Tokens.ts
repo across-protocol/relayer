@@ -15,7 +15,7 @@ let hubPool: Contract, lpTokenFactory: Contract;
 let owner: SignerWithAddress;
 let hubPoolClient: HubPoolClient;
 
-describe("HubPoolClient: L1Tokens", async function () {
+describe("HubPoolClient: L1Tokens", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
 

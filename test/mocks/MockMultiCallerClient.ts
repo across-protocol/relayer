@@ -10,7 +10,7 @@ export class MockedMultiCallerClient extends MultiCallerClient {
   // By default return undefined multisender so dataworker can just fallback to calling Multicaller instead
   // of having to deploy a Multisend2 on this network.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async _getMultisender(_: number): Promise<Contract | undefined> {
-    return this.multisend;
+  _getMultisender(_: number): Promise<Contract | undefined> {
+    return Promise.resolve(this.multisend);
   }
 }

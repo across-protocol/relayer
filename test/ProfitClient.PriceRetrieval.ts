@@ -37,7 +37,7 @@ const tokenPrices: { [addr: string]: string } = Object.fromEntries(
 );
 
 class ProfitClientWithMockPriceClient extends ProfitClient {
-  protected override async updateTokenPrices(): Promise<void> {
+  protected override updateTokenPrices(): Promise<void> {
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
       this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
     );
@@ -45,6 +45,8 @@ class ProfitClientWithMockPriceClient extends ProfitClient {
     Object.keys(l1Tokens).forEach((address) => {
       this.tokenPrices[address] = toBNWei(tokenPrices[address]);
     });
+
+    return Promise.resolve();
   }
 }
 
@@ -62,7 +64,7 @@ const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 let hubPoolClient: MockHubPoolClient;
 let profitClient: ProfitClientWithMockPriceClient; // tested
 
-describe("ProfitClient: Price Retrieval", async function () {
+describe("ProfitClient: Price Retrieval", function () {
   beforeEach(async function () {
     const [owner] = await ethers.getSigners();
 

@@ -70,7 +70,7 @@ export class MockUBAClient extends UBAClient {
     return this.flows[chainId]?.[tokenSymbol] ?? [];
   }
 
-  async validateFlow(flow: interfaces.UbaFlow): Promise<clients.ModifiedUBAFlow | undefined> {
+  validateFlow(flow: interfaces.UbaFlow): Promise<clients.ModifiedUBAFlow | undefined> {
     return super.validateFlow(flow);
   }
 }

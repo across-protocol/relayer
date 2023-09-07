@@ -27,7 +27,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Execute pool rebalances", async function () {
+describe("Dataworker: Execute pool rebalances", function () {
   beforeEach(async function () {
     ({
       hubPool,

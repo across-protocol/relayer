@@ -39,7 +39,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Validate pending root bundle", async function () {
+describe("Dataworker: Validate pending root bundle", function () {
   beforeEach(async function () {
     ({
       hubPool,

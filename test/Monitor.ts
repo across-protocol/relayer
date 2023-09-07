@@ -55,7 +55,7 @@ const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
 
 let defaultMonitorEnvVars;
 
-describe("Monitor", async function () {
+describe("Monitor", function () {
   beforeEach(async function () {
     ({
       configStoreClient,
@@ -98,7 +98,7 @@ describe("Monitor", async function () {
     // @dev: Force maxRelayerLookBack to undefined to skip lookback block resolution.
     // This overrules the readonly property for MonitorConfig.maxRelayerLookBack (...bodge!!).
     // @todo: Relocate getUnfilledDeposits() into a class to permit it to be overridden in test.
-    (monitorConfig as unknown)["maxRelayerLookBack"] = undefined;
+    (monitorConfig as unknown as Record<string, unknown>)["maxRelayerLookBack"] = undefined;
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
@@ -120,7 +120,7 @@ describe("Monitor", async function () {
     );
     tokenTransferClient = new TokenTransferClient(spyLogger, providers, [depositor.address]);
 
-    adapterManager = new MockAdapterManager(null, null, null, null);
+    adapterManager = new MockAdapterManager(spyLogger, {}, hubPoolClient, []);
     adapterManager.setSupportedChains(chainIds);
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
     monitorInstance = new Monitor(spyLogger, monitorConfig, {

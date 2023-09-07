@@ -15,7 +15,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 let hubPoolClient: HubPoolClient;
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker block range-related utility methods", async function () {
+describe("Dataworker block range-related utility methods", function () {
   beforeEach(async function () {
     ({ dataworkerClients, spokePoolClients, updateAllClients, hubPoolClient } = await setupDataworker(
       ethers,
@@ -26,7 +26,7 @@ describe("Dataworker block range-related utility methods", async function () {
     ));
     await updateAllClients();
   });
-  it("DataworkerUtils.getEndBlockBuffers", async function () {
+  it("DataworkerUtils.getEndBlockBuffers", function () {
     const defaultBuffer = {
       2: 2,
       3: 3,
@@ -96,7 +96,7 @@ describe("Dataworker block range-related utility methods", async function () {
     );
     expect(zeroRange).to.deep.equal(latestBlocks.map(() => [0, 0]));
   });
-  it("PoolRebalanceUtils.getWidestPossibleExpectedBlockRange: chain is paused", async function () {
+  it("PoolRebalanceUtils.getWidestPossibleExpectedBlockRange: chain is paused", function () {
     const mockHubPoolClient = new MockHubPoolClient(
       hubPoolClient.logger,
       hubPoolClient.hubPool,
@@ -155,7 +155,7 @@ describe("Dataworker block range-related utility methods", async function () {
       ])
     );
   });
-  it("DataworkerUtils.blockRangesAreInvalidForSpokeClients", async function () {
+  it("DataworkerUtils.blockRangesAreInvalidForSpokeClients", function () {
     const chainId = hubPoolClient.chainId;
 
     // Only use public chain IDs because getDeploymentBlockNumber will only work for real chain ID's. This is a hack

@@ -5,12 +5,12 @@ export class MockBundleDataClient extends BundleDataClient {
   private pendingBundleRefunds: FillsToRefund = {};
   private nextBundleRefunds: FillsToRefund = {};
 
-  async getPendingRefundsFromValidBundles(): Promise<FillsToRefund[]> {
-    return [this.pendingBundleRefunds];
+  getPendingRefundsFromValidBundles(): Promise<FillsToRefund[]> {
+    return Promise.resolve([this.pendingBundleRefunds]);
   }
 
-  async getNextBundleRefunds(): Promise<FillsToRefund> {
-    return this.nextBundleRefunds;
+  getNextBundleRefunds(): Promise<FillsToRefund> {
+    return Promise.resolve(this.nextBundleRefunds);
   }
 
   setReturnedPendingBundleRefunds(refunds: FillsToRefund): void {

@@ -98,7 +98,7 @@ function testProfitability(
   } as FillProfit;
 }
 
-describe("ProfitClient: Consider relay profit", async function () {
+describe("ProfitClient: Consider relay profit", function () {
   beforeEach(async function () {
     const [owner] = await ethers.getSigners();
     const logger = createSpyLogger().spyLogger;
@@ -165,8 +165,14 @@ describe("ProfitClient: Consider relay profit", async function () {
       expect(nativeGasCost.eq(gasCost[chainId])).to.be.true;
 
       const gasTokenAddr: string = GAS_TOKEN_BY_CHAIN_ID[chainId];
-      const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);
+      const gasToken: L1Token | undefined = Object.values(tokens).find(
+        (token: L1Token) => gasTokenAddr === token.address
+      );
       expect(gasToken).to.not.be.undefined;
+      // Appease TS
+      if (gasToken === undefined) {
+        throw new Error("Gas Token is Undefined");
+      }
 
       const gasPriceUsd = tokenPrices[gasToken.symbol];
       expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
@@ -190,7 +196,14 @@ describe("ProfitClient: Consider relay profit", async function () {
         profitClient.setGasMultiplier(toBNWei(gasMultiplier));
 
         const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[chainId];
-        const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);
+        const gasToken: L1Token | undefined = Object.values(tokens).find(
+          (token: L1Token) => gasTokenAddr === token.address
+        );
+
+        // Appease TS
+        if (gasToken === undefined) {
+          throw new Error("Gas Token is Undefined");
+        }
 
         const expectedFillCostUsd = nativeGasCost
           .mul(tokenPrices[gasToken.symbol])
@@ -203,8 +216,8 @@ describe("ProfitClient: Consider relay profit", async function () {
     });
   });
 
-  it("Return 0 when gas cost fails to be fetched", async function () {
-    profitClient.setGasCosts({ 137: undefined });
+  it("Return 0 when gas cost fails to be fetched", function () {
+    profitClient.setGasCosts({ 137: undefined as unknown as BigNumber });
     expect(profitClient.getTotalGasCost(137)).to.equal(toBN(0));
   });
 
@@ -262,7 +275,7 @@ describe("ProfitClient: Consider relay profit", async function () {
    * corner cases. This approach does however require fairly careful analysis of
    * the test results to make sure that they are sane. Sampling is recommended.
    */
-  it("Considers gas cost when computing profitability", async function () {
+  it("Considers gas cost when computing profitability", function () {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
     chainIds.forEach((destinationChainId: number) => {
@@ -318,7 +331,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     });
   });
 
-  it("Considers refund fees when computing profitability", async function () {
+  it("Considers refund fees when computing profitability", function () {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
     const refundFeeMultipliers = ["-0.1", "-0.01", "-0.001", "-0.0001", 0.0001, 0.001, 0.01, 0.1, 1];
 
@@ -372,7 +385,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     });
   });
 
-  it("Allows per-route and per-token fee configuration", async function () {
+  it("Allows per-route and per-token fee configuration", function () {
     // Setup custom USDC pricing to Optimism.
     chainIds.forEach((srcChainId) => {
       process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toPrecision(10).toString();
@@ -411,7 +424,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     });
   });
 
-  it("Considers deposits with newRelayerFeePct", async function () {
+  it("Considers deposits with newRelayerFeePct", function () {
     const l1Token: L1Token = tokens["WETH"];
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
@@ -430,7 +443,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
   });
 
-  it("Ignores newRelayerFeePct if it's lower than original relayerFeePct", async function () {
+  it("Ignores newRelayerFeePct if it's lower than original relayerFeePct", function () {
     const l1Token: L1Token = tokens["WETH"];
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
@@ -446,12 +459,17 @@ describe("ProfitClient: Consider relay profit", async function () {
     expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
 
     deposit.relayerFeePct = toBNWei(".001");
-    expect(deposit.relayerFeePct.lt(deposit.newRelayerFeePct)).to.be.true; // Sanity check
+
+    // We can assert a sanity check here. As a result, we can use
+    // newRelayerFeePct and expect it to be defined in the next assertion.
+    expect(deposit.newRelayerFeePct).to.not.be.undefined;
+
+    expect(deposit.relayerFeePct.lt(deposit.newRelayerFeePct ?? "")).to.be.true; // Sanity check
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
-    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
+    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct ?? "")).to.be.true;
   });
 
-  it("Captures unprofitable fills", async function () {
+  it("Captures unprofitable fills", function () {
     const deposit = { relayerFeePct: toBNWei("0.003"), originChainId: 1, depositId: 42 } as DepositWithBlock;
     profitClient.captureUnprofitableFill(deposit, toBNWei(1));
     expect(profitClient.getUnprofitableFills()).to.deep.equal({ 1: [{ deposit, fillAmount: toBNWei(1) }] });

@@ -7,16 +7,16 @@ let config: MockUBAConfig;
 const originChainId = 10;
 const destinationChainId = 137;
 
-describe("UBAFeeConfig", async function () {
-  beforeEach(async function () {
+describe("UBAFeeConfig", function () {
+  beforeEach(function () {
     config = new MockUBAConfig();
   });
-  it("getUbaRewardMultiplier", async function () {
+  it("getUbaRewardMultiplier", function () {
     config = new MockUBAConfig();
     // Default should be 1
     expect(config.getUbaRewardMultiplier("999")).to.equal(toBNWei("1"));
   });
-  it("getIncentivePoolAdjustment", async function () {
+  it("getIncentivePoolAdjustment", function () {
     config = new MockUBAConfig();
     // Default should be 0
     expect(config.getIncentivePoolAdjustment("999")).to.equal(0);
@@ -81,14 +81,14 @@ describe("UBAFeeConfig", async function () {
   });
 
   describe("getBalancingFeeTuples", function () {
-    it("getZeroFeePointOnBalancingFeeCurve", async function () {
+    it("getZeroFeePointOnBalancingFeeCurve", function () {
       config.setBalancingFeeTuple(originChainId, [
         [toBNWei("1"), toBNWei("0")],
         [toBNWei("2"), toBNWei("1")],
       ]);
       expect(config.getZeroFeePointOnBalancingFeeCurve(originChainId)).to.equal(toBNWei("1"));
     });
-    it("isBalancingFeeCurveFlatAtZero", async function () {
+    it("isBalancingFeeCurveFlatAtZero", function () {
       config.setBalancingFeeTuple(originChainId, [[toBNWei("1"), toBNWei("0")]]);
       expect(config.isBalancingFeeCurveFlatAtZero(originChainId)).to.be.false;
       expect(config.isBalancingFeeCurveFlatAtZero(destinationChainId)).to.be.true;

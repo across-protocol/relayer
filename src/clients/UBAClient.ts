@@ -16,11 +16,11 @@ export class UBAClient extends clients.UBAClient {
     super(clientConfig, tokenSymbols, hubPoolClient, spokePoolClients);
   }
 
-  async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
+  getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
     return getValidFillCandidates(chainId, this.spokePoolClients, filter);
   }
 
-  async getRefundRequests(chainId: number, filter: SpokePoolFillFilter = {}): Promise<RefundRequestWithBlock[]> {
+  getRefundRequests(chainId: number, filter: SpokePoolFillFilter = {}): Promise<RefundRequestWithBlock[]> {
     return getValidRefundCandidates(chainId, this.hubPoolClient, this.spokePoolClients, filter);
   }
 }

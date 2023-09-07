@@ -6,6 +6,7 @@ import {
   ProfitClient,
   SpokePoolClient,
   TokenClient,
+  UBAClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import {
@@ -53,7 +54,7 @@ let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-describe("Relayer: Zero sized fill for slow relay", async function () {
+describe("Relayer: Zero sized fill for slow relay", function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({
@@ -126,7 +127,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-        ubaClient: null,
+        ubaClient: null as unknown as UBAClient,
       },
       {
         relayerTokens: [],
@@ -137,12 +138,11 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       } as unknown as RelayerConfig
     );
 
-    await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], null, 10);
-
+    await setupTokensForWallet(spokePool_1, owner, [l1Token], undefined, 100); // Seed owner to LP.
+    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], undefined, 10);
+    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], undefined, 10);
+    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], undefined, 10);
+    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], undefined, 10);
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
     await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
@@ -177,14 +177,21 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
     const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
     expect(fillEvents2.length).to.equal(1);
-    expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
-    expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.fillAmount).to.equal(1); // 1wei fill size
-    expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
-    expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
-    expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
-    expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
+
+    // To appease typescript, let's assert that fillevents2[0] has a valid args
+    // From this point, we can use the lossy operator.
+    expect(fillEvents2[0].args).to.not.be.undefined;
+    // Appease TypeScript to expecting deposit1 to not be undefined
+    expect(deposit1).to.not.be.undefined;
+
+    expect(fillEvents2[0].args?.depositId).to.equal(deposit1?.depositId);
+    expect(fillEvents2[0].args?.amount).to.equal(deposit1?.amount);
+    expect(fillEvents2[0].args?.fillAmount).to.equal(1); // 1wei fill size
+    expect(fillEvents2[0].args?.destinationChainId).to.equal(Number(deposit1?.destinationChainId));
+    expect(fillEvents2[0].args?.originChainId).to.equal(Number(deposit1?.originChainId));
+    expect(fillEvents2[0].args?.relayerFeePct).to.equal(deposit1?.relayerFeePct);
+    expect(fillEvents2[0].args?.depositor).to.equal(deposit1?.depositor);
+    expect(fillEvents2[0].args?.recipient).to.equal(deposit1?.recipient);
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallerClient.clearTransactionQueue();
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);

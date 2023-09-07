@@ -15,7 +15,7 @@ import {
   winston,
 } from "./utils";
 
-import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
+import { ConfigStoreClient, InventoryClient, MultiCallerClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Deposit, InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks";
@@ -68,7 +68,7 @@ const initialAllocation = {
   42161: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Arbitrum
 };
 
-describe("InventoryClient: Refund chain selection", async function () {
+describe("InventoryClient: Refund chain selection", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
@@ -82,9 +82,14 @@ describe("InventoryClient: Refund chain selection", async function () {
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
-    adapterManager = new MockAdapterManager(null, null, null, null);
-    tokenClient = new MockTokenClient(null, null, null, null);
-    bundleDataClient = new MockBundleDataClient(null, null, null, null);
+    adapterManager = new MockAdapterManager(spyLogger, {}, hubPoolClient, []);
+    tokenClient = new MockTokenClient(spyLogger, "", {}, hubPoolClient);
+    bundleDataClient = new MockBundleDataClient(
+      spyLogger,
+      { hubPoolClient, configStoreClient, multiCallerClient: null as unknown as MultiCallerClient },
+      {},
+      []
+    );
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
     inventoryClient = new InventoryClient(

@@ -78,10 +78,17 @@ const generateValidRefundRequest = async (
   return { deposit: deposit as DepositWithBlock, fill: fill as FillWithBlock, refundRequest: refundRequest };
 };
 
-describe("SpokePoolClient: Event Filtering", async function () {
+describe("SpokePoolClient: Event Filtering", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    destinationChainId = (await owner.provider.getNetwork()).chainId as number;
+    const provider = owner.provider;
+    expect(provider).to.not.be.undefined;
+    // Added to satisfy TS.
+    if (!provider) {
+      throw new Error("Provider is undefined");
+    }
+
+    destinationChainId = (await provider.getNetwork()).chainId as number;
 
     originChainId = random(100_000, 1_000_000, false);
     repaymentChainId = random(1_000_001, 2_000_000, false);

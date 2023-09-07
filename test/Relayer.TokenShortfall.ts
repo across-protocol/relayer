@@ -5,6 +5,7 @@ import {
   MultiCallerClient,
   SpokePoolClient,
   TokenClient,
+  UBAClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { Relayer } from "../src/relayer/Relayer";
@@ -50,7 +51,7 @@ let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-describe("Relayer: Token balance shortfall", async function () {
+describe("Relayer: Token balance shortfall", function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({
@@ -123,7 +124,7 @@ describe("Relayer: Token balance shortfall", async function () {
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-        ubaClient: null,
+        ubaClient: null as unknown as UBAClient,
       },
       {
         relayerTokens: [],
@@ -135,9 +136,9 @@ describe("Relayer: Token balance shortfall", async function () {
     );
 
     // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.
-    await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
+    await setupTokensForWallet(spokePool_1, owner, [l1Token], undefined, 100); // Seed owner to LP.
+    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], undefined, 10);
+    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], undefined, 10);
 
     // Execute large approval so we dont need to worry about this.
     await erc20_1.connect(relayer).approve(spokePool_1.address, toBNWei(100000));

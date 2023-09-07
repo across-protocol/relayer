@@ -61,7 +61,7 @@ const tokenConfigToUpdate = JSON.stringify({
   spokeTargetBalances: sampleSpokeTargetBalances,
 });
 
-describe("AcrossConfigStoreClient", async function () {
+describe("AcrossConfigStoreClient", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());

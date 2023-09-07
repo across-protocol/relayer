@@ -24,7 +24,7 @@ let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract;
 let owner: SignerWithAddress;
 let hubPoolClient: HubPoolClient;
 
-describe("HubPoolClient: Deposit to Destination Token", async function () {
+describe("HubPoolClient: Deposit to Destination Token", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
 

@@ -58,8 +58,8 @@ const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const multiCaller: DummyMultiCallerClient = new DummyMultiCallerClient(spyLogger);
 const address = randomAddress(); // Test contract address
 
-describe("MultiCallerClient", async function () {
-  beforeEach(async function () {
+describe("MultiCallerClient", function () {
+  beforeEach(function () {
     multiCaller.clearTransactionQueue();
     expect(multiCaller.transactionCount()).to.equal(0);
 
@@ -67,13 +67,13 @@ describe("MultiCallerClient", async function () {
     expect(multiCaller.simulationFailureCount()).to.equal(0);
   });
 
-  it("Correctly enqueues value transactions", async function () {
+  it("Correctly enqueues value transactions", function () {
     chainIds.forEach((chainId) => multiCaller.enqueueTransaction({ chainId, value: toBN(1) } as AugmentedTransaction));
     expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
     expect(multiCaller.transactionCount()).to.equal(chainIds.length);
   });
 
-  it("Correctly enqueues non-value transactions", async function () {
+  it("Correctly enqueues non-value transactions", function () {
     [undefined, toBN(0)].forEach((value) => {
       multiCaller.clearTransactionQueue();
       expect(multiCaller.transactionCount()).to.equal(0);
@@ -84,7 +84,7 @@ describe("MultiCallerClient", async function () {
     });
   });
 
-  it("Correctly enqueues mixed transactions", async function () {
+  it("Correctly enqueues mixed transactions", function () {
     chainIds.forEach((chainId) => {
       multiCaller.enqueueTransaction({ chainId } as AugmentedTransaction);
       multiCaller.enqueueTransaction({ chainId, value: toBN(1) } as AugmentedTransaction);
@@ -201,7 +201,7 @@ describe("MultiCallerClient", async function () {
     }
   });
 
-  it("Validates transaction data before multicall bundle generation", async function () {
+  it("Validates transaction data before multicall bundle generation", function () {
     const chainId = chainIds[0];
 
     for (const badField of ["address", "chainId"]) {
@@ -245,7 +245,7 @@ describe("MultiCallerClient", async function () {
     }
   });
 
-  it("buildMultiCallBundle can handle transactions to different target contracts", async function () {
+  it("buildMultiCallBundle can handle transactions to different target contracts", function () {
     const chainId = chainIds[0];
     const txns = [
       {
@@ -343,7 +343,7 @@ describe("MultiCallerClient", async function () {
     const multicallerWithMultisend = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:
-    void assertPromiseError(
+    await assertPromiseError(
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,
@@ -358,7 +358,7 @@ describe("MultiCallerClient", async function () {
       ] as AugmentedTransaction[]),
       "Multisender bundle data mismatch"
     );
-    void assertPromiseError(
+    await assertPromiseError(
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,

@@ -27,7 +27,7 @@ export class MockedTransactionClient extends TransactionClient {
     return result !== undefined && result !== txnClientPassResult;
   }
 
-  protected override async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+  protected override _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     const fail = this.txnFailure(txn);
 
     this.logger.debug({
@@ -38,17 +38,14 @@ export class MockedTransactionClient extends TransactionClient {
 
     const gasLimit = this.gasLimit ?? this.randomGasLimit();
 
-    return {
+    return Promise.resolve({
       transaction: { ...txn, gasLimit },
       succeed: !fail,
       reason: fail ? this.txnFailureReason(txn) : "",
-    };
+    });
   }
 
-  protected override async _submit(
-    txn: AugmentedTransaction,
-    nonce: number | null = null
-  ): Promise<TransactionResponse> {
+  protected override _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     if (this.txnFailure(txn)) {
       return Promise.reject(this.txnFailureReason(txn));
     }
@@ -67,6 +64,6 @@ export class MockedTransactionClient extends TransactionClient {
       txn: txnResponse,
     });
 
-    return txnResponse;
+    return Promise.resolve(txnResponse);
   }
 }

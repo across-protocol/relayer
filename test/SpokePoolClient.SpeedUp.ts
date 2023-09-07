@@ -23,7 +23,7 @@ const destinationChainId2 = destinationChainId + 1;
 
 let spokePoolClient: SpokePoolClient;
 
-describe("SpokePoolClient: SpeedUp", async function () {
+describe("SpokePoolClient: SpeedUp", function () {
   const ignoredFields = [
     "blockNumber",
     "blockTimestamp",

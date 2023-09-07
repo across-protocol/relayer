@@ -43,7 +43,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let spokePoolClient2: SpokePoolClient, hubPoolClient: HubPoolClient;
 let spokePoolClient1: SpokePoolClient, configStoreClient: ConfigStoreClient;
 
-describe("SpokePoolClient: Fill Validation", async function () {
+describe("SpokePoolClient: Fill Validation", function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     // Creat two spoke pools: one to act as the source and the other to act as the destination.
@@ -255,7 +255,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(searchRange2.low).to.be.lessThanOrEqual(deposit1Block);
 
     // Searching for deposit ID 3 that doesn't exist yet should throw.
-    void assertPromiseError(
+    await assertPromiseError(
       spokePoolClient1._getBlockRangeForDepositId(3, spokePool1DeploymentBlock, spokePoolClient1.latestBlockNumber, 10),
       "Failed to find deposit ID"
     );

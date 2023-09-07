@@ -66,7 +66,7 @@ let spy: sinon.SinonSpy;
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Build merkle roots", async function () {
+describe("Dataworker: Build merkle roots", function () {
   beforeEach(async function () {
     const fastDataworkerResult = await setupFastDataworker(ethers);
     configStoreClient = fastDataworkerResult.configStoreClient as unknown as ConfigStoreClient;
@@ -1440,7 +1440,7 @@ describe("Dataworker: Build merkle roots", async function () {
       ubaClient = new MockUBAClient([l1TokenSymbol], hubPoolClient, spokePoolClients);
     });
     describe("Build pool rebalance root", function () {
-      it("> 0 flows", async function () {
+      it("> 0 flows", function () {
         // Test that the running balance, incentive balance, and the net running balance adjustment of only
         // the latest flow are used, since these values are accumulated by the UBA client. So, add two
         // flows.
@@ -1495,7 +1495,7 @@ describe("Dataworker: Build merkle roots", async function () {
           })
         ).to.be.true;
       });
-      it("0 flows", async function () {
+      it("0 flows", function () {
         const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
         if (!blockRanges) {
           throw new Error("Can't propose new bundle");

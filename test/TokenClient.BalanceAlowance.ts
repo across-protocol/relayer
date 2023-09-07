@@ -14,7 +14,7 @@ import {
   zeroAddress,
 } from "./utils";
 
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
+import { ConfigStoreClient, HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
@@ -23,7 +23,7 @@ let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-describe("TokenClient: Balance and Allowance", async function () {
+describe("TokenClient: Balance and Allowance", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
@@ -58,7 +58,7 @@ describe("TokenClient: Balance and Allowance", async function () {
     );
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
+    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null as unknown as ConfigStoreClient);
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });

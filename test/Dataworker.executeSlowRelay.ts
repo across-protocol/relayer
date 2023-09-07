@@ -24,7 +24,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Execute slow relays", async function () {
+describe("Dataworker: Execute slow relays", function () {
   beforeEach(async function () {
     ({
       hubPool,

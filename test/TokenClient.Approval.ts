@@ -1,5 +1,5 @@
 import { interfaceName } from "@uma/common";
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { ConfigStoreClient, HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
 import {
   Contract,
   MAX_UINT_VAL,
@@ -27,7 +27,7 @@ let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-describe("TokenClient: Origin token approval", async function () {
+describe("TokenClient: Origin token approval", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
@@ -71,7 +71,7 @@ describe("TokenClient: Origin token approval", async function () {
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
+    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null as unknown as ConfigStoreClient);
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 

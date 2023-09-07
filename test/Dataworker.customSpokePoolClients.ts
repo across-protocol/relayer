@@ -24,7 +24,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Using SpokePool clients with short lookback windows", async function () {
+describe("Dataworker: Using SpokePool clients with short lookback windows", function () {
   beforeEach(async function () {
     ({ hubPool, l1Token_1, dataworkerInstance, spokePoolClients, multiCallerClient, updateAllClients, spy } =
       await setupFastDataworker(

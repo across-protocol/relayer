@@ -24,7 +24,7 @@ let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-describe("TokenClient: Token shortfall", async function () {
+describe("TokenClient: Token shortfall", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());

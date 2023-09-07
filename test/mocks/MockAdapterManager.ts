@@ -11,7 +11,7 @@ export class MockAdapterManager extends AdapterManager {
   } = {};
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
-  async sendTokenCrossChain(
+  sendTokenCrossChain(
     _address: string,
     chainId: number,
     l1Token: string,
@@ -22,7 +22,7 @@ export class MockAdapterManager extends AdapterManager {
     }
     const hash = createRandomBytes32();
     this.tokensSentCrossChain[chainId][l1Token] = { amount, hash };
-    return { hash } as TransactionResponse;
+    return Promise.resolve({ hash } as TransactionResponse);
   }
 
   setSupportedChains(chains: number[]): void {
@@ -32,12 +32,12 @@ export class MockAdapterManager extends AdapterManager {
     return this.adapterChains ?? super.supportedChains();
   }
 
-  override async getOutstandingCrossChainTokenTransferAmount(
+  override getOutstandingCrossChainTokenTransferAmount(
     chainId: number,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Tokens: string[]
   ): Promise<OutstandingTransfers> {
-    return this.mockedOutstandingCrossChainTransfers[chainId];
+    return Promise.resolve(this.mockedOutstandingCrossChainTransfers[chainId]);
   }
 
   setMockedOutstandingCrossChainTransfers(chainId: number, address: string, l1Token: string, amount: BigNumber): void {

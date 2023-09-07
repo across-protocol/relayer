@@ -104,10 +104,10 @@ export async function run(logger: winston.Logger): Promise<void> {
 
 if (require.main === module) {
   run(Logger)
-    .then(async () => {
+    .then(() => {
       process.exit(0);
     })
-    .catch(async (error) => {
+    .catch((error) => {
       console.error("Process exited with", error);
       process.exit(1);
     });

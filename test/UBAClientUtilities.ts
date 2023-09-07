@@ -94,7 +94,7 @@ describe("UBAClientUtilities", function () {
     );
   };
   describe("getUbaActivationBundleStartBlocks", function () {
-    it("If uba activation block is not set", async function () {
+    it("If uba activation block is not set", function () {
       configStoreClient.setUBAActivationBlock(undefined);
       expect(() => getUbaActivationBundleStartBlocks(hubPoolClient)).to.throw(/UBA was not activated yet/);
     });
@@ -119,7 +119,7 @@ describe("UBAClientUtilities", function () {
         chainIds.map((chainId) => expectedBlockRanges[chainId][0].start)
       );
     });
-    it("If no validated proposals after UBA activation block, returns next bundle start blocks", async function () {
+    it("If no validated proposals after UBA activation block, returns next bundle start blocks", function () {
       const result = getUbaActivationBundleStartBlocks(hubPoolClient);
       deepEqualsWithBigNumber(
         result,
@@ -145,7 +145,7 @@ describe("UBAClientUtilities", function () {
     });
   });
   describe("getMostRecentBundleBlockRanges", function () {
-    it("Request maxBundleState 0", async function () {
+    it("Request maxBundleState 0", function () {
       // Should return by default single bundle range.
       const result = getMostRecentBundleBlockRanges(chainIds[0], 0, hubPoolClient, spokePoolClients);
       deepEqualsWithBigNumber(result, [
@@ -155,7 +155,7 @@ describe("UBAClientUtilities", function () {
         },
       ]);
     });
-    it("No bundles", async function () {
+    it("No bundles", function () {
       // If no bundles in memory, returns a single bundle range spanning from the spoke pool activation block
       // until the last block searched.
 
@@ -197,7 +197,7 @@ describe("UBAClientUtilities", function () {
     });
   });
   describe("getOpeningRunningBalances", function () {
-    it("No valid bundles", async function () {
+    it("No valid bundles", function () {
       const result = getOpeningRunningBalanceForEvent(
         hubPoolClient,
         0,
@@ -285,7 +285,7 @@ describe("UBAClientUtilities", function () {
       destinationSpokePoolClient: MockSpokePoolClient,
       repaymentSpokePoolClient: MockSpokePoolClient;
 
-    beforeEach(async function () {
+    beforeEach(function () {
       // Deposit spoke pool client:
       chainId = chainIds[0];
       spokePoolClient = spokePoolClients[chainId] as MockSpokePoolClient;
@@ -383,7 +383,7 @@ describe("UBAClientUtilities", function () {
       spokePoolClient.addEvent(event);
       await spokePoolClient.update();
 
-      void assertPromiseError(
+      await assertPromiseError(
         clients.getUBAFlows(tokenSymbol, chainId, spokePoolClients, hubPoolClient),
         "Found a UBA deposit with a defined realizedLpFeePct"
       );

@@ -57,7 +57,7 @@ let unfilledDeposits: RelayerUnfilledDeposit[] = [];
 
 let _getUnfilledDeposits: () => Promise<RelayerUnfilledDeposit[]>;
 
-describe("Relayer: Unfilled Deposits", async function () {
+describe("Relayer: Unfilled Deposits", function () {
   const sortableEventFields = [
     "blockNumber",
     "blockTimestamp",
@@ -109,7 +109,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock,
-      { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+      { fromBlock: 0, toBlock: undefined, maxBlockLookBack: 0 }
     );
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
@@ -140,11 +140,11 @@ describe("Relayer: Unfilled Deposits", async function () {
       } as unknown as RelayerConfig
     );
 
-    await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // seed the owner to LP.
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 100); // seed the depositor to LP.
-    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_1, relayer, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);
+    await setupTokensForWallet(spokePool_1, owner, [l1Token], undefined, 100); // seed the owner to LP.
+    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], undefined, 100); // seed the depositor to LP.
+    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], undefined, 10);
+    await setupTokensForWallet(spokePool_1, relayer, [erc20_1], undefined, 10);
+    await setupTokensForWallet(spokePool_2, relayer, [erc20_2], undefined, 10);
 
     // Approve and add liquidity.
     await enableRoutesOnHubPool(hubPool, [

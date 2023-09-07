@@ -5,7 +5,7 @@ export class MockInventoryClient extends InventoryClient {
     super(null, null, null, null, null, null, null, null, null);
   }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async determineRefundChainId(_deposit: Deposit): Promise<number> {
-    return 1;
+  determineRefundChainId(_deposit: Deposit): Promise<number> {
+    return Promise.resolve(1);
   }
 }

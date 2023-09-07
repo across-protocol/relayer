@@ -19,7 +19,7 @@ let _relayer: SignerWithAddress, relayer: string;
 let deploymentBlock: number;
 let spokePoolClient: MockSpokePoolClient;
 
-describe("SpokePoolClient: Refund Requests", async function () {
+describe("SpokePoolClient: Refund Requests", function () {
   beforeEach(async function () {
     [_relayer] = await ethers.getSigners();
     relayer = _relayer.address;

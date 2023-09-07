@@ -59,7 +59,7 @@ let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 let ubaClient: MockUBAClient;
 
-describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
+describe("Relayer: Check for Unfilled Deposits and Fill", function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({
@@ -160,11 +160,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       } as unknown as RelayerConfig
     );
 
-    await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], null, 10);
+    await setupTokensForWallet(spokePool_1, owner, [l1Token], undefined, 100); // Seed owner to LP.
+    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], undefined, 10);
+    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], undefined, 10);
+    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], undefined, 10);
+    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], undefined, 10);
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
@@ -189,15 +189,22 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
     const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
+
+    // To appease typescript, let's assert that fillevents2[0] has a valid args
+    // From this point, we can use the lossy operator.
+    expect(fillEvents2[0].args).to.not.be.undefined;
+    // Appease TypeScript to expecting deposit1 to not be undefined
+    expect(deposit1).to.not.be.undefined;
+
     expect(fillEvents2.length).to.equal(1);
-    expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
-    expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
-    expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
-    expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
-    expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
-    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(deposit1.relayerFeePct);
+    expect(fillEvents2[0].args?.depositId).to.equal(deposit1?.depositId);
+    expect(fillEvents2[0].args?.amount).to.equal(deposit1?.amount);
+    expect(fillEvents2[0].args?.destinationChainId).to.equal(Number(deposit1?.destinationChainId));
+    expect(fillEvents2[0].args?.originChainId).to.equal(Number(deposit1?.originChainId));
+    expect(fillEvents2[0].args?.relayerFeePct).to.equal(deposit1?.relayerFeePct);
+    expect(fillEvents2[0].args?.depositor).to.equal(deposit1?.depositor);
+    expect(fillEvents2[0].args?.recipient).to.equal(deposit1?.recipient);
+    expect(fillEvents2[0].args?.updatableRelayData.relayerFeePct).to.equal(deposit1?.relayerFeePct);
 
     // There should be no fill events on the origin spoke pool.
     expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);
@@ -376,19 +383,24 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
     const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
     expect(fillEvents2.length).to.equal(1);
-    expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
-    expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
-    expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
-    expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
-    expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
+
+    // To appease typescript, let's assert that fillevents2[0] has a valid args
+    // From this point, we can use the lossy operator.
+    expect(fillEvents2[0].args).to.not.be.undefined;
+
+    expect(fillEvents2[0].args?.depositId).to.equal(deposit1.depositId);
+    expect(fillEvents2[0].args?.amount).to.equal(deposit1.amount);
+    expect(fillEvents2[0].args?.destinationChainId).to.equal(Number(deposit1.destinationChainId));
+    expect(fillEvents2[0].args?.originChainId).to.equal(Number(deposit1.originChainId));
+    expect(fillEvents2[0].args?.relayerFeePct).to.equal(deposit1.relayerFeePct);
+    expect(fillEvents2[0].args?.depositor).to.equal(deposit1.depositor);
+    expect(fillEvents2[0].args?.recipient).to.equal(deposit1.recipient);
 
     // This specific line differs from the above test: the emitted event's appliedRelayerFeePct is
     // now !== relayerFeePct.
-    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(emptyMessageSpeedUp.relayerFeePct);
-    expect(fillEvents2[0].args.updatableRelayData.recipient).to.equal(emptyMessageSpeedUp.recipient);
-    expect(fillEvents2[0].args.updatableRelayData.message).to.equal(emptyMessageSpeedUp.message);
+    expect(fillEvents2[0].args?.updatableRelayData.relayerFeePct).to.equal(emptyMessageSpeedUp.relayerFeePct);
+    expect(fillEvents2[0].args?.updatableRelayData.recipient).to.equal(emptyMessageSpeedUp.recipient);
+    expect(fillEvents2[0].args?.updatableRelayData.message).to.equal(emptyMessageSpeedUp.message);
 
     // There should be no fill events on the origin spoke pool.
     expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);
@@ -522,8 +534,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // confirm that the realizedLpFeePct is _not_ the UBA systemFee.
     const _deposit = spokePoolClients[originChainId].getDepositsForDestinationChain(destinationChainId)[0];
     expect(_deposit.depositId).to.eq(deposit1?.depositId);
-    expect(_deposit.realizedLpFeePct.gt(0)).to.be.true;
-    expect(_deposit.realizedLpFeePct.eq(expectedSystemFeePct)).to.be.false;
+    expect(_deposit.realizedLpFeePct?.gt(0)).to.not.be.undefined.and.to.be.true;
+    expect(_deposit.realizedLpFeePct?.eq(expectedSystemFeePct)).to.not.be.undefined.and.to.be.false;
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
@@ -535,15 +547,22 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
     const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
     expect(fillEvents2.length).to.equal(1);
-    expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
-    expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
-    expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
-    expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
-    expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
-    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.realizedLpFeePct).to.equal(expectedSystemFeePct);
+
+    // To appease typescript, let's assert that fillevents2[0] has a valid args
+    // From this point, we can use the lossy operator.
+    expect(fillEvents2[0].args).to.not.be.undefined;
+    // Appease TypeScript to expecting deposit1 to not be undefined
+    expect(deposit1).to.not.be.undefined;
+
+    expect(fillEvents2[0].args?.depositId).to.equal(deposit1?.depositId);
+    expect(fillEvents2[0].args?.amount).to.equal(deposit1?.amount);
+    expect(fillEvents2[0].args?.destinationChainId).to.equal(Number(deposit1?.destinationChainId));
+    expect(fillEvents2[0].args?.originChainId).to.equal(Number(deposit1?.originChainId));
+    expect(fillEvents2[0].args?.relayerFeePct).to.equal(deposit1?.relayerFeePct);
+    expect(fillEvents2[0].args?.depositor).to.equal(deposit1?.depositor);
+    expect(fillEvents2[0].args?.recipient).to.equal(deposit1?.recipient);
+    expect(fillEvents2[0].args?.updatableRelayData.relayerFeePct).to.equal(deposit1?.relayerFeePct);
+    expect(fillEvents2[0].args?.realizedLpFeePct).to.equal(expectedSystemFeePct);
 
     // There should be no fill events on the origin spoke pool.
     expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);

@@ -21,6 +21,7 @@ import {
   defaultMinDepositConfirmations,
   defaultTokenConfig,
   repaymentChainId,
+  toBN,
 } from "./constants";
 import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
@@ -77,7 +78,7 @@ async function waitOnBlock(spokePoolClient: SpokePoolClient): Promise<void> {
   }
 }
 
-describe("Relayer: Request refunds for cross-chain repayments", async function () {
+describe("Relayer: Request refunds for cross-chain repayments", function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({
@@ -186,12 +187,11 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
       } as unknown as RelayerConfig
     );
 
-    await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], null, 10);
-
+    await setupTokensForWallet(spokePool_1, owner, [l1Token], undefined, 100); // Seed owner to LP.
+    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], undefined, 10);
+    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], undefined, 10);
+    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], undefined, 10);
+    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], undefined, 10);
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
     await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
@@ -299,7 +299,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     // Submit a invalid fill (for a non-existent deposit).
     const fakeDeposit = { ...deposit };
-    fakeDeposit.realizedLpFeePct = fakeDeposit.realizedLpFeePct.sub(1);
+    fakeDeposit.realizedLpFeePct = (fakeDeposit.realizedLpFeePct ?? toBN(0)).sub(1);
     fakeDeposit.relayerFeePct = fakeDeposit.relayerFeePct.sub(fakeDeposit.relayerFeePct);
 
     const fakeFill = await buildFillForRepaymentChain(spokePool_2, relayer, fakeDeposit, 1, spokePoolClient_1.chainId);
@@ -381,12 +381,12 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     expect(refundRequests[0].transactionHash).to.equal(transactionHash);
   });
 
-  it.skip("Finds deposits outside of the relayer lookback window", async function () {
+  it.skip("Finds deposits outside of the relayer lookback window", function () {
     // @todo
     return;
   });
 
-  it.skip("Finds fills outside of the relayer lookback window", async function () {
+  it.skip("Finds fills outside of the relayer lookback window", function () {
     // @todo
     return;
   });

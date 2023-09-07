@@ -261,11 +261,11 @@ async function run(argv: string[]): Promise<boolean> {
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async () => {
+    .then(() => {
       // eslint-disable-next-line no-process-exit
       process.exit(0);
     })
-    .catch(async (error) => {
+    .catch((error) => {
       console.error("Process exited with", error);
       // eslint-disable-next-line no-process-exit
       process.exit(1);

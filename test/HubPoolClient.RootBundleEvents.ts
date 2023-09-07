@@ -46,7 +46,7 @@ async function constructSimpleTree(runningBalance: BigNumber) {
   return { leaves, tree };
 }
 
-describe("HubPoolClient: RootBundle Events", async function () {
+describe("HubPoolClient: RootBundle Events", function () {
   beforeEach(async function () {
     ({ hubPool, l1Token_1, l1Token_2, dataworker, timer, owner } = await setupDataworker(
       ethers,
@@ -427,7 +427,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     );
   });
 
-  describe("HubPoolClient: UBA-specific runningBalances tests", async function () {
+  describe("HubPoolClient: UBA-specific runningBalances tests", function () {
     const hubPoolChainId = 1;
     const chainIds = [10, 137, 42161];
     const maxConfigStoreVersion = UBA_MIN_CONFIG_STORE_VERSION + 1;
@@ -514,10 +514,10 @@ describe("HubPoolClient: RootBundle Events", async function () {
           expect(leafEvent).to.not.be.undefined;
 
           // Must truncate runningBalances under UBA.
-          const expectedRunningBalances =
+          const expectedRunningBalances: constants.BigNumber[] =
             version < UBA_MIN_CONFIG_STORE_VERSION
-              ? leafEvent?.args["runningBalances"]
-              : leafEvent?.args["runningBalances"].slice(0, leafEvent.args["l1Tokens"].length);
+              ? leafEvent?.args?.["runningBalances"]
+              : leafEvent?.args?.["runningBalances"].slice(0, leafEvent.args["l1Tokens"].length);
           expectedRunningBalances.forEach((balance, idx) => expect(balance.eq(runningBalances[idx])).to.be.true);
 
           // Must generate 0 incentiveBalances pre-UBA.

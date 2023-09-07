@@ -10,8 +10,8 @@ const address = randomAddress(); // Test contract address
 const method = "testMethod";
 let txnClient: MockedTransactionClient;
 
-describe("TransactionClient", async function () {
-  beforeEach(async function () {
+describe("TransactionClient", function () {
+  beforeEach(function () {
     txnClient = new MockedTransactionClient(spyLogger);
   });
 

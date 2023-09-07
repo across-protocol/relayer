@@ -565,7 +565,7 @@ export class Relayer {
     return profitable ? preferredChainId : undefined;
   }
 
-  protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
+  protected computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): BigNumber {
     if (!sdkUtils.isUBA(version)) {
       if (deposit.realizedLpFeePct === undefined) {
         throw new Error(`Deposit ${deposit.depositId} is missing realizedLpFeePct`);
