@@ -168,7 +168,7 @@ export class BundleDataClient {
   // Common data re-formatting logic shared across all data worker public functions.
   // User must pass in spoke pool to search event data against. This allows the user to refund relays and fill deposits
   // on deprecated spoke pools.
-  async loadData(
+  loadData(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     logData = true
@@ -409,7 +409,7 @@ export class BundleDataClient {
           this.chainIdListForBundleEvaluationBlockNumbers
         );
         const refundRequests = originClient.getRefundRequests(blockRangeForChain[0], blockRangeForChain[1]);
-        await Promise.all(refundRequests.map(async (refundRequest) => validateRefundRequestAndSaveData(refundRequest)));
+        await Promise.all(refundRequests.map((refundRequest) => validateRefundRequestAndSaveData(refundRequest)));
       }
     }
 

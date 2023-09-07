@@ -195,7 +195,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     );
   }
 
-  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
+  wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
     throw new Error("Unnecessary to wrap ETH on Arbitrum");
   }
 

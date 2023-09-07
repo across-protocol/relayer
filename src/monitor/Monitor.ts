@@ -142,7 +142,7 @@ export class Monitor {
     }
   }
 
-  async checkUnknownRootBundleCallers(): Promise<void> {
+  checkUnknownRootBundleCallers(): void {
     this.logger.debug({ at: "Monitor#RootBundleCallers", message: "Checking for unknown root bundle callers" });
 
     const proposedBundles = this.clients.hubPoolClient.getProposedRootBundlesInBlockRange(
@@ -169,7 +169,7 @@ export class Monitor {
     }
   }
 
-  async checkUnknownRelayers(): Promise<void> {
+  checkUnknownRelayers(): void {
     const chainIds = this.monitorChains;
     this.logger.debug({ at: "Monitor#checkUnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
@@ -509,7 +509,7 @@ export class Monitor {
   // transfers stuck for longer than 1 bundle and the current time is within the last bundle execution + grace period.
   // But this should be okay as we should address any stuck transactions immediately so realistically no transfers
   // should stay unstuck for longer than one bundle.
-  async checkStuckRebalances(): Promise<void> {
+  checkStuckRebalances(): void {
     const hubPoolClient = this.clients.hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockNumber);
     // This case shouldn't happen outside of tests as Across V2 has already launched.

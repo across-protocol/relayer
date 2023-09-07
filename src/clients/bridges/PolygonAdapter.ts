@@ -288,7 +288,7 @@ export class PolygonAdapter extends BaseAdapter {
     );
   }
 
-  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
+  wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
     throw new Error("Unneccessary to wrap ETH on Polygon");
   }
 }

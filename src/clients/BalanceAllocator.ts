@@ -88,12 +88,7 @@ export class BalanceAllocator {
     return true;
   }
 
-  async requestBalanceAllocation(
-    chainId: number,
-    tokens: string[],
-    holder: string,
-    amount: BigNumber
-  ): Promise<boolean> {
+  requestBalanceAllocation(chainId: number, tokens: string[], holder: string, amount: BigNumber): Promise<boolean> {
     return this.requestBalanceAllocations([{ chainId, tokens, holder, amount }]);
   }
 

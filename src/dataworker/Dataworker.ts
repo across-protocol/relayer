@@ -1874,7 +1874,7 @@ export class Dataworker {
     });
   }
 
-  async _updateExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {
+  _updateExchangeRates(l1Tokens: string[], submitExecution: boolean): void {
     const syncedL1Tokens: string[] = [];
     l1Tokens.forEach((l1Token) => {
       // Exit early if we already synced this l1 token on this loop

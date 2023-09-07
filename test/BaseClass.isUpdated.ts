@@ -44,7 +44,7 @@ describe("BaseAbstractClient.isUpdated", () => {
       await ubaClient.update();
       expect(ubaClient.isUpdated).to.be.true;
     });
-    it("should return false if the client is not updated", async () => {
+    it("should return false if the client is not updated", () => {
       expect(ubaClient.isUpdated).to.be.false;
     });
   });

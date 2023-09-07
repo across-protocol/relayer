@@ -204,7 +204,7 @@ async function prepareFinalizations(
   const l1ERC20Bridge = getL1ERC20Bridge(l1ChainId);
   const ethAddr = getEthAddressForChain(l2ChainId);
 
-  return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal) =>
+  return await sdkUtils.mapAsync(withdrawalParams, (withdrawal) =>
     prepareFinalization(withdrawal, ethAddr, l1Mailbox, l1ERC20Bridge)
   );
 }

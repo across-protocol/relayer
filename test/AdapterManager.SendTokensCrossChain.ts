@@ -64,7 +64,7 @@ const addAttrib = (obj: unknown) =>
     transactionSubmissionData: number;
   };
 
-describe("AdapterManager: Send tokens cross-chain", async function () {
+describe("AdapterManager: Send tokens cross-chain", function () {
   beforeEach(async function () {
     [relayer, owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());

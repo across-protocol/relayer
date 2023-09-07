@@ -57,7 +57,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
     }, maxConcurrency);
   }
 
-  override async send(method: string, params: Array<any>): Promise<any> {
+  override send(method: string, params: Array<any>): Promise<any> {
     // This simply creates a promise and adds the arguments and resolve and reject handlers to the task.
     return new Promise<any>((resolve, reject) => {
       const task: RateLimitTask = {
@@ -200,7 +200,7 @@ class CacheProvider extends RateLimitedProvider {
         throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
       }
 
-      return this.canCacheInformationFromBlock(toBlock);
+      return await this.canCacheInformationFromBlock(toBlock);
     } else if ("eth_call" === method || "eth_getBlockByNumber" === method) {
       // Pull out the block tag from params. Its position in params is dependent on the method.
       // We are only interested in numeric block tags, which would be hex-encoded strings.
@@ -213,7 +213,7 @@ class CacheProvider extends RateLimitedProvider {
       }
 
       // If the block is old enough to cache, cache the call.
-      return this.canCacheInformationFromBlock(blockNumber);
+      return await this.canCacheInformationFromBlock(blockNumber);
     } else {
       return false;
     }

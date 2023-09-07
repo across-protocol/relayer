@@ -32,14 +32,14 @@ class TestBalanceAllocator extends BalanceAllocator {
   }
 }
 
-describe("BalanceAllocator", async function () {
+describe("BalanceAllocator", function () {
   let balanceAllocator: TestBalanceAllocator;
   const testToken1 = randomAddress();
   const testToken2 = randomAddress();
 
   const testAccount1 = randomAddress();
 
-  beforeEach(async function () {
+  beforeEach(function () {
     balanceAllocator = new TestBalanceAllocator();
   });
 
@@ -49,7 +49,7 @@ describe("BalanceAllocator", async function () {
     expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(0));
   });
 
-  it("Add used", async function () {
+  it("Add used", function () {
     balanceAllocator.addUsed(1, testToken1, testAccount1, BigNumber.from(100));
     expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(100));
   });

@@ -46,8 +46,8 @@ class TestAdapter extends BaseAdapter {
 }
 
 let adapter: TestAdapter;
-describe("AdapterManager: Get outstanding cross chain token transfer amounts", async function () {
-  beforeEach(async function () {
+describe("AdapterManager: Get outstanding cross chain token transfer amounts", function () {
+  beforeEach(function () {
     adapter = new TestAdapter();
   });
 

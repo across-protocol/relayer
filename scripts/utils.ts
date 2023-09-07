@@ -19,7 +19,7 @@ const fallbackProviders: { [chainId: number]: string } = {
   5: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
 };
 
-async function askQuestion(query: string) {
+function askQuestion(query: string) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   return new Promise((resolve) =>

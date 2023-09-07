@@ -175,11 +175,11 @@ export async function run(): Promise<void> {
 
 if (require.main === module) {
   run()
-    .then(async () => {
+    .then(() => {
       // eslint-disable-next-line no-process-exit
       process.exit(0);
     })
-    .catch(async (error) => {
+    .catch((error) => {
       console.error("Process exited with", error);
       // eslint-disable-next-line no-process-exit
       process.exit(1);
