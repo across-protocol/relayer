@@ -85,21 +85,21 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
   if (method === "eth_getBlockByNumber") {
     // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
     // led alchemy and quicknode to disagree on the the miner field's value.
-    return compareResultsAndFilterIgnoredKeys(["miner"], rpcResultA, rpcResultB);
+    return compareResultsAndFilterIgnoredKeys(
+      [
+        "miner", // polygon (sometimes)
+        "l1BatchNumber", // zkSync
+        "l1BatchTimestamp", // zkSync
+      ],
+      rpcResultA,
+      rpcResultB
+    );
   } else if (method === "eth_getLogs") {
     // We've seen some RPC's like QuickNode add in transactionLogIndex which isn't in the
     // JSON RPC spec: https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterchanges
     // Additional reference: https://github.com/ethers-io/ethers.js/issues/1721
     // 2023-08-31 Added blockHash because of upstream zkSync provider disagreements. Consider removing later.
-    return compareResultsAndFilterIgnoredKeys(
-      [
-        "l1BatchNumber", // zkSync
-        "l1BatchTimestamp", // zkSync
-        "transactionLogIndex",
-      ],
-      rpcResultA,
-      rpcResultB
-    );
+    return compareResultsAndFilterIgnoredKeys(["transactionLogIndex"], rpcResultA, rpcResultB);
   } else {
     return lodash.isEqual(rpcResultA, rpcResultB);
   }
