@@ -16,6 +16,7 @@ module.exports = {
   parser: "@typescript-eslint/parser",
   parserOptions: {
     ecmaVersion: 12,
+    project: "./tsconfig.eslint.json",
   },
   rules: {
     "prettier/prettier": ["warn"],
@@ -35,6 +36,8 @@ module.exports = {
     "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
     "chai-expect/missing-assertion": 2,
     "no-duplicate-imports": "error",
+    //    "require-await": "error",
+    "@typescript-eslint/no-floating-promises": ["error"],
   },
   settings: {
     node: {
