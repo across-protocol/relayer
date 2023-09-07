@@ -91,7 +91,11 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
     // JSON RPC spec: https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getfilterchanges
     // Additional reference: https://github.com/ethers-io/ethers.js/issues/1721
     // 2023-08-31 Added blockHash because of upstream zkSync provider disagreements. Consider removing later.
-    return compareResultsAndFilterIgnoredKeys(["blockHash", "transactionLogIndex"], rpcResultA, rpcResultB);
+    return compareResultsAndFilterIgnoredKeys([
+      "l1BatchNumber",  // zkSync
+      "l1BatchTimestamp", // zkSync
+      "transactionLogIndex"
+    ], rpcResultA, rpcResultB);
   } else {
     return lodash.isEqual(rpcResultA, rpcResultB);
   }
