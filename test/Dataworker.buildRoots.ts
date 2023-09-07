@@ -299,7 +299,7 @@ describe("Dataworker: Build merkle roots", async function () {
           poolRebalanceRoot1.runningBalances
         )
       ).tree;
-      const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
+      const expectedMerkleRoot1 = buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
       expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
       // Submit fills for multiple repayment chains. Note: Send the fills for destination tokens in the

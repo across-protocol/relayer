@@ -1,9 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "include": [".eslintrc.js", "index.ts", "./src", "./scripts", "./test", "./deploy", "./tasks"],
-  "exclude": ["artifacts", "cache", "dist", "node_modules"],
-  "compilerOptions": {
-    "target": "es6",
-    "module": "commonjs"
-  }
+  "exclude": ["artifacts", "cache", "dist", "node_modules"]
 }
