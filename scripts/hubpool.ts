@@ -1,17 +1,10 @@
-import assert from "assert";
-import * as contracts from "@across-protocol/contracts-v2";
-import { BigNumber, Contract, ethers, Wallet } from "ethers";
 import minimist from "minimist";
+import { WETH9__factory as WETH9 } from "@across-protocol/contracts-v2";
+import { BigNumber, ethers, Wallet } from "ethers";
 import { config } from "dotenv";
-import { getDeployedContract, getNetworkName, getNodeUrlList, getSigner } from "../src/utils";
+import { getNetworkName, getSigner } from "../src/utils";
+import * as utils from "./utils";
 
-// Fallback providers, to be used if preferred RPC providers are not defined in the environment.
-const providers: { [chainId: number]: string } = {
-  1: "https://eth.llamarpc.com",
-  5: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
-};
-
-const { WETH9__factory: WETH9 } = contracts;
 const { MaxUint256, One: bnOne } = ethers.constants;
 const { formatEther, formatUnits } = ethers.utils;
 
@@ -20,47 +13,9 @@ const NODE_SUCCESS = 0;
 const NODE_INPUT_ERR = 9;
 const NODE_APP_ERR = 127; // user-defined
 
-const testChains = [5, 280];
-const chains = [1, 10, 137, 324, 8453, 42161];
-
 function bnMax(a: BigNumber, b: BigNumber): BigNumber {
   const result = a.sub(b);
   return result.isZero() || result.gt(0) ? a : b;
-}
-
-function resolveHubChainId(spokeChainId: number): number {
-  if (chains.includes(spokeChainId)) {
-    return 1;
-  }
-
-  assert(testChains.includes(spokeChainId), `Unsupported SpokePool chain ID: ${spokeChainId}`);
-  return 5;
-}
-
-function getProviderUrl(chainId: number): string {
-  try {
-    return getNodeUrlList(chainId, 1)[0];
-  } catch {
-    return providers[chainId];
-  }
-}
-
-async function getConfigStore(chainId: number): Promise<Contract> {
-  const contractName = "AcrossConfigStore";
-  const hubPoolChainId = resolveHubChainId(chainId);
-
-  const configStore = getDeployedContract(contractName, hubPoolChainId);
-  const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(hubPoolChainId));
-  return configStore.connect(provider);
-}
-
-async function getHubPoolContract(chainId: number): Promise<Contract> {
-  const contractName = "HubPool";
-  const hubPoolChainId = resolveHubChainId(chainId);
-
-  const hubPool = getDeployedContract(contractName, hubPoolChainId);
-  const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(hubPoolChainId));
-  return hubPool.connect(provider);
 }
 
 async function dispute(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
@@ -70,7 +25,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
   const { force, txnHash } = args;
 
   const network = getNetworkName(chainId);
-  const hubPool = await getHubPoolContract(chainId);
+  const hubPool = await utils.getContract(chainId, "HubPool");
   signer = signer.connect(hubPool.provider);
   const [bondTokenAddress, bondAmount, proposal, liveness, latestBlock] = await Promise.all([
     hubPool.bondToken(),
@@ -202,7 +157,10 @@ async function search(args: Record<string, number | string>, _signer: Wallet): P
     throw new Error(`Invalid block range: ${fromBlock}, ${toBlock}`);
   }
 
-  const [configStore, hubPool] = await Promise.all([getConfigStore(chainId), getHubPoolContract(chainId)]);
+  const [configStore, hubPool] = await Promise.all([
+    utils.getContract(chainId, "ConfigStore"),
+    utils.getContract(chainId, "HubPool"),
+  ]);
 
   const filter = hubPool.filters[eventName]?.();
   if (filter === undefined) {
@@ -218,7 +176,7 @@ async function search(args: Record<string, number | string>, _signer: Wallet): P
       configStore.globalConfig(CHAIN_ID_INDICES, { blockTag: blockNumber }),
     ]);
 
-    const DEFAULT_CHAIN_IDS = chainId === 1 ? chains : testChains;
+    const DEFAULT_CHAIN_IDS = chainId === 1 ? utils.chains : utils.testChains;
     const chainIds = _chainIds.length > 0 ? JSON.parse(_chainIds.replaceAll('"', "")) : DEFAULT_CHAIN_IDS;
 
     const args = hubPool.interface.parseLog({ data, topics }).args;
