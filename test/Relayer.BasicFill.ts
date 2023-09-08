@@ -533,9 +533,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     // Fish the DepositWithBlock directly out of the SpokePoolClient;
     // confirm that the realizedLpFeePct is _not_ the UBA systemFee.
     const _deposit = spokePoolClients[originChainId].getDepositsForDestinationChain(destinationChainId)[0];
+    expect(_deposit.realizedLpFeePct).to.not.be.undefined;
     expect(_deposit.depositId).to.eq(deposit1?.depositId);
-    expect(_deposit.realizedLpFeePct?.gt(0)).to.not.be.undefined.and.to.be.true;
-    expect(_deposit.realizedLpFeePct?.eq(expectedSystemFeePct)).to.not.be.undefined.and.to.be.false;
+    expect(_deposit.realizedLpFeePct?.gt(0)).to.be.true;
+    expect(_deposit.realizedLpFeePct?.eq(expectedSystemFeePct)).to.be.false;
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
