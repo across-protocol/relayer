@@ -115,7 +115,7 @@ export function resolveHubChainId(spokeChainId: number): number {
  * @param contractName Name of the deployed contract.
  * @returns ethers Contract instance.
  */
-export async function getContract(chainId: number, contractName: string): Promise<Contract> {
+export function getContract(chainId: number, contractName: string): Contract {
   const contract = getDeployedContract(contractName, chainId);
   const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(chainId));
   return contract.connect(provider);

@@ -264,10 +264,10 @@ async function run(argv: string[]): Promise<number> {
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async (result) => {
+    .then((result) => {
       process.exitCode = result;
     })
-    .catch(async (error) => {
+    .catch((error) => {
       console.error("Process exited with", error);
       process.exitCode = NODE_APP_ERR;
     });
