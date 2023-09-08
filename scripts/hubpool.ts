@@ -1,6 +1,6 @@
 import assert from "assert";
 import * as contracts from "@across-protocol/contracts-v2";
-import { BigNumber, Contract, ethers, providers, Wallet } from "ethers";
+import { BigNumber, Contract, ethers, Wallet } from "ethers";
 import minimist from "minimist";
 import { config } from "dotenv";
 import { getDeployedContract, getNetworkName, getNodeUrlList, getSigner } from "../src/utils";
