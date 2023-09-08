@@ -132,8 +132,10 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
       console.log(`Invalid proposal transaction hash supplied: ${txnHash}.`);
     }
     console.log(
-      "To dispute, re-run with the following transaction hash (WARNING: THIS *WILL* SUBMIT A DISPUTE):\n\n" +
-        `\t--txnHash ${rootBundleProposal.transactionHash}\n`
+      "To dispute, re-run with the following transaction hash (WARNING: THIS *WILL* SUBMIT A DISPUTE):\n" +
+        `\n\t--txnHash ${rootBundleProposal.transactionHash}\n` +
+        "\nFor example:\n" +
+        `\n\tyarn dispute --txnHash ${rootBundleProposal.transactionHash}\n`
     );
     return txnHash === undefined;
   }
