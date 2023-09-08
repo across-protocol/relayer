@@ -78,7 +78,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
     hubPool.queryFilter(filter, fromBlock, latestBlock.number),
   ]);
 
-  /* Resolve the existing proposal and determine whether it can still be disputed. */
+  /* Resolve the existing proposal to dump its information. */
   const { poolRebalanceRoot, relayerRefundRoot, slowRelayRoot, challengePeriodEndTimestamp } = proposal;
   const rootBundleProposal = proposals.find(({ args }) => {
     return (
@@ -178,7 +178,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function scrape(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
+async function search(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
   const eventName = args.event as string;
   const fromBlock = Number(args.fromBlock) || undefined;
   const toBlock = Number(args.toBlock) || undefined;
@@ -209,7 +209,6 @@ async function scrape(args: Record<string, number | string>, _signer: Wallet): P
 
     const args = hubPool.interface.parseLog({ data, topics }).args;
     const eventArgs = Object.keys(args).filter((key) => isNaN(Number(key)));
-    const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
     const dateStr = new Date(Number(block.timestamp * 1000)).toUTCString();
 
     const fields = {
@@ -220,6 +219,7 @@ async function scrape(args: Record<string, number | string>, _signer: Wallet): P
       chainIds: chainIds.join(","),
       ...Object.fromEntries(eventArgs.map((arg) => [arg, args[arg]])),
     };
+    const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
     console.log(
       Object.entries(fields)
         .map(([k, v]) => `${k.padEnd(padLeft)} : ${v}`)
@@ -235,7 +235,7 @@ function usage(badInput?: string): boolean {
   const walletOpts = "mnemonic|privateKey";
   const runtimeArgs = {
     dispute: ["--chainId", "[--txnHash <proposalHash>]"],
-    scrape: ["--chainId", "--event <eventName>", "[--fromBlock <fromBlock>]", "[--toBlock <toBlock>]"],
+    search: ["--chainId", "--event <eventName>", "[--fromBlock <fromBlock>]", "[--toBlock <toBlock>]"],
   };
 
   usageStr += "Usage:\n";
@@ -278,8 +278,8 @@ async function run(argv: string[]): Promise<number> {
     case "dispute":
       result = await dispute(args, signer);
       break;
-    case "scrape":
-      result = await scrape(args, signer);
+    case "search":
+      result = await search(args, signer);
       break;
     default:
       return usage() ? NODE_SUCCESS : NODE_INPUT_ERR;
