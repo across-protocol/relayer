@@ -1,9 +1,15 @@
 import assert from "assert";
 import * as contracts from "@across-protocol/contracts-v2";
-import { BigNumber, Contract, ethers, Wallet } from "ethers";
+import { BigNumber, Contract, ethers, providers, Wallet } from "ethers";
 import minimist from "minimist";
 import { config } from "dotenv";
 import { getDeployedContract, getNetworkName, getNodeUrlList, getSigner } from "../src/utils";
+
+// Fallback providers, to be used if preferred RPC providers are not defined in the environment.
+const providers: { [chainId: number]: string } = {
+  1: "https://eth.llamarpc.com",
+  5: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
+};
 
 const { WETH9__factory: WETH9 } = contracts;
 const { MaxUint256, One: bnOne } = ethers.constants;
@@ -31,12 +37,20 @@ function resolveHubChainId(spokeChainId: number): number {
   return 5;
 }
 
+function getProviderUrl(chainId: number): string {
+  try {
+    return getNodeUrlList(chainId, 1)[0];
+  } catch {
+    return providers[chainId];
+  }
+}
+
 async function getConfigStore(chainId: number): Promise<Contract> {
   const contractName = "AcrossConfigStore";
   const hubPoolChainId = resolveHubChainId(chainId);
 
   const configStore = getDeployedContract(contractName, hubPoolChainId);
-  const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(hubPoolChainId, 1)[0]);
+  const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(hubPoolChainId));
   return configStore.connect(provider);
 }
 
@@ -45,7 +59,7 @@ async function getHubPoolContract(chainId: number): Promise<Contract> {
   const hubPoolChainId = resolveHubChainId(chainId);
 
   const hubPool = getDeployedContract(contractName, hubPoolChainId);
-  const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(hubPoolChainId, 1)[0]);
+  const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(hubPoolChainId));
   return hubPool.connect(provider);
 }
 
