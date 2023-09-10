@@ -392,7 +392,11 @@ export async function _buildPoolRebalanceRoot(
       runningBalances,
       clients.hubPoolClient,
       earlyDeposit,
-      earlyDeposit.args.amount.mul(toBN(-1))
+      // TODO: fix this.
+      // Because cloneDeep drops the non-array elements of args, we have to use the index rather than the name.
+      // As a fix, earlyDeposits should be treated similarly to other events and transformed at ingestion time
+      // into a type that is more digestable rather than a raw event.
+      earlyDeposit.args[0].mul(toBN(-1))
     );
   });
 
