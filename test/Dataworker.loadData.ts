@@ -37,7 +37,7 @@ import {
 
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { DepositWithBlock, Fill } from "../src/interfaces";
+import { Deposit, DepositWithBlock, Fill } from "../src/interfaces";
 import { MAX_UINT_VAL, getRealizedLpFeeForFills, getRefundForFills, toBN } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -103,10 +103,13 @@ describe("Dataworker: Load data used in all functions", async function () {
       deposits: [],
       fillsToRefund: {},
       allValidFills: [],
+      earlyDeposits: [],
     });
   });
   describe("Computing refunds for bundles", function () {
-    let fill1: Fill, deposit1;
+    let fill1: Fill;
+    let deposit1: Deposit;
+
     beforeEach(async function () {
       await updateAllClients();
 
@@ -579,7 +582,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       erc20_1,
       depositor,
       relayer,
-      { ...deposit2, realizedLpFeePct: deposit2.realizedLpFeePct.div(toBN(2)) },
+      { ...deposit2, realizedLpFeePct: deposit2.realizedLpFeePct?.div(toBN(2)) },
       0.25
     );
     // Note: This fill has identical deposit data to fill2 except for the destination token being different
