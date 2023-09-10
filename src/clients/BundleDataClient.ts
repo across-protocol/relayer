@@ -31,9 +31,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients } from "@across-protocol/sdk-v2";
-// eslint-disable-next-line node/no-missing-import
-import { FundsDepositedEvent } from "@across-protocol/sdk-v2/dist/typechain";
+import { clients, typechain } from "@across-protocol/sdk-v2";
 const { refundRequestIsValid, isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
@@ -41,7 +39,7 @@ type DataCacheValue = {
   fillsToRefund: FillsToRefund;
   allValidFills: FillWithBlock[];
   deposits: DepositWithBlock[];
-  earlyDeposits: FundsDepositedEvent[];
+  earlyDeposits: typechain.FundsDepositedEvent[];
 };
 type DataCache = Record<string, DataCacheValue>;
 
@@ -179,7 +177,7 @@ export class BundleDataClient {
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
-    earlyDeposits: FundsDepositedEvent[];
+    earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
     const mainnetStartBlock = getBlockRangeForChain(
       blockRangesForChains,
@@ -202,7 +200,7 @@ export class BundleDataClient {
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
-    earlyDeposits: FundsDepositedEvent[];
+    earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
     const key = JSON.stringify(blockRangesForChains);
 
@@ -228,7 +226,7 @@ export class BundleDataClient {
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
-    const earlyDeposits: FundsDepositedEvent[] = [];
+    const earlyDeposits: typechain.FundsDepositedEvent[] = [];
 
     // Save refund in-memory for validated fill.
     const addRefundForValidFill = (

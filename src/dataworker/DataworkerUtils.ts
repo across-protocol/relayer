@@ -1,4 +1,4 @@
-import { utils } from "@across-protocol/sdk-v2";
+import { utils, typechain } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -45,8 +45,6 @@ import {
   sortRefundAddresses,
   sortRelayerRefundLeaves,
 } from "./RelayerRefundUtils";
-// eslint-disable-next-line node/no-missing-import
-import { FundsDepositedEvent } from "@across-protocol/sdk-v2/dist/typechain";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -331,7 +329,7 @@ export async function _buildPoolRebalanceRoot(
   allValidFills: FillWithBlock[],
   allValidFillsInRange: FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
-  earlyDeposits: FundsDepositedEvent[],
+  earlyDeposits: typechain.FundsDepositedEvent[],
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[],

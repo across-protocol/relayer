@@ -1,5 +1,4 @@
-// eslint-disable-next-line node/no-missing-import
-import { FundsDepositedEvent } from "@across-protocol/sdk-v2/dist/typechain";
+import { typechain } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
@@ -82,7 +81,7 @@ export function updateRunningBalanceForDeposit(
 export function updateRunningBalanceForEarlyDeposit(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
-  deposit: FundsDepositedEvent,
+  deposit: typechain.FundsDepositedEvent,
   updateAmount: BigNumber
 ): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(

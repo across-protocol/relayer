@@ -48,8 +48,6 @@ import {
 import _ from "lodash";
 import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
-// eslint-disable-next-line node/no-missing-import
-import { FundsDepositedEvent } from "@across-protocol/sdk-v2/dist/typechain";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -2224,7 +2222,7 @@ export class Dataworker {
     allValidFills: FillWithBlock[],
     allValidFillsInRange: FillWithBlock[],
     unfilledDeposits: UnfilledDeposit[],
-    earlyDeposits: FundsDepositedEvent[],
+    earlyDeposits: sdk.typechain.FundsDepositedEvent[],
     logSlowFillExcessData = false
   ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
