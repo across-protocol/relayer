@@ -38,12 +38,15 @@ import {
   initializeRunningBalancesFromRelayerRepayments,
   subtractExcessFromPreviousSlowFillsFromRunningBalances,
   updateRunningBalanceForDeposit,
+  updateRunningBalanceForEarlyDeposit,
 } from "./PoolRebalanceUtils";
 import {
   getAmountToReturnForRelayerRefundLeaf,
   sortRefundAddresses,
   sortRelayerRefundLeaves,
 } from "./RelayerRefundUtils";
+// eslint-disable-next-line node/no-missing-import
+import { FundsDepositedEvent } from "@across-protocol/sdk-v2/dist/typechain";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -328,6 +331,7 @@ export async function _buildPoolRebalanceRoot(
   allValidFills: FillWithBlock[],
   allValidFillsInRange: FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
+  earlyDeposits: FundsDepositedEvent[],
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -381,6 +385,15 @@ export async function _buildPoolRebalanceRoot(
   // its important that `deposits` are all in this current block range.
   deposits.forEach((deposit: DepositWithBlock) => {
     updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.amount.mul(toBN(-1)));
+  });
+
+  earlyDeposits.forEach((earlyDeposit) => {
+    updateRunningBalanceForEarlyDeposit(
+      runningBalances,
+      clients.hubPoolClient,
+      earlyDeposit,
+      earlyDeposit.args.amount.mul(toBN(-1))
+    );
   });
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
