@@ -22,6 +22,7 @@
 # This script accepts two arguments:
 #   - The first argument is the target chain ID
 #   - The second argument is the base domain to make the HTTP request to
+#   - The third argument is the amount of tokens to transmit
 #
 # Example usage: ./testTargetChainRoutes.sh my-chain-id example.com
 
@@ -46,10 +47,11 @@ get_json_field() {
 
 TARGET_CHAIN_ID=$1
 BASE_DOMAIN=$2
+AMOUNT_TO_TRANSMIT=$3
 
 # Verify that the target chain ID and the base domain were provided
-if [ -z "$TARGET_CHAIN_ID" ] || [ -z "$BASE_DOMAIN" ]; then
-    echo "Usage: $0 <target chain ID> <base domain>"
+if [ -z "$TARGET_CHAIN_ID" ] || [ -z "$BASE_DOMAIN" ] || [ -z "$AMOUNT_TO_TRANSMIT" ]; then
+    echo "Usage: $0 <target chain ID> <base domain> <amount to transmit>"
     exit 1
 fi
 
@@ -80,7 +82,7 @@ for route in "${ORIGIN_ROUTES[@]}" "${DESTINATION_ROUTES[@]}"; do
         echo "Sending a deposit from $from_chain_id to $to_chain_id on token $origin_token_address"
 
         # Call yarn deposit with the correct arguments
-        echo $(yarn deposit --from $from_chain_id --to $to_chain_id --token $origin_token_address --amount 1)
+        echo $(yarn deposit --from $from_chain_id --to $to_chain_id --token $origin_token_address --amount $AMOUNT_TO_TRANSMIT)
 
     done
 
