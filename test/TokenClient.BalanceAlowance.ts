@@ -58,7 +58,7 @@ describe("TokenClient: Balance and Allowance", async function () {
     );
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });

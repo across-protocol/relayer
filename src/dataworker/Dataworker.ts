@@ -168,10 +168,8 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBlock?: number
   ): Promise<PoolRebalanceRoot> {
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
-      blockRangesForChains,
-      spokePoolClients
-    );
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
+      await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForChains,
@@ -194,6 +192,7 @@ export class Dataworker {
       allValidFills,
       allValidFillsInRange,
       unfilledDeposits,
+      earlyDeposits,
       true
     );
   }
@@ -497,12 +496,8 @@ export class Dataworker {
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient._loadData(
-      blockRangesForProposal,
-      spokePoolClients,
-      false,
-      logData
-    );
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
+      await this.clients.bundleDataClient._loadData(blockRangesForProposal, spokePoolClients, false, logData);
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
@@ -525,6 +520,7 @@ export class Dataworker {
       allValidFills,
       allValidFillsInRange,
       unfilledDeposits,
+      earlyDeposits,
       true
     );
     const relayerRefundRoot = _buildRelayerRefundRoot(
@@ -2231,6 +2227,7 @@ export class Dataworker {
     allValidFills: FillWithBlock[],
     allValidFillsInRange: FillWithBlock[],
     unfilledDeposits: UnfilledDeposit[],
+    earlyDeposits: sdk.typechain.FundsDepositedEvent[],
     logSlowFillExcessData = false
   ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
@@ -2246,6 +2243,7 @@ export class Dataworker {
         allValidFills,
         allValidFillsInRange,
         unfilledDeposits,
+        earlyDeposits,
         this.clients,
         spokePoolClients,
         this.chainIdListForBundleEvaluationBlockNumbers,

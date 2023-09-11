@@ -3,7 +3,7 @@ import { Contract, BigNumber, Event, EventSearchConfig } from "../../../utils";
 export interface BridgeTransactionDetails {
   readonly contract: Contract;
   readonly method: string;
-  readonly args: any[];
+  readonly args: unknown[];
 }
 
 export interface OpStackBridge {

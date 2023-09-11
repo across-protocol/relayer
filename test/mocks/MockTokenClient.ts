@@ -8,20 +8,20 @@ export class MockTokenClient extends TokenClient {
     [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
   } = {};
 
-  setTokenData(chainId: number, token: string, balance: BigNumber, allowance: BigNumber = toBN(0)) {
+  setTokenData(chainId: number, token: string, balance: BigNumber, allowance: BigNumber = toBN(0)): void {
     if (!this.tokenData[chainId]) {
       this.tokenData[chainId] = {};
     }
     this.tokenData[chainId][token] = { balance, allowance };
   }
-  setTokenShortFallData(chainId: number, token: string, deposits: number[], totalRequirement: BigNumber) {
+  setTokenShortFallData(chainId: number, token: string, deposits: number[], totalRequirement: BigNumber): void {
     if (!this.tokenShortfall[chainId]) {
       this.tokenShortfall[chainId] = {};
     }
     this.tokenShortfall[chainId][token] = { deposits, totalRequirement };
   }
 
-  getBalance(chainId: number, token: string) {
+  getBalance(chainId: number, token: string): BigNumber {
     if (!this.tokenData[chainId]) {
       return toBN(0);
     }
@@ -31,7 +31,7 @@ export class MockTokenClient extends TokenClient {
     return this.tokenData[chainId][token].balance;
   }
 
-  getTokensNeededToCoverShortfall(chainId: number, token: string) {
+  getTokensNeededToCoverShortfall(chainId: number, token: string): BigNumber {
     if (!this.tokenShortfall[chainId]) {
       return toBN(0);
     }
@@ -41,7 +41,7 @@ export class MockTokenClient extends TokenClient {
     return this.tokenShortfall[chainId][token].totalRequirement;
   }
 
-  decrementLocalBalance(chainId: number, token: string, amount: BigNumber) {
+  decrementLocalBalance(chainId: number, token: string, amount: BigNumber): void {
     if (!this.tokenData[chainId]) {
       this.tokenData[chainId] = {};
     }

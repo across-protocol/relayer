@@ -97,6 +97,7 @@ describe("SpokePoolClient: Event Filtering", async function () {
       {} as EventSearchConfig,
       DEFAULT_CONFIG_STORE_VERSION,
       chainIds,
+      undefined,
       mockUpdate
     );
     await configStoreClient.update();

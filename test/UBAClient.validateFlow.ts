@@ -9,7 +9,7 @@ import {
   ethers,
   hubPoolFixture,
 } from "./utils";
-import { CHAIN_ID_TEST_LIST, expect, randomAddress, toBNWei } from "./constants";
+import { BigNumber, CHAIN_ID_TEST_LIST, expect, randomAddress, toBNWei } from "./constants";
 import { SpokePoolClientsByChain, UbaFlow, UbaInflow, UbaOutflow } from "../src/interfaces";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient, MockUBAClient } from "./mocks";
 import { UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
@@ -37,7 +37,23 @@ const realizedLpFeePct = toBNWei("0.13");
 
 // Make these test flows partial types so we can leave some of the params undefined until we get to the individual
 // tests.
-let partialInflow: Omit<UbaInflow, "blockNumber">, partialOutflow: Omit<UbaOutflow, "blockNumber" | "matchedDeposit">;
+let partialInflow: Omit<UbaInflow, "blockNumber">;
+let partialOutflow: Omit<UbaOutflow, "blockNumber" | "matchedDeposit"> & {
+  fillAmount: BigNumber;
+  totalFilledAmount: BigNumber;
+  depositor: string;
+  destinationToken: string;
+  recipient: string;
+  relayerFeePct: BigNumber;
+  updatableRelayData: {
+    recipient: string;
+    isSlowRelay: boolean;
+    message: string;
+    payoutAdjustmentPct: BigNumber;
+    relayerFeePct: BigNumber;
+  };
+  message: string;
+};
 
 describe("UBAClient: Flow validation", function () {
   beforeEach(async function () {
@@ -243,7 +259,10 @@ describe("UBAClient: Flow validation", function () {
 
           const expectedLpFee = inflow.amount.mul(baselineFee).div(toBNWei(1));
           expect(result?.lpFee).to.equal(expectedLpFee);
-          deepEqualsWithBigNumber(result?.flow, inflow);
+          deepEqualsWithBigNumber(
+            result?.flow as unknown as Record<string, unknown>,
+            inflow as unknown as Record<string, unknown>
+          );
         });
       });
       describe("Outflow", function () {
@@ -285,7 +304,10 @@ describe("UBAClient: Flow validation", function () {
           // LP fee is just the realizedLpFee applied to the amount
           const expectedLpFee = outflow.amount.mul(outflow.realizedLpFeePct).div(toBNWei(1));
           expect(result?.lpFee).to.equal(expectedLpFee);
-          deepEqualsWithBigNumber(result?.flow, outflow);
+          deepEqualsWithBigNumber(
+            result?.flow as unknown as Record<string, unknown>,
+            outflow as unknown as Record<string, unknown>
+          );
 
           // Now, we change the outflow's realizedLpFeePct such that it doesn't match with the deposit, it
           // should return undefined.
@@ -400,11 +422,11 @@ describe("UBAClient: Flow validation", function () {
           // Don't add inflow to uba bundle state.
 
           // Throws errors if inflow is before, after, or in same bundle as outflow.
-          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find matched deposit in same bundle");
+          void assertPromiseError(ubaClient.validateFlow(outflow), "Could not find matched deposit in same bundle");
           outflow.matchedDeposit.blockNumber = expectedBlockRanges[originChainId][0].start - 1;
-          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
+          void assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
           outflow.matchedDeposit.blockNumber = expectedBlockRanges[originChainId][0].end + 1;
-          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
+          void assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
         });
       });
     });
