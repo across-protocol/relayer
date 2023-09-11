@@ -20,6 +20,7 @@ import {
   flattenAndFilterUnfilledDepositsByOriginChain,
   updateUnfilledDepositsWithMatchedDeposit,
   getUniqueDepositsInRange,
+  getUniqueEarlyDepositsInRange,
   queryHistoricalDepositForFill,
 } from "../utils";
 import { Clients } from "../common";
@@ -30,7 +31,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, typechain } from "@across-protocol/sdk-v2";
 const { refundRequestIsValid, isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
@@ -38,6 +39,7 @@ type DataCacheValue = {
   fillsToRefund: FillsToRefund;
   allValidFills: FillWithBlock[];
   deposits: DepositWithBlock[];
+  earlyDeposits: typechain.FundsDepositedEvent[];
 };
 type DataCache = Record<string, DataCacheValue>;
 
@@ -175,6 +177,7 @@ export class BundleDataClient {
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
+    earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
     const mainnetStartBlock = getBlockRangeForChain(
       blockRangesForChains,
@@ -197,6 +200,7 @@ export class BundleDataClient {
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
+    earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
     const key = JSON.stringify(blockRangesForChains);
 
@@ -222,6 +226,7 @@ export class BundleDataClient {
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
+    const earlyDeposits: typechain.FundsDepositedEvent[] = [];
 
     // Save refund in-memory for validated fill.
     const addRefundForValidFill = (
@@ -359,6 +364,19 @@ export class BundleDataClient {
           )
         );
 
+        // TODO: replace this logic with something more clear where all deposits can be queried at once,
+        // but separated into early and not after the initial filter/query.
+        earlyDeposits.push(
+          ...getUniqueEarlyDepositsInRange(
+            blockRangesForChains,
+            Number(originChainId),
+            Number(destinationChainId),
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            originClient,
+            earlyDeposits
+          )
+        );
+
         const blockRangeForChain = getBlockRangeForChain(
           blockRangesForChains,
           Number(destinationChainId),
@@ -432,7 +450,7 @@ export class BundleDataClient {
       });
     }
 
-    this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills };
+    this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills, earlyDeposits };
 
     return this.loadDataFromCache(key);
   }

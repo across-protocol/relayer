@@ -1,4 +1,4 @@
-import { utils } from "@across-protocol/sdk-v2";
+import { utils, typechain } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -38,6 +38,7 @@ import {
   initializeRunningBalancesFromRelayerRepayments,
   subtractExcessFromPreviousSlowFillsFromRunningBalances,
   updateRunningBalanceForDeposit,
+  updateRunningBalanceForEarlyDeposit,
 } from "./PoolRebalanceUtils";
 import {
   getAmountToReturnForRelayerRefundLeaf,
@@ -328,6 +329,7 @@ export async function _buildPoolRebalanceRoot(
   allValidFills: FillWithBlock[],
   allValidFillsInRange: FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
+  earlyDeposits: typechain.FundsDepositedEvent[],
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -381,6 +383,19 @@ export async function _buildPoolRebalanceRoot(
   // its important that `deposits` are all in this current block range.
   deposits.forEach((deposit: DepositWithBlock) => {
     updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.amount.mul(toBN(-1)));
+  });
+
+  earlyDeposits.forEach((earlyDeposit) => {
+    updateRunningBalanceForEarlyDeposit(
+      runningBalances,
+      clients.hubPoolClient,
+      earlyDeposit,
+      // TODO: fix this.
+      // Because cloneDeep drops the non-array elements of args, we have to use the index rather than the name.
+      // As a fix, earlyDeposits should be treated similarly to other events and transformed at ingestion time
+      // into a type that is more digestable rather than a raw event.
+      earlyDeposit.args[0].mul(toBN(-1))
+    );
   });
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
