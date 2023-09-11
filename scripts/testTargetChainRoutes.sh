@@ -1,13 +1,13 @@
 #!/bin/bash
 
 ##############################################
-############ SCRIPT Definitions ##############
+############ SCRIPT DEFINITIONS ##############
 ##############################################
 
 # This script is used to test the target chain routes for a given chain ID.
 # It does this by first making an HTTP request to the /api/available-routes endpoint
 # as both the origin and destination chain. It then iterates over the response and 
-# calls the yarn deposit command for each route.
+# calls the yarn deposit command for each route. 
 #
 # In doing so, this script will test the following:
 #   - The target chain ID is valid
@@ -24,7 +24,7 @@
 #   - The second argument is the base domain to make the HTTP request to
 #   - The third argument is the amount of tokens to transmit
 #
-# Example usage: ./testTargetChainRoutes.sh my-chain-id example.com
+# Example usage: ./testTargetChainRoutes.sh my-chain-id example.com 10
 
 ##############################################
 ########### CUSTOM FUNCTIONS #################
