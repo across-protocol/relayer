@@ -97,12 +97,7 @@ export function updateRunningBalanceForEarlyDeposit(
     hubPoolClient.latestBlockNumber
   );
 
-  updateRunningBalance(
-    runningBalances,
-    originChainId,
-    l1TokenCounterpart,
-    updateAmount
-  );
+  updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, updateAmount);
 }
 
 export function addLastRunningBalance(
