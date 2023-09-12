@@ -24,6 +24,7 @@ import {
   mineRandomBlocks,
   winston,
   lastSpyLogIncludes,
+  sinon,
 } from "./utils";
 
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
@@ -71,7 +72,13 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
-    configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
+    configStoreClient = new MockConfigStoreClient(
+      spyLogger,
+      configStore,
+      undefined,
+      undefined,
+      CHAIN_ID_TEST_LIST
+    ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -92,8 +99,8 @@ describe("SpokePoolClient: Fill Validation", async function () {
       spokePool2DeploymentBlock
     );
 
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);
+    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], undefined, 10);
+    await setupTokensForWallet(spokePool_2, relayer, [erc20_2], undefined, 10);
 
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps. We only need to do
@@ -248,7 +255,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(searchRange2.low).to.be.lessThanOrEqual(deposit1Block);
 
     // Searching for deposit ID 3 that doesn't exist yet should throw.
-    assertPromiseError(
+    void assertPromiseError(
       spokePoolClient1._getBlockRangeForDepositId(3, spokePool1DeploymentBlock, spokePoolClient1.latestBlockNumber, 10),
       "Failed to find deposit ID"
     );

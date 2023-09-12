@@ -3,7 +3,7 @@ import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOr
 import { SpokePoolClient } from "../clients";
 import { assign, toBN, isFirstFillForDeposit } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils, typechain } from "@across-protocol/sdk-v2";
 const { validateFillForDeposit } = utils;
 
 export function getDepositPath(deposit: Deposit): string {
@@ -91,6 +91,32 @@ export function getUniqueDepositsInRange(
             existingDeposit.originChainId === deposit.originChainId && existingDeposit.depositId === deposit.depositId
         )
     ) as DepositWithBlock[];
+}
+
+export function getUniqueEarlyDepositsInRange(
+  blockRangesForChains: number[][],
+  originChain: number,
+  destinationChain: number,
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  originClient: SpokePoolClient,
+  existingUniqueDeposits: typechain.FundsDepositedEvent[]
+): typechain.FundsDepositedEvent[] {
+  const originChainBlockRange = getBlockRangeForChain(
+    blockRangesForChains,
+    originChain,
+    chainIdListForBundleEvaluationBlockNumbers
+  );
+  return (originClient["earlyDeposits"] as unknown as typechain.FundsDepositedEvent[]).filter(
+    (deposit: typechain.FundsDepositedEvent) =>
+      deposit.blockNumber <= originChainBlockRange[1] &&
+      deposit.blockNumber >= originChainBlockRange[0] &&
+      deposit.args.destinationChainId.toString() === destinationChain.toString() &&
+      !existingUniqueDeposits.some(
+        (existingDeposit) =>
+          existingDeposit.args.originChainId.toString() === deposit.args.originChainId.toString() &&
+          existingDeposit.args.depositId.toString() === deposit.args.depositId.toString()
+      )
+  );
 }
 
 export function isDepositSpedUp(deposit: Deposit): boolean {

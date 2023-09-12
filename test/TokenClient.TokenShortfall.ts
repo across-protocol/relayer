@@ -1,10 +1,12 @@
 import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { MockConfigStoreClient } from "./mocks";
 import {
   Contract,
   SignerWithAddress,
   createSpyLogger,
   deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
+  deployConfigStore,
   deploySpokePoolWithToken,
   destinationChainId,
   ethers,
@@ -37,6 +39,9 @@ describe("TokenClient: Token shortfall", async function () {
       deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
+    const { configStore } = await deployConfigStore(owner, []);
+
+    const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
 
     spokePoolClient_1 = new SpokePoolClient(
       createSpyLogger().spyLogger,
@@ -54,7 +59,7 @@ describe("TokenClient: Token shortfall", async function () {
     );
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });

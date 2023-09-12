@@ -53,8 +53,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     const newRelayFeePct = toBNWei(0.1337);
     const speedUpSignature = await modifyRelayHelper(
       newRelayFeePct,
-      deposit.depositId,
-      deposit.originChainId!.toString(),
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
       depositor,
       deposit.recipient,
       "0x"
@@ -111,8 +111,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     const newRelayFeePct = toBNWei(0.1337);
     const speedUpSignature = await modifyRelayHelper(
       newRelayFeePct,
-      deposit.depositId,
-      deposit.originChainId!.toString(),
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
       depositor,
       deposit.recipient,
       "0x"
@@ -164,8 +164,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     const newLowerRelayFeePct = depositRelayerFeePct.sub(toBNWei(0.01));
     const speedUpSignature = await modifyRelayHelper(
       newLowerRelayFeePct,
-      deposit.depositId,
-      deposit.originChainId!.toString(),
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
       depositor,
       deposit.recipient,
       "0x"
@@ -198,8 +198,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     const speedupFast = toBNWei(0.1337);
     const speedUpFastSignature = await modifyRelayHelper(
       speedupFast,
-      deposit.depositId,
-      deposit.originChainId!.toString(),
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
       depositor,
       deposit.recipient,
       "0x"
@@ -215,8 +215,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     const speedupFaster = toBNWei(0.1338);
     const speedUpFasterSignature = await modifyRelayHelper(
       speedupFaster,
-      deposit.depositId,
-      deposit.originChainId!.toString(),
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
       depositor,
       deposit.recipient,
       "0x"
@@ -265,8 +265,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     const newRelayFeePct = toBNWei(0.1337);
     const speedUpSignature = await modifyRelayHelper(
       newRelayFeePct,
-      deposit.depositId,
-      deposit.originChainId!.toString(),
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
       depositor,
       deposit.recipient,
       "0x"

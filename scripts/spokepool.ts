@@ -1,34 +1,14 @@
-import assert from "assert";
-import * as contracts from "@across-protocol/contracts-v2";
+import minimist from "minimist";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
 import { LogDescription } from "@ethersproject/abi";
 import { Contract, ethers, Wallet } from "ethers";
-import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
-import { getDeployedContract, getNetworkName, getNodeUrlList, getSigner, resolveTokenSymbols } from "../src/utils";
-
-type ERC20 = {
-  address: string;
-  decimals: number;
-  symbol: string;
-};
+import { getNetworkName, getSigner, resolveTokenSymbols } from "../src/utils";
+import * as utils from "./utils";
 
 const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
-
-const testChains = [5, 280];
-const chains = [1, 10, 137, 324, 8453, 42161];
-
-function validateChainIds(chainIds: number[]): boolean {
-  const knownChainIds = [...chains, ...testChains];
-  return chainIds.every((chainId) => {
-    const ok = knownChainIds.includes(chainId);
-    if (!ok) {
-      console.log(`Invalid chain ID: ${chainId}`);
-    }
-    return ok;
-  });
-}
 
 function printDeposit(log: LogDescription): void {
   const { originChainId, originToken } = log.args;
@@ -67,62 +47,12 @@ function printFill(log: LogDescription): void {
   );
 }
 
-/**
- * Resolves an ERC20 type from a chain ID, and symbol or address.
- * @param token The address or symbol of the token to resolve.
- * @param chainId The chain ID to resolve the token on.
- * @returns The ERC20 attributes of the token.
- */
-function resolveToken(token: string, chainId: number): ERC20 {
-  // `token` may be an address or a symbol. Normalise it to a symbol for easy lookup.
-  const symbol = !isAddress(token)
-    ? token.toUpperCase()
-    : Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
-
-  const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
-  if (_token === undefined) {
-    throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
-  }
-
-  return {
-    address: _token.addresses[chainId],
-    decimals: _token.decimals,
-    symbol: _token.symbol,
-  };
-}
-
-function resolveHubChainId(spokeChainId: number): number {
-  if (chains.includes(spokeChainId)) {
-    return 1;
-  }
-
-  assert(testChains.includes(spokeChainId), `Unsupported SpokePool chain ID: ${spokeChainId}`);
-  return 5;
-}
-
-async function getHubPoolContract(chainId: number): Promise<Contract> {
-  const contractName = "HubPool";
-  const hubPoolChainId = resolveHubChainId(chainId);
-
-  const hubPool = getDeployedContract(contractName, hubPoolChainId);
-  const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(hubPoolChainId, 1)[0]);
-  return hubPool.connect(provider);
-}
-
-async function getSpokePoolContract(chainId: number): Promise<Contract> {
-  const hubPool = await getHubPoolContract(chainId);
-  const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
-
-  const contract = new Contract(spokePoolAddr, contracts.SpokePool__factory.abi);
-  return contract;
-}
-
 async function deposit(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
   const recipient = (args.recipient as string) ?? depositor;
 
-  if (!validateChainIds([fromChainId, toChainId])) {
+  if (!utils.validateChainIds([fromChainId, toChainId])) {
     usage(); // no return
   }
   const network = getNetworkName(fromChainId);
@@ -132,15 +62,15 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     usage(); // no return
   }
 
-  const token = resolveToken(args.token as string, fromChainId);
+  const token = utils.resolveToken(args.token as string, fromChainId);
   const tokenSymbol = token.symbol.toUpperCase();
   const amount = ethers.utils.parseUnits(baseAmount.toString(), args.decimals ? 0 : token.decimals);
 
-  const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(fromChainId, 1)[0]);
+  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(fromChainId));
   signer = signer.connect(provider);
-  const spokePool = (await getSpokePoolContract(fromChainId)).connect(signer);
+  const spokePool = (await utils.getSpokePoolContract(fromChainId)).connect(signer);
 
-  const erc20 = new Contract(token.address, contracts.ExpandedERC20__factory.abi, signer);
+  const erc20 = new Contract(token.address, ERC20.abi, signer);
   const allowance = await erc20.allowance(depositor, spokePool.address);
   if (amount.gt(allowance)) {
     const approvalAmount = amount.mul(5);
@@ -178,10 +108,10 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function dumpConfig(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
   const chainId = Number(args.chainId);
-  const _spokePool = await getSpokePoolContract(chainId);
+  const _spokePool = await utils.getSpokePoolContract(chainId);
 
-  const hubChainId = resolveHubChainId(chainId);
-  const spokeProvider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(chainId, 1)[0]);
+  const hubChainId = utils.resolveHubChainId(chainId);
+  const spokeProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
   const spokePool = _spokePool.connect(spokeProvider);
 
   const [spokePoolChainId, hubPool, crossDomainAdmin, weth, _currentTime] = await Promise.all([
@@ -225,7 +155,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Wallet):
   const { txnHash } = args;
   const chainId = Number(args.chainId);
 
-  if (!validateChainIds([chainId])) {
+  if (!utils.validateChainIds([chainId])) {
     usage(); // no return
   }
 
@@ -233,8 +163,8 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Wallet):
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
   }
 
-  const provider = new ethers.providers.StaticJsonRpcProvider(getNodeUrlList(chainId, 1)[0]);
-  const spokePool = await getSpokePoolContract(chainId);
+  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
+  const spokePool = await utils.getSpokePoolContract(chainId);
 
   const txn = await provider.getTransactionReceipt(txnHash);
   const fundsDeposited = spokePool.interface.getEventTopic("FundsDeposited");

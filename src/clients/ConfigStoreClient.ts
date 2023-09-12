@@ -1,5 +1,6 @@
 import { clients, constants, utils } from "@across-protocol/sdk-v2";
 import { Contract, EventSearchConfig, MakeOptional, isDefined, sortEventsDescending, winston } from "../utils";
+import { CONFIG_STORE_VERSION } from "../common";
 export const { UBA_MIN_CONFIG_STORE_VERSION } = utils;
 export const GLOBAL_CONFIG_STORE_KEYS = clients.GLOBAL_CONFIG_STORE_KEYS;
 
@@ -15,7 +16,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     readonly logger: winston.Logger,
     readonly configStore: Contract,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    readonly configStoreVersion: number
+    readonly configStoreVersion: number = CONFIG_STORE_VERSION
   ) {
     super(logger, configStore, eventSearchConfig, configStoreVersion);
 

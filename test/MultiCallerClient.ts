@@ -50,7 +50,7 @@ class DummyMultiCallerClient extends MockedMultiCallerClient {
 }
 
 // encodeFunctionData is called from within MultiCallerClient.buildMultiCallBundle.
-function encodeFunctionData(_method: string, args: ReadonlyArray<any> = []): string {
+function encodeFunctionData(_method: string, args: ReadonlyArray<unknown> = []): string {
   return args.join(" ");
 }
 
@@ -343,7 +343,7 @@ describe("MultiCallerClient", async function () {
     const multicallerWithMultisend = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:
-    assertPromiseError(
+    void assertPromiseError(
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,
@@ -358,7 +358,7 @@ describe("MultiCallerClient", async function () {
       ] as AugmentedTransaction[]),
       "Multisender bundle data mismatch"
     );
-    assertPromiseError(
+    void assertPromiseError(
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,

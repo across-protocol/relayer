@@ -9,6 +9,7 @@ import {
   hubPoolFixture,
   lastSpyLogIncludes,
   randomAddress,
+  sinon,
   toBN,
   toWei,
   winston,
@@ -112,6 +113,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       destinationChainId: 10,
       relayerFeePct: toBN(1337),
       quoteTimestamp: 1234,
+      message: "0x",
     };
     hubPoolClient.setReturnedL1TokenForDeposit(mainnetWeth);
   });

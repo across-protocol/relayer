@@ -1,3 +1,4 @@
+import { typechain } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
@@ -75,6 +76,28 @@ export function updateRunningBalanceForDeposit(
     deposit.quoteBlockNumber
   );
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
+}
+
+export function updateRunningBalanceForEarlyDeposit(
+  runningBalances: interfaces.RunningBalances,
+  hubPoolClient: HubPoolClient,
+  deposit: typechain.FundsDepositedEvent,
+  updateAmount: BigNumber
+): void {
+  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+    Number(deposit.args.originChainId.toString()),
+    deposit.args.originToken,
+    // TODO: this must be handled s.t. it doesn't depend on when this is run.
+    // For now, tokens do not change their mappings often, so this will work, but
+    // to keep the system resilient, this must be updated.
+    hubPoolClient.latestBlockNumber
+  );
+  updateRunningBalance(
+    runningBalances,
+    Number(deposit.args.originChainId.toString()),
+    l1TokenCounterpart,
+    updateAmount
+  );
 }
 
 export function addLastRunningBalance(

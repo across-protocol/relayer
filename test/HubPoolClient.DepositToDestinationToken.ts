@@ -1,5 +1,11 @@
 import { ConfigStoreClient, HubPoolClient } from "../src/clients";
-import { randomDestinationToken, randomDestinationToken2, randomL1Token, randomOriginToken } from "./constants";
+import {
+  CONFIG_STORE_VERSION,
+  randomDestinationToken,
+  randomDestinationToken2,
+  randomL1Token,
+  randomOriginToken,
+} from "./constants";
 import {
   Contract,
   SignerWithAddress,
@@ -33,7 +39,7 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
 
     const logger = createSpyLogger().spyLogger;
     const { configStore } = await deployConfigStore(owner, []);
-    const configStoreClient = new ConfigStoreClient(logger, configStore);
+    const configStoreClient = new ConfigStoreClient(logger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
     hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
