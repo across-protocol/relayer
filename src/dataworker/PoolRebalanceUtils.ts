@@ -86,10 +86,11 @@ export function updateRunningBalanceForEarlyDeposit(
 ): void {
   // deposit.args is a pure array; there are no mapping to be dereferenced.
   const originChainId = deposit.args[1].toNumber();
+  const originToken = deposit.args[6];
 
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     originChainId,
-    deposit.args.originToken,
+    originToken,
     // TODO: this must be handled s.t. it doesn't depend on when this is run.
     // For now, tokens do not change their mappings often, so this will work, but
     // to keep the system resilient, this must be updated.
