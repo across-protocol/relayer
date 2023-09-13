@@ -1,6 +1,5 @@
 import { HubPoolClient } from "../src/clients";
 import {
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
   amountToLp,
   destinationChainId,
   mockTreeRoot,
@@ -62,7 +61,6 @@ const sampleSpokeTargetBalances = {
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
   routeRateModel: { "999-888": sampleRateModel2 },
-  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
   spokeTargetBalances: sampleSpokeTargetBalances,
 });
 

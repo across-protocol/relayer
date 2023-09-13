@@ -3,7 +3,6 @@ import {
   deploySpokePoolWithToken,
   enableRoutesOnHubPool,
   Contract,
-  BigNumber,
   enableRoutes,
   sampleRateModel,
   createSpyLogger,
@@ -23,7 +22,6 @@ import {
   repaymentChainId,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
 } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
@@ -60,7 +58,6 @@ export async function setupDataworker(
   ethers: EthersTestLibrary,
   maxRefundPerRelayerRefundLeaf: number,
   maxL1TokensPerPoolRebalanceLeaf: number,
-  defaultPoolRebalanceTokenTransferThreshold: BigNumber,
   defaultEndBlockBuffer: number,
   destinationChainId = defaultDestinationChainId,
   originChainId = defaultOriginChainId,
@@ -163,8 +160,7 @@ export async function setupDataworker(
     [l1Token_1, l1Token_2],
     maxL1TokensPerPoolRebalanceLeaf,
     maxRefundPerRelayerRefundLeaf,
-    sampleRateModel,
-    defaultPoolRebalanceTokenTransferThreshold
+    sampleRateModel
   );
 
   const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
@@ -228,7 +224,6 @@ export async function setupDataworker(
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf,
-    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultPoolRebalanceTokenTransferThreshold])),
     Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
@@ -330,7 +325,6 @@ export async function setupFastDataworker(
     ethers,
     MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
     MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-    DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
     0,
     defaultDestinationChainId,
     defaultOriginChainId,

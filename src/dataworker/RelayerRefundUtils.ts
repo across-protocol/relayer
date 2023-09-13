@@ -3,15 +3,10 @@ import { BigNumber, compareAddresses, toBN } from "../utils";
 import { getNetSendAmountForL1Token } from "./PoolRebalanceUtils";
 
 export function getAmountToReturnForRelayerRefundLeaf(
-  transferThreshold: BigNumber,
   spokePoolTargetBalance: SpokePoolTargetBalance,
   runningBalanceForLeaf: BigNumber
 ): BigNumber {
-  const netSendAmountForLeaf = getNetSendAmountForL1Token(
-    transferThreshold,
-    spokePoolTargetBalance,
-    runningBalanceForLeaf
-  );
+  const netSendAmountForLeaf = getNetSendAmountForL1Token(spokePoolTargetBalance, runningBalanceForLeaf);
   return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
 }
 
