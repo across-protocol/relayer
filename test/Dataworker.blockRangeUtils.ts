@@ -5,7 +5,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { DataworkerClients } from "../src/dataworker/DataworkerClientHelper";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { getWidestPossibleExpectedBlockRange } from "../src/dataworker/PoolRebalanceUtils";
-import { originChainId, toBN } from "./constants";
+import { originChainId } from "./constants";
 import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
 import { getDeployedBlockNumber } from "@across-protocol/contracts-v2";
 import { MockHubPoolClient } from "./mocks";
@@ -17,13 +17,7 @@ let updateAllClients: () => Promise<void>;
 
 describe("Dataworker block range-related utility methods", async function () {
   beforeEach(async function () {
-    ({ dataworkerClients, spokePoolClients, updateAllClients, hubPoolClient } = await setupDataworker(
-      ethers,
-      1,
-      1,
-      toBN(0),
-      0
-    ));
+    ({ dataworkerClients, spokePoolClients, updateAllClients, hubPoolClient } = await setupDataworker(ethers, 1, 1, 0));
     await updateAllClients();
   });
   it("DataworkerUtils.getEndBlockBuffers", async function () {

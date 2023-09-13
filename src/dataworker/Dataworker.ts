@@ -28,7 +28,6 @@ import {
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
-  BigNumberForToken,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, UBAClient, BalanceAllocator } from "../clients";
@@ -92,7 +91,6 @@ export class Dataworker {
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly maxRefundCountOverride: number | undefined,
     readonly maxL1TokenCountOverride: number | undefined,
-    readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0,
     readonly bufferToPropose = 0,
@@ -101,7 +99,6 @@ export class Dataworker {
     if (
       maxRefundCountOverride !== undefined ||
       maxL1TokenCountOverride !== undefined ||
-      Object.keys(tokenTransferThreshold).length > 0 ||
       Object.keys(blockRangeEndBlockBuffer).length > 0
     ) {
       this.logger.debug({
@@ -110,7 +107,6 @@ export class Dataworker {
         chainIdListForBundleEvaluationBlockNumbers,
         maxRefundCountOverride: this.maxRefundCountOverride,
         maxL1TokenCountOverride: this.maxL1TokenCountOverride,
-        tokenTransferThreshold: this.tokenTransferThreshold,
         blockRangeEndBlockBuffer: this.blockRangeEndBlockBuffer,
       });
     }
@@ -156,8 +152,7 @@ export class Dataworker {
       poolRebalanceLeaves,
       runningBalances,
       this.clients,
-      maxRefundCount,
-      this.tokenTransferThreshold
+      maxRefundCount
     );
   }
 
@@ -526,8 +521,7 @@ export class Dataworker {
       this.clients,
       this.maxRefundCountOverride
         ? this.maxRefundCountOverride
-        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock),
-      this.tokenTransferThreshold
+        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock)
     );
     const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
 
@@ -724,7 +718,6 @@ export class Dataworker {
       poolRebalanceLeafData.bundleLpFees,
       this.clients.configStoreClient,
       this.maxL1TokenCountOverride,
-      this.tokenTransferThreshold,
       poolRebalanceLeafData.incentivePoolBalances,
       poolRebalanceLeafData.netSendAmounts,
       true
@@ -799,7 +792,6 @@ export class Dataworker {
       this.maxRefundCountOverride
         ? this.maxRefundCountOverride
         : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock),
-      this.tokenTransferThreshold,
       true // Instruct function to always set amountToReturn = -netSendAmount iff netSendAmount < 0
     );
     return relayerRefundRoot;
@@ -2243,7 +2235,6 @@ export class Dataworker {
         spokePoolClients,
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
-        this.tokenTransferThreshold,
         logSlowFillExcessData ? this.logger : undefined
       );
     }

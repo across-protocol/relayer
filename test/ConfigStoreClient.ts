@@ -3,7 +3,6 @@ import { constants } from "@across-protocol/sdk-v2";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { SpokePoolTargetBalance } from "../src/interfaces";
 import {
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   destinationChainId,
@@ -57,7 +56,6 @@ const sampleSpokeTargetBalances = {
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
   routeRateModel: { "999-888": sampleRateModel2 },
-  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
   spokeTargetBalances: sampleSpokeTargetBalances,
 });
 
@@ -169,7 +167,6 @@ describe("AcrossConfigStoreClient", async function () {
     // If ConfigStore has no events, stores nothing.
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(0);
-    expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(0);
     expect(configStoreClient.cumulativeMaxL1TokenCountUpdates.length).to.equal(0);
     expect(configStoreClient.cumulativeMaxRefundCountUpdates.length).to.equal(0);
 
@@ -178,18 +175,13 @@ describe("AcrossConfigStoreClient", async function () {
     await configStoreClient.update();
 
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
-    expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
     // Update ignores TokenConfig events that don't include a rate model:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })
-    );
+    await configStore.updateTokenConfig(l1Token.address, "");
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeRouteRateModelUpdates.length).to.equal(1);
-    expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
     // Add GlobalConfig events and check that updating pulls in events
     await configStore.updateGlobalConfig(
@@ -240,24 +232,6 @@ describe("AcrossConfigStoreClient", async function () {
       expect(() =>
         configStoreClient.getRateModelForBlockNumber(l2Token.address, 1, 2, initialRateModelUpdate.blockNumber)
       ).to.throw(/No updated rate model events for L1 token/);
-    });
-
-    it("Get token transfer threshold for block", async function () {
-      await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
-      await configStoreClient.update();
-      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
-      expect(configStoreClient.getTokenTransferThresholdForBlock(l1Token.address, initialUpdate.blockNumber)).to.equal(
-        DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
-      );
-      // Block number when there is no config
-      expect(() =>
-        configStoreClient.getTokenTransferThresholdForBlock(l1Token.address, initialUpdate.blockNumber - 1)
-      ).to.throw(/Could not find TransferThreshold/);
-
-      // L1 token where there is no config
-      expect(() =>
-        configStoreClient.getTokenTransferThresholdForBlock(l2Token.address, initialUpdate.blockNumber)
-      ).to.throw(/Could not find TransferThreshold/);
     });
 
     // @note: expect(...)to.deep.equals() coerces BigNumbers incorrectly and fails. Why?
