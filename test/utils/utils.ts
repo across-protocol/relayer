@@ -1,6 +1,5 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 
-import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
 import { constants as ethersConstants, providers } from "ethers";
 import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
@@ -34,6 +33,12 @@ chai.use(chaiExclude);
 
 const assert = chai.assert;
 export { assert, chai };
+
+const TokenRolesEnum = {
+  OWNER: "0",
+  MINTER: "1",
+  BURNER: "3",
+};
 
 export function deepEqualsWithBigNumber(x: unknown, y: unknown, omitKeys: string[] = []): boolean {
   if (x === undefined || y === undefined) {
