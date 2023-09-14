@@ -85,7 +85,7 @@ export function updateRunningBalanceForEarlyDeposit(
   updateAmount: BigNumber
 ): void {
   // deposit.args is a pure array; there are no mapping to be dereferenced.
-  const originChainId = deposit.args[1].toNumber();
+  const originChainId = Number(deposit.args[1].toString());
   const originToken = deposit.args[6];
 
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
