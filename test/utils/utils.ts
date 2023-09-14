@@ -18,8 +18,8 @@ import {
   zeroAddress,
 } from "../constants";
 import { BigNumber, Contract, SignerWithAddress, deposit } from "./index";
-export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 export { sinon, winston };
+export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 
 import { AcrossConfigStore, MerkleTree } from "@across-protocol/contracts-v2";
 import { constants } from "@across-protocol/sdk-v2";
