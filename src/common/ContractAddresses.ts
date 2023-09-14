@@ -454,6 +454,24 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    VotingV2: {
+      address: "0x004395edb43EFca9885CEdad51EC9fAf93Bd34ac",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "requester", type:"address"},
+            { indexed: true, internalType: "uint32", name: "roundId", type: "uint32" },
+            { indexed: true, internalType: "bytes32", name: "identifier", type: "bytes32" },
+            { indexed: false, internalType: "uint256", name: "time", type: "uint256" },
+            { indexed: false, internalType: "bytes", name: "ancillaryData", type: "bytes" },
+            { indexed:false, internalType: "bool", name: "isGovernance", type: "bool" }
+          ],
+          name: "RequestAdded",
+          type: "event",
+        }
+      ]
+    },
   },
   10: {
     daiOptimismBridge: {
