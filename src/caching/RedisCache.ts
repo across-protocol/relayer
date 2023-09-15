@@ -1,4 +1,4 @@
-import { interfaces } from "@across-protocol/sdk-v2";
+import { interfaces, constants } from "@across-protocol/sdk-v2";
 import { RedisClient, getRedis, objectWithBigNumberReviver, setRedisKey, winston } from "../utils";
 
 /**
@@ -67,7 +67,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
       await this.instantiate();
     }
     // Call the setRedisKey function to set the value in redis.
-    await setRedisKey(key, JSON.stringify(value), this.redisClient, ttl);
+    await setRedisKey(key, JSON.stringify(value), this.redisClient, ttl ?? constants.DEFAULT_CACHING_TTL);
     // Return key to indicate that the value was set successfully.
     return key;
   }
