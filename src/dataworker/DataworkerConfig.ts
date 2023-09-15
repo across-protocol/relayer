@@ -114,7 +114,7 @@ export class DataworkerConfig extends CommonConfig {
         assert(typeof end === "number", `forceProposalBundleRange[${index}][end] is not a number`);
         assert(start > 0, `forceProposalBundleRange[${index}][start] is not positive`);
         assert(end > 0, `forceProposalBundleRange[${index}][end] is not positive`);
-        assert(start < end, `forceProposalBundleRange[${index}][start] >= forceProposalBundleRange[${index}][end]`);
+        assert(start <= end, `forceProposalBundleRange[${index}][start] >= forceProposalBundleRange[${index}][end]`);
       });
     } else {
       // If FORCE_PROPOSAL_BUNDLE_RANGE is not set, then we don't want to force a specific bundle range.
