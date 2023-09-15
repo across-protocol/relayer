@@ -126,11 +126,6 @@ export class DataworkerConfig extends CommonConfig {
       assert(!this.forcePropose, "Cannot force propose if sending proposals is enabled");
     }
 
-    // We NEVER want to force a bundle range if the proposer OR disputer is enabled.
-    if (this.sendingDisputesEnabled || this.sendingProposalsEnabled) {
-      assert(!this.forceProposalBundleRange, "Cannot force bundle range if sending proposals or disputes is enabled");
-    }
-
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
     // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
     // The average bundle frequency is 4-6 bundles per day so 16 bundles is a reasonable default
