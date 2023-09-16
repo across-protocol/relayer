@@ -1,4 +1,4 @@
-import { interfaces } from "@across-protocol/sdk-v2";
+import { interfaces, constants } from "@across-protocol/sdk-v2";
 import { RedisClient, getRedis, objectWithBigNumberReviver, setRedisKey, winston } from "../utils";
 
 /**
@@ -61,7 +61,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     }
   }
 
-  public async set<T>(key: string, value: T, ttl?: number): Promise<string | undefined> {
+  public async set<T>(key: string, value: T, ttl: number = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {
     // Instantiate the redis client if it has not been instantiated yet.
     if (!this.redisClient) {
       await this.instantiate();
