@@ -1130,12 +1130,25 @@ export class Dataworker {
         reason: "out-of-date-config-store-version",
       };
     }
+
     let rootBundleData: ProposeRootBundleReturnType;
     const mainnetBundleStartBlock = getBlockRangeForChain(
       blockRangesImpliedByBundleEndBlocks,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
+
+    // Check if we have the right code to validate a bundle for the given block ranges.
+    const versionAtProposalBlock =
+      this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
+
+    // Bundles that need to be validated with older code should emit helpful error logs about which code to run:
+    if (versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION) {
+      throw new Error(
+        "Must use relayer-v2 code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
+      );
+    }
+
     let isUBA = false;
     if (
       sdk.clients.isUBAActivatedAtBlock(
