@@ -36,7 +36,8 @@ export async function createDataworker(
     config.blockRangeEndBlockBuffer,
     config.spokeRootsLookbackCount,
     config.bufferToPropose,
-    config.forcePropose
+    config.forcePropose,
+    config.forceProposalBundleRange
   );
 
   return {
