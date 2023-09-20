@@ -1,9 +1,7 @@
 import {
   AcrossApiClient,
   ConfigStoreClient,
-  HubPoolClient,
   MultiCallerClient,
-  SpokePoolClient,
   TokenClient,
   UBAClient,
 } from "../src/clients";
@@ -35,6 +33,7 @@ import {
   simpleDeposit,
   toBNWei,
 } from "./utils";
+import { clients } from "@across-protocol/sdk-v2"
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
@@ -46,8 +45,8 @@ let hubPool: Contract, l1Token: Contract, configStore: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 const { spy, spyLogger } = createSpyLogger();
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
+let spokePoolClient_1: clients.SpokePoolClient, spokePoolClient_2: clients.SpokePoolClient;
+let configStoreClient: MockConfigStoreClient, hubPoolClient: clients.HubPoolClient;
 let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
 let profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
@@ -93,17 +92,17 @@ describe("Relayer: Unfilled Deposits", async function () {
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new clients.SpokePoolClient(
       spyLogger,
       spokePool_1,
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new clients.SpokePoolClient(
       spyLogger,
       spokePool_2,
       hubPoolClient,

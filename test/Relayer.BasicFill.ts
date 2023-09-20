@@ -2,9 +2,7 @@ import { random } from "lodash";
 import {
   AcrossApiClient,
   ConfigStoreClient,
-  HubPoolClient,
   MultiCallerClient,
-  SpokePoolClient,
   TokenClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
@@ -45,15 +43,16 @@ import {
   winston,
 } from "./utils";
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
+import { clients } from "@across-protocol/sdk-v2"
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let spokePoolClients: { [chainId: number]: SpokePoolClient };
-let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+let spokePoolClient_1: clients.SpokePoolClient, spokePoolClient_2: clients.SpokePoolClient;
+let spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
+let configStoreClient: ConfigStoreClient, hubPoolClient: clients.HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
@@ -99,19 +98,19 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new clients.SpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new clients.SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,
@@ -477,7 +476,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const version = UBA_MIN_CONFIG_STORE_VERSION;
     configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version);
     await configStoreClient.update();
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient as unknown as clients.AcrossConfigStoreClient);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
