@@ -96,7 +96,8 @@ export class Dataworker {
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0,
     readonly bufferToPropose = 0,
-    readonly forceProposal = false
+    readonly forceProposal = false,
+    readonly forceBundleRange?: [number, number][]
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -344,7 +345,11 @@ export class Dataworker {
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
-    const blockRangesForProposal = this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+    // If we are forcing a bundle range, then we should use that instead of the next proposal block ranges.
+    const blockRangesForProposal = isDefined(this.forceBundleRange)
+      ? this.forceBundleRange
+      : this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+
     if (!blockRangesForProposal) {
       return;
     }
