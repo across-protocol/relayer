@@ -27,7 +27,6 @@ export class HubPoolClient extends clients.HubPoolClient {
     >,
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber | undefined; quoteBlock: number }> {
-
     if (deposit.quoteTimestamp > this.currentTime) {
       throw new Error(
         `Cannot compute lp fee percent for quote timestamp ${deposit.quoteTimestamp} in the future. Current time: ${this.currentTime}.`

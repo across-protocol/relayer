@@ -29,7 +29,7 @@ import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
-import { clients as sdkClients } from "@across-protocol/sdk-v2"
+import { clients as sdkClients } from "@across-protocol/sdk-v2";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],

@@ -1,10 +1,5 @@
 import { random } from "lodash";
-import {
-  AcrossApiClient,
-  ConfigStoreClient,
-  MultiCallerClient,
-  TokenClient,
-} from "../src/clients";
+import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { CONFIG_STORE_VERSION, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 import { Deposit } from "../src/interfaces";
 import { Relayer } from "../src/relayer/Relayer";
@@ -43,7 +38,7 @@ import {
   winston,
 } from "./utils";
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
-import { clients } from "@across-protocol/sdk-v2"
+import { clients } from "@across-protocol/sdk-v2";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -476,7 +471,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const version = UBA_MIN_CONFIG_STORE_VERSION;
     configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version);
     await configStoreClient.update();
-    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient as unknown as clients.AcrossConfigStoreClient);
+    hubPoolClient = new clients.HubPoolClient(
+      spyLogger,
+      hubPool,
+      configStoreClient as unknown as clients.AcrossConfigStoreClient
+    );
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,

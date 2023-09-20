@@ -1,10 +1,4 @@
-import {
-  AcrossApiClient,
-  ConfigStoreClient,
-  MultiCallerClient,
-  TokenClient,
-  UBAClient,
-} from "../src/clients";
+import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient, UBAClient } from "../src/clients";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -33,7 +27,7 @@ import {
   simpleDeposit,
   toBNWei,
 } from "./utils";
-import { clients } from "@across-protocol/sdk-v2"
+import { clients } from "@across-protocol/sdk-v2";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
