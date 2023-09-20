@@ -1143,8 +1143,7 @@ export class Dataworker {
       this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
 
     // Bundles that need to be validated with older code should emit helpful error logs about which code to run.
-    // @dev only throw this error if the hub chain ID is 1, suggesting we're running on production.
-    if (hubPoolChainId === 1 && versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION) {
+    if (versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION) {
       throw new Error(
         "Must use relayer-v2 code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
       );
