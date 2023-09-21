@@ -36,11 +36,11 @@
     "@eth-optimism/contracts" "^0.5.5"
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
-    
-"@across-protocol/sdk-v2@0.16.1":
-  version "0.16.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.16.1.tgz#f129daaf7a61741b5e570b977a5eac8dd3a68e02"
-  integrity sha512-4rYSeQJxtwLexnGjjMST3ctvvJY9KDux4//2IQVHkhllahkrg6oAx6wyO9BIvAeLnb1TkQF7Wr/1MkNLub/VTA==
+
+"@across-protocol/sdk-v2@0.16.4":
+  version "0.16.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.16.4.tgz#89ef2dc46fae9647ed46fda50a4de270f925f68e"
+  integrity sha512-mpPYiW4Kb2uQXmPOmsnCqer/iSuRuixSJM91svIxwA2z3kw1xk57G94LeVSufFPzVD/5urUS/sYm7Ea0z75WSw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/contracts-v2" "^2.4.3"
@@ -53,6 +53,7 @@
     ethers "^5.7.2"
     lodash.get "^4.4.2"
     superstruct "^0.15.4"
+    tslib "^2.6.2"
 
 "@arbitrum/sdk@^3.1.3":
   version "3.1.3"
@@ -13681,6 +13682,11 @@ tslib@^2.3.1, tslib@^2.5.0:
   version "2.5.3"
   resolved "https://registry.yarnpkg.com/tslib/-/tslib-2.5.3.tgz#24944ba2d990940e6e982c4bea147aba80209913"
   integrity sha512-mSxlJJwl3BMEQCUNnxXBU9jP4JBktcEGhURcPR6VQVlnP0FdDEsIaz0C35dXNGLyRfrATNofF0F5p2KPxQgB+w==
+
+tslib@^2.6.2:
+  version "2.6.2"
+  resolved "https://registry.yarnpkg.com/tslib/-/tslib-2.6.2.tgz#703ac29425e7b37cd6fd456e92404d46d1f3e4ae"
+  integrity sha512-AEYxH93jGFPn/a2iVAwW87VuUIkR1FVUKB77NwMF7nBTDkDrrT/Hpt/IrCJ0QXhW27jTBDcf5ZY7w6RiqTMw2Q==
 
 tsort@0.0.1:
   version "0.0.1"
