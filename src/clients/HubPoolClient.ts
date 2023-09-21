@@ -1,5 +1,5 @@
 import { clients } from "@across-protocol/sdk-v2";
-import { Contract } from "ethers";
+import { BigNumber, Contract } from "ethers";
 import winston from "winston";
 import { MakeOptional, EventSearchConfig } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
