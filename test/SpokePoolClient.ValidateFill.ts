@@ -81,7 +81,11 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
-    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient as unknown as clients.AcrossConfigStoreClient);
+    hubPoolClient = new clients.HubPoolClient(
+      spyLogger,
+      hubPool,
+      configStoreClient as unknown as clients.AcrossConfigStoreClient
+    );
 
     await hubPoolClient.update();
     spokePoolClient1 = new clients.SpokePoolClient(

@@ -96,7 +96,11 @@ describe("HubPool Utilization", async function () {
 
     await configStoreClient.update();
 
-    hubPoolClient = new clients.HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient as unknown as clients.AcrossConfigStoreClient);
+    hubPoolClient = new clients.HubPoolClient(
+      createSpyLogger().spyLogger,
+      hubPool,
+      configStoreClient as unknown as clients.AcrossConfigStoreClient
+    );
     await configStoreClient.update();
     await hubPoolClient.update();
   });
