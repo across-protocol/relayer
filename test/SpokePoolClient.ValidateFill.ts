@@ -27,10 +27,10 @@ import {
   sinon,
 } from "./utils";
 
-import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient } from "../src/clients";
 import { queryHistoricalDepositForFill } from "../src/utils";
 import { MockConfigStoreClient, MockSpokePoolClient } from "./mocks";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils, clients } from "@across-protocol/sdk-v2";
 import { CHAIN_ID_TEST_LIST, repaymentChainId } from "./constants";
 const { validateFillForDeposit } = utils;
 
@@ -40,8 +40,8 @@ let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 let l1Token: Contract, configStore: Contract;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
-let spokePoolClient2: SpokePoolClient, hubPoolClient: HubPoolClient;
-let spokePoolClient1: SpokePoolClient, configStoreClient: ConfigStoreClient;
+let spokePoolClient2: clients.SpokePoolClient, hubPoolClient: clients.HubPoolClient;
+let spokePoolClient1: clients.SpokePoolClient, configStoreClient: ConfigStoreClient;
 
 describe("SpokePoolClient: Fill Validation", async function () {
   beforeEach(async function () {
@@ -81,17 +81,17 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient as unknown as clients.AcrossConfigStoreClient);
 
     await hubPoolClient.update();
-    spokePoolClient1 = new SpokePoolClient(
+    spokePoolClient1 = new clients.SpokePoolClient(
       spyLogger,
       spokePool_1,
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient2 = new SpokePoolClient(
+    spokePoolClient2 = new clients.SpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
       null,
@@ -132,7 +132,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
   it("Returns deposit matched with fill", async function () {
     const deposit_1 = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
     const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit_1, 0.5);
-    const spokePoolClientForDestinationChain = new SpokePoolClient(
+    const spokePoolClientForDestinationChain = new clients.SpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
@@ -488,7 +488,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, expectedDeposit, 0.2);
     const fill_2 = await buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2, relayer.address, "0x12"); // Fill same % of deposit with 2x larger relayer fee pct.
 
-    const spokePoolClientForDestinationChain = new SpokePoolClient(
+    const spokePoolClientForDestinationChain = new clients.SpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,

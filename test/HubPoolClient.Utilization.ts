@@ -1,4 +1,4 @@
-import { HubPoolClient } from "../src/clients";
+import { clients } from "@across-protocol/sdk-v2";
 import {
   amountToLp,
   destinationChainId,
@@ -29,7 +29,7 @@ import {
 
 let configStore: Contract, hubPool: Contract;
 let l1Token: Contract, l2Token: Contract, timer: Contract, weth: Contract;
-let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
+let configStoreClient: MockConfigStoreClient, hubPoolClient: clients.HubPoolClient;
 let owner: SignerWithAddress;
 
 // Same rate model used for across-v1 tests:
@@ -96,7 +96,7 @@ describe("HubPool Utilization", async function () {
 
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new clients.HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient as unknown as clients.AcrossConfigStoreClient);
     await configStoreClient.update();
     await hubPoolClient.update();
   });
