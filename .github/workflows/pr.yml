@@ -26,8 +26,8 @@ jobs:
       - name: Archive build artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: build-cache-${{ github.run_id }}
-          path: relayer-v2/
+          name: build-cache-${{ github.run_id }}-${{ github.sha }}
+          path: /home/runner/work/relayer-v2/relayer-v2
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -40,7 +40,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v2
         with:
-          name: build-cache-${{ github.run_id }}
+          name: build-cache-${{ github.run_id }}-${{ github.sha }}
       - name: Execute tests
         run: yarn test --bail
         env:
