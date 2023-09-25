@@ -2,7 +2,7 @@ name: Checks
 on: [push]
 env:
   NODE_OPTIONS: "--max-old-space-size=6144"
-  NODE_VERSION: "16"
+  NODE_VERSION: 16
 jobs:
   build:
     name: Build
