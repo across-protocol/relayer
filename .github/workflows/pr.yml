@@ -32,17 +32,17 @@ jobs:
         ci_index: [0, 1, 2, 3]
         ci_total: [4]
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-      - name: Install Additional dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get -y install rsync libudev-dev libusb-1.0-0-dev
-      - name: Use Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
+      # - name: Checkout repo
+      #   uses: actions/checkout@v3
+      # - name: Install Additional dependencies
+      #   run: |
+      #     sudo apt-get update -y
+      #     sudo apt-get -y install rsync libudev-dev libusb-1.0-0-dev
+      # - name: Use Node ${{ env.NODE_VERSION }}
+      #   uses: actions/setup-node@v3
+      #   with:
+      #     node-version: ${{ env.NODE_VERSION }}
+      #     cache: "yarn"
       - name: Execute tests    
         run: yarn test --bail
         env:
