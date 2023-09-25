@@ -2,31 +2,10 @@ name: Checks
 on: [push]
 env:
   NODE_OPTIONS: "--max-old-space-size=6144"
+  NODE_VERSION: "16"
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [16]
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-      - name: Use Node ${{ matrix.node }}
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node }}
-          cache: "yarn"
-      - name: Install packages
-        run: yarn install --frozen-lockfile
-      - name: Lint
-        run: yarn lint
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [16]
+  build:
+    name: Build
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -34,14 +13,53 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get -y install rsync libudev-dev libusb-1.0-0-dev
-      - name: Use Node ${{ matrix.node }}
+      - name: Use Node $NODE_VERSION
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.node }}
+          node-version: $NODE_VERSION
           cache: "yarn"
       - name: Install packages
         run: yarn install --frozen-lockfile
       - name: Build
         run: yarn build
-      - name: Test
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        ci_index: [0, 1, 2, 3]
+        ci_total: [4]
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+      - name: Install Additional dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get -y install rsync libudev-dev libusb-1.0-0-dev
+      - name: Use Node $NODE_VERSION
+        uses: actions/setup-node@v3
+        with:
+          node-version: $NODE_VERSION
+          cache: "yarn"
+      - name: Execute tests    
         run: yarn test --bail
+        env:
+          CI_TOTAL: ${{ matrix.ci_total }}
+          CI_INDEX: ${{ matrix.ci_index }}
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+      - name: Use Node $NODE_VERSION
+        uses: actions/setup-node@v3
+        with:
+          node-version: $NODE_VERSION
+          cache: "yarn"
+      - name: Install packages
+        run: yarn install --frozen-lockfile
+      - name: Lint
+        run: yarn lint
