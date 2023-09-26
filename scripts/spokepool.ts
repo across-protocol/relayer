@@ -4,8 +4,9 @@ import { LogDescription } from "@ethersproject/abi";
 import { Contract, ethers, Wallet } from "ethers";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
-import { getNetworkName, getSigner, resolveTokenSymbols } from "../src/utils";
+import { getNetworkName, getSigner, isDefined, resolveTokenSymbols } from "../src/utils";
 import * as utils from "./utils";
+import { BaseHTTPAdapter } from "./baseAdapter";
 
 const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
@@ -50,7 +51,7 @@ function printFill(log: LogDescription): void {
 async function deposit(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
-  const recipient = (args.recipient as string) ?? depositor;
+  let recipient = (args.recipient as string) ?? depositor;
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     usage(); // no return
@@ -80,9 +81,53 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     console.log("Approval complete...");
   }
 
-  const relayerFeePct = Zero; // @todo: Make configurable.
   const maxCount = MaxUint256;
   const quoteTimestamp = Math.round(Date.now() / 1000);
+
+  let relayerFeePct = Zero; // @todo: Make configurable.
+  let message = new Uint8Array([]);
+  if (args.auction) {
+    const timeout = 65 * 1000;
+    const httpClient = new BaseHTTPAdapter(
+      "AuctionAPI",
+      process.env.AUCTION_API_ENDPOINT,
+      { timeout }
+    );
+    const auctionArgs = {
+      recipient,
+      tokenAddress: token.address,
+      amount: amount.toString(),
+      destinationChainId: toChainId,
+      quoteTimestamp: quoteTimestamp.toString(),
+      relayerFeePct: relayerFeePct.toString(),
+      message: "0x",
+      maxCount: maxCount.toString(),
+      txValue: Number(0).toString(),
+    };
+    const padLeft = Object.keys(auctionArgs).reduce((a,b) => b.length > a ? b.length : a, 0);
+    console.log(
+      `Requesting auction for fill:\n` +
+      Object.entries(auctionArgs).map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`).join("\n") +
+      "\n"
+    );
+    const auction = await httpClient.post("deposit", auctionArgs);
+
+    ["recipient", "relayerFeePct", "message"].forEach((field) => {
+      if (!isDefined(auction?.[field])) {
+        throw new Error(`Field \"${field}\" missing from auction response`);
+      }
+    });
+
+    recipient = auction["recipient"];
+    message = auction["message"];
+    relayerFeePct = auction["relayerFeePct"];
+
+    console.log(
+      "Got auction response:\n" +
+      Object.entries(auction).map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`).join("\n") +
+      "\n"
+    );
+  }
 
   const deposit = await spokePool.deposit(
     recipient,
@@ -91,7 +136,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     toChainId,
     relayerFeePct,
     quoteTimestamp,
-    "0x",
+    message,
     maxCount
   );
   const { hash: transactionHash } = deposit;
@@ -222,7 +267,7 @@ async function run(argv: string[]): Promise<boolean> {
   const fillOpts = [];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts],
-    boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
+    boolean: ["decimals", "auction"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "mnemonic",
       decimals: false,
