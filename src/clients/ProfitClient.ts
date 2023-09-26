@@ -325,8 +325,7 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): boolean {
-    const { profitable } = this.getFillProfitability(deposit, fillAmount, refundFee, l1Token);
-    return profitable ?? this.isTestnet;
+    return this.isTestnet || this.getFillProfitability(deposit, fillAmount, refundFee, l1Token).profitable;
   }
 
   captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {

@@ -86,7 +86,6 @@ export async function constructRelayerClients(
   // so we should track both for accurate cross-chain inventory management.
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
-    CONTRACT_ADDRESSES[commonClients.hubPoolClient.chainId].atomicDepositor.address,
   ]);
 
   const bundleDataClient = new BundleDataClient(
