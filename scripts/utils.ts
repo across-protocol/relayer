@@ -10,7 +10,7 @@ type ERC20 = {
   symbol: string;
 };
 
-export const testChains = [5, 280, 421613];
+export const testChains = [5, 280, 80001, 421613];
 export const chains = [1, 10, 137, 324, 8453, 42161];
 
 // Public RPC endpoints to be used if preferred providers are not defined in the environment.

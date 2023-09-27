@@ -118,15 +118,15 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
       }
     });
 
-    recipient = auction["recipient"];
-    message = auction["message"];
-    relayerFeePct = auction["relayerFeePct"];
-
     console.log(
       "Got auction response:\n" +
       Object.entries(auction).map(([k,v]) => `\t${k.padEnd(padLeft)} : ${v}`).join("\n") +
       "\n"
     );
+
+    recipient = auction["recipient"];
+    message = auction["message"];
+    relayerFeePct = auction["relayerFeePct"];
   }
 
   const deposit = await spokePool.deposit(
