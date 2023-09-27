@@ -97,6 +97,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
       recipient,
       tokenAddress: token.address,
       amount: amount.toString(),
+      sourceChainId: fromChainId,
       destinationChainId: toChainId,
       quoteTimestamp: quoteTimestamp.toString(),
       relayerFeePct: relayerFeePct.toString(),
