@@ -61,6 +61,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   // Testnets:
   5: 0,
   280: 0,
+  80001: 0,
   84531: 0,
   421613: 0,
 };
@@ -76,8 +77,9 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     5: 0,
     280: 0,
-    421613: 0,
+    80001: 0,
     84531: 0,
+    421613: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
@@ -90,6 +92,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     5: 0,
     280: 0,
+    80001: 0,
     84531: 0,
     421613: 0,
   },
@@ -114,6 +117,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   // Testnets:
   5: 10000,
   280: 10000,
+  80001: 10000,
   84531: 10000,
   421613: 10000,
 };
@@ -129,6 +133,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   // Testnets:
   5: 0,
   280: 0,
+  80001: 0,
   84531: 0,
   421613: 0,
 };
@@ -163,6 +168,7 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   // Testnets:
   5: 0,
   280: 0,
+  80001: 0,
   84531: 0,
   421613: 0,
 };
@@ -192,6 +198,7 @@ export const multicall3Addresses = {
   288: "0xcA11bde05977b3631167028862bE2a173976CA11",
   8453: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  80001: "0xcA11bde05977b3631167028862bE2a173976CA11",
   84531: "0xcA11bde05977b3631167028862bE2a173976CA11",
   421613: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
