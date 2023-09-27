@@ -58,6 +58,10 @@ export function resolveToken(token: string, chainId: number): ERC20 {
     throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
   }
 
+  if (symbol === "WETH" && chainId === 80001) {
+    _token.addresses[chainId] = "0xA6FA4fB5f76172d178d61B04b0ecd319C5d1C0aa";
+  }
+
   return {
     address: _token.addresses[chainId],
     decimals: _token.decimals,
