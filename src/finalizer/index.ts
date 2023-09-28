@@ -114,6 +114,10 @@ export async function finalize(
       message: `Found ${_withdrawals.length} ${network} withdrawals for finalization.`,
     });
 
+    if (_withdrawals.length === 0) {
+      continue;
+    }
+
     if (![1, 2].includes(txns.length / _withdrawals.length)) {
       logger.warn({
         at: "finalize",
