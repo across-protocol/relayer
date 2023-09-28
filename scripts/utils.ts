@@ -116,9 +116,7 @@ export function resolveHubChainId(spokeChainId: number): number {
  * @returns ethers Contract instance.
  */
 export async function getContract(chainId: number, contractName: string): Promise<Contract> {
-  const hubPoolChainId = resolveHubChainId(chainId);
-
-  const contract = getDeployedContract(contractName, hubPoolChainId);
+  const contract = getDeployedContract(contractName, chainId);
   const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(chainId));
   return contract.connect(provider);
 }
@@ -129,7 +127,8 @@ export async function getContract(chainId: number, contractName: string): Promis
  * @returns SpokePool contract instance.
  */
 export async function getSpokePoolContract(chainId: number): Promise<Contract> {
-  const hubPool = await getContract(chainId, "HubPool");
+  const hubChainId = resolveHubChainId(chainId);
+  const hubPool = await getContract(hubChainId, "HubPool");
   const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
 
   const contract = new Contract(spokePoolAddr, contracts.SpokePool__factory.abi);
