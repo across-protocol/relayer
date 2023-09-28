@@ -32,7 +32,7 @@ import { ChainFinalizer, Withdrawal as _Withdrawal } from "./types";
 
 type TransactionReceipt = providers.TransactionReceipt;
 
-type Withdrawal = _Withdrawal & { calldata: Multicall2Call[] };
+type Withdrawal = _Withdrawal & { txns: Multicall2Call[] };
 
 const { isError, isEthersError } = typeguards;
 
@@ -131,30 +131,30 @@ export async function finalize(
     // Normalise withdawals, such that 1 withdrawal has an array of calldata (usually only 1 call), but can be more.
     // @todo: Refactor the underlying adapters so they return in this data structure.
     const withdrawals: Withdrawal[] = _withdrawals.map((withdrawal) => {
-      return { ...withdrawal, calldata: [] };
+      return { ...withdrawal, txns: [] };
     });
 
     // Append calldata. If multiple calls are needed per withdrawal (i.e. Polygon),
     // require that the 2nd batch is appended to the first.
-    txns.forEach((txn, i) => withdrawals[i % withdrawals.length].calldata.push(txn));
+    txns.forEach((txn, i) => withdrawals[i % withdrawals.length].txns.push(txn));
 
     finalizationsToBatch.push(...withdrawals);
   }
 
   // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async (finalization) => {
-    const { calldata } = finalization;
+  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async (withdrawal) => {
+    const { txns } = withdrawal;
     try {
-      const txn = await multicall2.populateTransaction.aggregate(calldata);
+      const txn = await multicall2.populateTransaction.aggregate(txns);
       await multicall2.provider.estimateGas(txn);
       return true;
     } catch (err) {
-      const { l2ChainId, type, l1TokenSymbol, amount } = finalization;
+      const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
       const network = getNetworkName(l2ChainId);
       logger.info({
         at: "finalizer",
         message: `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`,
-        calldata,
+        txns,
         reason: isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error",
       });
       return false;
@@ -165,8 +165,8 @@ export async function finalize(
     let txn: TransactionReceipt;
     try {
       // Note: If the sum of finalizations approaches the gas limit, consider slicing them up.
-      const callData = finalizations.map(({ calldata }) => calldata.flat());
-      txn = await (await multicall2.aggregate(callData)).wait();
+      const txns = finalizations.map(({ txns }) => txns).flat();
+      txn = await (await multicall2.aggregate(txns)).wait();
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
