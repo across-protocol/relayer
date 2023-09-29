@@ -1,11 +1,14 @@
-import { Contract, ethers, getBlockForTimestamp, isEventOlder, sortEventsDescending } from ".";
-import * as uma from "@uma/contracts-node";
 import { HubPoolClient } from "../clients";
+import { CONTRACT_ADDRESSES } from "../common";
 import { ProposedRootBundle, SortableEvent } from "../interfaces";
+import { Contract, ethers, getBlockForTimestamp, isEventOlder, sortEventsDescending } from ".";
 
-export async function getDvmContract(mainnetProvider: ethers.providers.Provider): Promise<Contract> {
-  return new Contract(await uma.getVotingV2Address(1), uma.getAbi("VotingV2"), mainnetProvider);
+export async function getDvmContract(provider: ethers.providers.Provider): Promise<Contract> {
+  const { chainId } = await provider.getNetwork();
+  const { address, abi } = CONTRACT_ADDRESSES[chainId].VotingV2;
+  return new Contract(address, abi, provider);
 }
+
 export function getDisputedProposal(
   hubPoolClient: HubPoolClient,
   disputeEvent: SortableEvent
