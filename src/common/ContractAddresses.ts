@@ -460,17 +460,17 @@ export const CONTRACT_ADDRESSES: {
         {
           anonymous: false,
           inputs: [
-            { indexed: true, internalType: "address", name: "requester", type:"address"},
+            { indexed: true, internalType: "address", name: "requester", type: "address" },
             { indexed: true, internalType: "uint32", name: "roundId", type: "uint32" },
             { indexed: true, internalType: "bytes32", name: "identifier", type: "bytes32" },
             { indexed: false, internalType: "uint256", name: "time", type: "uint256" },
             { indexed: false, internalType: "bytes", name: "ancillaryData", type: "bytes" },
-            { indexed:false, internalType: "bool", name: "isGovernance", type: "bool" }
+            { indexed: false, internalType: "bool", name: "isGovernance", type: "bool" },
           ],
           name: "RequestAdded",
           type: "event",
-        }
-      ]
+        },
+      ],
     },
   },
   10: {
