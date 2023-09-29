@@ -39,13 +39,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       multiCallerClient,
       updateAllClients,
       spokePoolClients,
-    } = await setupDataworker(
-      ethers,
-      MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-      MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      ethers.BigNumber.from(0),
-      0
-    ));
+    } = await setupDataworker(ethers, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, 0));
   });
   it("Simple lifecycle", async function () {
     await updateAllClients();

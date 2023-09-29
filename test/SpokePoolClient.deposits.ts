@@ -1,4 +1,4 @@
-import { SpokePoolClient } from "../src/clients";
+import { clients } from "@across-protocol/sdk-v2";
 import {
   Contract,
   SignerWithAddress,
@@ -18,14 +18,20 @@ let depositor1: SignerWithAddress, depositor2: SignerWithAddress;
 let deploymentBlock: number;
 const destinationChainId2 = destinationChainId + 1;
 
-let spokePoolClient: SpokePoolClient;
+let spokePoolClient: clients.SpokePoolClient;
 
 describe("SpokePoolClient: Deposits", async function () {
   beforeEach(async function () {
     [, depositor1, depositor2] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId, deploymentBlock);
+    spokePoolClient = new clients.SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool,
+      null,
+      originChainId,
+      deploymentBlock
+    );
 
     await setupTokensForWallet(spokePool, depositor1, [erc20, destErc20], weth, 10);
     await setupTokensForWallet(spokePool, depositor2, [erc20, destErc20], weth, 10);
