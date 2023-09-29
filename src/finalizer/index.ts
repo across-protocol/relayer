@@ -1,4 +1,5 @@
 import assert from "assert";
+import { typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { groupBy } from "lodash";
 import {
   Wallet,
@@ -27,6 +28,8 @@ import {
   Multicall2Call,
 } from "../common";
 import { ChainFinalizer, Withdrawal } from "./types";
+
+const { isError, isEthersError } = typeguards;
 
 config();
 let logger: winston.Logger;
@@ -68,12 +71,9 @@ export async function finalize(
   // input byte length.
   const multicall2 = getMultisender(hubChainId, hubSigner);
   const finalizationsToBatch: {
-    callData: Multicall2Call[];
-    withdrawals: Withdrawal[];
-  } = {
-    callData: [],
-    withdrawals: [],
-  };
+    callData: Multicall2Call;
+    withdrawal: Withdrawal;
+  }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   for (const chainId of configuredChainIds) {
@@ -109,18 +109,41 @@ export async function finalize(
     );
     logger.debug({ at: "finalize", message: `Found ${callData.length} ${network} withdrawals for finalization.` });
 
-    finalizationsToBatch.callData.push(...callData);
-    finalizationsToBatch.withdrawals.push(...withdrawals);
+    const txns = callData.map((callData, i) => {
+      return { callData, withdrawal: withdrawals[i] };
+    });
+
+    finalizationsToBatch.push(...txns);
   }
 
-  if (finalizationsToBatch.callData.length > 0) {
+  // Ensure each transaction would succeed in isolation.
+  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async (finalization) => {
     try {
-      // Note: We might want to slice these up in the future but I don't forsee us including enough events
-      // to approach the block gas limit.
-      const txn = await (await multicall2.aggregate(finalizationsToBatch.callData)).wait();
-      const { withdrawals = [], proofs = [] } = groupBy(finalizationsToBatch.withdrawals, ({ type }) => {
-        return type === "withdrawal" ? "withdrawals" : "proofs";
+      const { target: to, callData: data } = finalization.callData;
+      await multicall2.provider.estimateGas({ to, data });
+      return true;
+    } catch (err) {
+      const { l2ChainId, type, l1TokenSymbol, amount } = finalization.withdrawal;
+      const network = getNetworkName(l2ChainId);
+      logger.info({
+        at: "finalizer",
+        message: `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`,
+        reason: isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error",
       });
+      return false;
+    }
+  });
+
+  if (finalizations.length > 0) {
+    try {
+      // Note: If the sum of finalizations approaches the gas limit, consider slicing them up.
+      const callData = finalizations.map(({ callData }) => callData);
+      const txn = await (await multicall2.aggregate(callData)).wait();
+
+      const { withdrawals = [], proofs = [] } = groupBy(
+        finalizations.map(({ withdrawal }) => withdrawal),
+        ({ type }) => (type === "withdrawal" ? "withdrawals" : "proofs")
+      );
       proofs.forEach(({ l2ChainId, amount, l1TokenSymbol: symbol }) => {
         const spokeChain = getNetworkName(l2ChainId);
         logger.info({
