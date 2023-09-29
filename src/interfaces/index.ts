@@ -15,7 +15,6 @@ export type BigNumberForToken = interfaces.BigNumberForToken;
 
 // ConfigStore interfaces
 export type ParsedTokenConfig = interfaces.ParsedTokenConfig;
-export type L1TokenTransferThreshold = interfaces.L1TokenTransferThreshold;
 export type SpokePoolTargetBalance = interfaces.SpokePoolTargetBalance;
 export type SpokeTargetBalanceUpdate = interfaces.SpokeTargetBalanceUpdate;
 export type RouteRateModelUpdate = interfaces.RouteRateModelUpdate;

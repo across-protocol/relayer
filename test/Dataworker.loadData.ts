@@ -77,7 +77,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePoolClients,
       updateAllClients,
       spy,
-    } = await setupDataworker(ethers, 25, 25, toBN(0), 0));
+    } = await setupDataworker(ethers, 25, 25, 0));
     bundleDataClient = dataworkerInstance.clients.bundleDataClient;
     multiCallerClient = dataworkerInstance.clients.multiCallerClient;
   });

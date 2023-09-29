@@ -3,7 +3,6 @@ import {
   deploySpokePoolWithToken,
   enableRoutesOnHubPool,
   Contract,
-  BigNumber,
   enableRoutes,
   sampleRateModel,
   createSpyLogger,
@@ -23,7 +22,6 @@ import {
   repaymentChainId,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
 } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
@@ -31,20 +29,21 @@ import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
+import { clients as sdkClients } from "@across-protocol/sdk-v2";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
   spokePoolChains: number[],
   spyLogger: winston.Logger,
   signer: SignerWithAddress,
-  hubPoolClient: clients.HubPoolClient,
+  hubPoolClient: sdkClients.HubPoolClient,
   lookbackForAllChains?: number,
   deploymentBlocks?: { [chainId: number]: number }
 ) {
   await hubPoolClient.update();
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
-    return new clients.SpokePoolClient(
+    return new sdkClients.SpokePoolClient(
       spyLogger,
       pool.connect(signer),
       hubPoolClient,
@@ -60,7 +59,6 @@ export async function setupDataworker(
   ethers: EthersTestLibrary,
   maxRefundPerRelayerRefundLeaf: number,
   maxL1TokensPerPoolRebalanceLeaf: number,
-  defaultPoolRebalanceTokenTransferThreshold: BigNumber,
   defaultEndBlockBuffer: number,
   destinationChainId = defaultDestinationChainId,
   originChainId = defaultOriginChainId,
@@ -75,14 +73,14 @@ export async function setupDataworker(
   l1Token_2: Contract;
   configStore: Contract;
   timer: Contract;
-  spokePoolClient_1: clients.SpokePoolClient;
-  spokePoolClient_2: clients.SpokePoolClient;
-  spokePoolClient_3: clients.SpokePoolClient;
-  spokePoolClient_4: clients.SpokePoolClient;
-  spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
+  spokePoolClient_1: sdkClients.SpokePoolClient;
+  spokePoolClient_2: sdkClients.SpokePoolClient;
+  spokePoolClient_3: sdkClients.SpokePoolClient;
+  spokePoolClient_4: sdkClients.SpokePoolClient;
+  spokePoolClients: { [chainId: number]: sdkClients.SpokePoolClient };
   mockedConfigStoreClient: MockConfigStoreClient;
-  configStoreClient: clients.ConfigStoreClient;
-  hubPoolClient: clients.HubPoolClient;
+  configStoreClient: sdkClients.AcrossConfigStoreClient;
+  hubPoolClient: sdkClients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
   spy: sinon.SinonSpy;
@@ -163,8 +161,7 @@ export async function setupDataworker(
     [l1Token_1, l1Token_2],
     maxL1TokensPerPoolRebalanceLeaf,
     maxRefundPerRelayerRefundLeaf,
-    sampleRateModel,
-    defaultPoolRebalanceTokenTransferThreshold
+    sampleRateModel
   );
 
   const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
@@ -172,7 +169,7 @@ export async function setupDataworker(
 
   await configStoreClient.update();
 
-  const hubPoolClient = new clients.HubPoolClient(
+  const hubPoolClient = new sdkClients.HubPoolClient(
     spyLogger,
     hubPool,
     configStoreClient,
@@ -206,7 +203,7 @@ export async function setupDataworker(
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
-      configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
+      configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
       multiCallerClient,
       hubPoolClient,
     },
@@ -219,7 +216,7 @@ export async function setupDataworker(
     tokenClient,
     hubPoolClient,
     multiCallerClient,
-    configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
+    configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
     profitClient,
   };
   const dataworkerInstance = new Dataworker(
@@ -228,7 +225,6 @@ export async function setupDataworker(
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf,
-    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultPoolRebalanceTokenTransferThreshold])),
     Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
@@ -267,7 +263,7 @@ export async function setupDataworker(
     spokePoolClient_3,
     spokePoolClient_4,
     spokePoolClients,
-    configStoreClient: configStoreClient as unknown as clients.ConfigStoreClient,
+    configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
     mockedConfigStoreClient: configStoreClient,
     hubPoolClient,
     dataworkerInstance,
@@ -306,14 +302,14 @@ export async function setupFastDataworker(
   l1Token_2: Contract;
   configStore: Contract;
   timer: Contract;
-  spokePoolClient_1: clients.SpokePoolClient;
-  spokePoolClient_2: clients.SpokePoolClient;
-  spokePoolClient_3: clients.SpokePoolClient;
-  spokePoolClient_4: clients.SpokePoolClient;
-  spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
+  spokePoolClient_1: sdkClients.SpokePoolClient;
+  spokePoolClient_2: sdkClients.SpokePoolClient;
+  spokePoolClient_3: sdkClients.SpokePoolClient;
+  spokePoolClient_4: sdkClients.SpokePoolClient;
+  spokePoolClients: { [chainId: number]: sdkClients.SpokePoolClient };
   mockedConfigStoreClient: MockConfigStoreClient;
-  configStoreClient: clients.ConfigStoreClient;
-  hubPoolClient: clients.HubPoolClient;
+  configStoreClient: sdkClients.AcrossConfigStoreClient;
+  hubPoolClient: sdkClients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
   spy: sinon.SinonSpy;
@@ -330,7 +326,6 @@ export async function setupFastDataworker(
     ethers,
     MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
     MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-    DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
     0,
     defaultDestinationChainId,
     defaultOriginChainId,
