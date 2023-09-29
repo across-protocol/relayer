@@ -2,7 +2,6 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { Contract } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { utf8ToHex, identifier, refundProposalLiveness } from "@across-protocol/contracts-v2/dist/test-utils";
-import { interfaceName } from "@uma/common";
 
 export async function setupUmaEcosystem(owner: SignerWithAddress): Promise<{
   timer: Contract;
@@ -25,11 +24,11 @@ export async function setupUmaEcosystem(owner: SignerWithAddress): Promise<{
   const store = await (
     await utils.getContractFactory("Store", owner)
   ).deploy({ rawValue: "0" }, { rawValue: "0" }, timer.address);
-  await finder.changeImplementationAddress(utf8ToHex(interfaceName.CollateralWhitelist), collateralWhitelist.address);
-  await finder.changeImplementationAddress(utf8ToHex(interfaceName.IdentifierWhitelist), identifierWhitelist.address);
-  await finder.changeImplementationAddress(utf8ToHex(interfaceName.SkinnyOptimisticOracle), optimisticOracle.address);
-  await finder.changeImplementationAddress(utf8ToHex(interfaceName.Store), store.address);
-  await finder.changeImplementationAddress(utf8ToHex(interfaceName.Oracle), mockOracle.address);
+  await finder.changeImplementationAddress(utf8ToHex("CollateralWhitelist"), collateralWhitelist.address);
+  await finder.changeImplementationAddress(utf8ToHex("IdentifierWhitelist"), identifierWhitelist.address);
+  await finder.changeImplementationAddress(utf8ToHex("SkinnyOptimisticOracle"), optimisticOracle.address);
+  await finder.changeImplementationAddress(utf8ToHex("Store"), store.address);
+  await finder.changeImplementationAddress(utf8ToHex("Oracle"), mockOracle.address);
   await identifierWhitelist.addSupportedIdentifier(identifier);
   return {
     timer,
