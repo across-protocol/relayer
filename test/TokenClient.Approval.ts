@@ -1,4 +1,3 @@
-import { interfaceName } from "@uma/common";
 import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
 import {
   Contract,
@@ -49,8 +48,8 @@ describe("TokenClient: Origin token approval", async function () {
     const store = await (
       await getContractFactory("Store", owner)
     ).deploy({ rawValue: "0" }, { rawValue: "0" }, zeroAddress);
-    await finder.changeImplementationAddress(utf8ToHex(interfaceName.CollateralWhitelist), collateralWhitelist.address);
-    await finder.changeImplementationAddress(utf8ToHex(interfaceName.Store), store.address);
+    await finder.changeImplementationAddress(utf8ToHex("CollateralWhitelist"), collateralWhitelist.address);
+    await finder.changeImplementationAddress(utf8ToHex("Store"), store.address);
     ({ hubPool, l1Token_1 } = await deployAndConfigureHubPool(owner, [], finder.address, zeroAddress));
     await collateralWhitelist.addToWhitelist(l1Token_1.address);
     await hubPool.setBond(l1Token_1.address, toBNWei("5"));
