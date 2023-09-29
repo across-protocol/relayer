@@ -3,7 +3,6 @@ import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
 import {
-  BigNumberForToken,
   PendingRootBundle,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
@@ -300,7 +299,6 @@ export function constructPoolRebalanceLeaves(
   realizedLpFees: interfaces.RunningBalances,
   configStoreClient: ConfigStoreClient,
   maxL1TokenCount?: number,
-  tokenTransferThreshold?: BigNumberForToken,
   incentivePoolBalances?: interfaces.RunningBalances,
   netSendAmounts?: interfaces.RunningBalances,
   ubaMode = false
@@ -326,12 +324,6 @@ export function constructPoolRebalanceLeaves(
       for (let i = 0; i < sortedL1Tokens.length; i += maxL1TokensPerLeaf) {
         const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxL1TokensPerLeaf);
 
-        const transferThresholds = l1TokensToIncludeInThisLeaf.map(
-          (l1Token) =>
-            tokenTransferThreshold[l1Token] ||
-            configStoreClient.getTokenTransferThresholdForBlock(l1Token, latestMainnetBlock)
-        );
-
         const spokeTargetBalances = l1TokensToIncludeInThisLeaf.map((l1Token) =>
           configStoreClient.getSpokeTargetBalancesForBlock(l1Token, Number(chainId), latestMainnetBlock)
         );
@@ -349,11 +341,7 @@ export function constructPoolRebalanceLeaves(
           if (ubaMode && netSendAmounts?.[chainId] && netSendAmounts[chainId][l1Token]) {
             return netSendAmounts[chainId][l1Token];
           } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
-            return getNetSendAmountForL1Token(
-              transferThresholds[index],
-              spokeTargetBalances[index],
-              runningBalances[chainId][l1Token]
-            );
+            return getNetSendAmountForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
           } else {
             return toBN(0);
           }
@@ -366,11 +354,7 @@ export function constructPoolRebalanceLeaves(
             if (ubaMode) {
               return runningBalances[chainId][l1Token];
             } else {
-              return getRunningBalanceForL1Token(
-                transferThresholds[index],
-                spokeTargetBalances[index],
-                runningBalances[chainId][l1Token]
-              );
+              return getRunningBalanceForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
             }
           } else {
             return toBN(0);
@@ -438,21 +422,18 @@ export function computeDesiredTransferAmountToSpoke(
 // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
 // pool when executing this leaf.
 export function getNetSendAmountForL1Token(
-  transferThreshold: BigNumber,
   spokePoolTargetBalance: SpokePoolTargetBalance,
   runningBalance: BigNumber
 ): BigNumber {
-  const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
-  return desiredTransferAmount.abs().gte(transferThreshold) ? desiredTransferAmount : toBN(0);
+  return computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
 }
 
 export function getRunningBalanceForL1Token(
-  transferThreshold: BigNumber,
   spokePoolTargetBalance: SpokePoolTargetBalance,
   runningBalance: BigNumber
 ): BigNumber {
   const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
-  return desiredTransferAmount.abs().lt(transferThreshold) ? runningBalance : runningBalance.sub(desiredTransferAmount);
+  return runningBalance.sub(desiredTransferAmount);
 }
 
 // This returns a possible next block range that could be submitted as a new root bundle, or used as a reference

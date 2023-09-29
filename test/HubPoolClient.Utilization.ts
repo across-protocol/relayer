@@ -1,6 +1,5 @@
-import { HubPoolClient } from "../src/clients";
+import { clients } from "@across-protocol/sdk-v2";
 import {
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
   amountToLp,
   destinationChainId,
   mockTreeRoot,
@@ -30,7 +29,7 @@ import {
 
 let configStore: Contract, hubPool: Contract;
 let l1Token: Contract, l2Token: Contract, timer: Contract, weth: Contract;
-let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
+let configStoreClient: MockConfigStoreClient, hubPoolClient: clients.HubPoolClient;
 let owner: SignerWithAddress;
 
 // Same rate model used for across-v1 tests:
@@ -62,7 +61,6 @@ const sampleSpokeTargetBalances = {
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
   routeRateModel: { "999-888": sampleRateModel2 },
-  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
   spokeTargetBalances: sampleSpokeTargetBalances,
 });
 
@@ -98,7 +96,11 @@ describe("HubPool Utilization", async function () {
 
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new clients.HubPoolClient(
+      createSpyLogger().spyLogger,
+      hubPool,
+      configStoreClient as unknown as clients.AcrossConfigStoreClient
+    );
     await configStoreClient.update();
     await hubPoolClient.update();
   });

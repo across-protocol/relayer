@@ -3,7 +3,6 @@ import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
-  BigNumberForToken,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
@@ -192,7 +191,6 @@ export function _buildRelayerRefundRoot(
   runningBalances: RunningBalances,
   clients: DataworkerClients,
   maxRefundCount: number,
-  tokenTransferThresholdOverrides: BigNumberForToken,
   isUBA = false
 ): {
   leaves: RelayerRefundLeaf[];
@@ -226,9 +224,6 @@ export function _buildRelayerRefundRoot(
           l2TokenAddress,
           endBlockForMainnet
         );
-        const transferThreshold =
-          tokenTransferThresholdOverrides[l1TokenCounterpart] ||
-          clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
 
         const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
           l1TokenCounterpart,
@@ -238,7 +233,6 @@ export function _buildRelayerRefundRoot(
 
         // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
         amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-          transferThreshold,
           spokePoolTargetBalance,
           runningBalances[repaymentChainId][l1TokenCounterpart]
         );
@@ -285,10 +279,6 @@ export function _buildRelayerRefundRoot(
       // If UBA model we don't need to do the following to figure out the amount to return:
       let amountToReturn = netSendAmount.mul(-1);
       if (!isUBA) {
-        const transferThreshold =
-          tokenTransferThresholdOverrides[leaf.l1Tokens[index]] ||
-          clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
-
         const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
           leaf.l1Tokens[index],
           leaf.chainId,
@@ -296,7 +286,6 @@ export function _buildRelayerRefundRoot(
         );
 
         amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-          transferThreshold,
           spokePoolTargetBalance,
           runningBalances[leaf.chainId][leaf.l1Tokens[index]]
         );
@@ -334,7 +323,6 @@ export async function _buildPoolRebalanceRoot(
   spokePoolClients: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number | undefined,
-  tokenTransferThreshold: BigNumberForToken,
   logger?: winston.Logger
 ): Promise<PoolRebalanceRoot> {
   // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
@@ -369,6 +357,7 @@ export async function _buildPoolRebalanceRoot(
     allValidFills,
     allValidFillsInRange
   );
+
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
       at: "Dataworker#DataworkerUtils",
@@ -407,8 +396,7 @@ export async function _buildPoolRebalanceRoot(
     runningBalances,
     realizedLpFees,
     clients.configStoreClient,
-    maxL1TokenCountOverride,
-    tokenTransferThreshold
+    maxL1TokenCountOverride
   );
 
   return {
