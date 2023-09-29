@@ -569,12 +569,13 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   return provider;
 }
 
-export function getNodeUrlList(chainId: number, quorum: number): string[] {
+export function getNodeUrlList(chainId: number, quorum = 1): string[] {
   const resolveUrls = (): string[] => {
     const providers = process.env[`RPC_PROVIDERS_${chainId}`] ?? process.env["RPC_PROVIDERS"];
     if (providers === undefined) {
       throw new Error(`No RPC providers defined for chainId ${chainId}`);
     }
+
     const nodeUrls = providers.split(",").map((provider) => {
       const envVar = `RPC_PROVIDER_${provider}_${chainId}`;
       const url = process.env[envVar];
@@ -591,29 +592,8 @@ export function getNodeUrlList(chainId: number, quorum: number): string[] {
     return nodeUrls;
   };
 
-  const retryConfigKey = `NODE_URLS_${chainId}`;
-  const nodeUrlKey = `NODE_URL_${chainId}`;
-  let nodeUrls: string[] = [];
-
-  try {
-    nodeUrls = resolveUrls();
-  } catch {
-    // Fallback to existing config scheme.
-    if (process.env[retryConfigKey]) {
-      nodeUrls = JSON.parse(process.env[retryConfigKey]) || [];
-      if (nodeUrls?.length === 0) {
-        throw new Error(`Provided ${retryConfigKey}, but parsing it as json did not result in an array of urls.`);
-      }
-    } else {
-      if (process.env[nodeUrlKey]) {
-        nodeUrls = [process.env[nodeUrlKey]];
-      }
-    }
-  }
-
-  if (nodeUrls.length === 0) {
-    throw new Error(`Can't get ${chainId} node url(s) because neither ${retryConfigKey} or ${nodeUrlKey} are defined.`);
-  } else if (nodeUrls.length < quorum) {
+  const nodeUrls = resolveUrls();
+  if (nodeUrls.length < quorum) {
     throw new Error(`Insufficient RPC providers for chainId ${chainId} to meet quorum (minimum ${quorum} required)`);
   }
 
