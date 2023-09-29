@@ -8,7 +8,7 @@ export type SignerOptions = {
    * The type of wallet to use.
    * @note If using a GCKMS wallet, the gckmsKeys parameter must be set.
    */
-  keyType: "mnemonic" | "privateKey" | "gckms";
+  keyType: string;
   /**
    * Whether or not to clear the mnemonic/private key from the env after retrieving the signer.
    * @note Not including this parameter or setting it to false will not clear the mnemonic/private key from the env.
@@ -42,7 +42,7 @@ export async function getSigner({ keyType, gckmsKeys, cleanEnv }: SignerOptions)
       wallet = await getGckmsSigner(gckmsKeys);
       break;
     default:
-      throw new Error("Must define mnemonic, privatekey or gckms for wallet");
+      throw new Error(`getSigner: Unsupported key type (${keyType})`);
   }
   if (!wallet) {
     throw new Error("Must define mnemonic, privatekey or gckms for wallet");
