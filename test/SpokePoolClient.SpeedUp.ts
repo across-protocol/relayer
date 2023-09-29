@@ -14,14 +14,14 @@ import {
   toBNWei,
 } from "./utils";
 
-import { SpokePoolClient } from "../src/clients";
+import { clients } from "@across-protocol/sdk-v2";
 import { DepositWithBlock } from "../src/interfaces";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let depositor: SignerWithAddress, deploymentBlock: number;
 const destinationChainId2 = destinationChainId + 1;
 
-let spokePoolClient: SpokePoolClient;
+let spokePoolClient: clients.SpokePoolClient;
 
 describe("SpokePoolClient: SpeedUp", async function () {
   const ignoredFields = [
@@ -37,7 +37,13 @@ describe("SpokePoolClient: SpeedUp", async function () {
     [, depositor] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId, deploymentBlock);
+    spokePoolClient = new clients.SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool,
+      null,
+      originChainId,
+      deploymentBlock
+    );
 
     await setupTokensForWallet(spokePool, depositor, [erc20, destErc20], weth, 10);
   });

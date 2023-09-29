@@ -93,12 +93,12 @@ export class TokenClient {
   // requirement to send all seen relays and the total remaining balance of the relayer.
   getTokenShortfall(): {
     [chainId: number]: {
-      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber };
+      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
     };
   } {
     const tokenShortfall: {
       [chainId: number]: {
-        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber };
+        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
       };
     } = {};
     Object.entries(this.tokenShortfall).forEach(([_chainId, tokenMap]) => {
