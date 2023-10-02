@@ -47,7 +47,7 @@ jobs:
       - name: Build
         run: yarn build
       - name: Execute tests
-        run: yarn test --bail
+        run:  node test/split.js | xargs yarn test --bail
         env:
           CI_TOTAL: ${{ matrix.ci_total }}
           CI_INDEX: ${{ matrix.ci_index }}
