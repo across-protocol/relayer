@@ -26,8 +26,8 @@ jobs:
       - name: Archive build artifacts
         uses: actions/cache@v3
         with:
-          path: '~/node_modules'
-          key: ${{ runner.os }}-build-cache-${{ hashFiles('**/package-lock.json') }}
+          path: '~/dist'
+          key: build-cache-${{ github.sha }}
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -41,8 +41,8 @@ jobs:
         uses: actions/cache/restore@v3
         id: cache
         with:
-          path: '~/node_modules'
-          key: ${{ runner.os }}-build-cache-${{ hashFiles('**/package-lock.json') }}
+          path: '~/dist'
+          key: build-cache-${{ github.sha }}
       - name: Execute tests
         run: yarn test --bail
         env:
