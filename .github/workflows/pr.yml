@@ -20,7 +20,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "yarn"
       - name: Install packages
-        run: yarn install --frozen-lockfile
+        run: yarn install
       - name: Build
         run: yarn build
   test:
@@ -43,7 +43,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "yarn"
       - name: Install packages
-        run: yarn install --frozen-lockfile
+        run: yarn install
       - name: Build
         run: yarn build
       - name: Execute tests
