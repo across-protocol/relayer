@@ -27,8 +27,6 @@ export {
 export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@ethersproject/abstract-provider";
 
 export { config } from "dotenv";
-
-export { replaceAddressCase } from "@uma/common";
 export { Logger } from "@uma/financial-templates-lib";
 
 // TypeChain exports used in the bot.
