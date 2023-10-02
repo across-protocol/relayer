@@ -1,4 +1,3 @@
-import { constants } from "@across-protocol/sdk-v2";
 import * as zksync from "zksync-web3";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
@@ -18,7 +17,7 @@ import {
   toBN,
   winston,
 } from "./utils";
-const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
+import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {

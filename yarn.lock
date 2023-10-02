@@ -11,6 +11,11 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
+"@across-protocol/constants-v2@1.0.4":
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants-v2/-/constants-v2-1.0.4.tgz#df31c81038982a25de2b1b8f7604875f3de1186c"
+  integrity sha512-Nzl8Z1rZFvcpuKQu7CmBVfvgB13/NoulcsRVYBSkG90imS/e6mugxzqD9UrUb+WOL0ODMCANCAoDw54ZBBzNiQ==
+
 "@across-protocol/contracts-v2@2.4.3", "@across-protocol/contracts-v2@^2.4.3":
   version "2.4.3"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.4.3.tgz#9cc0b1f52b4f819b32ca1524ef84af9dfed8687a"
