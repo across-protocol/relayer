@@ -1,7 +1,7 @@
 import assert from "assert";
 import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
-import * as contracts from "@across-protocol/contracts-v2";
+import { constants } from "@across-protocol/sdk-v2";
 import { getDeployedContract, getNodeUrlList } from "../src/utils";
 
 type ERC20 = {
@@ -51,9 +51,9 @@ export function resolveToken(token: string, chainId: number): ERC20 {
   // `token` may be an address or a symbol. Normalise it to a symbol for easy lookup.
   const symbol = !ethersUtils.isAddress(token)
     ? token.toUpperCase()
-    : Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
+    : Object.values(constants.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
 
-  const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
+  const _token = constants.TOKEN_SYMBOLS_MAP[symbol];
   if (_token === undefined) {
     throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
   }

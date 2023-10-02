@@ -15,9 +15,8 @@ import { SpokePoolClient } from "../SpokePoolClient";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
-import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, utils, constants } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 
 /**
@@ -233,7 +232,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     const { chainId } = this;
     assert(chainId === 324, `chainId ${chainId} is not supported`);
 
-    const l2WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
+    const l2WethAddress = constants.TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
     const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);

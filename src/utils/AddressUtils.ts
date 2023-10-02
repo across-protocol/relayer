@@ -1,4 +1,4 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
+import { constants } from "@across-protocol/sdk-v2";
 import { BigNumber, ethers } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
@@ -28,7 +28,7 @@ export function compareAddressesSimple(addressA: string, addressB: string): bool
  */
 export function matchTokenSymbol(tokenAddress: string, chainId: number): string[] {
   // We can match one l1 token address on multiple symbols in some special cases, like ETH/WETH.
-  return Object.values(TOKEN_SYMBOLS_MAP)
+  return Object.values(constants.TOKEN_SYMBOLS_MAP)
     .filter(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
     .map(({ symbol }) => symbol);
 }
@@ -39,7 +39,7 @@ export function matchTokenSymbol(tokenAddress: string, chainId: number): string[
  * @returns The number of ERC20 decimals configured for the requested token.
  */
 export function resolveTokenDecimals(tokenSymbol: string): number {
-  const decimals = TOKEN_SYMBOLS_MAP[tokenSymbol]?.decimals;
+  const decimals = constants.TOKEN_SYMBOLS_MAP[tokenSymbol]?.decimals;
   if (decimals === undefined) {
     throw new Error(`Unrecognized token symbol: ${tokenSymbol}`);
   }
@@ -53,7 +53,7 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
  * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
  */
 export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
-  const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
+  const tokenSymbols = Object.values(constants.TOKEN_SYMBOLS_MAP);
   return tokenAddresses
     .map((tokenAddress) => {
       return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
@@ -64,7 +64,7 @@ export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): 
 
 export function getTokenAddress(tokenAddress: string, chainId: number, targetChainId: number): string {
   const tokenSymbol = resolveTokenSymbols([tokenAddress], chainId)[0];
-  const targetAddress = TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[targetChainId];
+  const targetAddress = constants.TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[targetChainId];
   if (!targetAddress) {
     throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
   }
