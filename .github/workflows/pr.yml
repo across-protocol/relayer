@@ -26,7 +26,8 @@ jobs:
       - name: Archive build artifacts
         uses: actions/cache@v3
         with:
-          path: dist/
+          path: |
+            dist/
           key: build-cache-${{ github.sha }}
   test:
     name: Test
