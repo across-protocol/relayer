@@ -23,13 +23,15 @@ import {
   getSpokePoolClientEventSearchConfigsForFastDataworker,
 } from "../dataworker/DataworkerClientHelper";
 import { updateClients } from "../common";
-import * as sdk from "@across-protocol/sdk-v2";
-import { isDefined } from "@uma/financial-templates-lib/dist/types";
+import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { createDataworker } from "../dataworker";
 import { RedisCache } from "../caching/RedisCache";
 import { ConfigStoreClient } from "../clients";
 
 config();
+
+const { isDefined } = sdkUtils;
+
 let logger: winston.Logger;
 
 export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
@@ -66,7 +68,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
     const mockedUBAActivationBlock =
       Number(process.env.UBA_ACTIVATION_BLOCK) ||
       (await getBlockForTimestamp(1, Math.floor(Date.now() / 1000) - 12 * 60 * 60));
-    const mockConfigStoreClient = new sdk.clients.mocks.MockConfigStoreClient(
+    const mockConfigStoreClient = new sdkClients.mocks.MockConfigStoreClient(
       logger,
       configStoreClient.configStore,
       configStoreClient.eventSearchConfig,
@@ -127,8 +129,8 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
       error,
     });
   }
-  const ubaClient = new sdk.clients.UBAClient(
-    new sdk.clients.UBAClientConfig(),
+  const ubaClient = new sdkClients.UBAClient(
+    new sdkClients.UBAClientConfig(),
     ["WETH", "USDC"],
     // clients.hubPoolClient.getL1Tokens().map((x) => x.symbol),
     clients.hubPoolClient,

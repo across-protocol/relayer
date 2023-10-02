@@ -8,18 +8,16 @@ import { Deposit, Fill, FillWithBlock, RelayerRefundLeaf, RunningBalances } from
 import { TransactionResponse, buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
   depositRelayerFeePct,
-  l1TokenTransferThreshold,
   sampleRateModel,
   zeroAddress,
 } from "../constants";
 import { BigNumber, Contract, SignerWithAddress, deposit } from "./index";
-export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 export { sinon, winston };
+export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 
 import { AcrossConfigStore, MerkleTree } from "@across-protocol/contracts-v2";
 import { constants } from "@across-protocol/sdk-v2";
@@ -125,7 +123,6 @@ export async function deployConfigStore(
   maxL1TokensPerPoolRebalanceLeaf: number = MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
-  transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
   additionalChainIdIndices?: number[]
 ): Promise<{ configStore: AcrossConfigStore; deploymentBlock: number }> {
   const configStore = (await (
@@ -138,7 +135,6 @@ export async function deployConfigStore(
       token.address,
       JSON.stringify({
         rateModel: rateModel,
-        transferThreshold: transferThreshold.toString(),
       })
     );
   }
@@ -230,10 +226,7 @@ export async function deployNewTokenMapping(
     { destinationChainId: spokePoolChainId, l1Token, destinationToken: l2Token },
     { destinationChainId: spokePoolDestinationChainId, l1Token, destinationToken: l2TokenDestination },
   ]);
-  await configStore.updateTokenConfig(
-    l1Token.address,
-    JSON.stringify({ rateModel: sampleRateModel, transferThreshold: l1TokenTransferThreshold.toString() })
-  );
+  await configStore.updateTokenConfig(l1Token.address, JSON.stringify({ rateModel: sampleRateModel }));
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);

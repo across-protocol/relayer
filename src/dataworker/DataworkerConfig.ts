@@ -4,7 +4,6 @@ import { BigNumber, assert, toBNWei } from "../utils";
 export class DataworkerConfig extends CommonConfig {
   readonly maxPoolRebalanceLeafSizeOverride: number;
   readonly maxRelayerRepaymentLeafSizeOverride: number;
-  readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
   readonly rootBundleExecutionThreshold: BigNumber;
   readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
 
@@ -42,7 +41,6 @@ export class DataworkerConfig extends CommonConfig {
   constructor(env: ProcessEnv) {
     const {
       ROOT_BUNDLE_EXECUTION_THRESHOLD,
-      TOKEN_TRANSFER_THRESHOLD_OVERRIDE,
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
       DISPUTER_ENABLED,
@@ -76,9 +74,6 @@ export class DataworkerConfig extends CommonConfig {
     if (this.maxRelayerRepaymentLeafSizeOverride !== undefined) {
       assert(this.maxRelayerRepaymentLeafSizeOverride > 0, "Max leaf count set to 0");
     }
-    this.tokenTransferThresholdOverride = TOKEN_TRANSFER_THRESHOLD_OVERRIDE
-      ? JSON.parse(TOKEN_TRANSFER_THRESHOLD_OVERRIDE)
-      : {};
     this.rootBundleExecutionThreshold = ROOT_BUNDLE_EXECUTION_THRESHOLD
       ? toBNWei(ROOT_BUNDLE_EXECUTION_THRESHOLD)
       : toBNWei("500000");

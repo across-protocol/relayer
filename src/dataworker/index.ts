@@ -32,7 +32,6 @@ export async function createDataworker(
     clients.configStoreClient.getChainIdIndicesForBlock(),
     config.maxRelayerRepaymentLeafSizeOverride,
     config.maxPoolRebalanceLeafSizeOverride,
-    config.tokenTransferThresholdOverride,
     config.blockRangeEndBlockBuffer,
     config.spokeRootsLookbackCount,
     config.bufferToPropose,

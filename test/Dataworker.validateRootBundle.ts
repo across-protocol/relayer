@@ -3,7 +3,6 @@ import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/client
 import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, utf8ToHex } from "../src/utils";
 import {
   BUNDLE_END_BLOCK_BUFFER,
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
@@ -61,7 +60,6 @@ describe("Dataworker: Validate pending root bundle", async function () {
       ethers,
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       BUNDLE_END_BLOCK_BUFFER
     ));
   });
