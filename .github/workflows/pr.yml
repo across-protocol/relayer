@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            dist/
+            dist/*
           key: build-cache-${{ github.sha }}
   test:
     name: Test
@@ -42,6 +42,8 @@ jobs:
         uses: actions/cache/restore@v3
         id: restore-cache
         with:
+          path: |
+            dist/
           key: build-cache-${{ github.sha }}
       - name: Execute tests
         run: yarn test --bail
