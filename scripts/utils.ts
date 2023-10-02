@@ -3,6 +3,7 @@ import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
 import { constants } from "@across-protocol/sdk-v2";
 import { getDeployedContract, getNodeUrlList } from "../src/utils";
+import * as contracts from "@across-protocol/contracts-v2";
 
 type ERC20 = {
   address: string;
