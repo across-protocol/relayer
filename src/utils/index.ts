@@ -1,15 +1,48 @@
 // Utils from other packages.
+import { constants as sdkConstants } from "@across-protocol/sdk-v2";
+import { constants as ethersConstants } from "ethers";
+
 import winston from "winston";
 import assert from "assert";
-
 export { winston, assert };
+
+export const { MAX_SAFE_ALLOWANCE } = sdkConstants;
+export const { AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
+
+export {
+  ethers,
+  providers,
+  utils,
+  BaseContract,
+  BigNumber,
+  BigNumberish,
+  Contract,
+  ContractFactory,
+  Event,
+  EventFilter,
+  Signer,
+  Transaction,
+  Wallet,
+} from "ethers";
+export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@ethersproject/abstract-provider";
+
+export { config } from "dotenv";
+
+export { replaceAddressCase } from "@uma/common";
 export { Logger } from "@uma/financial-templates-lib";
 
-export { BigNumber, Signer, Contract, ContractFactory, Transaction, BigNumberish } from "ethers";
-export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
-export { ethers, providers } from "ethers";
-export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@ethersproject/abstract-provider";
-export { config } from "dotenv";
+// TypeChain exports used in the bot.
+export {
+  getContractInfoFromAddress,
+  getDeployedAddress,
+  getDeployedBlockNumber,
+  ExpandedERC20__factory as ERC20,
+  HubPool__factory as HubPool,
+  SpokePool__factory as SpokePool,
+  AcrossConfigStore__factory as AcrossConfigStore,
+  PolygonTokenBridger__factory as PolygonTokenBridger,
+  WETH9__factory as WETH9,
+} from "@across-protocol/contracts-v2";
 
 // Utils specifically for this bot.
 export * from "./SDKUtils";
@@ -39,17 +72,3 @@ export * from "./RedisUtils";
 export * from "./UmaUtils";
 export * from "./TokenUtils";
 export * from "./CLIUtils";
-
-export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
-
-// TypeChain exports used in the bot.
-export {
-  ExpandedERC20__factory as ERC20,
-  HubPool__factory as HubPool,
-  SpokePool__factory as SpokePool,
-  AcrossConfigStore__factory as AcrossConfigStore,
-  PolygonTokenBridger__factory as PolygonTokenBridger,
-  WETH9__factory as WETH9,
-} from "@across-protocol/contracts-v2";
-
-export { getDeployedAddress, getDeployedBlockNumber, getContractInfoFromAddress } from "@across-protocol/contracts-v2";
