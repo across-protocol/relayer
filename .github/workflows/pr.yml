@@ -24,7 +24,7 @@ jobs:
       - name: Build
         run: yarn build
       - name: Archive build artifacts
-      - uses: actions/cache@v3
+        uses: actions/cache@v3
         with:
           path: '~/node_modules'
           key: ${{ runner.os }}-build-cache-${{ hashFiles('**/package-lock.json') }}
@@ -38,7 +38,7 @@ jobs:
         ci_total: [4]
     steps:
       - name: Download build artifacts
-      - uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v3
         id: cache
         with:
           path: '~/node_modules'
