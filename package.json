@@ -5,6 +5,7 @@
   "repository": "git@github.com:across-protocol/relayer-v2.git",
   "author": "UMA Team",
   "license": "AGPL-3.0-only",
+  "private": true,
   "engines": {
     "node": ">=16.18.0"
   },
