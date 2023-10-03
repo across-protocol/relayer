@@ -1,10 +1,9 @@
-import { assert, getDeposit, setDeposit, getRedisDepositKey, getCurrentTime, getRedis, isDefined } from "../utils";
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
 import { SpokePoolClient } from "../clients";
-import { assign, toBN, isFirstFillForDeposit } from "./";
+import { assign, toBN, isFirstFillForDeposit, getRedis } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { utils, typechain } from "@across-protocol/sdk-v2";
-const { validateFillForDeposit } = utils;
+import { RedisCache } from "../caching/RedisCache";
 
 export function getDepositPath(deposit: Deposit): string {
   return `${deposit.originToken}-->${deposit.destinationChainId}`;
@@ -130,47 +129,6 @@ export async function queryHistoricalDepositForFill(
   spokePoolClient: SpokePoolClient,
   fill: Fill
 ): Promise<DepositWithBlock | undefined> {
-  if (fill.originChainId !== spokePoolClient.chainId) {
-    throw new Error(`OriginChainId mismatch (${fill.originChainId} != ${spokePoolClient.chainId})`);
-  }
-
-  // We need to update client so we know the first and last deposit ID's queried for this spoke pool client, as well
-  // as the global first and last deposit ID's for this spoke pool.
-  if (!spokePoolClient.isUpdated) {
-    throw new Error("SpokePoolClient must be updated before querying historical deposits");
-  }
-
-  if (
-    fill.depositId < spokePoolClient.firstDepositIdForSpokePool ||
-    fill.depositId > spokePoolClient.lastDepositIdForSpokePool
-  ) {
-    return undefined;
-  }
-
-  if (
-    fill.depositId >= spokePoolClient.earliestDepositIdQueried &&
-    fill.depositId <= spokePoolClient.latestDepositIdQueried
-  ) {
-    return spokePoolClient.getDepositForFill(fill);
-  }
-
-  let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
-  const redisClient = await getRedis(spokePoolClient.logger);
-  if (redisClient) {
-    cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
-  }
-
-  if (isDefined(cachedDeposit)) {
-    deposit = cachedDeposit as DepositWithBlock;
-    // Assert that cache hasn't been corrupted.
-    assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
-  } else {
-    deposit = await spokePoolClient.findDeposit(fill.depositId, fill.destinationChainId, fill.depositor);
-
-    if (redisClient) {
-      await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
-    }
-  }
-
-  return validateFillForDeposit(fill, deposit) ? deposit : undefined;
+  const cache = RedisCache.resolveFromRedisClient(await getRedis(spokePoolClient.logger), spokePoolClient.logger);
+  return utils.queryHistoricalDepositForFill(spokePoolClient, fill, cache);
 }

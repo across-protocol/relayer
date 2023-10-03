@@ -71,4 +71,10 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     // Return key to indicate that the value was set successfully.
     return key;
   }
+
+  static resolveFromRedisClient(redisClient: RedisClient, logger?: winston.Logger): RedisCache {
+    const cache = new RedisCache(redisClient.options.url, logger);
+    cache.redisClient = redisClient;
+    return cache;
+  }
 }
