@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   AcrossApiClient,
   ConfigStoreClient,
@@ -38,6 +39,8 @@ import {
   toBNWei,
   winston,
 } from "./utils";
+
+const { bnOne } = sdkUtils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -108,7 +111,10 @@ describe("Relayer: Token balance shortfall", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
+    profitClient.setTokenPrice(l1Token.address, bnOne);
+    Object.values(spokePoolClients).map((spokePoolClient) => profitClient.setGasCost(spokePoolClient.chainId, bnOne));
 
     relayerInstance = new Relayer(
       relayer.address,

@@ -8,7 +8,7 @@ import { priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-prot
 import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 const { formatEther } = ethersUtils;
-const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+const { bnUint256Max: uint256Max, fixedPointAdjustment: fixedPoint } = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 // @todo: These don't belong in the ProfitClient; they should be relocated.
@@ -17,16 +17,19 @@ export const USDC = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
 export const WBTC = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
 export const WETH = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
 
-// note: All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
-export type FillProfit = {
+// @note All FillCost and FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
+type FillCost = {
+  nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
+  gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
+  gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
+};
+
+export type FillProfit = FillCost & {
   grossRelayerFeePct: BigNumber; // Max of relayerFeePct and newRelayerFeePct from Deposit.
   tokenPriceUsd: BigNumber; // Resolved USD price of the bridged token.
   fillAmountUsd: BigNumber; // Amount of the bridged token being filled.
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
-  nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
   gasMultiplier: BigNumber; // Multiplier to apply to nativeGasCost as padding or discount
-  gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
-  gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
   refundFeeUsd: BigNumber; // Estimated relayer refund fee on the refund chain.
   relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
@@ -144,11 +147,7 @@ export class ProfitClient {
   }
 
   // Estimate the gas cost of filling this relay.
-  estimateFillCost(chainId: number): {
-    nativeGasCost: BigNumber;
-    gasPriceUsd: BigNumber;
-    gasCostUsd: BigNumber;
-  } {
+  estimateFillCost(chainId: number): FillCost {
     const gasPriceUsd = this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[chainId]);
     const nativeGasCost = this.getTotalGasCost(chainId); // gas cost in native token
 
@@ -284,20 +283,8 @@ export class ProfitClient {
     l1Token: L1Token
   ): FillProfit | undefined {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
-    let fill: FillProfit;
 
-    try {
-      fill = this.calculateFillProfitability(deposit, fillAmount, refundFee, l1Token, minRelayerFeePct);
-    } catch (err) {
-      this.logger.debug({
-        at: "ProfitClient#isFillProfitable",
-        message: `Unable to determine fill profitability (${err}).`,
-        deposit,
-        fillAmount,
-      });
-      return undefined;
-    }
-
+    const fill = this.calculateFillProfitability(deposit, fillAmount, refundFee, l1Token, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
       const { depositId, originChainId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
@@ -326,9 +313,26 @@ export class ProfitClient {
     return fill;
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): boolean {
-    const { profitable } = this.getFillProfitability(deposit, fillAmount, refundFee, l1Token);
-    return profitable ?? this.isTestnet;
+  isFillProfitable(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    refundFee: BigNumber,
+    l1Token: L1Token
+  ): [boolean, BigNumber] {
+    let profitable = false;
+    let nativeGasCost = uint256Max;
+    try {
+      ({ profitable, nativeGasCost } = this.getFillProfitability(deposit, fillAmount, refundFee, l1Token));
+    } catch (err) {
+      this.logger.debug({
+        at: "ProfitClient#isFillProfitable",
+        message: `Unable to determine fill profitability (${err}).`,
+        deposit,
+        fillAmount,
+      });
+    }
+
+    return [profitable || this.isTestnet, nativeGasCost];
   }
 
   captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {

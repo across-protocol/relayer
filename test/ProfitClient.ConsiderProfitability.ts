@@ -306,7 +306,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: expected.netRelayerFeeUsd,
             });
 
-            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
+            const [profitable] = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
             expect(profitable).to.equal(expected.profitable);
           });
         });
@@ -360,7 +360,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
+            const [profitable] = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
             expect(profitable).to.equal(expected.profitable);
           });
         });

@@ -267,9 +267,14 @@ export class Relayer {
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
 
-        const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
+        const [repaymentChainId, gasLimit] = await this.resolveRepaymentChain(
+          version,
+          deposit,
+          unfilledAmount,
+          l1Token
+        );
         if (isDefined(repaymentChainId)) {
-          this.fillRelay(deposit, unfilledAmount, repaymentChainId);
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
@@ -291,7 +296,7 @@ export class Relayer {
     }
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number): void {
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -323,6 +328,7 @@ export class Relayer {
       chainId: deposit.destinationChainId,
       method,
       args: argBuilder(deposit, repaymentChainId, fillAmount),
+      gasLimit,
       message,
       mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount),
     });
@@ -521,7 +527,7 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
-  ): Promise<number | undefined> {
+  ): Promise<[number | undefined, BigNumber]> {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
 
@@ -547,14 +553,16 @@ export class Relayer {
         message: `Skipping repayment chain determination for partial fill on ${destinationChain}`,
         deposit: { originChain, depositId, destinationChain, depositHash },
       });
-      return destinationChainId;
     }
 
-    const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
-    const refundFee = this.computeRefundFee(version, deposit);
+    const preferredChainId =
+      fillAmount.eq(deposit.amount) && !fillsInQueueForSameDeposit
+        ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
+        : destinationChainId;
 
-    const profitable = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
-    return profitable ? preferredChainId : undefined;
+    const refundFee = this.computeRefundFee(version, deposit);
+    const [profitable, gasLimit] = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
+    return [profitable ? preferredChainId : undefined, gasLimit];
   }
 
   protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
