@@ -1,5 +1,5 @@
 import { interfaces, constants } from "@across-protocol/sdk-v2";
-import { RedisClient, objectWithBigNumberReviver, setRedisKey, winston } from "../utils";
+import { RedisClient, objectWithBigNumberReviver, setRedisKey } from "../utils";
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -8,14 +8,6 @@ import { RedisClient, objectWithBigNumberReviver, setRedisKey, winston } from ".
  * drop-in in the SDK without the SDK needing to reason about the implementation details.
  */
 export class RedisCache implements interfaces.CachingMechanismInterface {
-  /**
-   * The logger is optional, but if it is provided, it will be used to log debug messages
-   */
-  private readonly logger: winston.Logger | undefined;
-  /**
-   * The redisUrl is the URL of the redis server to connect to.
-   */
-  private readonly redisUrl: string;
   /**
    * The redisClient is the redis client that is used to communicate with the redis server.
    * It is instantiated lazily when the `instantiate` method is called.
@@ -27,8 +19,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
    * @param redisUrl The URL of the redis server to connect to.
    * @param logger The logger to use to log debug messages.
    */
-  constructor(redisClient: RedisClient, logger?: winston.Logger) {
-    this.logger = logger;
+  constructor(redisClient: RedisClient) {
     this.redisClient = redisClient;
   }
 

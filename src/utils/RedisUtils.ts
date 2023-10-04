@@ -50,7 +50,7 @@ export async function getRedisCache(
 ): Promise<CachingMechanismInterface | undefined> {
   const client = await getRedis(logger, url);
   if (client) {
-    return new RedisCache(client, logger);
+    return new RedisCache(client);
   }
 }
 
