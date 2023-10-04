@@ -4,10 +4,10 @@ import * as constants from "../common/Constants";
 import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
-import { constants as sdkConstants, priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 const { formatEther } = ethersUtils;
-const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = sdkConstants;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.

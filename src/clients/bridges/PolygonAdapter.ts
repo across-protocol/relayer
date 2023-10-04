@@ -16,9 +16,8 @@ import {
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
-import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
-const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
+import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
