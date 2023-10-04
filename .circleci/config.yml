@@ -26,21 +26,38 @@ jobs:
     resource_class: medium+
     parallelism: 10
     steps:
-      - restore_cache:
-          key: relayer-cache-{{ .Environment.CIRCLE_SHA1 }}
+      - checkout
+      - run:
+          name: Install Prereqs
+          command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
+      - run:
+          name: Install Dependencies
+          command: yarn install
+      - run:
+          name: Run build
+          command: yarn build
       - run:
           name: Run tests
           command: |
-            pwd
-            cd test/
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
-            yarn test --bail $(cat /tmp/test-files)
+            cd /tmp/test-files && ls -la
+            yarn test --bail
   lint:
     docker:
       - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:
+      - checkout
+      - run:
+          name: Install Prereqs
+          command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
+      - run:
+          name: Install Dependencies
+          command: yarn install
+      - run:
+          name: Run build
+          command: yarn build
       - restore_cache:
           key: relayer-cache-{{ .Environment.CIRCLE_SHA1 }}
       - run:
@@ -50,10 +67,5 @@ workflows:
   version: 2.1
   build_and_test:
     jobs:
-      - build
-      - lint:
-          requires:
-            - build
-      - test:
-          requires:
-            - build
+      - test
+      - lint
