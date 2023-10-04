@@ -1,9 +1,8 @@
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
 import { SpokePoolClient } from "../clients";
-import { assign, toBN, isFirstFillForDeposit, getRedis } from "./";
+import { assign, toBN, isFirstFillForDeposit, getRedisCache } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { utils, typechain } from "@across-protocol/sdk-v2";
-import { RedisCache } from "../caching/RedisCache";
 
 export function getDepositPath(deposit: Deposit): string {
   return `${deposit.originToken}-->${deposit.destinationChainId}`;
@@ -129,6 +128,5 @@ export async function queryHistoricalDepositForFill(
   spokePoolClient: SpokePoolClient,
   fill: Fill
 ): Promise<DepositWithBlock | undefined> {
-  const cache = RedisCache.resolveFromRedisClient(await getRedis(spokePoolClient.logger), spokePoolClient.logger);
-  return utils.queryHistoricalDepositForFill(spokePoolClient, fill, cache);
+  return utils.queryHistoricalDepositForFill(spokePoolClient, fill, await getRedisCache(spokePoolClient.logger));
 }

@@ -1,5 +1,5 @@
 import { interfaces, constants } from "@across-protocol/sdk-v2";
-import { RedisClient, getRedis, objectWithBigNumberReviver, setRedisKey, winston } from "../utils";
+import { RedisClient, objectWithBigNumberReviver, setRedisKey, winston } from "../utils";
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -27,29 +27,12 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
    * @param redisUrl The URL of the redis server to connect to.
    * @param logger The logger to use to log debug messages.
    */
-  constructor(redisUrl: string, logger?: winston.Logger) {
+  constructor(redisClient: RedisClient, logger?: winston.Logger) {
     this.logger = logger;
-    this.redisUrl = redisUrl;
-    this.redisClient = undefined;
-  }
-
-  /**
-   * The instantiate method is used to instantiate the redis client. It is called lazily
-   * when the `get` or `set` methods are called.
-   * @returns A promise that resolves when the redis client has been instantiated.
-   * @throws An error if the redis client could not be instantiated.
-   */
-  public async instantiate(): Promise<void> {
-    if (!this.redisClient) {
-      this.redisClient = await getRedis(this.logger, this.redisUrl);
-    }
+    this.redisClient = redisClient;
   }
 
   public async get<T>(key: string): Promise<T | undefined> {
-    // Instantiate the redis client if it has not been instantiated yet.
-    if (!this.redisClient) {
-      await this.instantiate();
-    }
     // Get the value from redis.
     const result = await this.redisClient.get(key);
     if (result) {
@@ -62,19 +45,9 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
   }
 
   public async set<T>(key: string, value: T, ttl: number = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {
-    // Instantiate the redis client if it has not been instantiated yet.
-    if (!this.redisClient) {
-      await this.instantiate();
-    }
     // Call the setRedisKey function to set the value in redis.
     await setRedisKey(key, JSON.stringify(value), this.redisClient, ttl);
     // Return key to indicate that the value was set successfully.
     return key;
-  }
-
-  static resolveFromRedisClient(redisClient: RedisClient, logger?: winston.Logger): RedisCache {
-    const cache = new RedisCache(redisClient.options.url, logger);
-    cache.redisClient = redisClient;
-    return cache;
   }
 }

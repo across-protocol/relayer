@@ -2,8 +2,9 @@ import { assert, toBN, BigNumberish } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
-import { Deposit, Fill } from "../interfaces";
+import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
+import { RedisCache } from "../caching/RedisCache";
 dotenv.config();
 
 export type RedisClient = ReturnType<typeof createClient>;
@@ -41,6 +42,16 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
   }
 
   return redisClients[url];
+}
+
+export async function getRedisCache(
+  logger?: winston.Logger,
+  url?: string
+): Promise<CachingMechanismInterface | undefined> {
+  const client = await getRedis(logger, url);
+  if (client) {
+    return new RedisCache(client, logger);
+  }
 }
 
 export async function setRedisKey(

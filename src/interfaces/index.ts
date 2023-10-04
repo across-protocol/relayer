@@ -72,3 +72,5 @@ export const isUbaInflow = interfaces.isUbaInflow;
 export const isUbaOutflow = interfaces.isUbaOutflow;
 export const outflowIsFill = interfaces.outflowIsFill;
 export const outflowIsRefund = interfaces.outflowIsRefund;
+
+export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
