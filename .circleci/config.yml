@@ -2,7 +2,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/node:16.17.0
+      - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     steps:
       - checkout
@@ -21,7 +21,7 @@ jobs:
             - ~/relayer-v2
   test:
     docker:
-      - image: cimg/node:16.17.0
+      - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
     parallelism: 10
