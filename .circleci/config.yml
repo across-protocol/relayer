@@ -34,13 +34,12 @@ jobs:
             pwd
             cd test/
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
-            yarn test --bail ./$(echo '$(cat /tmp/test-files)')
+            yarn test --bail $(echo '$(cat /tmp/test-files)')
   lint:
     docker:
       - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
-    parallelism: 10
     steps:
       - restore_cache:
           key: relayer-cache-{{ .Environment.CIRCLE_SHA1 }}
