@@ -11,7 +11,7 @@ jobs:
           command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
       - run:
           name: Install Dependencies
-          command: yarn --frozen-lockfile
+          command: yarn install
       - run:
           name: Run build
           command: yarn build
