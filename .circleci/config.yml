@@ -35,3 +35,26 @@ jobs:
             cd test/
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
             yarn test --bail ./$(echo '$(cat /tmp/test-files)')
+  lint:
+    docker:
+      - image: cimg/node:16.18.0
+    working_directory: ~/relayer-v2
+    resource_class: medium+
+    parallelism: 10
+    steps:
+      - restore_cache:
+          key: relayer-cache-{{ .Environment.CIRCLE_SHA1 }}
+      - run:
+          name: Run lint
+          command: yarn lint
+workflows:
+  version: 2.1
+  build_and_test:
+    jobs:
+      - build
+      - lint:
+          requires:
+            - build
+      - test:
+          requires:
+            - build
