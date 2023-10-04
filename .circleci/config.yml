@@ -40,8 +40,8 @@ jobs:
           name: Run tests
           command: |
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
-            cd /tmp/test-files && ls -la
-            yarn test --bail
+            cat /tmp/test-files
+            yarn test --bail $(cat /tmp/test-files)
   lint:
     docker:
       - image: cimg/node:16.18.0
