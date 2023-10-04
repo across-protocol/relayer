@@ -34,7 +34,7 @@ jobs:
             pwd
             cd test/
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
-            yarn test --bail $(echo '$(cat /tmp/test-files)')
+            yarn test --bail $(cat /tmp/test-files)
   lint:
     docker:
       - image: cimg/node:16.18.0
