@@ -58,8 +58,6 @@ jobs:
       - run:
           name: Run build
           command: yarn build
-      - restore_cache:
-          key: relayer-cache-{{ .Environment.CIRCLE_SHA1 }}
       - run:
           name: Run lint
           command: yarn lint
