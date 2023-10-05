@@ -687,14 +687,17 @@ export class Relayer {
 
   private constructBaseFillMarkdown(deposit: Deposit, fillAmount: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+    const srcChain = getNetworkName(deposit.originChainId);
+    const dstChain = getNetworkName(deposit.destinationChainId);
+    const amount = createFormatFunction(2, 4, false, decimals)(deposit.amount.toString());
+    const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);
+    const _fillAmount = createFormatFunction(2, 4, false, decimals)(fillAmount.toString());
+    const relayerFeePct = formatFeePct(deposit.relayerFeePct);
+    const realizedLpFeePct = formatFeePct(deposit.realizedLpFeePct);
     return (
-      `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)} ` +
-      `to ${getNetworkName(deposit.destinationChainId)} of ` +
-      `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
-      `with depositor ${blockExplorerLink(deposit.depositor, deposit.originChainId)}. ` +
-      `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
-      `relayerFee ${formatFeePct(deposit.relayerFeePct)}% & ` +
-      `realizedLpFee ${formatFeePct(deposit.realizedLpFeePct)}%. `
+      `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${amount} ${symbol},` +
+      ` with depositor ${depositor}. Fill amount of ${_fillAmount} ${symbol} with` +
+      ` relayerFee ${relayerFeePct}% & realizedLpFee ${realizedLpFeePct}%.`
     );
   }
 
