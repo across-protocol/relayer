@@ -39,8 +39,7 @@
     "redis4": "npm:redis@^4.1.0",
     "ts-node": "^10.9.1",
     "winston": "^3.10.0",
-    "zksync-web3": "^0.14.3",
-    "glob": "^10.3.10"
+    "zksync-web3": "^0.14.3"
   },
   "files": [
     "/dist/**/*"

@@ -2,34 +2,31 @@ name: Checks
 on: [push]
 env:
   NODE_OPTIONS: "--max-old-space-size=6144"
-  NODE_VERSION: 16
 jobs:
-  build:
-    name: Build
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [16]
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-      - name: Install Additional dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get -y install rsync libudev-dev libusb-1.0-0-dev
-      - name: Use Node ${{ env.NODE_VERSION }}
+      - name: Use Node ${{ matrix.node }}
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ matrix.node }}
           cache: "yarn"
       - name: Install packages
-        run: yarn install
-      - name: Build
-        run: yarn build
+        run: yarn install --frozen-lockfile
+      - name: Lint
+        run: yarn lint
   test:
     name: Test
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ci_index: [0, 1, 2, 3]
-        ci_total: [4]
+        node: [16]
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -37,39 +34,14 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get -y install rsync libudev-dev libusb-1.0-0-dev
-      - name: Use Node ${{ env.NODE_VERSION }}
+      - name: Use Node ${{ matrix.node }}
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ matrix.node }}
           cache: "yarn"
       - name: Install packages
-        run: yarn install
+        run: yarn install --frozen-lockfile
       - name: Build
         run: yarn build
-      - name: Execute tests
-        run:  yarn test --bail --parallel
-        env:
-          CI_TOTAL: ${{ matrix.ci_total }}
-          CI_INDEX: ${{ matrix.ci_index }}
-  # lint:
-  #   name: Lint
-  #   runs-on: ubuntu-latest
-  #   needs: build
-  #   steps:
-  #     - name: Checkout repo
-  #       uses: actions/checkout@v3
-  #     - name: Install Additional dependencies
-  #       run: |
-  #         sudo apt-get update -y
-  #         sudo apt-get -y install rsync libudev-dev libusb-1.0-0-dev
-  #     - name: Use Node ${{ env.NODE_VERSION }}
-  #       uses: actions/setup-node@v3
-  #       with:
-  #         node-version: ${{ env.NODE_VERSION }}
-  #         cache: "yarn"
-  #     - name: Install packages
-  #       run: yarn install --frozen-lockfile
-  #     - name: Build
-  #       run: yarn build
-  #     - name: Lint
-  #       run: yarn lint
+      - name: Test
+        run: yarn test --bail
