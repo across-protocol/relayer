@@ -1,24 +1,28 @@
 version: 2.1
+orbs:
+  node: circleci/node@2.1
 jobs:
   build:
     docker:
       - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
+    executor: node/default
     steps:
       - checkout
-      - restore_cache:
-          name: Restore Yarn Package Cache
-          keys:
-            - cache-modules-{{ checksum "yarn.lock" }}
+      - node/cache
+      # - restore_cache:
+      #     name: Restore Yarn Package Cache
+      #     keys:
+      #       - cache-modules-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
-      - save_cache:
-          name: Save Yarn Package Cache
-          key: cache-modules-{{ checksum "yarn.lock" }}
-          paths:
-            - node_modules
+      # - save_cache:
+      #     name: Save Yarn Package Cache
+      #     key: cache-modules-{{ checksum "yarn.lock" }}
+      #     paths:
+      #       - node_modules
   test:
     docker:
       - image: cimg/node:16.18.0
@@ -27,6 +31,7 @@ jobs:
     parallelism: 20
     steps:
       - checkout
+      - node/cache
       - run:
           name: Install Prereqs
           command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
@@ -53,13 +58,14 @@ jobs:
     resource_class: medium+
     steps:
       - checkout
+      - node/cache
       - run:
           name: Install Prereqs
           command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
-      - restore_cache:
-          name: Restore Yarn Package Cache
-          keys:
-            - cache-modules-{{ checksum "yarn.lock" }}
+      # - restore_cache:
+      #     name: Restore Yarn Package Cache
+      #     keys:
+      #       - cache-modules-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install
