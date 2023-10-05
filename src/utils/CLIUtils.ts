@@ -10,9 +10,9 @@ export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
   // Call into the process' argv to retrieve the CLI args.
   const args = minimist(process.argv.slice(2));
   // Resolve the wallet type & verify that it is valid.
-  const keyType = ((args.wallet as string) ?? "MNEMONIC").toLowerCase();
+  const keyType = ((args.wallet as string) ?? "mnemonic");
   if (!isValidKeyType(keyType)) {
-    throw new Error("Must define mnemonic, privatekey or gckms for wallet");
+    throw new Error(`Unsupported key type (${keyType}); expected "mnemonic", "privateKey" or "gckms"`);
   }
 
   // Build out the signer options to pass to the signer utils.
@@ -31,5 +31,5 @@ export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
  * @returns True if the key type is valid, false otherwise.
  */
 function isValidKeyType(keyType: unknown): keyType is "mnemonic" | "privateKey" | "gckms" {
-  return ["mnemonic", "privateKey", "gckms"].includes((keyType as string).toLowerCase());
+  return ["mnemonic", "privateKey", "gckms"].includes(keyType as string);
 }
