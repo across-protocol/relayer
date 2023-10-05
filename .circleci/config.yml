@@ -18,14 +18,13 @@ jobs:
           name: Save Yarn Package Cache
           key: yarn-packages-{{ checksum "yarn.lock" }}
           paths:
-            - .yarn/cache
-            - .yarn/unplugged
+            - node_modules
   test:
     docker:
       - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
-    parallelism: 20
+    parallelism: 30
     steps:
       - checkout
       - run:
