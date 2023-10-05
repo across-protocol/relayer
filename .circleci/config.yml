@@ -1,5 +1,25 @@
 version: 2.1
 jobs:
+  build:
+    docker:
+      - image: cimg/node:16.18.0
+    working_directory: ~/relayer-v2
+    resource_class: medium+
+    steps:
+      - checkout
+      - restore_cache:
+          name: Restore Yarn Package Cache
+          keys:
+            - yarn-packages-{{ checksum "yarn.lock" }}
+      - run:
+          name: Install Dependencies
+          command: yarn install --immutable
+      - save_cache:
+          name: Save Yarn Package Cache
+          key: yarn-packages-{{ checksum "yarn.lock" }}
+          paths:
+            - .yarn/cache
+            - .yarn/unplugged
   test:
     docker:
       - image: cimg/node:16.18.0
@@ -11,6 +31,10 @@ jobs:
       - run:
           name: Install Prereqs
           command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
+      - restore_cache:
+          name: Restore Yarn Package Cache
+          keys:
+            - yarn-packages-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install
@@ -33,6 +57,10 @@ jobs:
       - run:
           name: Install Prereqs
           command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
+      - restore_cache:
+          name: Restore Yarn Package Cache
+          keys:
+            - yarn-packages-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install
@@ -46,5 +74,10 @@ workflows:
   version: 2.1
   test_and_lint:
     jobs:
+      - build
       - test
+          requires:
+            - build
       - lint
+          requires:
+            - build
