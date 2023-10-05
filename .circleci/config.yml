@@ -24,7 +24,7 @@ jobs:
       - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
-    parallelism: 15
+    parallelism: 20
     steps:
       - checkout
       - run:
@@ -63,7 +63,7 @@ jobs:
           command: yarn lint
 workflows:
   version: 2.1
-  build_and_test:
+  test_and_lint:
     jobs:
       - test
       - lint
