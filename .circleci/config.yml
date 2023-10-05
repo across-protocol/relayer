@@ -1,24 +1,5 @@
 version: 2.1
 jobs:
-  build:
-    docker:
-      - image: cimg/node:16.18.0
-    working_directory: ~/relayer-v2
-    steps:
-      - checkout
-      - run:
-          name: Install Prereqs
-          command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
-      - run:
-          name: Install Dependencies
-          command: yarn install
-      - run:
-          name: Run build
-          command: yarn build
-      - save_cache:
-          key: relayer-cache-{{ .Environment.CIRCLE_SHA1 }}
-          paths:
-            - ~/relayer-v2
   test:
     docker:
       - image: cimg/node:16.18.0
