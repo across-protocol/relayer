@@ -119,10 +119,5 @@ async function getSecretSigner(): Promise<Wallet> {
  * Clears the mnemonic and private key from the env.
  */
 function cleanKeysFromEnvironment(): void {
-  if (process.env.MNEMONIC) {
-    delete process.env.MNEMONIC;
-  }
-  if (process.env.PRIVATE_KEY) {
-    delete process.env.PRIVATE_KEY;
-  }
+  ["MNEMONIC", "PRIVATE_KEY", "SECRET"].forEach((config) => delete process.env[config]);
 }
