@@ -425,7 +425,7 @@ export class InventoryClient {
       if (!this.isInventoryManagementEnabled()) {
         return;
       }
-      const l1Weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+      const l1Weth = CONTRACT_ADDRESSES[this.hubPoolClient.chainId].weth.address;
 
       const chains = await Promise.all(
         this.getEnabledChains()
