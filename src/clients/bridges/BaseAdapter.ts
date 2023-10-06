@@ -325,13 +325,19 @@ export abstract class BaseAdapter {
     const { chainId, txnClient } = this;
     const method = "deposit";
     const mrkdwn =
-      `${createFormatFunction(2, 4, false, 18)(toBN(value).toString())} Ether on chain ${
-        chainId
-      } was wrapped due to being over the threshold of ` +
+      `${createFormatFunction(
+        2,
+        4,
+        false,
+        18
+      )(toBN(value).toString())} Ether on chain ${chainId} was wrapped due to being over the threshold of ` +
       `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.`;
-    const message = `${createFormatFunction(2, 4, false, 18)(toBN(value).toString())} Eth wrapped on target chain ${
-      chainId
-    }🎁`;
+    const message = `${createFormatFunction(
+      2,
+      4,
+      false,
+      18
+    )(toBN(value).toString())} Eth wrapped on target chain ${chainId}🎁`;
     if (simMode) {
       const { succeed, reason } = (
         await txnClient.simulate([{ contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message }])
