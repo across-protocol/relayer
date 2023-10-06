@@ -10,7 +10,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-modules-{{ checksum "yarn.lock" }}
+            - cache-yarn-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
@@ -18,9 +18,9 @@ jobs:
           command: yarn cache dir
       - save_cache:
           name: Save Yarn Package Cache
-          key: cache-modules-{{ checksum "yarn.lock" }}
+          key: cache-yarn-{{ checksum "yarn.lock" }}
           paths:
-            - node_modules
+            - /home/circleci/.cache/yarn/
   test:
     docker:
       - image: cimg/node:16.18.0
@@ -35,7 +35,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-modules-{{ checksum "yarn.lock" }}
+            - cache-yarn-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install
@@ -61,7 +61,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-modules-{{ checksum "yarn.lock" }}
+            - cache-yarn-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install
