@@ -29,9 +29,6 @@ jobs:
     parallelism: 20
     steps:
       - checkout
-      - run:
-          name: Install Prereqs
-          command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
@@ -54,9 +51,6 @@ jobs:
     resource_class: medium+
     steps:
       - checkout
-      - run:
-          name: Install Prereqs
-          command: sudo apt-get update && sudo apt-get install -y rsync libudev-dev libusb-1.0-0-dev yarn
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
