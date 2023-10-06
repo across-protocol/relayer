@@ -326,7 +326,7 @@ export abstract class BaseAdapter {
     const method = "deposit";
     const mrkdwn =
       `${createFormatFunction(2, 4, false, 18)(toBN(value).toString())} Ether on chain ${
-        this.chainId
+        chainId
       } was wrapped due to being over the threshold of ` +
       `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.`;
     const message = `${createFormatFunction(2, 4, false, 18)(toBN(value).toString())} Eth wrapped on target chain ${
