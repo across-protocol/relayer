@@ -196,19 +196,18 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   // The arbitrum relayer expects to receive ETH steadily per HubPool bundle processed, since it is the L2 refund
-  // address hardcoded in the Arbitrum Adapter. Therefore, to avoid excessively wrapping ETH, we only wrap
-  // it once it gets above a certain threshold.
-  async wrapEthIfAboveThreshold(target: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+  // address hardcoded in the Arbitrum Adapter.
+  async wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse | null> {
     const { chainId } = this;
     assert(42161 === chainId, `chainId ${chainId} is not supported`);
 
     const weth = CONTRACT_ADDRESSES[this.chainId].weth;
     const ethBalance = await this.getSigner(chainId).getBalance();
 
-    // For Arbitrum specifically, ETH should accumulate steadily. So reduce ETH balance down to the target
-    // if it exceeds a threshold.
-    // TODO: Add a configurable ETH target as opposed to just a threshold.
-    const threshold = target.mul(10);
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(weth.address, weth.abi, l2Signer);

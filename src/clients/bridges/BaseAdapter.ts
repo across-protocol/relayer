@@ -372,5 +372,9 @@ export abstract class BaseAdapter {
 
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 
-  abstract wrapEthIfAboveThreshold(threshold: BigNumber, simMode: boolean): Promise<TransactionResponse | null>;
+  abstract wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse | null>;
 }

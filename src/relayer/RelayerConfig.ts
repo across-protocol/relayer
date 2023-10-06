@@ -73,7 +73,39 @@ export class RelayerConfig extends CommonConfig {
       this.inventoryConfig.wrapEtherThreshold = this.inventoryConfig.wrapEtherThreshold
         ? toBNWei(this.inventoryConfig.wrapEtherThreshold)
         : toBNWei(1); // default to keeping 2 Eth on the target chains and wrapping the rest to WETH.
+      this.inventoryConfig.wrapEtherThresholdPerChain = this.inventoryConfig.wrapEtherThresholdPerChain ?? {};
+      this.inventoryConfig.wrapEtherTarget = this.inventoryConfig.wrapEtherTarget
+        ? toBNWei(this.inventoryConfig.wrapEtherTarget)
+        : this.inventoryConfig.wrapEtherThreshold; // default to wrapping ETH to threshold, same as target.
+      this.inventoryConfig.wrapEtherTargetPerChain = this.inventoryConfig.wrapEtherTargetPerChain ?? {};
+      assert(
+        this.inventoryConfig.wrapEtherThreshold.gte(this.inventoryConfig.wrapEtherTarget),
+        `default wrapEtherThreshold ${this.inventoryConfig.wrapEtherThreshold} must be >= default wrapEtherTarget ${this.inventoryConfig.wrapEtherTarget}}`
+      );
 
+      // Validate the per chain target and thresholds for wrapping ETH:
+      Object.keys(this.inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
+        if (this.inventoryConfig.wrapEtherThresholdPerChain[chainId] !== undefined) {
+          this.inventoryConfig.wrapEtherThresholdPerChain[chainId] = toBNWei(
+            this.inventoryConfig.wrapEtherThresholdPerChain[chainId]
+          );
+        }
+      });
+      Object.keys(this.inventoryConfig.wrapEtherTargetPerChain).forEach((chainId) => {
+        if (this.inventoryConfig.wrapEtherTargetPerChain[chainId] !== undefined) {
+          this.inventoryConfig.wrapEtherTargetPerChain[chainId] = toBNWei(
+            this.inventoryConfig.wrapEtherTargetPerChain[chainId]
+          );
+          // Check newly set target against threshold
+          const threshold =
+            this.inventoryConfig.wrapEtherThresholdPerChain[chainId] ?? this.inventoryConfig.wrapEtherThreshold;
+          const target = this.inventoryConfig.wrapEtherTargetPerChain[chainId];
+          assert(
+            threshold.gte(target),
+            `wrapEtherThresholdPerChain ${threshold.toString()} must be >= wrapEtherTargetPerChain ${target}`
+          );
+        }
+      });
       Object.keys(this.inventoryConfig.tokenConfig).forEach((l1Token) => {
         Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
           const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget } =

@@ -1,7 +1,7 @@
-import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse } from "../../utils";
+import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
-import { OutstandingTransfers } from "../../interfaces";
+import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { utils } from "@across-protocol/sdk-v2";
 import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import { BaseChainAdapter } from "./op-stack/base/BaseChainAdapter";
@@ -80,11 +80,17 @@ export class AdapterManager {
   // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
   // (not the ERC20), or if the relayer expects to be sent ETH perhaps as a gas refund from an original L1 to L2
   // deposit.
-  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber, simMode = false): Promise<void> {
+  async wrapEthIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
       this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
       async (chainId) => {
-        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, simMode);
+        const wrapThreshold = inventoryConfig.wrapEtherThresholdPerChain[chainId] ?? inventoryConfig.wrapEtherThreshold;
+        const wrapTarget = inventoryConfig.wrapEtherTargetPerChain[chainId] ?? inventoryConfig.wrapEtherTarget;
+        assert(
+          wrapThreshold.gte(wrapTarget),
+          `wrapEtherThreshold ${wrapThreshold.toString()} must be >= wrapEtherTarget ${wrapTarget.toString()}`
+        );
+        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
       }
     );
   }
