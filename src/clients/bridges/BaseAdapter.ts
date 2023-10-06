@@ -324,10 +324,13 @@ export abstract class BaseAdapter {
   ): Promise<TransactionResponse> {
     const { chainId, txnClient } = this;
     const method = "deposit";
+    const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =
-      `Ether on chain ${this.chainId} was wrapped due to being over the threshold of ` +
-      `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.`;
-    const message = `Eth wrapped on target chain ${this.chainId}🎁`;
+      `${formatFunc(
+        toBN(value).toString()
+      )} Ether on chain ${chainId} was wrapped due to being over the threshold of ` +
+      `${formatFunc(toBN(wrapThreshold).toString())} ETH.`;
+    const message = `${formatFunc(toBN(value).toString())} Eth wrapped on target chain ${chainId}🎁`;
     if (simMode) {
       const { succeed, reason } = (
         await txnClient.simulate([{ contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message }])
@@ -362,5 +365,9 @@ export abstract class BaseAdapter {
 
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 
-  abstract wrapEthIfAboveThreshold(threshold: BigNumber, simMode: boolean): Promise<TransactionResponse | null>;
+  abstract wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse | null>;
 }

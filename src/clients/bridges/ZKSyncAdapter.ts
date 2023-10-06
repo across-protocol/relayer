@@ -229,7 +229,11 @@ export class ZKSyncAdapter extends BaseAdapter {
    * @param threshold
    * @returns
    */
-  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+  async wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse | null> {
     const { chainId } = this;
     assert(chainId === 324, `chainId ${chainId} is not supported`);
 
@@ -239,8 +243,8 @@ export class ZKSyncAdapter extends BaseAdapter {
       const l2Signer = this.getSigner(chainId);
       // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.
       const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[this.hubChainId].weth.abi, l2Signer);
-      const value = ethBalance.sub(threshold);
-      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
+      const value = ethBalance.sub(target);
+      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
       return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
     }
     return null;

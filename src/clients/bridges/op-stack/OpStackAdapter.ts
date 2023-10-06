@@ -138,17 +138,21 @@ export class OpStackAdapter extends BaseAdapter {
     );
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+  async wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse | null> {
     const { chainId } = this;
-    assert(chainId === this.chainId, `chainId ${chainId} is not supported`);
+    assert([10, 8453].includes(chainId), `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[this.chainId].weth;
     const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
-      const value = ethBalance.sub(threshold);
-      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
+      const value = ethBalance.sub(target);
+      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
       return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
     }
     return null;
