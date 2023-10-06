@@ -14,8 +14,6 @@ jobs:
       - run:
           name: Install Dependencies
           command: yarn install --immutable
-      - run:
-          command: yarn cache dir
       - save_cache:
           name: Save Yarn Package Cache
           key: cache-yarn-{{ checksum "yarn.lock" }}
