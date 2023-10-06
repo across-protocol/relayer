@@ -140,7 +140,7 @@ export class OpStackAdapter extends BaseAdapter {
 
   async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
     const { chainId } = this;
-    assert(chainId === this.chainId, `chainId ${chainId} is not supported`);
+    assert([10, 8453].includes(chainId), `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[this.chainId].weth;
     const ethBalance = await this.getSigner(chainId).getBalance();

@@ -197,7 +197,7 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
     const { chainId } = this;
-    assert(chainId === this.chainId, `chainId ${chainId} is not supported`);
+    assert(42161 === chainId, `chainId ${chainId} is not supported`);
 
     const weth = CONTRACT_ADDRESSES[this.chainId].weth;
     const ethBalance = await this.getSigner(chainId).getBalance();
