@@ -106,9 +106,7 @@ async function getSecretSigner(): Promise<Wallet> {
   try {
     secret = await readFile(SECRET, { encoding: "utf8" });
     secret = secret.trim().replace("\n", "");
-    return /^0x[0-9a-f]{64}$/.test(secret)
-      ? new Wallet(secret)
-      : Wallet.fromMnemonic(secret);
+    return /^0x[0-9a-f]{64}$/.test(secret) ? new Wallet(secret) : Wallet.fromMnemonic(secret);
   } catch (err) {
     const msg = typeguards.isError(err) ? err.message : "unknown error";
     throw new Error(`Unable to load secret (${SECRET}: ${msg})`);
