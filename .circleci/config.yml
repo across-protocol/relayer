@@ -26,7 +26,7 @@ jobs:
       - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
-    parallelism: 25
+    parallelism: 20
     steps:
       - checkout
       - run:
@@ -46,7 +46,6 @@ jobs:
           name: Run tests
           command: |
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
-            cat /tmp/test-files
             yarn test --bail $(cat /tmp/test-files)
   lint:
     docker:
