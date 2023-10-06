@@ -72,7 +72,7 @@ jobs:
           command: yarn lint
 workflows:
   version: 2.1
-  test_and_lint:
+  build_and_test:
     jobs:
       - build
       - test:
