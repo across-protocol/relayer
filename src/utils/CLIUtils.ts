@@ -12,7 +12,7 @@ export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
   // Resolve the wallet type & verify that it is valid.
   const keyType = (args.wallet as string) ?? "mnemonic";
   if (!isValidKeyType(keyType)) {
-    throw new Error(`Unsupported key type (${keyType}); expected "mnemonic", "privateKey" or "gckms"`);
+    throw new Error(`Unsupported key type (${keyType}); expected "secret", "mnemonic", "privateKey" or "gckms"`);
   }
 
   // Build out the signer options to pass to the signer utils.
@@ -30,6 +30,6 @@ export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
  * @param keyType The key type to check.
  * @returns True if the key type is valid, false otherwise.
  */
-function isValidKeyType(keyType: unknown): keyType is "mnemonic" | "privateKey" | "gckms" {
-  return ["mnemonic", "privateKey", "gckms"].includes(keyType as string);
+function isValidKeyType(keyType: unknown): keyType is "secret" | "mnemonic" | "privateKey" | "gckms" {
+  return ["secret", "mnemonic", "privateKey", "gckms"].includes(keyType as string);
 }

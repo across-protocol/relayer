@@ -1,3 +1,5 @@
+import { readFile } from "fs/promises";
+import { typeguards } from "@across-protocol/sdk-v2";
 import { Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined } from "./";
 
 /**
@@ -41,11 +43,14 @@ export async function getSigner({ keyType, gckmsKeys, cleanEnv }: SignerOptions)
     case "gckms":
       wallet = await getGckmsSigner(gckmsKeys);
       break;
+    case "secret":
+      wallet = await getSecretSigner();
+      break;
     default:
       throw new Error(`getSigner: Unsupported key type (${keyType})`);
   }
   if (!wallet) {
-    throw new Error("Must define mnemonic, privatekey or gckms for wallet");
+    throw new Error("Must define secret, mnemonic, privateKey or gckms for wallet");
   }
   if (cleanEnv) {
     cleanKeysFromEnvironment();
@@ -88,6 +93,26 @@ function getMnemonicSigner(): Wallet {
     throw new Error("Wallet mnemonic selected but no MNEMONIC env set!");
   }
   return Wallet.fromMnemonic(process.env.MNEMONIC);
+}
+
+/**
+ * Retrieves a signer based on the secret stored in ./.secret.
+ * @returns An ethers Signer object.
+ * @throws If a valid secret could not be read.
+ */
+async function getSecretSigner(): Promise<Wallet> {
+  const { SECRET = "./.secret" } = process.env;
+  let secret: string;
+  try {
+    secret = await readFile(SECRET, { encoding: "utf8" });
+    secret = secret.trim().replace("\n", "");
+    return /^0x[0-9a-f]{64}$/.test(secret)
+      ? new Wallet(secret)
+      : Wallet.fromMnemonic(secret);
+  } catch (err) {
+    const msg = typeguards.isError(err) ? err.message : "unknown error";
+    throw new Error(`Unable to load secret (${SECRET}: ${msg})`);
+  }
 }
 
 /**

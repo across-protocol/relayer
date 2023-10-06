@@ -6,6 +6,9 @@ typechain*
 .DS_Store
 dump.rdb*
 .idea
+.mnemonic
+.keyfile
+.secret
 
 # Hardhat files
 cache
