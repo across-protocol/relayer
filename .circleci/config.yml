@@ -18,7 +18,8 @@ jobs:
           name: Save Yarn Package Cache
           key: cache-yarn-{{ checksum "yarn.lock" }}
           paths:
-            - /home/circleci/.cache/yarn/
+            #- /home/circleci/.cache/yarn/
+             - node_modules
   test:
     docker:
       - image: cimg/node:16.18.0
