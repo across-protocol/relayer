@@ -1,9 +1,12 @@
 import { isDefined, winston, BigNumber, getL2TokenAddresses } from "../utils";
 import axios, { AxiosError } from "axios";
 import { HubPoolClient } from "./HubPoolClient";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 import { SpokePoolClientsByChain } from "../interfaces";
 import _ from "lodash";
+
+const { bnZero } = sdkUtils;
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -133,5 +136,7 @@ export class AcrossApiClient {
         });
       }
     }
+
+    return { maxDeposit: bnZero };
   }
 }
