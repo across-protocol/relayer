@@ -85,7 +85,6 @@ export class AcrossApiClient {
       const resolvedData = data[i];
       if (isDefined(resolvedData)) {
         this.limits[token] = data[i].maxDeposit;
-
       } else {
         this.logger.debug({
           at: "AcrossAPIClient",
