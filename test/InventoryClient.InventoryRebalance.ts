@@ -1,5 +1,6 @@
 import {
   BigNumber,
+  FakeContract,
   SignerWithAddress,
   createSpyLogger,
   deployConfigStore,
@@ -9,6 +10,7 @@ import {
   lastSpyLogIncludes,
   randomAddress,
   sinon,
+  smock,
   spyLogIncludes,
   toBN,
   toWei,
@@ -19,6 +21,7 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
+import { ERC20 } from "../src/utils";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -32,6 +35,9 @@ const enabledChainIds = [1, 10, 137, 42161];
 
 const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const mainnetUsdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+
+let mainnetWethContract: FakeContract;
+let mainnetUsdcContract: FakeContract;
 
 // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
 const l2TokensForWeth = { 1: mainnetWeth };
@@ -102,6 +108,12 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       adapterManager,
       crossChainTransferClient
     );
+
+    mainnetWethContract = await smock.fake(ERC20.abi, { address: mainnetWeth });
+    mainnetUsdcContract = await smock.fake(ERC20.abi, { address: mainnetUsdc });
+
+    mainnetWethContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetWeth]);
+    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetUsdc]);
 
     seedMocks(initialAllocation);
   });
@@ -256,6 +268,37 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
     // expect(spyLogIncludes(spy, -2, `"42161":{"actualBalanceOnChain":"945.00"`)).to.be.true;
     // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
+  });
+
+  it("Refuses to send rebalance when ERC20 balance changes", async function () {
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    // Now, simulate the re-allocation of funds. Say that the USDC on arbitrum is half used up. This will leave arbitrum
+    // with 500 USDC, giving a percentage of 500/14000 = 0.035. This is below the threshold of 0.5 so we should see
+    // a re-balance executed in size of the target allocation + overshoot percentage.
+    const initialBalance = initialAllocation[42161][mainnetUsdc];
+    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(initialBalance);
+    const withdrawAmount = toMegaWei(500);
+    tokenClient.decrementLocalBalance(42161, l2TokensForUsdc[42161], withdrawAmount);
+    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(withdrawAmount);
+
+    // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
+    const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
+    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, 42161)).to.equal(expectedAlloc);
+
+    // Set USDC balance to be lower than expected.
+    mainnetUsdcContract.balanceOf
+      .whenCalledWith(owner.address)
+      .returns(initialAllocation[1][mainnetUsdc].sub(toMegaWei(1)));
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(spyLogIncludes(spy, -2, "balance in relayer on Ethereum changed before sending cross chain transfer")).to.be
+      .true;
+
+    // Reset and check again.
+    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetUsdc]);
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
   });
 });
 
