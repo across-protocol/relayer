@@ -24,16 +24,18 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
     for (;;) {
       await updateRelayerClients(relayerClients, config);
 
-      // @note: For fills with a different repaymentChainId, refunds are requested on the _subsequent_ relayer run.
-      // Refunds requests are enqueued before new fills, so fillRelay simulation occurs closest to txn submission.
-      const version = configStoreClient.getConfigStoreVersionForTimestamp();
-      if (sdkUtils.isUBA(version) && version <= configStoreClient.configStoreVersion) {
-        await relayer.requestRefunds(config.sendingSlowRelaysEnabled);
+      if (!config.skipRelays) {
+        // @note: For fills with a different repaymentChainId, refunds are requested on the _subsequent_ relayer run.
+        // Refunds requests are enqueued before new fills, so fillRelay simulation occurs closest to txn submission.
+        const version = configStoreClient.getConfigStoreVersionForTimestamp();
+        if (sdkUtils.isUBA(version) && version <= configStoreClient.configStoreVersion) {
+          await relayer.requestRefunds(config.sendingSlowRelaysEnabled);
+        }
+
+        await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
+
+        await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
       }
-
-      await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
-
-      await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
       // any tokens so rebalancing can take into account unwrapped WETH balances.

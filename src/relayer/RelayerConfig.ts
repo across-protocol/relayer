@@ -10,6 +10,7 @@ export class RelayerConfig extends CommonConfig {
   readonly debugProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
   // If this is false, the relayer will throw an error when fetching prices fails.
+  readonly skipRelays: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly sendingRefundRequestsEnabled: boolean;
@@ -43,7 +44,8 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
-      SEND_RELAYS,
+      SUBMIT_TRANSACTIONS,
+      SKIP_RELAYS,
       SEND_SLOW_RELAYS,
       SEND_REFUND_REQUESTS,
       MIN_RELAYER_FEE_PCT,
@@ -131,7 +133,8 @@ export class RelayerConfig extends CommonConfig {
     }
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
-    this.sendingRelaysEnabled = SEND_RELAYS === "true";
+    this.sendingRelaysEnabled = SUBMIT_TRANSACTIONS === "true";
+    this.skipRelays = SKIP_RELAYS === "true";
     this.sendingRefundRequestsEnabled = SEND_REFUND_REQUESTS !== "false";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
