@@ -318,7 +318,7 @@ export class InventoryClient {
         // balance then this logic ensures that we only fill the first n number of chains where we can.
         if (amount.lt(balance)) {
           // As a precautionary step before proceeding, check that the token balance for the token we're about to send
-          // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the 
+          // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
           // RPC's returning slowly.
           const expectedBalance = this.tokenClient.getBalance(1, l1Token);
           const tokenContract = new Contract(l1Token, ERC20.abi, this.hubPoolClient.hubPool.signer);
@@ -326,24 +326,25 @@ export class InventoryClient {
           if (!expectedBalance.eq(currentBalance)) {
             this.logger.warn({
               at: "InventoryClient",
-              message: `🚧 Token balance in relayer on Ethereum changed before sending cross chain transfer, skipping rebalance`,
+              message:
+                "🚧 Token balance in relayer on Ethereum changed before sending cross chain transfer, skipping rebalance",
               l1Token,
               l2ChainId: chainId,
               expectedBalance,
-              currentBalance
+              currentBalance,
             });
             continue;
           } else {
             this.logger.debug({
               at: "InventoryClient",
-              message: `Token balance in relayer on Ethereum is as expected, sending cross chain transfer`,
+              message: "Token balance in relayer on Ethereum is as expected, sending cross chain transfer",
               l1Token,
               l2ChainId: chainId,
-              expectedBalance
+              expectedBalance,
             });
             possibleRebalances.push(rebalance);
             // Decrement token balance in client for this chain and increment cross chain counter.
-            this.trackCrossChainTransfer(l1Token, amount, chainId);  
+            this.trackCrossChainTransfer(l1Token, amount, chainId);
           }
         } else {
           // Extract unexecutable rebalances for logging.
