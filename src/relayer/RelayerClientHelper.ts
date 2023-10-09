@@ -87,10 +87,14 @@ export async function constructRelayerClients(
 
   // The relayer will originate cross chain rebalances from both its own EOA address and the atomic depositor address
   // so we should track both for accurate cross-chain inventory management.
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
-    baseSigner.address,
-    CONTRACT_ADDRESSES[commonClients.hubPoolClient.chainId].atomicDepositor.address,
-  ]);
+  const atomicDepositor = CONTRACT_ADDRESSES[commonClients.hubPoolClient.chainId]?.atomicDepositor;
+  const monitoredAddresses = [baseSigner.address, atomicDepositor?.address];
+  const adapterManager = new AdapterManager(
+    logger,
+    spokePoolClients,
+    commonClients.hubPoolClient,
+    monitoredAddresses.filter(() => sdkUtils.isDefined)
+  );
 
   const bundleDataClient = new BundleDataClient(
     logger,
