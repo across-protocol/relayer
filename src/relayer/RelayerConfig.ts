@@ -44,7 +44,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
-      SUBMIT_TRANSACTIONS,
+      SEND_RELAYS,
       SKIP_RELAYS,
       SEND_SLOW_RELAYS,
       SEND_REFUND_REQUESTS,
@@ -133,7 +133,7 @@ export class RelayerConfig extends CommonConfig {
     }
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
-    this.sendingRelaysEnabled = SUBMIT_TRANSACTIONS === "true";
+    this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.skipRelays = SKIP_RELAYS === "true";
     this.sendingRefundRequestsEnabled = SEND_REFUND_REQUESTS !== "false";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
