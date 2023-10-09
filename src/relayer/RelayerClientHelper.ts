@@ -51,11 +51,14 @@ export async function constructRelayerClients(
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
   // destination chain list.
-  const destinationSpokePoolClients = Object.fromEntries(
-    Object.keys(spokePoolClients)
-      .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
-      .map((chainId) => [chainId, spokePoolClients[chainId]])
-  );
+  const destinationSpokePoolClients =
+    config.relayerDestinationChains.length === 0
+      ? spokePoolClients
+      : Object.fromEntries(
+          Object.keys(spokePoolClients)
+            .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
+            .map((chainId) => [chainId, spokePoolClients[chainId]])
+        );
 
   const acrossApiClient = new AcrossApiClient(
     logger,

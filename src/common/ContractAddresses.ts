@@ -696,6 +696,20 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    weth: {
+      address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      abi: [
+        {
+          constant: false,
+          inputs: [],
+          name: "deposit",
+          outputs: [],
+          payable: true,
+          stateMutability: "payable",
+          type: "function",
+        },
+      ],
+    },
     outbox: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
       abi: [
