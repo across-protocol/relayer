@@ -109,7 +109,6 @@ describe("Relayer: Unfilled Deposits", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
-    profitClient.testInit();
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,

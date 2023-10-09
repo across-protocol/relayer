@@ -1,11 +1,9 @@
+.*
 node_modules
-.env
 coverage
 coverage.json
 typechain*
-.DS_Store
 dump.rdb*
-.idea
 
 # Hardhat files
 cache

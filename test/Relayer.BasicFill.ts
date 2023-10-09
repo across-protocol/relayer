@@ -38,7 +38,9 @@ import {
   winston,
 } from "./utils";
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+
+const { bnOne } = sdkUtils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -117,9 +119,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       [destinationChainId]: spokePoolClient_2,
     };
 
-    for (const spokePoolClient of Object.values(spokePoolClients)) {
-      await spokePoolClient.update();
-    }
+    // Update all SpokePoolClient instances.
+    await Promise.all(Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
 
     // We will need to update the config store client at least once
     await configStoreClient.update();
@@ -131,7 +132,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
-    profitClient.testInit();
+    profitClient.setTokenPrice(l1Token.address, bnOne);
+    Object.values(spokePoolClients).map((spokePoolClient) => profitClient.setGasCost(spokePoolClient.chainId, bnOne));
 
     relayerInstance = new Relayer(
       relayer.address,
