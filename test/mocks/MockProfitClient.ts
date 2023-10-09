@@ -1,16 +1,54 @@
-import { BigNumber, toBN, toBNWei } from "../utils";
-import { GAS_TOKEN_BY_CHAIN_ID, ProfitClient, WETH } from "../../src/clients";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { GAS_TOKEN_BY_CHAIN_ID, HubPoolClient, ProfitClient, WETH } from "../../src/clients";
+import { SpokePoolClientsByChain } from "../../src/interfaces";
+import { BigNumber, toBNWei, winston } from "../utils";
 
 export class MockProfitClient extends ProfitClient {
+  constructor(
+    logger: winston.Logger,
+    hubPoolClient: HubPoolClient,
+    spokePoolClients: SpokePoolClientsByChain,
+    enabledChainIds: number[],
+    defaultMinRelayerFeePct?: BigNumber,
+    debugProfitability?: boolean,
+    gasMultiplier?: BigNumber
+  ) {
+    super(
+      logger,
+      hubPoolClient,
+      spokePoolClients,
+      enabledChainIds,
+      defaultMinRelayerFeePct,
+      debugProfitability,
+      gasMultiplier
+    );
+
+    // Some tests run against mocked chains, so hack in the necessary parts
+    const chainIds = [666, 1337];
+    chainIds.forEach((chainId) => {
+      GAS_TOKEN_BY_CHAIN_ID[chainId] = WETH;
+      this.setGasCost(chainId, toBNWei(chainId));
+    });
+    this.setTokenPrice(WETH, sdkUtils.bnOne);
+  }
+
+  setTokenPrice(l1Token: string, price: BigNumber | undefined): void {
+    if (price) {
+      this.tokenPrices[l1Token] = price;
+    } else {
+      delete this.tokenPrices[l1Token];
+    }
+  }
+
   setTokenPrices(tokenPrices: { [l1Token: string]: BigNumber }): void {
     this.tokenPrices = tokenPrices;
   }
 
-  getPriceOfToken(l1Token: string): BigNumber {
-    if (this.tokenPrices[l1Token] === undefined) {
-      return toBNWei(1);
+  setGasCost(chainId: number, gas: BigNumber | undefined): void {
+    if (gas) {
+      this.totalGasCosts[chainId] = gas;
     } else {
-      return this.tokenPrices[l1Token];
+      delete this.totalGasCosts[chainId];
     }
   }
 
@@ -20,17 +58,6 @@ export class MockProfitClient extends ProfitClient {
 
   setGasMultiplier(gasMultiplier: BigNumber): void {
     this.gasMultiplier = gasMultiplier;
-  }
-
-  // Some tests run against mocked chains, so hack in the necessary parts
-  testInit(): void {
-    GAS_TOKEN_BY_CHAIN_ID[666] = WETH;
-    GAS_TOKEN_BY_CHAIN_ID[1337] = WETH;
-
-    this.setGasCosts({
-      666: toBN(100_000),
-      1337: toBN(100_000),
-    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
