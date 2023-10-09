@@ -287,7 +287,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const newRelayerFeePct = toBNWei(0.1337);
     const newMessage = "0x12";
     const newRecipient = randomAddress();
-    const speedUpSignature = await modifyRelayHelper(
+    const { signature: speedUpSignature } = await modifyRelayHelper(
       newRelayerFeePct,
       deposit1.depositId.toString(),
       deposit1.originChainId.toString(),
@@ -301,7 +301,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       message: "0x1212",
       recipient: randomAddress(),
     };
-    const unusedSpeedUpSignature = await modifyRelayHelper(
+    const { signature: unusedSpeedUpSignature } = await modifyRelayHelper(
       unusedSpeedUp.relayerFeePct,
       deposit1.depositId.toString(),
       deposit1.originChainId.toString(),
@@ -316,7 +316,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       deposit1.depositId,
       unusedSpeedUp.recipient,
       unusedSpeedUp.message,
-      unusedSpeedUpSignature.signature
+      unusedSpeedUpSignature
     );
     await spokePool_1.speedUpDeposit(
       depositor.address,
@@ -324,7 +324,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       deposit1.depositId,
       newRecipient,
       newMessage,
-      speedUpSignature.signature
+      speedUpSignature
     );
     await spokePool_1.speedUpDeposit(
       depositor.address,
@@ -332,11 +332,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       deposit1.depositId,
       unusedSpeedUp.recipient,
       unusedSpeedUp.message,
-      unusedSpeedUpSignature.signature
+      unusedSpeedUpSignature
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping fill for sped-up deposit with message")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
