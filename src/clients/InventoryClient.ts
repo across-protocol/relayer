@@ -326,8 +326,7 @@ export class InventoryClient {
           if (!expectedBalance.eq(currentBalance)) {
             this.logger.warn({
               at: "InventoryClient",
-              message:
-                "🚧 Token balance on Ethereum changed before sending transaction, skipping rebalance",
+              message: "🚧 Token balance on Ethereum changed before sending transaction, skipping rebalance",
               l1Token,
               l2ChainId: chainId,
               expectedBalance,
