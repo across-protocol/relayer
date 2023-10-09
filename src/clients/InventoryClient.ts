@@ -12,6 +12,7 @@ import {
   DefaultLogLevels,
   TransactionResponse,
   AnyObject,
+  ERC20,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -317,9 +318,34 @@ export class InventoryClient {
         // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
         // balance then this logic ensures that we only fill the first n number of chains where we can.
         if (amount.lt(balance)) {
-          possibleRebalances.push(rebalance);
-          // Decrement token balance in client for this chain and increment cross chain counter.
-          this.trackCrossChainTransfer(l1Token, amount, chainId);
+          // As a precautionary step before proceeding, check that the token balance for the token we're about to send
+          // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
+          // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
+          const expectedBalance = this.tokenClient.getBalance(1, l1Token);
+          const tokenContract = new Contract(l1Token, ERC20.abi, this.hubPoolClient.hubPool.signer);
+          const currentBalance = await tokenContract.balanceOf(this.relayer);
+          if (!expectedBalance.eq(currentBalance)) {
+            this.logger.warn({
+              at: "InventoryClient",
+              message: "🚧 Token balance on Ethereum changed before sending transaction, skipping rebalance",
+              l1Token,
+              l2ChainId: chainId,
+              expectedBalance,
+              currentBalance,
+            });
+            continue;
+          } else {
+            this.logger.debug({
+              at: "InventoryClient",
+              message: "Token balance in relayer on Ethereum is as expected, sending cross chain transfer",
+              l1Token,
+              l2ChainId: chainId,
+              expectedBalance,
+            });
+            possibleRebalances.push(rebalance);
+            // Decrement token balance in client for this chain and increment cross chain counter.
+            this.trackCrossChainTransfer(l1Token, amount, chainId);
+          }
         } else {
           // Extract unexecutable rebalances for logging.
           unexecutedRebalances.push(rebalance);
