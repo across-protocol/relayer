@@ -327,7 +327,7 @@ export class InventoryClient {
             this.logger.warn({
               at: "InventoryClient",
               message:
-                "🚧 Token balance in relayer on Ethereum changed before sending cross chain transfer, skipping rebalance",
+                "🚧 Token balance on Ethereum changed before sending transaction, skipping rebalance",
               l1Token,
               l2ChainId: chainId,
               expectedBalance,
