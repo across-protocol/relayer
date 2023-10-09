@@ -1,9 +1,12 @@
-import { winston, BigNumber, getL2TokenAddresses } from "../utils";
+import { isDefined, winston, BigNumber, getL2TokenAddresses } from "../utils";
 import axios, { AxiosError } from "axios";
 import { HubPoolClient } from "./HubPoolClient";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 import { SpokePoolClientsByChain } from "../interfaces";
 import _ from "lodash";
+
+const { bnZero } = sdkUtils;
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -58,36 +61,42 @@ export class AcrossApiClient {
     if (!mainnetSpokePoolClient.isUpdated) {
       throw new Error("Mainnet SpokePoolClient for chainId must be updated before AcrossAPIClient");
     }
+
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
         const l2TokenAddresses = getL2TokenAddresses(l1Token);
-        const validDestinationChainForL1Token = Object.keys(l2TokenAddresses).find((chainId) => {
-          return (
-            mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, Number(chainId)) &&
-            Number(chainId) !== CHAIN_IDs.MAINNET &&
-            Object.keys(this.spokePoolClients).includes(chainId)
-          );
-        });
+        const destinationChains = Object.keys(l2TokenAddresses)
+          .map((chainId) => Number(chainId))
+          .filter((chainId) => {
+            return (
+              chainId !== CHAIN_IDs.MAINNET &&
+              mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, chainId) &&
+              Object.keys(this.spokePoolClients).includes(chainId.toString())
+            );
+          });
+
         // No valid deposit routes from mainnet for this token. We won't record a limit for it.
-        if (validDestinationChainForL1Token === undefined) {
+        if (destinationChains.length === 0) {
           return undefined;
         }
-        return this.callLimits(l1Token, Number(validDestinationChainForL1Token));
+
+        return this.callLimits(l1Token, destinationChains);
       })
     );
-    for (let i = 0; i < tokensQuery.length; i++) {
+
+    tokensQuery.forEach((token, i) => {
       const resolvedData = data[i];
-      if (resolvedData === undefined) {
+      if (isDefined(resolvedData)) {
+        this.limits[token] = data[i].maxDeposit;
+      } else {
         this.logger.debug({
           at: "AcrossAPIClient",
           message: "No valid deposit routes for enabled LP token, skipping",
-          token: tokensQuery[i],
+          token,
         });
-        continue;
       }
-      const l1Token = tokensQuery[i];
-      this.limits[l1Token] = resolvedData.maxDeposit;
-    }
+    });
+
     this.logger.debug({
       at: "AcrossAPIClient",
       message: "🏁 Fetched max deposit limits",
@@ -105,26 +114,29 @@ export class AcrossApiClient {
 
   private async callLimits(
     l1Token: string,
-    destinationChainId: number,
+    destinationChainIds: number[],
     timeout = this.timeout
   ): Promise<DepositLimits> {
     const path = "limits";
     const url = `${this.endpoint}/${path}`;
-    const params = { token: l1Token, destinationChainId, originChainId: 1 };
 
-    try {
-      const result = await axios(url, { timeout, params });
-      return result.data;
-    } catch (err) {
-      const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
-      this.logger.warn({
-        at: "AcrossAPIClient",
-        message: "Failed to get /limits, setting limit to 0",
-        url,
-        params,
-        msg,
-      });
-      return { maxDeposit: BigNumber.from(0) };
+    for (const destinationChainId of destinationChainIds) {
+      const params = { token: l1Token, destinationChainId, originChainId: 1 };
+      try {
+        const result = await axios(url, { timeout, params });
+        return result.data;
+      } catch (err) {
+        const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
+        this.logger.warn({
+          at: "AcrossAPIClient",
+          message: "Failed to get /limits",
+          url,
+          params,
+          msg,
+        });
+      }
     }
+
+    return { maxDeposit: bnZero };
   }
 }
