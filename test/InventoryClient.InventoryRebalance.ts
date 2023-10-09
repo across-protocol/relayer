@@ -292,7 +292,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       .whenCalledWith(owner.address)
       .returns(initialAllocation[1][mainnetUsdc].sub(toMegaWei(1)));
     await inventoryClient.rebalanceInventoryIfNeeded();
-    expect(spyLogIncludes(spy, -2, "balance in relayer on Ethereum changed before sending cross chain transfer")).to.be
+    expect(spyLogIncludes(spy, -2, "Token balance on Ethereum changed")).to.be;
       .true;
 
     // Reset and check again.
