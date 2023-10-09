@@ -97,9 +97,9 @@ export class ProfitClient {
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     readonly enabledChainIds: number[],
-    readonly defaultMinRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
-    readonly debugProfitability: boolean = false,
-    protected gasMultiplier: BigNumber = toBNWei(1)
+    readonly defaultMinRelayerFeePct = toBNWei(constants.RELAYER_MIN_FEE_PCT),
+    readonly debugProfitability = false,
+    protected gasMultiplier = toBNWei(1)
   ) {
     // Require 1% <= gasMultiplier <= 400%
     assert(

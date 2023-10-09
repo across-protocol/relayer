@@ -161,7 +161,6 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
-    profitClient.testInit();
 
     relayerInstance = new Relayer(
       relayer.address,
