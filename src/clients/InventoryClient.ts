@@ -1,3 +1,4 @@
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import {
   BigNumber,
   winston,
@@ -451,8 +452,7 @@ export class InventoryClient {
       if (!this.isInventoryManagementEnabled()) {
         return;
       }
-      const l1Weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-
+      const l1Weth = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolClient.chainId];
       const chains = await Promise.all(
         this.getEnabledChains()
           .map((chainId) => {
