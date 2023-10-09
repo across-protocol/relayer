@@ -13,6 +13,7 @@ import {
   toWei,
   paginatedEventQuery,
   Event,
+  assert,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
@@ -194,8 +195,27 @@ export class ArbitrumAdapter extends BaseAdapter {
     );
   }
 
-  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
-    throw new Error("Unnecessary to wrap ETH on Arbitrum");
+  // The arbitrum relayer expects to receive ETH steadily per HubPool bundle processed, since it is the L2 refund
+  // address hardcoded in the Arbitrum Adapter.
+  async wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse | null> {
+    const { chainId } = this;
+    assert(42161 === chainId, `chainId ${chainId} is not supported`);
+
+    const weth = CONTRACT_ADDRESSES[this.chainId].weth;
+    const ethBalance = await this.getSigner(chainId).getBalance();
+
+    if (ethBalance.gt(threshold)) {
+      const l2Signer = this.getSigner(chainId);
+      const contract = new Contract(weth.address, weth.abi, l2Signer);
+      const value = ethBalance.sub(target);
+      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
+      return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
+    }
+    return null;
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {

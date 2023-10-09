@@ -12,5 +12,13 @@ export interface InventoryConfig {
       };
     };
   };
-  wrapEtherThreshold: BigNumber; // Number of Ether, that if the balance is above, wrap it to WETH on the L2. in wei
+  // If ETH balance on chain is above threshold, wrap the excess over the target to WETH.
+  wrapEtherTargetPerChain: {
+    [chainId: number]: BigNumber;
+  };
+  wrapEtherTarget: BigNumber;
+  wrapEtherThresholdPerChain: {
+    [chainId: number]: BigNumber;
+  };
+  wrapEtherThreshold: BigNumber;
 }
