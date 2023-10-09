@@ -319,7 +319,7 @@ export class InventoryClient {
         if (amount.lt(balance)) {
           // As a precautionary step before proceeding, check that the token balance for the token we're about to send
           // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
-          // RPC's returning slowly.
+          // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
           const expectedBalance = this.tokenClient.getBalance(1, l1Token);
           const tokenContract = new Contract(l1Token, ERC20.abi, this.hubPoolClient.hubPool.signer);
           const currentBalance = await tokenContract.balanceOf(this.relayer);
