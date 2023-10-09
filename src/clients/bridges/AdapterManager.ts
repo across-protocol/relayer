@@ -1,8 +1,9 @@
-import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse } from "../../utils";
+import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
-import { OutstandingTransfers } from "../../interfaces";
+import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { utils } from "@across-protocol/sdk-v2";
+import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import { BaseChainAdapter } from "./op-stack/base/BaseChainAdapter";
 import { spokesThatHoldEthAndWeth } from "../../common/Constants";
 export class AdapterManager {
@@ -10,9 +11,9 @@ export class AdapterManager {
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
-  // manager will attempt to wrap ETH on into WETH. This is not necessary for chains that receive WETH, the ERC20,
-  // over the bridge.
-  public chainsToWrapEtherOn = spokesThatHoldEthAndWeth;
+  // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
+  // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
+  public chainsToWrapEtherOn = [...spokesThatHoldEthAndWeth, CHAIN_IDs.ARBITRUM];
 
   constructor(
     readonly logger: winston.Logger,
@@ -77,12 +78,19 @@ export class AdapterManager {
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
-  // (not the ERC20).
-  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber, simMode = false): Promise<void> {
+  // (not the ERC20), or if the relayer expects to be sent ETH perhaps as a gas refund from an original L1 to L2
+  // deposit.
+  async wrapEthIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
       this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
       async (chainId) => {
-        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, simMode);
+        const wrapThreshold = inventoryConfig.wrapEtherThresholdPerChain[chainId] ?? inventoryConfig.wrapEtherThreshold;
+        const wrapTarget = inventoryConfig.wrapEtherTargetPerChain[chainId] ?? inventoryConfig.wrapEtherTarget;
+        assert(
+          wrapThreshold.gte(wrapTarget),
+          `wrapEtherThreshold ${wrapThreshold.toString()} must be >= wrapEtherTarget ${wrapTarget.toString()}`
+        );
+        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
       }
     );
   }
