@@ -160,7 +160,7 @@ async function search(args: Record<string, number | string>, _signer: Wallet): P
   }
 
   const [configStore, hubPool] = await Promise.all([
-    utils.getContract(chainId, "ConfigStore"),
+    utils.getContract(chainId, "AcrossConfigStore"),
     utils.getContract(chainId, "HubPool"),
   ]);
 
