@@ -186,7 +186,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                 console.log(
                   `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
                 );
-                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address
+                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
                 let depositsToSpokePool: Event[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
@@ -212,11 +212,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                         maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
-                  ).filter(
-                    (e) =>
-                      e.args._amount.eq(previousNetSendAmount) &&
-                      e.args._to === spokePoolAddress
-                  );
+                  ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddress);
                 } else {
                   // This part could be inaccurate if there is a duplicate Transfer event for the exact same amount
                   // to the SpokePool address. This is unlikely so we'll ignore it for now.
