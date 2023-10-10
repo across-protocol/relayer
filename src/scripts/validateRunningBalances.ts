@@ -163,7 +163,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           // pools on those chains can take a variable amount of time, unlike transfers to the spoke pool on
           // mainnet. Additionally, deposits to those chains emit Transfer events where the to address
           // is the SpokePool address, making it easy to track.
-          if (leaf.chainId !== 1) {
+          if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
               clients.hubPoolClient.latestBlockNumber;
@@ -186,6 +186,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                 console.log(
                   `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
                 );
+                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address
                 let depositsToSpokePool: Event[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
@@ -214,7 +215,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                   ).filter(
                     (e) =>
                       e.args._amount.eq(previousNetSendAmount) &&
-                      e.args._to === spokePoolClients[leaf.chainId].spokePool.address
+                      e.args._to === spokePoolAddress
                   );
                 } else {
                   // This part could be inaccurate if there is a duplicate Transfer event for the exact same amount
@@ -222,7 +223,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                   depositsToSpokePool = (
                     await paginatedEventQuery(
                       l2TokenContract,
-                      l2TokenContract.filters.Transfer(undefined, spokePoolClients[leaf.chainId].spokePool.address),
+                      l2TokenContract.filters.Transfer(undefined, spokePoolAddress),
                       {
                         fromBlock: previousBundleEndBlockForChain.toNumber(),
                         toBlock: bundleEndBlockForChain.toNumber(),
