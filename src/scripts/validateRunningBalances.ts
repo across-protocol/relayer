@@ -25,6 +25,7 @@ import {
   config,
   Logger,
   toBN,
+  Event,
   fromWei,
   Contract,
   ERC20,
@@ -40,7 +41,7 @@ import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
-import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
+import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
 import { retrieveSignerFromCLIArgs } from "../utils/CLIUtils";
 
@@ -158,11 +159,11 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           }
 
           // Make sure that previous root bundle's netSendAmount has been deposited into the spoke pool. We only
-          // perform this check for chains 10, 137, 288, and 42161 because transfers from the hub pool to spoke
+          // perform this check for these L2 chains because transfers from the hub pool to spoke
           // pools on those chains can take a variable amount of time, unlike transfers to the spoke pool on
-          // mainnet. Additionally, deposits to those chains emit transfer events where the from address
-          // is the zero address, making it easy to track.
-          if ([10, 137, 288, 42161].includes(leaf.chainId)) {
+          // mainnet. Additionally, deposits to those chains emit Transfer events where the to address
+          // is the SpokePool address, making it easy to track.
+          if (leaf.chainId !== 1) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
               clients.hubPoolClient.latestBlockNumber;
@@ -182,19 +183,54 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
               mrkdwn += `\n\t\t- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`;
               if (previousNetSendAmount.gt(toBN(0))) {
-                // This part might fail if the token is ETH since deposits of ETH do not emit Transfer events, so
-                // in these cases the `tokenBalanceAtBundleEndBlock` might look artificially higher for this bundle.
-                const depositsToSpokePool = (
-                  await paginatedEventQuery(
-                    l2TokenContract,
-                    l2TokenContract.filters.Transfer(ZERO_ADDRESS, spokePoolClients[leaf.chainId].spokePool.address),
-                    {
-                      fromBlock: previousBundleEndBlockForChain.toNumber(),
-                      toBlock: bundleEndBlockForChain.toNumber(),
-                      maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
-                    }
-                  )
-                ).filter((e) => e.args.value.eq(previousNetSendAmount));
+                console.log(
+                  `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
+                );
+                let depositsToSpokePool: Event[];
+                // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
+                // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
+                // including the L1 and L2 ETH (native gas token) addresses.
+                if ([10, 8453].includes(leaf.chainId) && tokenInfo.symbol === "WETH") {
+                  const ovmL2BridgeContractInfo = CONTRACT_ADDRESSES[leaf.chainId].ovmStandardBridge;
+                  const ovmL2Bridge = new Contract(
+                    ovmL2BridgeContractInfo.address,
+                    ovmL2BridgeContractInfo.abi,
+                    await getProvider(leaf.chainId)
+                  );
+                  depositsToSpokePool = (
+                    await paginatedEventQuery(
+                      ovmL2Bridge,
+                      ovmL2Bridge.filters.DepositFinalized(
+                        ZERO_ADDRESS, // L1 token
+                        CONTRACT_ADDRESSES[leaf.chainId].eth.address, // L2 token
+                        clients.hubPoolClient.hubPool.address // from
+                      ),
+                      {
+                        fromBlock: previousBundleEndBlockForChain.toNumber(),
+                        toBlock: bundleEndBlockForChain.toNumber(),
+                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                      }
+                    )
+                  ).filter(
+                    (e) =>
+                      e.args._amount.eq(previousNetSendAmount) &&
+                      e.args._to === spokePoolClients[leaf.chainId].spokePool.address
+                  );
+                } else {
+                  // This part could be inaccurate if there is a duplicate Transfer event for the exact same amount
+                  // to the SpokePool address. This is unlikely so we'll ignore it for now.
+                  depositsToSpokePool = (
+                    await paginatedEventQuery(
+                      l2TokenContract,
+                      l2TokenContract.filters.Transfer(undefined, spokePoolClients[leaf.chainId].spokePool.address),
+                      {
+                        fromBlock: previousBundleEndBlockForChain.toNumber(),
+                        toBlock: bundleEndBlockForChain.toNumber(),
+                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                      }
+                    )
+                  ).filter((e) => e.args.value.eq(previousNetSendAmount));
+                }
                 if (depositsToSpokePool.length === 0) {
                   mrkdwn += `\n\t\t- Adding previous leaf's netSendAmount (${fromWei(
                     previousNetSendAmount.toString(),
@@ -335,9 +371,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   });
   const unexpectedExcess = Object.entries(excesses).some(([, tokenExcesses]) => {
     return Object.entries(tokenExcesses).some(([, excesses]) => {
-      // We only care that the latest excesses are 0, because sometimes excesses can appear in historical bundles
+      // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
-      return Number(excesses[0]).toFixed(6) !== "0.000000";
+      const excess = Number(excesses[0]);
+      return excess > 0.05 || excess < -0.05;
     });
   });
   if (unexpectedExcess) {
