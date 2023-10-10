@@ -158,11 +158,11 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           }
 
           // Make sure that previous root bundle's netSendAmount has been deposited into the spoke pool. We only
-          // perform this check for chains 10, 137, 288, and 42161 because transfers from the hub pool to spoke
+          // perform this check for chains 10, 137, 288, 324, 8453, and 42161 because transfers from the hub pool to spoke
           // pools on those chains can take a variable amount of time, unlike transfers to the spoke pool on
           // mainnet. Additionally, deposits to those chains emit transfer events where the from address
           // is the zero address, making it easy to track.
-          if ([10, 137, 288, 42161].includes(leaf.chainId)) {
+          if ([10, 137, 288, 42161, 324, 8453].includes(leaf.chainId)) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
               clients.hubPoolClient.latestBlockNumber;
