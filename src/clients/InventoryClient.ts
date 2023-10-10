@@ -636,7 +636,7 @@ export class InventoryClient {
   async wrapL2EthIfAboveThreshold(): Promise<void> {
     // If inventoryConfig is defined, there will be a default wrapEtherTarget and wrapEtherThreshold
     // set by RelayerConfig.ts
-    if (!this?.inventoryConfig) {
+    if (!this?.inventoryConfig?.wrapEtherThreshold || !this?.inventoryConfig?.wrapEtherTarget) {
       return;
     }
     this.log("Checking ETH->WETH Wrap status");
