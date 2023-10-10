@@ -123,6 +123,10 @@ export class TokenClient {
     this.tokenShortfall = {};
   }
 
+  clearTokenData(): void {
+    this.tokenData = {};
+  }
+
   async setOriginTokenApprovals(): Promise<void> {
     const tokensToApprove: { chainId: number; token: string }[] = [];
     Object.entries(this.tokenData).forEach(([_chainId, tokenMap]) => {
@@ -191,7 +195,20 @@ export class TokenClient {
       }
     }
 
-    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!" });
+    // Remove allowance from token data when logging.
+    const balanceData = Object.fromEntries(
+      Object.entries(this.tokenData).map(([chainId, tokenData]) => {
+        return [
+          chainId,
+          Object.fromEntries(
+            Object.entries(tokenData).map(([token, { balance }]) => {
+              return [token, balance];
+            })
+          ),
+        ];
+      })
+    );
+    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData });
   }
 
   async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<{

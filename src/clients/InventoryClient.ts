@@ -634,9 +634,6 @@ export class InventoryClient {
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {
-    if (!this.isInventoryManagementEnabled()) {
-      return;
-    }
     this.log("Checking ETH->WETH Wrap status");
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
