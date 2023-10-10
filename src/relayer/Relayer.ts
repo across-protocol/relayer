@@ -232,8 +232,7 @@ export class Relayer {
       // the fill's gas cost against a simple USDC fill with message=0x. This doesn't handle the case where the
       // message is != 0x and it ends up costing a lot of gas to execute, resulting in a big loss to the relayer.
       if (
-        (isDepositSpedUp(deposit) && deposit.updatedMessage !== "0x") ||
-        (!isDepositSpedUp(deposit) && deposit.message !== "0x")
+        deposit[isDepositSpedUp(deposit) ? "updatedMessage" : "message") !== "0x"
       ) {
         this.logger.warn({
           at: "Relayer",
