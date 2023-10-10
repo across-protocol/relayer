@@ -154,6 +154,13 @@ export class OpStackAdapter extends BaseAdapter {
       const value = ethBalance.sub(target);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
       return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
+    } else {
+      this.logger.debug({
+        at: this.getName(),
+        message: "ETH balance below threhsold",
+        threshold,
+        ethBalance,
+      });
     }
     return null;
   }
