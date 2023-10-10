@@ -1,7 +1,7 @@
-import { BlockFinder } from "@uma/financial-templates-lib";
-import { Block, getProvider, getRedis, isDefined, setRedisKey, shouldCache } from "./";
+import { getProvider, getRedis, isDefined, setRedisKey, shouldCache } from "./";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
-const blockFinders: { [chainId: number]: BlockFinder<Block> } = {};
+const blockFinders: { [chainId: number]: sdkUtils.BlockFinder } = {};
 
 /**
  * @notice Return block finder for chain. Loads from in memory blockFinder cache if this function was called before
@@ -9,10 +9,10 @@ const blockFinders: { [chainId: number]: BlockFinder<Block> } = {};
  * @param chainId
  * @returns
  */
-export async function getBlockFinder(chainId: number): Promise<BlockFinder<Block>> {
+export async function getBlockFinder(chainId: number): Promise<sdkUtils.BlockFinder> {
   if (!isDefined(blockFinders[chainId])) {
     const providerForChain = await getProvider(chainId);
-    blockFinders[chainId] = new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId);
+    blockFinders[chainId] = new sdkUtils.BlockFinder(providerForChain);
   }
   return blockFinders[chainId];
 }
@@ -29,7 +29,7 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder<Block
 export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
-  blockFinder?: BlockFinder<Block>
+  blockFinder?: sdkUtils.BlockFinder
 ): Promise<number> {
   blockFinder ??= await getBlockFinder(chainId);
   const redisClient = await getRedis();
