@@ -9,3 +9,6 @@ dump.rdb*
 cache
 artifacts
 dist
+
+# Debugging files
+*.log
