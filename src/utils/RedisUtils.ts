@@ -83,7 +83,7 @@ export async function disconnectRedisClient(logger?: winston.Logger): Promise<vo
   const redisClient = await getRedis(logger);
   if (redisClient !== undefined) {
     // todo understand why redisClient isn't GCed automagically.
-    logger.debug("Disconnecting from redis server.");
+    logger.debug({ at: "disconnectRedisClient", message: "Disconnecting from redis server." });
     await redisClient.disconnect();
   }
 }
