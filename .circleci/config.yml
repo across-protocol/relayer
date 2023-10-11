@@ -1,6 +1,6 @@
 version: 2.1
 jobs:
-  build:
+  install:
     docker:
       - image: cimg/node:16.18.0
     working_directory: ~/relayer-v2
@@ -10,13 +10,13 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-{{ checksum "yarn.lock" }}
+            - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
       - save_cache:
           name: Save Yarn Package Cache
-          key: cache-node-{{ checksum "yarn.lock" }}
+          key: cache-node-v1-{{ checksum "yarn.lock" }}
           paths:
             - node_modules
   test:
@@ -30,10 +30,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-{{ checksum "yarn.lock" }}
-      - run:
-          name: Install Dependencies
-          command: yarn install
+            - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Run build
           command: yarn build
@@ -52,13 +49,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-{{ checksum "yarn.lock" }}
-      - run:
-          name: Install Dependencies
-          command: yarn install
-      - run:
-          name: Run build
-          command: yarn build
+            - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Run lint
           command: yarn lint
@@ -66,10 +57,10 @@ workflows:
   version: 2.1
   build_and_test:
     jobs:
-      - build
+      - install
       - test:
           requires:
-            - build
+            - install
       - lint:
           requires:
-            - build
+            - install
