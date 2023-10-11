@@ -1,5 +1,5 @@
 import { interfaces, constants } from "@across-protocol/sdk-v2";
-import { RedisClient, objectWithBigNumberReviver, setRedisKey } from "../utils";
+import { RedisClient, setRedisKey } from "../utils";
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -25,14 +25,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
 
   public async get<T>(key: string): Promise<T | undefined> {
     // Get the value from redis.
-    const result = await this.redisClient.get(key);
-    if (result) {
-      // If the value exists, parse it and return it.
-      return JSON.parse(result, objectWithBigNumberReviver);
-    } else {
-      // If the value does not exist, return undefined.
-      return undefined;
-    }
+    return this.redisClient.get(key) as T;
   }
 
   public async set<T>(key: string, value: T, ttl: number = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {
