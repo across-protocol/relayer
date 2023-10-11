@@ -108,7 +108,7 @@ export class RelayerConfig extends CommonConfig {
           );
         }
       });
-      Object.keys(this.inventoryConfig.tokenConfig).forEach((l1Token) => {
+      Object.keys(this.inventoryConfig?.tokenConfig ?? {}).forEach((l1Token) => {
         Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
           const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget } =
             this.inventoryConfig.tokenConfig[l1Token][chainId];
