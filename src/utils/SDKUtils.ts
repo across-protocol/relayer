@@ -16,4 +16,5 @@ export const {
   blockExplorerLink,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
+  BlockFinder,
 } = sdkUtils;
