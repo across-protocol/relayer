@@ -26,7 +26,7 @@
     "@openzeppelin/hardhat-upgrades": "^1.28.0",
     "@uma/common": "2.33.0",
     "@uma/contracts-node": "^0.4.16",
-    "@uma/financial-templates-lib": "^2.32.11",
+    "@uma/financial-templates-lib": "^2.34.0",
     "@uma/sdk": "^0.34.2",
     "async": "^3.2.4",
     "axios": "^1.4.0",
