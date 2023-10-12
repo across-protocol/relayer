@@ -5,6 +5,7 @@ import winston from "winston";
 import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
 import { RedisCache } from "../caching/RedisCache";
+import { constants } from "@across-protocol/sdk-v2";
 dotenv.config();
 
 const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || "DEFAULT_0";
@@ -12,14 +13,20 @@ const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || "DEFAULT_0";
 export type _RedisClient = ReturnType<typeof createClient>;
 
 export class RedisClient {
-  constructor(readonly client: _RedisClient, private readonly namespace = "") {}
+  constructor(private readonly client: _RedisClient, private readonly namespace = "") {}
 
   async get(key: string): Promise<string | undefined> {
     return this.client.get(`${this.namespace}:${key}}`);
   }
 
-  async set(key: string, val: string, expirySeconds: number): Promise<void> {
-    await setRedisKey(`${this.namespace}:${key}`, val, this, expirySeconds);
+  async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
+    const modifiedKey = `${this.namespace}:${key}`;
+    if (expirySeconds > 0) {
+      // EX: Expire key after expirySeconds.
+      await this.client.set(modifiedKey, val, { EX: expirySeconds });
+    } else {
+      await this.client.set(modifiedKey, val);
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -76,14 +83,9 @@ export async function setRedisKey(
   key: string,
   val: string,
   redisClient: RedisClient,
-  expirySeconds = 0
+  expirySeconds = constants.DEFAULT_CACHING_TTL
 ): Promise<void> {
-  if (expirySeconds > 0) {
-    // EX: Expire key after expirySeconds.
-    await redisClient.client.set(key, val, { EX: expirySeconds });
-  } else {
-    await redisClient.client.set(key, val);
-  }
+  await redisClient.set(key, val, expirySeconds);
 }
 
 export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
