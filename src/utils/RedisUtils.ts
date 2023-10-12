@@ -1,4 +1,4 @@
-import { assert, toBN, BigNumberish } from "./";
+import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
@@ -8,19 +8,21 @@ import { RedisCache } from "../caching/RedisCache";
 import { constants } from "@across-protocol/sdk-v2";
 dotenv.config();
 
-const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || "DEFAULT_0";
+const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
+  ? String(process.env.GLOBAL_CACHE_NAMESPACE)
+  : undefined;
 
 export type _RedisClient = ReturnType<typeof createClient>;
 
 export class RedisClient {
-  constructor(private readonly client: _RedisClient, private readonly namespace = "") {}
+  constructor(private readonly client: _RedisClient, private readonly namespace?: string) {}
 
   async get(key: string): Promise<string | undefined> {
     return this.client.get(`${this.namespace}:${key}}`);
   }
 
   async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
-    const modifiedKey = `${this.namespace}:${key}`;
+    const modifiedKey = isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
     if (expirySeconds > 0) {
       // EX: Expire key after expirySeconds.
       await this.client.set(modifiedKey, val, { EX: expirySeconds });
