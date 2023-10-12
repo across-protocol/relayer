@@ -246,6 +246,10 @@ export class FinalizerConfig extends DataworkerConfig {
 
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
+    assert(
+      !isNaN(this.maxFinalizerLookback),
+      `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
+    );
   }
 }
 
