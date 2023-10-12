@@ -7,7 +7,25 @@ import dotenv from "dotenv";
 import { RedisCache } from "../caching/RedisCache";
 dotenv.config();
 
-export type RedisClient = ReturnType<typeof createClient>;
+const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || "DEFAULT_0";
+
+export type _RedisClient = ReturnType<typeof createClient>;
+
+export class RedisClient {
+  constructor(readonly client: _RedisClient, private readonly namespace = "") {}
+
+  async get(key: string): Promise<string | undefined> {
+    return this.client.get(`${this.namespace}:${key}}`);
+  }
+
+  async set(key: string, val: string, expirySeconds = 0): Promise<void> {
+    await setRedisKey(`${this.namespace}:${key}`, val, this, expirySeconds);
+  }
+
+  async disconnect(): Promise<void> {
+    await this.client.disconnect();
+  }
+}
 
 // Avoid caching calls that are recent enough to be affected by things like reorgs.
 // Current time must be >= 15 minutes past the event timestamp for it to be stable enough to cache.
@@ -30,7 +48,7 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
           dbSize: await redisClient.dbSize(),
         });
       }
-      redisClients[url] = redisClient;
+      redisClients[url] = new RedisClient(redisClient, globalNamespace);
     } catch (err) {
       if (logger) {
         logger.debug({
@@ -62,9 +80,9 @@ export async function setRedisKey(
 ): Promise<void> {
   if (expirySeconds > 0) {
     // EX: Expire key after expirySeconds.
-    await redisClient.set(key, val, { EX: expirySeconds });
+    await redisClient.client.set(key, val, { EX: expirySeconds });
   } else {
-    await redisClient.set(key, val);
+    await redisClient.client.set(key, val);
   }
 }
 
