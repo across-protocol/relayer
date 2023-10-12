@@ -321,6 +321,7 @@ export class Relayer {
       ? ["fillRelayWithUpdatedDeposit", buildFillRelayWithUpdatedFeeProps, "with modified parameters "]
       : ["fillRelay", buildFillRelayProps, ""];
 
+    // prettier-ignore
     const message = fillAmount.eq(deposit.amount)
       ? `Filled deposit ${messageModifier}🚀`
       : zeroFill
