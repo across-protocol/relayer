@@ -249,7 +249,7 @@ export class Relayer {
       }
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-      if (slowDepositors?.includes(deposit.depositor)) {
+      if (["0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D"].includes(deposit.depositor)) {
         if (sendSlowRelays && fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
           this.logger.debug({
             at: "Relayer",
@@ -675,7 +675,7 @@ export class Relayer {
       ` with depositor ${depositor}. Fill amount of ${_fillAmount} ${symbol} with` +
       ` relayerFee ${relayerFeePct}% & realizedLpFee ${realizedLpFeePct}%.`;
     if (fillAmount.eq(zeroFillAmount)) {
-      msg += "Has been relayed with 0 size due to a token shortfall! This will initiate a slow relay for this deposit.";
+      msg += " Has been zero filled due to a token shortfall! This will initiate a slow relay for this deposit.";
     }
 
     return msg;
