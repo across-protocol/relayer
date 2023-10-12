@@ -128,17 +128,5 @@ export async function queryHistoricalDepositForFill(
   spokePoolClient: SpokePoolClient,
   fill: Fill
 ): Promise<DepositWithBlock | undefined> {
-  try {
-    return await utils.queryHistoricalDepositForFill(
-      spokePoolClient,
-      fill,
-      await getRedisCache(spokePoolClient.logger)
-    );
-  } catch (e) {
-    spokePoolClient.logger.error({
-      at: "DepositUtils#queryHistoricalDepositForFill",
-      message: e,
-    });
-    throw e;
-  }
+  return utils.queryHistoricalDepositForFill(spokePoolClient, fill, await getRedisCache(spokePoolClient.logger));
 }
