@@ -334,8 +334,9 @@ export class Relayer {
       mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount),
     });
 
-    // TODO: Revisit in the future when we implement partial fills.
-    this.fullyFilledDeposits[fillKey] = fillAmount.eq(deposit.amount);
+    // @dev: Only zero fills _or_ fills that complete the transfer are attempted, so zeroFill indicates whether the
+    // deposit was filled to completion. @todo: Revisit in the future when we implement partial fills.
+    this.fullyFilledDeposits[fillKey] = !zeroFill;
 
     // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
     this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
