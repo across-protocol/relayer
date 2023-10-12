@@ -18,7 +18,7 @@ export class RedisClient {
     return this.client.get(`${this.namespace}:${key}}`);
   }
 
-  async set(key: string, val: string, expirySeconds = 0): Promise<void> {
+  async set(key: string, val: string, expirySeconds: number): Promise<void> {
     await setRedisKey(`${this.namespace}:${key}`, val, this, expirySeconds);
   }
 
