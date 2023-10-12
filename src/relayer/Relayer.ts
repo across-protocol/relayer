@@ -323,7 +323,9 @@ export class Relayer {
 
     const message = fillAmount.eq(deposit.amount)
       ? `Filled deposit ${messageModifier}🚀`
-      : `${zeroFill ? "Zero" : "Partially"} filled deposit ${messageModifier}📫"`;
+      : zeroFill
+        ? `Zero filled deposit ${messageModifier}🐌`
+        : `Partially filled deposit ${messageModifier}📫`;
 
     this.clients.multiCallerClient.enqueueTransaction({
       contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool,
