@@ -311,7 +311,7 @@ export class Relayer {
       at: "Relayer",
       message: zeroFill ? "Zero filling" : "Filling deposit",
       deposit,
-      repaymentChainId
+      repaymentChainId,
     });
 
     // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
