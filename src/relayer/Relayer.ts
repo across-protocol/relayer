@@ -306,7 +306,13 @@ export class Relayer {
       });
       return;
     }
-    this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChainId });
+    const zeroFill = fillAmount.eq(zeroFillAmount);
+    this.logger.debug({
+      at: "Relayer",
+      message: zeroFill ? "Zero filling" : "Filling deposit",
+      deposit,
+      repaymentChainId
+    });
 
     // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
     // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
@@ -317,7 +323,7 @@ export class Relayer {
 
     const message = fillAmount.eq(deposit.amount)
       ? `Filled deposit ${messageModifier}🚀`
-      : `${fillAmount.eq(zeroFillAmount) ? "Zero" : "Partially"} filled deposit ${messageModifier}📫"`;
+      : `${zeroFill ? "Zero" : "Partially"} filled deposit ${messageModifier}📫"`;
 
     this.clients.multiCallerClient.enqueueTransaction({
       contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool,
