@@ -119,7 +119,7 @@ class CacheProvider extends RateLimitedProvider {
   ) {
     super(...jsonRpcConstructorParams);
 
-    logger.info({
+    logger.debug({
       at: "CacheProvider#constructor",
       message: `Created cache provider with namespace ${providerCacheNamespace}`,
     });
