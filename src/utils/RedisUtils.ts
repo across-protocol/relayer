@@ -15,7 +15,11 @@ const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
 export type _RedisClient = ReturnType<typeof createClient>;
 
 export class RedisClient {
-  constructor(private readonly client: _RedisClient, private readonly namespace?: string) {}
+  constructor(
+    private readonly client: _RedisClient,
+    private readonly namespace?: string,
+    private readonly logger?: winston.Logger
+  ) {}
 
   private getNamespacedKey(key: string): string {
     return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
@@ -30,7 +34,13 @@ export class RedisClient {
       // EX: Expire key after expirySeconds.
       await this.client.set(this.getNamespacedKey(key), val, { EX: expirySeconds });
     } else {
-      await this.client.set(this.getNamespacedKey(key), val);
+      if (expirySeconds <= 0 && this.logger) {
+        this.logger.warn({
+          at: "RedisClient#setRedisKey",
+          message: `Tried to set key ${key} with expirySeconds = ${expirySeconds}. This shouldn't be allowed.`,
+        });
+      }
+      await this.client.set(modifiedKey, val);
     }
   }
 
