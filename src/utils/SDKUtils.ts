@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
-export class BlockFinder extends sdkUtils.BlockFinder {};
+export class BlockFinder extends sdkUtils.BlockFinder {}
 
 export const {
   toBN,
