@@ -131,7 +131,7 @@ export async function finalize(
   // Ensure each transaction would succeed in isolation.
   const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
     try {
-      const txn = await multicall2.populateTransaction.aggregate(_txn);
+      const txn = await multicall2.populateTransaction.aggregate([_txn]);
       await multicall2.provider.estimateGas(txn);
       return true;
     } catch (err) {
