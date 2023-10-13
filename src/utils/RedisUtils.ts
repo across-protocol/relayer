@@ -19,7 +19,12 @@ export class RedisClient {
     private readonly client: _RedisClient,
     private readonly namespace?: string,
     private readonly logger?: winston.Logger
-  ) {}
+  ) {
+    this.logger.info({
+      at: "RedisClient#constructor",
+      message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
+    });
+  }
 
   private getNamespacedKey(key: string): string {
     return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
