@@ -17,17 +17,20 @@ export type _RedisClient = ReturnType<typeof createClient>;
 export class RedisClient {
   constructor(private readonly client: _RedisClient, private readonly namespace?: string) {}
 
+  private getNamespacedKey(key: string): string {
+    return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
+  }
+
   async get(key: string): Promise<string | undefined> {
-    return this.client.get(`${this.namespace}:${key}}`);
+    return this.client.get(this.getNamespacedKey(key));
   }
 
   async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
-    const modifiedKey = isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
     if (expirySeconds > 0) {
       // EX: Expire key after expirySeconds.
-      await this.client.set(modifiedKey, val, { EX: expirySeconds });
+      await this.client.set(this.getNamespacedKey(key), val, { EX: expirySeconds });
     } else {
-      await this.client.set(modifiedKey, val);
+      await this.client.set(this.getNamespacedKey(key), val);
     }
   }
 
