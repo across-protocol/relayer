@@ -35,9 +35,11 @@ export class RedisClient {
   }
 
   async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
+    // Apply namespace to key.
+    key = this.getNamespacedKey(key);
     if (expirySeconds > 0) {
       // EX: Expire key after expirySeconds.
-      await this.client.set(this.getNamespacedKey(key), val, { EX: expirySeconds });
+      await this.client.set(key, val, { EX: expirySeconds });
     } else {
       if (expirySeconds <= 0 && this.logger) {
         this.logger.warn({
@@ -45,7 +47,7 @@ export class RedisClient {
           message: `Tried to set key ${key} with expirySeconds = ${expirySeconds}. This shouldn't be allowed.`,
         });
       }
-      await this.client.set(modifiedKey, val);
+      await this.client.set(key, val);
     }
   }
 
