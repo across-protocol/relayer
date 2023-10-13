@@ -1,8 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { getProvider, getRedis, isDefined, setRedisKey, shouldCache } from "./";
-
-type BlockFinder = sdkUtils.BlockFinder;
-const { BlockFinder } = sdkUtils;
+import { BlockFinder, getProvider, getRedis, isDefined, setRedisKey, shouldCache } from "./";
 
 const blockFinders: { [chainId: number]: BlockFinder } = {};
 
