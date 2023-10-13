@@ -119,9 +119,15 @@ class CacheProvider extends RateLimitedProvider {
   ) {
     super(...jsonRpcConstructorParams);
 
-    logger.info({
+    const url = this.connection.url;
+    const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
+
+    logger.debug({
       at: "CacheProvider#constructor",
-      message: `Created cache provider with namespace ${providerCacheNamespace}`,
+      message: "Created cache provider.",
+      namespace: providerCacheNamespace,
+      provider: regex[1],
+      network: `${this.network.name} (${this.network.chainId})`,
     });
 
     if (MAX_REORG_DISTANCE[this.network.chainId] === undefined) {
