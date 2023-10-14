@@ -30,6 +30,10 @@ export class RedisClient {
     return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
   }
 
+  get url(): string {
+    return this.client.options.url;
+  }
+
   async get(key: string): Promise<string | undefined> {
     return this.client.get(this.getNamespacedKey(key));
   }
@@ -129,12 +133,16 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   }
 }
 
-export async function disconnectRedisClient(logger?: winston.Logger): Promise<void> {
-  const redisClient = await getRedis(logger);
-  if (redisClient !== undefined) {
-    // todo understand why redisClient isn't GCed automagically.
-    logger.debug({ at: "disconnectRedisClient", message: "Disconnecting from redis server." });
-    await redisClient.disconnect();
+export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
+  // todo understand why redisClients arent't GCed automagically.
+  const clients = Object.values(redisClients);
+  for (const client of clients) {
+    logger?.debug({
+      at: "RedisUtils#disconnectRedisClient",
+      message: "Disconnecting from redis server.",
+      url: client.url,
+    });
+    await client.disconnect();
   }
 }
 

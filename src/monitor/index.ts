@@ -1,4 +1,4 @@
-import { winston, processEndPollingLoop, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
+import { winston, processEndPollingLoop, config, startupLogLevel, Wallet, disconnectRedisClients } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";
@@ -73,7 +73,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): P
       }
     }
   } catch (error) {
-    await disconnectRedisClient(logger);
+    await disconnectRedisClients(logger);
     throw error;
   }
 }

@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClients } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -181,7 +181,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       }
     }
   } catch (error) {
-    await disconnectRedisClient(logger);
+    await disconnectRedisClients(logger);
     throw error;
   }
 }
