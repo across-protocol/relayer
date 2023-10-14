@@ -71,8 +71,9 @@ const redisClients: { [url: string]: RedisClient } = {};
 
 export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient | undefined> {
   if (!redisClients[url]) {
+    let redisClient: _RedisClient | undefined = undefined;
     try {
-      const redisClient = createClient({ url });
+      redisClient = createClient({ url });
       await redisClient.connect();
       logger?.debug({
         at: "RedisUtils#getRedis",
@@ -86,6 +87,9 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
         message: `Failed to connect to redis server at ${url}.`,
         error: String(err),
       });
+      if (redisClient) {
+        await redisClient.disconnect();
+      }
     }
   }
 
