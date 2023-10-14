@@ -135,12 +135,12 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
 
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
   // todo understand why redisClients arent't GCed automagically.
-  const clients = Object.values(redisClients);
-  for (const client of clients) {
+  const clients = Object.entries(redisClients);
+  for (const [url, client] of clients) {
     const logParams = {
       at: "RedisUtils#disconnectRedisClient",
       message: "Disconnecting from redis server.",
-      url: client.url,
+      url,
     };
     // We don't want to throw an error if we can't disconnect from redis.
     // We can log the error and continue.
@@ -150,6 +150,10 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
     } catch (e) {
       logParams["success"] = false;
       logParams["error"] = e;
+    } finally {
+      // No matter what we need to eject this from
+      // our memory cache object.
+      delete redisClients[url];
     }
     logger?.debug(logParams);
   }
