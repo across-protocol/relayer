@@ -180,8 +180,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         break;
       }
     }
-  } catch (error) {
+  } finally {
     await disconnectRedisClients(logger);
-    throw error;
   }
 }

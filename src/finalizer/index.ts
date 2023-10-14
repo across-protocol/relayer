@@ -270,8 +270,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
         break;
       }
     }
-  } catch (error) {
+  } finally {
     await disconnectRedisClients(logger);
-    throw error;
   }
 }

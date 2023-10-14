@@ -72,8 +72,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): P
         break;
       }
     }
-  } catch (error) {
+  } finally {
     await disconnectRedisClients(logger);
-    throw error;
   }
 }
