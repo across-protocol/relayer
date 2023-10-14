@@ -20,7 +20,7 @@ export class RedisClient {
     private readonly namespace?: string,
     private readonly logger?: winston.Logger
   ) {
-    this.logger.debug({
+    this?.logger.debug({
       at: "RedisClient#constructor",
       message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
     });
@@ -70,21 +70,18 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
     try {
       const redisClient = createClient({ url });
       await redisClient.connect();
-      if (logger) {
-        logger.debug({
-          at: "RedisUtils#getRedis",
-          message: `Connected to redis server at ${url} successfully!`,
-          dbSize: await redisClient.dbSize(),
-        });
-      }
+      logger?.debug({
+        at: "RedisUtils#getRedis",
+        message: `Connected to redis server at ${url} successfully!`,
+        dbSize: await redisClient.dbSize(),
+      });
       redisClients[url] = new RedisClient(redisClient, globalNamespace);
     } catch (err) {
-      if (logger) {
-        logger.debug({
-          at: "RedisUtils#getRedis",
-          message: `Failed to connect to redis server at ${url}.`,
-        });
-      }
+      logger?.debug({
+        at: "RedisUtils#getRedis",
+        message: `Failed to connect to redis server at ${url}.`,
+        error: String(err),
+      });
     }
   }
 
