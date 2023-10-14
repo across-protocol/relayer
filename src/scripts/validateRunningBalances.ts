@@ -484,9 +484,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 }
 
 export async function run(_logger: winston.Logger): Promise<void> {
-  const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
-  await runScript(_logger, baseSigner);
-  await disconnectRedisClients(logger);
+  try {
+    const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+    await runScript(_logger, baseSigner);
+  } finally {
+    await disconnectRedisClients(logger);
+  }
 }
 
 // eslint-disable-next-line no-process-exit
