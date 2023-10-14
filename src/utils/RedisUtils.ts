@@ -20,7 +20,7 @@ export class RedisClient {
     private readonly namespace?: string,
     private readonly logger?: winston.Logger
   ) {
-    this?.logger.debug({
+    this.logger?.debug({
       at: "RedisClient#constructor",
       message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
     });
