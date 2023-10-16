@@ -109,22 +109,12 @@ export async function finalize(
       latestBlockToFinalize
     );
 
-    if (withdrawals.length > callData.length) {
-      logger.warn({
-        at: "finalize",
-        message: `callData/withdrawals mismatch on ${network} finalization.`,
-        callData: callData.length,
-        withdrawals: withdrawals.length,
-      });
-    } else {
-      logger.debug({
-        at: "finalize",
-        message: `Found ${withdrawals.length} ${network} withdrawals for finalization.`,
-      });
-    }
-
     callData.forEach((txn, idx) => {
       finalizationsToBatch.push({ txn, withdrawal: withdrawals[idx] });
+    });
+    logger.debug({
+      at: "finalize",
+      message: `Found ${withdrawals.length} ${network} withdrawals for finalization.`,
     });
   }
 
