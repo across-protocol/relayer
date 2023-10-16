@@ -82,14 +82,12 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
       });
       redisClients[url] = new RedisClient(redisClient, globalNamespace);
     } catch (err) {
+      await redisClient?.disconnect();
       logger?.debug({
         at: "RedisUtils#getRedis",
         message: `Failed to connect to redis server at ${url}.`,
         error: String(err),
       });
-      if (redisClient) {
-        await redisClient.disconnect();
-      }
     }
   }
 
