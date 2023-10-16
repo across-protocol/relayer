@@ -11,7 +11,7 @@ import {
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
   BLOCK_NUMBER_TTL,
 } from "../common";
-import { delay, Logger } from "./";
+import { delay, getOriginFromURL, Logger } from "./";
 import { compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
 
 const logger = Logger;
@@ -118,6 +118,14 @@ class CacheProvider extends RateLimitedProvider {
     ...jsonRpcConstructorParams: ConstructorParameters<typeof RateLimitedProvider>
   ) {
     super(...jsonRpcConstructorParams);
+
+    logger.debug({
+      at: "CacheProvider#constructor",
+      message: "Created cache provider.",
+      namespace: providerCacheNamespace,
+      provider: getOriginFromURL(this.connection.url),
+      network: `${this.network.name} (${this.network.chainId})`,
+    });
 
     if (MAX_REORG_DISTANCE[this.network.chainId] === undefined) {
       throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
@@ -522,12 +530,10 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
       const delayMs = baseDelay + baseDelay * Math.random();
 
       if (logger && rateLimitLogCounter++ % logEveryNRateLimitErrors === 0) {
-        // Make an effort to filter out any api keys.
-        const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
         logger.debug({
           at: "ProviderUtils#rpcRateLimited",
           message: `Got rate-limit (429) response on attempt ${attempt}.`,
-          rpc: regex ? regex[1] : url,
+          rpc: getOriginFromURL(url),
           retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,
         });
