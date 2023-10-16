@@ -119,14 +119,6 @@ class CacheProvider extends RateLimitedProvider {
   ) {
     super(...jsonRpcConstructorParams);
 
-    logger.debug({
-      at: "CacheProvider#constructor",
-      message: "Created cache provider.",
-      namespace: providerCacheNamespace,
-      provider: getOriginFromURL(this.connection.url),
-      network: `${this.network.name} (${this.network.chainId})`,
-    });
-
     if (MAX_REORG_DISTANCE[this.network.chainId] === undefined) {
       throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
     }
