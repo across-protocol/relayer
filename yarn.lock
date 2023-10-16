@@ -3221,10 +3221,10 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.17.tgz#27f5292e8ec5e02f5ac467f384601a56c27ff4c6"
   integrity sha512-g6+1PnHGvos4zcAPaBHAHQcK6tSNvEaiy/36Q8vzp4pX0IV8lrwfBKJtXjqLgjyK2okSSQgZKuT+quVPO9h4Cg==
 
-"@uma/contracts-node@^0.4.0", "@uma/contracts-node@^0.4.16", "@uma/contracts-node@^0.4.17":
-  version "0.4.17"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.17.tgz#6abd815723c8344017eb5c302f6a5b0b690eeb4e"
-  integrity sha512-e7cVJr3yhKrPZn1TAo/CCOt+QacJON6Mj71lcwHq/rnx+tgjujK2MsOhihytmb79ejPTKg1b5+2GIDL02ttrrQ==
+"@uma/contracts-node@^0.4.0", "@uma/contracts-node@^0.4.16", "@uma/contracts-node@^0.4.17", "@uma/contracts-node@^0.4.18":
+  version "0.4.18"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.18.tgz#3d3e0ad7dc70b81b3d0dbe722b4eba93bd29f9bf"
+  integrity sha512-JiICiNPEfL18JrddxjSNQUs0/gRMAvdqejIu7UP8JTG4Cup8tDJ6TejZJxBVHlmtB6hSOBnbLoPXb/uLtfdQiw==
 
 "@uma/core@^2.18.0":
   version "2.43.2"
