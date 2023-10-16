@@ -6,7 +6,7 @@ import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
 import {
-  MAX_REORG_DISTANCE,
+  CHAIN_CACHE_FOLLOW_DISTANCE,
   PROVIDER_CACHE_TTL,
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
   BLOCK_NUMBER_TTL,
@@ -119,14 +119,15 @@ class CacheProvider extends RateLimitedProvider {
   ) {
     super(...jsonRpcConstructorParams);
 
-    if (MAX_REORG_DISTANCE[this.network.chainId] === undefined) {
-      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
+    const { chainId } = this.network;
+    if (CHAIN_CACHE_FOLLOW_DISTANCE[chainId] === undefined) {
+      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${chainId}`);
     }
 
-    this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
+    this.maxReorgDistance = CHAIN_CACHE_FOLLOW_DISTANCE[chainId];
 
     // Pre-compute as much of the redis key as possible.
-    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}`;
+    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${chainId}`;
     this.getBlockByNumberPrefix = `${cachePrefix}:getBlockByNumber,`;
     this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
     this.callCachePrefix = `${cachePrefix}:eth_call,`;
