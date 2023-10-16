@@ -41,8 +41,8 @@ export class RedisClient {
       // EX: Expire key after expirySeconds.
       await this.client.set(key, val, { EX: expirySeconds });
     } else {
-      if (expirySeconds <= 0 && this.logger) {
-        this.logger.warn({
+      if (expirySeconds <= 0) {
+        this.logger?.warn({
           at: "RedisClient#setRedisKey",
           message: `Tried to set key ${key} with expirySeconds = ${expirySeconds}. This shouldn't be allowed.`,
         });
