@@ -3301,7 +3301,7 @@
     mocha "^8.3.0"
     node-fetch "^2.6.1"
 
-"@uma/sdk@^0.34.1", "@uma/sdk@^0.34.2":
+"@uma/sdk@^0.34.1":
   version "0.34.2"
   resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.34.2.tgz#b433b437f750c4afaf2f110209c80c513437eb94"
   integrity sha512-49akhv4eOLjoWvxawciNI9OztfDp2IyuJEuU8ME3BWAaQM+RYurPylKyxCPSzrmlCbx1KSQU97FXDOeH7hP4gg==

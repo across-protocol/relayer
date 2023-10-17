@@ -154,17 +154,18 @@ export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } =
 export const IGNORED_HUB_PROPOSED_BUNDLES: number[] = [];
 export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 
-// This is the max distance on each chain that reorgs can happen.
+// This is the max anticipated distance on each chain before RPC data is likely to be consistent amongst providers.
+// This distance should consider re-orgs, but also the time needed for various RPC providers to agree on chain state.
 // Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
 // This is intended to be conservative.
-export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
-  1: 64,
+export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
+  1: 128,
   10: 120,
   137: 256,
   288: 0,
-  324: 0,
+  324: 512,
   8453: 120,
-  42161: 0,
+  42161: 32,
   // Testnets:
   5: 0,
   280: 0,
