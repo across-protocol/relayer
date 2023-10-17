@@ -121,7 +121,7 @@ class CacheProvider extends RateLimitedProvider {
 
     const { chainId } = this.network;
     if (CHAIN_CACHE_FOLLOW_DISTANCE[chainId] === undefined) {
-      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${chainId}`);
+      throw new Error(`CacheProvider:constructor no CHAIN_CACHE_FOLLOW_DISTANCE for chain ${chainId}`);
     }
 
     this.maxReorgDistance = CHAIN_CACHE_FOLLOW_DISTANCE[chainId];
