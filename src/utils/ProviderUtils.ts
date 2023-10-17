@@ -6,12 +6,12 @@ import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
 import {
-  MAX_REORG_DISTANCE,
+  CHAIN_CACHE_FOLLOW_DISTANCE,
   PROVIDER_CACHE_TTL,
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
   BLOCK_NUMBER_TTL,
 } from "../common";
-import { delay, Logger } from "./";
+import { delay, getOriginFromURL, Logger } from "./";
 import { compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
 
 const logger = Logger;
@@ -119,14 +119,15 @@ class CacheProvider extends RateLimitedProvider {
   ) {
     super(...jsonRpcConstructorParams);
 
-    if (MAX_REORG_DISTANCE[this.network.chainId] === undefined) {
-      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
+    const { chainId } = this.network;
+    if (CHAIN_CACHE_FOLLOW_DISTANCE[chainId] === undefined) {
+      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${chainId}`);
     }
 
-    this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
+    this.maxReorgDistance = CHAIN_CACHE_FOLLOW_DISTANCE[chainId];
 
     // Pre-compute as much of the redis key as possible.
-    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}`;
+    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${chainId}`;
     this.getBlockByNumberPrefix = `${cachePrefix}:getBlockByNumber,`;
     this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
     this.callCachePrefix = `${cachePrefix}:eth_call,`;
@@ -522,12 +523,10 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
       const delayMs = baseDelay + baseDelay * Math.random();
 
       if (logger && rateLimitLogCounter++ % logEveryNRateLimitErrors === 0) {
-        // Make an effort to filter out any api keys.
-        const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
         logger.debug({
           at: "ProviderUtils#rpcRateLimited",
           message: `Got rate-limit (429) response on attempt ${attempt}.`,
-          rpc: regex ? regex[1] : url,
+          rpc: getOriginFromURL(url),
           retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,
         });
