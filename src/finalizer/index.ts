@@ -28,13 +28,12 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
 } from "../common";
-import { ChainFinalizer, Withdrawal as _Withdrawal } from "./types";
+import { ChainFinalizer, Withdrawal } from "./types";
 
 type TransactionReceipt = providers.TransactionReceipt;
 
-type Withdrawal = _Withdrawal & { txns: Multicall2Call[] };
-
 const { isError, isEthersError } = typeguards;
+const { isDefined } = sdkUtils;
 
 config();
 let logger: winston.Logger;
@@ -75,7 +74,7 @@ export async function finalize(
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const multicall2 = getMultisender(hubChainId, hubSigner);
-  const finalizationsToBatch: Withdrawal[] = [];
+  const finalizationsToBatch: { txn: Multicall2Call; withdrawal?: Withdrawal }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   for (const chainId of configuredChainIds) {
@@ -102,61 +101,42 @@ export async function finalize(
 
     const network = getNetworkName(chainId);
     logger.debug({ at: "finalize", message: `Spawning ${network} finalizer.`, latestBlockToFinalize });
-    const { callData: txns, withdrawals: _withdrawals } = await chainFinalizer(
+    const { callData, withdrawals } = await chainFinalizer(
       logger,
       hubSigner,
       hubPoolClient,
       client,
       latestBlockToFinalize
     );
+
+    callData.forEach((txn, idx) => {
+      finalizationsToBatch.push({ txn, withdrawal: withdrawals[idx] });
+    });
     logger.debug({
       at: "finalize",
-      message: `Found ${_withdrawals.length} ${network} withdrawals for finalization.`,
+      message: `Found ${withdrawals.length} ${network} withdrawals for finalization.`,
     });
-
-    if (_withdrawals.length === 0) {
-      continue;
-    }
-
-    if (![1, 2].includes(txns.length / _withdrawals.length)) {
-      logger.warn({
-        at: "finalize",
-        message: `Unexpected ${network} txn/withdrawal ratio (${txns.length / _withdrawals.length}).`,
-        txns,
-        withdrawals: _withdrawals,
-      });
-      continue;
-    }
-
-    // Normalise withdawals, such that 1 withdrawal has an array of calldata (usually only 1 call), but can be more.
-    // @todo: Refactor the underlying adapters so they return in this data structure.
-    const withdrawals: Withdrawal[] = _withdrawals.map((withdrawal) => {
-      return { ...withdrawal, txns: [] };
-    });
-
-    // Append calldata. If multiple calls are needed per withdrawal (i.e. Polygon),
-    // require that the 2nd batch is appended to the first.
-    txns.forEach((txn, i) => withdrawals[i % withdrawals.length].txns.push(txn));
-
-    finalizationsToBatch.push(...withdrawals);
   }
 
   // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async (withdrawal) => {
-    const { txns } = withdrawal;
+  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
     try {
-      const txn = await multicall2.populateTransaction.aggregate(txns);
+      const txn = await multicall2.populateTransaction.aggregate([_txn]);
       await multicall2.provider.estimateGas(txn);
       return true;
     } catch (err) {
-      const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
-      const network = getNetworkName(l2ChainId);
-      logger.info({
-        at: "finalizer",
-        message: `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`,
-        txns,
-        reason: isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error",
-      });
+      const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+      let message: string;
+
+      if (isDefined(withdrawal)) {
+        const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
+        const network = getNetworkName(l2ChainId);
+        message = `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`;
+      } else {
+        // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
+        message = "Unknown finalizer simulation failure.";
+      }
+      logger.info({ at: "finalizer", message, reason, txn: _txn });
       return false;
     }
   });
@@ -165,7 +145,7 @@ export async function finalize(
     let txn: TransactionReceipt;
     try {
       // Note: If the sum of finalizations approaches the gas limit, consider slicing them up.
-      const txns = finalizations.map(({ txns }) => txns).flat();
+      const txns = finalizations.map(({ txn }) => txn);
       txn = await (await multicall2.aggregate(txns)).wait();
     } catch (_error) {
       const error = _error as Error;
@@ -180,10 +160,14 @@ export async function finalize(
       return;
     }
 
-    const { withdrawals = [], proofs = [] } = groupBy(finalizations, ({ type }) =>
-      type === "withdrawal" ? "withdrawals" : "proofs"
+    const { withdrawals = [], proofs = [] } = groupBy(
+      finalizations.filter(({ withdrawal }) => isDefined(withdrawal)),
+      ({ withdrawal: { type } }) => {
+        return type === "withdrawal" ? "withdrawals" : "proofs";
+      }
     );
-    proofs.forEach(({ l2ChainId, amount, l1TokenSymbol: symbol }) => {
+
+    proofs.forEach(({ withdrawal: { l2ChainId, amount, l1TokenSymbol: symbol } }) => {
       const spokeChain = getNetworkName(l2ChainId);
       logger.info({
         at: "Finalizer",
@@ -191,7 +175,7 @@ export async function finalize(
         transactionHash: blockExplorerLink(txn.transactionHash, hubChainId),
       });
     });
-    withdrawals.forEach(({ l2ChainId, amount, l1TokenSymbol: symbol }) => {
+    withdrawals.forEach(({ withdrawal: { l2ChainId, amount, l1TokenSymbol: symbol } }) => {
       const spokeChain = getNetworkName(l2ChainId);
       logger.info({
         at: "Finalizer",
