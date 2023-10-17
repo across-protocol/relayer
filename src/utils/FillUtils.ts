@@ -257,6 +257,8 @@ export async function getUnfilledDeposits(
     );
   }
 
+  const latestHubPoolBlock = hubPoolClient.latestBlockNumber;
+
   // Iterate over each chainId and check for unfilled deposits.
   for (const originClient of Object.values(spokePoolClients)) {
     const { chainId: originChainId } = originClient;
@@ -273,7 +275,9 @@ export async function getUnfilledDeposits(
         originClient.getDepositsForDestinationChain(destinationChain);
 
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
-        .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
+        .filter(
+          (deposit) => deposit.blockNumber >= earliestBlockNumber && deposit.quoteBlockNumber <= latestHubPoolBlock
+        )
         .map((deposit) => {
           let version: number;
           // To determine if the fill is a UBA fill, we need to check against the UBA bundle start blocks.
