@@ -300,7 +300,7 @@ export class Relayer {
     }
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit: BigNumber): void {
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -536,7 +536,7 @@ export class Relayer {
     }
 
     const preferredChainId =
-      fillAmount.eq(deposit.amount) && !fillsInQueueForSameDeposit
+      fillAmount.eq(deposit.amount)
         ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
         : destinationChainId;
 
