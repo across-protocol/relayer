@@ -411,8 +411,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // The first fill is still pending but if we rerun the relayer loop, it shouldn't try to fill a second time.
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    // Only still 1 transaction.
-    expect(multiCallerClient.transactionCount()).to.equal(1); // no Transactions to send.
+    expect(multiCallerClient.transactionCount()).to.equal(0); // no new transactions were enqueued.
   });
 
   it("Respects configured relayer routes", async function () {
