@@ -1,7 +1,7 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { GAS_TOKEN_BY_CHAIN_ID, HubPoolClient, ProfitClient, WETH } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { BigNumber, toBNWei, winston } from "../utils";
+import { BigNumber, winston } from "../utils";
 
 export class MockProfitClient extends ProfitClient {
   constructor(
@@ -25,8 +25,8 @@ export class MockProfitClient extends ProfitClient {
 
     // Some tests run against mocked chains, so hack in the necessary parts
     Object.values(spokePoolClients).map(({ chainId }) => {
-        this.setGasCost(chainId, sdkUtils.bnOne);
-        GAS_TOKEN_BY_CHAIN_ID[chainId] ??= WETH;
+      this.setGasCost(chainId, sdkUtils.bnOne);
+      GAS_TOKEN_BY_CHAIN_ID[chainId] ??= WETH;
     });
     this.setTokenPrice(WETH, sdkUtils.bnOne);
   }
