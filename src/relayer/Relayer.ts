@@ -256,7 +256,7 @@ export class Relayer {
             message: "Initiating slow fill for grey listed depositor",
             depositor: deposit.depositor,
           });
-          this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
+          this.zeroFillDeposit(deposit);
         }
         // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
         // so we don't fast fill an already slow filled deposit from the slow fill-only list.
@@ -279,7 +279,7 @@ export class Relayer {
         // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
         if (sendSlowRelays && tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) {
-          this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
+          this.zeroFillDeposit(deposit);
         }
       }
     }
@@ -343,6 +343,14 @@ export class Relayer {
 
     // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
     this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
+  }
+
+  /**
+   * @description Initiate a zero-fill for a deposit.
+   * @param deposit Deposit object to zero-fill.
+   */
+  zeroFillDeposit(deposit: Deposit): void {
+    this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
   // Strategy for requesting refunds: Query all refunds requests, and match them to fills.
