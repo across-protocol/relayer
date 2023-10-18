@@ -114,6 +114,9 @@ export class Relayer {
     const { config } = this;
     const { acrossApiClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
+    // Flush any pre-existing enqueued transactions that might not have been executed.
+    this.clients.multiCallerClient.clearTransactionQueue();
+
     const unfilledDeposits = await this.getUnfilledDeposits();
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
@@ -516,21 +519,7 @@ export class Relayer {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
 
-    // TODO: Consider adding some way for Relayer to delete transactions in Queue for fills for same deposit.
-    // This way the relayer could set a repayment chain ID for any fill that follows a 1 wei fill in the queue.
-    // This isn't implemented due to complexity because its a very rare case in production, because its very
-    // unlikely that a relayer could enqueue a 1 wei fill (lacking balance to fully fill it) for a deposit and
-    // then later on in the run have enough balance to fully fill it.
-    const fillsInQueueForSameDeposit = this.clients.multiCallerClient
-      .getQueuedTransactions(deposit.destinationChainId)
-      .some(({ method, args }) => {
-        return (
-          (method === "fillRelay" && args[9] === depositId && args[6] === originChainId) ||
-          (method === "fillRelayWithUpdatedDeposit" && args[11] === depositId && args[7] === originChainId)
-        );
-      });
-
-    if (!fillAmount.eq(deposit.amount) || fillsInQueueForSameDeposit) {
+    if (!fillAmount.eq(deposit.amount)) {
       const originChain = getNetworkName(originChainId);
       const destinationChain = getNetworkName(destinationChainId);
       this.logger.debug({
