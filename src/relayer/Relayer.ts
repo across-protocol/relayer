@@ -23,6 +23,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
+const zeroFillAmount = sdkUtils.bnOne;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
@@ -112,6 +113,9 @@ export class Relayer {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { config } = this;
     const { acrossApiClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
+
+    // Flush any pre-existing enqueued transactions that might not have been executed.
+    this.clients.multiCallerClient.clearTransactionQueue();
 
     const unfilledDeposits = await this.getUnfilledDeposits();
 
@@ -299,18 +303,27 @@ export class Relayer {
       });
       return;
     }
-    this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChainId });
+    const zeroFill = fillAmount.eq(zeroFillAmount);
+    this.logger.debug({
+      at: "Relayer",
+      message: zeroFill ? "Zero filling" : "Filling deposit",
+      deposit,
+      repaymentChainId,
+    });
 
     // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
     // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
     // original hash with the old fee hasn't been filled.
     const [method, argBuilder, messageModifier] = isDepositSpedUp(deposit)
-      ? ["fillRelayWithUpdatedDeposit", buildFillRelayWithUpdatedFeeProps, "with modified fee "]
+      ? ["fillRelayWithUpdatedDeposit", buildFillRelayWithUpdatedFeeProps, "with modified parameters "]
       : ["fillRelay", buildFillRelayProps, ""];
 
+    // prettier-ignore
     const message = fillAmount.eq(deposit.amount)
       ? `Filled deposit ${messageModifier}🚀`
-      : `Partially filled deposit ${messageModifier}📫"`;
+      : zeroFill
+        ? `Zero filled deposit ${messageModifier}🐌`
+        : `Partially filled deposit ${messageModifier}📫`;
 
     this.clients.multiCallerClient.enqueueTransaction({
       contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool,
@@ -321,11 +334,20 @@ export class Relayer {
       mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount),
     });
 
-    // TODO: Revisit in the future when we implement partial fills.
-    this.fullyFilledDeposits[fillKey] = true;
+    // @dev: Only zero fills _or_ fills that complete the transfer are attempted, so zeroFill indicates whether the
+    // deposit was filled to completion. @todo: Revisit in the future when we implement partial fills.
+    this.fullyFilledDeposits[fillKey] = !zeroFill;
 
     // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
     this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
+  }
+
+  /**
+   * @description Initiate a zero-fill for a deposit.
+   * @param deposit Deposit object to zero-fill.
+   */
+  zeroFillDeposit(deposit: Deposit): void {
+    this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
   // Strategy for requesting refunds: Query all refunds requests, and match them to fills.
@@ -482,34 +504,6 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({ chainId, contract, method, args, message, mrkdwn });
   }
 
-  zeroFillDeposit(deposit: Deposit): void {
-    // We can only overwrite repayment chain ID if we can fully fill the deposit.
-    const repaymentChainId = deposit.destinationChainId;
-    const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
-    this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });
-    try {
-      // Note: Ignore deposit.newRelayerFeePct because slow relay leaves use a 0% relayer fee if executed.
-
-      // Add the zero fill fill transaction to the multiCallerClient so it will be executed with the next batch.
-      this.clients.multiCallerClient.enqueueTransaction({
-        contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
-        chainId: deposit.destinationChainId,
-        method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
-        message: "Zero size relay sent 🐌", // message sent to logger.
-        mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
-      });
-      this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
-    } catch (error) {
-      this.logger.error({
-        at: "Relayer",
-        message: "Error creating zeroFillRelayTx",
-        error,
-        notificationPath: "across-error",
-      });
-    }
-  }
-
   protected async resolveRepaymentChain(
     version: number,
     deposit: DepositWithBlock,
@@ -519,21 +513,7 @@ export class Relayer {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
 
-    // TODO: Consider adding some way for Relayer to delete transactions in Queue for fills for same deposit.
-    // This way the relayer could set a repayment chain ID for any fill that follows a 1 wei fill in the queue.
-    // This isn't implemented due to complexity because its a very rare case in production, because its very
-    // unlikely that a relayer could enqueue a 1 wei fill (lacking balance to fully fill it) for a deposit and
-    // then later on in the run have enough balance to fully fill it.
-    const fillsInQueueForSameDeposit = this.clients.multiCallerClient
-      .getQueuedTransactions(deposit.destinationChainId)
-      .some(({ method, args }) => {
-        return (
-          (method === "fillRelay" && args[9] === depositId && args[6] === originChainId) ||
-          (method === "fillRelayWithUpdatedDeposit" && args[11] === depositId && args[7] === originChainId)
-        );
-      });
-
-    if (!fillAmount.eq(deposit.amount) || fillsInQueueForSameDeposit) {
+    if (!fillAmount.eq(deposit.amount)) {
       const originChain = getNetworkName(originChainId);
       const destinationChain = getNetworkName(destinationChainId);
       this.logger.debug({
@@ -672,13 +652,6 @@ export class Relayer {
     return mrkdwn;
   }
 
-  private constructZeroSizeFilledMrkdwn(deposit: Deposit): string {
-    return (
-      this.constructBaseFillMarkdown(deposit, toBN(0)) +
-      "Has been relayed with 0 size due to a token shortfall! This will initiate a slow relay for this deposit."
-    );
-  }
-
   private constructBaseFillMarkdown(deposit: Deposit, fillAmount: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
@@ -688,11 +661,16 @@ export class Relayer {
     const _fillAmount = createFormatFunction(2, 4, false, decimals)(fillAmount.toString());
     const relayerFeePct = formatFeePct(deposit.relayerFeePct);
     const realizedLpFeePct = formatFeePct(deposit.realizedLpFeePct);
-    return (
+
+    let msg =
       `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${amount} ${symbol},` +
       ` with depositor ${depositor}. Fill amount of ${_fillAmount} ${symbol} with` +
-      ` relayerFee ${relayerFeePct}% & realizedLpFee ${realizedLpFeePct}%.`
-    );
+      ` relayerFee ${relayerFeePct}% & realizedLpFee ${realizedLpFeePct}%.`;
+    if (fillAmount.eq(zeroFillAmount)) {
+      msg += " Has been zero filled due to a token shortfall! This will initiate a slow relay for this deposit.";
+    }
+
+    return msg;
   }
 
   private constructRefundRequestMarkdown(fill: FillWithBlock): string {
