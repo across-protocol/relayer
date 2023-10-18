@@ -133,7 +133,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.setTokenPrice(l1Token.address, bnOne);
-    Object.values(spokePoolClients).map((spokePoolClient) => profitClient.setGasCost(spokePoolClient.chainId, bnOne));
 
     relayerInstance = new Relayer(
       relayer.address,
