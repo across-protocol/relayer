@@ -84,8 +84,9 @@ export class AdapterManager {
     await utils.mapAsync(
       this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
       async (chainId) => {
-        const wrapThreshold = inventoryConfig.wrapEtherThresholdPerChain[chainId] ?? inventoryConfig.wrapEtherThreshold;
-        const wrapTarget = inventoryConfig.wrapEtherTargetPerChain[chainId] ?? inventoryConfig.wrapEtherTarget;
+        const wrapThreshold =
+          inventoryConfig?.wrapEtherThresholdPerChain?.[chainId] ?? inventoryConfig.wrapEtherThreshold;
+        const wrapTarget = inventoryConfig?.wrapEtherTargetPerChain?.[chainId] ?? inventoryConfig.wrapEtherTarget;
         assert(
           wrapThreshold.gte(wrapTarget),
           `wrapEtherThreshold ${wrapThreshold.toString()} must be >= wrapEtherTarget ${wrapTarget.toString()}`

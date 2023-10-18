@@ -158,6 +158,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
   // The token client needs route data, so wait for update before checking approvals.
+  clients.tokenClient.clearTokenData();
   await clients.tokenClient.update();
   if (config.sendingRelaysEnabled) {
     await clients.tokenClient.setOriginTokenApprovals();

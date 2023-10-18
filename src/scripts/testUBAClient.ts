@@ -17,6 +17,7 @@ import {
   getBlockForTimestamp,
   disconnectRedisClient,
   REDIS_URL,
+  getRedisCache,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -25,8 +26,8 @@ import {
 import { updateClients } from "../common";
 import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { createDataworker } from "../dataworker";
-import { RedisCache } from "../caching/RedisCache";
 import { ConfigStoreClient } from "../clients";
+import { CachingMechanismInterface } from "../interfaces";
 
 config();
 
@@ -117,10 +118,10 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
   );
 
   // Now, simply update the UBA client:
-  const redisCache = new RedisCache(REDIS_URL);
+  let redisCache: CachingMechanismInterface | undefined;
   let successfullyInstantiated = false;
   try {
-    await redisCache.instantiate();
+    redisCache = await getRedisCache(logger, REDIS_URL);
     successfullyInstantiated = true;
   } catch (error) {
     logger.warn({
@@ -136,7 +137,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
     clients.hubPoolClient,
     spokePoolClients,
     // Pass in no redis client for now as testing with fresh state is easier to reason about
-    successfullyInstantiated ? new RedisCache(REDIS_URL) : undefined
+    successfullyInstantiated ? redisCache : undefined
   );
   await ubaClient.update();
 }
