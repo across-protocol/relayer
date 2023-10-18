@@ -113,8 +113,7 @@ describe("Relayer: Token balance shortfall", async function () {
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
 
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
-    profitClient.setTokenPrice(l1Token.address, bnOne);
-    Object.values(spokePoolClients).map((spokePoolClient) => profitClient.setGasCost(spokePoolClient.chainId, bnOne));
+    profitClient.setTokenPrice(l1Token.address, sdkUtils.bnOne);
 
     relayerInstance = new Relayer(
       relayer.address,
