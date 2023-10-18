@@ -56,7 +56,7 @@ export class RedisClient {
   }
 
   async disconnect(): Promise<void> {
-    await this.client.disconnect();
+    await disconnectRedisClient(this.client, this.logger);
   }
 }
 
@@ -82,7 +82,8 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
       });
       redisClients[url] = new RedisClient(redisClient, globalNamespace);
     } catch (err) {
-      await redisClient?.disconnect();
+      await disconnectRedisClient(redisClient, logger);
+      delete redisClients[url];
       logger?.debug({
         at: "RedisUtils#getRedis",
         message: `Failed to connect to redis server at ${url}.`,
@@ -175,4 +176,24 @@ export function objectWithBigNumberReviver(_: string, value: { type: string; hex
     return value;
   }
   return toBN(value.hex);
+}
+
+/**
+ * An internal function to disconnect from a redis client. This function is designed to NOT throw an error if the
+ * disconnect fails.
+ * @param client The redis client to disconnect from.
+ * @param logger An optional logger to use to log the disconnect.
+ */
+async function disconnectRedisClient(client: _RedisClient, logger?: winston.Logger): Promise<void> {
+  let disconnectSuccessful = true;
+  try {
+    await client.disconnect();
+  } catch (_e) {
+    disconnectSuccessful = false;
+  }
+  const url = client.options.url ?? "unknown";
+  logger?.debug({
+    at: "RedisClient#disconnect",
+    message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,
+  });
 }
