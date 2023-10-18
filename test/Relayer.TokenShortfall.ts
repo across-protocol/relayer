@@ -40,8 +40,6 @@ import {
   winston,
 } from "./utils";
 
-const { bnOne } = sdkUtils;
-
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;

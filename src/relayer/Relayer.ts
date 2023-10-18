@@ -535,10 +535,9 @@ export class Relayer {
       });
     }
 
-    const preferredChainId =
-      fillAmount.eq(deposit.amount)
-        ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
-        : destinationChainId;
+    const preferredChainId = fillAmount.eq(deposit.amount)
+      ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
+      : destinationChainId;
 
     const refundFee = this.computeRefundFee(version, deposit);
     const [profitable, gasLimit] = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
