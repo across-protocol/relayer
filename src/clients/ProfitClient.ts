@@ -278,7 +278,7 @@ export class ProfitClient {
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token
-  ): FillProfit | undefined {
+  ): FillProfit {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
 
     const fill = this.calculateFillProfitability(deposit, fillAmount, refundFee, l1Token, minRelayerFeePct);
