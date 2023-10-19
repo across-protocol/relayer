@@ -1,17 +1,28 @@
+import { random } from "lodash";
 import { Provider } from "@ethersproject/abstract-provider";
 import { constants as ethersConstants, utils as ethersUtils } from "ethers";
 import * as constants from "../common/Constants";
-import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
+import {
+    assert,
+    BigNumber,
+    formatFeePct,
+    getCurrentTime,
+    isDefined,
+    max,
+    winston,
+    toBNWei,
+    toBN,
+    assign
+} from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 const { formatEther } = ethersUtils;
-const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+const { bnOne, bnUint32Max, fixedPointAdjustment: fixedPoint,  resolveDepositMessage} = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
-// @todo: These don't belong in the ProfitClient; they should be relocated.
 export const MATIC = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
 export const USDC = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
 export const WBTC = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
@@ -51,6 +62,14 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
+
+// @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
+// Since _some_ known recipient address is needed for simulating a fill, default to this one. nb. Since
+// the SpokePool implements custom behaviour when relayer === recipient, it's important not to use the
+// relayer's own address.
+// @todo: Consider using an address with confirmed 0 destinationToken balance so that the initial cost
+// of populating storage is included in the estimate.
+const testRecipient = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
 
 // These are used to simulate fills on L2s to return estimated gas costs.
 // Note: the type here assumes that all of these classes take the same constructor parameters.
@@ -97,6 +116,7 @@ export class ProfitClient {
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     readonly enabledChainIds: number[],
+    readonly relayerAddress: string,
     readonly defaultMinRelayerFeePct = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability = false,
     protected gasMultiplier = toBNWei(1)
@@ -139,18 +159,27 @@ export class ProfitClient {
   }
 
   // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
-  getTotalGasCost(chainId: number): BigNumber {
-    return this.totalGasCosts[chainId] ? toBN(this.totalGasCosts[chainId]) : ethersConstants.Zero;
+  getTotalGasCost(deposit: Deposit): BigNumber {
+    const { destinationChainId: chainId } = deposit;
+
+    // If there's no attached message, gas consumption from previous fills can be used in most cases.
+    // @todo: Simulate this per-token in future, because some ERC20s consume more gas.
+    if (resolveDepositMessage(deposit) === "0x" && isDefined(this.totalGasCosts[chainId])) {
+      return toBN(this.totalGasCosts[chainId]);
+    }
+
+    return ethersConstants.Zero; // @todo: Return uint256max in a follow-up change.
   }
 
   // Estimate the gas cost of filling this relay.
-  estimateFillCost(chainId: number): {
+  estimateFillCost(deposit: Deposit): {
     nativeGasCost: BigNumber;
     gasPriceUsd: BigNumber;
     gasCostUsd: BigNumber;
   } {
+    const { destinationChainId: chainId } = deposit;
     const gasPriceUsd = this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[chainId]);
-    const nativeGasCost = this.getTotalGasCost(chainId); // gas cost in native token
+    const nativeGasCost = this.getTotalGasCost(deposit); // gas cost in native token
 
     if (gasPriceUsd.lte(0) || nativeGasCost.lte(0)) {
       const err = gasPriceUsd.lte(0) ? "gas price" : "gas consumption";
@@ -239,7 +268,7 @@ export class ProfitClient {
     const relayerCapitalUsd = relayerCapital.mul(tokenPriceUsd).div(fixedPoint);
 
     // Estimate the gas cost of filling this relay.
-    const { nativeGasCost, gasPriceUsd, gasCostUsd } = this.estimateFillCost(deposit.destinationChainId);
+    const { nativeGasCost, gasPriceUsd, gasCostUsd } = this.estimateFillCost(deposit);
 
     // Determine profitability.
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd).sub(refundFeeUsd);
@@ -395,14 +424,35 @@ export class ProfitClient {
   }
 
   private async updateGasCosts(): Promise<void> {
+    const { enabledChainIds, hubPoolClient, relayerAddress, relayerFeeQueries } = this;
+    const depositId = random(bnUint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
+    const fillAmount = bnOne;
+    const quoteTimestamp = getCurrentTime();
+
     // Pre-fetch total gas costs for relays on enabled chains.
-    const gasCosts = await Promise.all(
-      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
-    );
-    for (let i = 0; i < this.enabledChainIds.length; i++) {
+    await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId, idx) => {
+      const destinationToken = destinationChainId === hubPoolClient.chainId
+        ? USDC
+        : hubPoolClient.getDestinationTokenForL1Token(USDC, destinationChainId);
+      const deposit: Deposit = {
+        depositId,
+        depositor: testRecipient,
+        recipient: testRecipient,
+        originToken: "", // not relevant
+        amount: fillAmount,
+        originChainId: this.enabledChainIds.find((chainId) => chainId !== destinationChainId),
+        destinationChainId,
+        relayerFeePct: bnOne,
+        realizedLpFeePct: bnOne,
+        destinationToken,
+        quoteTimestamp,
+        message: "0x",
+      };
+
       // An extra toBN cast is needed as the provider returns a different BigNumber type.
-      this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
-    }
+      const gasCost = await relayerFeeQueries[destinationChainId].getGasCosts(deposit, fillAmount, relayerAddress);
+      this.totalGasCosts[this.enabledChainIds[idx]] = toBN(gasCost);
+    });
 
     this.logger.debug({
       at: "ProfitClient",
@@ -420,7 +470,6 @@ export class ProfitClient {
     const gasMarkup = 0;
     return new QUERY_HANDLERS[chainId](
       provider,
-      undefined,
       undefined,
       undefined,
       undefined,

@@ -9,6 +9,7 @@ export class MockProfitClient extends ProfitClient {
     hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     enabledChainIds: number[],
+    relayerAddress: string,
     defaultMinRelayerFeePct?: BigNumber,
     debugProfitability?: boolean,
     gasMultiplier?: BigNumber
@@ -18,6 +19,7 @@ export class MockProfitClient extends ProfitClient {
       hubPoolClient,
       spokePoolClients,
       enabledChainIds,
+      relayerAddress,
       defaultMinRelayerFeePct,
       debugProfitability,
       gasMultiplier
