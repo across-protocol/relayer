@@ -315,7 +315,7 @@ export class ProfitClient {
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token
-  ): { profitable: boolean; nativeGasCost: BigNumber } {
+  ): Pick<FillProfit, "profitable" | "nativeGasCost"> {
     let profitable = false;
     let nativeGasCost = uint256Max;
     try {
