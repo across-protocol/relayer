@@ -4,7 +4,7 @@ import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
-import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
+import { getRedis, incrementProviderErrorCount, RedisClient, setRedisKey } from "./RedisUtils";
 import {
   CHAIN_CACHE_FOLLOW_DISTANCE,
   PROVIDER_CACHE_TTL,
@@ -242,7 +242,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     readonly delay: number,
     readonly maxConcurrency: number,
     providerCacheNamespace: string,
-    redisClient?: RedisClient
+    readonly redisClient?: RedisClient
   ) {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
@@ -302,6 +302,21 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     };
 
     const results = await Promise.allSettled(requiredProviders.map(tryWithFallback));
+
+    // Iterate over all the errors and increment the error count for each provider.
+    await Promise.all(
+      errors.map(async ([provider]) => {
+        // Increment the error count for this provider.
+        // Note: redis must be enabled for this to work.
+        if (this.redisClient) {
+          await incrementProviderErrorCount(
+            this.redisClient,
+            getOriginFromURL(provider.connection.url),
+            this.network.chainId
+          );
+        }
+      })
+    );
 
     if (!results.every(isPromiseFulfilled)) {
       // Format the error so that it's very clear which providers failed and succeeded.

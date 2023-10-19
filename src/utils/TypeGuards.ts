@@ -1,4 +1,6 @@
 import { utils } from "@across-protocol/sdk-v2";
+import * as superstruct from "superstruct";
+import { ProviderErrorCount } from "./RedisUtils";
 
 export const { isDefined, isPromiseFulfilled, isPromiseRejected } = utils;
 
@@ -12,4 +14,15 @@ export function isKeyOf<T extends V, V extends number | string | symbol>(
   obj: Record<T, unknown>
 ): input is T {
   return input in obj;
+}
+
+const providerErrorCountSchema = superstruct.object({
+  chainId: superstruct.integer(),
+  provider: superstruct.string(),
+  errorCount: superstruct.min(superstruct.number(), 0),
+  lastTime: superstruct.min(superstruct.integer(), 0),
+});
+
+export function isProviderErrorCount(input: unknown): input is ProviderErrorCount {
+  return providerErrorCountSchema.is(input);
 }
