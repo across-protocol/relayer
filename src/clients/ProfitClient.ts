@@ -17,19 +17,16 @@ export const USDC = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
 export const WBTC = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
 export const WETH = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
 
-// @note All FillCost and FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
-type FillCost = {
-  nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
-  gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
-  gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
-};
-
-export type FillProfit = FillCost & {
+// @note All BigNumbers are scaled to 18 decimals unless specified otherwise.
+export type FillProfit = {
   grossRelayerFeePct: BigNumber; // Max of relayerFeePct and newRelayerFeePct from Deposit.
   tokenPriceUsd: BigNumber; // Resolved USD price of the bridged token.
   fillAmountUsd: BigNumber; // Amount of the bridged token being filled.
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
+  nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
   gasMultiplier: BigNumber; // Multiplier to apply to nativeGasCost as padding or discount
+  gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
+  gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
   refundFeeUsd: BigNumber; // Estimated relayer refund fee on the refund chain.
   relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
@@ -147,7 +144,7 @@ export class ProfitClient {
   }
 
   // Estimate the gas cost of filling this relay.
-  estimateFillCost(chainId: number): FillCost {
+  estimateFillCost(chainId: number): Pick<FillProfit, "nativeGasCost" | "gasPriceUsd" | "gasCostUsd"> {
     const gasPriceUsd = this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[chainId]);
     const nativeGasCost = this.getTotalGasCost(chainId); // gas cost in native token
 
@@ -318,7 +315,7 @@ export class ProfitClient {
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token
-  ): [boolean, BigNumber] {
+  ): { profitable: boolean; nativeGasCost: BigNumber } {
     let profitable = false;
     let nativeGasCost = uint256Max;
     try {
@@ -332,7 +329,10 @@ export class ProfitClient {
       });
     }
 
-    return [profitable || this.isTestnet, nativeGasCost];
+    return {
+      profitable: profitable || this.isTestnet,
+      nativeGasCost,
+    };
   }
 
   captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {

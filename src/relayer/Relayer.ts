@@ -271,7 +271,7 @@ export class Relayer {
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
 
-        const [repaymentChainId, gasLimit] = await this.resolveRepaymentChain(
+        const { repaymentChainId, gasLimit } = await this.resolveRepaymentChain(
           version,
           deposit,
           unfilledAmount,
@@ -521,7 +521,7 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
-  ): Promise<[number | undefined, BigNumber]> {
+  ): Promise<{ repaymentChainId?: number | undefined; gasLimit: BigNumber }> {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
 
@@ -540,8 +540,12 @@ export class Relayer {
       : destinationChainId;
 
     const refundFee = this.computeRefundFee(version, deposit);
-    const [profitable, gasLimit] = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
-    return [profitable ? preferredChainId : undefined, gasLimit];
+    const { profitable, nativeGasCost } = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
+
+    return {
+      repaymentChainId: profitable ? preferredChainId : undefined,
+      gasLimit: nativeGasCost,
+    };
   }
 
   protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
