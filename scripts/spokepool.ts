@@ -82,15 +82,13 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
 
   const relayerFeePct = Zero; // @todo: Make configurable.
   const maxCount = MaxUint256;
-  const quoteTimestamp = Math.round(Date.now() / 1000);
 
-  const deposit = await spokePool.deposit(
+  const deposit = await spokePool.depositNow(
     recipient,
     token.address,
     amount,
     toChainId,
     relayerFeePct,
-    quoteTimestamp,
     "0x",
     maxCount
   );
