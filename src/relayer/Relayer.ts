@@ -240,7 +240,7 @@ export class Relayer {
           at: "Relayer",
           message: "Skipping fill for deposit with message",
           deposit,
-          spedUp: isDepositSpedUp(deposit),
+          depositUpdated: isDepositSpedUp(deposit),
         });
         continue;
       }
