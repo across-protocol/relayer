@@ -273,10 +273,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Ignores deposit with non-empty message", async function () {
-    // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-
     await buildDeposit(
       hubPoolClient,
       spokePool_1,
@@ -297,9 +293,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Uses new relayer fee pct on updated deposits", async function () {
-    // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     const deposit1 = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
 
     // Relayer will ignore any deposit with a non empty message. Test this by first modifying the deposit's
@@ -418,10 +411,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Selects the correct message in an updated deposit", async function () {
-    // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-
     // Initial deposit without a message.
     const deposit = await buildDeposit(
       hubPoolClient,
