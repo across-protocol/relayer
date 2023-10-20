@@ -53,6 +53,12 @@ export type FillProfit = {
   profitable: boolean; // Fill profitability indicator.
 };
 
+type UnprofitableFill = {
+  deposit: DepositWithBlock;
+  fillAmount: BigNumber;
+  nativeGasCost: BigNumber;
+};
+
 export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   1: WETH,
   10: WETH,
@@ -103,12 +109,6 @@ const QUERY_HANDLERS: {
 
 const { PriceClient } = priceClient;
 const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
-
-type UnprofitableFill = {
-  deposit: DepositWithBlock;
-  fillAmount: BigNumber;
-  nativeGasCost: BigNumber;
-};
 
 export class ProfitClient {
   private readonly priceClient;
