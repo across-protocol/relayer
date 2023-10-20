@@ -166,12 +166,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
 
     await updateAllClients();
-  });
 
-  it("Correctly fetches single unfilled deposit and fills it", async function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+  });
+
+  it("Correctly fetches single unfilled deposit and fills it", async function () {
     const deposit1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     await updateAllClients();
@@ -206,8 +207,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Ignores deposits older than min deposit confirmation threshold", async function () {
-    // Send a deposit and save the block time.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     // Set MDC such that the deposit is is ignored. The profit client will return a fill USD amount of $0,
@@ -242,8 +241,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Ignores deposits with quote times in future", async function () {
-    // Send a deposit with the default quote time.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     // Set a non-zero quote time buffer, so that deposit quote time + buffer is > latest timestamp in
@@ -397,9 +394,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Shouldn't double fill a deposit", async function () {
-    // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     await updateAllClients();
@@ -446,10 +440,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     ];
     routes.forEach(({ from, to, enabled }) => expect(relayerInstance.routeEnabled(from, to)).to.equal(enabled));
 
-    // Verify that the relayer adheres to route validation.
-    // Deposit is not on a whitelisted destination chain so relayer shouldn't fill it.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-
     // Deposit on originChainId, destined for destinationChainId => expect ignored.
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
@@ -460,6 +450,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   it("UBA: Doesn't crash if client cannot support version bump", async function () {
     // Client is out of sync with on chain version, should crash.
     await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${UBA_MIN_CONFIG_STORE_VERSION ?? 2}`);
+
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);

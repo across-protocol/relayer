@@ -79,6 +79,7 @@ export async function constructRelayerClients(
     commonClients.hubPoolClient,
     spokePoolClients,
     enabledChainIds,
+    baseSigner.address,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier

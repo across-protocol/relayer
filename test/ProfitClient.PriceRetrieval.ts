@@ -5,6 +5,7 @@ import {
   createSpyLogger,
   hubPoolFixture,
   deployConfigStore,
+  randomAddress,
   winston,
   BigNumber,
   toBN,
@@ -76,7 +77,8 @@ describe("ProfitClient: Price Retrieval", async function () {
     await hubPoolClient.update();
 
     mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
-    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], toBN(0));
+    const relayerAddress = randomAddress();
+    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], relayerAddress, toBN(0));
   });
 
   it("Correctly fetches token prices", async function () {

@@ -15,7 +15,6 @@ import {
   getNetworkName,
   getUnfilledDeposits,
   isDefined,
-  isDepositSpedUp,
   toBN,
   toBNWei,
   winston,
@@ -23,7 +22,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
-const zeroFillAmount = sdkUtils.bnOne;
+const { isDepositSpedUp, bnOne: zeroFillAmount } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
@@ -634,7 +633,7 @@ export class Relayer {
           return;
         }
 
-        const gasCost = this.clients.profitClient.getTotalGasCost(deposit.destinationChainId).toString();
+        const gasCost = this.clients.profitClient.getTotalGasCost(deposit).toString();
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);
