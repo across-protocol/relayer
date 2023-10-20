@@ -69,7 +69,7 @@ const GAS_TOKEN_DECIMALS = 18;
 // relayer's own address.
 // @todo: Consider using an address with confirmed 0 destinationToken balance so that the initial cost
 // of populating storage is included in the estimate.
-const testRecipient = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
+const TEST_RECIPIENT = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
 
 // These are used to simulate fills on L2s to return estimated gas costs.
 // Note: the type here assumes that all of these classes take the same constructor parameters.
