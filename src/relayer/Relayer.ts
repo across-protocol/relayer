@@ -22,7 +22,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
-const { isDepositSpedUp, bnOne: zeroFillAmount, bnZero } = sdkUtils;
+const { isDepositSpedUp, bnOne: zeroFillAmount } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
