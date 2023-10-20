@@ -3,16 +3,16 @@ import { Provider } from "@ethersproject/abstract-provider";
 import { constants as ethersConstants, utils as ethersUtils } from "ethers";
 import * as constants from "../common/Constants";
 import {
-    assert,
-    BigNumber,
-    formatFeePct,
-    getCurrentTime,
-    isDefined,
-    max,
-    winston,
-    toBNWei,
-    toBN,
-    assign
+  assert,
+  BigNumber,
+  formatFeePct,
+  getCurrentTime,
+  isDefined,
+  max,
+  winston,
+  toBNWei,
+  toBN,
+  assign,
 } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
@@ -20,7 +20,7 @@ import { priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-prot
 import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 const { formatEther } = ethersUtils;
-const { bnOne, bnUint32Max, fixedPointAdjustment: fixedPoint,  resolveDepositMessage} = sdkUtils;
+const { bnOne, bnUint32Max, fixedPointAdjustment: fixedPoint, resolveDepositMessage } = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 export const MATIC = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
@@ -431,9 +431,10 @@ export class ProfitClient {
 
     // Pre-fetch total gas costs for relays on enabled chains.
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId, idx) => {
-      const destinationToken = destinationChainId === hubPoolClient.chainId
-        ? USDC
-        : hubPoolClient.getDestinationTokenForL1Token(USDC, destinationChainId);
+      const destinationToken =
+        destinationChainId === hubPoolClient.chainId
+          ? USDC
+          : hubPoolClient.getDestinationTokenForL1Token(USDC, destinationChainId);
       const deposit: Deposit = {
         depositId,
         depositor: testRecipient,

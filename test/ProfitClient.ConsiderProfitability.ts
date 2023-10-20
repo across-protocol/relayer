@@ -26,7 +26,7 @@ import {
   winston,
 } from "./utils";
 
-const { bnOne, bnZero, fixedPointAdjustment: fixedPoint, toGWei } = sdkUtils;
+const { bnZero, fixedPointAdjustment: fixedPoint, toGWei } = sdkUtils;
 const { formatEther } = ethers.utils;
 
 const chainIds = [originChainId, destinationChainId];
@@ -100,7 +100,7 @@ describe("ProfitClient: Consider relay profit", () => {
   // Define LOG_IN_TEST for logging to console.
   const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
   let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
-  let message = "0x"; // Empty message by default.
+  const message = "0x"; // Empty message by default.
 
   beforeEach(async () => {
     const [owner] = await ethers.getSigners();
@@ -269,7 +269,7 @@ describe("ProfitClient: Consider relay profit", () => {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
     chainIds.forEach((destinationChainId) => {
-      let deposit = { destinationChainId, message } as Deposit;
+      const deposit = { destinationChainId, message } as Deposit;
       const { gasCostUsd } = profitClient.estimateFillCost(deposit);
 
       Object.values(tokens).forEach((l1Token) => {
