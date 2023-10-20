@@ -1,4 +1,3 @@
-import { random } from "lodash";
 import { assert } from "chai";
 import { random } from "lodash";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
@@ -317,7 +316,12 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: expected.netRelayerFeeUsd,
             });
 
-            const { profitable } = await profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
+            const { profitable } = await profitClient.isFillProfitable(
+              deposit,
+              nativeFillAmount,
+              zeroRefundFee,
+              l1Token
+            );
             expect(profitable).to.equal(expected.profitable);
           }
         }

@@ -540,7 +540,10 @@ export class Relayer {
 
     const refundFee = this.computeRefundFee(version, deposit);
     const { profitable, nativeGasCost } = await profitClient.isFillProfitable(
-      deposit, fillAmount, refundFee, hubPoolToken
+      deposit,
+      fillAmount,
+      refundFee,
+      hubPoolToken
     );
 
     return {
