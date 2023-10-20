@@ -22,7 +22,6 @@ import { HubPoolClient } from ".";
 const { formatEther } = ethersUtils;
 const { EMPTY_MESSAGE } = sdkConsts;
 const {
-  bnZero,
   bnOne,
   bnUint32Max,
   bnUint256Max: uint256Max,
@@ -467,9 +466,9 @@ export class ProfitClient {
         depositId,
         depositor: TEST_RECIPIENT,
         recipient: TEST_RECIPIENT,
-        originToken: "", // not relevant
+        originToken: "", // Not verified by the SpokePool.
         amount: fillAmount,
-        originChainId: this.enabledChainIds.find((chainId) => chainId !== destinationChainId),
+        originChainId: destinationChainId, // Not verified by the SpokePool.
         destinationChainId,
         relayerFeePct: bnOne,
         realizedLpFeePct: bnOne,
