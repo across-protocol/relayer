@@ -22,7 +22,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
-const { isDepositSpedUp, bnOne: zeroFillAmount } = sdkUtils;
+const { isDepositSpedUp, bnOne: zeroFillAmount, bnZero } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
@@ -270,7 +270,7 @@ export class Relayer {
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
 
-        const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
+        const { repaymentChainId, gasCost } = await this.resolveRepaymentChain(
           version,
           deposit,
           unfilledAmount,
@@ -520,7 +520,7 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
-  ): Promise<{ repaymentChainId?: number | undefined; gasLimit: BigNumber }> {
+  ): Promise<{ repaymentChainId?: number | undefined; gasCost: BigNumber }> {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
 
@@ -539,11 +539,13 @@ export class Relayer {
       : destinationChainId;
 
     const refundFee = this.computeRefundFee(version, deposit);
-    const { profitable, nativeGasCost } = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
+    const { profitable, nativeGasCost } = await profitClient.isFillProfitable(
+      deposit, fillAmount, refundFee, hubPoolToken
+    );
 
     return {
       repaymentChainId: profitable ? preferredChainId : undefined,
-      gasLimit: nativeGasCost,
+      gasCost: nativeGasCost,
     };
   }
 
@@ -626,6 +628,7 @@ export class Relayer {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
         const { deposit, fillAmount, gasCost: _gasCost } = unprofitableDeposits[chainId][depositId];
+
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
