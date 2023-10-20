@@ -23,6 +23,7 @@ const { formatEther } = ethersUtils;
 const { EMPTY_MESSAGE } = sdkConsts;
 const {
   bnOne,
+  bnZero,
   bnUint32Max,
   bnUint256Max: uint256Max,
   fixedPointAdjustment: fixedPoint,
