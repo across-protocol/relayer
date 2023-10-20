@@ -27,7 +27,7 @@ const {
   bnUint256Max: uint256Max,
   fixedPointAdjustment: fixedPoint,
   isMessageEmpty,
-  resolveDepositMessage
+  resolveDepositMessage,
 } = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
@@ -104,11 +104,17 @@ const QUERY_HANDLERS: {
 const { PriceClient } = priceClient;
 const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
+type UnprofitableFill = {
+  deposit: DepositWithBlock;
+  fillAmount: BigNumber;
+  nativeGasCost: BigNumber;
+};
+
 export class ProfitClient {
   private readonly priceClient;
   protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
-  private unprofitableFills: { [chainId: number]: { deposit: DepositWithBlock; fillAmount: BigNumber }[] } = {};
+  private unprofitableFills: { [chainId: number]: UnprofitableFill[] } = {};
 
   // Track total gas costs of a relay on each chain.
   protected totalGasCosts: { [chainId: number]: BigNumber } = {};
@@ -367,9 +373,9 @@ export class ProfitClient {
     };
   }
 
-  captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {
-    this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount });
-    assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount }]);
+  captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber, gasCost: BigNumber): void {
+    this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount, gasCost });
+    assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount, gasCost }]);
   }
 
   anyCapturedUnprofitableFills(): boolean {

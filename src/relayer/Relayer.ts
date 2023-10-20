@@ -270,16 +270,16 @@ export class Relayer {
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
 
-        const { repaymentChainId, gasLimit } = await this.resolveRepaymentChain(
+        const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
           version,
           deposit,
           unfilledAmount,
           l1Token
         );
         if (isDefined(repaymentChainId)) {
-          this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId);
         } else {
-          profitClient.captureUnprofitableFill(deposit, unfilledAmount);
+          profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
       } else {
         tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
@@ -625,15 +625,13 @@ export class Relayer {
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const unprofitableDeposit = unprofitableDeposits[chainId][depositId];
-        const deposit: DepositWithBlock = unprofitableDeposit.deposit;
-        const fillAmount: BigNumber = unprofitableDeposit.fillAmount;
+        const { deposit, fillAmount, gasCost: _gasCost } = unprofitableDeposits[chainId][depositId];
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
         }
+        const gasCost = _gasCost.toString();
 
-        const gasCost = this.clients.profitClient.getTotalGasCost(deposit).toString();
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);
