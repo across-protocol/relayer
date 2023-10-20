@@ -48,7 +48,7 @@ export async function constructDataworkerClients(
   // Disable profitability by default as only the relayer needs it.
   // The dataworker only needs price updates from ProfitClient to calculate bundle volume.
   const profitClient = config.proposerEnabled
-    ? new ProfitClient(logger, commonClients.hubPoolClient, {}, [])
+    ? new ProfitClient(logger, commonClients.hubPoolClient, {}, [], "")
     : undefined;
 
   // Must come after hubPoolClient.
