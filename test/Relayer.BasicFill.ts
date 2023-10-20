@@ -40,7 +40,7 @@ import {
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 
-const { bnOne, bnUint256Max: uint256Max } = sdkUtils;
+const { bnOne } = sdkUtils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -280,7 +280,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
 
-    const deposit = await buildDeposit(
+    await buildDeposit(
       hubPoolClient,
       spokePool_1,
       erc20_1,

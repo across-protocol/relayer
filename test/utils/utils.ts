@@ -326,9 +326,9 @@ export async function buildDeposit(
   amount = amountToDeposit,
   relayerFeePct = depositRelayerFeePct,
   quoteTimestamp?: number,
-  message?: string,
+  message?: string
 ): Promise<Deposit> {
-  let _deposit = await utils.deposit(
+  const _deposit = await utils.deposit(
     spokePool,
     tokenToDeposit,
     recipientAndDepositor,
