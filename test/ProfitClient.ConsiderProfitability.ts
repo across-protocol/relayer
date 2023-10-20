@@ -1,5 +1,5 @@
 import { assert } from "chai";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   ConfigStoreClient,
   FillProfit,
@@ -100,7 +100,7 @@ describe("ProfitClient: Consider relay profit", () => {
   // Define LOG_IN_TEST for logging to console.
   const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
   let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
-  const message = "0x"; // Empty message by default.
+  const message = sdkConstants.EMPTY_MESSAGE; // Empty message by default.
 
   beforeEach(async () => {
     const [owner] = await ethers.getSigners();

@@ -1,6 +1,8 @@
 import { random } from "lodash";
 import { Provider } from "@ethersproject/abstract-provider";
 import { constants as ethersConstants, utils as ethersUtils } from "ethers";
+import { constants as sdkConsts, priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as constants from "../common/Constants";
 import {
   assert,
@@ -14,13 +16,12 @@ import {
   toBN,
   assign,
 } from "../utils";
-import { HubPoolClient } from ".";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
-import { priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
+import { HubPoolClient } from ".";
 
 const { formatEther } = ethersUtils;
-const { bnOne, bnUint32Max, fixedPointAdjustment: fixedPoint, resolveDepositMessage } = sdkUtils;
+const { EMPTY_MESSAGE } = sdkConsts;
+const { bnOne, bnUint32Max, fixedPointAdjustment: fixedPoint, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 export const MATIC = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
@@ -164,7 +165,7 @@ export class ProfitClient {
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
     // @todo: Simulate this per-token in future, because some ERC20s consume more gas.
-    if (resolveDepositMessage(deposit) === "0x" && isDefined(this.totalGasCosts[chainId])) {
+    if (isMessageEmpty(resolveDepositMessage(deposit)) && isDefined(this.totalGasCosts[chainId])) {
       return toBN(this.totalGasCosts[chainId]);
     }
 
@@ -437,8 +438,8 @@ export class ProfitClient {
           : hubPoolClient.getDestinationTokenForL1Token(USDC, destinationChainId);
       const deposit: Deposit = {
         depositId,
-        depositor: testRecipient,
-        recipient: testRecipient,
+        depositor: TEST_RECIPIENT,
+        recipient: TEST_RECIPIENT,
         originToken: "", // not relevant
         amount: fillAmount,
         originChainId: this.enabledChainIds.find((chainId) => chainId !== destinationChainId),
@@ -447,7 +448,7 @@ export class ProfitClient {
         realizedLpFeePct: bnOne,
         destinationToken,
         quoteTimestamp,
-        message: "0x",
+        message: EMPTY_MESSAGE,
       };
 
       // An extra toBN cast is needed as the provider returns a different BigNumber type.
