@@ -18,6 +18,7 @@ export class CommonConfig {
   readonly version: string;
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
+  readonly timeToCache: number;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number };
@@ -36,9 +37,15 @@ export class CommonConfig {
       SPOKE_POOL_CHAINS_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
+      HUB_POOL_TIME_TO_CACHE,
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
+
+    this.timeToCache = Number(HUB_POOL_TIME_TO_CACHE ?? 60 * 60); // 1 hour by default.
+    if (this.timeToCache < 0) {
+      throw new Error("Invalid default caching safe lag");
+    }
 
     // Maximum version of the Across ConfigStore version that is supported.
     // Operators should normally use the defaults here, but it can be overridden for testing.
