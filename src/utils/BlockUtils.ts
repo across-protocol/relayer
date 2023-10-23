@@ -22,14 +22,15 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
  * If redis cache is not available, then requests block from blockFinder.
  * @param chainId Chain to load block finder for.
  * @param timestamp Approximate timestamp of the to requested block number.
- * @param blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
+ * @param _blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
  * or loading from cache. This is useful for testing primarily.
  * @returns Block number for the requested timestamp.
  */
 export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
-  blockFinder?: BlockFinder
+  _blockFinder?: BlockFinder
 ): Promise<number> {
-  return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder ?? (await getBlockFinder(chainId)));
+  const blockFinder = _blockFinder ?? (await getBlockFinder(chainId));
+  return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder);
 }
