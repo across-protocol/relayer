@@ -2,7 +2,7 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
-import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
+import { isDefined, isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
 import {
@@ -410,10 +410,24 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     return quorumResult;
   }
 
+  _validateResponse(method: string, params: Array<any>, response: any): boolean {
+    // Basic validation logic to start.
+    return isDefined(response);
+  }
+
+  _sendAndValidate(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
+    return provider.send(method, params).then((response) => {
+      if (!this._validateResponse(method, params, response)) {
+        throw new Error(`Response failed validation for method ${method}, params ${params}, response ${response}`);
+      }
+      return response;
+    });
+  }
+
   _trySend(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
-    let promise = provider.send(method, params);
+    let promise = this._sendAndValidate(provider, method, params);
     for (let i = 0; i < this.retries; i++) {
-      promise = promise.catch(() => delay(this.delay).then(() => provider.send(method, params)));
+      promise = promise.catch(() => delay(this.delay).then(() => this._sendAndValidate(provider, method, params)));
     }
     return promise;
   }
