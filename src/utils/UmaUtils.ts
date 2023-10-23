@@ -1,7 +1,7 @@
 import { HubPoolClient } from "../clients";
 import { CONTRACT_ADDRESSES } from "../common";
 import { ProposedRootBundle, SortableEvent } from "../interfaces";
-import { Contract, ethers, getCachedBlockForTimestamp, isEventOlder, sortEventsDescending } from ".";
+import { Contract, ethers, getBlockForTimestamp, isEventOlder, sortEventsDescending } from ".";
 
 export async function getDvmContract(provider: ethers.providers.Provider): Promise<Contract> {
   const { chainId } = await provider.getNetwork();
@@ -28,7 +28,7 @@ export async function getDisputeForTimestamp(
   const priceRequestBlock =
     disputeRequestBlock !== undefined
       ? disputeRequestBlock
-      : await getCachedBlockForTimestamp(hubPoolClient.chainId, disputeRequestTimestamp);
+      : await getBlockForTimestamp(hubPoolClient.chainId, disputeRequestTimestamp);
 
   const disputes = await dvm.queryFilter(filter, priceRequestBlock, priceRequestBlock);
   return disputes.find((e) => e.args.time.toString() === disputeRequestTimestamp.toString()) as SortableEvent;
