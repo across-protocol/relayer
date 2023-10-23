@@ -254,7 +254,8 @@ export async function constructClients(
     Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
     config.hubPoolChainId,
     hubPoolClientSearchSettings,
-    await getRedisCache(logger)
+    await getRedisCache(logger),
+    config.timeToCache
   );
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);

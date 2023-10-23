@@ -13,7 +13,8 @@ export class HubPoolClient extends clients.HubPoolClient {
     deploymentBlock?: number,
     chainId = 1,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    cachingMechanism?: interfaces.CachingMechanismInterface
+    cachingMechanism?: interfaces.CachingMechanismInterface,
+    timeToCache?: number
   ) {
     super(
       logger,
@@ -25,6 +26,7 @@ export class HubPoolClient extends clients.HubPoolClient {
       {
         ignoredHubExecutedBundles: IGNORED_HUB_EXECUTED_BUNDLES,
         ignoredHubProposedBundles: IGNORED_HUB_PROPOSED_BUNDLES,
+        timeToCache,
       },
       cachingMechanism
     );
