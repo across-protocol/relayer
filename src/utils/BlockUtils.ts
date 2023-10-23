@@ -1,5 +1,5 @@
 import { BlockFinder, getProvider, isDefined } from "./";
-import { getCachedBlockForTimestamp } from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk-v2";
 
 const blockFinders: { [chainId: number]: BlockFinder } = {};
 
@@ -31,5 +31,5 @@ export async function getBlockForTimestamp(
   timestamp: number,
   blockFinder?: BlockFinder
 ): Promise<number> {
-  return getCachedBlockForTimestamp(chainId, timestamp, blockFinder ?? (await getBlockFinder(chainId)));
+  return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder ?? (await getBlockFinder(chainId)));
 }
