@@ -43,7 +43,7 @@ export class CommonConfig {
     this.version = ACROSS_BOT_VERSION ?? "unknown";
 
     this.timeToCache = Number(HUB_POOL_TIME_TO_CACHE ?? 60 * 60); // 1 hour by default.
-    if (this.timeToCache < 0) {
+    if (Number.isNaN(this.timeToCache) || this.timeToCache < 0) {
       throw new Error("Invalid default caching safe lag");
     }
 
