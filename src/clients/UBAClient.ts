@@ -1,4 +1,4 @@
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, interfaces } from "@across-protocol/sdk-v2";
 import { FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { HubPoolClient } from "./HubPoolClient";
 import { SpokePoolClient } from "./SpokePoolClient";
@@ -11,9 +11,10 @@ export class UBAClient extends clients.UBAClient {
     clientConfig: clients.UBAClientConfig,
     tokenSymbols: string[],
     hubPoolClient: HubPoolClient,
-    spokePoolClients: { [chainId: number]: SpokePoolClient }
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    cachingMechanism?: interfaces.CachingMechanismInterface
   ) {
-    super(clientConfig, tokenSymbols, hubPoolClient, spokePoolClients);
+    super(clientConfig, tokenSymbols, hubPoolClient, spokePoolClients, cachingMechanism);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {

@@ -11,7 +11,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { Wallet } from "../utils";
+import { Wallet, getRedisCache } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
@@ -46,7 +46,8 @@ export async function constructRelayerClients(
     new sdkClients.UBAClientConfig(),
     commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
     commonClients.hubPoolClient,
-    spokePoolClients
+    spokePoolClients,
+    await getRedisCache(logger)
   );
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
