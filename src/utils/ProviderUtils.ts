@@ -314,9 +314,8 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     if (!results.every(isPromiseFulfilled)) {
       // Format the error so that it's very clear which providers failed and succeeded.
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
-      const successfulProviderUrls = results
-        .filter(isPromiseFulfilled)
-        .map((result) => getProviderOrigin(result.value[0]));
+      const successfulProviderUrls = results.filter(isPromiseFulfilled).map(({ value }) => getProviderOrigin(value[0]));
+
       throw createSendErrorWithMessage(
         `Not enough providers succeeded. Errors:\n${errorTexts.join("\n")}\n` +
           `Successful Providers:\n${successfulProviderUrls.join("\n")}`,
