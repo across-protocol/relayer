@@ -4,7 +4,7 @@ import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
 import { LogDescription } from "@ethersproject/abi";
 import { Contract, ethers, Wallet } from "ethers";
-import { groupBy as _groupBy } from "lodash";
+import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { BigNumber, formatFeePct, getNetworkName, getSigner, isDefined, resolveTokenSymbols, toBN } from "../src/utils";
 import * as utils from "./utils";
@@ -223,7 +223,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Wallet):
   const fundsDeposited = spokePool.interface.getEventTopic("FundsDeposited");
   const filledRelay = spokePool.interface.getEventTopic("FilledRelay");
   const logs = txn.logs.filter(({ address }) => address === spokePool.address);
-  const { deposits = [], fills = [] } = _groupBy(logs, ({ topics }) => {
+  const { deposits = [], fills = [] } = groupBy(logs, ({ topics }) => {
     switch (topics[0]) {
       case fundsDeposited:
         return "deposits";
