@@ -514,7 +514,7 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
-  ): Promise<{ repaymentChainId?: number | undefined; gasLimit: BigNumber }> {
+  ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
 
