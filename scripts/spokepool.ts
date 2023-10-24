@@ -1,6 +1,6 @@
 import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
 import { LogDescription } from "@ethersproject/abi";
 import { Contract, ethers, Wallet } from "ethers";
@@ -104,7 +104,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
   const recipient = (args.recipient as string) ?? depositor;
-  const message = (args.message as string) ?? "0x";
+  const message = (args.message as string) ?? sdkConsts.EMPTY_MESSAGE;
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     usage(); // no return
