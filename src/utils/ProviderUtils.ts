@@ -72,8 +72,8 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
 
 const defaultTimeout = 60 * 1000;
 
-// @dev To avoid accidentally leaking RPC keys in log messages, resolve the RPC provider protocol and
-// hostname centrally. There should be no instances of `provider.connection.url` in log messages or errors.
+// @dev To avoid accidentally leaking RPC keys in log messages, resolve the RPC provider hostname
+// centrally. There should be no instances of `provider.connection.url` in log messages or errors.
 function getProviderHostname(provider: ethers.providers.StaticJsonRpcProvider): string {
   return new URL(provider.connection.url).hostname;
 }
@@ -537,7 +537,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
         logger.debug({
           at: "ProviderUtils#rpcRateLimited",
           message: `Got rate-limit (429) response on attempt ${attempt}.`,
-          rpc: getOriginFromURL(url),
+          rpc: getProviderHostname(url),
           retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,
         });
