@@ -1,4 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { ethers } from "ethers";
 
 export const { getNetworkName } = sdkUtils;
 
@@ -20,4 +21,8 @@ export function getOriginFromURL(url: string): string {
   } catch (e) {
     return "UNKNOWN";
   }
+}
+
+export function getOriginUrlFromProvider(provider: ethers.providers.StaticJsonRpcProvider): string {
+  return getOriginFromURL(provider.connection.url);
 }
