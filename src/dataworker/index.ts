@@ -1,4 +1,12 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClients } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Wallet,
+  disconnectRedisClients,
+  getRedisCache,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -106,7 +114,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         new sdkClients.UBAClientConfig(),
         clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
         clients.hubPoolClient,
-        spokePoolClients
+        spokePoolClients,
+        await getRedisCache(logger)
       );
       await clients.configStoreClient.update();
       const version = clients.configStoreClient.getConfigStoreVersionForTimestamp();
