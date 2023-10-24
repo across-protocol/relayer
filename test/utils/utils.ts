@@ -1,5 +1,4 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
-
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
 import { constants as ethersConstants, providers } from "ethers";
@@ -15,7 +14,7 @@ import {
   sampleRateModel,
   zeroAddress,
 } from "../constants";
-import { BigNumber, Contract, SignerWithAddress, deposit } from "./index";
+import { BigNumber, Contract, SignerWithAddress } from "./index";
 export { sinon, winston };
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 
@@ -275,18 +274,7 @@ export async function simpleDeposit(
     ...depositObject,
     realizedLpFeePct: toBNWei("0"),
     destinationToken: zeroAddress,
-    message: "0x",
   };
-}
-
-/**
- * Takes as input a body and returns a new object with the body and a message property. Used to appease the typescript
- * compiler when we want to return a type that doesn't have a message property.
- * @param body Typically a partial structure of a Deposit or Fill.
- * @returns A new object with the body and a message property.
- */
-export function appendMessageToResult<T>(body: T): T & { message: string } {
-  return { ...body, message: "" };
 }
 
 export async function getLastBlockTime(provider: providers.Provider): Promise<number> {
@@ -318,37 +306,43 @@ export async function buildDepositStruct(
     },
     l1TokenForDepositedToken.address
   );
+
   return {
     ...deposit,
-    message: "0x",
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
     quoteBlockNumber: quoteBlock,
     realizedLpFeePct,
     blockNumber: await getLastBlockNumber(),
   };
 }
+
 export async function buildDeposit(
   hubPoolClient: HubPoolClient,
   spokePool: Contract,
   tokenToDeposit: Contract,
   l1TokenForDepositedToken: Contract,
   recipientAndDepositor: SignerWithAddress,
-  _destinationChainId: number,
-  _amountToDeposit: BigNumber = amountToDeposit,
-  _relayerFeePct: BigNumber = depositRelayerFeePct
+  destinationChainId: number,
+  amount = amountToDeposit,
+  relayerFeePct = depositRelayerFeePct,
+  quoteTimestamp?: number,
+  message?: string
 ): Promise<Deposit> {
-  const _deposit = await deposit(
+  const _deposit = await utils.deposit(
     spokePool,
     tokenToDeposit,
     recipientAndDepositor,
     recipientAndDepositor,
-    _destinationChainId,
-    _amountToDeposit,
-    _relayerFeePct
+    destinationChainId,
+    amount,
+    relayerFeePct,
+    quoteTimestamp,
+    message
   );
+
   // Sanity Check: Ensure that the deposit was successful.
   expect(_deposit).to.not.be.null;
-  return await buildDepositStruct(appendMessageToResult(_deposit), hubPoolClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit, hubPoolClient, l1TokenForDepositedToken);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
@@ -511,7 +505,7 @@ export async function buildFillForRepaymentChain(
   };
   await spokePool.connect(relayer).fillRelay(
     ...utils.getFillRelayParams(
-      appendMessageToResult(relayDataFromDeposit),
+      relayDataFromDeposit,
       depositToFill.amount
         .mul(toBNWei(1).sub(depositToFill.realizedLpFeePct.add(depositToFill.relayerFeePct)))
         .mul(toBNWei(pctOfDepositToFill))
