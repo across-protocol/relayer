@@ -423,7 +423,7 @@ export class ProfitClient {
   }
 
   private async updateGasCosts(): Promise<void> {
-    const { enabledChainIds, hubPoolClient, relayerAddress, relayerFeeQueries } = this;
+    const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
     const depositId = random(bnUint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
     const fillAmount = bnOne;
     const quoteTimestamp = getCurrentTime();
