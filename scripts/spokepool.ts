@@ -104,6 +104,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
   const recipient = (args.recipient as string) ?? depositor;
+  const message = (args.message as string) ?? "0x";
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     usage(); // no return
@@ -143,7 +144,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     amount,
     toChainId,
     relayerFeePct,
-    "0x",
+    message,
     maxCount
   );
   const { hash: transactionHash } = deposit;
@@ -269,7 +270,7 @@ function usage(badInput?: string): boolean {
 
 async function run(argv: string[]): Promise<boolean> {
   const configOpts = ["chainId"];
-  const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct"];
+  const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct", "message"];
   const fetchOpts = ["chainId", "transactionHash"];
   const fillOpts = [];
   const opts = {
