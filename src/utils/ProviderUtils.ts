@@ -11,7 +11,7 @@ import {
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
   BLOCK_NUMBER_TTL,
 } from "../common";
-import { delay, getOriginFromURL, Logger } from "./";
+import { delay, Logger } from "./";
 import { compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
 
 const logger = Logger;
@@ -74,12 +74,12 @@ const defaultTimeout = 60 * 1000;
 
 // @dev To avoid accidentally leaking RPC keys in log messages, resolve the RPC provider protocol and
 // hostname centrally. There should be no instances of `provider.connection.url` in log messages or errors.
-function getProviderOrigin(provider: ethers.providers.StaticJsonRpcProvider): string {
-  return getOriginFromURL(provider.connection.url);
+function getProviderHostname(provider: ethers.providers.StaticJsonRpcProvider): string {
+  return new URL(provider.connection.url).hostname;
 }
 
 function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
-  return `Provider ${getProviderOrigin(provider)} failed with error: ${rawErrorText}`;
+  return `Provider ${getProviderHostname(provider)} failed with error: ${rawErrorText}`;
 }
 
 function createSendErrorWithMessage(message: string, sendError: any) {
@@ -314,7 +314,9 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     if (!results.every(isPromiseFulfilled)) {
       // Format the error so that it's very clear which providers failed and succeeded.
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
-      const successfulProviderUrls = results.filter(isPromiseFulfilled).map(({ value }) => getProviderOrigin(value[0]));
+      const successfulProviderUrls = results
+        .filter(isPromiseFulfilled)
+        .map(({ value }) => getProviderHostname(value[0]));
 
       throw createSendErrorWithMessage(
         `Not enough providers succeeded. Errors:\n${errorTexts.join("\n")}\n` +
@@ -333,7 +335,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     const throwQuorumError = () => {
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
-      const successfulProviderUrls = values.map(([provider]) => getProviderOrigin(provider));
+      const successfulProviderUrls = values.map(([provider]) => getProviderHostname(provider));
       throw new Error(
         "Not enough providers agreed to meet quorum.\n" +
           "Providers that errored:\n" +
@@ -399,11 +401,11 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     const mismatchedProviders = Object.fromEntries(
       [...values, ...fallbackValues]
         .filter(([, result]) => !compareRpcResults(method, result, quorumResult))
-        .map(([provider, result]) => [getProviderOrigin(provider), result])
+        .map(([provider, result]) => [getProviderHostname(provider), result])
     );
     const quorumProviders = [...values, ...fallbackValues]
       .filter(([, result]) => compareRpcResults(method, result, quorumResult))
-      .map(([provider]) => getProviderOrigin(provider));
+      .map(([provider]) => getProviderHostname(provider));
     if (Object.keys(mismatchedProviders).length > 0 || errors.length > 0) {
       logger.warn({
         at: "ProviderUtils",
