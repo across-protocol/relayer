@@ -135,7 +135,7 @@ class CacheProvider extends RateLimitedProvider {
     // Pre-compute as much of the redis key as possible.
     // The full provider URL is deliberately used here, since the redis cache is considered sensitive,
     // but additional caution is needed to ensure the cache prefix is not logged anywhere.
-    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${chainId}`;
+    const cachePrefix = `${providerCacheNamespace},${getProviderHostname(this)},${chainId}`;
     this.getBlockByNumberPrefix = `${cachePrefix}:getBlockByNumber,`;
     this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
     this.callCachePrefix = `${cachePrefix}:eth_call,`;
