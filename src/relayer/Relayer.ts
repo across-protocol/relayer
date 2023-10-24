@@ -264,11 +264,16 @@ export class Relayer {
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
 
-        const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
+        const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
+          version,
+          deposit,
+          unfilledAmount,
+          l1Token
+        );
         if (isDefined(repaymentChainId)) {
           this.fillRelay(deposit, unfilledAmount, repaymentChainId);
         } else {
-          profitClient.captureUnprofitableFill(deposit, unfilledAmount);
+          profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
       } else {
         tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
@@ -288,7 +293,7 @@ export class Relayer {
     }
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number): void {
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -329,6 +334,7 @@ export class Relayer {
       chainId: deposit.destinationChainId,
       method,
       args: argBuilder(deposit, repaymentChainId, fillAmount),
+      gasLimit,
       message,
       mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount),
     });
@@ -508,7 +514,7 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
-  ): Promise<number | undefined> {
+  ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
 
@@ -520,14 +526,19 @@ export class Relayer {
         message: `Skipping repayment chain determination for partial fill on ${destinationChain}`,
         deposit: { originChain, depositId, destinationChain, depositHash },
       });
-      return destinationChainId;
     }
 
-    const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
-    const refundFee = this.computeRefundFee(version, deposit);
+    const preferredChainId = fillAmount.eq(deposit.amount)
+      ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
+      : destinationChainId;
 
-    const profitable = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
-    return profitable ? preferredChainId : undefined;
+    const refundFee = this.computeRefundFee(version, deposit);
+    const { profitable, nativeGasCost } = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
+
+    return {
+      repaymentChainId: profitable ? preferredChainId : undefined,
+      gasLimit: nativeGasCost,
+    };
   }
 
   protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
@@ -608,15 +619,13 @@ export class Relayer {
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const unprofitableDeposit = unprofitableDeposits[chainId][depositId];
-        const deposit: DepositWithBlock = unprofitableDeposit.deposit;
-        const fillAmount: BigNumber = unprofitableDeposit.fillAmount;
+        const { deposit, fillAmount, gasCost: _gasCost } = unprofitableDeposits[chainId][depositId];
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
         }
+        const gasCost = _gasCost.toString();
 
-        const gasCost = this.clients.profitClient.getTotalGasCost(deposit).toString();
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);

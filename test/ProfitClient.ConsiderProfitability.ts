@@ -1,3 +1,4 @@
+import { random } from "lodash";
 import { assert } from "chai";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
@@ -314,7 +315,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: expected.netRelayerFeeUsd,
             });
 
-            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
+            const { profitable } = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
             expect(profitable).to.equal(expected.profitable);
           });
         });
@@ -367,7 +368,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
+            const { profitable } = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
             expect(profitable).to.equal(expected.profitable);
           });
         });
@@ -453,7 +454,8 @@ describe("ProfitClient: Consider relay profit", () => {
 
   it("Captures unprofitable fills", () => {
     const deposit = { relayerFeePct: toBNWei("0.003"), originChainId: 1, depositId: 42 } as DepositWithBlock;
-    profitClient.captureUnprofitableFill(deposit, toBNWei(1));
-    expect(profitClient.getUnprofitableFills()).to.deep.equal({ 1: [{ deposit, fillAmount: toBNWei(1) }] });
+    const gasCost = toGWei(random(1, 100_000));
+    profitClient.captureUnprofitableFill(deposit, toBNWei(1), gasCost);
+    expect(profitClient.getUnprofitableFills()).to.deep.equal({ 1: [{ deposit, fillAmount: toBNWei(1), gasCost }] });
   });
 });
