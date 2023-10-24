@@ -426,6 +426,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
       logger.debug({
         at: "ProviderUtils",
         message: "Provider returned invalid response",
+        provider: getOriginFromURL(provider.connection.url),
         method,
         params,
         response,
