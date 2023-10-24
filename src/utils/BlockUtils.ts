@@ -1,4 +1,5 @@
-import { BlockFinder, getProvider, getRedis, isDefined, setRedisKey, shouldCache } from "./";
+import { BlockFinder, getProvider, isDefined } from "./";
+import { utils } from "@across-protocol/sdk-v2";
 
 const blockFinders: { [chainId: number]: BlockFinder } = {};
 
@@ -21,38 +22,15 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
  * If redis cache is not available, then requests block from blockFinder.
  * @param chainId Chain to load block finder for.
  * @param timestamp Approximate timestamp of the to requested block number.
- * @param blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
+ * @param _blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
  * or loading from cache. This is useful for testing primarily.
  * @returns Block number for the requested timestamp.
  */
 export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
-  blockFinder?: BlockFinder
+  _blockFinder?: BlockFinder
 ): Promise<number> {
-  blockFinder ??= await getBlockFinder(chainId);
-  const redisClient = await getRedis();
-
-  // If no redis client, then request block from blockFinder. Otherwise try to load from redis cache.
-  if (redisClient === undefined) {
-    return (await blockFinder.getBlockForTimestamp(timestamp)).number;
-  }
-
-  const key = `${chainId}_block_number_${timestamp}`;
-  const result = await redisClient.get(key);
-  if (result === null) {
-    const provider = await getProvider(chainId);
-    const [currentBlock, { number: blockNumber }] = await Promise.all([
-      provider.getBlock("latest"),
-      blockFinder.getBlockForTimestamp(timestamp),
-    ]);
-
-    // Expire key after 90 days.
-    if (shouldCache(timestamp, currentBlock.timestamp)) {
-      await setRedisKey(key, blockNumber.toString(), redisClient, 60 * 60 * 24 * 90);
-    }
-    return blockNumber;
-  } else {
-    return parseInt(result);
-  }
+  const blockFinder = _blockFinder ?? (await getBlockFinder(chainId));
+  return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder);
 }

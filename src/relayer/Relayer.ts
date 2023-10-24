@@ -22,7 +22,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
-const { isDepositSpedUp, bnOne: zeroFillAmount } = sdkUtils;
+const { isDepositSpedUp, isMessageEmpty, bnOne: zeroFillAmount, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
@@ -234,17 +234,11 @@ export class Relayer {
       // We need to build in better simulation logic for deposits with non-empty messages. Currently we only measure
       // the fill's gas cost against a simple USDC fill with message=0x. This doesn't handle the case where the
       // message is != 0x and it ends up costing a lot of gas to execute, resulting in a big loss to the relayer.
-      if (isDepositSpedUp(deposit) && deposit.updatedMessage !== "0x") {
-        this.logger.warn({
-          at: "Relayer",
-          message: "Skipping fill for sped-up deposit with message",
-          deposit,
-        });
-        continue;
-      } else if (deposit.message !== "0x") {
+      if (!isMessageEmpty(resolveDepositMessage(deposit))) {
         this.logger.warn({
           at: "Relayer",
           message: "Skipping fill for deposit with message",
+          depositUpdated: isDepositSpedUp(deposit),
           deposit,
         });
         continue;
