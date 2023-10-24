@@ -53,6 +53,21 @@ jobs:
       - run:
           name: Run lint
           command: yarn lint
+  no-leaked-logs:
+    docker:
+      - image: circleci/python:3.7
+    steps:
+      - checkout
+      - run:
+          name: Search for connection.url
+          command: |
+            if find . -type f -not -path "./node_modules/*" -not -path "./src/utils/NetworkUtils.ts" -exec grep -H "connection.url" {} +; then
+              echo "Found 'connection.url'. Failing the test."
+              exit 1
+            else
+              echo "'connection.url' not found."
+              exit 0
+            fi
 workflows:
   version: 2.1
   build_and_test:
@@ -62,5 +77,8 @@ workflows:
           requires:
             - install
       - lint:
+          requires:
+            - install
+      - no-leaked-logs:
           requires:
             - install
