@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants-v2": "1.0.4",
     "@across-protocol/contracts-v2": "2.4.6",
-    "@across-protocol/sdk-v2": "0.17.1",
+    "@across-protocol/sdk-v2": "0.17.7",
     "@arbitrum/sdk": "^3.1.3",
     "@defi-wonderland/smock": "^2.3.5",
     "@eth-optimism/sdk": "^3.1.0",
@@ -58,6 +58,10 @@
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
     "reinstall": "yarn clean && yarn install && yarn build",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
+    "run-disputer": "DISPUTER_ENABLED=true HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --dataworker",
+    "run-executor": "EXECUTOR_ENABLED=true HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --dataworker",
+    "run-proposer": "PROPOSER_ENABLED=true HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --dataworker",
+    "run-finalizer": "FINALIZER_ENABLED=true HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --finalizer",
     "relay": "HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --relayer",
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
     "dispute": "yarn ts-node ./scripts/hubpool.ts dispute"

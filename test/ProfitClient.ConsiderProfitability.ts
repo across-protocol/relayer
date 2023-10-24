@@ -1,5 +1,5 @@
 import { assert } from "chai";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   ConfigStoreClient,
   FillProfit,
@@ -22,6 +22,7 @@ import {
   expect,
   hubPoolFixture,
   originChainId,
+  randomAddress,
   winston,
 } from "./utils";
 
@@ -99,6 +100,7 @@ describe("ProfitClient: Consider relay profit", () => {
   // Define LOG_IN_TEST for logging to console.
   const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
   let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
+  const message = sdkConstants.EMPTY_MESSAGE; // Empty message by default.
 
   beforeEach(async () => {
     const [owner] = await ethers.getSigners();
@@ -140,6 +142,7 @@ describe("ProfitClient: Consider relay profit", () => {
       hubPoolClient,
       spokePoolClients,
       [],
+      randomAddress(),
       minRelayerFeePct,
       debugProfitability
     );
@@ -151,14 +154,15 @@ describe("ProfitClient: Consider relay profit", () => {
 
   // Verify gas cost calculation first, so we can leverage it in all subsequent tests.
   it("Verify gas cost estimation", () => {
-    chainIds.forEach((chainId) => {
-      spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${chainId}.` });
+    chainIds.forEach((destinationChainId) => {
+      spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${destinationChainId}.` });
+      const deposit = { destinationChainId, message } as Deposit;
 
-      const nativeGasCost = profitClient.getTotalGasCost(chainId);
+      const nativeGasCost = profitClient.getTotalGasCost(deposit);
       expect(nativeGasCost.eq(0)).to.be.false;
-      expect(nativeGasCost.eq(gasCost[chainId])).to.be.true;
+      expect(nativeGasCost.eq(gasCost[destinationChainId])).to.be.true;
 
-      const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[chainId];
+      const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[destinationChainId];
       let gasToken = Object.values(tokens).find((token) => gasTokenAddr === token.address);
       expect(gasToken).to.not.be.undefined;
       gasToken = gasToken as L1Token;
@@ -166,25 +170,26 @@ describe("ProfitClient: Consider relay profit", () => {
       const gasPriceUsd = tokenPrices[gasToken.symbol];
       expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
 
-      const estimate = profitClient.estimateFillCost(chainId);
-      expect(estimate.nativeGasCost.eq(gasCost[chainId])).to.be.true;
+      const estimate = profitClient.estimateFillCost(deposit);
+      expect(estimate.nativeGasCost.eq(gasCost[destinationChainId])).to.be.true;
       expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
       expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBN(10).pow(gasToken.decimals)))).to.be.true;
     });
   });
 
   it("Verify gas multiplier", () => {
-    chainIds.forEach((chainId) => {
-      spyLogger.debug({ message: `Verifying gas multiplier for chainId ${chainId}.` });
+    chainIds.forEach((destinationChainId) => {
+      spyLogger.debug({ message: `Verifying gas multiplier for chainId ${destinationChainId}.` });
+      const deposit = { destinationChainId, message } as Deposit;
 
-      const nativeGasCost = profitClient.getTotalGasCost(chainId);
+      const nativeGasCost = profitClient.getTotalGasCost(deposit);
       expect(nativeGasCost.gt(0)).to.be.true;
 
       const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
       gasMultipliers.forEach((gasMultiplier) => {
         profitClient.setGasMultiplier(toBNWei(gasMultiplier));
 
-        const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[chainId];
+        const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[destinationChainId];
         let gasToken = Object.values(tokens).find((token) => gasTokenAddr === token.address);
         expect(gasToken).to.not.be.undefined;
         gasToken = gasToken as L1Token;
@@ -194,7 +199,7 @@ describe("ProfitClient: Consider relay profit", () => {
           .mul(toBNWei(gasMultiplier))
           .div(fixedPoint)
           .div(fixedPoint);
-        const { gasCostUsd } = profitClient.estimateFillCost(chainId);
+        const { gasCostUsd } = profitClient.estimateFillCost(deposit);
         expect(expectedFillCostUsd.eq(gasCostUsd)).to.be.true;
       });
     });
@@ -203,16 +208,18 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Return 0 when gas cost fails to be fetched", () => {
     const destinationChainId = 137;
     profitClient.setGasCost(destinationChainId, undefined);
-    expect(profitClient.getTotalGasCost(destinationChainId)).to.equal(bnZero);
+    const deposit = { destinationChainId, message } as Deposit;
+    expect(profitClient.getTotalGasCost(deposit)).to.equal(bnZero);
   });
 
   it("Verify token price and gas cost lookup failures", () => {
     const fillAmount = toBNWei(1);
     const l1Token = tokens["WETH"];
+    const relayerFeePct = toBNWei("0.0003");
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
     chainIds.forEach((destinationChainId) => {
-      const deposit = { destinationChainId, relayerFeePct: toBNWei("0.0003") } as Deposit;
+      const deposit = { destinationChainId, message, relayerFeePct } as Deposit;
 
       // Verify that it works before we break it.
       expect(() =>
@@ -220,7 +227,7 @@ describe("ProfitClient: Consider relay profit", () => {
       ).to.not.throw();
 
       spyLogger.debug({ message: `Verify exception on chain ${destinationChainId} gas cost estimation failure.` });
-      const destinationGasCost = profitClient.getTotalGasCost(destinationChainId);
+      const destinationGasCost = profitClient.getTotalGasCost(deposit);
       profitClient.setGasCost(destinationChainId, undefined);
       expect(() =>
         profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct)
@@ -262,7 +269,8 @@ describe("ProfitClient: Consider relay profit", () => {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
     chainIds.forEach((destinationChainId) => {
-      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
+      const deposit = { destinationChainId, message } as Deposit;
+      const { gasCostUsd } = profitClient.estimateFillCost(deposit);
 
       Object.values(tokens).forEach((l1Token) => {
         const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
@@ -289,7 +297,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
           relayerFeePcts.forEach((_relayerFeePct) => {
             const relayerFeePct = _relayerFeePct.gt(maxRelayerFeePct) ? maxRelayerFeePct : _relayerFeePct;
-            const deposit = { relayerFeePct, destinationChainId } as Deposit;
+            deposit.relayerFeePct = relayerFeePct;
 
             const expected = testProfitability(deposit, fillAmountUsd, gasCostUsd, zeroRefundFee);
             spyLogger.debug({
@@ -317,9 +325,11 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Considers refund fees when computing profitability", () => {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
     const refundFeeMultipliers = ["-0.1", "-0.01", "-0.001", "-0.0001", 0.0001, 0.001, 0.01, 0.1, 1];
+    const relayerFeePct = toBN(0.0001);
 
     chainIds.forEach((destinationChainId) => {
-      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
+      const deposit = { destinationChainId, relayerFeePct, message } as Deposit;
+      const { gasCostUsd } = profitClient.estimateFillCost(deposit);
 
       Object.values(tokens).forEach((l1Token) => {
         const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
@@ -332,9 +342,6 @@ describe("ProfitClient: Consider relay profit", () => {
 
           const fillAmountUsd = fillAmount.mul(tokenPriceUsd).div(fixedPoint);
           const gasCostPct = gasCostUsd.mul(fixedPoint).div(fillAmountUsd);
-
-          const relayerFeePct = toBN(0.0001);
-          const deposit = { relayerFeePct, destinationChainId } as Deposit;
 
           refundFeeMultipliers.forEach((_multiplier) => {
             const feeMultiplier = toBNWei(_multiplier);
@@ -410,13 +417,14 @@ describe("ProfitClient: Consider relay profit", () => {
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
     const fillAmount = toBNWei(1);
-    const deposit = { relayerFeePct: toBNWei("0.001"), destinationChainId } as Deposit;
+    const relayerFeePct = toBNWei("0.001");
+    const deposit = { destinationChainId, message, relayerFeePct } as Deposit;
 
     let fill: FillProfit;
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
     expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
 
-    deposit["newRelayerFeePct"] = toBNWei("0.1");
+    deposit.newRelayerFeePct = deposit.relayerFeePct.mul(10);
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
     expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
   });
@@ -426,9 +434,10 @@ describe("ProfitClient: Consider relay profit", () => {
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
     const deposit = {
+      destinationChainId,
+      message,
       relayerFeePct: toBNWei("0.1"),
       newRelayerFeePct: toBNWei("0.01"),
-      destinationChainId,
     } as Deposit;
     const fillAmount = toBNWei(1);
 
