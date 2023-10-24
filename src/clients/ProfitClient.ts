@@ -209,7 +209,7 @@ export class ProfitClient {
     };
   }
 
-  getUnprofitableFills(): { [chainId: number]: { deposit: DepositWithBlock; fillAmount: BigNumber }[] } {
+  getUnprofitableFills(): { [chainId: number]: UnprofitableFill[] } {
     return this.unprofitableFills;
   }
 
