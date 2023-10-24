@@ -1,12 +1,22 @@
+import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
 import { LogDescription } from "@ethersproject/abi";
 import { Contract, ethers, Wallet } from "ethers";
-import { groupBy } from "lodash";
+import { groupBy as _groupBy } from "lodash";
 import { config } from "dotenv";
-import { getNetworkName, getSigner, resolveTokenSymbols } from "../src/utils";
+import { BigNumber, formatFeePct, getNetworkName, getSigner, isDefined, resolveTokenSymbols, toBN } from "../src/utils";
 import * as utils from "./utils";
 
+type relayerFeeQuery = {
+  token: string;
+  originChainId: number;
+  destinationChainId: number;
+  amount: BigNumber;
+};
+
+const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
 
@@ -47,6 +57,49 @@ function printFill(log: LogDescription): void {
   );
 }
 
+async function getRelayerFeePct(request: relayerFeeQuery, timeout = 3000): Promise<BigNumber> {
+  const host = "across.to";
+  const path = "api/suggested-fees";
+  const url = `https://${host}/${path}`;
+
+  try {
+    const quote = await axios.get(url, { timeout, params: request });
+    return quote?.data["relayFeePct"];
+  } catch (err) {
+    if (isAxiosError(err) && err.response.status >= 400) {
+      throw new Error(`Failed to get quote for deposit (${err.response.data})`);
+    }
+    throw err;
+  }
+}
+
+async function getRelayerQuote(
+  fromChainId: number,
+  toChainId: number,
+  token: utils.ERC20,
+  amount: BigNumber
+): Promise<BigNumber> {
+  const tokenFormatter = sdkUtils.createFormatFunction(2, 4, false, token.decimals);
+  let relayerFeePct = Zero;
+  let quoteAccepted = false;
+  do {
+    relayerFeePct = await getRelayerFeePct({
+      token: token.address,
+      originChainId: fromChainId,
+      destinationChainId: toChainId,
+      amount,
+    });
+
+    const feeAmount = amount.mul(relayerFeePct).div(fixedPoint);
+    const quote =
+      `Relayer fee quote for ${tokenFormatter(amount)} ${token.symbol} ${fromChainId} -> ${toChainId}:` +
+      ` ${formatFeePct(relayerFeePct)} % (${tokenFormatter(feeAmount)} ${token.symbol})`;
+    quoteAccepted = await utils.askYesNoQuestion(quote);
+  } while (!quoteAccepted);
+
+  return relayerFeePct;
+}
+
 async function deposit(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
@@ -79,9 +132,10 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
     await approval.wait();
     console.log("Approval complete...");
   }
-
-  const relayerFeePct = Zero; // @todo: Make configurable.
   const maxCount = MaxUint256;
+  const relayerFeePct = isDefined(args.relayerFeePct)
+    ? toBN(args.relayerFeePct)
+    : await getRelayerQuote(fromChainId, toChainId, token, amount);
 
   const deposit = await spokePool.depositNow(
     recipient,
@@ -168,7 +222,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Wallet):
   const fundsDeposited = spokePool.interface.getEventTopic("FundsDeposited");
   const filledRelay = spokePool.interface.getEventTopic("FilledRelay");
   const logs = txn.logs.filter(({ address }) => address === spokePool.address);
-  const { deposits = [], fills = [] } = groupBy(logs, ({ topics }) => {
+  const { deposits = [], fills = [] } = _groupBy(logs, ({ topics }) => {
     switch (topics[0]) {
       case fundsDeposited:
         return "deposits";
@@ -215,7 +269,7 @@ function usage(badInput?: string): boolean {
 
 async function run(argv: string[]): Promise<boolean> {
   const configOpts = ["chainId"];
-  const depositOpts = ["from", "to", "token", "amount", "recipient"];
+  const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct"];
   const fetchOpts = ["chainId", "transactionHash"];
   const fillOpts = [];
   const opts = {
