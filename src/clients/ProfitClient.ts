@@ -64,6 +64,12 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
 
+// @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
+// Since _some_ known recipient address is needed for simulating a fill, default to this one. nb. Since
+// the SpokePool implements custom behaviour when relayer === recipient, it's important not to use the
+// relayer's own address. The specified address is deliberately setup by RL to have a 0 token balance.
+const TEST_RECIPIENT = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
+
 // These are used to simulate fills on L2s to return estimated gas costs.
 // Note: the type here assumes that all of these classes take the same constructor parameters.
 const QUERY_HANDLERS: {
@@ -434,8 +440,8 @@ export class ProfitClient {
       // all supported tokens and approvals in place on all chains.
       const deposit: Deposit = {
         depositId,
-        depositor: relayerAddress,
-        recipient: relayerAddress,
+        depositor: TEST_RECIPIENT,
+        recipient: TEST_RECIPIENT,
         originToken: "", // not relevant
         amount: fillAmount,
         originChainId: this.enabledChainIds.find((chainId) => chainId !== destinationChainId),
