@@ -1455,25 +1455,8 @@ export class Dataworker {
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
     const leaves = _leaves.filter(({ payoutAdjustmentPct, relayData }) => {
-      // We don't have access to any speed up requests, so we don't have the full picture
-      // just looking at the relay data. Let's enrich it with the latest speed up requests.
-      const depositWithSpeedup = client.appendMaxSpeedUpSignatureToDeposit(
-        // We don't have access to the full deposit, so we just use the relay data. It has
-        // all the information we need to resolve the speed up parameters. Per the function,
-        // we really just need the deposit ID, the depositor, and relayerFeePct
-        {
-          depositId: relayData.depositId,
-          depositor: relayData.depositor,
-          relayerFeePct: relayData.relayerFeePct,
-          message: relayData.message, // Pass this in for the next function
-        } as DepositWithBlock
-      );
-      // This function retrieves either the updated message or the original message if no speed up request
-      // was found. Since we have exactly what the function works with + the potential speed up request,
-      // we can get away with calling it directly.
-      const message = sdk.utils.resolveDepositMessage(depositWithSpeedup);
       // If there is a message, we ignore the leaf and log an error.
-      if (!sdk.utils.isMessageEmpty(message)) {
+      if (!sdk.utils.isMessageEmpty(relayData.message)) {
         this.logger.error({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill leaf with message",
