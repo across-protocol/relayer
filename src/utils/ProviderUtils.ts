@@ -431,7 +431,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         params,
         response,
       });
-      throw new Error(`Response failed validation for method ${method}, params ${params}, response ${response}`);
+      throw new Error("Response failed validation");
     }
     return response;
   }
