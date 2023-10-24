@@ -415,13 +415,24 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     return isDefined(response);
   }
 
-  _sendAndValidate(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
-    return provider.send(method, params).then((response) => {
-      if (!this._validateResponse(method, params, response)) {
-        throw new Error(`Response failed validation for method ${method}, params ${params}, response ${response}`);
-      }
-      return response;
-    });
+  async _sendAndValidate(
+    provider: ethers.providers.StaticJsonRpcProvider,
+    method: string,
+    params: Array<any>
+  ): Promise<any> {
+    const response = await provider.send(method, params);
+    if (!this._validateResponse(method, params, response)) {
+      // Not a warning to avoid spam since this could trigger a lot.
+      logger.debug({
+        at: "ProviderUtils",
+        message: "Provider returned invalid response",
+        method,
+        params,
+        response,
+      });
+      throw new Error(`Response failed validation for method ${method}, params ${params}, response ${response}`);
+    }
+    return response;
   }
 
   _trySend(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
