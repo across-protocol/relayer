@@ -272,10 +272,27 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 
-  it("Uses new relayer fee pct if depositor sped it up", async function () {
-    // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+  it("Ignores deposit with non-empty message", async function () {
+    await buildDeposit(
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId,
+      undefined, // amount
+      undefined, // relayerFeePct
+      undefined, // quoteTimestamp,
+      "0x0000" // message
+    );
+
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+  });
+
+  it("Uses new relayer fee pct on updated deposits", async function () {
     const deposit1 = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
 
     // Relayer will ignore any deposit with a non empty message. Test this by first modifying the deposit's
@@ -283,7 +300,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const newRelayerFeePct = toBNWei(0.1337);
     const newMessage = "0x12";
     const newRecipient = randomAddress();
-    const speedUpSignature = await modifyRelayHelper(
+    const { signature: speedUpSignature } = await modifyRelayHelper(
       newRelayerFeePct,
       deposit1.depositId.toString(),
       deposit1.originChainId.toString(),
@@ -297,7 +314,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       message: "0x1212",
       recipient: randomAddress(),
     };
-    const unusedSpeedUpSignature = await modifyRelayHelper(
+    const { signature: unusedSpeedUpSignature } = await modifyRelayHelper(
       unusedSpeedUp.relayerFeePct,
       deposit1.depositId.toString(),
       deposit1.originChainId.toString(),
@@ -312,7 +329,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       deposit1.depositId,
       unusedSpeedUp.recipient,
       unusedSpeedUp.message,
-      unusedSpeedUpSignature.signature
+      unusedSpeedUpSignature
     );
     await spokePool_1.speedUpDeposit(
       depositor.address,
@@ -320,7 +337,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       deposit1.depositId,
       newRecipient,
       newMessage,
-      speedUpSignature.signature
+      speedUpSignature
     );
     await spokePool_1.speedUpDeposit(
       depositor.address,
@@ -328,11 +345,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       deposit1.depositId,
       unusedSpeedUp.recipient,
       unusedSpeedUp.message,
-      unusedSpeedUpSignature.signature
+      unusedSpeedUpSignature
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping fill for sped-up deposit with message")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
@@ -391,6 +408,75 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+  });
+
+  it("Selects the correct message in an updated deposit", async function () {
+    // Initial deposit without a message.
+    const deposit = await buildDeposit(
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId,
+      undefined, // amount
+      undefined, // relayerFeePct
+      undefined, // quoteTimestamp
+      "0x" // message
+    );
+
+    // Deposit is followed by an update that adds a message.
+    let newRelayerFeePct = deposit.relayerFeePct.add(1);
+    let newMessage = "0x1234";
+    const newRecipient = randomAddress();
+    let { signature } = await modifyRelayHelper(
+      newRelayerFeePct,
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
+      depositor,
+      newRecipient,
+      newMessage
+    );
+
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      newRelayerFeePct,
+      deposit.depositId,
+      newRecipient,
+      newMessage,
+      signature
+    );
+
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+
+    // Deposit is updated again with a nullified message.
+    newRelayerFeePct = newRelayerFeePct.add(1);
+    newMessage = "0x";
+    ({ signature } = await modifyRelayHelper(
+      newRelayerFeePct,
+      deposit.depositId.toString(),
+      deposit.originChainId.toString(),
+      depositor,
+      newRecipient,
+      newMessage
+    ));
+
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      newRelayerFeePct,
+      deposit.depositId,
+      newRecipient,
+      newMessage,
+      signature
+    );
+
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
+    expect(multiCallerClient.transactionCount()).to.equal(1);
   });
 
   it("Shouldn't double fill a deposit", async function () {
