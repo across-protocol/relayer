@@ -10,6 +10,7 @@ import {
   getCurrentTime,
   SpokePool,
   isDefined,
+  getRedisCache,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -252,7 +253,9 @@ export async function constructClients(
     configStoreClient,
     Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
     config.hubPoolChainId,
-    hubPoolClientSearchSettings
+    hubPoolClientSearchSettings,
+    await getRedisCache(logger),
+    config.timeToCache
   );
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);

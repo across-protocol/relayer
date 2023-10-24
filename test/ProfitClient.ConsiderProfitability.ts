@@ -1,3 +1,4 @@
+import { random } from "lodash";
 import { assert } from "chai";
 import { random } from "lodash";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
