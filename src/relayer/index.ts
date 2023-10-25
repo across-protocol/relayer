@@ -41,7 +41,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       // any tokens so rebalancing can take into account unwrapped WETH balances.
       await relayerClients.inventoryClient.unwrapWeth();
 
-      await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+      if (!config.skipRebalancing) {
+        await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+      }
 
       // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
       relayerClients.profitClient.clearUnprofitableFills();
