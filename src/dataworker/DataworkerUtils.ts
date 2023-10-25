@@ -159,7 +159,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
         realizedLpFeePct: deposit.deposit.realizedLpFeePct,
         relayerFeePct: deposit.deposit.relayerFeePct,
         depositId: deposit.deposit.depositId,
-        message: "0x",
+        message: deposit.deposit.message,
       },
       payoutAdjustmentPct: deposit?.relayerBalancingFee?.toString() ?? "0",
     })
