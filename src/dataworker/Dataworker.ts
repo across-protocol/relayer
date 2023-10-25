@@ -1457,7 +1457,7 @@ export class Dataworker {
     const leaves = _leaves.filter(({ payoutAdjustmentPct, relayData }) => {
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(relayData.message)) {
-        this.logger.error({
+        this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill leaf with message",
           leafExecutionArgs: [
