@@ -280,7 +280,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       relayerInstance.config.sendingMessageRelaysEnabled = sendingMessageRelaysEnabled;
       profitClient.clearUnprofitableFills();
 
-      const deposit = await buildDeposit(
+      await buildDeposit(
         hubPoolClient,
         spokePool_1,
         erc20_1,

@@ -1,7 +1,13 @@
 import { random } from "lodash";
 import { Provider } from "@ethersproject/abstract-provider";
 import { utils as ethersUtils } from "ethers";
-import { constants as sdkConsts, priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import {
+  constants as sdkConsts,
+  priceClient,
+  relayFeeCalculator,
+  typeguards,
+  utils as sdkUtils,
+} from "@across-protocol/sdk-v2";
 import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as constants from "../common/Constants";
 import {
@@ -19,6 +25,7 @@ import {
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from ".";
 
+const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
 const { EMPTY_MESSAGE, DEFAULT_SIMULATED_RELAYER_ADDRESS: TEST_RELAYER } = sdkConsts;
 const {
@@ -185,7 +192,15 @@ export class ProfitClient {
     try {
       const gasCost = await relayerFeeQueries[chainId].getGasCosts(deposit, fillAmount, relayerAddress);
       return toBN(gasCost); // BigNumberish -> BigNumber
-    } catch {
+    } catch (err) {
+      const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+      this.logger.warn({
+        at: "ProfitClient#getTotalGasCost",
+        message: "Failed to simulate fill for deposit.",
+        reason,
+        deposit,
+        fillAmount,
+      });
       return bnZero;
     }
   }
