@@ -82,8 +82,8 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
       });
       redisClients[url] = new RedisClient(redisClient, globalNamespace);
     } catch (err) {
-      await disconnectRedisClient(redisClient, logger);
       delete redisClients[url];
+      await disconnectRedisClient(redisClient, logger);
       logger?.debug({
         at: "RedisUtils#getRedis",
         message: `Failed to connect to redis server at ${url}.`,
@@ -145,6 +145,9 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
       message: "Disconnecting from redis server.",
       url,
     };
+    // We should delete the client from our cache object before
+    // we disconnect from redis.
+    delete redisClients[url];
     // We don't want to throw an error if we can't disconnect from redis.
     // We can log the error and continue.
     try {
@@ -153,10 +156,6 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
     } catch (e) {
       logParams["success"] = false;
       logParams["error"] = e;
-    } finally {
-      // No matter what we need to eject this from
-      // our memory cache object.
-      delete redisClients[url];
     }
     logger?.debug(logParams);
   }
