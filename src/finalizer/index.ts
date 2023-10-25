@@ -11,7 +11,7 @@ import {
   blockExplorerLink,
   getBlockForTimestamp,
   getCurrentTime,
-  disconnectRedisClient,
+  disconnectRedisClients,
   getMultisender,
   winston,
 } from "../utils";
@@ -270,8 +270,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
         break;
       }
     }
-  } catch (error) {
-    await disconnectRedisClient(logger);
-    throw error;
+  } finally {
+    await disconnectRedisClients(logger);
   }
 }

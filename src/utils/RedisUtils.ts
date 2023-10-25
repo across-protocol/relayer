@@ -30,6 +30,10 @@ export class RedisClient {
     return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
   }
 
+  get url(): string {
+    return this.client.options.url;
+  }
+
   async get(key: string): Promise<string | undefined> {
     return this.client.get(this.getNamespacedKey(key));
   }
@@ -52,7 +56,7 @@ export class RedisClient {
   }
 
   async disconnect(): Promise<void> {
-    await this.client.disconnect();
+    await disconnectRedisClient(this.client, this.logger);
   }
 }
 
@@ -67,8 +71,9 @@ const redisClients: { [url: string]: RedisClient } = {};
 
 export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient | undefined> {
   if (!redisClients[url]) {
+    let redisClient: _RedisClient | undefined = undefined;
     try {
-      const redisClient = createClient({ url });
+      redisClient = createClient({ url });
       await redisClient.connect();
       logger?.debug({
         at: "RedisUtils#getRedis",
@@ -77,6 +82,8 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
       });
       redisClients[url] = new RedisClient(redisClient, globalNamespace);
     } catch (err) {
+      delete redisClients[url];
+      await disconnectRedisClient(redisClient, logger);
       logger?.debug({
         at: "RedisUtils#getRedis",
         message: `Failed to connect to redis server at ${url}.`,
@@ -129,12 +136,28 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   }
 }
 
-export async function disconnectRedisClient(logger?: winston.Logger): Promise<void> {
-  const redisClient = await getRedis(logger);
-  if (redisClient !== undefined) {
-    // todo understand why redisClient isn't GCed automagically.
-    logger.debug({ at: "disconnectRedisClient", message: "Disconnecting from redis server." });
-    await redisClient.disconnect();
+export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
+  // todo understand why redisClients arent't GCed automagically.
+  const clients = Object.entries(redisClients);
+  for (const [url, client] of clients) {
+    const logParams = {
+      at: "RedisUtils#disconnectRedisClient",
+      message: "Disconnecting from redis server.",
+      url,
+    };
+    // We should delete the client from our cache object before
+    // we disconnect from redis.
+    delete redisClients[url];
+    // We don't want to throw an error if we can't disconnect from redis.
+    // We can log the error and continue.
+    try {
+      await client.disconnect();
+      logParams["success"] = true;
+    } catch (e) {
+      logParams["success"] = false;
+      logParams["error"] = e;
+    }
+    logger?.debug(logParams);
   }
 }
 
@@ -152,4 +175,24 @@ export function objectWithBigNumberReviver(_: string, value: { type: string; hex
     return value;
   }
   return toBN(value.hex);
+}
+
+/**
+ * An internal function to disconnect from a redis client. This function is designed to NOT throw an error if the
+ * disconnect fails.
+ * @param client The redis client to disconnect from.
+ * @param logger An optional logger to use to log the disconnect.
+ */
+async function disconnectRedisClient(client: _RedisClient, logger?: winston.Logger): Promise<void> {
+  let disconnectSuccessful = true;
+  try {
+    await client.disconnect();
+  } catch (_e) {
+    disconnectSuccessful = false;
+  }
+  const url = client.options.url ?? "unknown";
+  logger?.debug({
+    at: "RedisClient#disconnect",
+    message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,
+  });
 }
