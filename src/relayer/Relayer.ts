@@ -275,6 +275,9 @@ export class Relayer {
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
+      } else if (deposit.recipient === this.relayerAddress) {
+        // A relayer can fill its own deposit without an ERC20 transfer.
+        this.fillRelay(deposit, unfilledAmount, destinationChainId);
       } else {
         tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
