@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClients } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -51,8 +51,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
         break;
       }
     }
-  } catch (error) {
-    await disconnectRedisClient(logger);
-    throw error;
+  } finally {
+    await disconnectRedisClients(logger);
   }
 }

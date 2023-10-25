@@ -4,7 +4,7 @@ import {
   config,
   startupLogLevel,
   Wallet,
-  disconnectRedisClient,
+  disconnectRedisClients,
   getRedisCache,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
@@ -189,8 +189,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         break;
       }
     }
-  } catch (error) {
-    await disconnectRedisClient(logger);
-    throw error;
+  } finally {
+    await disconnectRedisClients(logger);
   }
 }
