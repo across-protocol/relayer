@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClients } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -41,7 +41,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       // any tokens so rebalancing can take into account unwrapped WETH balances.
       await relayerClients.inventoryClient.unwrapWeth();
 
-      await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+      if (!config.skipRebalancing) {
+        await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+      }
 
       // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
       relayerClients.profitClient.clearUnprofitableFills();
@@ -51,8 +53,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
         break;
       }
     }
-  } catch (error) {
-    await disconnectRedisClient(logger);
-    throw error;
+  } finally {
+    await disconnectRedisClients(logger);
   }
 }
