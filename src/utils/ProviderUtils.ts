@@ -412,7 +412,9 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
   _validateResponse(method: string, params: Array<any>, response: any): boolean {
     // Basic validation logic to start.
-    return isDefined(response);
+    // Note: eth_getTransactionReceipt is ignored here because null responses are expected in the case that ethers is
+    // polling for the transaction receipt and receiving null until it does.
+    return isDefined(response) || method === "eth_getTransactionReceipt";
   }
 
   async _sendAndValidate(
