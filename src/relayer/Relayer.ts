@@ -352,6 +352,14 @@ export class Relayer {
    * @param deposit Deposit object to zero-fill.
    */
   zeroFillDeposit(deposit: Deposit): void {
+    if (!isMessageEmpty(deposit)) {
+      this.logger.debug({
+        at: "Relayer::zeroFillDeposit",
+        message: "Suppressing zero-fill for deposit with message.",
+        deposit,
+      });
+      return;
+    }
     this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
