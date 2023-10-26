@@ -64,7 +64,10 @@ async function getRelayerFeePct(request: relayerFeeQuery, timeout = 3000): Promi
 
   try {
     const quote = await axios.get(url, { timeout, params: request });
-    return quote?.data["relayFeePct"];
+    if (!isDefined(quote.data["relayFeePct"])) {
+      throw new Error(`relayFeePct missing from suggested-fees response`);
+    }
+    return toBN(quote.data["relayFeePct"]);
   } catch (err) {
     if (isAxiosError(err) && err.response.status >= 400) {
       throw new Error(`Failed to get quote for deposit (${err.response.data})`);
