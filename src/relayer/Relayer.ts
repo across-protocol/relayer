@@ -352,6 +352,16 @@ export class Relayer {
    * @param deposit Deposit object to zero-fill.
    */
   zeroFillDeposit(deposit: Deposit): void {
+    // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
+    // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
+    if (!isMessageEmpty(deposit.message)) {
+      this.logger.debug({
+        at: "Relayer::zeroFillDeposit",
+        message: "Suppressing zero-fill for deposit with message.",
+        deposit,
+      });
+      return;
+    }
     this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
