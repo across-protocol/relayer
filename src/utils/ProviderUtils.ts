@@ -90,6 +90,7 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
         "miner", // polygon (sometimes)
         "l1BatchNumber", // zkSync
         "l1BatchTimestamp", // zkSync
+        "size", // Alchemy/Arbitrum (temporary)
       ],
       rpcResultA,
       rpcResultB
