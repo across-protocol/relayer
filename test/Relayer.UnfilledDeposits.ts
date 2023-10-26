@@ -1,3 +1,4 @@
+import { clients } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient, UBAClient } from "../src/clients";
 import {
   CHAIN_ID_TEST_LIST,
@@ -27,7 +28,6 @@ import {
   simpleDeposit,
   toBNWei,
 } from "./utils";
-import { clients } from "@across-protocol/sdk-v2";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
@@ -109,6 +109,10 @@ describe("Relayer: Unfilled Deposits", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
+    for (const erc20 of [l1Token]) {
+      await profitClient.initToken(erc20);
+    }
+
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,

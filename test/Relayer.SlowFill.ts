@@ -3,7 +3,6 @@ import {
   ConfigStoreClient,
   HubPoolClient,
   MultiCallerClient,
-  ProfitClient,
   SpokePoolClient,
   TokenClient,
 } from "../src/clients";
@@ -41,6 +40,7 @@ import {
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import { MockProfitClient } from "./mocks/MockProfitClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -50,7 +50,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
-let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
+let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("Relayer: Zero sized fill for slow relay", async function () {
@@ -113,7 +113,11 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, [], relayer.address);
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, [], relayer.address);
+    for (const erc20 of [l1Token]) {
+      await profitClient.initToken(erc20);
+    }
+
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,

@@ -85,12 +85,12 @@ describe("ProfitClient: Consider relay profit", () => {
     })
   );
 
-  const tokenPrices: { [symbol: string]: BigNumber } = {
-    MATIC: toBNWei("0.4"),
-    USDC: toBNWei(1),
-    WBTC: toBNWei(21000),
-    WETH: toBNWei(3000),
-  };
+  const tokenPrices = Object.fromEntries(
+    Object.keys(tokens).map((symbol) => {
+      const { decimals } = TOKEN_SYMBOLS_MAP[symbol];
+      return [symbol, toBNWei(random(0.1, 21000, true).toFixed(decimals))];
+    })
+  );
 
   // Quirk: Use the chainId as the gas price in Gwei. This gives a range of
   // gas prices to test with, since there's a spread in the chainId numbers.
@@ -102,25 +102,16 @@ describe("ProfitClient: Consider relay profit", () => {
     })
   );
 
-  const setDefaultTokenPrices = (profitClient: MockProfitClient): void => {
-    // Load ERC20 token prices in USD.
-    profitClient.setTokenPrices(
-      Object.fromEntries(Object.entries(tokenPrices).map(([symbol, price]) => [tokens[symbol].address, price]))
-    );
-  };
-
   beforeEach(async () => {
     const [owner] = await ethers.getSigners();
     const logger = createSpyLogger().spyLogger;
 
     const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(logger, configStore);
-
     await configStoreClient.update();
 
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
-
     await hubPoolClient.update();
 
     const chainIds = [originChainId, destinationChainId];
@@ -156,7 +147,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
     // Load per-chain gas cost (gas consumed * gas price in Wei), in native gas token.
     profitClient.setGasCosts(gasCost);
-    setDefaultTokenPrices(profitClient);
+    profitClient.setTokenPrices(tokenPrices);
   });
 
   // Verify gas cost calculation first, so we can leverage it in all subsequent tests.
@@ -265,7 +256,6 @@ describe("ProfitClient: Consider relay profit", () => {
    */
   it("Considers gas cost when computing profitability", async () => {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
-
     for (const destinationChainId of chainIds) {
       const deposit = { amount: bnOne, destinationChainId, message } as Deposit;
 
