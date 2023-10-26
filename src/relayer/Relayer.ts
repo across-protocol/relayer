@@ -234,7 +234,7 @@ export class Relayer {
       // We need to build in better simulation logic for deposits with non-empty messages. Currently we only measure
       // the fill's gas cost against a simple USDC fill with message=0x. This doesn't handle the case where the
       // message is != 0x and it ends up costing a lot of gas to execute, resulting in a big loss to the relayer.
-      if (!isMessageEmpty(resolveDepositMessage(deposit))) {
+      if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
         this.logger.warn({
           at: "Relayer",
           message: "Skipping fill for deposit with message",
@@ -357,6 +357,16 @@ export class Relayer {
    * @param deposit Deposit object to zero-fill.
    */
   zeroFillDeposit(deposit: Deposit): void {
+    // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
+    // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
+    if (!isMessageEmpty(deposit.message)) {
+      this.logger.debug({
+        at: "Relayer::zeroFillDeposit",
+        message: "Suppressing zero-fill for deposit with message.",
+        deposit,
+      });
+      return;
+    }
     this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
@@ -538,7 +548,12 @@ export class Relayer {
       : destinationChainId;
 
     const refundFee = this.computeRefundFee(version, deposit);
-    const { profitable, nativeGasCost } = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
+    const { profitable, nativeGasCost } = await profitClient.isFillProfitable(
+      deposit,
+      fillAmount,
+      refundFee,
+      hubPoolToken
+    );
 
     return {
       repaymentChainId: profitable ? preferredChainId : undefined,

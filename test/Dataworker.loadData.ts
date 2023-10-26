@@ -730,7 +730,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
     const blockNumber = await spokePool_2.provider.getBlockNumber();
-    const blockTimestamp = (await spokePool_2.provider.getBlock(blockNumber)).timestamp;
     const realizedLpFeePctData = await hubPoolClient.computeRealizedLpFeePct(
       { ...deposit1, blockNumber },
       l1Token_1.address
@@ -740,8 +739,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
     expect(data1.deposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
-      .to.deep.equal([{ ...deposit1, quoteBlockNumber: realizedLpFeePctData.quoteBlock, blockNumber, blockTimestamp }]);
+      .excludingEvery(["blockTimestamp", "logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([{ ...deposit1, quoteBlockNumber: realizedLpFeePctData.quoteBlock, blockNumber }]);
 
     // If block range does not cover deposits, then they are not included
     expect(

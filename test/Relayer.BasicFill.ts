@@ -273,23 +273,35 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Ignores deposit with non-empty message", async function () {
-    await buildDeposit(
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token,
-      depositor,
-      destinationChainId,
-      undefined, // amount
-      undefined, // relayerFeePct
-      undefined, // quoteTimestamp,
-      "0x0000" // message
-    );
+    const quoteTimestamp = await spokePool_1.getCurrentTime();
+    const { profitClient } = relayerInstance.clients;
 
-    await updateAllClients();
-    await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
-    expect(multiCallerClient.transactionCount()).to.equal(0);
+    for (const sendingMessageRelaysEnabled of [false, true]) {
+      relayerInstance.config.sendingMessageRelaysEnabled = sendingMessageRelaysEnabled;
+      profitClient.clearUnprofitableFills();
+
+      await buildDeposit(
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token,
+        depositor,
+        destinationChainId,
+        bnOne, // amount
+        bnOne, // relayerFeePct
+        quoteTimestamp,
+        "0x0000" // message
+      );
+
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+
+      // Dynamic fill simulation fails in test, so the deposit will
+      // appear as unprofitable when message filling is enabled.
+      expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.equal(!sendingMessageRelaysEnabled);
+      expect(profitClient.anyCapturedUnprofitableFills()).to.equal(sendingMessageRelaysEnabled);
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+    }
   });
 
   it("Uses new relayer fee pct on updated deposits", async function () {
