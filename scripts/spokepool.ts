@@ -61,7 +61,7 @@ function printFill(log: LogDescription): void {
   );
 }
 
-async function getRelayerFeePct(params: relayerFeeQuery, timeout = 3000): Promise<BigNumber> {
+async function getRelayerFeePct(params: relayerFeeQuery, timeout = 5000): Promise<BigNumber> {
   const path = "api/suggested-fees";
   const url = `https://${ACROSS_API_HOST}/${path}`;
 
