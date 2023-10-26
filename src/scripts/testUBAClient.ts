@@ -15,7 +15,7 @@ import {
   retrieveSignerFromCLIArgs,
   Logger,
   getBlockForTimestamp,
-  disconnectRedisClient,
+  disconnectRedisClients,
   REDIS_URL,
   getRedisCache,
 } from "../utils";
@@ -143,9 +143,12 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
 }
 
 export async function run(_logger: winston.Logger): Promise<void> {
-  const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
-  await testUBAClient(_logger, baseSigner);
-  await disconnectRedisClient(logger);
+  try {
+    const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+    await testUBAClient(_logger, baseSigner);
+  } finally {
+    await disconnectRedisClients(logger);
+  }
 }
 
 // eslint-disable-next-line no-process-exit

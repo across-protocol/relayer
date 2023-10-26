@@ -21,7 +21,7 @@ import {
   getBlockForTimestamp,
   sortEventsDescending,
   getDisputeForTimestamp,
-  disconnectRedisClient,
+  disconnectRedisClients,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -201,9 +201,12 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 }
 
 export async function run(_logger: winston.Logger): Promise<void> {
-  const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
-  await validate(_logger, baseSigner);
-  await disconnectRedisClient(logger);
+  try {
+    const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+    await validate(_logger, baseSigner);
+  } finally {
+    await disconnectRedisClients(logger);
+  }
 }
 
 // eslint-disable-next-line no-process-exit
