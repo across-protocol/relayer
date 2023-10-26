@@ -65,7 +65,7 @@ async function getRelayerFeePct(request: relayerFeeQuery, timeout = 3000): Promi
   try {
     const quote = await axios.get(url, { timeout, params: request });
     if (!isDefined(quote.data["relayFeePct"])) {
-      throw new Error(`relayFeePct missing from suggested-fees response`);
+      throw new Error("relayFeePct missing from suggested-fees response");
     }
     return toBN(quote.data["relayFeePct"]);
   } catch (err) {
