@@ -10,10 +10,12 @@ import { BigNumber, formatFeePct, getNetworkName, getSigner, isDefined, resolveT
 import * as utils from "./utils";
 
 type relayerFeeQuery = {
-  token: string;
   originChainId: number;
   destinationChainId: number;
-  amount: BigNumber;
+  token: string;
+  amount: string;
+  recipientAddress?: string;
+  message?: string;
 };
 
 const { ACROSS_API_HOST = "across.to" } = process.env;
@@ -59,12 +61,12 @@ function printFill(log: LogDescription): void {
   );
 }
 
-async function getRelayerFeePct(request: relayerFeeQuery, timeout = 3000): Promise<BigNumber> {
+async function getRelayerFeePct(params: relayerFeeQuery, timeout = 3000): Promise<BigNumber> {
   const path = "api/suggested-fees";
   const url = `https://${ACROSS_API_HOST}/${path}`;
 
   try {
-    const quote = await axios.get(url, { timeout, params: request });
+    const quote = await axios.get(url, { timeout, params });
     if (!isDefined(quote.data["relayFeePct"])) {
       throw new Error("relayFeePct missing from suggested-fees response");
     }
@@ -81,7 +83,9 @@ async function getRelayerQuote(
   fromChainId: number,
   toChainId: number,
   token: utils.ERC20,
-  amount: BigNumber
+  amount: BigNumber,
+  recipient?: string,
+  message?: string
 ): Promise<BigNumber> {
   const tokenFormatter = sdkUtils.createFormatFunction(2, 4, false, token.decimals);
   let relayerFeePct = Zero;
@@ -91,7 +95,9 @@ async function getRelayerQuote(
       token: token.address,
       originChainId: fromChainId,
       destinationChainId: toChainId,
-      amount,
+      amount: amount.toString(),
+      recipientAddress: recipient,
+      message
     });
 
     const feeAmount = amount.mul(relayerFeePct).div(fixedPoint);
@@ -140,7 +146,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const maxCount = MaxUint256;
   const relayerFeePct = isDefined(args.relayerFeePct)
     ? toBN(args.relayerFeePct)
-    : await getRelayerQuote(fromChainId, toChainId, token, amount);
+    : await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
 
   const deposit = await spokePool.depositNow(
     recipient,
