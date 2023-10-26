@@ -16,6 +16,8 @@ type relayerFeeQuery = {
   amount: BigNumber;
 };
 
+const { ACROSS_API_HOST = "across.to" } = process.env;
+
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
@@ -58,9 +60,8 @@ function printFill(log: LogDescription): void {
 }
 
 async function getRelayerFeePct(request: relayerFeeQuery, timeout = 3000): Promise<BigNumber> {
-  const host = "across.to";
   const path = "api/suggested-fees";
-  const url = `https://${host}/${path}`;
+  const url = `https://${ACROSS_API_HOST}/${path}`;
 
   try {
     const quote = await axios.get(url, { timeout, params: request });
