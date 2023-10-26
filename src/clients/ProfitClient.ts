@@ -1,7 +1,13 @@
 import { random } from "lodash";
 import { Provider } from "@ethersproject/abstract-provider";
-import { constants as ethersConstants, utils as ethersUtils } from "ethers";
-import { constants as sdkConsts, priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as ethersUtils } from "ethers";
+import {
+  constants as sdkConsts,
+  priceClient,
+  relayFeeCalculator,
+  typeguards,
+  utils as sdkUtils,
+} from "@across-protocol/sdk-v2";
 import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as constants from "../common/Constants";
 import {
@@ -19,11 +25,12 @@ import {
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from ".";
 
+const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
-
 const { EMPTY_MESSAGE, DEFAULT_SIMULATED_RELAYER_ADDRESS: TEST_RELAYER } = sdkConsts;
 const {
   bnOne,
+  bnZero,
   bnUint32Max,
   bnUint256Max: uint256Max,
   fixedPointAdjustment: fixedPoint,
@@ -165,14 +172,14 @@ export class ProfitClient {
     // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
     if (this.tokenPrices[token] === undefined && !this.isTestnet) {
       this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.` });
-      return ethersConstants.Zero;
+      return bnZero;
     }
 
     return this.tokenPrices[token];
   }
 
   // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
-  getTotalGasCost(deposit: Deposit): BigNumber {
+  async getTotalGasCost(deposit: Deposit, fillAmount = deposit.amount): Promise<BigNumber> {
     const { destinationChainId: chainId } = deposit;
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
@@ -181,21 +188,38 @@ export class ProfitClient {
       return toBN(this.totalGasCosts[chainId]);
     }
 
-    return ethersConstants.Zero; // @todo: Return uint256max in a follow-up change.
+    const { relayerAddress, relayerFeeQueries } = this;
+    try {
+      const gasCost = await relayerFeeQueries[chainId].getGasCosts(deposit, fillAmount, relayerAddress);
+      return toBN(gasCost); // BigNumberish -> BigNumber
+    } catch (err) {
+      const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+      this.logger.warn({
+        at: "ProfitClient#getTotalGasCost",
+        message: "Failed to simulate fill for deposit.",
+        reason,
+        deposit,
+        fillAmount,
+      });
+      return bnZero;
+    }
   }
 
   // Estimate the gas cost of filling this relay.
-  estimateFillCost(deposit: Deposit): Pick<FillProfit, "nativeGasCost" | "gasPriceUsd" | "gasCostUsd"> {
+  async estimateFillCost(
+    deposit: Deposit,
+    fillAmount = deposit.amount
+  ): Promise<Pick<FillProfit, "nativeGasCost" | "gasPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
     const gasPriceUsd = this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[chainId]);
-    const nativeGasCost = this.getTotalGasCost(deposit); // gas cost in native token
+    const nativeGasCost = await this.getTotalGasCost(deposit, fillAmount); // gas cost in native token
 
     if (gasPriceUsd.lte(0) || nativeGasCost.lte(0)) {
       const err = gasPriceUsd.lte(0) ? "gas price" : "gas consumption";
       throw new Error(`Unable to compute gas cost (${err} unknown)`);
     }
 
-    // this._gasMultiplier is scaled to 18 decimals
+    // this.gasMultiplier is scaled to 18 decimals
     const gasCostUsd = nativeGasCost
       .mul(this.gasMultiplier)
       .mul(gasPriceUsd)
@@ -240,13 +264,13 @@ export class ProfitClient {
     return max(toBN(deposit.relayerFeePct), toBN(deposit.newRelayerFeePct ?? 0));
   }
 
-  calculateFillProfitability(
+  async calculateFillProfitability(
     deposit: Deposit,
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token,
     minRelayerFeePct: BigNumber
-  ): FillProfit {
+  ): Promise<FillProfit> {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
       Object.keys(GAS_TOKEN_BY_CHAIN_ID).includes(deposit.destinationChainId.toString()),
@@ -277,7 +301,7 @@ export class ProfitClient {
     const relayerCapitalUsd = relayerCapital.mul(tokenPriceUsd).div(fixedPoint);
 
     // Estimate the gas cost of filling this relay.
-    const { nativeGasCost, gasPriceUsd, gasCostUsd } = this.estimateFillCost(deposit);
+    const { nativeGasCost, gasPriceUsd, gasCostUsd } = await this.estimateFillCost(deposit, fillAmount);
 
     // Determine profitability.
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd).sub(refundFeeUsd);
@@ -315,10 +339,15 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
-  getFillProfitability(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): FillProfit {
+  async getFillProfitability(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    refundFee: BigNumber,
+    l1Token: L1Token
+  ): Promise<FillProfit> {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
 
-    const fill = this.calculateFillProfitability(deposit, fillAmount, refundFee, l1Token, minRelayerFeePct);
+    const fill = await this.calculateFillProfitability(deposit, fillAmount, refundFee, l1Token, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
       const { depositId, originChainId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
@@ -347,16 +376,16 @@ export class ProfitClient {
     return fill;
   }
 
-  isFillProfitable(
+  async isFillProfitable(
     deposit: Deposit,
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token
-  ): Pick<FillProfit, "profitable" | "nativeGasCost"> {
+  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost">> {
     let profitable = false;
     let nativeGasCost = uint256Max;
     try {
-      ({ profitable, nativeGasCost } = this.getFillProfitability(deposit, fillAmount, refundFee, l1Token));
+      ({ profitable, nativeGasCost } = await this.getFillProfitability(deposit, fillAmount, refundFee, l1Token));
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
@@ -405,7 +434,7 @@ export class ProfitClient {
     Object.values(l1Tokens).forEach((token: L1Token) => {
       const { address, symbol } = token;
       if (this.tokenPrices[address] === undefined) {
-        this.tokenPrices[address] = ethersConstants.Zero;
+        this.tokenPrices[address] = bnZero;
         newTokens.push(symbol);
       }
     });
@@ -455,9 +484,9 @@ export class ProfitClient {
         depositId,
         depositor: TEST_RECIPIENT,
         recipient: TEST_RECIPIENT,
-        originToken: "", // not relevant
+        originToken: "", // Not verified by the SpokePool.
         amount: fillAmount,
-        originChainId: this.enabledChainIds.find((chainId) => chainId !== destinationChainId),
+        originChainId: destinationChainId, // Not verified by the SpokePool.
         destinationChainId,
         relayerFeePct: bnOne,
         realizedLpFeePct: bnOne,
