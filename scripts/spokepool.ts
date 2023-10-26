@@ -97,7 +97,7 @@ async function getRelayerQuote(
       destinationChainId: toChainId,
       amount: amount.toString(),
       recipientAddress: recipient,
-      message
+      message,
     });
 
     const feeAmount = amount.mul(relayerFeePct).div(fixedPoint);
