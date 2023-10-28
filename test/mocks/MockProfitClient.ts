@@ -1,6 +1,7 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { GAS_TOKEN_BY_CHAIN_ID, HubPoolClient, ProfitClient, WETH } from "../../src/clients";
+import { GAS_TOKEN_BY_CHAIN_ID, HubPoolClient, ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
+import { isDefined } from "../../src/utils";
 import { BigNumber, winston } from "../utils";
 
 export class MockProfitClient extends ProfitClient {
@@ -27,10 +28,17 @@ export class MockProfitClient extends ProfitClient {
 
     // Some tests run against mocked chains, so hack in the necessary parts
     Object.values(spokePoolClients).map(({ chainId }) => {
-      this.setGasCost(chainId, sdkUtils.bnOne);
-      GAS_TOKEN_BY_CHAIN_ID[chainId] ??= WETH;
+      GAS_TOKEN_BY_CHAIN_ID[chainId] ??= "WETH";
+
+      // Ensure a minimum price for the gas token.
+      const gasToken = this.resolveGasToken(hubPoolClient.chainId);
+      const gasTokenPrice = this.getPriceOfToken(gasToken.address);
+      if (!isDefined(gasTokenPrice) || gasTokenPrice.eq(sdkUtils.bnZero)) {
+        this.setTokenPrice(gasToken.address, sdkUtils.bnOne);
+      }
+
+      this.setGasCost(chainId, sdkUtils.bnOne); // Units of gas for a single fillRelay() execution.
     });
-    this.setTokenPrice(WETH, sdkUtils.bnOne);
   }
 
   setTokenPrice(l1Token: string, price: BigNumber | undefined): void {
