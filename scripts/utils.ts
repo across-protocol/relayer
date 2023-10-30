@@ -4,7 +4,7 @@ import readline from "readline";
 import * as contracts from "@across-protocol/contracts-v2";
 import { getDeployedContract, getNodeUrlList } from "../src/utils";
 
-type ERC20 = {
+export type ERC20 = {
   address: string;
   decimals: number;
   symbol: string;
