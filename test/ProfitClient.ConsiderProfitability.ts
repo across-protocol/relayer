@@ -216,7 +216,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
   it("Verify token price and gas cost lookup failures", async () => {
     const fillAmount = toBNWei(1);
-    const l1Token = tokens["WETH"];
+    const l1Token = tokens.WETH;
     const relayerFeePct = toBNWei("0.0003");
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
@@ -425,7 +425,7 @@ describe("ProfitClient: Consider relay profit", () => {
   });
 
   it("Considers deposits with newRelayerFeePct", async () => {
-    const l1Token = tokens["WETH"];
+    const l1Token = tokens.WETH;
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
     const fillAmount = toBNWei(1);
@@ -442,7 +442,7 @@ describe("ProfitClient: Consider relay profit", () => {
   });
 
   it("Ignores newRelayerFeePct if it's lower than original relayerFeePct", async () => {
-    const l1Token = tokens["WETH"];
+    const l1Token = tokens.WETH;
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
     const deposit = {
