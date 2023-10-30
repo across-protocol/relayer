@@ -106,11 +106,11 @@ const QUERY_HANDLERS: {
   42161: relayFeeCalculator.ArbitrumQueries,
   8453: relayFeeCalculator.BaseQueries,
   // Testnets:
-  5: relayFeeCalculator.EthereumQueries,
+  5: relayFeeCalculator.EthereumGoerliQueries,
   280: relayFeeCalculator.zkSyncGoerliQueries,
-  80001: relayFeeCalculator.PolygonQueries,
+  80001: relayFeeCalculator.PolygonMumbaiQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
-  421613: relayFeeCalculator.ArbitrumQueries,
+  421613: relayFeeCalculator.ArbitrumGoerliQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -471,11 +471,14 @@ export class ProfitClient {
     const quoteTimestamp = getCurrentTime();
 
     // Pre-fetch total gas costs for relays on enabled chains.
+    const testToken = "WETH";
+    const WETH = TOKEN_SYMBOLS_MAP[testToken].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId, idx) => {
       const destinationToken =
         destinationChainId === hubPoolClient.chainId
-          ? USDC
-          : hubPoolClient.getDestinationTokenForL1Token(USDC, destinationChainId);
+          ? WETH
+          : hubPoolClient.getDestinationTokenForL1Token(WETH, destinationChainId);
+      assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testToken}`);
 
       // @dev The relayer _can not_ be the recipient, since the SpokePool short-circuits the ERC20 transfer
       // and consumes less gas. Instead, just use the main RL address as the simulated relayer, since it has
