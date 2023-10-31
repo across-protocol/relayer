@@ -73,7 +73,7 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = getMultisender(hubChainId, hubSigner);
+  const multicall2 = await getMultisender(hubChainId, hubSigner);
   const finalizationsToBatch: { txn: Multicall2Call; withdrawal?: Withdrawal }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
