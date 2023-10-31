@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   AugmentedTransaction,
   knownRevertReasons,
@@ -8,7 +9,6 @@ import { TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, smock, assertPromiseError } from "./utils";
-import { getAbi } from "@uma/contracts-node";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 class DummyMultiCallerClient extends MockedMultiCallerClient {
@@ -339,7 +339,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly handles unpermissioned transactions", async function () {
-    const fakeMultisender = await smock.fake(getAbi("Multicall3"), { address: randomAddress() });
+    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
     const multicallerWithMultisend = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:

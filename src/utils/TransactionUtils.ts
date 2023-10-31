@@ -1,6 +1,5 @@
-import { gasPriceOracle, typeguards } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { FeeData } from "@ethersproject/abstract-provider";
-import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
 import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
@@ -34,11 +33,11 @@ const txnRetryable = (error?: unknown): boolean => {
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
-export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
+export async function getMultisender(chainId: number, baseSigner: Wallet): Promise<Contract | undefined> {
   if (!multicall3Addresses[chainId] || !baseSigner) {
     return undefined;
   }
-  return new Contract(multicall3Addresses[chainId], getAbi("Multicall3"), baseSigner);
+  return new Contract(multicall3Addresses[chainId], await sdkUtils.getABI("Multicall3"), baseSigner);
 }
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
