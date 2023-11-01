@@ -1,7 +1,12 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { GAS_TOKEN_BY_CHAIN_ID, HubPoolClient, ProfitClient, WETH } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { BigNumber, winston } from "../utils";
+import { BigNumber, toBN, toBNWei, winston } from "../utils";
+
+type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
+
+const defaultFillCost = toBN(100_000); // gas
+const defaultGasPrice = sdkUtils.bnOne; // wei per gas
 
 export class MockProfitClient extends ProfitClient {
   constructor(
@@ -12,7 +17,8 @@ export class MockProfitClient extends ProfitClient {
     relayerAddress: string,
     defaultMinRelayerFeePct?: BigNumber,
     debugProfitability?: boolean,
-    gasMultiplier?: BigNumber
+    gasMultiplier = toBNWei("1"),
+    gasPadding = toBNWei("0")
   ) {
     super(
       logger,
@@ -22,18 +28,23 @@ export class MockProfitClient extends ProfitClient {
       relayerAddress,
       defaultMinRelayerFeePct,
       debugProfitability,
-      gasMultiplier
+      gasMultiplier,
+      gasPadding
     );
 
     // Some tests run against mocked chains, so hack in the necessary parts
+    const defaultGasCost = {
+      nativeGasCost: defaultFillCost,
+      tokenGasCost: defaultGasPrice.mul(defaultFillCost),
+    };
     Object.values(spokePoolClients).map(({ chainId }) => {
-      this.setGasCost(chainId, sdkUtils.bnOne);
+      this.setGasCost(chainId, defaultGasCost);
       GAS_TOKEN_BY_CHAIN_ID[chainId] ??= WETH;
     });
     this.setTokenPrice(WETH, sdkUtils.bnOne);
   }
 
-  setTokenPrice(l1Token: string, price: BigNumber | undefined): void {
+  setTokenPrice(l1Token: string, price?: BigNumber): void {
     if (price) {
       this.tokenPrices[l1Token] = price;
     } else {
@@ -45,7 +56,7 @@ export class MockProfitClient extends ProfitClient {
     this.tokenPrices = tokenPrices;
   }
 
-  setGasCost(chainId: number, gas: BigNumber | undefined): void {
+  setGasCost(chainId: number, gas?: TransactionCostEstimate): void {
     if (gas) {
       this.totalGasCosts[chainId] = gas;
     } else {
@@ -53,8 +64,12 @@ export class MockProfitClient extends ProfitClient {
     }
   }
 
-  setGasCosts(gasCosts: { [chainId: number]: BigNumber }): void {
+  setGasCosts(gasCosts: { [chainId: number]: TransactionCostEstimate }): void {
     this.totalGasCosts = gasCosts;
+  }
+
+  setGasPadding(gasPadding: BigNumber): void {
+    this.gasPadding = gasPadding;
   }
 
   setGasMultiplier(gasMultiplier: BigNumber): void {

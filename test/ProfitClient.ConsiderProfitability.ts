@@ -28,6 +28,8 @@ import {
   winston,
 } from "./utils";
 
+type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
+
 const { bnOne, bnZero, fixedPointAdjustment: fixedPoint, toGWei } = sdkUtils;
 const { formatEther } = ethers.utils;
 
@@ -57,11 +59,12 @@ const tokenPrices: { [symbol: string]: BigNumber } = {
 
 // Quirk: Use the chainId as the gas price in Gwei. This gives a range of
 // gas prices to test with, since there's a spread in the chainId numbers.
-const gasCost: { [chainId: number]: BigNumber } = Object.fromEntries(
+const gasCost: { [chainId: number]: TransactionCostEstimate } = Object.fromEntries(
   chainIds.map((chainId) => {
-    const nativeGasPrice = toGWei(chainId);
-    const gasConsumed = toBN(100_000); // Assume 100k gas for a single fill
-    return [chainId, gasConsumed.mul(nativeGasPrice)];
+    const nativeGasCost = toBN(100_000); // Assume 100k gas for a single fill
+    const gasTokenPrice = toBN(chainId);
+    const tokenGasCost = nativeGasCost.mul(gasTokenPrice);
+    return [chainId, { nativeGasCost, tokenGasCost }];
   })
 );
 
@@ -160,43 +163,67 @@ describe("ProfitClient: Consider relay profit", () => {
       spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${destinationChainId}.` });
       const deposit = { destinationChainId, message } as Deposit;
 
-      const nativeGasCost = await profitClient.getTotalGasCost(deposit, deposit.amount);
-      expect(nativeGasCost.eq(0)).to.be.false;
-      expect(nativeGasCost.eq(gasCost[destinationChainId])).to.be.true;
+      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.amount);
+      expect(tokenGasCost.eq(0)).to.be.false;
+      expect(tokenGasCost.eq(gasCost[destinationChainId].tokenGasCost)).to.be.true;
 
       const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[destinationChainId];
       let gasToken = Object.values(tokens).find((token) => gasTokenAddr === token.address);
       expect(gasToken).to.not.be.undefined;
       gasToken = gasToken as L1Token;
-
-      const gasPriceUsd = tokenPrices[gasToken.symbol];
-      expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
+      const gasTokenPriceUsd = tokenPrices[gasToken.symbol];
 
       const estimate = await profitClient.estimateFillCost(deposit, deposit.amount);
-      expect(estimate.nativeGasCost.eq(gasCost[destinationChainId])).to.be.true;
-      expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
-      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBN(10).pow(gasToken.decimals)))).to.be.true;
+      Object.entries(gasCost[destinationChainId]).forEach(([k, v]) => expect(estimate[k].eq(v)).to.be.true);
+      expect(estimate.gasCostUsd.eq(tokenGasCost.mul(gasTokenPriceUsd).div(toBN(10).pow(gasToken.decimals)))).to.be
+        .true;
+    }
+  });
+
+  it("Verify gas padding", async () => {
+    const gasPadding = ["0", "0.10", "0.20", "0.50", "1"].map((padding) => toBNWei("1").add(toBNWei(padding)));
+
+    profitClient.setGasMultiplier(toBNWei("1")); // Neutralise any gas multiplier.
+
+    for (const destinationChainId of chainIds) {
+      spyLogger.debug({ message: `Verifying gas padding for chainId ${destinationChainId}.` });
+      const deposit = { destinationChainId, message } as Deposit;
+
+      const { nativeGasCost: defaultNativeGasCost, tokenGasCost: defaultTokenGasCost } =
+        await profitClient.getTotalGasCost(deposit, deposit.amount);
+
+      for (const padding of gasPadding) {
+        profitClient.setGasPadding(padding);
+
+        const expectedNativeGasCost = defaultNativeGasCost.mul(padding).div(fixedPoint);
+        const expectedTokenGasCost = defaultTokenGasCost.mul(padding).div(fixedPoint);
+
+        const { nativeGasCost, tokenGasCost } = await profitClient.estimateFillCost(deposit);
+        expect(expectedNativeGasCost.eq(nativeGasCost)).to.be.true;
+        expect(expectedTokenGasCost.eq(tokenGasCost)).to.be.true;
+      }
     }
   });
 
   it("Verify gas multiplier", async () => {
+    const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((multiplier) => toBNWei(multiplier));
+
     for (const destinationChainId of chainIds) {
       spyLogger.debug({ message: `Verifying gas multiplier for chainId ${destinationChainId}.` });
       const deposit = { destinationChainId, message } as Deposit;
 
-      const nativeGasCost = await profitClient.getTotalGasCost(deposit, deposit.amount);
-      expect(nativeGasCost.gt(0)).to.be.true;
+      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.amount);
+      expect(tokenGasCost.gt(0)).to.be.true;
 
-      const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
       for (const gasMultiplier of gasMultipliers) {
-        profitClient.setGasMultiplier(toBNWei(gasMultiplier));
+        profitClient.setGasMultiplier(gasMultiplier);
 
         const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[destinationChainId];
         let gasToken = Object.values(tokens).find((token) => gasTokenAddr === token.address);
         expect(gasToken).to.not.be.undefined;
         gasToken = gasToken as L1Token;
 
-        const expectedFillCostUsd = nativeGasCost
+        const expectedFillCostUsd = tokenGasCost
           .mul(tokenPrices[gasToken.symbol])
           .mul(toBNWei(gasMultiplier))
           .div(fixedPoint)
@@ -211,7 +238,9 @@ describe("ProfitClient: Consider relay profit", () => {
     const destinationChainId = 137;
     profitClient.setGasCost(destinationChainId, undefined);
     const deposit = { amount: bnOne, destinationChainId, message } as Deposit;
-    expect(await profitClient.getTotalGasCost(deposit)).to.equal(bnZero);
+    const { nativeGasCost, tokenGasCost } = await profitClient.getTotalGasCost(deposit);
+    expect(nativeGasCost.eq(bnZero)).to.be.true;
+    expect(tokenGasCost.eq(bnZero)).to.be.true;
   });
 
   it("Verify token price and gas cost lookup failures", async () => {
