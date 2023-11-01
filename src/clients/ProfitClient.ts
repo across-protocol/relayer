@@ -1,4 +1,4 @@
-import { random, uniq } from "lodash";
+import { random } from "lodash";
 import { Provider } from "@ethersproject/abstract-provider";
 import { utils as ethersUtils } from "ethers";
 import {
@@ -34,6 +34,7 @@ const {
   bnUint32Max,
   bnUint256Max: uint256Max,
   fixedPointAdjustment: fixedPoint,
+  getNativeTokenSymbol,
   isMessageEmpty,
   resolveDepositMessage,
 } = sdkUtils;
@@ -63,22 +64,6 @@ type UnprofitableFill = {
 
 const WETH = "WETH";
 const MATIC = "MATIC";
-
-export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
-  1: WETH,
-  10: WETH,
-  137: MATIC,
-  288: WETH,
-  324: WETH,
-  42161: WETH,
-  8453: WETH,
-  // Testnets:
-  5: WETH,
-  280: WETH,
-  80001: MATIC,
-  84531: WETH,
-  421613: WETH,
-};
 
 // @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
 // Since _some_ known recipient address is needed for simulating a fill, default to this one. nb. Since
@@ -159,7 +144,7 @@ export class ProfitClient {
   }
 
   resolveGasToken(chainId: number): L1Token {
-    const symbol = GAS_TOKEN_BY_CHAIN_ID[chainId];
+    const symbol = getNativeTokenSymbol(chainId);
     const token = TOKEN_SYMBOLS_MAP[symbol];
     if (!isDefined(symbol) || !isDefined(token)) {
       throw new Error(`Unable to resolve gas token for chain ID ${chainId}`);
@@ -281,11 +266,6 @@ export class ProfitClient {
     minRelayerFeePct: BigNumber
   ): Promise<FillProfit> {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
-    assert(
-      isDefined(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]),
-      `Unsupported destination chain ID: ${deposit.destinationChainId}`
-    );
-
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
     if (tokenPriceUsd.lte(0)) {
       throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
@@ -430,7 +410,8 @@ export class ProfitClient {
     );
 
     // Also ensure all gas tokens are included in the lookup.
-    uniq(Object.values(GAS_TOKEN_BY_CHAIN_ID)).map((symbol) => {
+    this.enabledChainIds.forEach((chainId) => {
+      const symbol = getNativeTokenSymbol(chainId);
       const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
       const address = addresses[1];
       l1Tokens[address] ??= { symbol, decimals, address };

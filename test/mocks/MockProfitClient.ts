@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { GAS_TOKEN_BY_CHAIN_ID, HubPoolClient, ProfitClient } from "../../src/clients";
+import { HubPoolClient, ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
 import { isDefined } from "../../src/utils";
 import { BigNumber, winston } from "../utils";
@@ -28,8 +28,6 @@ export class MockProfitClient extends ProfitClient {
 
     // Some tests run against mocked chains, so hack in the necessary parts
     Object.values(spokePoolClients).map(({ chainId }) => {
-      GAS_TOKEN_BY_CHAIN_ID[chainId] ??= "WETH";
-
       // Ensure a minimum price for the gas token.
       const gasToken = this.resolveGasToken(hubPoolClient.chainId);
       const gasTokenPrice = this.getPriceOfToken(gasToken.address);
