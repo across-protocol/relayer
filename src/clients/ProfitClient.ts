@@ -62,9 +62,6 @@ type UnprofitableFill = {
   nativeGasCost: BigNumber;
 };
 
-const WETH = "WETH";
-const MATIC = "MATIC";
-
 // @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
 // Since _some_ known recipient address is needed for simulating a fill, default to this one. nb. Since
 // the SpokePool implements custom behaviour when relayer === recipient, it's important not to use the
