@@ -469,7 +469,7 @@ export class ProfitClient {
       const destinationToken =
         destinationChainId === hubPoolClient.chainId
           ? hubToken
-          : hubPoolClient.getDestinationTokenForL1Token(testSymbol, destinationChainId);
+          : hubPoolClient.getDestinationTokenForL1Token(hubToken, destinationChainId);
       assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
       // @dev The relayer _can not_ be the recipient, since the SpokePool short-circuits the ERC20 transfer
