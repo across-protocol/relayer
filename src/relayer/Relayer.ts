@@ -275,7 +275,7 @@ export class Relayer {
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
-      } else if (depositor === this.relayerAddress && recipient === this.relayerAddress) {
+      } else if ([depositor, recipient].every((address) => address === this.relayerAddress)) {
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
         // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
         // expensive fills on (for example) mainnet.
