@@ -25,7 +25,7 @@ export class AcrossApiClient {
     readonly hubPoolClient: HubPoolClient,
     readonly spokePoolClients: SpokePoolClientsByChain,
     readonly tokensQuery: string[] = [],
-    readonly timeout: number = 60000
+    readonly timeout: number = 3000
   ) {
     if (Object.keys(tokensQuery).length === 0) {
       this.tokensQuery = Object.entries(TOKEN_SYMBOLS_MAP).map(([, details]) => details.addresses[CHAIN_IDs.MAINNET]);
