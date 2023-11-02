@@ -210,15 +210,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   it("Correctly validates self-relays", async function () {
     const relayerFeePct = bnZero;
     for (const testDepositor of [depositor, relayer]) {
-      await deposit(
-        spokePool_1,
-        erc20_1,
-        relayer,
-        testDepositor,
-        destinationChainId,
-        amountToDeposit,
-        relayerFeePct,
-      );
+      await deposit(spokePool_1, erc20_1, relayer, testDepositor, destinationChainId, amountToDeposit, relayerFeePct);
 
       await updateAllClients();
       await relayerInstance.checkForUnfilledDepositsAndFill();
