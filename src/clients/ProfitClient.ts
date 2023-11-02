@@ -106,11 +106,11 @@ const QUERY_HANDLERS: {
   42161: relayFeeCalculator.ArbitrumQueries,
   8453: relayFeeCalculator.BaseQueries,
   // Testnets:
-  5: relayFeeCalculator.EthereumQueries,
+  5: relayFeeCalculator.EthereumGoerliQueries,
   280: relayFeeCalculator.zkSyncGoerliQueries,
-  80001: relayFeeCalculator.PolygonQueries,
+  80001: relayFeeCalculator.PolygonMumbaiQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
-  421613: relayFeeCalculator.ArbitrumQueries,
+  421613: relayFeeCalculator.ArbitrumGoerliQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -273,7 +273,7 @@ export class ProfitClient {
   ): Promise<FillProfit> {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
-      Object.keys(GAS_TOKEN_BY_CHAIN_ID).includes(deposit.destinationChainId.toString()),
+      isDefined(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]),
       `Unsupported destination chain ID: ${deposit.destinationChainId}`
     );
 
@@ -416,9 +416,8 @@ export class ProfitClient {
 
   protected async updateTokenPrices(): Promise<void> {
     // Generate list of tokens to retrieve.
-    const newTokens: string[] = [];
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
+      this.hubPoolClient.getL1Tokens().map((token) => [token.address, token])
     );
 
     // Also include MATIC in the price queries as we need it for gas cost calculation.
@@ -431,27 +430,11 @@ export class ProfitClient {
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
 
     // Pre-populate any new addresses.
-    Object.values(l1Tokens).forEach((token: L1Token) => {
-      const { address, symbol } = token;
-      if (this.tokenPrices[address] === undefined) {
-        this.tokenPrices[address] = bnZero;
-        newTokens.push(symbol);
-      }
-    });
-
-    if (newTokens.length > 0) {
-      this.logger.debug({
-        at: "ProfitClient",
-        message: "Initialised tokens to price 0.",
-        tokens: newTokens.join(", "),
-      });
-    }
+    Object.values(l1Tokens).forEach(({ address }) => (this.tokenPrices[address] ??= bnZero));
 
     try {
       const tokenPrices = await this.priceClient.getPricesByAddress(Object.keys(l1Tokens), "usd");
-      tokenPrices.forEach((tokenPrice) => {
-        this.tokenPrices[tokenPrice.address] = toBNWei(tokenPrice.price);
-      });
+      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
@@ -471,11 +454,14 @@ export class ProfitClient {
     const quoteTimestamp = getCurrentTime();
 
     // Pre-fetch total gas costs for relays on enabled chains.
+    const testToken = "WETH";
+    const WETH = TOKEN_SYMBOLS_MAP[testToken].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId, idx) => {
       const destinationToken =
         destinationChainId === hubPoolClient.chainId
-          ? USDC
-          : hubPoolClient.getDestinationTokenForL1Token(USDC, destinationChainId);
+          ? WETH
+          : hubPoolClient.getDestinationTokenForL1Token(WETH, destinationChainId);
+      assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testToken}`);
 
       // @dev The relayer _can not_ be the recipient, since the SpokePool short-circuits the ERC20 transfer
       // and consumes less gas. Instead, just use the main RL address as the simulated relayer, since it has

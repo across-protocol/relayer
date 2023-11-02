@@ -1,46 +1,26 @@
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { ConfigStoreClient, ProfitClient } from "../src/clients"; // Tested
 import { L1Token } from "../src/interfaces";
-import {
-  expect,
-  ethers,
-  createSpyLogger,
-  hubPoolFixture,
-  deployConfigStore,
-  randomAddress,
-  winston,
-  BigNumber,
-  toBN,
-  toBNWei,
-} from "./utils";
-
+import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
-import { ConfigStoreClient, ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
 
-const mainnetTokens: Array<L1Token> = [
-  // Checksummed addresses
-  { symbol: "USDC", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
-  { symbol: "DAI", address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", decimals: 18 },
-  // Lower-case addresses
-  { symbol: "WBTC", address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", decimals: 8 },
-  { symbol: "BOBA", address: "0x42bbfa2e77757c645eeaad1655e0911a7553efbc", decimals: 18 },
-  { symbol: "BAL", address: "0xba100000625a3754423978a60c9317c58a424e3d", decimals: 18 },
-  // Upper-case addresses
-  { symbol: "UMA", address: "0X04FA0D235C4ABF4BCF4787AF4CF447DE572EF828", decimals: 18 },
-  { symbol: "BADGER", address: "0X3472A5A71965499ACD81997A54BBA8D852C6E53D", decimals: 18 },
-  // Misc.
-  { symbol: "WETH", address: WETH, decimals: 18 },
-  { symbol: "MATIC", address: MATIC, decimals: 18 },
-];
+const { bnZero } = sdkUtils;
+
+const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "MATIC"].map((symbol) => {
+  const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
+  const address = addresses[1];
+  return { symbol, decimals, address };
+});
 
 const tokenPrices: { [addr: string]: string } = Object.fromEntries(
-  mainnetTokens.map((token) => {
-    return [token.address, Math.random().toPrecision(10)];
-  })
+  mainnetTokens.map(({ address }) => [address, Math.random().toPrecision(10)])
 );
 
 class ProfitClientWithMockPriceClient extends ProfitClient {
   protected override async updateTokenPrices(): Promise<void> {
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
+      this.hubPoolClient.getL1Tokens().map((token) => [token.address, token])
     );
 
     Object.keys(l1Tokens).forEach((address) => {
@@ -49,24 +29,14 @@ class ProfitClientWithMockPriceClient extends ProfitClient {
   }
 }
 
-const verifyTokenPrices = (logger: winston.Logger, profitClient: ProfitClientWithMockPriceClient) => {
-  const tokenPrices: { [k: string]: BigNumber } = profitClient.getAllPrices();
+describe("ProfitClient: Price Retrieval", async () => {
+  // Define LOG_IN_TEST for logging to console.
+  const { spyLogger } = createSpyLogger();
+  let hubPoolClient: MockHubPoolClient;
+  let profitClient: ProfitClientWithMockPriceClient; // tested
 
-  // The client should have fetched prices for all requested tokens.
-  expect(Object.keys(tokenPrices)).to.have.deep.members(mainnetTokens.map((token) => token["address"]));
-  Object.values(tokenPrices).forEach((price: BigNumber) => expect(toBN(price).gt(toBN(0))).to.be.true);
-  Object.keys(tokenPrices).forEach((token) => expect(toBN(profitClient.getPriceOfToken(token)).gt(toBN(0))).to.be.true);
-};
-
-// Define LOG_IN_TEST for logging to console.
-const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
-let hubPoolClient: MockHubPoolClient;
-let profitClient: ProfitClientWithMockPriceClient; // tested
-
-describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
     const [owner] = await ethers.getSigners();
-
     const { hubPool, dai: l1Token } = await hubPoolFixture();
     const { configStore } = await deployConfigStore(owner, [l1Token]);
 
@@ -76,13 +46,18 @@ describe("ProfitClient: Price Retrieval", async function () {
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
-    mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
+    mainnetTokens.forEach((token) => hubPoolClient.addL1Token(token));
     const relayerAddress = randomAddress();
-    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], relayerAddress, toBN(0));
+    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], relayerAddress, bnZero);
   });
 
-  it("Correctly fetches token prices", async function () {
+  it("Correctly fetches token prices", async () => {
     await profitClient.update();
-    verifyTokenPrices(spyLogger, profitClient);
+    const tokenPrices = profitClient.getAllPrices();
+
+    // The client should have fetched prices for all requested tokens.
+    expect(Object.keys(tokenPrices)).to.have.deep.members(mainnetTokens.map(({ address }) => address));
+    Object.values(tokenPrices).forEach((price) => expect(price.gt(bnZero)).to.be.true);
+    Object.keys(tokenPrices).forEach((token) => expect(profitClient.getPriceOfToken(token).gt(bnZero)).to.be.true);
   });
 });
