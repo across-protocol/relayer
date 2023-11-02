@@ -5,6 +5,7 @@ import { Deposit } from "../src/interfaces";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
+  amountToDeposit,
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
@@ -40,7 +41,7 @@ import {
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 
-const { bnOne } = sdkUtils;
+const { bnOne, bnZero } = sdkUtils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -204,6 +205,26 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+  });
+
+  it("Correctly validates self-relays", async function () {
+    const relayerFeePct = bnZero;
+    for (const testDepositor of [depositor, relayer]) {
+      await deposit(
+        spokePool_1,
+        erc20_1,
+        relayer,
+        testDepositor,
+        destinationChainId,
+        amountToDeposit,
+        relayerFeePct,
+      );
+
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      const expectedTransactions = testDepositor.address === relayer.address ? 1 : 0;
+      expect(multiCallerClient.transactionCount()).to.equal(expectedTransactions);
+    }
   });
 
   it("Ignores deposits older than min deposit confirmation threshold", async function () {

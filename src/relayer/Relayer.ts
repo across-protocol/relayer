@@ -259,7 +259,8 @@ export class Relayer {
         continue;
       }
 
-      if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
+      const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
+      if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
@@ -275,7 +276,7 @@ export class Relayer {
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
-      } else if ([depositor, recipient].every((address) => address === this.relayerAddress)) {
+      } else if (selfRelay) {
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
         // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
         // expensive fills on (for example) mainnet.
