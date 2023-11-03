@@ -225,7 +225,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
         const expectedFillCostUsd = tokenGasCost
           .mul(tokenPrices[gasToken.symbol])
-          .mul(toBNWei(gasMultiplier))
+          .mul(gasMultiplier)
           .div(fixedPoint)
           .div(fixedPoint);
         const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
