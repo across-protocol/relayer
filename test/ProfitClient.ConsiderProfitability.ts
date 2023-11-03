@@ -68,7 +68,7 @@ describe("ProfitClient: Consider relay profit", () => {
   const randomiseGasCost = (chainId: number): BigNumber => {
     // Randomise the gas token price (usd)
     const gasToken = profitClient.resolveGasToken(chainId);
-    const gasPriceUsd = toBNWei(Math.random().toPrecision(10));
+    const gasPriceUsd = toBNWei(Math.random().toFixed(18));
     profitClient.setTokenPrice(gasToken.address, gasPriceUsd);
 
     // Randomise the fillRelay cost in units of gas.
@@ -390,7 +390,7 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Allows per-route and per-token fee configuration", () => {
     // Setup custom USDC pricing to Optimism.
     chainIds.forEach((srcChainId) => {
-      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toPrecision(10).toString();
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toFixed(10).toString();
       process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_42161`] = "0.00005";
     });
 
