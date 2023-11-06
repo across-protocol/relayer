@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { GAS_TOKEN_BY_CHAIN_ID, HubPoolClient, ProfitClient, WETH } from "../../src/clients";
+import { HubPoolClient, ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 
@@ -7,6 +7,7 @@ type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const defaultFillCost = toBN(100_000); // gas
 const defaultGasPrice = sdkUtils.bnOne; // wei per gas
+
 
 export class MockProfitClient extends ProfitClient {
   constructor(
@@ -37,11 +38,9 @@ export class MockProfitClient extends ProfitClient {
       nativeGasCost: defaultFillCost,
       tokenGasCost: defaultGasPrice.mul(defaultFillCost),
     };
-    Object.values(spokePoolClients).map(({ chainId }) => {
-      this.setGasCost(chainId, defaultGasCost);
-      GAS_TOKEN_BY_CHAIN_ID[chainId] ??= WETH;
-    });
-    this.setTokenPrice(WETH, sdkUtils.bnOne);
+    Object.values(spokePoolClients).map(({ chainId }) =>
+      this.setGasCost(chainId, defaultGasCost)
+    );
   }
 
   setTokenPrice(l1Token: string, price?: BigNumber): void {

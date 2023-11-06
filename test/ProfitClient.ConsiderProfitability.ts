@@ -1,17 +1,9 @@
 import { assert } from "chai";
 import { random } from "lodash";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import {
-  ConfigStoreClient,
-  FillProfit,
-  GAS_TOKEN_BY_CHAIN_ID,
-  MATIC,
-  SpokePoolClient,
-  USDC,
-  WBTC,
-  WETH,
-} from "../src/clients";
-import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
+import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
+import { Deposit, DepositWithBlock } from "../src/interfaces";
 import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import {
@@ -42,38 +34,6 @@ const minRelayerFeePct = toBNWei(minRelayerFeeBps).div(1e4);
 // relayerFeePct clamped at 50 bps by each SpokePool.
 const maxRelayerFeeBps = 50;
 const maxRelayerFeePct = toBNWei(maxRelayerFeeBps).div(1e4);
-
-const tokens: { [symbol: string]: L1Token } = {
-  MATIC: { address: MATIC, decimals: 18, symbol: "MATIC" },
-  USDC: { address: USDC, decimals: 6, symbol: "USDC" },
-  WBTC: { address: WBTC, decimals: 8, symbol: "WBTC" },
-  WETH: { address: WETH, decimals: 18, symbol: "WETH" },
-};
-
-const tokenPrices: { [symbol: string]: BigNumber } = {
-  MATIC: toBNWei("0.4"),
-  USDC: toBNWei(1),
-  WBTC: toBNWei(21000),
-  WETH: toBNWei(3000),
-};
-
-// Quirk: Use the chainId as the gas price in Gwei. This gives a range of
-// gas prices to test with, since there's a spread in the chainId numbers.
-const gasCost: { [chainId: number]: TransactionCostEstimate } = Object.fromEntries(
-  chainIds.map((chainId) => {
-    const nativeGasCost = toBN(100_000); // Assume 100k gas for a single fill
-    const gasTokenPrice = toBN(chainId);
-    const tokenGasCost = nativeGasCost.mul(gasTokenPrice);
-    return [chainId, { nativeGasCost, tokenGasCost }];
-  })
-);
-
-function setDefaultTokenPrices(profitClient: MockProfitClient): void {
-  // Load ERC20 token prices in USD.
-  profitClient.setTokenPrices(
-    Object.fromEntries(Object.entries(tokenPrices).map(([symbol, price]) => [tokens[symbol].address, price]))
-  );
-}
 
 function testProfitability(
   deposit: Deposit,
@@ -106,6 +66,54 @@ describe("ProfitClient: Consider relay profit", () => {
   const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
   let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
   const message = sdkConstants.EMPTY_MESSAGE; // Empty message by default.
+
+  const randomiseGasCost = (chainId: number): TransactionCostEstimate & { gasTokenPriceUsd: BigNumber } => {
+    // Randomise the gas token price (usd)
+    const gasToken = profitClient.resolveGasToken(chainId);
+    const gasTokenPriceUsd = toBNWei(Math.random().toFixed(18));
+
+    // Randomise the fillRelay cost in units of gas.
+    const nativeGasCost = toBN(random(80_000, 100_000));
+    const tokenGasCost = nativeGasCost.mul(toGWei((random(1, 100)))).div(toBN(10).pow(9));
+
+    profitClient.setTokenPrice(gasToken.address, gasTokenPriceUsd);
+    profitClient.setGasCost(chainId, { nativeGasCost, tokenGasCost });
+
+    console.log(`set chainId ${chainId} nativeGasCost: ${nativeGasCost.toString()}, tokenGasCost: ${tokenGasCost.toString()}, gasTokenPriceUsd: ${gasTokenPriceUsd.toString()}.`);
+    return { nativeGasCost, tokenGasCost, gasTokenPriceUsd };
+  };
+
+  const tokens = Object.fromEntries(
+    ["MATIC", "USDC", "WBTC", "WETH"].map((symbol) => {
+      const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
+      return [symbol, { symbol, decimals, address: addresses[1] }];
+    })
+  );
+
+  const tokenPrices: { [symbol: string]: BigNumber } = {
+    MATIC: toBNWei("0.4"),
+    USDC: toBNWei(1),
+    WBTC: toBNWei(21000),
+    WETH: toBNWei(3000),
+  };
+
+  // Quirk: Use the chainId as the gas price in Gwei. This gives a range of
+  // gas prices to test with, since there's a spread in the chainId numbers.
+  const gasCost: { [chainId: number]: TransactionCostEstimate } = Object.fromEntries(
+    chainIds.map((chainId) => {
+      const nativeGasCost = toBN(100_000); // Assume 100k gas for a single fill
+      const gasTokenPrice = toBN(chainId);
+      const tokenGasCost = nativeGasCost.mul(gasTokenPrice);
+      return [chainId, { nativeGasCost, tokenGasCost }];
+    })
+  );
+
+  const setDefaultTokenPrices = (profitClient: MockProfitClient): void => {
+    // Load ERC20 token prices in USD.
+    profitClient.setTokenPrices(
+      Object.fromEntries(Object.entries(tokenPrices).map(([symbol, price]) => [tokens[symbol].address, price]))
+    );
+  };
 
   beforeEach(async () => {
     const [owner] = await ethers.getSigners();
@@ -162,19 +170,19 @@ describe("ProfitClient: Consider relay profit", () => {
     for (const destinationChainId of chainIds) {
       spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${destinationChainId}.` });
       const deposit = { destinationChainId, message } as Deposit;
+      const gasToken = profitClient.resolveGasToken(destinationChainId);
+      const expected = randomiseGasCost(destinationChainId);
 
       const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.amount);
       expect(tokenGasCost.eq(0)).to.be.false;
-      expect(tokenGasCost.eq(gasCost[destinationChainId].tokenGasCost)).to.be.true;
 
-      const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[destinationChainId];
-      let gasToken = Object.values(tokens).find((token) => gasTokenAddr === token.address);
-      expect(gasToken).to.not.be.undefined;
-      gasToken = gasToken as L1Token;
-      const gasTokenPriceUsd = tokenPrices[gasToken.symbol];
+      const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.address);
 
       const estimate = await profitClient.estimateFillCost(deposit, deposit.amount);
-      Object.entries(gasCost[destinationChainId]).forEach(([k, v]) => expect(estimate[k].eq(v)).to.be.true);
+      ["nativeGasCost", "tokenGasCost"].forEach((field) =>
+        expect(estimate[field].eq((expected[field]))).to.be.true
+      );
+
       expect(estimate.gasCostUsd.eq(tokenGasCost.mul(gasTokenPriceUsd).div(toBN(10).pow(gasToken.decimals)))).to.be
         .true;
     }
@@ -212,22 +220,19 @@ describe("ProfitClient: Consider relay profit", () => {
       spyLogger.debug({ message: `Verifying gas multiplier for chainId ${destinationChainId}.` });
       const deposit = { destinationChainId, message } as Deposit;
 
+      const { gasTokenPriceUsd } = randomiseGasCost(destinationChainId);
+      const gasToken = profitClient.resolveGasToken(destinationChainId);
       const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.amount);
       expect(tokenGasCost.gt(0)).to.be.true;
 
       for (const gasMultiplier of gasMultipliers) {
         profitClient.setGasMultiplier(gasMultiplier);
 
-        const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[destinationChainId];
-        let gasToken = Object.values(tokens).find((token) => gasTokenAddr === token.address);
-        expect(gasToken).to.not.be.undefined;
-        gasToken = gasToken as L1Token;
-
         const expectedFillCostUsd = tokenGasCost
-          .mul(tokenPrices[gasToken.symbol])
+          .mul(gasTokenPriceUsd)
           .mul(gasMultiplier)
           .div(fixedPoint)
-          .div(fixedPoint);
+          .div(toBN(10).pow(gasToken.decimals));
         const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
         expect(expectedFillCostUsd.eq(gasCostUsd)).to.be.true;
       }
@@ -301,6 +306,8 @@ describe("ProfitClient: Consider relay profit", () => {
 
     for (const destinationChainId of chainIds) {
       const deposit = { amount: bnOne, destinationChainId, message } as Deposit;
+
+      randomiseGasCost(destinationChainId);
       const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
 
       for (const l1Token of Object.values(tokens)) {
@@ -365,6 +372,8 @@ describe("ProfitClient: Consider relay profit", () => {
 
     for (const destinationChainId of chainIds) {
       const deposit = { amount: bnOne, destinationChainId, relayerFeePct, message } as Deposit;
+
+      randomiseGasCost(destinationChainId);
       const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
 
       for (const l1Token of Object.values(tokens)) {
@@ -419,7 +428,7 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Allows per-route and per-token fee configuration", () => {
     // Setup custom USDC pricing to Optimism.
     chainIds.forEach((srcChainId) => {
-      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toPrecision(10).toString();
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toFixed(10).toString();
       process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_42161`] = "0.00005";
     });
 
@@ -461,6 +470,8 @@ describe("ProfitClient: Consider relay profit", () => {
     const relayerFeePct = toBNWei("0.001");
     const deposit = { destinationChainId, message, relayerFeePct } as Deposit;
 
+    randomiseGasCost(destinationChainId);
+
     let fill: FillProfit;
     fill = await profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
     expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
@@ -473,6 +484,8 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Ignores newRelayerFeePct if it's lower than original relayerFeePct", async () => {
     const l1Token = tokens.WETH;
     hubPoolClient.setTokenInfoToReturn(l1Token);
+
+    randomiseGasCost(destinationChainId);
 
     const deposit = {
       destinationChainId,
