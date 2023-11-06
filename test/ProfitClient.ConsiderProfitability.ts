@@ -229,9 +229,9 @@ describe("ProfitClient: Consider relay profit", () => {
         profitClient.setGasMultiplier(gasMultiplier);
 
         const expectedFillCostUsd = tokenGasCost
-          .mul(gasTokenPriceUsd)
           .mul(gasMultiplier)
           .div(fixedPoint)
+          .mul(gasTokenPriceUsd)
           .div(toBN(10).pow(gasToken.decimals));
         const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
         expect(expectedFillCostUsd.eq(gasCostUsd)).to.be.true;
