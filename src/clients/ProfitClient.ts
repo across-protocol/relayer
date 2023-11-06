@@ -34,15 +34,10 @@ const {
   bnUint32Max,
   bnUint256Max: uint256Max,
   fixedPointAdjustment: fixedPoint,
+  getNativeTokenSymbol,
   isMessageEmpty,
   resolveDepositMessage,
 } = sdkUtils;
-
-// We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
-export const MATIC = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
-export const USDC = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
-export const WBTC = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
-export const WETH = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
 
 // @note All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
@@ -66,24 +61,6 @@ type UnprofitableFill = {
   fillAmount: BigNumber;
   nativeGasCost: BigNumber;
 };
-
-export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
-  1: WETH,
-  10: WETH,
-  137: MATIC,
-  288: WETH,
-  324: WETH,
-  42161: WETH,
-  8453: WETH,
-  // Testnets:
-  5: WETH,
-  280: WETH,
-  80001: MATIC,
-  84531: WETH,
-  421613: WETH,
-};
-// TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
-const GAS_TOKEN_DECIMALS = 18;
 
 // @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
 // Since _some_ known recipient address is needed for simulating a fill, default to this one. nb. Since
@@ -163,6 +140,19 @@ export class ProfitClient {
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
   }
 
+  resolveGasToken(chainId: number): L1Token {
+    const symbol = getNativeTokenSymbol(chainId);
+    const token = TOKEN_SYMBOLS_MAP[symbol];
+    if (!isDefined(symbol) || !isDefined(token)) {
+      throw new Error(`Unable to resolve gas token for chain ID ${chainId}`);
+    }
+
+    const { decimals, addresses } = token;
+    const address = addresses[1]; // Mainnet tokens are always used for price lookups.
+
+    return { symbol, address, decimals };
+  }
+
   getAllPrices(): { [address: string]: BigNumber } {
     return this.tokenPrices;
   }
@@ -211,12 +201,13 @@ export class ProfitClient {
     fillAmount = deposit.amount
   ): Promise<Pick<FillProfit, "nativeGasCost" | "gasPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
-    const gasPriceUsd = this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[chainId]);
+    const gasToken = this.resolveGasToken(chainId);
+    const gasPriceUsd = this.getPriceOfToken(gasToken.address);
     const nativeGasCost = await this.getTotalGasCost(deposit, fillAmount); // gas cost in native token
 
     if (gasPriceUsd.lte(0) || nativeGasCost.lte(0)) {
       const err = gasPriceUsd.lte(0) ? "gas price" : "gas consumption";
-      throw new Error(`Unable to compute gas cost (${err} unknown)`);
+      throw new Error(`Unable to compute chain ${chainId} fillRelay gas cost (${err} unknown)`);
     }
 
     // this.gasMultiplier is scaled to 18 decimals
@@ -224,7 +215,7 @@ export class ProfitClient {
       .mul(this.gasMultiplier)
       .mul(gasPriceUsd)
       .div(fixedPoint)
-      .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
+      .div(toBN(10).pow(gasToken.decimals));
 
     return {
       nativeGasCost,
@@ -272,11 +263,6 @@ export class ProfitClient {
     minRelayerFeePct: BigNumber
   ): Promise<FillProfit> {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
-    assert(
-      isDefined(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]),
-      `Unsupported destination chain ID: ${deposit.destinationChainId}`
-    );
-
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
     if (tokenPriceUsd.lte(0)) {
       throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
@@ -420,12 +406,13 @@ export class ProfitClient {
       this.hubPoolClient.getL1Tokens().map((token) => [token.address, token])
     );
 
-    // Also include MATIC in the price queries as we need it for gas cost calculation.
-    l1Tokens[MATIC] = {
-      address: MATIC,
-      symbol: "MATIC",
-      decimals: 18,
-    };
+    // Also ensure all gas tokens are included in the lookup.
+    this.enabledChainIds.forEach((chainId) => {
+      const symbol = getNativeTokenSymbol(chainId);
+      const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
+      const address = addresses[1];
+      l1Tokens[address] ??= { symbol, decimals, address };
+    });
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
 
@@ -454,14 +441,14 @@ export class ProfitClient {
     const quoteTimestamp = getCurrentTime();
 
     // Pre-fetch total gas costs for relays on enabled chains.
-    const testToken = "WETH";
-    const WETH = TOKEN_SYMBOLS_MAP[testToken].addresses[this.hubPoolClient.chainId];
+    const testSymbol = "WETH";
+    const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId, idx) => {
       const destinationToken =
         destinationChainId === hubPoolClient.chainId
-          ? WETH
-          : hubPoolClient.getDestinationTokenForL1Token(WETH, destinationChainId);
-      assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testToken}`);
+          ? hubToken
+          : hubPoolClient.getDestinationTokenForL1Token(hubToken, destinationChainId);
+      assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
       // @dev The relayer _can not_ be the recipient, since the SpokePool short-circuits the ERC20 transfer
       // and consumes less gas. Instead, just use the main RL address as the simulated relayer, since it has
