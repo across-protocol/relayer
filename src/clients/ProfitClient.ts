@@ -173,7 +173,11 @@ export class ProfitClient {
     // Warn on this initially, and move to an assert() once any latent issues are resolved.
     // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
     if (this.tokenPrices[token] === undefined && !this.isTestnet) {
-      this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, tokenPrices: this.tokenPrices });
+      this.logger.warn({
+        at: "ProfitClient#getPriceOfToken",
+        message: `Token ${token} not in price list.`,
+        tokenPrices: this.tokenPrices,
+      });
       return bnZero;
     }
 

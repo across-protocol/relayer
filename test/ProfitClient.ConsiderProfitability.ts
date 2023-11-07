@@ -74,12 +74,11 @@ describe("ProfitClient: Consider relay profit", () => {
 
     // Randomise the fillRelay cost in units of gas.
     const nativeGasCost = toBN(random(80_000, 100_000));
-    const tokenGasCost = nativeGasCost.mul(toGWei((random(1, 100)))).div(toBN(10).pow(9));
+    const tokenGasCost = nativeGasCost.mul(toGWei(random(1, 100))).div(toBN(10).pow(9));
 
     profitClient.setTokenPrice(gasToken.address, gasTokenPriceUsd);
     profitClient.setGasCost(chainId, { nativeGasCost, tokenGasCost });
 
-    console.log(`set chainId ${chainId} nativeGasCost: ${nativeGasCost.toString()}, tokenGasCost: ${tokenGasCost.toString()}, gasTokenPriceUsd: ${gasTokenPriceUsd.toString()}.`);
     return { nativeGasCost, tokenGasCost, gasTokenPriceUsd };
   };
 
@@ -179,9 +178,7 @@ describe("ProfitClient: Consider relay profit", () => {
       const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.address);
 
       const estimate = await profitClient.estimateFillCost(deposit, deposit.amount);
-      ["nativeGasCost", "tokenGasCost"].forEach((field) =>
-        expect(estimate[field].eq((expected[field]))).to.be.true
-      );
+      ["nativeGasCost", "tokenGasCost"].forEach((field) => expect(estimate[field].eq(expected[field])).to.be.true);
 
       expect(estimate.gasCostUsd.eq(tokenGasCost.mul(gasTokenPriceUsd).div(toBN(10).pow(gasToken.decimals)))).to.be
         .true;
