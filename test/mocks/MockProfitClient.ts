@@ -8,7 +8,6 @@ type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 const defaultFillCost = toBN(100_000); // gas
 const defaultGasPrice = sdkUtils.bnOne; // wei per gas
 
-
 export class MockProfitClient extends ProfitClient {
   constructor(
     logger: winston.Logger,
@@ -38,9 +37,12 @@ export class MockProfitClient extends ProfitClient {
       nativeGasCost: defaultFillCost,
       tokenGasCost: defaultGasPrice.mul(defaultFillCost),
     };
-    Object.values(spokePoolClients).map(({ chainId }) =>
-      this.setGasCost(chainId, defaultGasCost)
-    );
+    Object.values(spokePoolClients).map(({ chainId }) => {
+      this.setGasCost(chainId, defaultGasCost); // gas/fill
+
+      const gasToken = this.resolveGasToken(chainId);
+      this.setTokenPrice(gasToken.address, defaultGasPrice); // usd wei
+    });
   }
 
   setTokenPrice(l1Token: string, price?: BigNumber): void {
