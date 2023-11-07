@@ -1,7 +1,10 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { BigNumber } from "ethers";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
   winston,
   getNetworkName,
+  isDefined,
   isPromiseFulfilled,
   getTarget,
   TransactionResponse,
@@ -288,40 +291,49 @@ export class MultiCallerClient {
   }
 
   _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
-    // Validate all transactions have the same chainId.
-    const { chainId, contract } = transactions[0];
-    if (transactions.some((tx) => tx.contract.address !== contract.address || tx.chainId !== chainId)) {
-      this.logger.error({
-        at: "MultiCallerClient#_buildMultiCallBundle",
-        message: "Some transactions in the queue contain different target chain or contract address",
-        transactions: transactions.map(({ contract, chainId }) => {
-          return { target: getTarget(contract.address), chainId };
-        }),
-        notificationPath: "across-error",
-      });
-      throw new Error("Multicall bundle data mismatch");
-    }
-
     const mrkdwn: string[] = [];
-    let callData = transactions.map((txn, idx) => {
+    const callData: string[] = [];
+    let gasLimit: BigNumber | undefined = sdkUtils.bnZero;
+
+    const { chainId, contract } = transactions[0];
+    transactions.forEach((txn, idx) => {
+      // Basic validation on all transactions to be bundled.
+      if (txn.contract.address !== contract.address || txn.chainId !== chainId) {
+        this.logger.error({
+          at: "MultiCallerClient#_buildMultiCallBundle",
+          message: "Some transactions in the queue contain different target chain or contract address",
+          transactions: transactions.map(({ contract, chainId }) => {
+            return { target: getTarget(contract.address), chainId };
+          }),
+          notificationPath: "across-error",
+        });
+        throw new Error("Multicall bundle data mismatch");
+      }
+
       mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.message ?? "No message"}: ${txn.mrkdwn ?? "No markdown"}`);
-      return txn.contract.interface.encodeFunctionData(txn.method, txn.args);
+      callData.push(txn.contract.interface.encodeFunctionData(txn.method, txn.args));
+
+      // Aggregate the individual gasLimits. If a transaction does not have a gasLimit defined then it has not been
+      // simulated. In this case, drop the aggregation and revert to undefined to force estimation on submission.
+      gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit)
+        ? gasLimit.add(txn.gasLimit)
+        : undefined;
     });
 
-    // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
-    callData = [...new Set(callData)];
     this.logger.debug({
       at: "MultiCallerClient",
       message: `Made multicall bundle for ${getNetworkName(chainId)}.`,
       target: getTarget(contract.address),
       callData,
+      gasLimit,
     });
 
     return {
       chainId,
       contract,
       method: "multicall",
-      args: [callData],
+      args: callData,
+      gasLimit,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;
