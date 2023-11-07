@@ -243,25 +243,28 @@ export class MultiCallerClient {
       throw new Error("Multisender not available for this chain");
     }
 
-    if (transactions.some((tx) => !tx.unpermissioned || tx.chainId !== chainId)) {
-      this.logger.error({
-        at: "MultiCallerClient#buildMultiSenderBundle",
-        message: "Some transactions in the queue contain different target chain or are permissioned",
-        transactions: transactions.map(({ contract, chainId, unpermissioned }) => {
-          return { target: getTarget(contract.address), unpermissioned: Boolean(unpermissioned), chainId };
-        }),
-        notificationPath: "across-error",
-      });
-      throw new Error("Multisender bundle data mismatch");
-    }
-
     const mrkdwn: string[] = [];
-    const callData: Multicall2Call[] = transactions.map((txn, idx) => {
+    const callData: Multicall2Call[] = [];
+    let gasLimit: BigNumber | undefined = sdkUtils.bnZero;
+    transactions.forEach((txn, idx) => {
+      if (!txn.unpermissioned || txn.chainId !== chainId) {
+        this.logger.error({
+          at: "MultiCallerClient#buildMultiSenderBundle",
+          message: "Some transactions in the queue contain different target chain or are permissioned",
+          transactions: transactions.map(({ contract, chainId, unpermissioned }) => {
+            return { target: getTarget(contract.address), unpermissioned: Boolean(unpermissioned), chainId };
+          }),
+          notificationPath: "across-error",
+        });
+        throw new Error("Multisender bundle data mismatch");
+      }
+
       mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.message ?? "No message"}: ${txn.mrkdwn ?? "No markdown"}`);
-      return {
+      callData.push({
         target: txn.contract.address,
         callData: txn.contract.interface.encodeFunctionData(txn.method, txn.args),
-      };
+      });
+      gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit) ? gasLimit.add(txn.gasLimit) : undefined;
     });
 
     this.logger.debug({
@@ -276,6 +279,7 @@ export class MultiCallerClient {
       contract: multisender,
       method: "aggregate",
       args: [callData],
+      gasLimit,
       gasLimitMultiplier: MULTICALL3_AGGREGATE_GAS_MULTIPLIER,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
@@ -330,7 +334,7 @@ export class MultiCallerClient {
       chainId,
       contract,
       method: "multicall",
-      args: callData,
+      args: [callData],
       gasLimit,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
