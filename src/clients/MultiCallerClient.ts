@@ -315,9 +315,7 @@ export class MultiCallerClient {
 
       // Aggregate the individual gasLimits. If a transaction does not have a gasLimit defined then it has not been
       // simulated. In this case, drop the aggregation and revert to undefined to force estimation on submission.
-      gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit)
-        ? gasLimit.add(txn.gasLimit)
-        : undefined;
+      gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit) ? gasLimit.add(txn.gasLimit) : undefined;
     });
 
     this.logger.debug({
