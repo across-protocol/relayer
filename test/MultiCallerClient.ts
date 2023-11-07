@@ -122,6 +122,34 @@ describe("MultiCallerClient", async function () {
     expect(_gasLimit.eq(gasLimit.mul(nTxns))).to.be.true;
   });
 
+  it("Can revert to undefined gasLimit: internal multicall", async function () {
+    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+    multiCaller = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
+
+    const nTxns = 10;
+    const gasLimit = toBN(99_999);
+
+    const txns: AugmentedTransaction[] = [];
+    for (let i = 0; i < nTxns; ++i) {
+      const txn: AugmentedTransaction = {
+        chainId: 1,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "gasLimitTest",
+        args: [{ txnClientPassResult }],
+        gasLimit: i === nTxns - 1 ? undefined : gasLimit,
+        message: `Test transaction with gasLimit ${gasLimit}`,
+        unpermissioned: true,
+      };
+      txns.push(txn);
+    }
+
+    const txnBundle = multiCaller.buildMultiCallBundle(txns)[0];
+    expect(txnBundle.gasLimit).to.be.undefined;
+  });
+
   it("Propagates input transaction gasLimits: external multicall", async function () {
     const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
     multiCaller = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
@@ -150,6 +178,34 @@ describe("MultiCallerClient", async function () {
     expect(txnBundle.gasLimit).to.not.be.undefined;
     const _gasLimit = txnBundle.gasLimit as BigNumber;
     expect(_gasLimit.eq(gasLimit.mul(nTxns))).to.be.true;
+  });
+
+  it("Can revert to undefined gasLimit: external multicall", async function () {
+    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+    multiCaller = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
+
+    const nTxns = 10;
+    const gasLimit = toBN(99_999);
+
+    const txns: AugmentedTransaction[] = [];
+    for (let i = 0; i < nTxns; ++i) {
+      const txn: AugmentedTransaction = {
+        chainId: 1,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "gasLimitTest",
+        args: [{ txnClientPassResult }],
+        gasLimit: i === nTxns - 1 ? undefined : gasLimit,
+        message: `Test transaction with gasLimit ${gasLimit}`,
+        unpermissioned: true,
+      };
+      txns.push(txn);
+    }
+
+    const txnBundle = await multiCaller.buildMultiSenderBundle(txns);
+    expect(txnBundle.gasLimit).to.be.undefined;
   });
 
   it("Correctly excludes simulation failures", async function () {
