@@ -272,7 +272,8 @@ export class Relayer {
           l1Token
         );
         if (isDefined(repaymentChainId)) {
-          this.fillRelay(deposit, unfilledAmount, repaymentChainId);
+          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
