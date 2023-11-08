@@ -7,6 +7,7 @@ import { EthersError } from "../interfaces";
 import {
   BigNumber,
   Contract,
+  isDefined,
   TransactionResponse,
   Wallet,
   ethers,
@@ -162,9 +163,11 @@ export async function getGasPrice(
 }
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
-  if (transaction.canFailInSimulation) {
+  // If the transaction already has a gasLimit, it should have been simulated in advance.
+  if (transaction.canFailInSimulation || isDefined(transaction.gasLimit)) {
     return { transaction, succeed: true };
   }
+
   try {
     const { contract, method } = transaction;
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
