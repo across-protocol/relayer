@@ -379,7 +379,7 @@ export class ProfitClient {
         fillAmount: formatEther(fillAmount),
         fillAmountUsd: formatEther(fill.fillAmountUsd),
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
-        nativeGasCost: formatEther(fill.nativeGasCost),
+        nativeGasCost: fill.nativeGasCost,
         tokenGasCost: formatEther(fill.tokenGasCost),
         gasPadding: this.gasPadding,
         gasMultiplier: this.gasMultiplier,
