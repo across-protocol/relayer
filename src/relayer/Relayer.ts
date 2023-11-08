@@ -272,7 +272,8 @@ export class Relayer {
           l1Token
         );
         if (isDefined(repaymentChainId)) {
-          this.fillRelay(deposit, unfilledAmount, repaymentChainId);
+          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
@@ -549,7 +550,7 @@ export class Relayer {
       : destinationChainId;
 
     const refundFee = this.computeRefundFee(version, deposit);
-    const { profitable, nativeGasCost } = await profitClient.isFillProfitable(
+    const { profitable, nativeGasCost: gasLimit } = await profitClient.isFillProfitable(
       deposit,
       fillAmount,
       refundFee,
@@ -558,7 +559,7 @@ export class Relayer {
 
     return {
       repaymentChainId: profitable ? preferredChainId : undefined,
-      gasLimit: nativeGasCost,
+      gasLimit,
     };
   }
 

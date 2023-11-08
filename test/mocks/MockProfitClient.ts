@@ -1,8 +1,12 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { isDefined } from "../../src/utils";
-import { BigNumber, winston } from "../utils";
+import { BigNumber, toBN, toBNWei, winston } from "../utils";
+
+type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
+
+const defaultFillCost = toBN(100_000); // gas
+const defaultGasPrice = sdkUtils.bnOne; // wei per gas
 
 export class MockProfitClient extends ProfitClient {
   constructor(
@@ -13,7 +17,8 @@ export class MockProfitClient extends ProfitClient {
     relayerAddress: string,
     defaultMinRelayerFeePct?: BigNumber,
     debugProfitability?: boolean,
-    gasMultiplier?: BigNumber
+    gasMultiplier = toBNWei("1"),
+    gasPadding = toBNWei("0")
   ) {
     super(
       logger,
@@ -23,23 +28,24 @@ export class MockProfitClient extends ProfitClient {
       relayerAddress,
       defaultMinRelayerFeePct,
       debugProfitability,
-      gasMultiplier
+      gasMultiplier,
+      gasPadding
     );
 
     // Some tests run against mocked chains, so hack in the necessary parts
+    const defaultGasCost = {
+      nativeGasCost: defaultFillCost,
+      tokenGasCost: defaultGasPrice.mul(defaultFillCost),
+    };
     Object.values(spokePoolClients).map(({ chainId }) => {
-      // Ensure a minimum price for the gas token.
-      const gasToken = this.resolveGasToken(hubPoolClient.chainId);
-      const gasTokenPrice = this.getPriceOfToken(gasToken.address);
-      if (!isDefined(gasTokenPrice) || gasTokenPrice.eq(sdkUtils.bnZero)) {
-        this.setTokenPrice(gasToken.address, sdkUtils.bnOne);
-      }
+      this.setGasCost(chainId, defaultGasCost); // gas/fill
 
-      this.setGasCost(chainId, sdkUtils.bnOne); // Units of gas for a single fillRelay() execution.
+      const gasToken = this.resolveGasToken(chainId);
+      this.setTokenPrice(gasToken.address, defaultGasPrice); // usd wei
     });
   }
 
-  setTokenPrice(l1Token: string, price: BigNumber | undefined): void {
+  setTokenPrice(l1Token: string, price?: BigNumber): void {
     if (price) {
       this.tokenPrices[l1Token] = price;
     } else {
@@ -51,7 +57,7 @@ export class MockProfitClient extends ProfitClient {
     this.tokenPrices = tokenPrices;
   }
 
-  setGasCost(chainId: number, gas: BigNumber | undefined): void {
+  setGasCost(chainId: number, gas?: TransactionCostEstimate): void {
     if (gas) {
       this.totalGasCosts[chainId] = gas;
     } else {
@@ -59,8 +65,12 @@ export class MockProfitClient extends ProfitClient {
     }
   }
 
-  setGasCosts(gasCosts: { [chainId: number]: BigNumber }): void {
+  setGasCosts(gasCosts: { [chainId: number]: TransactionCostEstimate }): void {
     this.totalGasCosts = gasCosts;
+  }
+
+  setGasPadding(gasPadding: BigNumber): void {
+    this.gasPadding = gasPadding;
   }
 
   setGasMultiplier(gasMultiplier: BigNumber): void {

@@ -366,6 +366,21 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Old relayer fee pct is unchanged as this is what's included in relay hash
     expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(deposit1.relayerFeePct);
 
+    // @dev The SpokePoolClient expects to know about the deposit _before_ the SpeedUp. In this case,
+    // the deposit was initially early due to time manipulation, and is not treated as a normal deposit,
+    // so the SpokePoolClient needs to re-initialise to capture both Deposit event and SpeedUp in the
+    // same (or later) update. This fits OK with the serverless mode of operating the bot.
+    spokePoolClient_1 = new clients.SpokePoolClient(
+      spyLogger,
+      spokePool_1,
+      hubPoolClient,
+      originChainId,
+      spokePool1DeploymentBlock
+    );
+    relayerInstance.clients.spokePoolClients = Object.fromEntries(
+      [spokePoolClient_1, spokePoolClient_2].map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
+    );
+
     // Cycle forward to the next deposit
     await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
     await updateAllClients();
