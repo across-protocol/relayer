@@ -126,7 +126,7 @@ export class ProfitClient {
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
-      this.gasPadding.gte(toBNWei("0")) && this.gasPadding.lte(toBNWei(2)),
+      this.gasPadding.gte(bnZero) && this.gasPadding.lte(toBNWei(2)),
       `Gas padding out of range (${this.gasPadding})`
     );
     this.gasPadding = toBNWei("1").add(gasPadding);
