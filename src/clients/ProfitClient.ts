@@ -479,16 +479,13 @@ export class ProfitClient {
     // Pre-fetch total gas costs for relays on enabled chains.
     const testSymbol = "WETH";
     const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
-    await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId, idx) => {
+    await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
       const destinationToken =
         destinationChainId === hubPoolClient.chainId
           ? hubToken
           : hubPoolClient.getDestinationTokenForL1Token(hubToken, destinationChainId);
       assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
-      // @dev The relayer _can not_ be the recipient, since the SpokePool short-circuits the ERC20 transfer
-      // and consumes less gas. Instead, just use the main RL address as the simulated relayer, since it has
-      // all supported tokens and approvals in place on all chains.
       const deposit: Deposit = {
         depositId,
         depositor: TEST_RECIPIENT,
@@ -504,10 +501,13 @@ export class ProfitClient {
         message: EMPTY_MESSAGE,
       };
 
-      // An extra toBN cast is needed as the provider returns a different BigNumber type.
-      const getGasCosts = relayerFeeQueries[destinationChainId].getGasCosts;
-      const { nativeGasCost, tokenGasCost } = await getGasCosts(deposit, fillAmount, TEST_RELAYER);
-      this.totalGasCosts[this.enabledChainIds[idx]] = { nativeGasCost, tokenGasCost };
+      // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
+      // use the main RL address because it has all supported tokens and approvals in place on all chains.
+      this.totalGasCosts[destinationChainId] = await relayerFeeQueries[destinationChainId].getGasCosts(
+        deposit,
+        fillAmount,
+        TEST_RELAYER
+      );
     });
 
     this.logger.debug({
@@ -526,9 +526,9 @@ export class ProfitClient {
     const gasMarkup = 0;
     return new QUERY_HANDLERS[chainId](
       provider,
-      undefined,
-      undefined,
-      undefined,
+      undefined, // symbolMapping
+      undefined, // spokePoolAddress
+      undefined, // simulatedRelayerAddress
       coingeckoProApiKey,
       this.logger,
       gasMarkup
