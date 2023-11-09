@@ -117,7 +117,7 @@ export async function constructRelayerClients(
     adapterManager,
     crossChainTransferClient,
     config.bundleRefundLookback,
-    !config.sendingRelaysEnabled
+    !config.sendingRebalancesEnabled
   );
 
   return { ...commonClients, spokePoolClients, ubaClient, tokenClient, profitClient, inventoryClient, acrossApiClient };
