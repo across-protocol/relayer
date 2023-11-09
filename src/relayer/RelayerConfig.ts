@@ -20,6 +20,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerTokens: string[];
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
+  readonly relayerGasPadding: BigNumber;
   readonly relayerGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
@@ -45,6 +46,7 @@ export class RelayerConfig extends CommonConfig {
       SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
       RELAYER_GAS_MULTIPLIER,
+      RELAYER_GAS_PADDING,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
@@ -138,6 +140,7 @@ export class RelayerConfig extends CommonConfig {
       });
     }
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
+    this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingRebalancesEnabled = SEND_REBALANCES === "true";

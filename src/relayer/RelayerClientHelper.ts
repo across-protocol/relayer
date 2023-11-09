@@ -83,7 +83,8 @@ export async function constructRelayerClients(
     baseSigner.address,
     config.minRelayerFeePct,
     config.debugProfitability,
-    config.relayerGasMultiplier
+    config.relayerGasMultiplier,
+    config.relayerGasPadding
   );
   await profitClient.update();
 

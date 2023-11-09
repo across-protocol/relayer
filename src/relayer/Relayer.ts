@@ -184,7 +184,7 @@ export class Relayer {
     for (const { deposit, version, unfilledAmount, fillCount, invalidFills } of confirmedUnfilledDeposits) {
       const { relayerTokens, slowDepositors } = config;
 
-      const { originChainId, destinationChainId, originToken } = deposit;
+      const { depositId, depositor, recipient, originChainId, destinationChainId, originToken, amount } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
       // Skip any L1 tokens that are not specified in the config.
@@ -221,10 +221,10 @@ export class Relayer {
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit: acrossApiClient.getLimit(l1Token.address),
           l1Token: l1Token.address,
-          depositId: deposit.depositId,
-          amount: deposit.amount,
+          depositId,
+          amount,
           unfilledAmount: unfilledAmount.toString(),
-          originChainId: deposit.originChainId,
+          originChainId,
           transactionHash: deposit.transactionHash,
         });
         continue;
@@ -245,12 +245,12 @@ export class Relayer {
       }
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-      if (slowDepositors?.includes(deposit.depositor)) {
+      if (slowDepositors?.includes(depositor)) {
         if (sendSlowRelays && fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
           this.logger.debug({
             at: "Relayer",
             message: "Initiating slow fill for grey listed depositor",
-            depositor: deposit.depositor,
+            depositor,
           });
           this.zeroFillDeposit(deposit);
         }
@@ -259,7 +259,8 @@ export class Relayer {
         continue;
       }
 
-      if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
+      const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
+      if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
@@ -271,10 +272,16 @@ export class Relayer {
           l1Token
         );
         if (isDefined(repaymentChainId)) {
-          this.fillRelay(deposit, unfilledAmount, repaymentChainId);
+          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
+      } else if (selfRelay) {
+        // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
+        // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
+        // expensive fills on (for example) mainnet.
+        this.fillRelay(deposit, unfilledAmount, destinationChainId);
       } else {
         tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
@@ -543,7 +550,7 @@ export class Relayer {
       : destinationChainId;
 
     const refundFee = this.computeRefundFee(version, deposit);
-    const { profitable, nativeGasCost } = await profitClient.isFillProfitable(
+    const { profitable, nativeGasCost: gasLimit } = await profitClient.isFillProfitable(
       deposit,
       fillAmount,
       refundFee,
@@ -552,7 +559,7 @@ export class Relayer {
 
     return {
       repaymentChainId: profitable ? preferredChainId : undefined,
-      gasLimit: nativeGasCost,
+      gasLimit,
     };
   }
 
