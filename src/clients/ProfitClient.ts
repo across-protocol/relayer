@@ -27,7 +27,11 @@ import { HubPoolClient } from ".";
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
-const { EMPTY_MESSAGE, DEFAULT_SIMULATED_RELAYER_ADDRESS: TEST_RELAYER } = sdkConsts;
+const {
+  EMPTY_MESSAGE,
+  DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
+  DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER
+} = sdkConsts;
 const {
   bnOne,
   bnZero,
@@ -472,6 +476,7 @@ export class ProfitClient {
 
   private async updateGasCosts(): Promise<void> {
     const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
+    const relayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? PROD_RELAYER : TEST_RELAYER;
     const depositId = random(bnUint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
     const fillAmount = bnOne;
     const quoteTimestamp = getCurrentTime();
@@ -506,7 +511,7 @@ export class ProfitClient {
       this.totalGasCosts[destinationChainId] = await relayerFeeQueries[destinationChainId].getGasCosts(
         deposit,
         fillAmount,
-        TEST_RELAYER
+        relayer
       );
     });
 
