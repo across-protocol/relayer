@@ -27,7 +27,7 @@
     "@uma/common": "2.33.0",
     "@uma/financial-templates-lib": "^2.34.1",
     "async": "^3.2.4",
-    "axios": "^1.4.0",
+    "axios": "^1.6.0",
     "dotenv": "^16.3.1",
     "ethers": "^5.7.2",
     "hardhat": "^2.14.0",
