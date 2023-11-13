@@ -13,6 +13,7 @@ export class RelayerConfig extends CommonConfig {
   readonly skipRelays: boolean;
   readonly skipRebalancing: boolean;
   readonly sendingRelaysEnabled: boolean;
+  readonly sendingRebalancesEnabled: boolean;
   readonly sendingMessageRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly sendingRefundRequestsEnabled: boolean;
@@ -49,6 +50,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
+      SEND_REBALANCES,
       SEND_MESSAGE_RELAYS,
       SKIP_RELAYS,
       SKIP_REBALANCING,
@@ -141,6 +143,7 @@ export class RelayerConfig extends CommonConfig {
     this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
+    this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
     this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
     this.skipRelays = SKIP_RELAYS === "true";
     this.skipRebalancing = SKIP_REBALANCING === "true";

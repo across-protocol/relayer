@@ -216,12 +216,12 @@ export class MultiCallerClient {
       txnRequestsToSubmit.forEach((txn, idx) => {
         mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       });
-      this.logger.info({
+      this.logger.debug({
         at: "MultiCallerClient#executeTxnQueue",
         message: `${txnRequestsToSubmit.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
         mrkdwn,
       });
-      this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      this.logger.debug({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
       return [];
     }
 
