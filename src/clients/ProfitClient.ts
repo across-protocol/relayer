@@ -469,9 +469,7 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      if (!isDefined(tokens[symbol])) {
-        tokens[symbol] = TOKEN_SYMBOLS_MAP[symbol].addresses[1];
-      }
+      tokens[symbol] ??= TOKEN_SYMBOLS_MAP[symbol].addresses[1];
     });
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
