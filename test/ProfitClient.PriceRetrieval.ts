@@ -1,7 +1,7 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, ProfitClient } from "../src/clients"; // Tested
 import { L1Token } from "../src/interfaces";
+import { TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 

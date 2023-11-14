@@ -10,12 +10,12 @@ import {
   Event,
   ZERO_ADDRESS,
   getTokenAddress,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";

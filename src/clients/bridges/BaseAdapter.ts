@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/ban-types */
-import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
@@ -26,6 +25,7 @@ import {
   winston,
   createFormatFunction,
   BigNumberish,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -40,8 +40,6 @@ interface Events {
     [l1Token: string]: DepositEvent[];
   };
 }
-
-const { TOKEN_SYMBOLS_MAP } = sdkConstants;
 
 // TODO: make these generic arguments to BaseAdapter.
 type SupportedL1Token = string;
