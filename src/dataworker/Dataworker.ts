@@ -350,19 +350,13 @@ export class Dataworker {
     }
 
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
-    const mainnetBundleEndBlock = getBlockRangeForChain(
+    const [mainnetBundleStartBlock, mainnetBundleEndBlock] = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[1];
+    );
 
     let rootBundleData: ProposeRootBundleReturnType;
-
-    const mainnetBundleStartBlock = getBlockRangeForChain(
-      blockRangesForProposal,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[0];
     let isUBA = false;
     if (
       sdk.clients.isUBAActivatedAtBlock(
@@ -765,18 +759,13 @@ export class Dataworker {
     // Go through all flows in range. For each outflow, add the refund balancing fee to the refund entry
     // of the relayer.
     for (const chainId of enabledChainIds) {
-      const blockRangeForChain = getBlockRangeForChain(
+      const [startBlock, endBlock] = getBlockRangeForChain(
         blockRanges,
         Number(chainId),
         this.chainIdListForBundleEvaluationBlockNumbers
       );
       for (const tokenSymbol of ubaClient.tokens) {
-        const flowsForChain = ubaClient.getModifiedFlows(
-          Number(chainId),
-          tokenSymbol,
-          blockRangeForChain[0],
-          blockRangeForChain[1]
-        );
+        const flowsForChain = ubaClient.getModifiedFlows(Number(chainId), tokenSymbol, startBlock, endBlock);
         flowsForChain.forEach(({ flow, balancingFee }) => {
           // All flows in here are assumed to be valid, so we can use the flow's
           // repayment chain to pay out the refund. But we need to check which
@@ -813,7 +802,7 @@ export class Dataworker {
       (unfilledDeposit: UnfilledDeposit) => {
         const deposit = unfilledDeposit.deposit;
         const destinationChainId = deposit.destinationChainId;
-        const blockRangesForDestChain = getBlockRangeForChain(
+        const [startBlock, endBlock] = getBlockRangeForChain(
           blockRanges,
           destinationChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
@@ -824,7 +813,7 @@ export class Dataworker {
         ).symbol;
         // There should only be one outflow on the deposit.destinationchain matching this deposit ID.
         const matchingOutflow = ubaClient
-          .getModifiedFlows(destinationChainId, tokenSymbol, blockRangesForDestChain[0], blockRangesForDestChain[1])
+          .getModifiedFlows(destinationChainId, tokenSymbol, startBlock, endBlock)
           .find((flow) => flow.flow.depositId === deposit.depositId);
         if (!matchingOutflow || !matchingOutflow?.balancingFee) {
           throw new Error(`No matching outflow with refund balancing fee found for deposit ID ${deposit.depositId}`);
