@@ -7,8 +7,8 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { Wallet } from "../utils";
-import { BundleDataClient, HubPoolClient, ProfitClient, TokenClient } from "../clients";
+import { PriceClient, acrossApi, coingecko, defiLlama, Wallet } from "../utils";
+import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
@@ -16,7 +16,7 @@ import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
   bundleDataClient: BundleDataClient;
-  profitClient?: ProfitClient;
+  priceClient?: PriceClient;
 }
 
 export async function constructDataworkerClients(
@@ -45,24 +45,18 @@ export async function constructDataworkerClients(
     config.blockRangeEndBlockBuffer
   );
 
-  // Disable profitability by default as only the relayer needs it.
-  // The dataworker only needs price updates from ProfitClient to calculate bundle volume.
-  const profitClient = config.proposerEnabled
-    ? new ProfitClient(logger, commonClients.hubPoolClient, {}, [], "")
-    : undefined;
-
-  // Must come after hubPoolClient.
-  // TODO: This should be refactored to check if the hubpool client has had one previous update run such that it has
-  // L1 tokens within it.If it has we dont need to make it sequential like this.
-  if (profitClient) {
-    await profitClient.update();
-  }
+  // The proposer needs prices to calculate bundle volumes.
+  const priceClient = new PriceClient(logger, [
+    new acrossApi.PriceFeed(),
+    new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+    new defiLlama.PriceFeed(),
+  ]);
 
   return {
     ...commonClients,
     bundleDataClient,
     tokenClient,
-    profitClient,
+    priceClient,
   };
 }
 

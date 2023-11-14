@@ -1,6 +1,8 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk-v2";
 
-export class BlockFinder extends sdkUtils.BlockFinder {}
+export class BlockFinder extends sdk.utils.BlockFinder {}
+export class PriceClient extends sdk.priceClient.PriceClient {}
+export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
 export const {
   toBN,
@@ -18,4 +20,4 @@ export const {
   blockExplorerLink,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
-} = sdkUtils;
+} = sdk.utils;
