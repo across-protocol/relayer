@@ -456,40 +456,42 @@ export class ProfitClient {
   }
 
   protected async updateTokenPrices(): Promise<void> {
-    // Generate list of tokens to retrieve.
-    const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
+    // Generate list of tokens to retrieve. Map by symbol because tokens like
+    // ETH/WETH refer to the same mainnet contract address.
+    const tokens: { [_symbol: string]: string } = Object.fromEntries(
       this.hubPoolClient.getL1Tokens().map(({ symbol }) => {
-        const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
+        const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
         const address = addresses[1];
-        return [address, { symbol, decimals, address }];
+        return [symbol, address];
       })
     );
 
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
+      const addresses = TOKEN_SYMBOLS_MAP[symbol];
       const address = addresses[1];
-      l1Tokens[address] ??= { symbol, decimals, address };
+      tokens[symbol] ??= address;
     });
 
-    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
 
     // Pre-populate any new addresses.
-    Object.values(l1Tokens).forEach(({ symbol, address }) => {
+    Object.entries(tokens).forEach(([symbol, address]) => {
       this.tokenSymbolMap[symbol] ??= address;
       this.tokenPrices[address] ??= bnZero;
     });
 
     try {
-      const tokenPrices = await this.priceClient.getPricesByAddress(Object.keys(l1Tokens), "usd");
-      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
+      const tokenAddrs = Array.from(new Set(Object.values(tokens)));
+      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
+      tokenPrices.forEach(({ address, price }) => this.tokenPrices[address] = toBNWei(price));
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
       let mrkdwn = `${errMsg}:\n`;
-      Object.entries(l1Tokens).forEach(([, l1Token]) => {
-        mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.symbol)}.\n`;
+      Object.entries(tokens).forEach(([symbol, address]) => {
+        mrkdwn += `- Using last known ${symbol} price of ${this.getPriceOfToken(address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
       throw new Error(errMsg);
