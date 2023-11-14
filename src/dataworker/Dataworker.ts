@@ -409,7 +409,7 @@ export class Dataworker {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
       // that is the actual amount sent over bridges. This also mitigates the chance that a RelayerRefundLeaf is
       // published but its refund currency isn't sent over the bridge in a PoolRebalanceLeaf.
-      const totalUsdRefund = PoolRebalanceUtils.computePoolRebalanceUsdVolume(
+      const totalUsdRefund = await PoolRebalanceUtils.computePoolRebalanceUsdVolume(
         rootBundleData.poolRebalanceLeaves,
         this.clients
       );

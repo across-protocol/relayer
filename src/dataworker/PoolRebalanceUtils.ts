@@ -1,4 +1,4 @@
-import { typechain } from "@across-protocol/sdk-v2";
+import { typechain, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
@@ -29,6 +29,8 @@ import {
   winston,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
+
+const { bnZero, fixedPointAdjustment: fixedPoint } = sdkUtils;
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
@@ -174,19 +176,39 @@ export function addSlowFillsToRunningBalances(
 
 // TODO: Is summing up absolute values really the best way to compute a root bundle's "volume"? Said another way,
 // how do we measure a root bundle's "impact" or importance?
-export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clients: DataworkerClients): BigNumber {
+export async function computePoolRebalanceUsdVolume(
+  leaves: PoolRebalanceLeaf[],
+  clients: DataworkerClients
+): Promise<BigNumber> {
+  // Fetch the set of unique token addresses from the array of PoolRebalanceLeave objects.
+  // Map the resulting HubPool token addresses to symbol, decimals, and price.
+  const hubPoolTokens = Object.fromEntries(
+    Array.from(new Set(leaves.map(({ l1Tokens }) => l1Tokens).flat()))
+      .map((address) => clients.hubPoolClient.getTokenInfoForL1Token(address))
+      .map(({ symbol, decimals, address }) => [address, { symbol, decimals, price: bnZero }])
+  );
+
+  // Fetch all relevant token prices.
+  const prices = await clients.priceClient.getPricesByAddress(
+    Object.keys(hubPoolTokens).map((address) => address),
+    "usd"
+  );
+
+  // Scale token price to 18 decimals.
+  prices.forEach(({ address, price }) => (hubPoolTokens[address].price = toBNWei(price)));
+
+  const bn10 = toBN(10);
   return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
     return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: string, index: number) => {
-      const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
-      const volume = netSendAmount.abs();
-      const tokenPriceInUsd = clients.profitClient.getPriceOfToken(l1Token);
-      const volumeInUsd = volume.mul(tokenPriceInUsd).div(toBNWei(1));
-      const l1TokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
-      const volumeInUsdScaled = volumeInUsd.mul(toBN(10).pow(18 - l1TokenInfo.decimals));
+      const { decimals, price: usdTokenPrice } = hubPoolTokens[l1Token];
 
-      return sum.add(volumeInUsdScaled);
+      const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
+      const volume = netSendAmount.abs().mul(bn10.pow(18 - decimals)); // Scale volume to 18 decimals.
+
+      const usdVolume = volume.mul(usdTokenPrice).div(fixedPoint);
+      return sum.add(usdVolume);
     }, result);
-  }, toBN(0));
+  }, bnZero);
 }
 
 export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
