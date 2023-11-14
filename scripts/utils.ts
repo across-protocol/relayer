@@ -3,7 +3,7 @@ import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
 import * as contracts from "@across-protocol/contracts-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { getDeployedContract, getNodeUrlList, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
 
 export type ERC20 = {
   address: string;
