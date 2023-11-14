@@ -193,8 +193,6 @@ export class ProfitClient {
    * @returns Token token price for token.
    */
   getPriceOfToken(token: string): BigNumber {
-    // Warn on this initially, and move to an assert() once any latent issues are resolved.
-    // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
     const address = this.resolveTokenAddress(token);
     const price = this.tokenPrices[address];
     if (!isDefined(price)) {
