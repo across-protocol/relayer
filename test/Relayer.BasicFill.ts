@@ -127,13 +127,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await configStoreClient.update();
 
     ubaClient = new MockUBAClient(
-      hubPoolClient.getL1Tokens().map((x) => x.symbol),
+      hubPoolClient.getL1Tokens().map(({ symbol }) => symbol),
       hubPoolClient,
       generateNoOpSpokePoolClientsForDefaultChainIndices(spokePoolClients)
     );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
-    profitClient.setTokenPrice(l1Token.address, bnOne);
+    for (const erc20 of [l1Token]) {
+      await profitClient.initToken(erc20);
+    }
 
     relayerInstance = new Relayer(
       relayer.address,
