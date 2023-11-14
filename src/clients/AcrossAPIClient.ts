@@ -2,7 +2,7 @@ import _ from "lodash";
 import axios, { AxiosError } from "axios";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { isDefined, winston, BigNumber, getL2TokenAddresses, TOKEN_SYMBOLS_MAP } from "../utils";
+import { isDefined, winston, BigNumber, getL2TokenAddresses, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 
 const { bnZero } = sdkUtils;
