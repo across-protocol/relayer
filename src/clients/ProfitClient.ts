@@ -470,9 +470,7 @@ export class ProfitClient {
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
       if (!isDefined(tokens[symbol])) {
-        const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-        const address = addresses[1];
-        tokens[symbol] = address;
+        tokens[symbol] = TOKEN_SYMBOLS_MAP[symbol].addresses[1];
       }
     });
 
