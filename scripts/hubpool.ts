@@ -1,6 +1,6 @@
 import minimist from "minimist";
 import { WETH9__factory as WETH9 } from "@across-protocol/contracts-v2";
-import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants as sdkConsts } from "@across-protocol/sdk-v2";
 import { BigNumber, ethers, Wallet } from "ethers";
 import { config } from "dotenv";
 import { getNetworkName, getSigner } from "../src/utils";
@@ -180,9 +180,11 @@ async function search(args: Record<string, number | string>, _signer: Wallet): P
       configStore.globalConfig(CHAIN_ID_INDICES, { blockTag: blockNumber }),
     ]);
 
-    const chainIds = _chainIds.length > 0
-      ? JSON.parse(_chainIds.replaceAll('"', ""))
-      : PROTOCOL_DEFAULT_CHAIN_ID_INDICES; // Production chain IDs; will be incorrect on Görli.
+    // If the ConfigStore doesn't have CHAIN_ID_INDICES defined at the relevant block, sub in
+    // the implicit initial value. This is only applicable to production and will be incorrect on Görli.
+    // Görli will soon be deprecated, at which point it won't be relevant anyway.
+    const chainIds =
+      _chainIds.length > 0 ? JSON.parse(_chainIds.replaceAll('"', "")) : PROTOCOL_DEFAULT_CHAIN_ID_INDICES;
 
     const args = hubPool.interface.parseLog({ data, topics }).args;
     const eventArgs = Object.keys(args).filter((key) => isNaN(Number(key)));
