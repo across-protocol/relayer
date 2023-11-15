@@ -1,6 +1,6 @@
 import assert from "assert";
-import { typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { BigNumber, constants, providers } from "ethers";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { BigNumber, constants } from "ethers";
 import { groupBy } from "lodash";
 import {
   Wallet,
@@ -14,10 +14,11 @@ import {
   disconnectRedisClients,
   getMultisender,
   winston,
+  TransactionResponse,
 } from "../utils";
 import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient } from "../clients";
+import { AugmentedTransaction, HubPoolClient, TransactionClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -29,10 +30,6 @@ import {
   Multicall2Call,
 } from "../common";
 import { ChainFinalizer, Withdrawal } from "./types";
-
-type TransactionReceipt = providers.TransactionReceipt;
-
-const { isError, isEthersError } = typeguards;
 const { isDefined } = sdkUtils;
 
 config();
@@ -118,22 +115,30 @@ export async function finalize(
     });
   }
 
-  // Ensure each transaction would succeed in isolation.
-  const gasLimit = BigNumber.from(2_000_000);
+  const txnClient = new TransactionClient(logger);
+
   let gasEstimation = constants.Zero;
+  const batchGasLimit = BigNumber.from(2_000_000);
   // @dev To avoid running into block gas limit in case the # of finalizations gets too high, keep a running
   // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
-    try {
-      const txn = await multicall2.populateTransaction.aggregate([_txn]);
-      const _gas = await multicall2.provider.estimateGas(txn);
-      // @dev 2x the gas estimation when adding to the counter to be safe.
-      gasEstimation = gasEstimation.add(_gas.mul(2));
-      return gasEstimation.lt(gasLimit) && true;
-    } catch (err) {
-      const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
-      let message: string;
 
+  // Ensure each transaction would succeed in isolation.
+  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
+    const txnToSubmit: AugmentedTransaction = {
+      contract: multicall2,
+      chainId: hubChainId,
+      method: "aggregate",
+      args: [_txn],
+    };
+    const { reason, succeed, transaction } = (await txnClient.simulate([txnToSubmit]))[0];
+
+    if (succeed) {
+      // Increase running counter of estimated gas cost for batch finalization.
+      // gasLimit should be defined if succeed is True.
+      gasEstimation = gasEstimation.add(transaction.gasLimit);
+      return gasEstimation.lt(batchGasLimit);
+    } else {
+      let message: string;
       if (isDefined(withdrawal)) {
         const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
         const network = getNetworkName(l2ChainId);
@@ -148,10 +153,20 @@ export async function finalize(
   });
 
   if (finalizations.length > 0) {
-    let txn: TransactionReceipt;
+    let txn: TransactionResponse;
     try {
-      const txns = finalizations.map(({ txn }) => txn);
-      txn = await (await multicall2.aggregate(txns, { gasLimit: gasLimit.mul(2) })).wait();
+      const finalizerTxns = finalizations.map(({ txn }) => txn);
+      const txnToSubmit: AugmentedTransaction = {
+        contract: multicall2,
+        chainId: hubChainId,
+        method: "aggregate",
+        args: finalizerTxns,
+        gasLimit: gasEstimation,
+        gasLimitMultiplier: 2,
+        message: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
+        mrkdwn: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
+      };
+      txn = (await txnClient.submit(hubChainId, [txnToSubmit]))[0];
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -177,7 +192,7 @@ export async function finalize(
       logger.info({
         at: "Finalizer",
         message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🔜`,
-        transactionHash: blockExplorerLink(txn.transactionHash, hubChainId),
+        transactionHash: blockExplorerLink(txn.hash, hubChainId),
       });
     });
     withdrawals.forEach(({ withdrawal: { l2ChainId, amount, l1TokenSymbol: symbol } }) => {
@@ -185,7 +200,7 @@ export async function finalize(
       logger.info({
         at: "Finalizer",
         message: `Finalized ${spokeChain} withdrawal for ${amount} ${symbol} 🪃`,
-        transactionHash: blockExplorerLink(txn.transactionHash, hubChainId),
+        transactionHash: blockExplorerLink(txn.hash, hubChainId),
       });
     });
   }
