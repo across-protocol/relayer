@@ -1,6 +1,6 @@
 import assert from "assert";
 import { typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { providers } from "ethers";
+import { BigNumber, constants, providers } from "ethers";
 import { groupBy } from "lodash";
 import {
   Wallet,
@@ -119,39 +119,39 @@ export async function finalize(
   }
 
   // Ensure each transaction would succeed in isolation.
-  const finalizations = (
-    await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
-      try {
-        const txn = await multicall2.populateTransaction.aggregate([_txn]);
-        await multicall2.provider.estimateGas(txn);
-        return true;
-      } catch (err) {
-        const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
-        let message: string;
+  const gasLimit = BigNumber.from(2_000_000);
+  let gasEstimation = constants.Zero;
+  // @dev To avoid running into block gas limit in case the # of finalizations gets too high, keep a running
+  // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
+  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
+    try {
+      const txn = await multicall2.populateTransaction.aggregate([_txn]);
+      const _gas = await multicall2.provider.estimateGas(txn);
+      // @dev 2x the gas estimation when adding to the counter to be safe.
+      gasEstimation = gasEstimation.add(_gas.mul(2));
+      return gasEstimation.lt(gasLimit) && true;
+    } catch (err) {
+      const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+      let message: string;
 
-        if (isDefined(withdrawal)) {
-          const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
-          const network = getNetworkName(l2ChainId);
-          message = `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`;
-        } else {
-          // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
-          message = "Unknown finalizer simulation failure.";
-        }
-        logger.info({ at: "finalizer", message, reason, txn: _txn });
-        return false;
+      if (isDefined(withdrawal)) {
+        const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
+        const network = getNetworkName(l2ChainId);
+        message = `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`;
+      } else {
+        // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
+        message = "Unknown finalizer simulation failure.";
       }
-    })
-  ).slice(0, 4);
+      logger.info({ at: "finalizer", message, reason, txn: _txn });
+      return false;
+    }
+  });
 
   if (finalizations.length > 0) {
     let txn: TransactionReceipt;
     try {
-      // Note: If the sum of finalizations approaches the gas limit, consider slicing them up. For now, deal with them
-      // by overriding the txn gas limit to something very high (e.g. 10mil) and capping the `finalizations` list
-      // at some length like 3 txns. If there are more than this number, then the next run in the finalizer should
-      // handle them.
       const txns = finalizations.map(({ txn }) => txn);
-      txn = await (await multicall2.aggregate(txns, { gasLimit: 10_000_000 })).wait();
+      txn = await (await multicall2.aggregate(txns, { gasLimit: gasLimit.mul(2) })).wait();
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
