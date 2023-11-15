@@ -119,34 +119,39 @@ export async function finalize(
   }
 
   // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
-    try {
-      const txn = await multicall2.populateTransaction.aggregate([_txn]);
-      await multicall2.provider.estimateGas(txn);
-      return true;
-    } catch (err) {
-      const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
-      let message: string;
+  const finalizations = (
+    await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
+      try {
+        const txn = await multicall2.populateTransaction.aggregate([_txn]);
+        await multicall2.provider.estimateGas(txn);
+        return true;
+      } catch (err) {
+        const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+        let message: string;
 
-      if (isDefined(withdrawal)) {
-        const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
-        const network = getNetworkName(l2ChainId);
-        message = `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`;
-      } else {
-        // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
-        message = "Unknown finalizer simulation failure.";
+        if (isDefined(withdrawal)) {
+          const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
+          const network = getNetworkName(l2ChainId);
+          message = `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`;
+        } else {
+          // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
+          message = "Unknown finalizer simulation failure.";
+        }
+        logger.info({ at: "finalizer", message, reason, txn: _txn });
+        return false;
       }
-      logger.info({ at: "finalizer", message, reason, txn: _txn });
-      return false;
-    }
-  });
+    })
+  ).slice(0, 4);
 
   if (finalizations.length > 0) {
     let txn: TransactionReceipt;
     try {
-      // Note: If the sum of finalizations approaches the gas limit, consider slicing them up.
+      // Note: If the sum of finalizations approaches the gas limit, consider slicing them up. For now, deal with them
+      // by overriding the txn gas limit to something very high (e.g. 10mil) and capping the `finalizations` list
+      // at some length like 3 txns. If there are more than this number, then the next run in the finalizer should
+      // handle them.
       const txns = finalizations.map(({ txn }) => txn);
-      txn = await (await multicall2.aggregate(txns)).wait();
+      txn = await (await multicall2.aggregate(txns, { gasLimit: 10_000_000 })).wait();
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
