@@ -142,7 +142,7 @@ export async function finalize(
         // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
         message = "Unknown finalizer simulation failure.";
       }
-      logger.info({ at: "finalizer", message, reason, txn: _txn });
+      logger.warn({ at: "finalizer", message, reason, txn: _txn });
       return false;
     }
   });
