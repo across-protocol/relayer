@@ -94,6 +94,7 @@ const QUERY_HANDLERS: {
   // Testnets:
   5: relayFeeCalculator.EthereumGoerliQueries,
   280: relayFeeCalculator.zkSyncGoerliQueries,
+  420: relayFeeCalculator.OptimismGoerliQueries,
   80001: relayFeeCalculator.PolygonMumbaiQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
   421613: relayFeeCalculator.ArbitrumGoerliQueries,
@@ -105,7 +106,8 @@ const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 export class ProfitClient {
   private readonly priceClient;
   protected minRelayerFees: { [route: string]: BigNumber } = {};
-  protected tokenPrices: { [l1Token: string]: BigNumber } = {};
+  protected tokenSymbolMap: { [symbol: string]: string } = {};
+  protected tokenPrices: { [address: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: UnprofitableFill[] } = {};
 
   // Track total gas costs of a relay on each chain.
@@ -173,19 +175,32 @@ export class ProfitClient {
     return this.tokenPrices;
   }
 
+  /**
+   * Convenience function to resolve a token symbol to its underlying address.
+   * @notice In case that an address is supplied, it will simply be returned as-is.
+   * @param token Token address or symbol to resolve.
+   * @returns Address corresponding to token.
+   */
+  resolveTokenAddress(token: string): string {
+    const address = ethersUtils.isAddress(token) ? token : this.tokenSymbolMap[token];
+    assert(isDefined(address), `Unable to resolve address for token ${token}`);
+    return address;
+  }
+
+  /**
+   * Return the cached price for token.
+   * @param token Token identifier. May be a token symbol or token address on the HubPool chain.
+   * @returns Token token price for token.
+   */
   getPriceOfToken(token: string): BigNumber {
-    // Warn on this initially, and move to an assert() once any latent issues are resolved.
-    // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
-    if (this.tokenPrices[token] === undefined && !this.isTestnet) {
-      this.logger.warn({
-        at: "ProfitClient#getPriceOfToken",
-        message: `Token ${token} not in price list.`,
-        tokenPrices: this.tokenPrices,
-      });
+    const address = this.resolveTokenAddress(token);
+    const price = this.tokenPrices[address];
+    if (!isDefined(price)) {
+      this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, address });
       return bnZero;
     }
 
-    return this.tokenPrices[token];
+    return price;
   }
 
   // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
@@ -221,7 +236,7 @@ export class ProfitClient {
   ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
     const gasToken = this.resolveGasToken(chainId);
-    const gasTokenPriceUsd = this.getPriceOfToken(gasToken.address);
+    const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
     let { nativeGasCost, tokenGasCost } = await this.getTotalGasCost(deposit, fillAmount);
 
     Object.entries({
@@ -295,7 +310,7 @@ export class ProfitClient {
     minRelayerFeePct: BigNumber
   ): Promise<FillProfit> {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
-    const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
+    const tokenPriceUsd = this.getPriceOfToken(l1Token.symbol);
     if (tokenPriceUsd.lte(0)) {
       throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
     }
@@ -358,7 +373,7 @@ export class ProfitClient {
         `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
       );
     }
-    const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.address);
+    const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.symbol);
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
@@ -441,33 +456,40 @@ export class ProfitClient {
   }
 
   protected async updateTokenPrices(): Promise<void> {
-    // Generate list of tokens to retrieve.
-    const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token) => [token.address, token])
+    // Generate list of tokens to retrieve. Map by symbol because tokens like
+    // ETH/WETH refer to the same mainnet contract address.
+    const tokens: { [_symbol: string]: string } = Object.fromEntries(
+      this.hubPoolClient.getL1Tokens().map(({ symbol }) => {
+        const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
+        const address = addresses[1];
+        return [symbol, address];
+      })
     );
 
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
-      const address = addresses[1];
-      l1Tokens[address] ??= { symbol, decimals, address };
+      tokens[symbol] ??= TOKEN_SYMBOLS_MAP[symbol].addresses[1];
     });
 
-    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
 
     // Pre-populate any new addresses.
-    Object.values(l1Tokens).forEach(({ address }) => (this.tokenPrices[address] ??= bnZero));
+    Object.entries(tokens).forEach(([symbol, address]) => {
+      this.tokenSymbolMap[symbol] ??= address;
+      this.tokenPrices[address] ??= bnZero;
+    });
 
     try {
-      const tokenPrices = await this.priceClient.getPricesByAddress(Object.keys(l1Tokens), "usd");
+      const tokenAddrs = Array.from(new Set(Object.values(tokens)));
+      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
       tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
       let mrkdwn = `${errMsg}:\n`;
-      Object.entries(l1Tokens).forEach(([, l1Token]) => {
-        mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.address)}.\n`;
+      Object.entries(tokens).forEach(([symbol, address]) => {
+        mrkdwn += `- Using last known ${symbol} price of ${this.getPriceOfToken(address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
       throw new Error(errMsg);

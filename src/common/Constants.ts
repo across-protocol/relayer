@@ -61,6 +61,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   // Testnets:
   5: 0,
   280: 0,
+  420: 0,
   80001: 0,
   84531: 0,
   421613: 0,
@@ -77,6 +78,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     5: 0,
     280: 0,
+    420: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -92,6 +94,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     5: 0,
     280: 0,
+    420: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -117,6 +120,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   // Testnets:
   5: 10000,
   280: 10000,
+  420: 10000,
   80001: 10000,
   84531: 10000,
   421613: 10000,
@@ -133,6 +137,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   // Testnets:
   5: 0,
   280: 0,
+  420: 0,
   80001: 0,
   84531: 0,
   421613: 0,
@@ -170,6 +175,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   // Testnets:
   5: 0,
   280: 0,
+  420: 0,
   80001: 0,
   84531: 0,
   421613: 0,
@@ -194,12 +200,16 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 // Multicall3 Constants:
 export const multicall3Addresses = {
   1: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  5: "0xcA11bde05977b3631167028862bE2a173976CA11",
   10: "0xcA11bde05977b3631167028862bE2a173976CA11",
   137: "0xcA11bde05977b3631167028862bE2a173976CA11",
   288: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  324: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   8453: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  // testnet
+  5: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  280: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
+  420: "0xcA11bde05977b3631167028862bE2a173976CA11",
   80001: "0xcA11bde05977b3631167028862bE2a173976CA11",
   84531: "0xcA11bde05977b3631167028862bE2a173976CA11",
   421613: "0xcA11bde05977b3631167028862bE2a173976CA11",

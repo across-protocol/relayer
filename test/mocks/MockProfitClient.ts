@@ -1,7 +1,10 @@
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { HubPoolClient, ProfitClient } from "../../src/clients";
+import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
+import { isDefined } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
+import { MockHubPoolClient } from "./MockHubPoolClient";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
@@ -11,7 +14,7 @@ const defaultGasPrice = sdkUtils.bnOne; // wei per gas
 export class MockProfitClient extends ProfitClient {
   constructor(
     logger: winston.Logger,
-    hubPoolClient: HubPoolClient,
+    hubPoolClient: HubPoolClient | MockHubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     enabledChainIds: number[],
     relayerAddress: string,
@@ -32,6 +35,23 @@ export class MockProfitClient extends ProfitClient {
       gasPadding
     );
 
+    // Initialise with known mainnet ERC20s
+    Object.entries(TOKEN_SYMBOLS_MAP).forEach(([symbol, { decimals, addresses }]) => {
+      const address = addresses[hubPoolClient.chainId];
+      if (isDefined(address)) {
+        this.mapToken(symbol, address);
+        this.setTokenPrice(symbol, sdkUtils.bnOne);
+        if (this.hubPoolClient instanceof MockHubPoolClient) {
+          this.hubPoolClient.addL1Token({ symbol, decimals, address });
+        }
+      } else {
+        logger.debug({
+          at: "MockProfitClient",
+          message: `Skipping ${symbol}: not supported on ${hubPoolClient.chainId}`,
+        });
+      }
+    });
+
     // Some tests run against mocked chains, so hack in the necessary parts
     const defaultGasCost = {
       nativeGasCost: defaultFillCost,
@@ -45,16 +65,31 @@ export class MockProfitClient extends ProfitClient {
     });
   }
 
-  setTokenPrice(l1Token: string, price?: BigNumber): void {
+  async initToken(erc20: Contract): Promise<void> {
+    const symbol = await erc20.symbol();
+    this.mapToken(symbol, erc20.address);
+    this.setTokenPrice(symbol, sdkUtils.bnOne);
+  }
+
+  mapToken(symbol: string, address: string): void {
+    this.tokenSymbolMap[symbol] = address;
+  }
+
+  setTokenPrice(token: string, price: BigNumber | undefined): void {
+    const address = this.resolveTokenAddress(token);
     if (price) {
-      this.tokenPrices[l1Token] = price;
+      this.tokenPrices[address] = price;
     } else {
-      delete this.tokenPrices[l1Token];
+      delete this.tokenPrices[address];
     }
   }
 
-  setTokenPrices(tokenPrices: { [l1Token: string]: BigNumber }): void {
-    this.tokenPrices = tokenPrices;
+  setTokenPrices(tokenPrices: { [token: string]: BigNumber }): void {
+    this.tokenPrices = {};
+    Object.entries(tokenPrices).forEach(([token, price]) => {
+      const address = this.resolveTokenAddress(token);
+      this.tokenPrices[address] = price;
+    });
   }
 
   setGasCost(chainId: number, gas?: TransactionCostEstimate): void {
