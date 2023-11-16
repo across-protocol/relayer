@@ -143,19 +143,20 @@ export async function finalize(
       } else {
         return false;
       }
-    } else {
-      let message: string;
-      if (isDefined(withdrawal)) {
-        const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
-        const network = getNetworkName(l2ChainId);
-        message = `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`;
-      } else {
-        // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
-        message = "Unknown finalizer simulation failure.";
-      }
-      logger.warn({ at: "finalizer", message, reason, txn: _txn });
-      return false;
     }
+
+    // Simulation failed, log the reason and continue.
+    let message: string;
+    if (isDefined(withdrawal)) {
+      const { l2ChainId, type, l1TokenSymbol, amount } = withdrawal;
+      const network = getNetworkName(l2ChainId);
+      message = `Failed to estimate gas for ${network} ${amount} ${l1TokenSymbol} ${type}.`;
+    } else {
+      // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
+      message = "Unknown finalizer simulation failure.";
+    }
+    logger.warn({ at: "finalizer", message, reason, txn: _txn });
+    return false;
   });
 
   if (finalizations.length > 0) {
