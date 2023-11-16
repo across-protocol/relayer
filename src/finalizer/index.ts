@@ -128,7 +128,8 @@ export async function finalize(
       contract: multicall2,
       chainId: hubChainId,
       method: "aggregate",
-      args: [_txn],
+      // aggregate() takes an array of tuples: [calldata: bytes, target: address].
+      args: [[_txn]],
     };
     const { reason, succeed, transaction } = (await txnClient.simulate([txnToSubmit]))[0];
 
@@ -165,7 +166,7 @@ export async function finalize(
         contract: multicall2,
         chainId: hubChainId,
         method: "aggregate",
-        args: finalizerTxns,
+        args: [finalizerTxns],
         gasLimit: gasEstimation,
         gasLimitMultiplier: 2,
         message: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
