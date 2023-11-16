@@ -118,7 +118,7 @@ export async function finalize(
   const txnClient = new TransactionClient(logger);
 
   let gasEstimation = constants.Zero;
-  const batchGasLimit = BigNumber.from(2_000_000);
+  const batchGasLimit = BigNumber.from(10_000_000);
   // @dev To avoid running into block gas limit in case the # of finalizations gets too high, keep a running
   // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
 
@@ -135,8 +135,13 @@ export async function finalize(
     if (succeed) {
       // Increase running counter of estimated gas cost for batch finalization.
       // gasLimit should be defined if succeed is True.
-      gasEstimation = gasEstimation.add(transaction.gasLimit);
-      return gasEstimation.lt(batchGasLimit);
+      const updatedGasEstimation = gasEstimation.add(transaction.gasLimit);
+      if (updatedGasEstimation.lt(batchGasLimit)) {
+        gasEstimation = updatedGasEstimation;
+        return true;
+      } else {
+        return false;
+      }
     } else {
       let message: string;
       if (isDefined(withdrawal)) {
