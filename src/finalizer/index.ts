@@ -131,7 +131,7 @@ export async function finalize(
       // aggregate() takes an array of tuples: [calldata: bytes, target: address].
       args: [[_txn]],
     };
-    const { reason, succeed, transaction } = (await txnClient.simulate([txnToSubmit]))[0];
+    const [{ reason, succeed, transaction }] = await txnClient.simulate([txnToSubmit]);
 
     if (succeed) {
       // Increase running counter of estimated gas cost for batch finalization.
