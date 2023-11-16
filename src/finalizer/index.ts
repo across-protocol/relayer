@@ -166,7 +166,7 @@ export async function finalize(
         message: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
         mrkdwn: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
       };
-      txn = (await txnClient.submit(hubChainId, [txnToSubmit]))[0];
+      [txn] = await txnClient.submit(hubChainId, [txnToSubmit]);
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
