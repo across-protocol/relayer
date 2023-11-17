@@ -220,11 +220,13 @@ export function isEventOlder<T extends SortableEvent>(ex: T, ey: T): boolean {
 }
 
 /**
- * Returns an array with the same length as the passed in Event array where each index is assigned a new index
+ * @notice Returns an array with the same length as the passed in Event array where each index is assigned a new index
  * that states its relative position to other events with the same transaction hash. If two or more of the input
  * events have the same transaction hash, they will be assigned unique indices starting at 0 and counting up based
  * on the order of events passed in.
- * @param events
+ * @param events List of objects to pass in that contain a transaction hash.
+ * @return Index for each event based on the # of other input events with the same transaction hash. The order of the
+ * input events is preserved in the output array.
  */
 export function getUniqueLogIndex(events: { transactionHash: string }[]): number[] {
   const uniqueTokenhashes = {};
