@@ -230,10 +230,9 @@ export function getUniqueLogIndex(events: { transactionHash: string }[]): number
   const uniqueTokenhashes = {};
   const logIndexesForMessage = [];
   for (const event of events) {
-    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
-    const logIndex = uniqueTokenhashes[event.transactionHash];
+    const logIndex = uniqueTokenhashes[event.transactionHash] ?? 0;
     logIndexesForMessage.push(logIndex);
-    uniqueTokenhashes[event.transactionHash] += 1;
+    uniqueTokenhashes[event.transactionHash] = logIndex + 1;
   }
   return logIndexesForMessage;
 }
