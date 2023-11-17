@@ -14,11 +14,10 @@ import {
   disconnectRedisClients,
   getMultisender,
   winston,
-  TransactionResponse,
 } from "../utils";
 import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { AugmentedTransaction, HubPoolClient, TransactionClient } from "../clients";
+import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -160,7 +159,10 @@ export async function finalize(
   });
 
   if (finalizations.length > 0) {
-    let txn: TransactionResponse;
+    // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
+    // safety features
+    const multicallerClient = new MultiCallerClient(logger);
+    let txnHash: string;
     try {
       const finalizerTxns = finalizations.map(({ txn }) => txn);
       const txnToSubmit: AugmentedTransaction = {
@@ -170,10 +172,12 @@ export async function finalize(
         args: [finalizerTxns],
         gasLimit: gasEstimation,
         gasLimitMultiplier: 2,
+        unpermissioned: true,
         message: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
         mrkdwn: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
       };
-      [txn] = await txnClient.submit(hubChainId, [txnToSubmit]);
+      multicallerClient.enqueueTransaction(txnToSubmit);
+      [txnHash] = await multicallerClient.executeTransactionQueue();
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -199,7 +203,7 @@ export async function finalize(
       logger.info({
         at: "Finalizer",
         message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🔜`,
-        transactionHash: blockExplorerLink(txn.hash, hubChainId),
+        transactionHash: blockExplorerLink(txnHash, hubChainId),
       });
     });
     withdrawals.forEach(({ withdrawal: { l2ChainId, amount, l1TokenSymbol: symbol } }) => {
@@ -207,7 +211,7 @@ export async function finalize(
       logger.info({
         at: "Finalizer",
         message: `Finalized ${spokeChain} withdrawal for ${amount} ${symbol} 🪃`,
-        transactionHash: blockExplorerLink(txn.hash, hubChainId),
+        transactionHash: blockExplorerLink(txnHash, hubChainId),
       });
     });
   }
