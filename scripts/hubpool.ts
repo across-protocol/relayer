@@ -180,9 +180,9 @@ async function search(args: Record<string, number | string>, _signer: Wallet): P
       configStore.globalConfig(CHAIN_ID_INDICES, { blockTag: blockNumber }),
     ]);
 
-    // If the ConfigStore doesn't have CHAIN_ID_INDICES defined at the relevant block, sub in
-    // the implicit initial value. This is only applicable to production and will be incorrect on Görli.
-    // Görli will soon be deprecated, at which point it won't be relevant anyway.
+    // If the ConfigStore doesn't have CHAIN_ID_INDICES defined at the relevant block, sub in the implicit initial
+    // value. This is only applicable to production and will be incorrect on Görli. Görli will soon be deprecated,
+    // at which point it won't be relevant anyway.
     const chainIds =
       _chainIds.length > 0 ? JSON.parse(_chainIds.replaceAll('"', "")) : PROTOCOL_DEFAULT_CHAIN_ID_INDICES;
 

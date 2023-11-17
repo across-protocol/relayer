@@ -1,6 +1,7 @@
 import assert from "assert";
 import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
+import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as contracts from "@across-protocol/contracts-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
