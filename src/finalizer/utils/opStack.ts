@@ -8,6 +8,7 @@ import {
   convertFromWei,
   getCachedProvider,
   getNetworkName,
+  getUniqueLogIndex,
   groupObjectCountsByProp,
   Wallet,
   winston,
@@ -107,14 +108,7 @@ async function getCrossChainMessages(
 ): Promise<CrossChainMessageWithEvent[]> {
   // For each token bridge event, store a unique log index for the event within the optimism transaction hash.
   // This is important for bridge transactions containing multiple events.
-  const uniqueTokenhashes = {};
-  const logIndexesForMessage = [];
-  for (const event of tokensBridged) {
-    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
-    const logIndex = uniqueTokenhashes[event.transactionHash];
-    logIndexesForMessage.push(logIndex);
-    uniqueTokenhashes[event.transactionHash] += 1;
-  }
+  const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
 
   return (
     await Promise.all(
