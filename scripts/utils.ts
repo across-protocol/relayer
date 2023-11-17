@@ -1,7 +1,9 @@
 import assert from "assert";
 import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
+import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as contracts from "@across-protocol/contracts-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { getDeployedContract, getNodeUrlList } from "../src/utils";
 
 export type ERC20 = {
@@ -10,13 +12,10 @@ export type ERC20 = {
   symbol: string;
 };
 
-export const testChains = [5, 280, 80001, 421613];
-export const chains = [1, 10, 137, 324, 8453, 42161];
-
 // Public RPC endpoints to be used if preferred providers are not defined in the environment.
 const fallbackProviders: { [chainId: number]: string } = {
-  1: "https://eth.llamarpc.com",
-  5: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
+  [CHAIN_IDs.MAINNET]: "https://eth.llamarpc.com",
+  [CHAIN_IDs.GOERLI]: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
 };
 
 async function askQuestion(query: string) {
@@ -72,14 +71,10 @@ export function resolveToken(token: string, chainId: number): ERC20 {
  * @returns True if all chainIds are known.
  */
 export function validateChainIds(chainIds: number[]): boolean {
-  const knownChainIds = [...chains, ...testChains];
-  return chainIds.every((chainId) => {
-    const ok = knownChainIds.includes(chainId);
-    if (!ok) {
-      console.log(`Invalid chain ID: ${chainId}`);
-    }
-    return ok;
-  });
+  return (
+    chainIds.every((chainId) => sdkUtils.chainIsProd(chainId)) ||
+    chainIds.every((chainId) => sdkUtils.chainIsTestnet(chainId))
+  );
 }
 
 /**
@@ -101,12 +96,12 @@ export function getProviderUrl(chainId: number): string {
  * @returns Chain ID for the corresponding HubPool.
  */
 export function resolveHubChainId(spokeChainId: number): number {
-  if (chains.includes(spokeChainId)) {
-    return 1;
+  if (sdkUtils.chainIsProd(spokeChainId)) {
+    return CHAIN_IDs.MAINNET;
   }
 
-  assert(testChains.includes(spokeChainId), `Unsupported SpokePool chain ID: ${spokeChainId}`);
-  return 5;
+  assert(sdkUtils.chainIsTestnet(spokeChainId), `Unsupported testnet SpokePool chain ID: ${spokeChainId}`);
+  return CHAIN_IDs.GOERLI;
 }
 
 /**
