@@ -125,14 +125,19 @@ async function filterMessageLogs(
     const { transactionHash, logIndex } = tokenBridged;
     const txnReceipt = txnReceipts[transactionHash];
 
-    // Search backwards from the TokensBridged log index for the corresponding L1MessageSent event.
+    // Search backwards from the TokensBridged log index for all L1MessageSent events. The
+    // last L1MessageSent event is the one that corresponds to the withdrawal.
     // @dev Array.findLast() would be an improvement but tsc doesn't currently allow it.
-    const txnLogs = txnReceipt.logs.slice(0, logIndex).reverse();
-    const withdrawal = txnLogs.find((log) => log.topics[0] === l1MessageSent);
+    const l1MessagesSentPrecedingWithdrawal = txnReceipt.logs.filter(
+      (log) => log.topics[0] === l1MessageSent && log.logIndex <= logIndex
+    );
+    if (l1MessagesSentPrecedingWithdrawal.length === 0) {
+      throw new Error("Found a ZkSync TokensBridged event without any preceding L1MessageSent events");
+    }
 
     // @dev withdrawalIdx is the "withdrawal number" within the transaction, _not_ the index of the log.
-    const l1MessagesSent = txnReceipt.logs.filter((log) => log.topics[0] === l1MessageSent);
-    const withdrawalIdx = l1MessagesSent.indexOf(withdrawal);
+    // The withdrawal index for this withdrawal is therefore the number of L1MessageSent events that precede it.
+    const withdrawalIdx = l1MessagesSentPrecedingWithdrawal.length - 1;
     return { ...tokenBridged, withdrawalIdx };
   });
 
