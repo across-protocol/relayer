@@ -173,8 +173,8 @@ export async function finalize(
         gasLimit: gasEstimation,
         gasLimitMultiplier: 2,
         unpermissioned: true,
-        message: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
-        mrkdwn: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
+        message: `Batch finalized ${finalizerTxns.length} txns`,
+        mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
       };
       multicallerClient.enqueueTransaction(txnToSubmit);
       [txnHash] = await multicallerClient.executeTransactionQueue();
