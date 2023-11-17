@@ -9,6 +9,7 @@ import {
   winston,
   Contract,
   getCachedProvider,
+  getUniqueLogIndex,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -93,24 +94,14 @@ async function getFinalizableTransactions(
 
   // For each token bridge event that was checkpointed, store a unique log index for the event
   // within the transaction hash. This is important for bridge transactions containing multiple events.
-  const logIndexesForMessage = {};
-  const checkpointedTokensBridged = tokensBridged
-    .filter((_, i) => isCheckpointed[i])
-    .map((_tokensBridged) => {
-      if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined) {
-        logIndexesForMessage[_tokensBridged.transactionHash] = 0;
-      }
-      return {
-        logIndex: logIndexesForMessage[_tokensBridged.transactionHash]++,
-        event: _tokensBridged,
-      };
-    });
+  const checkpointedTokensBridged = tokensBridged.filter((_, i) => isCheckpointed[i]);
+  const logIndexesForMessage = getUniqueLogIndex(checkpointedTokensBridged);
 
   // Construct the payload we'll need to finalize each L2 transaction that has been checkpointed to Mainnet and
   // can potentially be finalized.
   const payloads = await Promise.all(
-    checkpointedTokensBridged.map((e) => {
-      return posClient.exitUtil.buildPayloadForExit(e.event.transactionHash, BURN_SIG, false, e.logIndex);
+    checkpointedTokensBridged.map((e, i) => {
+      return posClient.exitUtil.buildPayloadForExit(e.transactionHash, BURN_SIG, false, logIndexesForMessage[i]);
     })
   );
 
