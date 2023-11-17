@@ -147,13 +147,15 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const relayerFeePct = isDefined(args.relayerFeePct)
     ? toBN(args.relayerFeePct)
     : await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
+  const quoteTimestamp = await spokePool.getCurrentTime();
 
-  const deposit = await spokePool.depositNow(
+  const deposit = await spokePool.deposit(
     recipient,
     token.address,
     amount,
     toChainId,
     relayerFeePct,
+    quoteTimestamp,
     message,
     maxCount
   );
