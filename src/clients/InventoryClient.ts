@@ -304,7 +304,6 @@ export class InventoryClient {
     // Note: these types are just used inside this method, so they are declared in-line.
     type ExecutedRebalance = Rebalance & { hash: string };
 
-    const rebalancesRequired: Rebalance[] = [];
     const possibleRebalances: Rebalance[] = [];
     const unexecutedRebalances: Rebalance[] = [];
     const executedTransactions: ExecutedRebalance[] = [];
@@ -438,7 +437,7 @@ export class InventoryClient {
     } catch (error) {
       this.log(
         "Something errored during inventory rebalance",
-        { error, rebalancesRequired, possibleRebalances, unexecutedRebalances, executedTransactions }, // include all info to help debugging.
+        { error, possibleRebalances, unexecutedRebalances, executedTransactions }, // include all info to help debugging.
         "error"
       );
     }
