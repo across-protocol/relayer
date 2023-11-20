@@ -317,6 +317,7 @@ export class Relayer {
           this.logger.debug({
             at: "Relayer",
             message: "No rebalances for filled token, proceeding to evaluate zero fill",
+            depositL1Token: l1Token.address,
             currentDestinationChainBalance,
             rebalances,
           });
