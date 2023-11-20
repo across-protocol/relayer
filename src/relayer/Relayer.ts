@@ -283,11 +283,18 @@ export class Relayer {
         // expensive fills on (for example) mainnet.
         this.fillRelay(deposit, unfilledAmount, destinationChainId);
       } else {
-        tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
         if (sendSlowRelays && tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) {
           this.zeroFillDeposit(deposit);
+        } else {
+          // If we are slow filling this relay then there is no need to capture a "token shortfall" for it since it'll
+          // get slow filled. Conversely, if we don't slow fill it then we should capture the token shortfall so that
+          // the inventory manager can account for it when deciding to bridge funds over the chain.
+          // @dev the shortfall is accounted for when computing the allocation % of a token on a chain, so adding
+          // a shortfall for this fill means that the allocation % would be lower on the destination chain which
+          // increases the likelihood of the inventory manager subsequently wanting to send tokens to that chain.
+          tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         }
       }
     }
