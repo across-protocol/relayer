@@ -301,11 +301,6 @@ export class InventoryClient {
   // Trigger a rebalance if the current balance on any L2 chain, including shortfalls, is less than the threshold
   // allocation.
   async rebalanceInventoryIfNeeded(): Promise<void> {
-    const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
-    this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
-    if (!this.isInventoryManagementEnabled()) {
-      return;
-    }
     // Note: these types are just used inside this method, so they are declared in-line.
     type ExecutedRebalance = Rebalance & { hash: string };
 
@@ -314,6 +309,12 @@ export class InventoryClient {
     const unexecutedRebalances: Rebalance[] = [];
     const executedTransactions: ExecutedRebalance[] = [];
     try {
+      if (!this.isInventoryManagementEnabled()) {
+        return;
+      }
+      const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
+      this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
+
       const rebalancesRequired = this._getPossibleRebalances(tokenDistributionPerL1Token);
       if (rebalancesRequired.length === 0) {
         this.log("No rebalances required");
