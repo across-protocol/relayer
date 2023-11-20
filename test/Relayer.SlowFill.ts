@@ -198,7 +198,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
   });
-  describe.only("Sends zero fills only if it won't rebalance to fast fill deposit", function () {
+  describe("Sends zero fills only if it won't rebalance to fast fill deposit", function () {
     let deposit1: any, partialRebalance: any;
     beforeEach(async function () {
       // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
