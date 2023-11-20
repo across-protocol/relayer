@@ -8,6 +8,7 @@ import {
   convertFromWei,
   getCachedProvider,
   getNetworkName,
+  getUniqueLogIndex,
   groupObjectCountsByProp,
   Wallet,
   winston,
@@ -37,6 +38,7 @@ export async function opStackFinalizer(
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
   assert(isOVMChainId(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
+  const networkName = getNetworkName(chainId);
 
   const crossChainMessenger = getOptimismClient(chainId, signer);
 
@@ -50,8 +52,8 @@ export async function opStackFinalizer(
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
-    at: "Finalizer#optimismFinalizer",
-    message: `Earliest TokensBridged block to attempt to submit proofs for ${getNetworkName(chainId)}`,
+    at: `Finalizer#${networkName}Finalizer`,
+    message: `Earliest TokensBridged block to attempt to submit proofs for ${networkName}`,
     earliestBlockToProve,
   });
 
@@ -67,7 +69,7 @@ export async function opStackFinalizer(
   // Skip events that are likely not past the seven day challenge period.
   logger.debug({
     at: "Finalizer",
-    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    message: `Oldest TokensBridged block to attempt to finalize for ${networkName}`,
     latestBlockToFinalize,
   });
 
@@ -106,14 +108,7 @@ async function getCrossChainMessages(
 ): Promise<CrossChainMessageWithEvent[]> {
   // For each token bridge event, store a unique log index for the event within the optimism transaction hash.
   // This is important for bridge transactions containing multiple events.
-  const uniqueTokenhashes = {};
-  const logIndexesForMessage = [];
-  for (const event of tokensBridged) {
-    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
-    const logIndex = uniqueTokenhashes[event.transactionHash];
-    logIndexesForMessage.push(logIndex);
-    uniqueTokenhashes[event.transactionHash] += 1;
-  }
+  const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
 
   return (
     await Promise.all(
@@ -194,8 +189,8 @@ async function getOptimismFinalizableMessages(
   ).filter((m) => m !== undefined);
   const messageStatuses = await getMessageStatuses(chainId, bedrockMessages, crossChainMessenger);
   logger.debug({
-    at: "OptimismFinalizer",
-    message: "Optimism message statuses",
+    at: `${getNetworkName(chainId)}Finalizer`,
+    message: `${getNetworkName(chainId)} message statuses`,
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
   return messageStatuses.filter(
