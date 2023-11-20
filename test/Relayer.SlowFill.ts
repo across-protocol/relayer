@@ -34,6 +34,7 @@ import {
   setupTokensForWallet,
   sinon,
   spyLogIncludes,
+  toBN,
   winston,
 } from "./utils";
 
@@ -50,7 +51,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
-let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
+let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient, mockInventoryClient: MockInventoryClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("Relayer: Zero sized fill for slow relay", async function () {
@@ -118,6 +119,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       await profitClient.initToken(erc20);
     }
 
+    mockInventoryClient = new MockInventoryClient();
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -128,7 +130,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(),
+        inventoryClient: mockInventoryClient,
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
         ubaClient: null,
       },
@@ -195,6 +197,73 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+  });
+  describe.only("Sends zero fills only if it won't rebalance to fast fill deposit", function () {
+    let deposit1: any, partialRebalance: any;
+    beforeEach(async function () {
+      // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
+      const balance = await erc20_1.balanceOf(relayer.address);
+      await erc20_1.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
+      await erc20_2.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
+      // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
+      await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+      deposit1 = await deposit(
+        spokePool_1,
+        erc20_1,
+        depositor,
+        depositor,
+        destinationChainId,
+        amountToDeposit.mul(2) // 2x the normal deposit size. Bot only has 1x the deposit amount.
+      );
+      await updateAllClients();
+
+      partialRebalance = {
+        // These parameters don't matter, as the relayer only checks that the rebalance matches
+        // the deposit destination chain and L1 token. The amount must be greater than the unfilled
+        // deposit amount too.
+        thresholdPct: toBN(0),
+        targetPct: toBN(0),
+        currentAllocPct: toBN(0),
+        cumulativeBalance: await l1Token.balanceOf(relayer.address),
+      };
+    });
+    it("Skips zero fill if there is a rebalance that will fast fill the deposit", async function () {
+      // Add a rebalance to the inventory client to trick relayer into thinking it will be able to fill
+      // the deposit post rebalance.
+      mockInventoryClient.addPossibleRebalance({
+        ...partialRebalance,
+        balance: deposit1.amount,
+        amount: deposit1.amount,
+        chainId: deposit1.destinationChainId,
+        l1Token: l1Token.address,
+      });
+
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+    });
+    describe("Sends zero fill if no rebalance for deposit", function () {
+      it("rebalance amount is too low", async function () {
+        mockInventoryClient.addPossibleRebalance({
+          ...partialRebalance,
+          balance: toBN(0), // No balance
+          amount: deposit1.amount,
+          chainId: deposit1.destinationChainId,
+          l1Token: l1Token.address,
+        });
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect(multiCallerClient.transactionCount()).to.equal(1);
+      });
+      it("rebalance doesn't match deposit", async function () {
+        mockInventoryClient.addPossibleRebalance({
+          ...partialRebalance,
+          amount: deposit1.amount,
+          chainId: deposit1.originChainId, // Wrong chain
+          l1Token: l1Token.address,
+        });
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect(multiCallerClient.transactionCount()).to.equal(1);
+      });
+    });
   });
 });
 

@@ -293,12 +293,12 @@ export class Relayer {
         // enforces that partial fills must take  repayment on the destination which can lead to over-allocations
         // on the destination chain if we always sent zero/partial fills here.
         let willFastFillAfterRebalance = false;
-        const currentChainBalance = tokenClient.getBalance(destinationChainId, deposit.destinationToken);
-        let newChainBalance = currentChainBalance;
+        const currentDestinationChainBalance = tokenClient.getBalance(destinationChainId, deposit.destinationToken);
+        let newChainBalance = currentDestinationChainBalance;
         const rebalances = inventoryClient.getPossibleRebalances();
         const rebalanceForFilledToken = rebalances.find(
           ({ l1Token: l1TokenForFill, chainId, amount, balance }) =>
-            l1TokenForFill === l1Token.address && chainId === destinationChainId && amount.lt(balance) // It's important we count only rebalances that are executable based on current L1 balance.
+            l1TokenForFill === l1Token.address && chainId === destinationChainId && amount.lte(balance) // It's important we count only rebalances that are executable based on current L1 balance.
         );
         if (rebalanceForFilledToken !== undefined) {
           newChainBalance = newChainBalance.add(rebalanceForFilledToken.amount);
@@ -307,7 +307,7 @@ export class Relayer {
             at: "Relayer",
             message:
               "Inventory manager will rebalance to this chain after capturing token shortfall. Will skip zero fill if this deposit will be fillable after rebalance.",
-            currentChainBalance,
+            currentDestinationChainBalance,
             newChainBalance,
             rebalanceForFilledToken,
             rebalances,
@@ -317,7 +317,7 @@ export class Relayer {
           this.logger.debug({
             at: "Relayer",
             message: "No rebalances for filled token, proceeding to evaluate zero fill",
-            currentChainBalance,
+            currentDestinationChainBalance,
             rebalances,
           });
         }

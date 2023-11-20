@@ -22,7 +22,7 @@ import { CONTRACT_ADDRESSES } from "../common";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
-type Rebalance = {
+export type Rebalance = {
   chainId: number;
   l1Token: string;
   thresholdPct: BigNumber;
@@ -328,7 +328,7 @@ export class InventoryClient {
         // If the amount required in the rebalance is less than the total amount of this token on L1 then we can execute
         // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
         // balance then this logic ensures that we only fill the first n number of chains where we can.
-        if (amount.lt(balance)) {
+        if (amount.lte(balance)) {
           // As a precautionary step before proceeding, check that the token balance for the token we're about to send
           // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
           // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
