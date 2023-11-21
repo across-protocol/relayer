@@ -269,7 +269,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         mockCrossChainTransferClient.setCrossChainTransferAmount(deposit1.amount);
         await relayerInstance.checkForUnfilledDepositsAndFill();
         expect(multiCallerClient.transactionCount()).to.equal(0);
-      })
+      });
     });
   });
 });

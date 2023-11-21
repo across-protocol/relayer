@@ -3,9 +3,7 @@ import { InventoryClient, Rebalance } from "../../src/clients";
 import { CrossChainTransferClient } from "../../src/clients/bridges";
 export class MockInventoryClient extends InventoryClient {
   possibleRebalances: Rebalance[] = [];
-  constructor(
-    crossChainTransferClient: CrossChainTransferClient | null = null
-  ) {
+  constructor(crossChainTransferClient: CrossChainTransferClient | null = null) {
     super(
       null, // relayer
       null, // logger

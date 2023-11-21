@@ -9,8 +9,7 @@ export class CrossChainTransferClient {
     readonly logger: winston.Logger,
     readonly chainIdList: number[],
     readonly adapterManager: AdapterManager
-  ) {
-  }
+  ) {}
 
   // Get any funds currently in the canonical bridge.
   getOutstandingCrossChainTransferAmount(address: string, chainId: number | string, l1Token: string): BigNumber {
