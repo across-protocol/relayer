@@ -1,8 +1,11 @@
 import { Deposit } from "../../src/interfaces";
 import { InventoryClient, Rebalance } from "../../src/clients";
 import { CrossChainTransferClient } from "../../src/clients/bridges";
+import { BigNumber } from "ethers";
 export class MockInventoryClient extends InventoryClient {
   possibleRebalances: Rebalance[] = [];
+  balanceOnChain: BigNumber = BigNumber.from(0);
+
   constructor(crossChainTransferClient: CrossChainTransferClient | null = null) {
     super(
       null, // relayer
@@ -31,5 +34,13 @@ export class MockInventoryClient extends InventoryClient {
 
   getPossibleRebalances(): Rebalance[] {
     return this.possibleRebalances;
+  }
+
+  setBalanceOnChainForL1Token(newBalance: BigNumber): void {
+    this.balanceOnChain = newBalance;
+  }
+
+  getBalanceOnChainForL1Token(): BigNumber {
+    return this.balanceOnChain;
   }
 }

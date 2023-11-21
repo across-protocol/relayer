@@ -266,7 +266,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
       it("Skips zero fill if outstanding transfer amount is greater than deposit amount", async function () {
-        mockCrossChainTransferClient.setCrossChainTransferAmount(deposit1.amount);
+        mockInventoryClient.setBalanceOnChainForL1Token(deposit1.amount);
         await relayerInstance.checkForUnfilledDepositsAndFill();
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
