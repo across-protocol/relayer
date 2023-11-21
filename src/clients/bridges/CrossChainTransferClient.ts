@@ -10,11 +10,6 @@ export class CrossChainTransferClient {
     readonly chainIdList: number[],
     readonly adapterManager: AdapterManager
   ) {
-    logger.debug({
-      at: "CrossChainTransferClient#constructor",
-      message: "Initialized CrossChainTransferClient",
-      chainIdList,
-    });
   }
 
   // Get any funds currently in the canonical bridge.

@@ -42,6 +42,7 @@ import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import { MockProfitClient } from "./mocks/MockProfitClient";
+import { MockCrossChainTransferClient } from "./mocks/MockCrossChainTransferClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -50,7 +51,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
-let relayerInstance: Relayer;
+let relayerInstance: Relayer, mockCrossChainTransferClient: MockCrossChainTransferClient;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient, mockInventoryClient: MockInventoryClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
@@ -119,7 +120,8 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       await profitClient.initToken(erc20);
     }
 
-    mockInventoryClient = new MockInventoryClient();
+    mockCrossChainTransferClient = new MockCrossChainTransferClient();
+    mockInventoryClient = new MockInventoryClient(mockCrossChainTransferClient);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -263,6 +265,11 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         await relayerInstance.checkForUnfilledDepositsAndFill();
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
+      it("Skips zero fill if outstanding transfer amount is greater than deposit amount", async function () {
+        mockCrossChainTransferClient.setCrossChainTransferAmount(deposit1.amount);
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+      })
     });
   });
 });
