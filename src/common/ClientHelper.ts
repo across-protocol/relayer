@@ -142,14 +142,6 @@ export async function constructSpokePoolClientsWithStartBlocks(
     );
   }
 
-  logger.debug({
-    at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
-    message: "Enabled chains in block range",
-    startBlocks,
-    toBlockOverride,
-    enabledChains,
-  });
-
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
@@ -165,7 +157,24 @@ export async function constructSpokePoolClientsWithStartBlocks(
     })
   );
 
-  return getSpokePoolClientsForContract(logger, hubPoolClient, config, spokePools, startBlocks, toBlockOverride);
+  // Explicitly set toBlocks for all chains so we can re-use them in other clients to make sure they all query
+  // state to the same "latest" block per chain.
+  const latestBlocksForChain: Record<number, number> = Object.fromEntries(
+    await Promise.all(
+      enabledChains.map(async (chainId) => {
+        if (chainId === 1) {
+          if (hubPoolClient.eventSearchConfig.toBlock === undefined) {
+            throw new Error("HubPoolClient eventSearchConfig.toBlock is undefined");
+          }
+          return [chainId, hubPoolClient.eventSearchConfig.toBlock];
+        } else {
+          return [chainId, await spokePoolSigners[chainId].provider.getBlockNumber()];
+        }
+      })
+    )
+  );
+
+  return getSpokePoolClientsForContract(logger, hubPoolClient, config, spokePools, startBlocks, latestBlocksForChain);
 }
 
 /**
@@ -181,8 +190,15 @@ export function getSpokePoolClientsForContract(
   config: CommonConfig,
   spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
-  toBlocks: { [chainId: number]: number } = {}
+  toBlocks: { [chainId: number]: number }
 ): SpokePoolClientsByChain {
+  logger.debug({
+    at: "ClientHelper#getSpokePoolClientsForContract",
+    message: "Constructing SpokePoolClients",
+    fromBlocks,
+    toBlocks,
+  });
+
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ chainId, contract, registrationBlock }) => {
     if (!isDefined(fromBlocks[chainId])) {
@@ -192,9 +208,15 @@ export function getSpokePoolClientsForContract(
         registrationBlock,
       });
     }
+    if (!isDefined(toBlocks[chainId])) {
+      logger.debug({
+        at: "ClientHelper#getSpokePoolClientsForContract",
+        message: `No toBlock set for spoke pool client ${chainId}, exiting since this can lead to state sync issues between clients querying "latest" state from this chain`,
+      });
+    }
     const spokePoolClientSearchSettings = {
       fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,
+      toBlock: toBlocks[chainId],
       maxBlockLookBack: config.maxBlockLookBack[chainId],
     };
     spokePoolClients[chainId] = new SpokePoolClient(
@@ -222,11 +244,13 @@ export async function constructClients(
   config: CommonConfig,
   baseSigner: Wallet
 ): Promise<Clients> {
-  const hubSigner = baseSigner.connect(await getProvider(config.hubPoolChainId, logger));
+  const hubPoolProvider = await getProvider(config.hubPoolChainId, logger);
+  const hubSigner = baseSigner.connect(hubPoolProvider);
+  const latestMainnetBlock = await hubPoolProvider.getBlockNumber();
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: undefined,
+    toBlock: latestMainnetBlock,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
@@ -240,8 +264,7 @@ export async function constructClients(
 
   const hubPoolClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: undefined, // Important that we set this to `undefined` to always look up latest HubPool events such as
-    // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
+    toBlock: latestMainnetBlock,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 

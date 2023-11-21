@@ -79,7 +79,6 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     // Skip the token if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
@@ -206,7 +205,9 @@ export class ArbitrumAdapter extends BaseAdapter {
     assert(42161 === chainId, `chainId ${chainId} is not supported`);
 
     const weth = CONTRACT_ADDRESSES[this.chainId].weth;
-    const ethBalance = await this.getSigner(chainId).getBalance();
+    const ethBalance = await this.getSigner(chainId).getBalance(
+      this.spokePoolClients[chainId].eventSearchConfig.toBlock
+    );
 
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);

@@ -64,7 +64,6 @@ export class OpStackAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
@@ -147,7 +146,9 @@ export class OpStackAdapter extends BaseAdapter {
     assert([10, 8453].includes(chainId), `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[this.chainId].weth;
-    const ethBalance = await this.getSigner(chainId).getBalance();
+    const ethBalance = await this.getSigner(chainId).getBalance(
+      this.spokePoolClients[chainId].eventSearchConfig.toBlock
+    );
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);

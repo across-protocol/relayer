@@ -35,7 +35,6 @@ export class ZKSyncAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
@@ -238,7 +237,9 @@ export class ZKSyncAdapter extends BaseAdapter {
     assert(chainId === 324, `chainId ${chainId} is not supported`);
 
     const l2WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
-    const ethBalance = await this.getSigner(chainId).getBalance();
+    const ethBalance = await this.getSigner(chainId).getBalance(
+      this.spokePoolClients[chainId].eventSearchConfig.toBlock
+    );
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.
