@@ -42,13 +42,6 @@ export class TokenClient {
     return this.tokenData[chainId][token].balance;
   }
 
-  getAllowanceOnChain(chainId: number, token: string): BigNumber {
-    if (!this._hasTokenPairData(chainId, token)) {
-      return toBN(0);
-    }
-    return this.tokenData[chainId][token].allowance;
-  }
-
   decrementLocalBalance(chainId: number, token: string, amount: BigNumber): void {
     this.tokenData[chainId][token].balance = this.tokenData[chainId][token].balance.sub(amount);
   }
