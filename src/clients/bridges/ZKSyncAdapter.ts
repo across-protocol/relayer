@@ -237,9 +237,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     assert(chainId === 324, `chainId ${chainId} is not supported`);
 
     const l2WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
-    const ethBalance = await this.getSigner(chainId).getBalance(
-      this.spokePoolClients[chainId].eventSearchConfig.toBlock
-    );
+    const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.

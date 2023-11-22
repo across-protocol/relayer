@@ -146,9 +146,7 @@ export class OpStackAdapter extends BaseAdapter {
     assert([10, 8453].includes(chainId), `chainId ${chainId} is not supported`);
 
     const ovmWeth = CONTRACT_ADDRESSES[this.chainId].weth;
-    const ethBalance = await this.getSigner(chainId).getBalance(
-      this.spokePoolClients[chainId].eventSearchConfig.toBlock
-    );
+    const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);

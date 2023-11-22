@@ -205,9 +205,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     assert(42161 === chainId, `chainId ${chainId} is not supported`);
 
     const weth = CONTRACT_ADDRESSES[this.chainId].weth;
-    const ethBalance = await this.getSigner(chainId).getBalance(
-      this.spokePoolClients[chainId].eventSearchConfig.toBlock
-    );
+    const ethBalance = await this.getSigner(chainId).getBalance();
 
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
