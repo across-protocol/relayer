@@ -142,6 +142,14 @@ export async function constructSpokePoolClientsWithStartBlocks(
     );
   }
 
+  logger.debug({
+    at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
+    message: "Enabled chains in block range",
+    startBlocks,
+    toBlockOverride,
+    enabledChains,
+  });
+
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
@@ -162,7 +170,11 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const latestBlocksForChain: Record<number, number> = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
-        if (chainId === 1) {
+        // Allow caller to hardcode the spoke pool client end blocks.
+        if (isDefined(toBlockOverride[chainId])) {
+          return [chainId, toBlockOverride[chainId]];
+        }
+        if (chainId === hubPoolClient.chainId) {
           if (hubPoolClient.eventSearchConfig.toBlock === undefined) {
             throw new Error("HubPoolClient eventSearchConfig.toBlock is undefined");
           }
@@ -250,7 +262,7 @@ export async function constructClients(
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: latestMainnetBlock,
+    toBlock: config.toBlockOverride[config.hubPoolChainId] ?? latestMainnetBlock,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
@@ -263,9 +275,8 @@ export async function constructClients(
   );
 
   const hubPoolClientSearchSettings = {
+    ...rateModelClientSearchSettings,
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: latestMainnetBlock,
-    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
   // Create contract instances for each chain for each required contract.
