@@ -1,6 +1,6 @@
 import { interfaces, utils } from "@across-protocol/sdk-v2";
 import { isDefined } from "./";
-import { BlockFinder } from "./SDKUtils";
+import { BlockFinder, BlockFinderHint } from "./SDKUtils";
 import { getProvider } from "./ProviderUtils";
 import { getRedisCache } from "./RedisUtils";
 
@@ -33,9 +33,10 @@ export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
   blockFinder?: BlockFinder,
-  redisCache?: interfaces.CachingMechanismInterface
+  redisCache?: interfaces.CachingMechanismInterface,
+  hints: BlockFinderHint = {}
 ): Promise<number> {
   blockFinder ??= await getBlockFinder(chainId);
   redisCache ??= await getRedisCache();
-  return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache);
+  return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache, hints);
 }
