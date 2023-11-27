@@ -33,7 +33,7 @@ export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
   blockFinder?: BlockFinder,
-  redisCache?: interfaces.CachingMechanismInterface,
+  redisCache?: interfaces.CachingMechanismInterface
 ): Promise<number> {
   blockFinder ??= await getBlockFinder(chainId);
   redisCache ??= await getRedisCache();
