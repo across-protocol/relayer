@@ -13,6 +13,7 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   getNetworkName,
+  getRedisCache,
   getUnfilledDeposits,
   isDefined,
   toBN,
@@ -459,11 +460,13 @@ export class Relayer {
     // Guard getBlockForTimestamp() by maxRelayerLookBack, because getBlockForTimestamp() doesn't work in test (yet).
     let fromBlocks: { [chainId: number]: number } = {};
     if (isDefined(this.config.maxRelayerLookBack)) {
+      const blockFinder = undefined;
+      const redis = await getRedisCache(this.logger);
       const _fromBlocks = await Promise.all(
         spokePoolClients.map((spokePoolClient) => {
-          const currentTime = spokePoolClient.getCurrentTime();
           const { chainId, deploymentBlock } = spokePoolClient;
-          return getBlockForTimestamp(chainId, currentTime - this.config.maxRelayerLookBack) ?? deploymentBlock;
+          const lookback = spokePoolClient.getCurrentTime() - this.config.maxRelayerLookBack;
+          return getBlockForTimestamp(chainId, lookback, blockFinder, redis) ?? deploymentBlock;
         })
       );
       fromBlocks = Object.fromEntries(
