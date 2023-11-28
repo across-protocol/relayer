@@ -5,9 +5,15 @@ export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
 export const {
+  bnZero,
+  bnOne,
+  bnUint32Max,
+  bnUint256Max,
+  fixedPointAdjustment,
   toBN,
   bnToHex,
   toWei,
+  toGWei,
   toBNWei,
   formatFeePct,
   shortenHexStrings,

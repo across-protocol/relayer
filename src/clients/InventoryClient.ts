@@ -1,6 +1,6 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
+  bnZero,
   BigNumber,
   winston,
   toBN,
@@ -20,8 +20,6 @@ import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
-
-const { bnZero } = sdkUtils;
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 

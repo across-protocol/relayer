@@ -1,4 +1,4 @@
-import { typechain, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { typechain } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
@@ -14,7 +14,9 @@ import {
 } from "../interfaces";
 import {
   AnyObject,
+  bnZero,
   BigNumber,
+  fixedPointAdjustment as fixedPoint,
   MerkleTree,
   assign,
   compareAddresses,
@@ -29,8 +31,6 @@ import {
   winston,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
-
-const { bnZero, fixedPointAdjustment: fixedPoint } = sdkUtils;
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
