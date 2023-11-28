@@ -484,8 +484,11 @@ describe("Relayer: Unfilled Deposits", async function () {
     await relayerInstance.checkForUnfilledDepositsAndFill();
     // Relayer shouldn't try to relay the fill even though it's unfilled as there has been one invalid fill from this
     // same relayer.
-
-    expect(lastSpyLogIncludes(spy, "Skipping deposit with invalid fills from the same relayer")).to.be.true;
+    expect(
+      spy
+        .getCalls()
+        .find(({ lastArg }) => lastArg.message.includes("Skipping deposit with invalid fills from the same relayer"))
+    ).to.not.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 

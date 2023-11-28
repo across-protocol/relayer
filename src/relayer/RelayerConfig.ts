@@ -26,6 +26,8 @@ export class RelayerConfig extends CommonConfig {
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
+  // List of depositors that caller wants to ignore.
+  readonly blacklistedDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
@@ -44,6 +46,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_ORIGIN_CHAINS,
       RELAYER_DESTINATION_CHAINS,
       SLOW_DEPOSITORS,
+      BLACKLISTED_DEPOSITORS,
       DEBUG_PROFITABILITY,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_GAS_PADDING,
@@ -74,6 +77,9 @@ export class RelayerConfig extends CommonConfig {
       : [];
     this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
+      : [];
+    this.blacklistedDepositors = BLACKLISTED_DEPOSITORS
+      ? JSON.parse(BLACKLISTED_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);

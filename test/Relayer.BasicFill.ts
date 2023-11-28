@@ -313,10 +313,23 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Dynamic fill simulation fails in test, so the deposit will
       // appear as unprofitable when message filling is enabled.
-      expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.equal(!sendingMessageRelaysEnabled);
+      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message")))
+        .to.not.be.undefined;
       expect(profitClient.anyCapturedUnprofitableFills()).to.equal(sendingMessageRelaysEnabled);
       expect(multiCallerClient.transactionCount()).to.equal(0);
     }
+  });
+
+  it("Ignores deposit from blacklisted depositor", async function () {
+    relayerInstance.config.blacklistedDepositors = [depositor.address];
+
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+
+    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Ignoring deposit for blacklisted depositor")))
+      .to.not.be.undefined;
+    expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 
   it("Uses new relayer fee pct on updated deposits", async function () {
@@ -376,7 +389,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
+    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))).to
+      .not.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
@@ -476,7 +490,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
+    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))).to
+      .not.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Deposit is updated again with a nullified message.
