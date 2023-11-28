@@ -64,11 +64,13 @@ export async function constructSpokePoolClientsWithLookback(
   }
 
   const hubPoolChainId = hubPoolClient.chainId;
-  const currentTime = getCurrentTime();
+  const lookback = getCurrentTime() - initialLookBackOverride;
 
   // Use the first block that we'll query on mainnet to figure out which chains were enabled between then
   // and the the latest mainnet block. These chains were enabled via the ConfigStore.
-  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, currentTime - initialLookBackOverride);
+  const blockFinder = undefined;
+  const redis = await getRedisCache(logger);
+  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
   const enabledChains = getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
@@ -79,7 +81,7 @@ export async function constructSpokePoolClientsWithLookback(
         if (chainId === 1) {
           return [chainId, fromBlock_1];
         } else {
-          return [chainId, await getBlockForTimestamp(chainId, currentTime - initialLookBackOverride)];
+          return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
         }
       })
     )
@@ -150,6 +152,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
     enabledChains,
   });
 
+  const blockFinder = undefined;
+  const redis = await getRedisCache(logger);
+
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
@@ -160,7 +165,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
       const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
       const spokePoolRegistrationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
       const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock)).timestamp;
-      const registrationBlock = await getBlockForTimestamp(chainId, time);
+      const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis);
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );

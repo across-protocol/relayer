@@ -13,6 +13,7 @@ import {
   getCurrentTime,
   disconnectRedisClients,
   getMultisender,
+  getRedisCache,
   winston,
 } from "../utils";
 import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
@@ -93,7 +94,10 @@ export async function finalize(
     const finalizationWindow = finalizationWindows[chainId];
     assert(finalizationWindow !== undefined, `No finalization window defined for chain ${chainId}`);
 
-    const latestBlockToFinalize = await getBlockForTimestamp(chainId, getCurrentTime() - finalizationWindow);
+    const lookback = getCurrentTime() - finalizationWindow;
+    const blockFinder = undefined;
+    const redis = await getRedisCache(logger);
+    const latestBlockToFinalize = await getBlockForTimestamp(chainId, lookback, blockFinder, redis);
 
     const network = getNetworkName(chainId);
     logger.debug({ at: "finalize", message: `Spawning ${network} finalizer.`, latestBlockToFinalize });
