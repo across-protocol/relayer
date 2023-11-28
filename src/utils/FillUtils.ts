@@ -1,7 +1,7 @@
 import assert from "assert";
 import { HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
+import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
   assign,
@@ -246,13 +246,15 @@ export async function getUnfilledDeposits(
 ): Promise<RelayerUnfilledDeposit[]> {
   const unfilledDeposits: RelayerUnfilledDeposit[] = [];
   const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-
   let earliestBlockNumbers = Object.values(spokePoolClients).map(({ deploymentBlock }) => deploymentBlock);
+
   if (isDefined(depositLookBack)) {
+    const blockFinder = undefined;
+    const redis = await getRedisCache();
     earliestBlockNumbers = await Promise.all(
       Object.values(spokePoolClients).map((spokePoolClient) => {
-        const currentTime = spokePoolClient.getCurrentTime();
-        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - depositLookBack);
+        const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
+        return getBlockForTimestamp(spokePoolClient.chainId, timestamp, blockFinder, redis);
       })
     );
   }
