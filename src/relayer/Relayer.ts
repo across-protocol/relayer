@@ -44,7 +44,7 @@ export class Relayer {
    */
   private async _getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
     const { configStoreClient, hubPoolClient, spokePoolClients, acrossApiClient } = this.clients;
-    const { relayerTokens, blacklistedDepositors, quoteTimeBuffer, acceptInvalidFills } = this.config;
+    const { relayerTokens, blacklistedDepositors, acceptInvalidFills } = this.config;
 
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
 
@@ -64,7 +64,7 @@ export class Relayer {
       }
 
       // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-      if (quoteTimestamp + quoteTimeBuffer > hubPoolClient.currentTime) {
+      if (quoteTimestamp > hubPoolClient.currentTime) {
         return false;
       }
 
