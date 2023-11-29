@@ -78,9 +78,8 @@ export class RelayerConfig extends CommonConfig {
     this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
-    this.blacklistedDepositors = BLACKLISTED_DEPOSITORS
-      ? JSON.parse(BLACKLISTED_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
-      : [];
+    this.blacklistedDepositors = JSON.parse(BLACKLISTED_DEPOSITORS ?? "[]")
+      .map((depositor) => ethers.utils.getAddress(depositor));
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
