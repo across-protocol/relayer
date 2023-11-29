@@ -66,8 +66,9 @@ export async function constructSpokePoolClientsWithLookback(
   const hubPoolChainId = hubPoolClient.chainId;
   const lookback = getCurrentTime() - initialLookBackOverride;
 
-  // Use the first block that we'll query on mainnet to figure out which chains were enabled between then
-  // and the the latest mainnet block. These chains were enabled via the ConfigStore.
+  // Use the first block that we'll query on mainnet to figure out which chains were enabled between then and the latest
+  // mainnet block. These chains were enabled via the ConfigStore. These lookbacks should typically be fairly short, so
+  // BlockFinder estimates are likely to be OK - avoid overriding them with hints.
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
   const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
@@ -163,9 +164,12 @@ export async function constructSpokePoolClientsWithStartBlocks(
       // spoke pool.
       const latestSpokePool = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
       const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
-      const spokePoolRegistrationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
-      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock)).timestamp;
-      const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis);
+      const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
+      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
+
+      // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
+      const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
+      const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );
