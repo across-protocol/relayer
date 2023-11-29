@@ -507,15 +507,11 @@ describe("Relayer: Unfilled Deposits", async function () {
     await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
 
-    let unfilledDeposits: RelayerUnfilledDeposit[];
-    unfilledDeposits = await _getUnfilledDeposits();
+    const unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
     expect(unfilledDeposits[0].version).to.equal(highVersion);
 
     // Relayer class should filter out based on its highest supported version.
-    unfilledDeposits = await relayerInstance.getUnfilledDeposits();
-    expect(unfilledDeposits.length).to.equal(0);
-
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
