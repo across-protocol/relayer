@@ -254,7 +254,8 @@ export async function getUnfilledDeposits(
     earliestBlockNumbers = await Promise.all(
       Object.values(spokePoolClients).map((spokePoolClient) => {
         const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
-        return getBlockForTimestamp(spokePoolClient.chainId, timestamp, blockFinder, redis);
+        const hints = { lowBlock: spokePoolClient.deploymentBlock };
+        return getBlockForTimestamp(spokePoolClient.chainId, timestamp, blockFinder, redis, hints);
       })
     );
   }
