@@ -167,7 +167,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
       const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
       const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
 
-      // Improve BlockFinder efficiency by clamping the its search space lower bound to the SpokePool deployment block.
+      // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
       const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
       const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
       return { chainId, contract: spokePoolContract, registrationBlock };
