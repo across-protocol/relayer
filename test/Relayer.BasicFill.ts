@@ -572,7 +572,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(spyLogIncludes(spy, -3, "Skipping 1 deposits from or to disabled chains.")).to.be.true;
+    expect(
+      spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping deposit from or to disabled chains"))
+    ).to.not.be.undefined;
   });
 
   it("UBA: Doesn't crash if client cannot support version bump", async function () {
