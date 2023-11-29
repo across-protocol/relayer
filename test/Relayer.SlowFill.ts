@@ -3,6 +3,7 @@ import {
   ConfigStoreClient,
   HubPoolClient,
   MultiCallerClient,
+  Rebalance,
   SpokePoolClient,
   TokenClient,
 } from "../src/clients";
@@ -17,6 +18,7 @@ import {
 } from "./constants";
 import { MockInventoryClient } from "./mocks";
 import {
+  BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
@@ -201,7 +203,8 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
   });
   describe("Sends zero fills only if it won't rebalance to fast fill deposit", function () {
-    let deposit1: any, partialRebalance: any;
+    let deposit1: Record<string, number | string | BigNumber> | null = null;
+    let partialRebalance: Pick<Rebalance, "thresholdPct" | "targetPct" | "currentAllocPct" | "cumulativeBalance">;
     beforeEach(async function () {
       // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
       const balance = await erc20_1.balanceOf(relayer.address);
