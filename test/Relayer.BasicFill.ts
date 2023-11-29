@@ -31,7 +31,6 @@ import {
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
-  spyLogIncludes,
   originChainId,
   setupTokensForWallet,
   sinon,
