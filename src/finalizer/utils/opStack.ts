@@ -1,6 +1,7 @@
 import assert from "assert";
 import { groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
 import {
@@ -88,7 +89,7 @@ export async function opStackFinalizer(
 }
 
 function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
-  return [10, 8453].includes(chainId);
+  return sdkUtils.chainIsOPStack(chainId);
 }
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
