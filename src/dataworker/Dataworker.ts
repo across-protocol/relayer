@@ -1,3 +1,4 @@
+import { utils as ethersUtils } from "ethers";
 import {
   winston,
   EMPTY_MERKLE_ROOT,
@@ -1465,9 +1466,24 @@ export class Dataworker {
           ],
         });
         return false;
-      } else {
-        return true;
       }
+
+      const ignoredAddresses = JSON.parse(process.env.IGNORED_ADDRESSES ?? "[]").map((address) =>
+        ethersUtils.getAddress(address)
+      );
+      if (
+        ignoredAddresses?.includes(ethersUtils.getAddress(relayData.depositor)) ||
+        ignoredAddresses?.includes(ethersUtils.getAddress(relayData.recipient))
+      ) {
+        this.logger.warn({
+          at: "Dataworker#_executeSlowFillLeaf",
+          message: "Ignoring slow fill.",
+          leafExecutionArgs: [relayData.depositor, relayData.recipient],
+        });
+        return false;
+      }
+
+      return true;
     });
 
     if (leaves.length === 0) {
