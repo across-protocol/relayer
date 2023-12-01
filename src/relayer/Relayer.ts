@@ -55,6 +55,18 @@ export class Relayer {
       const { quoteTimestamp, depositId, depositor, originChainId, destinationChainId, originToken, amount } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
+      // If we don't have the latest code to support this deposit, skip it.
+      if (version > maxVersion) {
+        this.logger.warn({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit that is not supported by this relayer version.",
+          latestVersionSupported: maxVersion,
+          latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
+          deposit,
+        });
+        return false;
+      }
+
       // Skip blacklisted depositor address
       if (blacklistedDepositors?.includes(depositor)) {
         this.logger.debug({
@@ -104,24 +116,25 @@ export class Relayer {
         return false;
       }
 
-      // If we don't have the latest code to support this deposit, skip it.
-      if (version > maxVersion) {
-        this.logger.warn({
+      // Resolve L1 token and perform additional checks
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
+
+      // Skip any L1 tokens that are not specified in the config.
+      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+        this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit that is not supported by this relayer version.",
-          latestVersionSupported: maxVersion,
-          latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
+          message: "Skipping deposit for unwhitelisted token",
           deposit,
+          l1Token,
         });
         return false;
       }
 
-      // Resolve L1 token and perform additional checks
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
-
       // We query the relayer API to get the deposit limits for different token and destination combinations.
       // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
-      // refund will be stuck for potentially 7 days.
+      // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
+      // queries for limits on supported tokens.
       if (acrossApiClient.updatedLimits && unfilledAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
         this.logger.warn({
           at: "Relayer::getUnfilledDeposits",
@@ -133,18 +146,6 @@ export class Relayer {
           unfilledAmount: unfilledAmount.toString(),
           originChainId,
           transactionHash: deposit.transactionHash,
-        });
-        return false;
-      }
-
-      // Skip any L1 tokens that are not specified in the config.
-      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit for unwhitelisted token",
-          deposit,
-          l1Token,
         });
         return false;
       }
