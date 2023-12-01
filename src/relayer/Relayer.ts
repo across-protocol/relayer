@@ -3,6 +3,7 @@ import { constants as ethersConstants } from "ethers";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import {
   BigNumber,
+  bnOne,
   RelayerUnfilledDeposit,
   blockExplorerLink,
   buildFillRelayProps,
@@ -22,8 +23,9 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
-const { isDepositSpedUp, isMessageEmpty, bnOne: zeroFillAmount, resolveDepositMessage } = sdkUtils;
+const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
+const zeroFillAmount = bnOne;
 
 export class Relayer {
   // Track by originChainId since depositId is issued on the origin chain.

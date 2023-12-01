@@ -1,7 +1,9 @@
 import { random } from "lodash";
+import { clients } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { CONFIG_STORE_VERSION, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 import { Deposit } from "../src/interfaces";
+import { bnZero, bnOne } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -38,9 +40,6 @@ import {
   winston,
 } from "./utils";
 import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
-
-const { bnOne, bnZero } = sdkUtils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
