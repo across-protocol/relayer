@@ -181,7 +181,6 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
         slowDepositors: [],
         relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
-        quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
     );
 

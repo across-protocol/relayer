@@ -11,6 +11,7 @@ export const {
   bnOne,
   bnUint32Max,
   bnUint256Max,
+  chainIsOPStack,
   fixedPointAdjustment,
   toBN,
   bnToHex,

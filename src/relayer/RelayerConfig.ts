@@ -26,15 +26,12 @@ export class RelayerConfig extends CommonConfig {
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
+  // List of depositors that caller wants to ignore.
+  readonly blacklistedDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
   };
-  // Quote timestamp buffer to protect relayer from edge case where a quote time is > HEAD's latest block.
-  // This exposes relayer to risk that HubPool utilization changes between now and the eventual block mined at that
-  // timestamp, since the ConfigStoreClient.computeRealizedLpFee returns the current lpFee % for quote times >
-  // HEAD
-  readonly quoteTimeBuffer: number;
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
@@ -44,6 +41,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_ORIGIN_CHAINS,
       RELAYER_DESTINATION_CHAINS,
       SLOW_DEPOSITORS,
+      BLACKLISTED_DEPOSITORS,
       DEBUG_PROFITABILITY,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_GAS_PADDING,
@@ -59,7 +57,6 @@ export class RelayerConfig extends CommonConfig {
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
-      QUOTE_TIME_BUFFER,
       RELAYER_IGNORE_LIMITS,
     } = env;
     super(env);
@@ -75,6 +72,9 @@ export class RelayerConfig extends CommonConfig {
     this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
+    this.blacklistedDepositors = JSON.parse(BLACKLISTED_DEPOSITORS ?? "[]").map((depositor) =>
+      ethers.utils.getAddress(depositor)
+    );
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
@@ -164,7 +164,6 @@ export class RelayerConfig extends CommonConfig {
       });
     // Force default thresholds in MDC config.
     this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
-    this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
   }
 }
