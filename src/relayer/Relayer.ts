@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { constants as ethersConstants } from "ethers";
+import { constants as ethersConstants, utils as ethersUtils } from "ethers";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import {
   BigNumber,
@@ -46,7 +46,7 @@ export class Relayer {
    */
   private async _getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
     const { configStoreClient, hubPoolClient, spokePoolClients, acrossApiClient } = this.clients;
-    const { relayerTokens, blacklistedDepositors, acceptInvalidFills } = this.config;
+    const { relayerTokens, ignoredAddresses, acceptInvalidFills } = this.config;
 
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
 
@@ -68,10 +68,10 @@ export class Relayer {
       }
 
       // Skip blacklisted depositor address
-      if (blacklistedDepositors?.includes(depositor)) {
+      if (ignoredAddresses?.includes(ethersUtils.getAddress(depositor))) {
         this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
-          message: "Ignoring deposit for blacklisted depositor",
+          message: "Ignoring deposit",
           depositor,
         });
         return false;
