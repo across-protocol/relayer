@@ -12,6 +12,11 @@ import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as constants from "../common/Constants";
 import {
   assert,
+  bnZero,
+  bnOne,
+  bnUint32Max as uint32Max,
+  bnUint256Max as uint256Max,
+  fixedPointAdjustment as fixedPoint,
   BigNumber,
   formatFeePct,
   getCurrentTime,
@@ -32,16 +37,7 @@ const {
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
 } = sdkConsts;
-const {
-  bnOne,
-  bnZero,
-  bnUint32Max,
-  bnUint256Max: uint256Max,
-  fixedPointAdjustment: fixedPoint,
-  getNativeTokenSymbol,
-  isMessageEmpty,
-  resolveDepositMessage,
-} = sdkUtils;
+const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
@@ -499,7 +495,7 @@ export class ProfitClient {
   private async updateGasCosts(): Promise<void> {
     const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
     const relayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? PROD_RELAYER : TEST_RELAYER;
-    const depositId = random(bnUint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
+    const depositId = random(uint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
     const fillAmount = bnOne;
     const quoteTimestamp = getCurrentTime();
 

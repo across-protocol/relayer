@@ -1,8 +1,8 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber } from "ethers";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
   winston,
+  bnZero,
   getNetworkName,
   isDefined,
   isPromiseFulfilled,
@@ -245,7 +245,7 @@ export class MultiCallerClient {
 
     const mrkdwn: string[] = [];
     const callData: Multicall2Call[] = [];
-    let gasLimit: BigNumber | undefined = sdkUtils.bnZero;
+    let gasLimit: BigNumber | undefined = bnZero;
     transactions.forEach((txn, idx) => {
       if (!txn.unpermissioned || txn.chainId !== chainId) {
         this.logger.error({
@@ -297,7 +297,7 @@ export class MultiCallerClient {
   _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     const mrkdwn: string[] = [];
     const callData: string[] = [];
-    let gasLimit: BigNumber | undefined = sdkUtils.bnZero;
+    let gasLimit: BigNumber | undefined = bnZero;
 
     const { chainId, contract } = transactions[0];
     transactions.forEach((txn, idx) => {
