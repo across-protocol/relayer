@@ -36,7 +36,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     deposit: Pick<
       DepositWithBlock,
       "quoteTimestamp" | "amount" | "originChainId" | "originToken" | "destinationChainId" | "blockNumber"
-    >,
+    >
   ): Promise<interfaces.RealizedLpFee> {
     if (deposit.quoteTimestamp > this.currentTime) {
       throw new Error(
