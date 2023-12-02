@@ -20,6 +20,7 @@
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
 import {
+  bnZero,
   Wallet,
   winston,
   config,
@@ -147,14 +148,14 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               previousLeafExecution.blockNumber > bundleEndBlockForChain.toNumber();
             mrkdwn += `\n\t\t- Previous relayer refund leaf executed after bundle end block for chain: ${previousLeafExecutedAfterBundleEndBlockForChain}`;
             if (previousLeafExecutedAfterBundleEndBlockForChain) {
-              const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0));
+              const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero);
               mrkdwn += `\n\t\t- Subtracting previous leaf's amountToReturn (${fromWei(
                 previousLeafExecution.amountToReturn.toString(),
                 decimals
               )}) and refunds (${fromWei(previousLeafRefundAmount.toString(), decimals)}) from token balance`;
               tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock
                 .sub(previousLeafExecution.amountToReturn)
-                .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0)));
+                .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero));
             }
           }
 
@@ -182,7 +183,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               const previousNetSendAmount =
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
               mrkdwn += `\n\t\t- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`;
-              if (previousNetSendAmount.gt(toBN(0))) {
+              if (previousNetSendAmount.gt(bnZero)) {
                 console.log(
                   `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
                 );
@@ -337,7 +338,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             throw new Error(`No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
           }
         } else {
-          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), toBN(0));
+          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), bnZero);
           excess = excess.sub(executedRelayerRefund);
           mrkdwn += `\n\t\t- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`;
         }

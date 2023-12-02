@@ -14,6 +14,7 @@ import {
 import {
   assign,
   BigNumber,
+  bnZero,
   Contract,
   convertFromWei,
   createFormatFunction,
@@ -28,7 +29,7 @@ import {
   getUnfilledDeposits,
   providers,
   toBN,
-  toWei,
+  toBNWei,
   winston,
 } from "../utils";
 
@@ -131,7 +132,7 @@ export class Monitor {
     );
     // Send notification if pool utilization is above configured threshold.
     for (const l1TokenUtilization of l1TokenUtilizations) {
-      if (l1TokenUtilization.utilization.gt(toBN(this.monitorConfig.utilizationThreshold).mul(toBN(toWei("0.01"))))) {
+      if (l1TokenUtilization.utilization.gt(toBN(this.monitorConfig.utilizationThreshold).mul(toBNWei("0.01")))) {
         const utilizationString = l1TokenUtilization.utilization.mul(100).toString();
         const mrkdwn = `${l1TokenUtilization.poolCollateralSymbol} pool token at \
           ${blockExplorerLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
@@ -204,7 +205,7 @@ export class Monitor {
       const chainId = deposit.deposit.destinationChainId;
       const tokenAddress = deposit.deposit.destinationToken;
       if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][tokenAddress]) {
-        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], toBN(0));
+        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], bnZero);
       }
       unfilledAmountByChainAndToken[chainId][tokenAddress] = unfilledAmountByChainAndToken[chainId][tokenAddress].add(
         deposit.unfilledAmount
@@ -252,10 +253,10 @@ export class Monitor {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(toBN(0)))) {
+          if (balancesBN.find((b) => b.gt(bnZero))) {
             // Human-readable balances
             const balances = balancesBN.map((balance) =>
-              balance.gt(toBN(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
+              balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
             );
             tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
           } else {
@@ -266,7 +267,7 @@ export class Monitor {
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        if (totalBalance.gt(toBN(0))) {
+        if (totalBalance.gt(bnZero)) {
           mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
           summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
         } else {
@@ -591,7 +592,7 @@ export class Monitor {
           l1Token.address
         );
 
-        if (transferBalance.gt(toBN(0))) {
+        if (transferBalance.gt(bnZero)) {
           this.updateRelayerBalanceTable(
             relayerBalanceTable,
             l1Token.symbol,
@@ -628,7 +629,7 @@ export class Monitor {
             continue;
           }
 
-          let totalOutgoingAmount = toBN(0);
+          let totalOutgoingAmount = bnZero;
           // Filter v2 fills and bond payments from outgoing transfers.
           const fillTransactionHashes = spokePoolClient.getFillsForRelayer(relayer).map((fill) => fill.transactionHash);
           const outgoingTransfers = this.categorizeUnknownTransfers(transfers.outgoing, fillTransactionHashes);
@@ -638,7 +639,7 @@ export class Monitor {
             currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, tokenInfo.decimals, chainId);
           }
 
-          let totalIncomingAmount = toBN(0);
+          let totalIncomingAmount = bnZero;
           // Filter v2 refunds and bond repayments from incoming transfers.
           const refundTransactionHashes = spokePoolClient
             .getRelayerRefundExecutions()
@@ -652,7 +653,7 @@ export class Monitor {
 
           // Record if there are net outgoing transfers.
           const netTransfersAmount = totalIncomingAmount.sub(totalOutgoingAmount);
-          if (!netTransfersAmount.eq(toBN(0))) {
+          if (!netTransfersAmount.eq(bnZero)) {
             const netAmount = convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
             currentTokenMrkdwn = `*${tokenInfo.symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
             currentChainMrkdwn += currentTokenMrkdwn;
@@ -670,7 +671,7 @@ export class Monitor {
               tokenInfo.symbol,
               UNKNOWN_TRANSFERS_NAME,
               BalanceType.PENDING,
-              totalOutgoingAmount.mul(toBN(-1))
+              totalOutgoingAmount.mul(-1)
             );
             this.incrementBalance(
               report,
@@ -763,7 +764,7 @@ export class Monitor {
         for (const chainName of allChainNames) {
           reports[relayer][token.symbol][chainName] = {};
           for (const balanceType of ALL_BALANCE_TYPES) {
-            reports[relayer][token.symbol][chainName][balanceType] = toBN(0);
+            reports[relayer][token.symbol][chainName][balanceType] = bnZero;
           }
         }
       }
@@ -793,7 +794,7 @@ export class Monitor {
 
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
-        const amount = totalRefundAmount || toBN(0);
+        const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
           tokenInfo.symbol,

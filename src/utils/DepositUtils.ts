@@ -1,6 +1,7 @@
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
 import { SpokePoolClient } from "../clients";
-import { assign, toBN, isFirstFillForDeposit, getRedisCache } from "./";
+import { assign, isFirstFillForDeposit, getRedisCache } from "./";
+import { bnZero } from "./SDKUtils";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { utils, typechain } from "@across-protocol/sdk-v2";
 
@@ -38,7 +39,7 @@ export function flattenAndFilterUnfilledDepositsByOriginChain(
       .map((_unfilledDeposits: UnfilledDeposit[]): UnfilledDeposit => {
         // Remove deposits with no matched fills.
         if (_unfilledDeposits.length === 0) {
-          return { unfilledAmount: toBN(0), deposit: undefined };
+          return { unfilledAmount: bnZero, deposit: undefined };
         }
         // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
         // that we'll only be slow relaying deposits where the first fill (i.e. the one with
@@ -47,7 +48,7 @@ export function flattenAndFilterUnfilledDepositsByOriginChain(
         if (
           !_unfilledDeposits.some((_unfilledDeposit: UnfilledDeposit) => _unfilledDeposit.hasFirstPartialFill === true)
         ) {
-          return { unfilledAmount: toBN(0), deposit: undefined };
+          return { unfilledAmount: bnZero, deposit: undefined };
         }
         // For each deposit, identify the smallest unfilled amount remaining after a fill since each fill can
         // only decrease the unfilled amount.
