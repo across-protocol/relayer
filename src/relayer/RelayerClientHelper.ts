@@ -12,7 +12,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { isDefined, Wallet, getRedisCache } from "../utils";
+import { isDefined, Signer, getRedisCache } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
@@ -27,8 +27,9 @@ export interface RelayerClients extends Clients {
 export async function constructRelayerClients(
   logger: winston.Logger,
   config: RelayerConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<RelayerClients> {
+  const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
@@ -73,7 +74,7 @@ export async function constructRelayerClients(
         );
 
   const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, destinationSpokePoolClients, config.relayerTokens);
-  const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, hubPoolClient);
+  const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
@@ -86,7 +87,7 @@ export async function constructRelayerClients(
     hubPoolClient,
     spokePoolClients,
     enabledChainIds,
-    baseSigner.address,
+    signerAddr,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
@@ -97,7 +98,7 @@ export async function constructRelayerClients(
   // The relayer will originate cross chain rebalances from both its own EOA address and the atomic depositor address
   // so we should track both for accurate cross-chain inventory management.
   const atomicDepositor = CONTRACT_ADDRESSES[hubPoolClient.chainId]?.atomicDepositor;
-  const monitoredAddresses = [baseSigner.address, atomicDepositor?.address];
+  const monitoredAddresses = [signerAddr, atomicDepositor?.address];
   const adapterManager = new AdapterManager(
     logger,
     spokePoolClients,
@@ -114,7 +115,7 @@ export async function constructRelayerClients(
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
   const inventoryClient = new InventoryClient(
-    baseSigner.address,
+    await baseSigner.getAddress(),
     logger,
     config.inventoryConfig,
     tokenClient,

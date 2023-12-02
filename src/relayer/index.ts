@@ -1,12 +1,12 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClients } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
-export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const config = new RelayerConfig(process.env);
   let relayerClients: RelayerClients;
@@ -17,7 +17,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
     relayerClients = await constructRelayerClients(logger, config, baseSigner);
     const { configStoreClient } = relayerClients;
 
-    const relayer = new Relayer(baseSigner.address, logger, relayerClients, config);
+    const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
     logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
 

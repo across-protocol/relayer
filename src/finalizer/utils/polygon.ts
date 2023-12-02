@@ -5,7 +5,7 @@ import {
   getDeployedContract,
   getNetworkName,
   groupObjectCountsByProp,
-  Wallet,
+  Signer,
   winston,
   Contract,
   getCachedProvider,
@@ -36,7 +36,7 @@ export interface PolygonTokensBridged extends TokensBridged {
 
 export async function polygonFinalizer(
   logger: winston.Logger,
-  signer: Wallet,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   latestBlockToFinalize: number
@@ -59,7 +59,8 @@ export async function polygonFinalizer(
   return await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
 }
 
-async function getPosClient(mainnetSigner: Wallet): Promise<POSClient> {
+async function getPosClient(mainnetSigner: Signer): Promise<POSClient> {
+  const from = await mainnetSigner.getAddress();
   // Following from https://maticnetwork.github.io/matic.js/docs/pos
   use(Web3ClientPlugin);
   setProofApi("https://apis.matic.network/");
@@ -69,15 +70,11 @@ async function getPosClient(mainnetSigner: Wallet): Promise<POSClient> {
     version: "v1",
     parent: {
       provider: mainnetSigner,
-      defaultConfig: {
-        from: mainnetSigner.address,
-      },
+      defaultConfig: { from },
     },
     child: {
       provider: mainnetSigner.connect(getCachedProvider(CHAIN_ID, true)),
-      defaultConfig: {
-        from: mainnetSigner.address,
-      },
+      defaultConfig: { from },
     },
   });
 }
@@ -161,7 +158,7 @@ async function finalizePolygon(posClient: POSClient, event: PolygonTokensBridged
 async function multicallPolygonFinalizations(
   tokensBridged: TokensBridged[],
   posClient: POSClient,
-  hubSigner: Wallet,
+  hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
@@ -202,13 +199,13 @@ async function multicallPolygonFinalizations(
   };
 }
 
-function getMainnetTokenBridger(mainnetSigner: Wallet): Contract {
+function getMainnetTokenBridger(mainnetSigner: Signer): Contract {
   return getDeployedContract("PolygonTokenBridger", 1, mainnetSigner);
 }
 
 async function retrieveTokenFromMainnetTokenBridger(
   l2Token: string,
-  mainnetSigner: Wallet,
+  mainnetSigner: Signer,
   hubPoolClient: HubPoolClient
 ): Promise<Multicall2Call> {
   const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(CHAIN_ID, l2Token, hubPoolClient.latestBlockNumber);

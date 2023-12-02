@@ -38,7 +38,7 @@ export async function run(): Promise<void> {
   const l1ChainId = Number(args.chainId);
   const l1Provider = await getProvider(l1ChainId);
   const connectedSigner = baseSigner.connect(l1Provider);
-  console.log("Connected to account", connectedSigner.address);
+  console.log("Connected to account", await connectedSigner.getAddress());
   const recipient = args.to;
   const token = args.token;
   if (!ethers.utils.isAddress(recipient)) {
@@ -92,7 +92,7 @@ export async function run(): Promise<void> {
       token,
       toBN(args.amount),
       recipient,
-      baseSigner.address,
+      await baseSigner.getAddress(),
       l2PubdataByteLimit
     );
     const params = [recipient, args.amount, "0x", l2GasLimit.toString(), l2PubdataByteLimit, [], recipient];
@@ -141,7 +141,7 @@ export async function run(): Promise<void> {
       token,
       toBN(args.amount),
       recipient,
-      baseSigner.address,
+      await baseSigner.getAddress(),
       l2PubdataByteLimit
     );
 

@@ -1,6 +1,5 @@
 import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "@arbitrum/sdk";
 import {
-  Wallet,
   winston,
   convertFromWei,
   getNetworkName,
@@ -8,6 +7,7 @@ import {
   Contract,
   getCachedProvider,
   getUniqueLogIndex,
+  Signer,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -18,7 +18,7 @@ const CHAIN_ID = 42161;
 
 export async function arbitrumOneFinalizer(
   logger: winston.Logger,
-  signer: Wallet,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   latestBlockToFinalize: number
@@ -40,7 +40,7 @@ export async function arbitrumOneFinalizer(
 
 async function multicallArbitrumFinalizations(
   tokensBridged: TokensBridged[],
-  hubSigner: Wallet,
+  hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
@@ -98,7 +98,7 @@ async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall
 async function getFinalizableMessages(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
-  l1Signer: Wallet
+  l1Signer: Signer
 ): Promise<
   {
     info: TokensBridged;
@@ -122,7 +122,7 @@ async function getFinalizableMessages(
 async function getAllMessageStatuses(
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
-  mainnetSigner: Wallet
+  mainnetSigner: Signer
 ): Promise<
   {
     info: TokensBridged;
@@ -150,7 +150,7 @@ async function getAllMessageStatuses(
 async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
   event: TokensBridged,
-  l1Signer: Wallet,
+  l1Signer: Signer,
   logIndex: number
 ): Promise<{
   message: L2ToL1MessageWriter;

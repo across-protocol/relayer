@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
+import { constants as ethersConsts, VoidSigner } from "ethers";
 import { typeguards } from "@across-protocol/sdk-v2";
-import { Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined } from "./";
+import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined } from "./";
 
 /**
  * Signer options for the getSigner function.
@@ -21,6 +22,10 @@ export type SignerOptions = {
    * @note This parameter is only required if the keyType is set to gckms.
    */
   gckmsKeys?: string[];
+  /**
+   * For a void signer, the address to use.
+   */
+  roAddress?: string;
 };
 
 /**
@@ -31,8 +36,8 @@ export type SignerOptions = {
  * @note If cleanEnv is true, the mnemonic and private key will be cleared from the env after retrieving the signer.
  * @note This function will throw if called a second time after the first call with cleanEnv = true.
  */
-export async function getSigner({ keyType, gckmsKeys, cleanEnv }: SignerOptions): Promise<Wallet> {
-  let wallet: Wallet | undefined = undefined;
+export async function getSigner({ keyType, gckmsKeys, cleanEnv, roAddress }: SignerOptions): Promise<Signer> {
+  let wallet: Signer | undefined = undefined;
   switch (keyType) {
     case "mnemonic":
       wallet = getMnemonicSigner();
@@ -46,11 +51,14 @@ export async function getSigner({ keyType, gckmsKeys, cleanEnv }: SignerOptions)
     case "secret":
       wallet = await getSecretSigner();
       break;
+    case "void":
+      wallet = new VoidSigner(roAddress ?? ethersConsts.AddressZero);
+      break;
     default:
       throw new Error(`getSigner: Unsupported key type (${keyType})`);
   }
   if (!wallet) {
-    throw new Error("Must define secret, mnemonic, privateKey or gckms for wallet");
+    throw new Error("Must define secret, mnemonic, privateKey, gckms or void for wallet");
   }
   if (cleanEnv) {
     cleanKeysFromEnvironment();
@@ -63,7 +71,7 @@ export async function getSigner({ keyType, gckmsKeys, cleanEnv }: SignerOptions)
  * @returns A signer based on the mnemonic set in the env.
  * @throws If a valid private key is not defined in the environment.
  */
-function getPrivateKeySigner(): Wallet {
+function getPrivateKeySigner(): Signer {
   if (!process.env.PRIVATE_KEY) {
     throw new Error("Wallet private key selected but no PRIVATE_KEY env set!");
   }
@@ -75,7 +83,7 @@ function getPrivateKeySigner(): Wallet {
  * @returns A signer based on the GCKMS key set in the args.
  * @throws If the GCKMS key is not set.
  */
-async function getGckmsSigner(keys?: string[]): Promise<Wallet> {
+async function getGckmsSigner(keys?: string[]): Promise<Signer> {
   if (!isDefined(keys) || keys.length === 0) {
     throw new Error("Wallet GCKSM selected but no keys parameter set! Set GCKMS key to use");
   }
@@ -88,7 +96,7 @@ async function getGckmsSigner(keys?: string[]): Promise<Wallet> {
  * @returns A signer based on the mnemonic set in the env.
  * @throws If a valid mnemonic is not defined in the environment.
  */
-function getMnemonicSigner(): Wallet {
+function getMnemonicSigner(): Signer {
   if (!process.env.MNEMONIC) {
     throw new Error("Wallet mnemonic selected but no MNEMONIC env set!");
   }
@@ -100,7 +108,7 @@ function getMnemonicSigner(): Wallet {
  * @returns An ethers Signer object.
  * @throws If a valid secret could not be read.
  */
-async function getSecretSigner(): Promise<Wallet> {
+async function getSecretSigner(): Promise<Signer> {
   const { SECRET = "./.secret" } = process.env;
   let secret: string;
   try {

@@ -33,6 +33,7 @@ export async function run(): Promise<void> {
     throw new Error("Define `amount` as how much you want to unwrap");
   }
   const baseSigner = await retrieveSignerFromCLIArgs();
+  const signerAddr = await baseSigner.getAddress();
   const chainId = Number(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
   if (!isKeyOf(chainId, WETH_ADDRESSES)) {
@@ -47,13 +48,13 @@ export async function run(): Promise<void> {
   if (wrapping) {
     console.log("Wrapping WETH 🎁");
     const currentBalance = ethers.utils.formatUnits(
-      await connectedSigner.provider.getBalance(baseSigner.address),
+      await connectedSigner.provider.getBalance(signerAddr),
       decimals
     );
     console.log(
-      `Current ETH balance for account ${baseSigner.address} on ${getNetworkName(chainId)}: ${currentBalance}`
+      `Current ETH balance for account ${signerAddr} on ${getNetworkName(chainId)}: ${currentBalance}`
     );
-    if ((await connectedSigner.provider.getBalance(baseSigner.address)).lt(toBN(args.amount))) {
+    if ((await connectedSigner.provider.getBalance(signerAddr)).lt(toBN(args.amount))) {
       console.log(`ETH balance < ${amountFromWei}, exiting`);
       return;
     }
@@ -68,9 +69,9 @@ export async function run(): Promise<void> {
     console.log("Transaction hash:", receipt.transactionHash);
   } else {
     console.log("Unwrapping WETH 🎊");
-    const currentBalance = ethers.utils.formatUnits(await weth.balanceOf(baseSigner.address), decimals);
-    console.log(`Current WETH balance for account ${baseSigner.address} on Mainnet: ${currentBalance}`);
-    if ((await weth.balanceOf(baseSigner.address)).lt(toBN(args.amount))) {
+    const currentBalance = ethers.utils.formatUnits(await weth.balanceOf(signerAddr), decimals);
+    console.log(`Current WETH balance for account ${signerAddr} on Mainnet: ${currentBalance}`);
+    if ((await weth.balanceOf(signerAddr)).lt(toBN(args.amount))) {
       console.log(`WETH balance < ${amountFromWei}, exiting`);
       return;
     }

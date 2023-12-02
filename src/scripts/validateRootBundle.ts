@@ -6,14 +6,13 @@
 //    NODE_URL_10=https://optimism-mainnet.infura.io/v3/KEY
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
 //    NODE_URL_42161=https://arb-mainnet.g.alchemy.com/v2/KEY
-// 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
-// 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
+// 2. To validate the proposal at timestamp 1653594774:
+//    REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts
 
 import {
-  Wallet,
   winston,
   config,
-  retrieveSignerFromCLIArgs,
+  getSigner,
   startupLogLevel,
   Logger,
   getDvmContract,
@@ -22,6 +21,7 @@ import {
   sortEventsDescending,
   getDisputeForTimestamp,
   disconnectRedisClients,
+  Signer
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -35,7 +35,7 @@ import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUt
 config();
 let logger: winston.Logger;
 
-export async function validate(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function validate(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   if (!process.env.REQUEST_TIME) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
@@ -202,7 +202,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+    const baseSigner = await getSigner({ keyType: "void", cleanEnv: true });
     await validate(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);

@@ -1,12 +1,12 @@
 import minimist from "minimist";
+import { Signer } from "ethers";
 import { SignerOptions, getSigner } from "./SignerUtils";
-import { Wallet } from "ethers";
 
 /**
  * Retrieves a signer based on both the CLI args and the env.
  * @returns A signer based on the CLI args.
  */
-export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
+export function retrieveSignerFromCLIArgs(): Promise<Signer> {
   // Call into the process' argv to retrieve the CLI args.
   const args = minimist(process.argv.slice(2));
   // Resolve the wallet type & verify that it is valid.

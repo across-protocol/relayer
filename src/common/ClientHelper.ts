@@ -4,7 +4,7 @@ import {
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
-  Wallet,
+  Signer,
   Contract,
   ethers,
   getBlockForTimestamp,
@@ -22,13 +22,13 @@ export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: ConfigStoreClient;
   multiCallerClient: MultiCallerClient;
-  hubSigner?: Wallet;
+  hubSigner?: Signer;
 }
 
 async function getSpokePoolSigners(
-  baseSigner: Wallet,
+  baseSigner: Signer,
   spokePoolChains: number[]
-): Promise<{ [chainId: number]: Wallet }> {
+): Promise<{ [chainId: number]: Signer }> {
   return Object.fromEntries(
     await Promise.all(
       spokePoolChains.map(async (chainId) => {
@@ -51,7 +51,7 @@ export async function constructSpokePoolClientsWithLookback(
   hubPoolClient: HubPoolClient,
   configStoreClient: ConfigStoreClient,
   config: CommonConfig,
-  baseSigner: Wallet,
+  baseSigner: Signer,
   initialLookBackOverride: number,
   enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
@@ -134,7 +134,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: CommonConfig,
-  baseSigner: Wallet,
+  baseSigner: Signer,
   startBlocks: { [chainId: number]: number },
   toBlockOverride: { [chainId: number]: number } = {},
   enabledChains?: number[]
@@ -264,7 +264,7 @@ export async function updateSpokePoolClients(
 export async function constructClients(
   logger: winston.Logger,
   config: CommonConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<Clients> {
   const hubPoolProvider = await getProvider(config.hubPoolChainId, logger);
   const hubSigner = baseSigner.connect(hubPoolProvider);
