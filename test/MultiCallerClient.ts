@@ -5,7 +5,7 @@ import {
   unknownRevertReason,
   unknownRevertReasonMethodsToIgnore,
 } from "../src/clients";
-import { BigNumber, TransactionSimulationResult } from "../src/utils";
+import { bnOne, BigNumber, TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, smock, assertPromiseError } from "./utils";
@@ -85,7 +85,7 @@ describe("MultiCallerClient", async function () {
   it("Correctly enqueues mixed transactions", async function () {
     chainIds.forEach((chainId) => {
       multiCaller.enqueueTransaction({ chainId } as AugmentedTransaction);
-      multiCaller.enqueueTransaction({ chainId, value: sdkUtils.bnOne } as AugmentedTransaction);
+      multiCaller.enqueueTransaction({ chainId, value: bnOne } as AugmentedTransaction);
     });
     expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
     expect(multiCaller.multiCallTransactionCount()).to.equal(chainIds.length);

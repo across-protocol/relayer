@@ -4,7 +4,16 @@ import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
 import { Deposit, DepositWithBlock } from "../src/interfaces";
-import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
+import {
+  bnZero,
+  bnOne,
+  BigNumber,
+  fixedPointAdjustment as fixedPoint,
+  formatFeePct,
+  toBN,
+  toBNWei,
+  toGWei,
+} from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import {
   assertPromiseError,
@@ -22,7 +31,6 @@ import {
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
-const { bnOne, bnZero, fixedPointAdjustment: fixedPoint, toGWei } = sdkUtils;
 const { formatEther } = ethers.utils;
 
 const chainIds = [originChainId, destinationChainId];

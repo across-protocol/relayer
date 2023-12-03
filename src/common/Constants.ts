@@ -100,7 +100,6 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     421613: 0,
   },
 };
-export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 

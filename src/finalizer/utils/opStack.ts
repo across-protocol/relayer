@@ -5,6 +5,7 @@ import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
 import {
   BigNumber,
+  chainIsOPStack,
   convertFromWei,
   getCachedProvider,
   getNetworkName,
@@ -88,7 +89,7 @@ export async function opStackFinalizer(
 }
 
 function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
-  return [10, 8453].includes(chainId);
+  return chainIsOPStack(chainId);
 }
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
