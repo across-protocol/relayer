@@ -127,8 +127,6 @@ export async function constructRelayerClients(
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
   const { configStoreClient, spokePoolClients, ubaClient } = clients;
-
-  await configStoreClient.update();
   const version = configStoreClient.getConfigStoreVersionForTimestamp();
   if (sdkUtils.isUBA(version)) {
     await ubaClient.update();
