@@ -33,7 +33,6 @@ export async function constructRelayerClients(
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
 
-
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
