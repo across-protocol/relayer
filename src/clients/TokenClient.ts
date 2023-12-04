@@ -42,13 +42,6 @@ export class TokenClient {
     return this.tokenData[chainId][token].balance;
   }
 
-  getAllowanceOnChain(chainId: number, token: string): BigNumber {
-    if (!this._hasTokenPairData(chainId, token)) {
-      return toBN(0);
-    }
-    return this.tokenData[chainId][token].allowance;
-  }
-
   decrementLocalBalance(chainId: number, token: string, amount: BigNumber): void {
     this.tokenData[chainId][token].balance = this.tokenData[chainId][token].balance.sub(amount);
   }
@@ -219,11 +212,14 @@ export class TokenClient {
       .getAllOriginTokens()
       .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
 
+    const blockTag = spokePoolClient.eventSearchConfig.toBlock ?? "latest";
     const tokenData = Object.fromEntries(
       await Promise.all(
         tokens.map(async (token) => {
-          const balance: BigNumber = await token.balanceOf(this.relayerAddress);
-          const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
+          const balance: BigNumber = await token.balanceOf(this.relayerAddress, { blockTag });
+          const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
+            blockTag,
+          });
 
           return [token.address, { balance, allowance }];
         })

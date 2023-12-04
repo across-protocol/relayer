@@ -128,7 +128,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
   const { configStoreClient, spokePoolClients } = clients;
 
-  await configStoreClient.update();
   const version = configStoreClient.getConfigStoreVersionForTimestamp();
   if (sdkUtils.isUBA(version)) {
     const { ubaClient } = clients;

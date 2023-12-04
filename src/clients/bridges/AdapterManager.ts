@@ -59,7 +59,14 @@ export class AdapterManager {
     chainId: number,
     l1Tokens: string[]
   ): Promise<OutstandingTransfers> {
-    this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Tokens });
+    const adapter = this.adapters[chainId];
+    this.logger.debug({
+      at: "AdapterManager",
+      message: "Getting outstandingCrossChainTransfers",
+      chainId,
+      l1Tokens,
+      searchConfigs: adapter.getUpdatedSearchConfigs(),
+    });
     return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }
 
