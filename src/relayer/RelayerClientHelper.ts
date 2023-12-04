@@ -36,9 +36,10 @@ export async function constructRelayerClients(
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
   // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
   // enabled chain.
-  const enabledChains = config.relayerOriginChains.length > 0 && config.relayerDestinationChains.length > 0
-    ? sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains])
-    : undefined;
+  const enabledChains =
+    config.relayerOriginChains.length > 0 && config.relayerDestinationChains.length > 0
+      ? sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains])
+      : undefined;
 
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
@@ -50,7 +51,7 @@ export async function constructRelayerClients(
     enabledChains
   );
 
-  const ubaClient: UBAClient | undefined = !sdkUtils.isUBA(commonClients.configStoreClient.configStoreVersion)
+  const ubaClient = !sdkUtils.isUBA(commonClients.configStoreClient.configStoreVersion)
     ? undefined
     : new UBAClient(
         new sdkClients.UBAClientConfig(),
