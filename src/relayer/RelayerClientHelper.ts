@@ -35,7 +35,10 @@ export async function constructRelayerClients(
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
-  const enabledChains = sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains]);
+  const enabledChains = config.relayerOriginChains.length > 0 && config.relayerDestinationChains.length > 0
+    ? sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains])
+    : undefined;
+
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     hubPoolClient,
@@ -43,7 +46,7 @@ export async function constructRelayerClients(
     config,
     baseSigner,
     config.maxRelayerLookBack,
-    enabledChains.length > 0 ? enabledChains : undefined
+    enabledChains
   );
 
   const ubaClient: UBAClient | undefined = !sdkUtils.isUBA(commonClients.configStoreClient.configStoreVersion)
