@@ -1,3 +1,4 @@
+import assert from "assert";
 import winston from "winston";
 import {
   getProvider,
@@ -74,6 +75,7 @@ export async function constructSpokePoolClientsWithLookback(
   const redis = await getRedisCache(logger);
   const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
   enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
+  assert(enabledChains.length > 0, "No SpokePool chains configured");
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
   // chains that are not enabled.
