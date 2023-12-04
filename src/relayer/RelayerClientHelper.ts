@@ -33,8 +33,9 @@ export async function constructRelayerClients(
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
 
-  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
-  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
+  // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
+  // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
+  // enabled chain.
   const enabledChains = config.relayerOriginChains.length > 0 && config.relayerDestinationChains.length > 0
     ? sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains])
     : undefined;
