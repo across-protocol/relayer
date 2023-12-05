@@ -86,6 +86,7 @@ export class Relayer {
           enabledOriginChains: this.config.relayerOriginChains,
           enabledDestinationChains: this.config.relayerDestinationChains,
         });
+        return false;
       }
 
       // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
