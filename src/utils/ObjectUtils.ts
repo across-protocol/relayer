@@ -89,14 +89,18 @@ function deleteIgnoredKeys(ignoredKeys: string[], obj: any) {
 }
 
 export function compareResultsAndFilterIgnoredKeys(ignoredKeys: string[], _objA: any, _objB: any): boolean {
-  // Deep copy objects so we don't mutate original inputs.
-  const objA = { ..._objA };
-  const objB = { ..._objB };
-
   // Remove ignored keys from objects and store them in ignoredMappings.
-  const newObjA = deleteIgnoredKeys(ignoredKeys, objA);
-  const newObjB = deleteIgnoredKeys(ignoredKeys, objB);
+  const filteredA = deleteIgnoredKeys(ignoredKeys, _objA);
+  const filteredB = deleteIgnoredKeys(ignoredKeys, _objB);
 
   // Compare objects without the ignored keys.
-  return lodash.isEqual(newObjA, newObjB);
+  return lodash.isEqual(filteredA, filteredB);
+}
+
+export function compareArrayResultsWithIgnoredKeys(ignoredKeys: string[], _objA: any[], _objB: any[]): boolean {
+  const filteredA = _objA.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
+  const filteredB = _objB.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
+
+  // Compare objects without the ignored keys.
+  return lodash.isEqual(filteredA, filteredB);
 }
