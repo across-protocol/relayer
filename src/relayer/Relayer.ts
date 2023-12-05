@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { constants as ethersConstants, utils as ethersUtils } from "ethers";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
@@ -454,6 +455,8 @@ export class Relayer {
   // The remaining fills are eligible for new requests.
   async requestRefunds(sendRefundRequests = true): Promise<void> {
     const { multiCallerClient, ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
     const spokePoolClients = Object.values(this.clients.spokePoolClients);
     this.logger.debug({
       at: "Relayer::requestRefunds",
@@ -533,6 +536,9 @@ export class Relayer {
     refundRequests: RefundRequestWithBlock[],
     fromBlock: number
   ): Promise<FillWithBlock[]> {
+    const { ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
     const depositIds: { [chainId: number]: number[] } = {};
 
     refundRequests.forEach(({ originChainId, depositId }) => {
@@ -542,7 +548,7 @@ export class Relayer {
 
     // Find fills where repayment was requested on another chain.
     const filter = { relayer: this.relayerAddress, fromBlock };
-    const fills = (await this.clients.ubaClient.getFills(destinationChainId, filter)).filter((fill) => {
+    const fills = (await ubaClient.getFills(destinationChainId, filter)).filter((fill) => {
       const { depositId, originChainId, destinationChainId, repaymentChainId } = fill;
       return repaymentChainId !== destinationChainId && !depositIds[originChainId]?.includes(depositId);
     });
@@ -644,15 +650,18 @@ export class Relayer {
   }
 
   protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
+    const { depositId, originChainId } = deposit;
     if (!sdkUtils.isUBA(version)) {
       if (deposit.realizedLpFeePct === undefined) {
-        throw new Error(`Deposit ${deposit.depositId} is missing realizedLpFeePct`);
+        throw new Error(`Chain ${originChainId} deposit ${depositId} is missing realizedLpFeePct`);
       }
       return deposit.realizedLpFeePct;
     }
 
-    const { depositId } = deposit;
-    const { depositBalancingFee, lpFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
+    const { ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
+    const { depositBalancingFee, lpFee } = ubaClient.computeFeesForDeposit(deposit);
     const realizedLpFeePct = depositBalancingFee.add(lpFee);
 
     const chain = getNetworkName(deposit.originChainId);
@@ -668,11 +677,12 @@ export class Relayer {
     if (!sdkUtils.isUBA(version)) {
       return toBN(0);
     }
-    const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
-      deposit.originToken,
-      deposit.originChainId
-    )?.symbol;
-    const relayerBalancingFee = this.clients.ubaClient.computeBalancingFeeForNextRefund(
+
+    const { hubPoolClient, ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
+    const tokenSymbol = hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId)?.symbol;
+    const relayerBalancingFee = ubaClient.computeBalancingFeeForNextRefund(
       deposit.destinationChainId,
       tokenSymbol,
       deposit.amount

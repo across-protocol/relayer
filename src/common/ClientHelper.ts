@@ -1,3 +1,4 @@
+import assert from "assert";
 import winston from "winston";
 import {
   getProvider,
@@ -51,7 +52,8 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: ConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride: number
+  initialLookBackOverride: number,
+  enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
   // Construct spoke pool clients for all chains that were enabled at least once in the block range.
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
@@ -72,7 +74,8 @@ export async function constructSpokePoolClientsWithLookback(
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
   const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
-  const enabledChains = getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
+  enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
+  assert(enabledChains.length > 0, "No SpokePool chains configured");
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
   // chains that are not enabled.
@@ -136,14 +139,12 @@ export async function constructSpokePoolClientsWithStartBlocks(
   toBlockOverride: { [chainId: number]: number } = {},
   enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
-  if (!enabledChains) {
-    enabledChains = getEnabledChainsInBlockRange(
-      hubPoolClient.configStoreClient,
-      config.spokePoolChainsOverride,
-      startBlocks[hubPoolClient.chainId],
-      toBlockOverride[hubPoolClient.chainId]
-    );
-  }
+  enabledChains ??= getEnabledChainsInBlockRange(
+    hubPoolClient.configStoreClient,
+    config.spokePoolChainsOverride,
+    startBlocks[hubPoolClient.chainId],
+    toBlockOverride[hubPoolClient.chainId]
+  );
 
   logger.debug({
     at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
