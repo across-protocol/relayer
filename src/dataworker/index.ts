@@ -117,7 +117,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         spokePoolClients,
         await getRedisCache(logger)
       );
-      await clients.configStoreClient.update();
       const version = clients.configStoreClient.getConfigStoreVersionForTimestamp();
       if (sdkUtils.isUBA(version)) {
         await ubaClient.update();
