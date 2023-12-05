@@ -89,7 +89,7 @@ function deleteIgnoredKeys(ignoredKeys: string[], obj: any) {
 }
 
 export function compareResultsAndFilterIgnoredKeys(ignoredKeys: string[], _objA: any, _objB: any): boolean {
-  // Remove ignored keys from objects and store them in ignoredMappings.
+  // Remove ignored keys from copied objects.
   const filteredA = deleteIgnoredKeys(ignoredKeys, _objA);
   const filteredB = deleteIgnoredKeys(ignoredKeys, _objB);
 
@@ -98,6 +98,7 @@ export function compareResultsAndFilterIgnoredKeys(ignoredKeys: string[], _objA:
 }
 
 export function compareArrayResultsWithIgnoredKeys(ignoredKeys: string[], _objA: any[], _objB: any[]): boolean {
+  // Remove ignored keys from each element of copied arrays.
   const filteredA = _objA.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
   const filteredB = _objB.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
 
