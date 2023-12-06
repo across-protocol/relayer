@@ -21,7 +21,7 @@ import {
   sortEventsDescending,
   getDisputeForTimestamp,
   disconnectRedisClients,
-  Signer
+  Signer,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,

@@ -47,13 +47,8 @@ export async function run(): Promise<void> {
   const wrapping = args.wrap;
   if (wrapping) {
     console.log("Wrapping WETH 🎁");
-    const currentBalance = ethers.utils.formatUnits(
-      await connectedSigner.provider.getBalance(signerAddr),
-      decimals
-    );
-    console.log(
-      `Current ETH balance for account ${signerAddr} on ${getNetworkName(chainId)}: ${currentBalance}`
-    );
+    const currentBalance = ethers.utils.formatUnits(await connectedSigner.provider.getBalance(signerAddr), decimals);
+    console.log(`Current ETH balance for account ${signerAddr} on ${getNetworkName(chainId)}: ${currentBalance}`);
     if ((await connectedSigner.provider.getBalance(signerAddr)).lt(toBN(args.amount))) {
       console.log(`ETH balance < ${amountFromWei}, exiting`);
       return;
