@@ -1,3 +1,4 @@
+import assert from "assert";
 import winston from "winston";
 import {
   getProvider,
@@ -51,7 +52,8 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: ConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride: number
+  initialLookBackOverride: number,
+  enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
   // Construct spoke pool clients for all chains that were enabled at least once in the block range.
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
@@ -72,7 +74,8 @@ export async function constructSpokePoolClientsWithLookback(
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
   const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
-  const enabledChains = getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
+  enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
+  assert(enabledChains.length > 0, "No SpokePool chains configured");
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
   // chains that are not enabled.
@@ -136,14 +139,12 @@ export async function constructSpokePoolClientsWithStartBlocks(
   toBlockOverride: { [chainId: number]: number } = {},
   enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
-  if (!enabledChains) {
-    enabledChains = getEnabledChainsInBlockRange(
-      hubPoolClient.configStoreClient,
-      config.spokePoolChainsOverride,
-      startBlocks[hubPoolClient.chainId],
-      toBlockOverride[hubPoolClient.chainId]
-    );
-  }
+  enabledChains ??= getEnabledChainsInBlockRange(
+    hubPoolClient.configStoreClient,
+    config.spokePoolChainsOverride,
+    startBlocks[hubPoolClient.chainId],
+    toBlockOverride[hubPoolClient.chainId]
+  );
 
   logger.debug({
     at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
@@ -174,7 +175,28 @@ export async function constructSpokePoolClientsWithStartBlocks(
     })
   );
 
-  return getSpokePoolClientsForContract(logger, hubPoolClient, config, spokePools, startBlocks, toBlockOverride);
+  // Explicitly set toBlocks for all chains so we can re-use them in other clients to make sure they all query
+  // state to the same "latest" block per chain.
+  const latestBlocksForChain: Record<number, number> = Object.fromEntries(
+    await Promise.all(
+      enabledChains.map(async (chainId) => {
+        // Allow caller to hardcode the spoke pool client end blocks.
+        if (isDefined(toBlockOverride[chainId])) {
+          return [chainId, toBlockOverride[chainId]];
+        }
+        if (chainId === hubPoolClient.chainId) {
+          if (hubPoolClient.eventSearchConfig.toBlock === undefined) {
+            throw new Error("HubPoolClient eventSearchConfig.toBlock is undefined");
+          }
+          return [chainId, hubPoolClient.eventSearchConfig.toBlock];
+        } else {
+          return [chainId, await spokePoolSigners[chainId].provider.getBlockNumber()];
+        }
+      })
+    )
+  );
+
+  return getSpokePoolClientsForContract(logger, hubPoolClient, config, spokePools, startBlocks, latestBlocksForChain);
 }
 
 /**
@@ -190,8 +212,15 @@ export function getSpokePoolClientsForContract(
   config: CommonConfig,
   spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
-  toBlocks: { [chainId: number]: number } = {}
+  toBlocks: { [chainId: number]: number }
 ): SpokePoolClientsByChain {
+  logger.debug({
+    at: "ClientHelper#getSpokePoolClientsForContract",
+    message: "Constructing SpokePoolClients",
+    fromBlocks,
+    toBlocks,
+  });
+
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ chainId, contract, registrationBlock }) => {
     if (!isDefined(fromBlocks[chainId])) {
@@ -201,9 +230,15 @@ export function getSpokePoolClientsForContract(
         registrationBlock,
       });
     }
+    if (!isDefined(toBlocks[chainId])) {
+      logger.debug({
+        at: "ClientHelper#getSpokePoolClientsForContract",
+        message: `No toBlock set for spoke pool client ${chainId}, exiting since this can lead to state sync issues between clients querying "latest" state from this chain`,
+      });
+    }
     const spokePoolClientSearchSettings = {
       fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,
+      toBlock: toBlocks[chainId],
       maxBlockLookBack: config.maxBlockLookBack[chainId],
     };
     spokePoolClients[chainId] = new SpokePoolClient(
@@ -231,11 +266,13 @@ export async function constructClients(
   config: CommonConfig,
   baseSigner: Wallet
 ): Promise<Clients> {
-  const hubSigner = baseSigner.connect(await getProvider(config.hubPoolChainId, logger));
+  const hubPoolProvider = await getProvider(config.hubPoolChainId, logger);
+  const hubSigner = baseSigner.connect(hubPoolProvider);
+  const latestMainnetBlock = await hubPoolProvider.getBlockNumber();
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: undefined,
+    toBlock: config.toBlockOverride[config.hubPoolChainId] ?? latestMainnetBlock,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
@@ -248,10 +285,8 @@ export async function constructClients(
   );
 
   const hubPoolClientSearchSettings = {
+    ...rateModelClientSearchSettings,
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: undefined, // Important that we set this to `undefined` to always look up latest HubPool events such as
-    // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
-    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
   // Create contract instances for each chain for each required contract.

@@ -299,15 +299,14 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     }
   });
 
-  it("Ignores deposit from blacklisted depositor", async function () {
-    relayerInstance.config.blacklistedDepositors = [depositor.address];
+  it("Ignores deposit from preconfigured addresses", async function () {
+    relayerInstance.config.ignoredAddresses = [depositor.address];
 
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
 
-    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Ignoring deposit for blacklisted depositor")))
-      .to.not.be.undefined;
+    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Ignoring deposit"))).to.not.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 

@@ -1,5 +1,6 @@
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { constants as ethersConstants } from "ethers";
+import { constants as ethersConstants, utils as ethersUtils } from "ethers";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import {
   BigNumber,
@@ -46,7 +47,7 @@ export class Relayer {
    */
   private async _getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
     const { configStoreClient, hubPoolClient, spokePoolClients, acrossApiClient } = this.clients;
-    const { relayerTokens, blacklistedDepositors, acceptInvalidFills } = this.config;
+    const { relayerTokens, ignoredAddresses, acceptInvalidFills } = this.config;
 
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
 
@@ -55,11 +56,23 @@ export class Relayer {
       const { quoteTimestamp, depositId, depositor, originChainId, destinationChainId, originToken, amount } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
+      // If we don't have the latest code to support this deposit, skip it.
+      if (version > maxVersion) {
+        this.logger.warn({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit that is not supported by this relayer version.",
+          latestVersionSupported: maxVersion,
+          latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
+          deposit,
+        });
+        return false;
+      }
+
       // Skip blacklisted depositor address
-      if (blacklistedDepositors?.includes(depositor)) {
+      if (ignoredAddresses?.includes(ethersUtils.getAddress(depositor))) {
         this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
-          message: "Ignoring deposit for blacklisted depositor",
+          message: "Ignoring deposit",
           depositor,
         });
         return false;
@@ -73,6 +86,7 @@ export class Relayer {
           enabledOriginChains: this.config.relayerOriginChains,
           enabledDestinationChains: this.config.relayerDestinationChains,
         });
+        return false;
       }
 
       // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
@@ -104,24 +118,25 @@ export class Relayer {
         return false;
       }
 
-      // If we don't have the latest code to support this deposit, skip it.
-      if (version > maxVersion) {
-        this.logger.warn({
+      // Resolve L1 token and perform additional checks
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
+
+      // Skip any L1 tokens that are not specified in the config.
+      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+        this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit that is not supported by this relayer version.",
-          latestVersionSupported: maxVersion,
-          latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
+          message: "Skipping deposit for unwhitelisted token",
           deposit,
+          l1Token,
         });
         return false;
       }
 
-      // Resolve L1 token and perform additional checks
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
-
       // We query the relayer API to get the deposit limits for different token and destination combinations.
       // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
-      // refund will be stuck for potentially 7 days.
+      // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
+      // queries for limits on supported tokens.
       if (acrossApiClient.updatedLimits && unfilledAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
         this.logger.warn({
           at: "Relayer::getUnfilledDeposits",
@@ -133,18 +148,6 @@ export class Relayer {
           unfilledAmount: unfilledAmount.toString(),
           originChainId,
           transactionHash: deposit.transactionHash,
-        });
-        return false;
-      }
-
-      // Skip any L1 tokens that are not specified in the config.
-      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit for unwhitelisted token",
-          deposit,
-          l1Token,
         });
         return false;
       }
@@ -452,6 +455,8 @@ export class Relayer {
   // The remaining fills are eligible for new requests.
   async requestRefunds(sendRefundRequests = true): Promise<void> {
     const { multiCallerClient, ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
     const spokePoolClients = Object.values(this.clients.spokePoolClients);
     this.logger.debug({
       at: "Relayer::requestRefunds",
@@ -531,6 +536,9 @@ export class Relayer {
     refundRequests: RefundRequestWithBlock[],
     fromBlock: number
   ): Promise<FillWithBlock[]> {
+    const { ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
     const depositIds: { [chainId: number]: number[] } = {};
 
     refundRequests.forEach(({ originChainId, depositId }) => {
@@ -540,7 +548,7 @@ export class Relayer {
 
     // Find fills where repayment was requested on another chain.
     const filter = { relayer: this.relayerAddress, fromBlock };
-    const fills = (await this.clients.ubaClient.getFills(destinationChainId, filter)).filter((fill) => {
+    const fills = (await ubaClient.getFills(destinationChainId, filter)).filter((fill) => {
       const { depositId, originChainId, destinationChainId, repaymentChainId } = fill;
       return repaymentChainId !== destinationChainId && !depositIds[originChainId]?.includes(depositId);
     });
@@ -642,15 +650,18 @@ export class Relayer {
   }
 
   protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
+    const { depositId, originChainId } = deposit;
     if (!sdkUtils.isUBA(version)) {
       if (deposit.realizedLpFeePct === undefined) {
-        throw new Error(`Deposit ${deposit.depositId} is missing realizedLpFeePct`);
+        throw new Error(`Chain ${originChainId} deposit ${depositId} is missing realizedLpFeePct`);
       }
       return deposit.realizedLpFeePct;
     }
 
-    const { depositId } = deposit;
-    const { depositBalancingFee, lpFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
+    const { ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
+    const { depositBalancingFee, lpFee } = ubaClient.computeFeesForDeposit(deposit);
     const realizedLpFeePct = depositBalancingFee.add(lpFee);
 
     const chain = getNetworkName(deposit.originChainId);
@@ -666,11 +677,12 @@ export class Relayer {
     if (!sdkUtils.isUBA(version)) {
       return toBN(0);
     }
-    const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
-      deposit.originToken,
-      deposit.originChainId
-    )?.symbol;
-    const relayerBalancingFee = this.clients.ubaClient.computeBalancingFeeForNextRefund(
+
+    const { hubPoolClient, ubaClient } = this.clients;
+    assert(isDefined(ubaClient), "No ubaClient");
+
+    const tokenSymbol = hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId)?.symbol;
+    const relayerBalancingFee = ubaClient.computeBalancingFeeForNextRefund(
       deposit.destinationChainId,
       tokenSymbol,
       deposit.amount
