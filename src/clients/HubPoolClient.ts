@@ -1,5 +1,5 @@
 import { clients, interfaces } from "@across-protocol/sdk-v2";
-import { BigNumber, Contract } from "ethers";
+import { Contract } from "ethers";
 import winston from "winston";
 import { MakeOptional, EventSearchConfig } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
@@ -35,16 +35,15 @@ export class HubPoolClient extends clients.HubPoolClient {
   async computeRealizedLpFeePct(
     deposit: Pick<
       DepositWithBlock,
-      "quoteTimestamp" | "amount" | "destinationChainId" | "originChainId" | "blockNumber"
-    >,
-    l1Token: string
-  ): Promise<{ realizedLpFeePct: BigNumber | undefined; quoteBlock: number }> {
+      "quoteTimestamp" | "amount" | "originChainId" | "originToken" | "destinationChainId" | "blockNumber"
+    >
+  ): Promise<interfaces.RealizedLpFee> {
     if (deposit.quoteTimestamp > this.currentTime) {
       throw new Error(
         `Cannot compute lp fee percent for quote timestamp ${deposit.quoteTimestamp} in the future. Current time: ${this.currentTime}.`
       );
     }
 
-    return await super.computeRealizedLpFeePct(deposit, l1Token);
+    return await super.computeRealizedLpFeePct(deposit);
   }
 }
