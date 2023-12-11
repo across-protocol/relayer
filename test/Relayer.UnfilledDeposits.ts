@@ -189,7 +189,7 @@ describe("Relayer: Unfilled Deposits", async function () {
   });
 
   it("Correctly defers deposits with future quote timestamps", async function () {
-    const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
+    const delta = await spokePool_1.quoteTimeBuffer(); // seconds
 
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
@@ -327,7 +327,7 @@ describe("Relayer: Unfilled Deposits", async function () {
   });
 
   it("Correctly selects unfilled deposit with updated fee", async function () {
-    const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
+    const delta = await spokePool_1.quoteTimeBuffer(); // seconds
 
     // perform simple deposit
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
