@@ -1,6 +1,7 @@
 import minimist from "minimist";
 import { SignerOptions, getSigner } from "./SignerUtils";
 import { Wallet } from "ethers";
+import { isDefined } from "./TypeGuards";
 
 /**
  * Retrieves a signer based on both the CLI args and the env.
@@ -18,7 +19,7 @@ export function retrieveSignerFromCLIArgs(): Promise<Wallet> {
   // Build out the signer options to pass to the signer utils.
   const signerOptions: SignerOptions = {
     keyType,
-    gckmsKeys: [args.keys],
+    gckmsKeys: isDefined(args.keys) ? [args.keys] : [],
     cleanEnv: false, // TODO: We don't want to clean the env for now. This will be changed in the future.
   };
   // Return the signer.
