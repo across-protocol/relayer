@@ -248,7 +248,8 @@ async function run(argv: string[]): Promise<number> {
 
   let signer: Signer;
   try {
-    signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
+    const keyType = ["dispute"].includes(argv[0]) ? args.wallet : "void";
+    signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
     return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
