@@ -481,8 +481,7 @@ export function getWidestPossibleExpectedBlockRange(
       if (!isDefined(spokePoolClient)) {
         return undefined;
       }
-      const toBlock = spokePoolClient.eventSearchConfig.toBlock ?? spokePoolClient.latestBlockNumber;
-      return Math.max(toBlock - endBlockBuffers[index], 0);
+      return Math.max(spokePoolClient.latestBlockSearched - endBlockBuffers[index], 0);
     }
   );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
