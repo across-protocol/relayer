@@ -476,7 +476,7 @@ export function getWidestPossibleExpectedBlockRange(
   // filled during the challenge period.
   const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
     (chainId: number, index) =>
-      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockSearched - endBlockBuffers[index], 0)
   );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     const lastEndBlockForChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
