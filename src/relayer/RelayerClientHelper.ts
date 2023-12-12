@@ -115,7 +115,7 @@ export async function constructRelayerClients(
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
   const inventoryClient = new InventoryClient(
-    await baseSigner.getAddress(),
+    signerAddr,
     logger,
     config.inventoryConfig,
     tokenClient,
