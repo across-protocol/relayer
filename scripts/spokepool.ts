@@ -300,20 +300,17 @@ async function run(argv: string[]): Promise<boolean> {
   const args = minimist(argv.slice(1), opts);
 
   config();
+  const keyType = ["deposit", "fill"].includes(argv[0]) ? args.wallet : "void";
+  const signer = await getSigner({ keyType, cleanEnv: true });
 
-  let signer: Signer;
   switch (argv[0]) {
     case "deposit":
-      signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
       return await deposit(args, signer);
     case "dump":
-      signer = await getSigner({ keyType: "void", cleanEnv: true });
       return await dumpConfig(args, signer);
     case "fetch":
-      signer = await getSigner({ keyType: "void", cleanEnv: true });
       return await fetchTxn(args, signer);
     case "fill":
-      signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
       // @todo Not supported yet...
       usage(); // no return
       break; // ...keep the linter less dissatisfied!
