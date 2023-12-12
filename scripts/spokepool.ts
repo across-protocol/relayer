@@ -300,8 +300,13 @@ async function run(argv: string[]): Promise<boolean> {
   const args = minimist(argv.slice(1), opts);
 
   config();
-  const keyType = ["deposit", "fill"].includes(argv[0]) ? args.wallet : "void";
-  const signer = await getSigner({ keyType, cleanEnv: true });
+  let signer: Signer;
+  try {
+    const keyType = ["deposit", "fill"].includes(argv[0]) ? args.wallet : "void";
+    const signer = await getSigner({ keyType, cleanEnv: true });
+  } catch (err) {
+    usage(args.wallet); // no return
+  }
 
   switch (argv[0]) {
     case "deposit":
