@@ -30,6 +30,6 @@ export function retrieveSignerFromCLIArgs(): Promise<Signer> {
  * @param keyType The key type to check.
  * @returns True if the key type is valid, false otherwise.
  */
-function isValidKeyType(keyType: unknown): keyType is "secret" | "mnemonic" | "privateKey" | "gckms" {
-  return ["secret", "mnemonic", "privateKey", "gckms"].includes(keyType as string);
+function isValidKeyType(keyType: unknown): keyType is "secret" | "mnemonic" | "privateKey" | "gckms" | "void" {
+  return ["secret", "mnemonic", "privateKey", "gckms", "void"].includes(keyType as string);
 }

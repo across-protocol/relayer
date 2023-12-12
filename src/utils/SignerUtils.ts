@@ -8,8 +8,8 @@ import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined } from "./
  */
 export type SignerOptions = {
   /*
-   * The type of wallet to use.
-   * @note If using a GCKMS wallet, the gckmsKeys parameter must be set.
+   * The type of signer to use.
+   * @note If using a GCKMS signer, the gckmsKeys parameter must be set.
    */
   keyType: string;
   /**
@@ -29,41 +29,41 @@ export type SignerOptions = {
 };
 
 /**
- * Retrieves a signer based on the wallet type defined in the args.
+ * Retrieves a signer based on the signer type defined in the args.
  * @param cleanEnv If true, clears the mnemonic and private key from the env after retrieving the signer.
  * @returns A signer.
- * @throws If the wallet type is not defined or the mnemonic/private key is not set.
+ * @throws If the signer type is not defined or the mnemonic/private key is not set.
  * @note If cleanEnv is true, the mnemonic and private key will be cleared from the env after retrieving the signer.
  * @note This function will throw if called a second time after the first call with cleanEnv = true.
  */
 export async function getSigner({ keyType, gckmsKeys, cleanEnv, roAddress }: SignerOptions): Promise<Signer> {
-  let wallet: Signer | undefined = undefined;
+  let signer: Signer | undefined = undefined;
   switch (keyType) {
     case "mnemonic":
-      wallet = getMnemonicSigner();
+      signer = getMnemonicSigner();
       break;
     case "privateKey":
-      wallet = getPrivateKeySigner();
+      signer = getPrivateKeySigner();
       break;
     case "gckms":
-      wallet = await getGckmsSigner(gckmsKeys);
+      signer = await getGckmsSigner(gckmsKeys);
       break;
     case "secret":
-      wallet = await getSecretSigner();
+      signer = await getSecretSigner();
       break;
     case "void":
-      wallet = new VoidSigner(roAddress ?? ethersConsts.AddressZero);
+      signer = new VoidSigner(roAddress ?? ethersConsts.AddressZero);
       break;
     default:
-      throw new Error(`getSigner: Unsupported key type (${keyType})`);
+      throw new Error(`getSigner: Unsupported signer key type (${keyType})`);
   }
-  if (!wallet) {
-    throw new Error("Must define secret, mnemonic, privateKey, gckms or void for wallet");
+  if (!signer) {
+    throw new Error('Must specify "secret", "mnemonic", "privateKey", "gckms" or "void" for keyType');
   }
   if (cleanEnv) {
     cleanKeysFromEnvironment();
   }
-  return wallet;
+  return signer;
 }
 
 /**
@@ -85,7 +85,7 @@ function getPrivateKeySigner(): Signer {
  */
 async function getGckmsSigner(keys?: string[]): Promise<Signer> {
   if (!isDefined(keys) || keys.length === 0) {
-    throw new Error("Wallet GCKSM selected but no keys parameter set! Set GCKMS key to use");
+    throw new Error("Wallet GCKMS selected but no keys parameter set! Set GCKMS key to use");
   }
   const privateKeys = await retrieveGckmsKeys(getGckmsConfig(keys));
   return new Wallet(privateKeys[0]); // GCKMS retrieveGckmsKeys returns multiple keys. For now we only support 1.
