@@ -39,7 +39,7 @@ export async function run(): Promise<void> {
   const l1ChainId = Number(args.chainId);
   const l1Provider = await getProvider(l1ChainId);
   const connectedSigner = baseSigner.connect(l1Provider);
-  console.log("Connected to account", await connectedSigner.getAddress());
+  console.log(`Connected to account ${signerAddr}`);
   const recipient = args.to;
   const token = args.token;
   if (!ethers.utils.isAddress(recipient)) {
