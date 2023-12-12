@@ -24,7 +24,6 @@ import {
   formatFeePct,
   getFillDataForSlowFillFromPreviousRootBundle,
   getRefund,
-  isDefined,
   shortenHexString,
   shortenHexStrings,
   toBN,
@@ -476,13 +475,8 @@ export function getWidestPossibleExpectedBlockRange(
   // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
   // filled during the challenge period.
   const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
-    (chainId: number, index) => {
-      const spokePoolClient = spokeClients[chainId];
-      if (!isDefined(spokePoolClient)) {
-        return undefined;
-      }
-      return Math.max(spokePoolClient.latestBlockSearched - endBlockBuffers[index], 0);
-    }
+    (chainId: number, index) =>
+      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockSearched - endBlockBuffers[index], 0)
   );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     const lastEndBlockForChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
