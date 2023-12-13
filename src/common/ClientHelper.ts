@@ -177,6 +177,10 @@ export async function constructSpokePoolClientsWithStartBlocks(
 
   // Explicitly set toBlocks for all chains so we can re-use them in other clients to make sure they all query
   // state to the same "latest" block per chain.
+  if (hubPoolClient.eventSearchConfig.toBlock === undefined) {
+    throw new Error("HubPoolClient eventSearchConfig.toBlock is undefined");
+  }
+  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.eventSearchConfig.toBlock);
   const latestBlocksForChain: Record<number, number> = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
@@ -185,12 +189,10 @@ export async function constructSpokePoolClientsWithStartBlocks(
           return [chainId, toBlockOverride[chainId]];
         }
         if (chainId === hubPoolClient.chainId) {
-          if (hubPoolClient.eventSearchConfig.toBlock === undefined) {
-            throw new Error("HubPoolClient eventSearchConfig.toBlock is undefined");
-          }
-          return [chainId, hubPoolClient.eventSearchConfig.toBlock];
+          return [chainId, hubPoolBlock.number];
         } else {
-          return [chainId, await spokePoolSigners[chainId].provider.getBlockNumber()];
+          const toBlock = await getBlockForTimestamp(chainId, hubPoolBlock.timestamp, blockFinder, redis);
+          return [chainId, toBlock];
         }
       })
     )
