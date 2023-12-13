@@ -21,7 +21,6 @@
 
 import {
   bnZero,
-  Wallet,
   winston,
   config,
   Logger,
@@ -37,6 +36,7 @@ import {
   ZERO_ADDRESS,
   getRefund,
   disconnectRedisClients,
+  Signer,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
@@ -51,7 +51,7 @@ let logger: winston.Logger;
 
 const slowRootCache = {};
 
-export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runScript(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
 
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
@@ -486,7 +486,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+    const baseSigner = await retrieveSignerFromCLIArgs();
     await runScript(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);

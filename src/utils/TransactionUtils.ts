@@ -11,9 +11,9 @@ import {
   fixedPointAdjustment as fixedPoint,
   isDefined,
   TransactionResponse,
-  Wallet,
   ethers,
   getContractInfoFromAddress,
+  Signer,
   toBNWei,
   winston,
 } from "../utils";
@@ -35,7 +35,7 @@ const txnRetryable = (error?: unknown): boolean => {
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
-export async function getMultisender(chainId: number, baseSigner: Wallet): Promise<Contract | undefined> {
+export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
   if (!multicall3Addresses[chainId] || !baseSigner) {
     return undefined;
   }
