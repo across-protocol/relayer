@@ -202,7 +202,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner = await getSigner({ keyType: "void", cleanEnv: true });
+    // This script inherits the TokenClient, and it attempts to update token approvals.
+    // The disputer bot already has the necessary token approvals in place, so use its address.
+    const voidSigner = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
+    const baseSigner = await getSigner({ keyType: "void", cleanEnv: true, roAddress: voidSigner });
     await validate(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);
