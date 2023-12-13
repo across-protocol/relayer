@@ -70,7 +70,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 }
 
-const defaultTimeout = 10 * 1000;
+const defaultTimeout = 25 * 1000;
 
 function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
   return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
