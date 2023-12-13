@@ -9,7 +9,6 @@
  * Run with `ts-node ./src/scripts/testUBAClient.ts --wallet mnemonic`
  */
 import {
-  Wallet,
   winston,
   config,
   retrieveSignerFromCLIArgs,
@@ -18,6 +17,7 @@ import {
   disconnectRedisClients,
   REDIS_URL,
   getRedisCache,
+  Signer,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -35,7 +35,7 @@ const { isDefined } = sdkUtils;
 
 let logger: winston.Logger;
 
-export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function testUBAClient(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
 
   // Override default config with sensible defaults:
@@ -144,7 +144,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+    const baseSigner = await retrieveSignerFromCLIArgs();
     await testUBAClient(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);

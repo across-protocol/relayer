@@ -3,7 +3,6 @@ import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber, constants } from "ethers";
 import { groupBy } from "lodash";
 import {
-  Wallet,
   config,
   startupLogLevel,
   processEndPollingLoop,
@@ -14,6 +13,7 @@ import {
   disconnectRedisClients,
   getMultisender,
   getRedisCache,
+  Signer,
   winston,
 } from "../utils";
 import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
@@ -49,7 +49,7 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
 
 export async function finalize(
   logger: winston.Logger,
-  hubSigner: Wallet,
+  hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
@@ -224,7 +224,7 @@ export async function finalize(
 export async function constructFinalizerClients(
   _logger: winston.Logger,
   config: FinalizerConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<{
   commonClients: Clients;
   spokePoolClients: SpokePoolClientsByChain;
@@ -272,7 +272,7 @@ export class FinalizerConfig extends DataworkerConfig {
   }
 }
 
-export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);

@@ -11,7 +11,7 @@ import {
   getNetworkName,
   getUniqueLogIndex,
   groupObjectCountsByProp,
-  Wallet,
+  Signer,
   winston,
 } from "../../utils";
 import { Multicall2Call } from "../../common";
@@ -32,7 +32,7 @@ type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export async function opStackFinalizer(
   logger: winston.Logger,
-  signer: Wallet,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   latestBlockToFinalize: number
@@ -92,7 +92,7 @@ function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
   return chainIsOPStack(chainId);
 }
 
-function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
+function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
     l1ChainId: 1,
