@@ -230,7 +230,7 @@ export class Relayer {
       .filter((x) => {
         return (
           x.deposit.blockNumber <=
-          spokePoolClients[x.deposit.originChainId].latestBlockNumber - mdcPerChain[x.deposit.originChainId]
+          spokePoolClients[x.deposit.originChainId].latestBlockSearched - mdcPerChain[x.deposit.originChainId]
         );
       })
       .sort((a, b) =>
@@ -522,8 +522,8 @@ export class Relayer {
 
     const message = `${nRefunds === 0 ? "No" : nRefunds} outstanding fills with eligible cross-chain refunds found.`;
     const blockRanges = Object.fromEntries(
-      spokePoolClients.map(({ chainId, deploymentBlock, latestBlockNumber }) => {
-        return [chainId, [fromBlocks[chainId] ?? deploymentBlock, latestBlockNumber]];
+      spokePoolClients.map(({ chainId, deploymentBlock, latestBlockSearched }) => {
+        return [chainId, [fromBlocks[chainId] ?? deploymentBlock, latestBlockSearched]];
       })
     );
     this.logger.info({ at: "Relayer::requestRefunds", message, blockRanges });

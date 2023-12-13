@@ -45,9 +45,9 @@ describe("Dataworker block range-related utility methods", async function () {
         )
       )
     );
-    const latestMainnetBlock = hubPoolClient.latestBlockNumber;
+    const latestMainnetBlock = hubPoolClient.latestBlockSearched;
     if (latestMainnetBlock === undefined) {
-      throw new Error("hubPoolClient.latestBlockNumber is undefined");
+      throw new Error("hubPoolClient.latestBlockSearched is undefined");
     }
     const startingWidestBlocks = getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
@@ -107,7 +107,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // - Buffers are 0:
     let defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(0);
     chainIdListForBundleEvaluationBlockNumbers.forEach((_chainId) => {
-      mockHubPoolClient.setLatestBundleEndBlockForChain(_chainId, spokePoolClients[_chainId].latestBlockNumber);
+      mockHubPoolClient.setLatestBundleEndBlockForChain(_chainId, spokePoolClients[_chainId].latestBlockSearched);
     });
     expect(
       getWidestPossibleExpectedBlockRange(
@@ -123,8 +123,8 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     ).to.deep.equal(
       chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
-        spokePoolClients[_chainId].latestBlockNumber,
-        spokePoolClients[_chainId].latestBlockNumber,
+        spokePoolClients[_chainId].latestBlockSearched,
+        spokePoolClients[_chainId].latestBlockSearched,
       ])
     );
 
@@ -144,8 +144,8 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     ).to.deep.equal(
       chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
-        spokePoolClients[_chainId].latestBlockNumber,
-        spokePoolClients[_chainId].latestBlockNumber,
+        spokePoolClients[_chainId].latestBlockSearched,
+        spokePoolClients[_chainId].latestBlockSearched,
       ])
     );
   });
@@ -164,9 +164,9 @@ describe("Dataworker block range-related utility methods", async function () {
     if (mainnetDeploymentBlock === 0) {
       throw new Error("Mainnet SpokePoolClient has not been updated");
     }
-    if (spokePoolClients[chainId].latestBlockNumber === 0) {
+    if (spokePoolClients[chainId].latestBlockSearched === 0) {
       throw new Error(`Chain ${spokePoolClients[1].chainId} SpokePoolClient has not been updated`);
-    } else if (spokePoolClients[originChainId].latestBlockNumber === 0) {
+    } else if (spokePoolClients[originChainId].latestBlockSearched === 0) {
       throw new Error(`Chain ${originChainId} SpokePoolClient has not been updated`);
     }
 
@@ -182,7 +182,7 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(
       blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
-        [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockNumber]],
+        [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         { [chainId]: mainnetDeploymentBlock + 2 }
       )
@@ -191,7 +191,7 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(
       blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
-        [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockNumber + 3]],
+        [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched + 3]],
         chainIds,
         { [chainId]: mainnetDeploymentBlock + 2 }
       )
@@ -201,7 +201,7 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(
       blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
-        [[mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockNumber]],
+        [[mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         { [chainId]: mainnetDeploymentBlock + 2 }
       )
@@ -212,8 +212,8 @@ describe("Dataworker block range-related utility methods", async function () {
       blockRangesAreInvalidForSpokeClients(
         { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
         [
-          [mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockNumber],
-          [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestBlockNumber],
+          [mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched],
+          [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestBlockSearched],
         ],
         [chainId, 10],
         { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
@@ -223,8 +223,8 @@ describe("Dataworker block range-related utility methods", async function () {
       blockRangesAreInvalidForSpokeClients(
         { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
         [
-          [mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockNumber],
-          [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestBlockNumber],
+          [mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched],
+          [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestBlockSearched],
         ],
         [chainId, 10],
         { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
@@ -237,7 +237,7 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(
       blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
-        [[0, spokePoolClients[chainId].latestBlockNumber]],
+        [[0, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         {
           [chainId]: mainnetDeploymentBlock + 2,
@@ -247,7 +247,7 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(
       blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
-        [[0, spokePoolClients[chainId].latestBlockNumber]],
+        [[0, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         {
           [chainId]: mainnetDeploymentBlock - 1,

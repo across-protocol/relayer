@@ -203,7 +203,7 @@ export class Dataworker {
     // are executed so we want to make sure that these are all older than the mainnet bundle end block which is
     // sometimes treated as the "latest" mainnet block.
     const mostRecentProposedRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-      this.clients.hubPoolClient.latestBlockNumber
+      this.clients.hubPoolClient.latestBlockSearched
     );
 
     // If there has never been a validated root bundle, then we can always propose a new one:
@@ -270,7 +270,7 @@ export class Dataworker {
     const { configStoreClient, hubPoolClient } = this.clients;
 
     // Check if a bundle is pending.
-    if (!hubPoolClient.isUpdated || !hubPoolClient.latestBlockNumber) {
+    if (!hubPoolClient.isUpdated || !hubPoolClient.latestBlockSearched) {
       throw new Error("HubPoolClient not updated");
     }
     if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
@@ -295,7 +295,7 @@ export class Dataworker {
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      hubPoolClient.latestBlockNumber,
+      hubPoolClient.latestBlockSearched,
       hubPoolClient.chainId
     );
     const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
@@ -377,7 +377,7 @@ export class Dataworker {
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesForProposal,
         spokePoolClients,
-        this.clients.hubPoolClient.latestBlockNumber,
+        this.clients.hubPoolClient.latestBlockSearched,
         true
       );
       rootBundleData = {
@@ -839,7 +839,7 @@ export class Dataworker {
     if (
       !this.clients.hubPoolClient.isUpdated ||
       this.clients.hubPoolClient.currentTime === undefined ||
-      this.clients.hubPoolClient.latestBlockNumber === undefined
+      this.clients.hubPoolClient.latestBlockSearched === undefined
     ) {
       throw new Error("HubPoolClient not updated");
     }
@@ -873,7 +873,7 @@ export class Dataworker {
 
     const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockSearched,
       this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
@@ -1307,7 +1307,7 @@ export class Dataworker {
 
             const followingBlockNumber =
               this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
-              this.clients.hubPoolClient.latestBlockNumber;
+              this.clients.hubPoolClient.latestBlockSearched;
 
             if (!followingBlockNumber) {
               return false;
@@ -1616,7 +1616,7 @@ export class Dataworker {
     if (
       !this.clients.hubPoolClient.isUpdated ||
       this.clients.hubPoolClient.currentTime === undefined ||
-      this.clients.hubPoolClient.latestBlockNumber === undefined
+      this.clients.hubPoolClient.latestBlockSearched === undefined
     ) {
       throw new Error("HubPoolClient not updated");
     }
@@ -1640,7 +1640,7 @@ export class Dataworker {
 
     const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockSearched,
       this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
@@ -1707,7 +1707,7 @@ export class Dataworker {
 
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       this.clients.hubPoolClient.getLatestProposedRootBundle(),
-      this.clients.hubPoolClient.latestBlockNumber
+      this.clients.hubPoolClient.latestBlockSearched
     );
 
     // Filter out previously executed leaves.
@@ -1966,7 +1966,7 @@ export class Dataworker {
             return false;
           }
           const followingBlockNumber =
-            hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber || hubPoolClient.latestBlockNumber;
+            hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber || hubPoolClient.latestBlockSearched;
 
           if (followingBlockNumber === undefined) {
             return false;
@@ -2323,7 +2323,7 @@ export class Dataworker {
       spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
-      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
       this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock)
     );

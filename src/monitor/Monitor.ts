@@ -511,7 +511,7 @@ export class Monitor {
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
-    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockNumber);
+    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
@@ -901,16 +901,16 @@ export class Monitor {
     // provided) to fetch for latest events.
     // Else, if running in loop mode (pollingDelay != 0), start with the latest block and on next loops continue from
     // where the last one ended.
-    const latestBlockNumber = (await provider.getBlock("latest")).number;
+    const latestBlockSearched = (await provider.getBlock("latest")).number;
     let finalStartingBlock: number;
     let finalEndingBlock: number;
 
     if (this.monitorConfig.pollingDelay === 0) {
-      finalStartingBlock = configuredStartingBlock !== undefined ? configuredStartingBlock : latestBlockNumber;
-      finalEndingBlock = configuredEndingBlock !== undefined ? configuredEndingBlock : latestBlockNumber;
+      finalStartingBlock = configuredStartingBlock !== undefined ? configuredStartingBlock : latestBlockSearched;
+      finalEndingBlock = configuredEndingBlock !== undefined ? configuredEndingBlock : latestBlockSearched;
     } else {
-      finalStartingBlock = configuredEndingBlock ? configuredEndingBlock + 1 : latestBlockNumber;
-      finalEndingBlock = latestBlockNumber;
+      finalStartingBlock = configuredEndingBlock ? configuredEndingBlock + 1 : latestBlockSearched;
+      finalEndingBlock = latestBlockSearched;
     }
 
     // Starting block should not be after the ending block. this could happen on short polling period or misconfiguration.
@@ -939,7 +939,7 @@ export class Monitor {
               // is now aware of those executions.
               await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
                 account,
-                { blockTag: this.clients.spokePoolClients[chainId].latestBlockNumber }
+                { blockTag: this.clients.spokePoolClients[chainId].latestBlockSearched }
               );
         if (!this.balanceCache[chainId]) {
           this.balanceCache[chainId] = {};

@@ -88,7 +88,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
     mrkdwn += `Bundle proposed at ${mostRecentValidatedBundle.transactionHash}`;
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
-      clients.hubPoolClient.latestBlockNumber;
+      clients.hubPoolClient.latestBlockSearched;
     const poolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentValidatedBundle,
       followingBlockNumber
@@ -166,7 +166,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockNumber;
+              clients.hubPoolClient.latestBlockSearched;
             const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
               previousValidatedBundle,
               _followingBlockNumber

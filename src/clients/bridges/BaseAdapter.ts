@@ -86,8 +86,8 @@ export abstract class BaseAdapter {
 
   // Note: this must be called after the SpokePoolClients are updated.
   getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
-    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockNumber;
-    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
+    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
+    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockSearched;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
     }
