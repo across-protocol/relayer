@@ -3,6 +3,8 @@ import { Signer } from "ethers";
 import { SignerOptions, getSigner } from "./SignerUtils";
 import { isDefined } from "./TypeGuards";
 
+const keyTypes = ["secret", "mnemonic", "privateKey", "gckms", "void"];
+
 /**
  * Retrieves a signer based on both the CLI args and the env.
  * @returns A signer based on the CLI args.
@@ -13,7 +15,7 @@ export function retrieveSignerFromCLIArgs(): Promise<Signer> {
   // Resolve the wallet type & verify that it is valid.
   const keyType = (args.wallet as string) ?? "mnemonic";
   if (!isValidKeyType(keyType)) {
-    throw new Error(`Unsupported key type (${keyType}); expected "secret", "mnemonic", "privateKey", "gckms" or "void"`);
+    throw new Error(`Unsupported key type (${keyType}); expected one of: ${keyTypes.join(", ")}.`);
   }
 
   // Build out the signer options to pass to the signer utils.
@@ -32,5 +34,5 @@ export function retrieveSignerFromCLIArgs(): Promise<Signer> {
  * @returns True if the key type is valid, false otherwise.
  */
 function isValidKeyType(keyType: unknown): keyType is "secret" | "mnemonic" | "privateKey" | "gckms" | "void" {
-  return ["secret", "mnemonic", "privateKey", "gckms", "void"].includes(keyType as string);
+  return keyTypes.includes(keyType as string);
 }
