@@ -85,7 +85,7 @@ function getPrivateKeySigner(): Signer {
  */
 async function getGckmsSigner(keys?: string[]): Promise<Signer> {
   if (!isDefined(keys) || keys.length === 0) {
-    throw new Error("Wallet GCKMS selected but no keys parameter set! Set GCKMS key to use");
+    throw new Error("Wallet GCKMS selected but no keys parameter set! Set GCKMS key (--keys <key>) to use");
   }
   const privateKeys = await retrieveGckmsKeys(getGckmsConfig(keys));
   return new Wallet(privateKeys[0]); // GCKMS retrieveGckmsKeys returns multiple keys. For now we only support 1.
