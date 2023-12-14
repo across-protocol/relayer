@@ -181,7 +181,7 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.l2GasPrice, // gasPriceBid
       this.transactionSubmissionData, // data
     ];
-    // Pad gas for deposits to Arbitrum to account for under-estimation in GETH. Offchain Labs confirm that this is
+    // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
     // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
     const gasMultiplier = 1.2;
     return await this._sendTokenToTargetChain(
