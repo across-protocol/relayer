@@ -10,7 +10,7 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
   Contract,
-  Wallet,
+  Signer,
   getMultisender,
   getProvider,
 } from "../utils";
@@ -56,7 +56,7 @@ export class MultiCallerClient {
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
-    readonly baseSigner?: Wallet
+    readonly baseSigner?: Signer
   ) {
     this.txnClient = new TransactionClient(logger);
   }

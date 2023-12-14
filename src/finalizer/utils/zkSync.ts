@@ -1,5 +1,5 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { Contract, Wallet } from "ethers";
+import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
 import { Provider as zksProvider, types as zkTypes, Wallet as zkWallet } from "zksync-web3";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -25,7 +25,7 @@ const TransactionStatus = zkTypes.TransactionStatus;
  */
 export async function zkSyncFinalizer(
   logger: winston.Logger,
-  signer: Wallet,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   oldestBlockToFinalize: number
@@ -35,7 +35,7 @@ export async function zkSyncFinalizer(
 
   const l1Provider = hubPoolClient.hubPool.provider;
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
-  const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
+  const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
 
   // Any block younger than latestBlockToFinalize is ignored.
   const withdrawalsToQuery = spokePoolClient

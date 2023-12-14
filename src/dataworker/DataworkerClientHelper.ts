@@ -7,7 +7,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Wallet } from "../utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -22,13 +22,14 @@ export interface DataworkerClients extends Clients {
 export async function constructDataworkerClients(
   logger: winston.Logger,
   config: DataworkerConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<DataworkerClients> {
+  const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
   await updateClients(commonClients, config);
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
+  const tokenClient = new TokenClient(logger, signerAddr, {}, commonClients.hubPoolClient);
   await tokenClient.update();
   // Run approval on hub pool.
   if (config.sendingTransactionsEnabled) {
@@ -67,7 +68,7 @@ export async function constructSpokePoolClientsForFastDataworker(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: DataworkerConfig,
-  baseSigner: Wallet,
+  baseSigner: Signer,
   startBlocks: { [chainId: number]: number },
   endBlocks: { [chainId: number]: number }
 ): Promise<SpokePoolClientsByChain> {
