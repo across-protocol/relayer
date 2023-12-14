@@ -270,7 +270,7 @@ export class Dataworker {
     const { configStoreClient, hubPoolClient } = this.clients;
 
     // Check if a bundle is pending.
-    if (!hubPoolClient.isUpdated || !hubPoolClient.latestBlockSearched) {
+    if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient not updated");
     }
     if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
@@ -836,11 +836,7 @@ export class Dataworker {
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
     ubaClient?: UBAClient
   ): Promise<void> {
-    if (
-      !this.clients.hubPoolClient.isUpdated ||
-      this.clients.hubPoolClient.currentTime === undefined ||
-      this.clients.hubPoolClient.latestBlockSearched === undefined
-    ) {
+    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
     }
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
@@ -1613,11 +1609,7 @@ export class Dataworker {
       message: "Executing pool rebalance leaves",
     });
 
-    if (
-      !this.clients.hubPoolClient.isUpdated ||
-      this.clients.hubPoolClient.currentTime === undefined ||
-      this.clients.hubPoolClient.latestBlockSearched === undefined
-    ) {
+    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
     }
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
