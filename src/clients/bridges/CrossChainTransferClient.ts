@@ -1,4 +1,4 @@
-import { BigNumber, winston, assign, toBN, DefaultLogLevels, AnyObject } from "../../utils";
+import { BigNumber, bnZero, winston, assign, toBN, DefaultLogLevels, AnyObject } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces";
 
@@ -14,7 +14,7 @@ export class CrossChainTransferClient {
   // Get any funds currently in the canonical bridge.
   getOutstandingCrossChainTransferAmount(address: string, chainId: number | string, l1Token: string): BigNumber {
     const amount = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token]?.totalAmount;
-    return amount ? toBN(amount) : toBN(0);
+    return amount ? toBN(amount) : bnZero;
   }
 
   getOutstandingCrossChainTransferTxs(address: string, chainId: number | string, l1Token: string): string[] {
@@ -40,7 +40,7 @@ export class CrossChainTransferClient {
     }
     if (transfers[address][l1Token] === undefined) {
       transfers[address][l1Token] = {
-        totalAmount: toBN(0),
+        totalAmount: bnZero,
         depositTxHashes: [],
       };
     }

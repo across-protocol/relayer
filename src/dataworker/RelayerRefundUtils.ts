@@ -1,5 +1,5 @@
 import { Refund, RelayerRefundLeaf, RelayerRefundLeafWithGroup, SpokePoolTargetBalance } from "../interfaces";
-import { BigNumber, compareAddresses, toBN } from "../utils";
+import { BigNumber, bnZero, compareAddresses } from "../utils";
 import { getNetSendAmountForL1Token } from "./PoolRebalanceUtils";
 
 export function getAmountToReturnForRelayerRefundLeaf(
@@ -7,7 +7,7 @@ export function getAmountToReturnForRelayerRefundLeaf(
   runningBalanceForLeaf: BigNumber
 ): BigNumber {
   const netSendAmountForLeaf = getNetSendAmountForL1Token(spokePoolTargetBalance, runningBalanceForLeaf);
-  return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
+  return netSendAmountForLeaf.lt(bnZero) ? netSendAmountForLeaf.mul(-1) : bnZero;
 }
 
 export function sortRefundAddresses(refunds: Refund): string[] {

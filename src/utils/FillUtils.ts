@@ -4,13 +4,13 @@ import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsB
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
+  bnZero,
   assign,
   getRealizedLpFeeForFills,
   getRefundForFills,
   isDefined,
   sortEventsDescending,
   sortEventsAscending,
-  toBN,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { clients } from "@across-protocol/sdk-v2";
@@ -108,7 +108,7 @@ export function updateTotalRefundAmountRaw(
 }
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
-  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
+  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(bnZero);
 }
 
 export function filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
