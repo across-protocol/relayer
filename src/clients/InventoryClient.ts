@@ -124,7 +124,7 @@ export class InventoryClient {
   }
 
   getDestinationTokenForL1Token(l1Token: string, chainId: number | string): string {
-    return this.hubPoolClient.getDestinationTokenForL1Token(l1Token, Number(chainId));
+    return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
   }
 
   getEnabledChains(): number[] {
