@@ -124,7 +124,7 @@ export class InventoryClient {
   }
 
   getDestinationTokenForL1Token(l1Token: string, chainId: number | string): string {
-    return this.hubPoolClient.getDestinationTokenForL1Token(l1Token, Number(chainId));
+    return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
   }
 
   getEnabledChains(): number[] {
@@ -184,14 +184,15 @@ export class InventoryClient {
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
   async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number> {
-    const { amount, destinationChainId } = deposit;
+    const { originChainId, originToken, amount, destinationChainId } = deposit;
+    const hubChainId = this.hubPoolClient.chainId;
 
     // Always refund on L1 if the transfer is to L1.
-    if (!this.isInventoryManagementEnabled() || destinationChainId === this.hubPoolClient.chainId) {
+    if (!this.isInventoryManagementEnabled() || destinationChainId === hubChainId) {
       return destinationChainId;
     }
 
-    l1Token ??= this.hubPoolClient.getL1TokenForDeposit(deposit);
+    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(originToken, originChainId);
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
     if (
@@ -214,7 +215,7 @@ export class InventoryClient {
     } catch (e) {
       // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
       // Inventory management can always rebalance from Mainnet to other chains easily if needed.
-      return this.hubPoolClient.chainId;
+      return hubChainId;
     }
 
     // Add upcoming refunds going to this destination chain.
@@ -236,7 +237,7 @@ export class InventoryClient {
     // If the post relay allocation, considering funds in transit, is larger than the target threshold then refund on L1
     // Else, refund on destination chian to keep funds within the target.
     const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][destinationChainId].targetPct);
-    const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? this.hubPoolClient.chainId : destinationChainId;
+    const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? hubChainId : destinationChainId;
 
     this.log("Evaluated refund Chain", {
       chainShortfall,

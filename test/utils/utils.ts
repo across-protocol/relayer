@@ -309,7 +309,7 @@ export async function buildDepositStruct(
 
   return {
     ...deposit,
-    destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
+    destinationToken: hubPoolClient.getL2TokenForDeposit(deposit),
     quoteBlockNumber: quoteBlock,
     realizedLpFeePct,
     blockNumber: await getLastBlockNumber(),

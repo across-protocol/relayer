@@ -57,9 +57,9 @@ export function updateRunningBalanceForFill(
   fill: interfaces.FillWithBlock,
   updateAmount: BigNumber
 ): void {
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    fill.destinationChainId,
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     fill.destinationToken,
+    fill.destinationChainId,
     endBlockForMainnet
   );
   updateRunningBalance(runningBalances, fill.destinationChainId, l1TokenCounterpart, updateAmount);
@@ -71,9 +71,9 @@ export function updateRunningBalanceForDeposit(
   deposit: interfaces.DepositWithBlock,
   updateAmount: BigNumber
 ): void {
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    deposit.originChainId,
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     deposit.originToken,
+    deposit.originChainId,
     deposit.quoteBlockNumber
   );
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
@@ -89,9 +89,9 @@ export function updateRunningBalanceForEarlyDeposit(
   const originChainId = Number(deposit.args[1].toString());
   const originToken = deposit.args[6];
 
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    originChainId,
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     originToken,
+    originChainId,
     // TODO: this must be handled s.t. it doesn't depend on when this is run.
     // For now, tokens do not change their mappings often, so this will work, but
     // to keep the system resilient, this must be updated.
@@ -131,9 +131,9 @@ export function initializeRunningBalancesFromRelayerRepayments(
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(fillsForChain).forEach(
       ([l2TokenAddress, { realizedLpFees: totalRealizedLpFee, totalRefundAmount }]) => {
-        const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-          repaymentChainId,
+        const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
           l2TokenAddress,
+          repaymentChainId,
           latestMainnetBlock
         );
 
@@ -160,9 +160,9 @@ export function addSlowFillsToRunningBalances(
   unfilledDeposits: UnfilledDeposit[]
 ): void {
   unfilledDeposits.forEach((unfilledDeposit) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      unfilledDeposit.deposit.originChainId,
+    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
       unfilledDeposit.deposit.originToken,
+      unfilledDeposit.deposit.originChainId,
       latestMainnetBlock
     );
     updateRunningBalance(

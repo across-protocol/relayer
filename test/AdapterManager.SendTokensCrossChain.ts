@@ -97,10 +97,8 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     // Throws if there is a misconfiguration between L1 tokens and L2 tokens. This checks that the bot will error out
     // if it tries to delete money in the bridge. configure hubpool to return the wrong token for Optimism
 
-    hubPoolClient.setL1TokensToDestinationTokens({
-      // bad config. map USDC on L1 to boba on L2. This is WRONG for chainID 10 and should error.
-      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": { 10: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8" },
-    });
+    // bad config. map USDC on L1 to Arbitrum on L2. This is WRONG for chainID 10 and should error.
+    hubPoolClient.setTokenMapping(mainnetTokens["usdc"], 10, getL2TokenAddresses(mainnetTokens["usdc"])[42161]);
     let thrown2 = false;
     try {
       await adapterManager.sendTokenCrossChain(relayer.address, 10, mainnetTokens["usdc"], amountToSend);
@@ -292,8 +290,11 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
 async function seedMocks() {
   const allL1Tokens = Object.values(TOKEN_SYMBOLS_MAP).map((details) => details.addresses[CHAIN_IDs.MAINNET]);
-  const tokenAddressMapping = Object.fromEntries(allL1Tokens.map((address) => [address, getL2TokenAddresses(address)]));
-  hubPoolClient.setL1TokensToDestinationTokens(tokenAddressMapping);
+  allL1Tokens.forEach((address) =>
+    Object.entries(getL2TokenAddresses(address)).forEach(([chainId, l2Addr]) =>
+      hubPoolClient.setTokenMapping(address, Number(chainId), l2Addr)
+    )
+  );
 
   // Construct fake spoke pool clients. All the adapters need is a signer and a provider on each chain.
   for (const chainId of enabledChainIds) {
