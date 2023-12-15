@@ -507,7 +507,7 @@ export class ProfitClient {
       const destinationToken =
         destinationChainId === hubPoolClient.chainId
           ? hubToken
-          : hubPoolClient.getDestinationTokenForL1Token(hubToken, destinationChainId);
+          : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
       assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
       const deposit: Deposit = {

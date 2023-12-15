@@ -36,6 +36,7 @@ import {
   ZERO_ADDRESS,
   getRefund,
   disconnectRedisClients,
+  getSigner,
   Signer,
 } from "../utils";
 import { createDataworker } from "../dataworker";
@@ -44,7 +45,6 @@ import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUt
 import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
-import { retrieveSignerFromCLIArgs } from "../utils/CLIUtils";
 
 config();
 let logger: winston.Logger;
@@ -114,7 +114,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
         mrkdwn += `\n\tLeaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`;
         const decimals = tokenInfo.decimals;
-        const l2Token = clients.hubPoolClient.getDestinationTokenForL1Token(l1Token, leaf.chainId);
+        const l2Token = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(
+          l1Token,
+          leaf.chainId,
+          followingBlockNumber
+        );
+
         const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
@@ -486,7 +491,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner = await retrieveSignerFromCLIArgs();
+    // This script inherits the TokenClient, and it attempts to update token approvals.
+    // The disputer bot already has the necessary token approvals in place, so use its address.
+    // const voidSigner = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
+    const baseSigner = await getSigner({ keyType: "void", cleanEnv: true });
     await runScript(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);

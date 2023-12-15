@@ -115,7 +115,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       quoteTimestamp: 1234,
       message: "0x",
     };
-    hubPoolClient.setReturnedL1TokenForDeposit(mainnetWeth);
   });
 
   it("Correctly decides when to refund based on relay size", async function () {
@@ -232,7 +231,7 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
     adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, toBN(0));
     tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth]);
     tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc]);
+    hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
+    hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
   });
-
-  hubPoolClient.setL1TokensToDestinationTokens({ [mainnetWeth]: l2TokensForWeth, [mainnetUsdc]: l2TokensForUsdc });
 }

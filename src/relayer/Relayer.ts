@@ -578,21 +578,18 @@ export class Relayer {
       destinationToken,
       fillAmount: amount,
       realizedLpFeePct,
-      repaymentChainId: chainId,
+      repaymentChainId,
       blockNumber: fillBlock,
     } = fill;
 
-    const contract = spokePoolClients[chainId].spokePool;
+    const contract = spokePoolClients[repaymentChainId].spokePool;
     const method = "requestRefund";
     // @todo: Support specifying max impact against the refund amount (i.e. to mitigate price impact by fills).
     const maxCount = ethersConstants.MaxUint256;
 
-    // Resolve the refund token from the fill token. The name getDestinationtTokenForDeposit() is a misnomer here.
-    const refundToken = hubPoolClient.getDestinationTokenForDeposit({
-      originChainId: destinationChainId,
-      originToken: destinationToken,
-      destinationChainId: chainId,
-    });
+    // Resolve the refund token from the fill token.
+    const hubPoolToken = hubPoolClient.getL1TokenForL2TokenAtBlock(destinationToken, destinationChainId);
+    const refundToken = hubPoolClient.getL2TokenForL1TokenAtBlock(hubPoolToken, repaymentChainId);
 
     const args = [
       refundToken,
@@ -605,11 +602,11 @@ export class Relayer {
       maxCount,
     ];
 
-    const message = `Submitted refund request on chain ${getNetworkName(chainId)}.`;
+    const message = `Submitted refund request on chain ${getNetworkName(repaymentChainId)}.`;
     const mrkdwn = this.constructRefundRequestMarkdown(fill);
 
     this.logger.debug({ at: "Relayer::requestRefund", message: "Requesting refund for fill.", fill });
-    multiCallerClient.enqueueTransaction({ chainId, contract, method, args, message, mrkdwn });
+    multiCallerClient.enqueueTransaction({ chainId: repaymentChainId, contract, method, args, message, mrkdwn });
   }
 
   protected async resolveRepaymentChain(

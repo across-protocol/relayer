@@ -177,14 +177,14 @@ async function multicallPolygonFinalizations(
     )
   );
   callData.push(...callDataRetrievals);
-  const withdrawals = finalizableMessages.map((message) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+  const withdrawals = finalizableMessages.map(({ l2TokenAddress, amountToReturn }) => {
+    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      l2TokenAddress,
       CHAIN_ID,
-      message.l2TokenAddress,
       hubPoolClient.latestBlockNumber
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-    const amountFromWei = convertFromWei(message.amountToReturn.toString(), l1TokenInfo.decimals);
+    const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
     const withdrawal: Withdrawal = {
       l2ChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,
@@ -208,7 +208,7 @@ async function retrieveTokenFromMainnetTokenBridger(
   mainnetSigner: Signer,
   hubPoolClient: HubPoolClient
 ): Promise<Multicall2Call> {
-  const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(CHAIN_ID, l2Token, hubPoolClient.latestBlockNumber);
+  const l1Token = hubPoolClient.getL1TokenForL2TokenAtBlock(l2Token, CHAIN_ID, hubPoolClient.latestBlockNumber);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
   return {

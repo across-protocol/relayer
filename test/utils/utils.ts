@@ -307,9 +307,11 @@ export async function buildDepositStruct(
     l1TokenForDepositedToken.address
   );
 
+  console.log(`XXX Got deposit: ${JSON.stringify(deposit)}.`);
+
   return {
     ...deposit,
-    destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
+    destinationToken: hubPoolClient.getL2TokenForDeposit(deposit),
     quoteBlockNumber: quoteBlock,
     realizedLpFeePct,
     blockNumber: await getLastBlockNumber(),
