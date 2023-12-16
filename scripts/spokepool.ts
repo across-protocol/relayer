@@ -2,12 +2,23 @@ import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
-import { Contract, ethers, Signer } from "ethers";
+import { Contract, ethers, Signer, VoidSigner } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { ExpandedERC20__factory as ERC20, SpokePool } from "@across-protocol/contracts-v2";
-import { BigNumber, formatFeePct, getNetworkName, getSigner, isDefined, resolveTokenSymbols, toBN } from "../src/utils";
+import { ExpandedERC20__factory as ERC20, randomAddress } from "@across-protocol/contracts-v2";
+import {
+  BigNumber,
+  formatFeePct,
+  getNetworkName,
+  getSigner,
+  isDefined,
+  Logger,
+  resolveTokenSymbols,
+  toBN,
+} from "../src/utils";
 import * as utils from "./utils";
+import { createDataworker } from "../src/dataworker";
+import { constructSpokePoolClientsWithStartBlocks } from "../src/common";
 
 type relayerFeeQuery = {
   originChainId: number;
@@ -256,70 +267,65 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
 }
 
 async function fetchDepositId(args: Record<string, number | string>): Promise<boolean> {
-  const chainId = Number(args.chainId);
+  const originChainId = Number(args.fromChainId);
   const depositId = Number(args.depositId);
+  const destinationChain = Number(args.toChainId);
+  const depositor = String(args.depositor);
+  const hours = Number(args.hours) || 24;
 
-  if (!utils.validateChainIds([chainId]) || Number.isNaN(depositId) || depositId < 0) {
+  if (!utils.validateChainIds([originChainId]) || Number.isNaN(depositId) || depositId < 0) {
     usage(); // no return
   }
-  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
-  const spokePool = (await utils.getSpokePoolContract(chainId)).connect(provider) as SpokePool;
+  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(originChainId));
+  const voidSigner = new VoidSigner(randomAddress(), provider);
+  const {
+    clients: { hubPoolClient },
+    config,
+  } = await createDataworker(Logger, voidSigner);
+  const latestBlockOnChain = await provider.getBlock("latest");
+  const previousBlockOnChain = await provider.getBlock(latestBlockOnChain.number - 1);
+  const secondsDifference = latestBlockOnChain.timestamp - previousBlockOnChain.timestamp;
+  const blocksPerHour = 3600 / secondsDifference;
+  const blockLookback = Math.floor(hours * blocksPerHour);
 
-  const findRangeFn = async (): Promise<[number, number] | undefined> => {
-    let maxBlock = Number((await provider.getBlockNumber()).toString());
-    let minBlock = 0;
-    while (minBlock < maxBlock) {
-      const midBlock = Math.floor((maxBlock + minBlock) / 2);
-      const [lowRange, highRange] = await Promise.all([
-        spokePool.numberOfDeposits({ blockTag: midBlock - 1 }),
-        (await spokePool.numberOfDeposits({ blockTag: midBlock })) - 1,
-      ]);
-      if (depositId < lowRange) {
-        maxBlock = midBlock - 1;
-      } else if (depositId > highRange) {
-        minBlock = midBlock + 1;
-      } else {
-        return [midBlock - 10, midBlock + 10];
-      }
-    }
-    return undefined;
-  };
-  const range = await findRangeFn();
-
-  if (!range) {
-    return false;
-  }
-  const [lowRange, highRange] = range;
-
-  const deposits = await spokePool.queryFilter(
-    spokePool.filters.FundsDeposited(null, null, null, null, depositId),
-    lowRange - 1,
-    highRange + 1
+  const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
+    Logger,
+    hubPoolClient,
+    config,
+    voidSigner,
+    {
+      [originChainId]: latestBlockOnChain.number - blockLookback,
+    },
+    {
+      [originChainId]: latestBlockOnChain.number,
+    },
+    [originChainId]
   );
+
+  const spokeClient = spokePoolClients[originChainId];
+
+  await spokeClient.update();
+
+  const deposit = await spokeClient.findDeposit(depositId, destinationChain, depositor);
+
   console.log(
-    deposits
-      .map(() =>
-        [
-          `Deposit #${depositId} on ${getNetworkName(chainId)}:`,
-          `amount: ${deposits[0].args.amount.toString()}`,
-          `originChainId: ${deposits[0].args.originChainId.toString()}`,
-          `destinationChainId: ${deposits[0].args.destinationChainId.toString()}`,
-          `relayerFeePct: ${deposits[0].args.relayerFeePct.toString()}`,
-          `depositId: ${deposits[0].args.depositId.toString()}`,
-          `quoteTimestamp: ${deposits[0].args.quoteTimestamp.toString()}`,
-          `originToken: ${deposits[0].args.originToken.toString()}`,
-          `recipient: ${deposits[0].args.recipient.toString()}`,
-          `depositor: ${deposits[0].args.depositor.toString()}`,
-          `message: ${deposits[0].args.message.toString()}`,
-          `blockNumber: ${deposits[0].blockNumber.toString()}`,
-          `transactionHash: ${deposits[0].transactionHash.toString()}`,
-          `logIndex: ${deposits[0].logIndex.toString()}`,
-          `transactionIndex: ${deposits[0].transactionIndex.toString()}`,
-          `blockHash: ${deposits[0].blockHash.toString()}`,
-          `address: ${deposits[0].address.toString()}`,
-        ].join("\n    ")
-      )
-      .join("\n\n")
+    [
+      `Deposit #${depositId} on ${getNetworkName(originChainId)}:`,
+      `amount: ${deposit.amount.toString()}`,
+      `originChainId: ${deposit.originChainId.toString()}`,
+      `destinationChainId: ${deposit.destinationChainId.toString()}`,
+      `relayerFeePct: ${deposit.relayerFeePct.toString()}`,
+      `depositId: ${deposit.depositId.toString()}`,
+      `quoteTimestamp: ${deposit.quoteTimestamp.toString()}`,
+      `originToken: ${deposit.originToken.toString()}`,
+      `recipient: ${deposit.recipient.toString()}`,
+      `depositor: ${deposit.depositor.toString()}`,
+      `message: ${deposit.message.toString()}`,
+      `blockNumber: ${deposit.blockNumber.toString()}`,
+      `transactionHash: ${deposit.transactionHash.toString()}`,
+      `logIndex: ${deposit.logIndex.toString()}`,
+      `transactionIndex: ${deposit.transactionIndex.toString()}`,
+    ].join("\n    ")
   );
   return true;
 }
@@ -333,7 +339,8 @@ function usage(badInput?: string): boolean {
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> --txnHash <txnHash>";
   const fillArgs = "--from <originChainId> --hash <depositHash>";
-  const depositFetchArgs = "--chainId <chainId> --depositId <depositId>";
+  const depositFetchArgs =
+    "--fromChainId <chainId> --toChainId= <chainId> --depositor <address> --depositId <depositId>";
 
   const pad = "fetch-deposit".length;
   usageStr += `
@@ -356,7 +363,7 @@ async function run(argv: string[]): Promise<boolean> {
   const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct", "message"];
   const fetchOpts = ["chainId", "transactionHash"];
   const fillOpts = [];
-  const fetchDepositOpts = ["chainId", "depositId"];
+  const fetchDepositOpts = ["fromChainId", "toChainId", "depositor", "depositId"];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
     boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
@@ -367,6 +374,8 @@ async function run(argv: string[]): Promise<boolean> {
     alias: {
       transactionHash: "txnHash",
       depositId: "id",
+      fromChainId: "from",
+      toChainId: "to",
     },
     unknown: usage,
   };
