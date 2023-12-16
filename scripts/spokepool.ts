@@ -12,9 +12,9 @@ import {
   getNetworkName,
   getSigner,
   isDefined,
-  Logger,
   resolveTokenSymbols,
   toBN,
+  winston,
 } from "../src/utils";
 import * as utils from "./utils";
 import { createDataworker } from "../src/dataworker";
@@ -269,7 +269,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
 async function fetchDepositId(args: Record<string, number | string>): Promise<boolean> {
   const originChainId = Number(args.fromChainId);
   const depositId = Number(args.depositId);
-  const destinationChain = Number(args.toChainId);
+  const destinationChainId = Number(args.toChainId);
   const depositor = String(args.depositor);
   const hours = Number(args.hours) || 24;
 
@@ -278,10 +278,16 @@ async function fetchDepositId(args: Record<string, number | string>): Promise<bo
   }
   const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(originChainId));
   const voidSigner = new VoidSigner(randomAddress(), provider);
+
+  // Create a dummy winston logger to pass to createDataworker.
+  const logger = winston.createLogger({
+    transports: [new winston.transports.Console({ silent: true })],
+  });
+
   const {
     clients: { hubPoolClient },
     config,
-  } = await createDataworker(Logger, voidSigner);
+  } = await createDataworker(logger, voidSigner);
   const latestBlockOnChain = await provider.getBlock("latest");
   const previousBlockOnChain = await provider.getBlock(latestBlockOnChain.number - 1);
   const secondsDifference = latestBlockOnChain.timestamp - previousBlockOnChain.timestamp;
@@ -289,7 +295,7 @@ async function fetchDepositId(args: Record<string, number | string>): Promise<bo
   const blockLookback = Math.floor(hours * blocksPerHour);
 
   const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
-    Logger,
+    logger,
     hubPoolClient,
     config,
     voidSigner,
@@ -306,7 +312,7 @@ async function fetchDepositId(args: Record<string, number | string>): Promise<bo
 
   await spokeClient.update();
 
-  const deposit = await spokeClient.findDeposit(depositId, destinationChain, depositor);
+  const deposit = await spokeClient.findDeposit(depositId, destinationChainId, depositor);
 
   if (!deposit) {
     console.log(
