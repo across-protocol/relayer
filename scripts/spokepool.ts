@@ -273,7 +273,7 @@ async function fetchDepositId(args: Record<string, number | string>): Promise<bo
   const depositor = String(args.depositor);
   const hours = Number(args.hours) || 24;
 
-  if (!utils.validateChainIds([originChainId]) || Number.isNaN(depositId) || depositId < 0) {
+  if (!utils.validateChainIds([originChainId, destinationChainId]) || !Number.isInteger(depositId) || depositId < 0) {
     usage(); // no return
   }
   const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(originChainId));
