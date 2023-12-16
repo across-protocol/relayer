@@ -308,6 +308,13 @@ async function fetchDepositId(args: Record<string, number | string>): Promise<bo
 
   const deposit = await spokeClient.findDeposit(depositId, destinationChain, depositor);
 
+  if (!deposit) {
+    console.log(
+      `No deposit found for depositId ${depositId} on chain ${originChainId}. Recommended to increase lookback time`
+    );
+    return false;
+  }
+
   console.log(
     [
       `Deposit #${depositId} on ${getNetworkName(originChainId)}:`,
