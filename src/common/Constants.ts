@@ -55,7 +55,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   10: 60,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
-  324: 0,
+  324: 180,
   8453: 60,
   42161: 0,
   // Testnets:
@@ -130,7 +130,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   10: 150, // 2s/block, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  324: 1500, // At 1s/block, 25 mins = 1500 blocks.
+  324: 3000, // At 1s/block, 25 mins = 1500 blocks.
   8453: 750, // At 2s/block, 25 mins = 750 blocks.
   42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   // Testnets:
