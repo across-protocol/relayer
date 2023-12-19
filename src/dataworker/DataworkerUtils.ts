@@ -88,8 +88,7 @@ export function blockRangesAreInvalidForSpokeClients(
       return true;
     }
 
-    const clientLastBlockQueried =
-      spokePoolClients[chainId].latestBlockSearched;
+    const clientLastBlockQueried = spokePoolClients[chainId].latestBlockSearched;
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
