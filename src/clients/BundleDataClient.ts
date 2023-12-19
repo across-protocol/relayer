@@ -70,7 +70,7 @@ export class BundleDataClient {
 
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
     const refunds = [];
-    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.latestBlockSearched === undefined) {
+    if (!this.clients.hubPoolClient.isUpdated) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
     }
 
