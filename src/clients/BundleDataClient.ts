@@ -12,7 +12,7 @@ import { SpokePoolClient } from "../clients";
 import {
   winston,
   BigNumber,
-  toBN,
+  bnZero,
   assignValidFillToFillsToRefund,
   getRefundInformationFromFill,
   updateTotalRefundAmount,
@@ -144,7 +144,7 @@ export class BundleDataClient {
           // refunds in the bundle calculation. If relayer refund leaves are executed later and all the executions are
           // within the lookback period but the corresponding deposits/fills are not, we can run into cases where
           // executedAmount > refunds[relayer].
-          refunds[relayer] = executedAmount.gt(refunds[relayer]) ? toBN(0) : refunds[relayer].sub(executedAmount);
+          refunds[relayer] = executedAmount.gt(refunds[relayer]) ? bnZero : refunds[relayer].sub(executedAmount);
         }
       }
     }
@@ -162,7 +162,7 @@ export class BundleDataClient {
   getTotalRefund(refunds: FillsToRefund[], relayer: string, chainId: number, refundToken: string): BigNumber {
     return refunds.reduce((totalRefund, refunds) => {
       return totalRefund.add(this.getRefundsFor(refunds, relayer, chainId, refundToken));
-    }, toBN(0));
+    }, bnZero);
   }
 
   // Common data re-formatting logic shared across all data worker public functions.

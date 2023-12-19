@@ -6,6 +6,7 @@ import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../
 import {
   AnyObject,
   BigNumber,
+  bnZero,
   Contract,
   DefaultLogLevels,
   ERC20,
@@ -199,7 +200,7 @@ export abstract class BaseAdapter {
           continue;
         }
 
-        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
+        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), bnZero);
         const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
         outstandingTransfers[monitoredAddress][l1Token] = {
           totalAmount,

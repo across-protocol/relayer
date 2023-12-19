@@ -4,6 +4,7 @@ import { constants as ethersConstants, utils as ethersUtils } from "ethers";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import {
   BigNumber,
+  bnZero,
   bnOne,
   RelayerUnfilledDeposit,
   blockExplorerLink,
@@ -17,7 +18,6 @@ import {
   getRedisCache,
   getUnfilledDeposits,
   isDefined,
-  toBN,
   toBNWei,
   winston,
 } from "../utils";
@@ -194,7 +194,7 @@ export class Relayer {
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
       const unfilledAmountUsd = profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
       if (!agg[curr.deposit.originChainId]) {
-        agg[curr.deposit.originChainId] = toBN(0);
+        agg[curr.deposit.originChainId] = bnZero;
       }
       agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
       return agg;
@@ -675,7 +675,7 @@ export class Relayer {
 
   protected computeRefundFee(version: number, deposit: DepositWithBlock): BigNumber {
     if (!sdkUtils.isUBA(version)) {
-      return toBN(0);
+      return bnZero;
     }
 
     const { hubPoolClient, ubaClient } = this.clients;

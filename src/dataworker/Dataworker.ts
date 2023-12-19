@@ -350,55 +350,29 @@ export class Dataworker {
       return;
     }
 
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+    const { chainId: hubPoolChainId, latestBlockSearched } = this.clients.hubPoolClient;
     const [mainnetBundleStartBlock, mainnetBundleEndBlock] = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
 
-    let rootBundleData: ProposeRootBundleReturnType;
-    let isUBA = false;
-    if (
-      sdk.clients.isUBAActivatedAtBlock(
-        this.clients.hubPoolClient,
-        mainnetBundleStartBlock,
-        this.clients.hubPoolClient.chainId
-      )
-    ) {
-      isUBA = true;
-    }
-    if (!isUBA) {
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: "Proposing Legacy root bundle",
-        blockRangesForProposal,
-      });
-      const _rootBundleData = await this.Legacy_proposeRootBundle(
-        blockRangesForProposal,
-        spokePoolClients,
-        this.clients.hubPoolClient.latestBlockSearched,
-        true
-      );
-      rootBundleData = {
-        ..._rootBundleData,
-      };
-    } else {
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: "Proposing UBA root bundle",
-        blockRangesForProposal,
-      });
-      const _rootBundleData = await this.UBA_proposeRootBundle(
-        blockRangesForProposal,
-        ubaClient,
-        spokePoolClients,
-        true
-      );
-      rootBundleData = {
-        ..._rootBundleData,
-      };
-    }
+    const isUBA = sdk.clients.isUBAActivatedAtBlock(
+      this.clients.hubPoolClient,
+      mainnetBundleStartBlock,
+      hubPoolChainId
+    );
+
+    const rootBundleDataProducer = isUBA
+      ? this.UBA_proposeRootBundle(blockRangesForProposal, ubaClient, spokePoolClients, true)
+      : this.Legacy_proposeRootBundle(blockRangesForProposal, spokePoolClients, latestBlockSearched, true);
+
+    this.logger.debug({
+      at: "Dataworker#propose",
+      message: `Proposing ${isUBA ? "UBA" : "Legacy"} root bundle`,
+      blockRangesForProposal,
+    });
+    const rootBundleData = { ...(await rootBundleDataProducer) };
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
