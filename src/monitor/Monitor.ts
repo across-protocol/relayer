@@ -910,8 +910,8 @@ export class Monitor {
       finalStartingBlock = configuredStartingBlock !== undefined ? configuredStartingBlock : latestBlockNumber;
       finalEndingBlock = configuredEndingBlock !== undefined ? configuredEndingBlock : latestBlockNumber;
     } else {
-      finalStartingBlock = configuredEndingBlock ? configuredEndingBlock + 1 : latestBlockSearched;
-      finalEndingBlock = latestBlockSearched;
+      finalStartingBlock = configuredEndingBlock ? configuredEndingBlock + 1 : latestBlockNumber;
+      finalEndingBlock = latestBlockNumber;
     }
 
     // Starting block should not be after the ending block. this could happen on short polling period or misconfiguration.
