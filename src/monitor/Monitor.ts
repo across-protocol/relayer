@@ -907,8 +907,8 @@ export class Monitor {
     let finalEndingBlock: number;
 
     if (this.monitorConfig.pollingDelay === 0) {
-      finalStartingBlock = configuredStartingBlock !== undefined ? configuredStartingBlock : latestBlockSearched;
-      finalEndingBlock = configuredEndingBlock !== undefined ? configuredEndingBlock : latestBlockSearched;
+      finalStartingBlock = configuredStartingBlock !== undefined ? configuredStartingBlock : latestBlockNumber;
+      finalEndingBlock = configuredEndingBlock !== undefined ? configuredEndingBlock : latestBlockNumber;
     } else {
       finalStartingBlock = configuredEndingBlock ? configuredEndingBlock + 1 : latestBlockSearched;
       finalEndingBlock = latestBlockSearched;
