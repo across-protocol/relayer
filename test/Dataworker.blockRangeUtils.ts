@@ -46,9 +46,6 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     );
     const latestMainnetBlock = hubPoolClient.latestBlockSearched;
-    if (latestMainnetBlock === undefined) {
-      throw new Error("hubPoolClient.latestBlockSearched is undefined");
-    }
     const startingWidestBlocks = getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
