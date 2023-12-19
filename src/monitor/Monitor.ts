@@ -902,7 +902,7 @@ export class Monitor {
     // provided) to fetch for latest events.
     // Else, if running in loop mode (pollingDelay != 0), start with the latest block and on next loops continue from
     // where the last one ended.
-    const latestBlockSearched = (await provider.getBlock("latest")).number;
+    const latestBlockNumber = (await provider.getBlock("latest")).number;
     let finalStartingBlock: number;
     let finalEndingBlock: number;
 
