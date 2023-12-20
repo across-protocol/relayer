@@ -8,7 +8,7 @@ class TestAdapter extends BaseAdapter {
   constructor() {
     super(
       {
-        1: { latestBlockNumber: 123 } as unknown as SpokePoolClient,
+        1: { latestBlockSearched: 123 } as unknown as SpokePoolClient,
       },
       1,
       ["0xmonitored"],
