@@ -2127,6 +2127,9 @@ export class Dataworker {
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
+          // @dev: If txn is to be sumbmitted to networkId=137, do not batch with other txns as this function call
+          // must be executed from EOA.
+          unbatched: Number(chainId) === 137,
         });
       } else {
         this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });

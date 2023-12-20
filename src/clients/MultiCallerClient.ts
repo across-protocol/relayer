@@ -13,6 +13,7 @@ import {
   Signer,
   getMultisender,
   getProvider,
+  assert,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
@@ -59,17 +60,6 @@ export class MultiCallerClient {
     readonly baseSigner?: Signer
   ) {
     this.txnClient = new TransactionClient(logger);
-  }
-
-  getQueuedTransactions(chainId: number): AugmentedTransaction[] {
-    const allTxns = [];
-    if (this.valueTxns?.[chainId]) {
-      allTxns.push(...this.valueTxns[chainId]);
-    }
-    if (this.txns?.[chainId]) {
-      allTxns.push(...this.txns[chainId]);
-    }
-    return allTxns;
   }
 
   // Adds all information associated with a transaction to the transaction queue.
@@ -161,11 +151,11 @@ export class MultiCallerClient {
   // and return early.
   async executeChainTxnQueue(
     chainId: number,
-    txns: AugmentedTransaction[] = [],
+    _txns: AugmentedTransaction[] = [],
     valueTxns: AugmentedTransaction[] = [],
     simulate = false
   ): Promise<TransactionResponse[]> {
-    const nTxns = txns.length + valueTxns.length;
+    const nTxns = _txns.length + valueTxns.length;
     if (nTxns === 0) {
       return [];
     }
@@ -178,11 +168,17 @@ export class MultiCallerClient {
 
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
 
-    // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
+    // @dev If there is only one txn, then treat it as unbatched. Otherwise filter out the unbatched txns.
+    const unbatchedTxns = (nTxns === 1 ? _txns : _txns.filter((txn) => txn.unbatched)).concat(valueTxns);
+    const batchableTxns = nTxns === 1 ? [] : _txns.filter((txn) => !txn.unbatched);
+    assert(batchableTxns.length + unbatchedTxns.length === nTxns, "Transaction queue length mismatch");
+
+    // First try to simulate the transaction as a batch, excluding the unbatchedTxns which will be simulated
+    // individually. If the full batch succeeded, then we don't
     // need to simulate transactions individually. If the batch failed, then we need to
     // simulate the transactions individually and pick out the successful ones.
-    const batchTxns: AugmentedTransaction[] = valueTxns.concat(
-      await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
+    const batchTxns: AugmentedTransaction[] = unbatchedTxns.concat(
+      await this.buildMultiCallBundles(batchableTxns, this.chunkSize[chainId])
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
@@ -201,14 +197,16 @@ export class MultiCallerClient {
       txnRequestsToSubmit.push(...batchTxns);
     } else {
       const individualTxnSimResults = await Promise.allSettled([
-        this.simulateTransactionQueue(txns),
-        this.simulateTransactionQueue(valueTxns),
+        this.simulateTransactionQueue(batchableTxns),
+        this.simulateTransactionQueue(unbatchedTxns),
       ]);
-      const [_txns, _valueTxns] = individualTxnSimResults.map((result): AugmentedTransaction[] => {
+      const [_txns, _unbatchedTxns] = individualTxnSimResults.map((result): AugmentedTransaction[] => {
         return isPromiseFulfilled(result) ? result.value : [];
       });
       // Fill in the set of txns to submit to the network. Anything that failed simulation is dropped.
-      txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
+      txnRequestsToSubmit.push(
+        ..._unbatchedTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId]))
+      );
     }
 
     if (simulate) {

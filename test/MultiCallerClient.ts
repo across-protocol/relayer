@@ -270,6 +270,43 @@ describe("MultiCallerClient", async function () {
     }
   });
 
+  it("Does not multicall unbatched transactions", async function () {
+    const nTxns = 2;
+
+    // For each chain, send two batched ones for every unbatched one
+    for (const unbatched of [true, false, false]) {
+      for (let txn = 1; txn <= nTxns; ++txn) {
+        chainIds.forEach((_chainId) => {
+          const chainId = Number(_chainId);
+          const txnRequest: AugmentedTransaction = {
+            chainId,
+            contract: {
+              address,
+              interface: { encodeFunctionData },
+              multicall: 1,
+            } as unknown as Contract,
+            method: "test",
+            args: [{ result: txnClientPassResult }],
+            value: toBN(0),
+            unbatched,
+            message: `Test unbatched=${unbatched} transaction (${txn}/${nTxns}) on chain ${chainId}`,
+            mrkdwn: `Sample markdown string for chain ${chainId} unbatched=${unbatched} transaction`,
+          };
+
+          multiCaller.enqueueTransaction(txnRequest);
+        });
+      }
+    }
+
+    expect(multiCaller.transactionCount()).to.equal(nTxns * 3 * chainIds.length);
+
+    // Each chain sends nTxns * 3 total transactions. Unbatched ones should be sent individually, while the others
+    // should be batched. Since there is only one unabathced txn per chain, the total number of transactions
+    // per chain to be sent should be nTxns + 1.
+    const results: string[] = await multiCaller.executeTransactionQueue();
+    expect(results.length).to.equal((nTxns + 1) * chainIds.length);
+  });
+
   it("Correctly filters loggable vs. ignorable simulation failures", async function () {
     const txn = {
       chainId: chainIds[0],

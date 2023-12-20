@@ -23,8 +23,10 @@ export interface AugmentedTransaction {
   message?: string;
   mrkdwn?: string;
   value?: BigNumber;
+  unbatched?: boolean; // If true, the transaction will not be batched in simulation or in production.
   unpermissioned?: boolean; // If false, the transaction must be sent from the enqueuer of the method.
-  // If true, then can be sent from the MakerDAO multisender contract.
+  // If true, then can be sent from the MakerDAO multisender contract because anyone can call this
+  // function.
   canFailInSimulation?: boolean;
 }
 
