@@ -1560,7 +1560,9 @@ export class Dataworker {
           ],
           message: "Executed SlowRelayLeaf 🌿!",
           mrkdwn,
-          unpermissioned: true,
+          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+          // SpokePool.multicall() is fine.
+          unpermissioned: Number(chainId) === 1,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: relayData.destinationChainId === this.clients.hubPoolClient.chainId,
@@ -2123,7 +2125,9 @@ export class Dataworker {
           args: [rootBundleId, leaf, relayerRefundTree.getHexProof(leaf)],
           message: "Executed RelayerRefundLeaf 🌿!",
           mrkdwn,
-          unpermissioned: true,
+          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+          // SpokePool.multicall() is fine.
+          unpermissioned: Number(chainId) === 1,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
