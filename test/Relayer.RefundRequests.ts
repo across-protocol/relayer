@@ -68,7 +68,7 @@ async function waitOnBlock(spokePoolClient: SpokePoolClient): Promise<void> {
 
   let loop = 0;
   let latest = await provider.getBlockNumber();
-  while (latest <= spokePoolClient.latestBlockNumber) {
+  while (latest <= spokePoolClient.latestBlockSearched) {
     if (loop++ % 5 === 0) {
       await hre.network.provider.send("evm_mine");
     }

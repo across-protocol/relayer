@@ -528,7 +528,7 @@ export class Monitor {
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
-    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockNumber);
+    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
@@ -635,7 +635,7 @@ export class Monitor {
         const l2ToL1Tokens = Object.fromEntries(
           Object.keys(transfersPerToken).map((l2Token) => [
             l2Token,
-            hubPoolClient.getL1TokenForL2TokenAtBlock(l2Token, chainId, hubPoolClient.latestBlockNumber),
+            hubPoolClient.getL1TokenForL2TokenAtBlock(l2Token, chainId, hubPoolClient.latestBlockSearched),
           ])
         );
 
@@ -961,7 +961,7 @@ export class Monitor {
               // is now aware of those executions.
               await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
                 account,
-                { blockTag: this.clients.spokePoolClients[chainId].latestBlockNumber }
+                { blockTag: this.clients.spokePoolClients[chainId].latestBlockSearched }
               );
         if (!this.balanceCache[chainId]) {
           this.balanceCache[chainId] = {};

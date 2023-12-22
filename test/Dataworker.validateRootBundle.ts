@@ -189,7 +189,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await hubPool.proposeRootBundle(
       // Since the dataworker sets the end block to latest minus buffer, setting the bundle end blocks to HEAD
       // should fall within buffer.
-      Object.keys(spokePoolClients).map((chainId) => spokePoolClients[chainId].latestBlockNumber),
+      Object.keys(spokePoolClients).map((chainId) => spokePoolClients[chainId].latestBlockSearched),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
@@ -210,7 +210,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await hubPool.proposeRootBundle(
       Object.keys(spokePoolClients).map(
-        (chainId) => spokePoolClients[chainId].latestBlockNumber + BUNDLE_END_BLOCK_BUFFER + 1
+        (chainId) => spokePoolClients[chainId].latestBlockSearched + BUNDLE_END_BLOCK_BUFFER + 1
       ),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
