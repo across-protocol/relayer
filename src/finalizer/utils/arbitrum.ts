@@ -50,7 +50,7 @@ async function multicallArbitrumFinalizations(
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
       CHAIN_ID,
       message.info.l2TokenAddress,
-      hubPoolClient.latestBlockNumber
+      hubPoolClient.latestBlockSearched
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(message.info.amountToReturn.toString(), l1TokenInfo.decimals);

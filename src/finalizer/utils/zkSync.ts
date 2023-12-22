@@ -50,7 +50,7 @@ export async function zkSyncFinalizer(
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
       l2ChainId,
       l2TokenAddress,
-      hubPoolClient.latestBlockNumber
+      hubPoolClient.latestBlockSearched
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);

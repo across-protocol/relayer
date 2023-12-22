@@ -97,11 +97,11 @@ export function compareResultsAndFilterIgnoredKeys(ignoredKeys: string[], _objA:
   return lodash.isEqual(filteredA, filteredB);
 }
 
-export function compareArrayResultsWithIgnoredKeys(ignoredKeys: string[], _objA: any[], _objB: any[]): boolean {
+export function compareArrayResultsWithIgnoredKeys(ignoredKeys: string[], objA: any[], objB: any[]): boolean {
   // Remove ignored keys from each element of copied arrays.
-  const filteredA = _objA.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
-  const filteredB = _objB.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
+  const filteredA = objA?.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
+  const filteredB = objB?.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
 
   // Compare objects without the ignored keys.
-  return lodash.isEqual(filteredA, filteredB);
+  return isDefined(filteredA) && isDefined(filteredB) && lodash.isEqual(filteredA, filteredB);
 }
