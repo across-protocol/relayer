@@ -237,6 +237,10 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
   const latestBlockNumber = await spokePool.provider.getBlockNumber();
   console.log(`Searching for depositId ${depositId} between ${deploymentBlockNumber} and ${latestBlockNumber}.`);
   const filter = spokePool.filters.FundsDeposited(null, null, null, null, depositId);
+
+  // @note: Querying over such a large block range typically only works on top-tier providers.
+  // @todo: Narrow the block range for the depositId, subject to this PR:
+  //        https://github.com/across-protocol/sdk-v2/pull/476
   return await spokePool.queryFilter(filter, deploymentBlockNumber, latestBlockNumber);
 }
 
