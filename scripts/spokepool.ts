@@ -128,13 +128,14 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const message = (args.message as string) ?? sdkConsts.EMPTY_MESSAGE;
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
-    usage(); // no return
+    console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
+    return false;
   }
   const network = getNetworkName(fromChainId);
 
   if (!isAddress(recipient)) {
-    console.log(`Invalid recipient address (${recipient})`);
-    usage(); // no return
+    console.log(`Invalid recipient address (${recipient}).`);
+    return false;
   }
 
   const token = utils.resolveToken(args.token as string, fromChainId);
@@ -267,7 +268,8 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
   const chainId = Number(args.chainId);
 
   if (!utils.validateChainIds([chainId])) {
-    usage(); // no return
+    console.log(`Invalid chain ID (${chainId}).`);
+    return false;
   }
 
   const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
@@ -312,9 +314,7 @@ function usage(badInput?: string): boolean {
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 
-  // eslint-disable-next-line no-process-exit
-  process.exit(badInput === undefined ? 0 : 9);
-  // not reached
+  return !isDefined(badInput);
 }
 
 async function run(argv: string[]): Promise<boolean> {
@@ -343,7 +343,7 @@ async function run(argv: string[]): Promise<boolean> {
     const keyType = ["deposit", "fill"].includes(argv[0]) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
-    usage(args.wallet); // no return
+    return usage(args.wallet);
   }
 
   switch (argv[0]) {
@@ -353,24 +353,17 @@ async function run(argv: string[]): Promise<boolean> {
       return await dumpConfig(args, signer);
     case "fetch":
       return await fetchTxn(args, signer);
-    case "fill":
-      // @todo Not supported yet...
-      usage(); // no return
-      break; // ...keep the linter less dissatisfied!
+    case "fill": // @todo Not supported yet...
     default:
-      usage(); // no return
+      return usage();
   }
 }
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async () => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(0);
-    })
+    .then(async (result) => (process.exitCode = result ? 0 : 9))
     .catch(async (error) => {
       console.error("Process exited with", error);
-      // eslint-disable-next-line no-process-exit
-      process.exit(1);
+      process.exitCode = 9;
     });
 }
