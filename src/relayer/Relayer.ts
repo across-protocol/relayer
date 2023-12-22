@@ -53,7 +53,16 @@ export class Relayer {
 
     const maxVersion = configStoreClient.configStoreVersion;
     return unfilledDeposits.filter(({ deposit, version, invalidFills, unfilledAmount }) => {
-      const { quoteTimestamp, depositId, depositor, recipient, originChainId, destinationChainId, originToken, amount } = deposit;
+      const {
+        quoteTimestamp,
+        depositId,
+        depositor,
+        recipient,
+        originChainId,
+        destinationChainId,
+        originToken,
+        amount,
+      } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
       // If we don't have the latest code to support this deposit, skip it.
@@ -71,7 +80,7 @@ export class Relayer {
       if (
         ignoredAddresses?.includes(ethersUtils.getAddress(depositor)) ||
         ignoredAddresses?.includes(ethersUtils.getAddress(recipient))
-      ){
+      ) {
         this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
           message: "Ignoring deposit",
