@@ -243,16 +243,17 @@ async function run(argv: string[]): Promise<number> {
 
   config();
 
+  const cmd = argv[0];
   let signer: Signer;
   try {
-    const keyType = ["dispute"].includes(argv[0]) ? args.wallet : "void";
+    const keyType = ["dispute"].includes(cmd) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
     return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
   let result: boolean;
-  switch (argv[0]) {
+  switch (cmd) {
     case "dispute":
       result = await dispute(args, signer);
       break;
@@ -260,7 +261,7 @@ async function run(argv: string[]): Promise<number> {
       result = await search(args, signer);
       break;
     default:
-      return usage() ? NODE_SUCCESS : NODE_INPUT_ERR;
+      return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
   return result ? NODE_SUCCESS : NODE_APP_ERR;
