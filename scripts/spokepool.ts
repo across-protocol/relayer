@@ -31,6 +31,7 @@ type relayerFeeQuery = {
 
 const { ACROSS_API_HOST = "across.to" } = process.env;
 
+const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
@@ -320,7 +321,7 @@ function usage(badInput?: string): boolean {
   return !isDefined(badInput);
 }
 
-async function run(argv: string[]): Promise<boolean> {
+async function run(argv: string[]): Promise<number> {
   const configOpts = ["chainId"];
   const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct", "message"];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
@@ -347,27 +348,33 @@ async function run(argv: string[]): Promise<boolean> {
     const keyType = ["deposit", "fill"].includes(cmd) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
-    return usage(args.wallet);
+    return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
+  let result: boolean;
   switch (cmd) {
     case "deposit":
-      return await deposit(args, signer);
+      result = await deposit(args, signer);
+      break;
     case "dump":
-      return await dumpConfig(args, signer);
+      result = await dumpConfig(args, signer);
+      break;
     case "fetch":
-      return await fetchTxn(args, signer);
+      result = await fetchTxn(args, signer);
+      break;
     case "fill": // @todo Not supported yet...
     default:
-      return usage(cmd);
+      return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
+
+  return result ? NODE_SUCCESS : NODE_APP_ERR;
 }
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async (result) => (process.exitCode = result ? 0 : 9))
+    .then(async (result) => (process.exitCode = result))
     .catch(async (error) => {
       console.error("Process exited with", error);
-      process.exitCode = 9;
+      process.exitCode = NODE_APP_ERR;
     });
 }

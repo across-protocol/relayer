@@ -10,10 +10,7 @@ const { PROTOCOL_DEFAULT_CHAIN_ID_INDICES } = sdkConsts;
 const { MaxUint256, One: bnOne } = ethers.constants;
 const { formatEther, formatUnits } = ethers.utils;
 
-// https://nodejs.org/api/process.html#exit-codes
-const NODE_SUCCESS = 0;
-const NODE_INPUT_ERR = 9;
-const NODE_APP_ERR = 127; // user-defined
+const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 
 function bnMax(a: BigNumber, b: BigNumber): BigNumber {
   const result = a.sub(b);
@@ -271,9 +268,7 @@ async function run(argv: string[]): Promise<number> {
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async (result) => {
-      process.exitCode = result;
-    })
+    .then(async (result) => (process.exitCode = result))
     .catch(async (error) => {
       console.error("Process exited with", error);
       process.exitCode = NODE_APP_ERR;
