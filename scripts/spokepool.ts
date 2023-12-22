@@ -302,7 +302,7 @@ function usage(badInput?: string): boolean {
     " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
-  const fillArgs = "--from <originChainId> --hash <depositHash>";
+  // const fillArgs = "--from <originChainId> --hash <depositHash>"; @todo: future
 
   const pad = "deposit".length;
   usageStr += `
@@ -310,7 +310,6 @@ function usage(badInput?: string): boolean {
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fill".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 
@@ -338,15 +337,16 @@ async function run(argv: string[]): Promise<boolean> {
   const args = minimist(argv.slice(1), opts);
 
   config();
+  const cmd = argv[0];
   let signer: Signer;
   try {
-    const keyType = ["deposit", "fill"].includes(argv[0]) ? args.wallet : "void";
+    const keyType = ["deposit", "fill"].includes(cmd) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
     return usage(args.wallet);
   }
 
-  switch (argv[0]) {
+  switch (cmd) {
     case "deposit":
       return await deposit(args, signer);
     case "dump":
@@ -355,7 +355,7 @@ async function run(argv: string[]): Promise<boolean> {
       return await fetchTxn(args, signer);
     case "fill": // @todo Not supported yet...
     default:
-      return usage();
+      return usage(cmd);
   }
 }
 
