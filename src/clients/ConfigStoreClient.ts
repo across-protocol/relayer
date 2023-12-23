@@ -67,10 +67,10 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     if (isDefined(this.injectedChain)) {
       const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = this.injectedChain;
       // Sanity check to ensure that this event doesn't happen in the future
-      if (injectedBlockNumber > this.latestBlockNumber) {
+      if (injectedBlockNumber > this.latestBlockSearched) {
         this.logger.debug({
           at: "ConfigStore[Relayer]#update",
-          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestBlockNumber}`,
+          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestBlockSearched}`,
         });
         return;
       }

@@ -95,7 +95,7 @@ export function updateRunningBalanceForEarlyDeposit(
     // TODO: this must be handled s.t. it doesn't depend on when this is run.
     // For now, tokens do not change their mappings often, so this will work, but
     // to keep the system resilient, this must be updated.
-    hubPoolClient.latestBlockNumber
+    hubPoolClient.latestBlockSearched
   );
 
   updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, updateAmount);
@@ -234,7 +234,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       .map(async (fill: interfaces.FillWithBlock) => {
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
-            hubPoolClient.latestBlockNumber,
+            hubPoolClient.latestBlockSearched,
             fill,
             allValidFills,
             hubPoolClient,
@@ -257,7 +257,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
         // current fill, then the first fill is in the current bundle and we can exit early.
         const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-          hubPoolClient.latestBlockNumber,
+          hubPoolClient.latestBlockSearched,
           fill.blockNumber,
           fill.destinationChainId
         );

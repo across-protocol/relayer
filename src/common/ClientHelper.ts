@@ -177,10 +177,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
 
   // Explicitly set toBlocks for all chains so we can re-use them in other clients to make sure they all query
   // state to the same "latest" block per chain.
-  if (hubPoolClient.eventSearchConfig.toBlock === undefined) {
-    throw new Error("HubPoolClient eventSearchConfig.toBlock is undefined");
-  }
-  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.eventSearchConfig.toBlock);
+  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.latestBlockSearched);
   const latestBlocksForChain: Record<number, number> = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {

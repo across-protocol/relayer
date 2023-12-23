@@ -181,7 +181,7 @@ async function multicallPolygonFinalizations(
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
       CHAIN_ID,
       message.l2TokenAddress,
-      hubPoolClient.latestBlockNumber
+      hubPoolClient.latestBlockSearched
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(message.amountToReturn.toString(), l1TokenInfo.decimals);
@@ -208,7 +208,7 @@ async function retrieveTokenFromMainnetTokenBridger(
   mainnetSigner: Signer,
   hubPoolClient: HubPoolClient
 ): Promise<Multicall2Call> {
-  const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(CHAIN_ID, l2Token, hubPoolClient.latestBlockNumber);
+  const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(CHAIN_ID, l2Token, hubPoolClient.latestBlockSearched);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
   return {
