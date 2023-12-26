@@ -47,7 +47,7 @@ yarn build
 
 # Community
 
-General discussion happens most frequently on the [Across discord](https://discord.com/invite/across).
+General discussion happens most frequently on the [Across discord](https://discord.across.to).
 
 # License
 
