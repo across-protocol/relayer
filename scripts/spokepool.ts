@@ -1,13 +1,24 @@
 import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
-import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
-import { LogDescription } from "@ethersproject/abi";
-import { Contract, ethers, Wallet } from "ethers";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
-import { BigNumber, formatFeePct, getNetworkName, getSigner, isDefined, resolveTokenSymbols, toBN } from "../src/utils";
+import { Contract, ethers, Signer } from "ethers";
+import { LogDescription } from "@ethersproject/abi";
+import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
+import {
+  BigNumber,
+  formatFeePct,
+  getDeploymentBlockNumber,
+  getNetworkName,
+  getSigner,
+  isDefined,
+  resolveTokenSymbols,
+  toBN,
+} from "../src/utils";
 import * as utils from "./utils";
+
+type Log = ethers.providers.Log;
 
 type relayerFeeQuery = {
   originChainId: number;
@@ -110,7 +121,7 @@ async function getRelayerQuote(
   return relayerFeePct;
 }
 
-async function deposit(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
+async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
   const recipient = (args.recipient as string) ?? depositor;
@@ -147,13 +158,15 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
   const relayerFeePct = isDefined(args.relayerFeePct)
     ? toBN(args.relayerFeePct)
     : await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
+  const quoteTimestamp = await spokePool.getCurrentTime();
 
-  const deposit = await spokePool.depositNow(
+  const deposit = await spokePool.deposit(
     recipient,
     token.address,
     amount,
     toChainId,
     relayerFeePct,
+    quoteTimestamp,
     message,
     maxCount
   );
@@ -169,7 +182,7 @@ async function deposit(args: Record<string, number | string>, signer: Wallet): P
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function dumpConfig(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
+async function dumpConfig(args: Record<string, number | string>, _signer: Signer): Promise<boolean> {
   const chainId = Number(args.chainId);
   const _spokePool = await utils.getSpokePoolContract(chainId);
 
@@ -213,23 +226,30 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Wallet
   return true;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function fetchTxn(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
-  const { txnHash } = args;
-  const chainId = Number(args.chainId);
-
-  if (!utils.validateChainIds([chainId])) {
-    usage(); // no return
+async function _fetchDeposit(spokePool: Contract, _depositId: number | string): Promise<Log[]> {
+  const depositId = parseInt(_depositId.toString());
+  if (isNaN(depositId)) {
+    throw new Error("No depositId specified");
   }
 
+  const { chainId } = await spokePool.provider.getNetwork();
+  const deploymentBlockNumber = getDeploymentBlockNumber("SpokePool", chainId);
+  const latestBlockNumber = await spokePool.provider.getBlockNumber();
+  console.log(`Searching for depositId ${depositId} between ${deploymentBlockNumber} and ${latestBlockNumber}.`);
+  const filter = spokePool.filters.FundsDeposited(null, null, null, null, depositId);
+
+  // @note: Querying over such a large block range typically only works on top-tier providers.
+  // @todo: Narrow the block range for the depositId, subject to this PR:
+  //        https://github.com/across-protocol/sdk-v2/pull/476
+  return await spokePool.queryFilter(filter, deploymentBlockNumber, latestBlockNumber);
+}
+
+async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposits: Log[]; fills: Log[] }> {
   if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
   }
 
-  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
-  const spokePool = await utils.getSpokePoolContract(chainId);
-
-  const txn = await provider.getTransactionReceipt(txnHash);
+  const txn = await spokePool.provider.getTransactionReceipt(txnHash);
   const fundsDeposited = spokePool.interface.getEventTopic("FundsDeposited");
   const filledRelay = spokePool.interface.getEventTopic("FilledRelay");
   const logs = txn.logs.filter(({ address }) => address === spokePool.address);
@@ -241,6 +261,29 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Wallet):
         return "fills";
     }
   });
+
+  return { deposits, fills };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function fetchTxn(args: Record<string, number | string>, _signer: Signer): Promise<boolean> {
+  const { txnHash } = args;
+  const chainId = Number(args.chainId);
+
+  if (!utils.validateChainIds([chainId])) {
+    usage(); // no return
+  }
+
+  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
+  const spokePool = (await utils.getSpokePoolContract(chainId)).connect(provider);
+
+  let deposits: Log[] = [];
+  let fills: Log[] = [];
+  if (args.depositId) {
+    deposits = await _fetchDeposit(spokePool, args.depositId);
+  } else if (txnHash) {
+    ({ deposits, fills } = await _fetchTxn(spokePool, txnHash as string));
+  }
 
   deposits.forEach((deposit) => {
     printDeposit(spokePool.interface.parseLog(deposit));
@@ -260,7 +303,7 @@ function usage(badInput?: string): boolean {
     "--from <originChainId> --to <destinationChainId>" +
     " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
   const dumpConfigArgs = "--chainId";
-  const fetchArgs = "--chainId <chainId> --txnHash <txnHash>";
+  const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
   const fillArgs = "--from <originChainId> --hash <depositHash>";
 
   const pad = "deposit".length;
@@ -281,10 +324,11 @@ function usage(badInput?: string): boolean {
 async function run(argv: string[]): Promise<boolean> {
   const configOpts = ["chainId"];
   const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct", "message"];
-  const fetchOpts = ["chainId", "transactionHash"];
+  const fetchOpts = ["chainId", "transactionHash", "depositId"];
   const fillOpts = [];
+  const fetchDepositOpts = ["chainId", "depositId"];
   const opts = {
-    string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts],
+    string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
     boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "mnemonic",
@@ -298,10 +342,10 @@ async function run(argv: string[]): Promise<boolean> {
   const args = minimist(argv.slice(1), opts);
 
   config();
-
-  let signer: Wallet;
+  let signer: Signer;
   try {
-    signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
+    const keyType = ["deposit", "fill"].includes(argv[0]) ? args.wallet : "void";
+    signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
     usage(args.wallet); // no return
   }

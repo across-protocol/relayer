@@ -16,6 +16,7 @@ import {
 } from "../interfaces";
 import {
   AnyObject,
+  bnZero,
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
@@ -25,7 +26,6 @@ import {
   groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
-  toBN,
   winston,
 } from "../utils";
 import { PoolRebalanceRoot } from "./Dataworker";
@@ -88,8 +88,7 @@ export function blockRangesAreInvalidForSpokeClients(
       return true;
     }
 
-    const clientLastBlockQueried =
-      spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
+    const clientLastBlockQueried = spokePoolClients[chainId].latestBlockSearched;
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
@@ -217,7 +216,7 @@ export function _buildRelayerRefundRoot(
       // If UBA model, set amount to return to 0 for now until we match this leaf against a pool rebalance leaf. In
       // the UBA model, the amount to return is simpler to compute: simply set it equal to the negative
       // net send amount value if the net send amount is negative.
-      let amountToReturn = toBN(0);
+      let amountToReturn = bnZero;
       if (!isUBA) {
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenCounterpartAtBlock(
           repaymentChainId,
@@ -241,7 +240,7 @@ export function _buildRelayerRefundRoot(
         relayerRefundLeaves.push({
           groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
           // L2 token address
-          amountToReturn: i === 0 ? amountToReturn : toBN(0),
+          amountToReturn: i === 0 ? amountToReturn : bnZero,
           chainId: Number(repaymentChainId),
           refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
           leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
@@ -256,7 +255,7 @@ export function _buildRelayerRefundRoot(
   // since we need to return tokens from SpokePool to HubPool.
   poolRebalanceLeaves.forEach((leaf) => {
     leaf.netSendAmounts.forEach((netSendAmount, index) => {
-      if (netSendAmount.gte(toBN(0))) {
+      if (netSendAmount.gte(bnZero)) {
         return;
       }
 
@@ -371,7 +370,7 @@ export async function _buildPoolRebalanceRoot(
   // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
   // its important that `deposits` are all in this current block range.
   deposits.forEach((deposit: DepositWithBlock) => {
-    updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.amount.mul(toBN(-1)));
+    updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.amount.mul(-1));
   });
 
   earlyDeposits.forEach((earlyDeposit) => {
@@ -383,7 +382,7 @@ export async function _buildPoolRebalanceRoot(
       // Because cloneDeep drops the non-array elements of args, we have to use the index rather than the name.
       // As a fix, earlyDeposits should be treated similarly to other events and transformed at ingestion time
       // into a type that is more digestable rather than a raw event.
-      earlyDeposit.args[0].mul(toBN(-1))
+      earlyDeposit.args[0].mul(-1)
     );
   });
 

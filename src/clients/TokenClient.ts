@@ -2,6 +2,8 @@ import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 import {
   BigNumber,
+  bnZero,
+  bnOne,
   Contract,
   ERC20,
   MAX_SAFE_ALLOWANCE,
@@ -37,16 +39,9 @@ export class TokenClient {
 
   getBalance(chainId: number, token: string): BigNumber {
     if (!this._hasTokenPairData(chainId, token)) {
-      return toBN(0);
+      return bnZero;
     }
     return this.tokenData[chainId][token].balance;
-  }
-
-  getAllowanceOnChain(chainId: number, token: string): BigNumber {
-    if (!this._hasTokenPairData(chainId, token)) {
-      return toBN(0);
-    }
-    return this.tokenData[chainId][token].allowance;
   }
 
   decrementLocalBalance(chainId: number, token: string, amount: BigNumber): void {
@@ -54,7 +49,7 @@ export class TokenClient {
   }
 
   getShortfallTotalRequirement(chainId: number, token: string): BigNumber {
-    return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement || toBN(0);
+    return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement ?? bnZero;
   }
 
   getTokensNeededToCoverShortfall(chainId: number, token: string): BigNumber {
@@ -70,7 +65,7 @@ export class TokenClient {
   }
 
   hasBalanceForZeroFill(deposit: Deposit): boolean {
-    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(toBN(1));
+    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(bnOne);
   }
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it it will capture the
@@ -219,11 +214,14 @@ export class TokenClient {
       .getAllOriginTokens()
       .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
 
+    const blockTag = spokePoolClient.eventSearchConfig.toBlock ?? "latest";
     const tokenData = Object.fromEntries(
       await Promise.all(
         tokens.map(async (token) => {
-          const balance: BigNumber = await token.balanceOf(this.relayerAddress);
-          const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
+          const balance: BigNumber = await token.balanceOf(this.relayerAddress, { blockTag });
+          const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
+            blockTag,
+          });
 
           return [token.address, { balance, allowance }];
         })

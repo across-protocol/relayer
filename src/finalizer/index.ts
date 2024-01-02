@@ -3,7 +3,6 @@ import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber, constants } from "ethers";
 import { groupBy } from "lodash";
 import {
-  Wallet,
   config,
   startupLogLevel,
   processEndPollingLoop,
@@ -13,12 +12,13 @@ import {
   getCurrentTime,
   disconnectRedisClients,
   getMultisender,
+  getRedisCache,
+  Signer,
   winston,
-  TransactionResponse,
 } from "../utils";
 import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { AugmentedTransaction, HubPoolClient, TransactionClient } from "../clients";
+import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -49,7 +49,7 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
 
 export async function finalize(
   logger: winston.Logger,
-  hubSigner: Wallet,
+  hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
@@ -94,7 +94,10 @@ export async function finalize(
     const finalizationWindow = finalizationWindows[chainId];
     assert(finalizationWindow !== undefined, `No finalization window defined for chain ${chainId}`);
 
-    const latestBlockToFinalize = await getBlockForTimestamp(chainId, getCurrentTime() - finalizationWindow);
+    const lookback = getCurrentTime() - finalizationWindow;
+    const blockFinder = undefined;
+    const redis = await getRedisCache(logger);
+    const latestBlockToFinalize = await getBlockForTimestamp(chainId, lookback, blockFinder, redis);
 
     const network = getNetworkName(chainId);
     logger.debug({ at: "finalize", message: `Spawning ${network} finalizer.`, latestBlockToFinalize });
@@ -160,7 +163,10 @@ export async function finalize(
   });
 
   if (finalizations.length > 0) {
-    let txn: TransactionResponse;
+    // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
+    // safety features
+    const multicallerClient = new MultiCallerClient(logger);
+    let txnHash: string;
     try {
       const finalizerTxns = finalizations.map(({ txn }) => txn);
       const txnToSubmit: AugmentedTransaction = {
@@ -170,10 +176,12 @@ export async function finalize(
         args: [finalizerTxns],
         gasLimit: gasEstimation,
         gasLimitMultiplier: 2,
-        message: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
-        mrkdwn: `Batch finalized ${finalizerTxns.length} withdrawals and/or proofs`,
+        unpermissioned: true,
+        message: `Batch finalized ${finalizerTxns.length} txns`,
+        mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
       };
-      [txn] = await txnClient.submit(hubChainId, [txnToSubmit]);
+      multicallerClient.enqueueTransaction(txnToSubmit);
+      [txnHash] = await multicallerClient.executeTransactionQueue();
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -199,7 +207,7 @@ export async function finalize(
       logger.info({
         at: "Finalizer",
         message: `Submitted proof on chain ${hubChain} to initiate ${spokeChain} withdrawal of ${amount} ${symbol} 🔜`,
-        transactionHash: blockExplorerLink(txn.hash, hubChainId),
+        transactionHash: blockExplorerLink(txnHash, hubChainId),
       });
     });
     withdrawals.forEach(({ withdrawal: { l2ChainId, amount, l1TokenSymbol: symbol } }) => {
@@ -207,7 +215,7 @@ export async function finalize(
       logger.info({
         at: "Finalizer",
         message: `Finalized ${spokeChain} withdrawal for ${amount} ${symbol} 🪃`,
-        transactionHash: blockExplorerLink(txn.hash, hubChainId),
+        transactionHash: blockExplorerLink(txnHash, hubChainId),
       });
     });
   }
@@ -216,7 +224,7 @@ export async function finalize(
 export async function constructFinalizerClients(
   _logger: winston.Logger,
   config: FinalizerConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<{
   commonClients: Clients;
   spokePoolClients: SpokePoolClientsByChain;
@@ -264,7 +272,7 @@ export class FinalizerConfig extends DataworkerConfig {
   }
 }
 
-export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);

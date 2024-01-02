@@ -1,14 +1,14 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
+import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const defaultFillCost = toBN(100_000); // gas
-const defaultGasPrice = sdkUtils.bnOne; // wei per gas
+const defaultGasPrice = bnOne; // wei per gas
 
 export class MockProfitClient extends ProfitClient {
   constructor(
@@ -39,7 +39,7 @@ export class MockProfitClient extends ProfitClient {
       const address = addresses[hubPoolClient.chainId];
       if (isDefined(address)) {
         this.mapToken(symbol, address);
-        this.setTokenPrice(symbol, sdkUtils.bnOne);
+        this.setTokenPrice(symbol, bnOne);
         if (this.hubPoolClient instanceof MockHubPoolClient) {
           this.hubPoolClient.addL1Token({ symbol, decimals, address });
         }
@@ -67,7 +67,7 @@ export class MockProfitClient extends ProfitClient {
   async initToken(erc20: Contract): Promise<void> {
     const symbol = await erc20.symbol();
     this.mapToken(symbol, erc20.address);
-    this.setTokenPrice(symbol, sdkUtils.bnOne);
+    this.setTokenPrice(symbol, bnOne);
   }
 
   mapToken(symbol: string, address: string): void {

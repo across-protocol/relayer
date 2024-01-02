@@ -1,7 +1,7 @@
 import minimist from "minimist";
 import { WETH9__factory as WETH9 } from "@across-protocol/contracts-v2";
 import { constants as sdkConsts } from "@across-protocol/sdk-v2";
-import { BigNumber, ethers, Wallet } from "ethers";
+import { BigNumber, ethers, Signer } from "ethers";
 import { config } from "dotenv";
 import { getNetworkName, getSigner } from "../src/utils";
 import * as utils from "./utils";
@@ -20,9 +20,10 @@ function bnMax(a: BigNumber, b: BigNumber): BigNumber {
   return result.isZero() || result.gt(0) ? a : b;
 }
 
-async function dispute(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
+async function dispute(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const ethBuffer = "0.1"; // Spare ether required to pay for gas.
 
+  const signerAddr = await signer.getAddress();
   const chainId = Number(args.chainId);
   const { force, txnHash } = args;
 
@@ -42,10 +43,10 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
   const fromBlock = Math.floor(latestBlock.number - (liveness - avgBlockTime));
   const bondToken = WETH9.connect(bondTokenAddress, hubPool.provider);
   const [bondBalance, decimals, symbol, allowance, proposals] = await Promise.all([
-    bondToken.balanceOf(signer.address),
+    bondToken.balanceOf(signerAddr),
     bondToken.decimals(),
     bondToken.symbol(),
-    bondToken.allowance(signer.address, hubPool.address),
+    bondToken.allowance(signerAddr, hubPool.address),
     hubPool.queryFilter(filter, fromBlock, latestBlock.number),
   ]);
 
@@ -151,7 +152,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function search(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
+async function search(args: Record<string, number | string>, _signer: Signer): Promise<boolean> {
   const eventName = args.event as string;
   const fromBlock = Number(args.fromBlock) || undefined;
   const toBlock = Number(args.toBlock) || undefined;
@@ -245,9 +246,10 @@ async function run(argv: string[]): Promise<number> {
 
   config();
 
-  let signer: Wallet;
+  let signer: Signer;
   try {
-    signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
+    const keyType = ["dispute"].includes(argv[0]) ? args.wallet : "void";
+    signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
     return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }

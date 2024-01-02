@@ -6,13 +6,14 @@ import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
 import { EthersError } from "../interfaces";
 import {
   BigNumber,
+  bnZero,
   Contract,
+  fixedPointAdjustment as fixedPoint,
   isDefined,
   TransactionResponse,
-  Wallet,
   ethers,
   getContractInfoFromAddress,
-  toBN,
+  Signer,
   toBNWei,
   winston,
 } from "../utils";
@@ -34,7 +35,7 @@ const txnRetryable = (error?: unknown): boolean => {
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
-export async function getMultisender(chainId: number, baseSigner: Wallet): Promise<Contract | undefined> {
+export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
   if (!multicall3Addresses[chainId] || !baseSigner) {
     return undefined;
   }
@@ -48,7 +49,7 @@ export async function runTransaction(
   contract: Contract,
   method: string,
   args: unknown,
-  value: BigNumber = toBN(0),
+  value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retriesRemaining = 2
@@ -196,5 +197,5 @@ export function getTarget(targetAddress: string):
 }
 
 function scaleByNumber(amount: ethers.BigNumber, scaling: number) {
-  return amount.mul(toBNWei(scaling)).div(toBNWei("1"));
+  return amount.mul(toBNWei(scaling)).div(fixedPoint);
 }

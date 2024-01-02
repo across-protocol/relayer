@@ -1,9 +1,10 @@
+import assert from "assert";
 import winston from "winston";
 import {
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
-  Wallet,
+  Signer,
   Contract,
   ethers,
   getBlockForTimestamp,
@@ -21,13 +22,13 @@ export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: ConfigStoreClient;
   multiCallerClient: MultiCallerClient;
-  hubSigner?: Wallet;
+  hubSigner?: Signer;
 }
 
 async function getSpokePoolSigners(
-  baseSigner: Wallet,
+  baseSigner: Signer,
   spokePoolChains: number[]
-): Promise<{ [chainId: number]: Wallet }> {
+): Promise<{ [chainId: number]: Signer }> {
   return Object.fromEntries(
     await Promise.all(
       spokePoolChains.map(async (chainId) => {
@@ -50,8 +51,9 @@ export async function constructSpokePoolClientsWithLookback(
   hubPoolClient: HubPoolClient,
   configStoreClient: ConfigStoreClient,
   config: CommonConfig,
-  baseSigner: Wallet,
-  initialLookBackOverride: number
+  baseSigner: Signer,
+  initialLookBackOverride: number,
+  enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
   // Construct spoke pool clients for all chains that were enabled at least once in the block range.
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
@@ -64,12 +66,16 @@ export async function constructSpokePoolClientsWithLookback(
   }
 
   const hubPoolChainId = hubPoolClient.chainId;
-  const currentTime = getCurrentTime();
+  const lookback = getCurrentTime() - initialLookBackOverride;
 
-  // Use the first block that we'll query on mainnet to figure out which chains were enabled between then
-  // and the the latest mainnet block. These chains were enabled via the ConfigStore.
-  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, currentTime - initialLookBackOverride);
-  const enabledChains = getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
+  // Use the first block that we'll query on mainnet to figure out which chains were enabled between then and the latest
+  // mainnet block. These chains were enabled via the ConfigStore. These lookbacks should typically be fairly short, so
+  // BlockFinder estimates are likely to be OK - avoid overriding them with hints.
+  const blockFinder = undefined;
+  const redis = await getRedisCache(logger);
+  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
+  enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
+  assert(enabledChains.length > 0, "No SpokePool chains configured");
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
   // chains that are not enabled.
@@ -79,7 +85,7 @@ export async function constructSpokePoolClientsWithLookback(
         if (chainId === 1) {
           return [chainId, fromBlock_1];
         } else {
-          return [chainId, await getBlockForTimestamp(chainId, currentTime - initialLookBackOverride)];
+          return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
         }
       })
     )
@@ -128,19 +134,17 @@ export async function constructSpokePoolClientsWithStartBlocks(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: CommonConfig,
-  baseSigner: Wallet,
+  baseSigner: Signer,
   startBlocks: { [chainId: number]: number },
   toBlockOverride: { [chainId: number]: number } = {},
   enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
-  if (!enabledChains) {
-    enabledChains = getEnabledChainsInBlockRange(
-      hubPoolClient.configStoreClient,
-      config.spokePoolChainsOverride,
-      startBlocks[hubPoolClient.chainId],
-      toBlockOverride[hubPoolClient.chainId]
-    );
-  }
+  enabledChains ??= getEnabledChainsInBlockRange(
+    hubPoolClient.configStoreClient,
+    config.spokePoolChainsOverride,
+    startBlocks[hubPoolClient.chainId],
+    toBlockOverride[hubPoolClient.chainId]
+  );
 
   logger.debug({
     at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
@@ -150,6 +154,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
     enabledChains,
   });
 
+  const blockFinder = undefined;
+  const redis = await getRedisCache(logger);
+
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
@@ -158,14 +165,37 @@ export async function constructSpokePoolClientsWithStartBlocks(
       // spoke pool.
       const latestSpokePool = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
       const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
-      const spokePoolRegistrationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
-      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock)).timestamp;
-      const registrationBlock = await getBlockForTimestamp(chainId, time);
+      const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
+      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
+
+      // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
+      const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
+      const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );
 
-  return getSpokePoolClientsForContract(logger, hubPoolClient, config, spokePools, startBlocks, toBlockOverride);
+  // Explicitly set toBlocks for all chains so we can re-use them in other clients to make sure they all query
+  // state to the same "latest" block per chain.
+  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.latestBlockSearched);
+  const latestBlocksForChain: Record<number, number> = Object.fromEntries(
+    await Promise.all(
+      enabledChains.map(async (chainId) => {
+        // Allow caller to hardcode the spoke pool client end blocks.
+        if (isDefined(toBlockOverride[chainId])) {
+          return [chainId, toBlockOverride[chainId]];
+        }
+        if (chainId === hubPoolClient.chainId) {
+          return [chainId, hubPoolBlock.number];
+        } else {
+          const toBlock = await getBlockForTimestamp(chainId, hubPoolBlock.timestamp, blockFinder, redis);
+          return [chainId, toBlock];
+        }
+      })
+    )
+  );
+
+  return getSpokePoolClientsForContract(logger, hubPoolClient, config, spokePools, startBlocks, latestBlocksForChain);
 }
 
 /**
@@ -181,8 +211,15 @@ export function getSpokePoolClientsForContract(
   config: CommonConfig,
   spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
-  toBlocks: { [chainId: number]: number } = {}
+  toBlocks: { [chainId: number]: number }
 ): SpokePoolClientsByChain {
+  logger.debug({
+    at: "ClientHelper#getSpokePoolClientsForContract",
+    message: "Constructing SpokePoolClients",
+    fromBlocks,
+    toBlocks,
+  });
+
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ chainId, contract, registrationBlock }) => {
     if (!isDefined(fromBlocks[chainId])) {
@@ -192,9 +229,15 @@ export function getSpokePoolClientsForContract(
         registrationBlock,
       });
     }
+    if (!isDefined(toBlocks[chainId])) {
+      logger.debug({
+        at: "ClientHelper#getSpokePoolClientsForContract",
+        message: `No toBlock set for spoke pool client ${chainId}, exiting since this can lead to state sync issues between clients querying "latest" state from this chain`,
+      });
+    }
     const spokePoolClientSearchSettings = {
       fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,
+      toBlock: toBlocks[chainId],
       maxBlockLookBack: config.maxBlockLookBack[chainId],
     };
     spokePoolClients[chainId] = new SpokePoolClient(
@@ -220,13 +263,15 @@ export async function updateSpokePoolClients(
 export async function constructClients(
   logger: winston.Logger,
   config: CommonConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<Clients> {
-  const hubSigner = baseSigner.connect(await getProvider(config.hubPoolChainId, logger));
+  const hubPoolProvider = await getProvider(config.hubPoolChainId, logger);
+  const hubSigner = baseSigner.connect(hubPoolProvider);
+  const latestMainnetBlock = await hubPoolProvider.getBlockNumber();
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: undefined,
+    toBlock: config.toBlockOverride[config.hubPoolChainId] ?? latestMainnetBlock,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
@@ -239,10 +284,8 @@ export async function constructClients(
   );
 
   const hubPoolClientSearchSettings = {
+    ...rateModelClientSearchSettings,
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: undefined, // Important that we set this to `undefined` to always look up latest HubPool events such as
-    // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
-    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
   // Create contract instances for each chain for each required contract.

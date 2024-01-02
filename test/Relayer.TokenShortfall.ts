@@ -17,6 +17,7 @@ import {
   repaymentChainId,
 } from "./constants";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
+import { MockCrossChainTransferClient } from "./mocks/MockCrossChainTransferClient";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
   Contract,
@@ -123,7 +124,7 @@ describe("Relayer: Token balance shortfall", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(),
+        inventoryClient: new MockInventoryClient(new MockCrossChainTransferClient()),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
         ubaClient: null,
       },
@@ -131,7 +132,6 @@ describe("Relayer: Token balance shortfall", async function () {
         relayerTokens: [],
         slowDepositors: [],
         relayerDestinationChains: [],
-        quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig
     );

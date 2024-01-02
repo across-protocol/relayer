@@ -11,6 +11,11 @@ import {
 import * as constants from "../common/Constants";
 import {
   assert,
+  bnZero,
+  bnOne,
+  bnUint32Max as uint32Max,
+  bnUint256Max as uint256Max,
+  fixedPointAdjustment as fixedPoint,
   BigNumber,
   formatFeePct,
   getCurrentTime,
@@ -26,6 +31,8 @@ import {
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from ".";
 
+type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
+
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
 const {
@@ -33,18 +40,9 @@ const {
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
 } = sdkConsts;
-const {
-  bnOne,
-  bnZero,
-  bnUint32Max,
-  bnUint256Max: uint256Max,
-  fixedPointAdjustment: fixedPoint,
-  getNativeTokenSymbol,
-  isMessageEmpty,
-  resolveDepositMessage,
-} = sdkUtils;
+const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
-type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
+const bn10 = toBN(10);
 
 // @note All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
@@ -140,7 +138,7 @@ export class ProfitClient {
 
     // Require 0% <= gasMultiplier <= 400%
     assert(
-      this.gasMultiplier.gte(toBNWei("0")) && this.gasMultiplier.lte(toBNWei(4)),
+      this.gasMultiplier.gte(bnZero) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
     this.priceClient = new PriceClient(logger, [
@@ -262,7 +260,7 @@ export class ProfitClient {
       tokenGasCost = tokenGasCost.mul(this.gasMultiplier).div(fixedPoint);
     }
 
-    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(toBN(10).pow(gasToken.decimals));
+    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
 
     return {
       nativeGasCost,
@@ -300,7 +298,7 @@ export class ProfitClient {
 
   appliedRelayerFeePct(deposit: Deposit): BigNumber {
     // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
-    return max(toBN(deposit.relayerFeePct), toBN(deposit.newRelayerFeePct ?? 0));
+    return max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? bnZero);
   }
 
   async calculateFillProfitability(
@@ -317,10 +315,9 @@ export class ProfitClient {
     }
 
     // Normalise to 18 decimals.
-    const scaledFillAmount =
-      l1Token.decimals === 18 ? fillAmount : toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
+    const scaledFillAmount = l1Token.decimals === 18 ? fillAmount : fillAmount.mul(toBNWei(1, 18 - l1Token.decimals));
     const scaledRefundFeeAmount =
-      l1Token.decimals === 18 ? refundFee : toBN(refundFee).mul(toBNWei(1, 18 - l1Token.decimals));
+      l1Token.decimals === 18 ? refundFee : refundFee.mul(toBNWei(1, 18 - l1Token.decimals));
 
     const grossRelayerFeePct = this.appliedRelayerFeePct(deposit);
 
@@ -375,7 +372,7 @@ export class ProfitClient {
       );
     }
     const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.symbol);
-    return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
+    return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
   }
 
   async getFillProfitability(
@@ -500,7 +497,7 @@ export class ProfitClient {
   private async updateGasCosts(): Promise<void> {
     const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
     const relayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? PROD_RELAYER : TEST_RELAYER;
-    const depositId = random(bnUint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
+    const depositId = random(uint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
     const fillAmount = bnOne;
     const quoteTimestamp = getCurrentTime();
 

@@ -5,6 +5,7 @@ import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../
 import {
   AnyObject,
   BigNumber,
+  bnZero,
   Contract,
   DefaultLogLevels,
   ERC20,
@@ -84,9 +85,8 @@ export abstract class BaseAdapter {
 
   // Note: this must be called after the SpokePoolClients are updated.
   getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
-    // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
-    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockNumber;
-    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
+    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
+    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockSearched;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
     }
@@ -94,17 +94,11 @@ export abstract class BaseAdapter {
     return {
       l1SearchConfig: {
         ...this.baseL1SearchConfig,
-        fromBlock: this.baseL1SearchConfig.toBlock
-          ? this.baseL1SearchConfig.toBlock + 1
-          : this.baseL1SearchConfig.fromBlock,
-        toBlock: l1LatestBlock,
+        toBlock: this.baseL1SearchConfig?.toBlock ?? l1LatestBlock,
       },
       l2SearchConfig: {
         ...this.baseL2SearchConfig,
-        fromBlock: this.baseL2SearchConfig.toBlock
-          ? this.baseL2SearchConfig.toBlock + 1
-          : this.baseL2SearchConfig.fromBlock,
-        toBlock: l2LatestBlock,
+        toBlock: this.baseL2SearchConfig?.toBlock ?? l2LatestBlock,
       },
     };
   }
@@ -204,7 +198,7 @@ export abstract class BaseAdapter {
           continue;
         }
 
-        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
+        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), bnZero);
         const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
         outstandingTransfers[monitoredAddress][l1Token] = {
           totalAmount,

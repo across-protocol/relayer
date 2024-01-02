@@ -1,4 +1,5 @@
 import {
+  bnZero,
   BigNumber,
   winston,
   toBN,
@@ -22,6 +23,16 @@ import { CONTRACT_ADDRESSES } from "../common";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
+export type Rebalance = {
+  chainId: number;
+  l1Token: string;
+  thresholdPct: BigNumber;
+  targetPct: BigNumber;
+  currentAllocPct: BigNumber;
+  balance: BigNumber;
+  cumulativeBalance: BigNumber;
+  amount: BigNumber;
+};
 export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
@@ -48,7 +59,7 @@ export class InventoryClient {
   getCumulativeBalance(l1Token: string): BigNumber {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChainForL1Token(chainId, l1Token))
-      .reduce((acc, curr) => acc.add(curr), toBN(0));
+      .reduce((acc, curr) => acc.add(curr), bnZero);
   }
 
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
@@ -57,14 +68,14 @@ export class InventoryClient {
     chainId = Number(chainId);
     if (
       chainId !== this.hubPoolClient.chainId &&
-      this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined
+      this.inventoryConfig.tokenConfig?.[l1Token]?.[String(chainId)] === undefined
     ) {
-      return toBN(0);
+      return bnZero;
     }
 
     // If the chain does not have this token (EG BOBA on Optimism) then 0.
     const balance =
-      this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || toBN(0);
+      this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || bnZero;
 
     // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
     return balance.add(
@@ -98,10 +109,10 @@ export class InventoryClient {
     // If there is nothing over all chains, return early.
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     if (cumulativeBalance.eq(0)) {
-      return toBN(0);
+      return bnZero;
     }
 
-    const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
+    const shortfall = this.getTokenShortFall(l1Token, chainId) || bnZero;
     const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -127,7 +138,7 @@ export class InventoryClient {
 
   getL1Tokens(): string[] {
     return (
-      Object.keys(this.inventoryConfig.tokenConfig) ||
+      Object.keys(this.inventoryConfig.tokenConfig ?? {}) ||
       this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
     );
   }
@@ -184,7 +195,7 @@ export class InventoryClient {
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
     if (
-      this.inventoryConfig.tokenConfig[l1Token] === undefined ||
+      this.inventoryConfig.tokenConfig?.[l1Token] === undefined ||
       this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined
     ) {
       return destinationChainId;
@@ -212,7 +223,7 @@ export class InventoryClient {
     );
     // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
     // equivalents of l1Token on all chains.
-    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), toBN(0));
+    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
 
     const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(amount);
@@ -243,23 +254,57 @@ export class InventoryClient {
     return refundChainId;
   }
 
+  getPossibleRebalances(): Rebalance[] {
+    const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
+    return this._getPossibleRebalances(tokenDistributionPerL1Token);
+  }
+
+  _getPossibleRebalances(tokenDistributionPerL1Token: TokenDistributionPerL1Token): Rebalance[] {
+    const rebalancesRequired: Rebalance[] = [];
+
+    // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
+    for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
+      const cumulativeBalance = this.getCumulativeBalance(l1Token);
+      if (cumulativeBalance.eq(0)) {
+        continue;
+      }
+
+      for (const chainId of this.getEnabledL2Chains()) {
+        // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
+        // as they're not present on all L2s.
+        if (this.inventoryConfig.tokenConfig?.[l1Token]?.[String(chainId)] === undefined) {
+          continue;
+        }
+
+        const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId);
+        const { thresholdPct, targetPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
+        if (currentAllocPct.lt(thresholdPct)) {
+          const deltaPct = targetPct.sub(currentAllocPct);
+          const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
+          const balance = this.tokenClient.getBalance(1, l1Token);
+          // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
+          rebalancesRequired.push({
+            chainId,
+            l1Token,
+            currentAllocPct,
+            thresholdPct,
+            targetPct,
+            balance,
+            cumulativeBalance,
+            amount,
+          });
+        }
+      }
+    }
+    return rebalancesRequired;
+  }
+
   // Trigger a rebalance if the current balance on any L2 chain, including shortfalls, is less than the threshold
   // allocation.
   async rebalanceInventoryIfNeeded(): Promise<void> {
     // Note: these types are just used inside this method, so they are declared in-line.
-    type Rebalance = {
-      chainId: number;
-      l1Token: string;
-      thresholdPct: BigNumber;
-      targetPct: BigNumber;
-      currentAllocPct: BigNumber;
-      balance: BigNumber;
-      cumulativeBalance: BigNumber;
-      amount: BigNumber;
-    };
     type ExecutedRebalance = Rebalance & { hash: string };
 
-    const rebalancesRequired: Rebalance[] = [];
     const possibleRebalances: Rebalance[] = [];
     const unexecutedRebalances: Rebalance[] = [];
     const executedTransactions: ExecutedRebalance[] = [];
@@ -270,41 +315,7 @@ export class InventoryClient {
       const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
       this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
-      // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
-      for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
-        const cumulativeBalance = this.getCumulativeBalance(l1Token);
-        if (cumulativeBalance.eq(0)) {
-          continue;
-        }
-
-        for (const chainId of this.getEnabledL2Chains()) {
-          // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
-          // as they're not present on all L2s.
-          if (this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
-            continue;
-          }
-
-          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId);
-          const { thresholdPct, targetPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
-          if (currentAllocPct.lt(thresholdPct)) {
-            const deltaPct = targetPct.sub(currentAllocPct);
-            const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
-            const balance = this.tokenClient.getBalance(1, l1Token);
-            // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
-            rebalancesRequired.push({
-              chainId,
-              l1Token,
-              currentAllocPct,
-              thresholdPct,
-              targetPct,
-              balance,
-              cumulativeBalance,
-              amount,
-            });
-          }
-        }
-      }
-
+      const rebalancesRequired = this._getPossibleRebalances(tokenDistributionPerL1Token);
       if (rebalancesRequired.length === 0) {
         this.log("No rebalances required");
         return;
@@ -317,7 +328,7 @@ export class InventoryClient {
         // If the amount required in the rebalance is less than the total amount of this token on L1 then we can execute
         // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
         // balance then this logic ensures that we only fill the first n number of chains where we can.
-        if (amount.lt(balance)) {
+        if (amount.lte(balance)) {
           // As a precautionary step before proceeding, check that the token balance for the token we're about to send
           // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
           // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
@@ -427,7 +438,7 @@ export class InventoryClient {
     } catch (error) {
       this.log(
         "Something errored during inventory rebalance",
-        { error, rebalancesRequired, possibleRebalances, unexecutedRebalances, executedTransactions }, // include all info to help debugging.
+        { error, possibleRebalances, unexecutedRebalances, executedTransactions }, // include all info to help debugging.
         "error"
       );
     }
@@ -457,8 +468,8 @@ export class InventoryClient {
         this.getEnabledChains()
           .map((chainId) => {
             const unwrapWethThreshold =
-              this.inventoryConfig.tokenConfig[l1Weth][chainId.toString()]?.unwrapWethThreshold;
-            const unwrapWethTarget = this.inventoryConfig.tokenConfig[l1Weth][chainId.toString()]?.unwrapWethTarget;
+              this.inventoryConfig.tokenConfig?.[l1Weth]?.[chainId.toString()]?.unwrapWethThreshold;
+            const unwrapWethTarget = this.inventoryConfig.tokenConfig?.[l1Weth]?.[chainId.toString()]?.unwrapWethTarget;
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
             if (chainId === 137 || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {

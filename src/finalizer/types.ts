@@ -1,4 +1,4 @@
-import { Wallet } from "ethers";
+import { Signer } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { Multicall2Call } from "../common";
 import { winston } from "../utils";
@@ -15,7 +15,7 @@ export type FinalizerPromise = { callData: Multicall2Call[]; withdrawals: Withdr
 export interface ChainFinalizer {
   (
     logger: winston.Logger,
-    signer: Wallet,
+    signer: Signer,
     hubPoolClient: HubPoolClient,
     spokePoolClient: SpokePoolClient,
     firstBlockToFinalize: number

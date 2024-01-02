@@ -1,4 +1,4 @@
-import { typechain, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { typechain } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
@@ -14,7 +14,9 @@ import {
 } from "../interfaces";
 import {
   AnyObject,
+  bnZero,
   BigNumber,
+  fixedPointAdjustment as fixedPoint,
   MerkleTree,
   assign,
   compareAddresses,
@@ -29,8 +31,6 @@ import {
   winston,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
-
-const { bnZero, fixedPointAdjustment: fixedPoint } = sdkUtils;
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
@@ -95,7 +95,7 @@ export function updateRunningBalanceForEarlyDeposit(
     // TODO: this must be handled s.t. it doesn't depend on when this is run.
     // For now, tokens do not change their mappings often, so this will work, but
     // to keep the system resilient, this must be updated.
-    hubPoolClient.latestBlockNumber
+    hubPoolClient.latestBlockSearched
   );
 
   updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, updateAmount);
@@ -113,7 +113,7 @@ export function addLastRunningBalance(
         Number(repaymentChainId),
         l1TokenAddress
       );
-      if (!runningBalance.eq(toBN(0))) {
+      if (!runningBalance.eq(bnZero)) {
         updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, runningBalance);
       }
     });
@@ -146,7 +146,7 @@ export function initializeRunningBalancesFromRelayerRepayments(
         if (totalRefundAmount) {
           assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
         } else {
-          assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
+          assign(runningBalances, [repaymentChainId, l1TokenCounterpart], bnZero);
         }
       }
     );
@@ -234,7 +234,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       .map(async (fill: interfaces.FillWithBlock) => {
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
-            hubPoolClient.latestBlockNumber,
+            hubPoolClient.latestBlockSearched,
             fill,
             allValidFills,
             hubPoolClient,
@@ -257,7 +257,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
         // current fill, then the first fill is in the current bundle and we can exit early.
         const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-          hubPoolClient.latestBlockNumber,
+          hubPoolClient.latestBlockSearched,
           fill.blockNumber,
           fill.destinationChainId
         );
@@ -279,7 +279,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
             : preFeeAmountSentForSlowFill,
           fill.realizedLpFeePct
         );
-        if (excess.eq(toBN(0))) {
+        if (excess.eq(bnZero)) {
           return;
         }
 
@@ -300,7 +300,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
           finalFill: fill,
         });
 
-        updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+        updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(-1));
       })
   );
 
@@ -356,7 +356,7 @@ export function constructPoolRebalanceLeaves(
           if (realizedLpFees[chainId]?.[l1Token]) {
             return realizedLpFees[chainId][l1Token];
           } else {
-            return toBN(0);
+            return bnZero;
           }
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
@@ -365,7 +365,7 @@ export function constructPoolRebalanceLeaves(
           } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
             return getNetSendAmountForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
           } else {
-            return toBN(0);
+            return bnZero;
           }
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
@@ -379,7 +379,7 @@ export function constructPoolRebalanceLeaves(
               return getRunningBalanceForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
             }
           } else {
-            return toBN(0);
+            return bnZero;
           }
         });
         const incentiveBalances =
@@ -389,7 +389,7 @@ export function constructPoolRebalanceLeaves(
             if (incentivePoolBalances[chainId]?.[l1Token]) {
               return incentivePoolBalances[chainId][l1Token];
             } else {
-              return toBN(0);
+              return bnZero;
             }
           });
 
@@ -421,7 +421,7 @@ export function computeDesiredTransferAmountToSpoke(
   // Running balance is negative, but its absolute value is less than the spoke pool target balance threshold.
   // In this case, we transfer nothing.
   if (runningBalance.abs().lt(spokePoolTargetBalance.threshold)) {
-    return toBN(0);
+    return bnZero;
   }
 
   // We are left with the case where the spoke pool is beyond the threshold.
@@ -432,7 +432,7 @@ export function computeDesiredTransferAmountToSpoke(
   // This can only happen if the threshold is less than the target. This is likely due to a misconfiguration.
   // In this case, we transfer nothing until the target is exceeded.
   if (transferSize.lt(0)) {
-    return toBN(0);
+    return bnZero;
   }
 
   // Negate the transfer size because a transfer from spoke to hub is indicated by a negative number.
@@ -476,7 +476,7 @@ export function getWidestPossibleExpectedBlockRange(
   // filled during the challenge period.
   const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
     (chainId: number, index) =>
-      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockSearched - endBlockBuffers[index], 0)
   );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     const lastEndBlockForChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(

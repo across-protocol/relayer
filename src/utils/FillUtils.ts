@@ -1,16 +1,16 @@
 import assert from "assert";
 import { HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
+import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
+  bnZero,
   assign,
   getRealizedLpFeeForFills,
   getRefundForFills,
   isDefined,
   sortEventsDescending,
   sortEventsAscending,
-  toBN,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { clients } from "@across-protocol/sdk-v2";
@@ -108,7 +108,7 @@ export function updateTotalRefundAmountRaw(
 }
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
-  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
+  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(bnZero);
 }
 
 export function filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
@@ -246,13 +246,16 @@ export async function getUnfilledDeposits(
 ): Promise<RelayerUnfilledDeposit[]> {
   const unfilledDeposits: RelayerUnfilledDeposit[] = [];
   const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-
   let earliestBlockNumbers = Object.values(spokePoolClients).map(({ deploymentBlock }) => deploymentBlock);
+
   if (isDefined(depositLookBack)) {
+    const blockFinder = undefined;
+    const redis = await getRedisCache();
     earliestBlockNumbers = await Promise.all(
       Object.values(spokePoolClients).map((spokePoolClient) => {
-        const currentTime = spokePoolClient.getCurrentTime();
-        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - depositLookBack);
+        const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
+        const hints = { lowBlock: spokePoolClient.deploymentBlock };
+        return getBlockForTimestamp(spokePoolClient.chainId, timestamp, blockFinder, redis, hints);
       })
     );
   }

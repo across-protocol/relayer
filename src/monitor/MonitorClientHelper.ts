@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { Wallet, winston } from "../utils";
+import { Signer, winston } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
@@ -22,8 +22,9 @@ export interface MonitorClients extends Clients {
 export async function constructMonitorClients(
   config: MonitorConfig,
   logger: winston.Logger,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<MonitorClients> {
+  const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
   await updateClients(commonClients, config);
 
@@ -51,7 +52,7 @@ export async function constructMonitorClients(
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
-    baseSigner.address,
+    signerAddr,
     commonClients.hubPoolClient.hubPool.address,
     ...spokePoolAddresses,
   ]);
