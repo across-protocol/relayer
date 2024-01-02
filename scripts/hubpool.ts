@@ -10,10 +10,7 @@ const { PROTOCOL_DEFAULT_CHAIN_ID_INDICES } = sdkConsts;
 const { MaxUint256, One: bnOne } = ethers.constants;
 const { formatEther, formatUnits } = ethers.utils;
 
-// https://nodejs.org/api/process.html#exit-codes
-const NODE_SUCCESS = 0;
-const NODE_INPUT_ERR = 9;
-const NODE_APP_ERR = 127; // user-defined
+const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 
 function bnMax(a: BigNumber, b: BigNumber): BigNumber {
   const result = a.sub(b);
@@ -246,16 +243,17 @@ async function run(argv: string[]): Promise<number> {
 
   config();
 
+  const cmd = argv[0];
   let signer: Signer;
   try {
-    const keyType = ["dispute"].includes(argv[0]) ? args.wallet : "void";
+    const keyType = ["dispute"].includes(cmd) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
     return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
   let result: boolean;
-  switch (argv[0]) {
+  switch (cmd) {
     case "dispute":
       result = await dispute(args, signer);
       break;
@@ -263,7 +261,7 @@ async function run(argv: string[]): Promise<number> {
       result = await search(args, signer);
       break;
     default:
-      return usage() ? NODE_SUCCESS : NODE_INPUT_ERR;
+      return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
   return result ? NODE_SUCCESS : NODE_APP_ERR;
@@ -271,9 +269,7 @@ async function run(argv: string[]): Promise<number> {
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async (result) => {
-      process.exitCode = result;
-    })
+    .then(async (result) => (process.exitCode = result))
     .catch(async (error) => {
       console.error("Process exited with", error);
       process.exitCode = NODE_APP_ERR;

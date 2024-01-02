@@ -31,6 +31,7 @@ type relayerFeeQuery = {
 
 const { ACROSS_API_HOST = "across.to" } = process.env;
 
+const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
@@ -128,13 +129,14 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const message = (args.message as string) ?? sdkConsts.EMPTY_MESSAGE;
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
-    usage(); // no return
+    console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
+    return false;
   }
   const network = getNetworkName(fromChainId);
 
   if (!isAddress(recipient)) {
-    console.log(`Invalid recipient address (${recipient})`);
-    usage(); // no return
+    console.log(`Invalid recipient address (${recipient}).`);
+    return false;
   }
 
   const token = utils.resolveToken(args.token as string, fromChainId);
@@ -271,7 +273,8 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
   const chainId = Number(args.chainId);
 
   if (!utils.validateChainIds([chainId])) {
-    usage(); // no return
+    console.log(`Invalid chain ID (${chainId}).`);
+    return false;
   }
 
   const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
@@ -304,7 +307,7 @@ function usage(badInput?: string): boolean {
     " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
-  const fillArgs = "--from <originChainId> --hash <depositHash>";
+  // const fillArgs = "--from <originChainId> --hash <depositHash>"; @todo: future
 
   const pad = "deposit".length;
   usageStr += `
@@ -312,16 +315,13 @@ function usage(badInput?: string): boolean {
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fill".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 
-  // eslint-disable-next-line no-process-exit
-  process.exit(badInput === undefined ? 0 : 9);
-  // not reached
+  return !isDefined(badInput);
 }
 
-async function run(argv: string[]): Promise<boolean> {
+async function run(argv: string[]): Promise<number> {
   const configOpts = ["chainId"];
   const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct", "message"];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
@@ -342,39 +342,41 @@ async function run(argv: string[]): Promise<boolean> {
   const args = minimist(argv.slice(1), opts);
 
   config();
+  const cmd = argv[0];
   let signer: Signer;
   try {
-    const keyType = ["deposit", "fill"].includes(argv[0]) ? args.wallet : "void";
+    const keyType = ["deposit", "fill"].includes(cmd) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
-    usage(args.wallet); // no return
+    return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
-  switch (argv[0]) {
+  let result: boolean;
+  switch (cmd) {
     case "deposit":
-      return await deposit(args, signer);
+      result = await deposit(args, signer);
+      break;
     case "dump":
-      return await dumpConfig(args, signer);
+      result = await dumpConfig(args, signer);
+      break;
     case "fetch":
-      return await fetchTxn(args, signer);
-    case "fill":
-      // @todo Not supported yet...
-      usage(); // no return
-      break; // ...keep the linter less dissatisfied!
+      result = await fetchTxn(args, signer);
+      break;
+    case "fill": // @todo Not supported yet...
     default:
-      usage(); // no return
+      return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
+
+  return result ? NODE_SUCCESS : NODE_APP_ERR;
 }
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async () => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(0);
+    .then(async (result) => {
+      process.exitCode = result;
     })
     .catch(async (error) => {
       console.error("Process exited with", error);
-      // eslint-disable-next-line no-process-exit
-      process.exit(1);
+      process.exitCode = NODE_APP_ERR;
     });
 }
