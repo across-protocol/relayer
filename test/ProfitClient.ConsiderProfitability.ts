@@ -12,7 +12,7 @@ import {
   toBN,
   toBNWei,
   toGWei,
-  TOKEN_SYMBOLS_MAP
+  TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import {
