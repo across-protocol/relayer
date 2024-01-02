@@ -1,4 +1,3 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import {
   bnZero,
   BigNumber,
@@ -14,6 +13,7 @@ import {
   TransactionResponse,
   AnyObject,
   ERC20,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";

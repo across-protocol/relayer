@@ -1,8 +1,7 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { bnOne, isDefined } from "../../src/utils";
+import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
 
