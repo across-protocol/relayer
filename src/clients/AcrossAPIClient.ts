@@ -1,8 +1,7 @@
 import _ from "lodash";
 import axios, { AxiosError } from "axios";
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
-import { bnZero, isDefined, winston, BigNumber, getL2TokenAddresses } from "../utils";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { bnZero, isDefined, winston, BigNumber, getL2TokenAddresses, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {

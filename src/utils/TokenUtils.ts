@@ -1,8 +1,8 @@
 import { constants, utils } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, utils as ethersUtils } from "ethers";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 const { ZERO_ADDRESS } = constants;
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 export const { fetchTokenInfo } = utils;
 

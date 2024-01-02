@@ -1,9 +1,7 @@
-import { winston } from "../../../../utils";
+import { winston, TOKEN_SYMBOLS_MAP } from "../../../../utils";
 import { SpokePoolClient } from "../../..";
 import { BaseAdapter } from "../..";
-import { constants } from "@across-protocol/sdk-v2";
 import { OpStackAdapter } from "../OpStackAdapter";
-const { TOKEN_SYMBOLS_MAP } = constants;
 import { DaiOptimismBridge } from "./DaiOptimismBridge";
 import { SnxOptimismBridge } from "./SnxOptimismBridge";
 

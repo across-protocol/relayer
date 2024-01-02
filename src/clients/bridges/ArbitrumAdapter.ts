@@ -14,12 +14,13 @@ import {
   paginatedEventQuery,
   Event,
   assert,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 // TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
