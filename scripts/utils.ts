@@ -5,6 +5,11 @@ import * as contracts from "@across-protocol/contracts-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
 
+// https://nodejs.org/api/process.html#exit-codes
+export const NODE_SUCCESS = 0;
+export const NODE_INPUT_ERR = 9;
+export const NODE_APP_ERR = 127; // user-defined
+
 export type ERC20 = {
   address: string;
   decimals: number;
