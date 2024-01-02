@@ -12,12 +12,13 @@ import {
   ZERO_ADDRESS,
   spreadEventWithBlockNumber,
   paginatedEventQuery,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf

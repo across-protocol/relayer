@@ -8,7 +8,6 @@ import {
   typeguards,
   utils as sdkUtils,
 } from "@across-protocol/sdk-v2";
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as constants from "../common/Constants";
 import {
   assert,
@@ -26,6 +25,8 @@ import {
   toBNWei,
   toBN,
   assign,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from ".";
