@@ -103,9 +103,11 @@ describe("Dataworker: Load data used in all functions", async function () {
       deposits: [],
       fillsToRefund: {},
       allValidFills: [],
+      allInvalidFills: [],
       earlyDeposits: [],
     });
   });
+
   describe("Computing refunds for bundles", function () {
     let fill1: Fill;
     let deposit1: Deposit;

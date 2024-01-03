@@ -6,6 +6,7 @@ import {
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
+  InvalidFill,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
@@ -104,10 +105,10 @@ export function prettyPrintSpokePoolEvents(
   allValidFills: FillWithBlock[],
   allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[],
   unfilledDeposits: UnfilledDeposit[],
-  allInvalidFills: FillWithBlock[]
+  allInvalidFills: InvalidFill[]
 ): AnyObject {
   const allInvalidFillsInRange = getFillsInRange(
-    allInvalidFills,
+    allInvalidFills.map(({ fill }) => fill),
     blockRangesForChains,
     chainIdListForBundleEvaluationBlockNumbers
   );

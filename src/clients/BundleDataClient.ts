@@ -1,8 +1,10 @@
+import assert from "assert";
 import * as _ from "lodash";
 import {
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
+  InvalidFill,
   ProposedRootBundle,
   RefundRequestWithBlock,
   UnfilledDeposit,
@@ -38,6 +40,7 @@ type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
   fillsToRefund: FillsToRefund;
   allValidFills: FillWithBlock[];
+  allInvalidFills: InvalidFill[];
   deposits: DepositWithBlock[];
   earlyDeposits: typechain.FundsDepositedEvent[];
 };
@@ -176,6 +179,7 @@ export class BundleDataClient {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
+    allInvalidFills: InvalidFill[];
     deposits: DepositWithBlock[];
     earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
@@ -190,6 +194,7 @@ export class BundleDataClient {
     }
     return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
   }
+
   async _loadData(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -199,6 +204,7 @@ export class BundleDataClient {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
+    allInvalidFills: InvalidFill[];
     deposits: DepositWithBlock[];
     earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
@@ -225,7 +231,7 @@ export class BundleDataClient {
     const allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[] = [];
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
-    const allInvalidFills: FillWithBlock[] = [];
+    const allInvalidFills: InvalidFill[] = [];
     const earlyDeposits: typechain.FundsDepositedEvent[] = [];
 
     // Save refund in-memory for validated fill.
@@ -275,23 +281,27 @@ export class BundleDataClient {
       updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
     };
 
-    const validateFillAndSaveData = async (fill: FillWithBlock, blockRangeForChain: number[]): Promise<void> => {
+    const validateFillAndSaveData = async (fill: FillWithBlock, blockRangeForChain: number[]): Promise<boolean> => {
       const originClient = spokePoolClients[fill.originChainId];
       const matchedDeposit = originClient.getDepositForFill(fill);
       if (matchedDeposit) {
         addRefundForValidFill(fill, matchedDeposit, blockRangeForChain);
-      } else {
-        // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
-        // send some extra RPC requests to blocks older than the spoke client's initial event search config
-        // to find the deposit if it exists.
-        const spokePoolClient = spokePoolClients[fill.originChainId];
-        const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
-        if (historicalDeposit.found) {
-          addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
-        } else {
-          allInvalidFills.push(fill);
-        }
+        return true;
       }
+
+      // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
+      // send some extra RPC requests to blocks older than the spoke client's initial event search config
+      // to find the deposit if it exists.
+      const spokePoolClient = spokePoolClients[fill.originChainId];
+      const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
+      if (historicalDeposit.found) {
+        addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
+        return true;
+      }
+
+      assert(historicalDeposit.found === false); // Help tsc to narrow the discriminated union type.
+      allInvalidFills.push({ fill, code: historicalDeposit.code, reason: historicalDeposit.reason });
+      return false;
     };
 
     const _isChainDisabled = (chainId: number): boolean => {
@@ -450,7 +460,14 @@ export class BundleDataClient {
       });
     }
 
-    this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills, earlyDeposits };
+    this.loadDataCache[key] = {
+      fillsToRefund,
+      deposits,
+      unfilledDeposits,
+      allValidFills,
+      allInvalidFills,
+      earlyDeposits,
+    };
 
     return this.loadDataFromCache(key);
   }
