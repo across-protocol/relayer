@@ -166,7 +166,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     const depositForFill = await queryHistoricalDepositForFill(spokePoolClientsByChain[fill.originChainId], fill);
     const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
       fill,
-      depositForFill,
+      depositForFill.found ? depositForFill.deposit : undefined,
       allMatchingFills[0].blockNumber
     );
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
