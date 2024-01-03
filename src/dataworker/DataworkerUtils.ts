@@ -218,9 +218,9 @@ export function _buildRelayerRefundRoot(
       // net send amount value if the net send amount is negative.
       let amountToReturn = bnZero;
       if (!isUBA) {
-        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-          repaymentChainId,
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           l2TokenAddress,
+          repaymentChainId,
           endBlockForMainnet
         );
 
@@ -259,10 +259,7 @@ export function _buildRelayerRefundRoot(
         return;
       }
 
-      const l2TokenCounterpart = clients.hubPoolClient.getDestinationTokenForL1Token(
-        leaf.l1Tokens[index],
-        leaf.chainId
-      );
+      const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(leaf.l1Tokens[index], leaf.chainId);
       // If we've already seen this leaf, then skip. If UBA, reset the net send amount and then skip.
       const existingLeaf = relayerRefundLeaves.find(
         (relayerRefundLeaf) =>

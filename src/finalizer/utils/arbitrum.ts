@@ -46,14 +46,14 @@ async function multicallArbitrumFinalizations(
 ): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
-  const withdrawals = finalizableMessages.map((message) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+  const withdrawals = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
+    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      l2TokenAddress,
       CHAIN_ID,
-      message.info.l2TokenAddress,
       hubPoolClient.latestBlockSearched
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-    const amountFromWei = convertFromWei(message.info.amountToReturn.toString(), l1TokenInfo.decimals);
+    const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
     const withdrawal: Withdrawal = {
       l2ChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,

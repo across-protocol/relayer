@@ -107,10 +107,17 @@ export class Monitor {
         },
       ])
     );
+    const { hubPoolClient } = this.clients;
+    const l1Tokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
     const tokensPerChain = Object.fromEntries(
       this.monitorChains.map((chainId) => {
-        const l2Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
-        return [chainId, Object.keys(l2Tokens)];
+        const l2Tokens = l1Tokens
+          .filter((l1Token) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
+          .map((l1Token) => {
+            const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
+            return l2Token;
+          });
+        return [chainId, l2Tokens];
       })
     );
     await this.clients.tokenTransferClient.update(searchConfigs, tokensPerChain);
@@ -125,7 +132,7 @@ export class Monitor {
         return {
           l1Token: l1Token.address,
           chainId: this.monitorConfig.hubPoolChainId,
-          poolCollateralSymbol: this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token.address).symbol,
+          poolCollateralSymbol: l1Token.symbol,
           utilization: toBN(utilization.toString()),
         };
       })
@@ -286,9 +293,18 @@ export class Monitor {
 
   // Update current balances of all tokens on each supported chain for each relayer.
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
+    const { hubPoolClient } = this.clients;
+    const l1Tokens = hubPoolClient.getL1Tokens();
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
-        const l2ToL1Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
+        const l2ToL1Tokens = Object.fromEntries(
+          l1Tokens
+            .filter(({ address: l1Token }) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
+            .map((l1Token) => {
+              const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token.address, chainId);
+              return [l2Token, l1Token];
+            })
+        );
 
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
         const tokenBalances = await this._getBalances(
@@ -606,7 +622,7 @@ export class Monitor {
   }
 
   updateUnknownTransfers(relayerBalanceReport: RelayerBalanceReport): void {
-    const hubPoolClient = this.clients.hubPoolClient;
+    const { hubPoolClient, spokePoolClients } = this.clients;
 
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       const report = relayerBalanceReport[relayer];
@@ -614,9 +630,14 @@ export class Monitor {
 
       let mrkdwn = "";
       for (const chainId of this.monitorChains) {
-        const spokePoolClient = this.clients.spokePoolClients[chainId];
+        const spokePoolClient = spokePoolClients[chainId];
         const transfersPerToken: TransfersByTokens = transfersPerChain[chainId];
-        const l2ToL1Tokens = hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
+        const l2ToL1Tokens = Object.fromEntries(
+          Object.keys(transfersPerToken).map((l2Token) => [
+            l2Token,
+            hubPoolClient.getL1TokenForL2TokenAtBlock(l2Token, chainId, hubPoolClient.latestBlockSearched),
+          ])
+        );
 
         let currentChainMrkdwn = "";
         for (const l2Token of Object.keys(l2ToL1Tokens)) {

@@ -359,7 +359,7 @@ describe("Monitor", async function () {
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       [UNKNOWN_TRANSFERS_NAME]
     );
-    await monitorInstance.updateUnknownTransfers(reports);
+    monitorInstance.updateUnknownTransfers(reports);
 
     expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
