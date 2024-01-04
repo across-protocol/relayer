@@ -149,8 +149,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        await dataworker._updateExchangeRates(["0xdAC17F958D2ee523a2206206994597C13D831ec7"], false);
-        return;
         await dataworker.executePoolRebalanceLeaves(
           spokePoolClients,
           balanceAllocator,
