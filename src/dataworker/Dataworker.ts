@@ -1856,7 +1856,7 @@ export class Dataworker {
 
   async _updateExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {
     const syncedL1Tokens: string[] = [];
-    l1Tokens.forEach((l1Token) => {
+    await sdk.utils.forEachAsync(l1Tokens, async (l1Token) => {
       // Exit early if we already synced this l1 token on this loop
       if (syncedL1Tokens.includes(l1Token)) {
         return;
@@ -1874,10 +1874,41 @@ export class Dataworker {
         return;
       }
 
+      // Check how liquidReserves will be affected by the exchange rate update and skip it if it wouldn't increase.
+      // Updating exchange rate current or sync-ing pooled tokens is used only to potentially increase liquid
+      // reserves available to the HubPool to execute pool rebalance leaves, particularly fot tokens that haven't
+      // updated recently. If the liquid reserves would not increase, then we skip the update.
+      const hubPool = this.clients.hubPoolClient.hubPool;
+      const multicallInput = [
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+        hubPool.interface.encodeFunctionData("sync", [l1Token]),
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+      ];
+      const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
+      const currentPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[0]);
+      const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[2]);
+      const liquidReservesDelta = updatedPooledTokens.liquidReserves.sub(currentPooledTokens.liquidReserves);
+
+      // If the delta is positive, then the update will increase liquid reserves and
+      // at this point, we want to update the liquid reserves to make more available
+      // for executing a pool rebalance leaf.
+      const chainId = this.clients.hubPoolClient.chainId;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
+
+      if (liquidReservesDelta.lte(0)) {
+        this.logger.debug({
+          at: "Dataworker#_updateExchangeRates",
+          message: `Skipping exchange rate update for l1 token ${tokenSymbol} because liquid reserves would not increase`,
+          currentPooledTokens,
+          updatedPooledTokens,
+          liquidReservesDelta,
+        });
+        return;
+      }
+
       if (submitExecution) {
-        const chainId = this.clients.hubPoolClient.chainId;
         this.clients.multiCallerClient.enqueueTransaction({
-          contract: this.clients.hubPoolClient.hubPool,
+          contract: hubPool,
           chainId,
           method: "exchangeRateCurrent",
           args: [l1Token],
