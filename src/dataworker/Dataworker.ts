@@ -1898,7 +1898,7 @@ export class Dataworker {
       if (liquidReservesDelta.lte(0)) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRates",
-          message: `Skipping exchange rate update for l1 token ${tokenSymbol} because liquid reserves would not increase`,
+          message: `Skipping exchange rate update for ${tokenSymbol} because liquid reserves would not increase`,
           currentPooledTokens,
           updatedPooledTokens,
           liquidReservesDelta,
