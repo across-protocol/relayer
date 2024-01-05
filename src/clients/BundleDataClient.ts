@@ -286,8 +286,8 @@ export class BundleDataClient {
         // to find the deposit if it exists.
         const spokePoolClient = spokePoolClients[fill.originChainId];
         const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
-        if (historicalDeposit) {
-          addRefundForValidFill(fill, historicalDeposit, blockRangeForChain);
+        if (historicalDeposit.found) {
+          addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
         } else {
           allInvalidFills.push(fill);
         }

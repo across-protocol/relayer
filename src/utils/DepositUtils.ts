@@ -124,6 +124,6 @@ export function getUniqueEarlyDepositsInRange(
 export async function queryHistoricalDepositForFill(
   spokePoolClient: SpokePoolClient,
   fill: Fill
-): Promise<DepositWithBlock | undefined> {
+): Promise<utils.DepositSearchResult> {
   return utils.queryHistoricalDepositForFill(spokePoolClient, fill, await getRedisCache(spokePoolClient.logger));
 }
