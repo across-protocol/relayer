@@ -74,7 +74,7 @@ describe("Dataworker: Propose root bundle", async function () {
     } = await setupFastDataworker(ethers));
   });
 
-  it.skip("Simple lifecycle", async function () {
+  it("Simple lifecycle", async function () {
     await updateAllClients();
 
     const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
@@ -242,7 +242,7 @@ describe("Dataworker: Propose root bundle", async function () {
     dataworkerInstance.clearCache();
     expect(dataworkerInstance.rootCache).to.deep.equal({});
   });
-  it.skip("Exits early if config store version is out of date", async function () {
+  it("Exits early if config store version is out of date", async function () {
     // Set up test so that the latest version in the config store contract is higher than
     // the version in the config store client.
     const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "1");
