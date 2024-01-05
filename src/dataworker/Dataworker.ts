@@ -601,7 +601,7 @@ export class Dataworker {
     });
     assert(coherentBlockRanges, "Updated proposal block ranges are incoherent");
 
-    return chainIds.map((chainId) => updatedBlockRanges[chainId]);
+    return finalBlockRanges;
   }
 
   async Legacy_proposeRootBundle(
