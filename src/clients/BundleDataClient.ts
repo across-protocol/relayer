@@ -281,12 +281,12 @@ export class BundleDataClient {
       updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
     };
 
-    const validateFillAndSaveData = async (fill: FillWithBlock, blockRangeForChain: number[]): Promise<boolean> => {
+    const validateFillAndSaveData = async (fill: FillWithBlock, blockRangeForChain: number[]): Promise<void> => {
       const originClient = spokePoolClients[fill.originChainId];
       const matchedDeposit = originClient.getDepositForFill(fill);
       if (matchedDeposit) {
         addRefundForValidFill(fill, matchedDeposit, blockRangeForChain);
-        return true;
+        return;
       }
 
       // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
@@ -296,12 +296,10 @@ export class BundleDataClient {
       const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
       if (historicalDeposit.found) {
         addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
-        return true;
+      } else {
+        assert(historicalDeposit.found === false); // Help tsc to narrow the discriminated union type.
+        allInvalidFills.push({ fill, code: historicalDeposit.code, reason: historicalDeposit.reason });
       }
-
-      assert(historicalDeposit.found === false); // Help tsc to narrow the discriminated union type.
-      allInvalidFills.push({ fill, code: historicalDeposit.code, reason: historicalDeposit.reason });
-      return false;
     };
 
     const _isChainDisabled = (chainId: number): boolean => {
