@@ -16,6 +16,7 @@ import {
   expect,
   smock,
   toBN,
+  zeroAddress,
 } from "./utils";
 
 // Tested
@@ -154,16 +155,16 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // Hardcode multicall output such that it looks like liquid reserves stayed the same
       fakeHubPool.multicall.returns([
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          "0x0000000000000000000000000000000000000000", // lp token address
+          zeroAddress, // lp token address
           true, // enabled
           0, // last lp fee update
           toBN(0), // utilized reserves
           toBN(0), // liquid reserves
           toBN(0), // unaccumulated fees
         ]),
-        "0x0000000000000000000000000000000000000000",
+        zeroAddress, // sync output
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          "0x0000000000000000000000000000000000000000", // lp token address
+          zeroAddress, // lp token address
           true, // enabled
           0, // last lp fee update
           toBN(0), // utilized reserves
@@ -178,16 +179,16 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // Add test when liquid reserves decreases
       fakeHubPool.multicall.returns([
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          "0x0000000000000000000000000000000000000000", // lp token address
+          zeroAddress, // lp token address
           true, // enabled
           0, // last lp fee update
           toBN(0), // utilized reserves
           toBNWei(1), // liquid reserves
           toBN(0), // unaccumulated fees
         ]),
-        "0x0000000000000000000000000000000000000000",
+        zeroAddress, // sync output
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          "0x0000000000000000000000000000000000000000", // lp token address
+          zeroAddress, // lp token address
           true, // enabled
           0, // last lp fee update
           toBN(0), // utilized reserves
