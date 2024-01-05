@@ -267,10 +267,10 @@ export class Dataworker {
    * of log level
    * @returns Array of blocks ranges to propose for next bundle.
    */
-  _getNextProposalBlockRanges(
+  async _getNextProposalBlockRanges(
     spokePoolClients: SpokePoolClientsByChain,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): number[][] | undefined {
+  ): Promise<number[][] | undefined> {
     const { configStoreClient, hubPoolClient } = this.clients;
 
     // Check if a bundle is pending.
@@ -330,7 +330,9 @@ export class Dataworker {
       return;
     }
 
-    return blockRangesForProposal;
+    // Narrow the block range depending on potential data incoherencies.
+    const safeBlockRanges = await this.narrowProposalBlockRanges(blockRangesForProposal, spokePoolClients);
+    return safeBlockRanges;
   }
 
   async proposeRootBundle(
@@ -346,11 +348,9 @@ export class Dataworker {
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
     // If we are forcing a bundle range, then we should use that instead of the next proposal block ranges.
-    const widestBlockRanges = this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
-    const safeBlockRanges = await this.narrowProposalBlockRanges(widestBlockRanges, spokePoolClients);
     const blockRangesForProposal = isDefined(this.forceBundleRange)
       ? this.forceBundleRange
-      : safeBlockRanges;
+      : await this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
 
     if (!blockRangesForProposal) {
       return;
