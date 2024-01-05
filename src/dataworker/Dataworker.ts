@@ -346,9 +346,11 @@ export class Dataworker {
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
     // If we are forcing a bundle range, then we should use that instead of the next proposal block ranges.
+    const widestBlockRanges = this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+    const safeBlockRanges = await this.narrowProposalBlockRanges(widestBlockRanges, spokePoolClients);
     const blockRangesForProposal = isDefined(this.forceBundleRange)
       ? this.forceBundleRange
-      : this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+      : safeBlockRanges;
 
     if (!blockRangesForProposal) {
       return;
@@ -612,11 +614,8 @@ export class Dataworker {
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
 
-    // Dry-run the proposal over the input block ranges to identify any data inconsistencies.
-    const blockRanges = await this.narrowProposalBlockRanges(blockRangesForProposal, spokePoolClients);
-
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
-      await this.clients.bundleDataClient._loadData(blockRanges, spokePoolClients, false, logData);
+      await this.clients.bundleDataClient._loadData(blockRangesForProposal, spokePoolClients, false, logData);
 
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
