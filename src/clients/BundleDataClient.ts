@@ -286,19 +286,18 @@ export class BundleDataClient {
       const matchedDeposit = originClient.getDepositForFill(fill);
       if (matchedDeposit) {
         addRefundForValidFill(fill, matchedDeposit, blockRangeForChain);
-        return;
-      }
-
-      // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
-      // send some extra RPC requests to blocks older than the spoke client's initial event search config
-      // to find the deposit if it exists.
-      const spokePoolClient = spokePoolClients[fill.originChainId];
-      const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
-      if (historicalDeposit.found) {
-        addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
       } else {
-        assert(historicalDeposit.found === false); // Help tsc to narrow the discriminated union type.
-        allInvalidFills.push({ fill, code: historicalDeposit.code, reason: historicalDeposit.reason });
+        // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
+        // send some extra RPC requests to blocks older than the spoke client's initial event search config
+        // to find the deposit if it exists.
+        const spokePoolClient = spokePoolClients[fill.originChainId];
+        const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
+        if (historicalDeposit.found) {
+          addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
+        } else {
+          assert(historicalDeposit.found === false); // Help tsc to narrow the discriminated union type.
+          allInvalidFills.push({ fill, code: historicalDeposit.code, reason: historicalDeposit.reason });
+        }
       }
     };
 
