@@ -1913,9 +1913,7 @@ export class Dataworker {
           method: "exchangeRateCurrent",
           args: [l1Token],
           message: "Updated exchange rate ♻️!",
-          mrkdwn: `Updated exchange rate for l1 token: ${
-            this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol
-          }`,
+          mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
           unpermissioned: true,
         });
       }
