@@ -49,6 +49,7 @@ export async function zkSyncFinalizer(
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
       l2TokenAddress,
+      l2ChainId,
       hubPoolClient.latestBlockSearched
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
