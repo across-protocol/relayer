@@ -1,17 +1,29 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { MAX_UINT_VAL } from "../src/utils";
+import { MAX_UINT_VAL, toBNWei } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, buildDeposit, buildFillForRepaymentChain, ethers, expect } from "./utils";
+import {
+  Contract,
+  FakeContract,
+  SignerWithAddress,
+  buildDeposit,
+  buildFillForRepaymentChain,
+  ethers,
+  expect,
+  smock,
+  toBN,
+  zeroAddress,
+} from "./utils";
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
 
 // Set to arbitrum to test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message transfers.
 const destinationChainId = 42161;
@@ -81,9 +93,10 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 4 transactions: 1 for `exchangeRateCurrent`, 1 for the to chain, 1 for the from chain, and 1 for the extra ETH sent to cover
-    // arbitrum gas fees.Should NOT be 3 since not enough time has passed since the last lp fee update.
-    expect(multiCallerClient.transactionCount()).to.equal(4);
+    // Should be 3 transactions: 1 for the to chain, 1 for the from chain, and 1 for the extra ETH sent to cover
+    // arbitrum gas fees. exchangeRateCurrent isn't updated because liquidReserves wouldn't increase after calling
+    // sync() on the spoke pool.
+    expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -119,5 +132,102 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     pendingBundle = await hubPool.rootBundleProposal();
     expect(pendingBundle.unclaimedPoolRebalanceLeafCount).to.equal(0);
+  });
+  describe("_updateExchangeRates", function () {
+    let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;
+    beforeEach(async function () {
+      fakeHubPool = await smock.fake(hubPool.interface, { address: hubPool.address });
+      mockHubPoolClient = new MockHubPoolClient(hubPoolClient.logger, fakeHubPool, hubPoolClient.configStoreClient);
+      mockHubPoolClient.setTokenInfoToReturn({ address: l1Token_1.address, decimals: 18, symbol: "TEST" });
+      dataworkerInstance.clients.hubPoolClient = mockHubPoolClient;
+    });
+    it("exits early if we recently synced l1 token", async function () {
+      mockHubPoolClient.currentTime = 10_000;
+      mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 10_000);
+      await dataworkerInstance._updateExchangeRates([l1Token_1.address], true);
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+    });
+    it("exits early if liquid reserves wouldn't increase for token post-update", async function () {
+      // Last update was at time 0, current time is at 10_000, so definitely past the update threshold
+      mockHubPoolClient.currentTime = 10_000;
+      mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0);
+
+      // Hardcode multicall output such that it looks like liquid reserves stayed the same
+      fakeHubPool.multicall.returns([
+        hubPool.interface.encodeFunctionResult("pooledTokens", [
+          zeroAddress, // lp token address
+          true, // enabled
+          0, // last lp fee update
+          toBN(0), // utilized reserves
+          toBN(0), // liquid reserves
+          toBN(0), // unaccumulated fees
+        ]),
+        zeroAddress, // sync output
+        hubPool.interface.encodeFunctionResult("pooledTokens", [
+          zeroAddress, // lp token address
+          true, // enabled
+          0, // last lp fee update
+          toBN(0), // utilized reserves
+          toBN(0), // liquid reserves, equal to "current" reserves
+          toBN(0), // unaccumulated fees
+        ]),
+      ]);
+
+      await dataworkerInstance._updateExchangeRates([l1Token_1.address], true);
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+
+      // Add test when liquid reserves decreases
+      fakeHubPool.multicall.returns([
+        hubPool.interface.encodeFunctionResult("pooledTokens", [
+          zeroAddress, // lp token address
+          true, // enabled
+          0, // last lp fee update
+          toBN(0), // utilized reserves
+          toBNWei(1), // liquid reserves
+          toBN(0), // unaccumulated fees
+        ]),
+        zeroAddress, // sync output
+        hubPool.interface.encodeFunctionResult("pooledTokens", [
+          zeroAddress, // lp token address
+          true, // enabled
+          0, // last lp fee update
+          toBN(0), // utilized reserves
+          toBNWei(1).sub(1), // liquid reserves, less than "current" reserves
+          toBN(0), // unaccumulated fees
+        ]),
+      ]);
+
+      await dataworkerInstance._updateExchangeRates([l1Token_1.address], true);
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+    });
+    it("submits update if liquid reserves would increase for token post-update and last update was old enough", async function () {
+      // Last update was at time 0, current time is at 10_000, so definitely past the update threshold
+      mockHubPoolClient.currentTime = 10_000;
+      mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0);
+
+      // Hardcode multicall output such that it looks like liquid reserves increased
+      fakeHubPool.multicall.returns([
+        hubPool.interface.encodeFunctionResult("pooledTokens", [
+          "0x0000000000000000000000000000000000000000", // lp token address
+          true, // enabled
+          0, // last lp fee update
+          toBN(0), // utilized reserves
+          toBNWei(1), // liquid reserves
+          toBN(0), // unaccumulated fees
+        ]),
+        "0x0000000000000000000000000000000000000000",
+        hubPool.interface.encodeFunctionResult("pooledTokens", [
+          "0x0000000000000000000000000000000000000000", // lp token address
+          true, // enabled
+          0, // last lp fee update
+          toBN(0), // utilized reserves
+          toBNWei(1).add(1), // liquid reserves, higher than "current" reserves
+          toBN(0), // unaccumulated fees
+        ]),
+      ]);
+
+      await dataworkerInstance._updateExchangeRates([l1Token_1.address], true);
+      expect(multiCallerClient.transactionCount()).to.equal(1);
+    });
   });
 });
