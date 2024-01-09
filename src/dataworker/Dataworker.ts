@@ -490,9 +490,8 @@ export class Dataworker {
         `Invalid block range update for chain ${chainId}: block ${endBlock} >= ${currentEndBlock}`
       );
 
-      updatedBlockRanges[chainId] = endBlock > currentStartBlock
-        ? [currentStartBlock, endBlock]
-        : [previousEndBlock, previousEndBlock];
+      updatedBlockRanges[chainId] =
+        endBlock > currentStartBlock ? [currentStartBlock, endBlock] : [previousEndBlock, previousEndBlock];
     };
 
     // If invalid fills were detected and they appear to be due to gaps in FundsDeposited events:
@@ -580,10 +579,9 @@ export class Dataworker {
         const { destinationChainId } = deposit;
         const chain = getNetworkName(deposit.destinationChainId);
 
-        const newEndBlock =
-          allValidFills
-            .filter((fill) => fill.destinationChainId === destinationChainId && fill.blockNumber < fillBlock)
-            .at(-1)?.blockNumber;
+        const newEndBlock = allValidFills
+          .filter((fill) => fill.destinationChainId === destinationChainId && fill.blockNumber < fillBlock)
+          .at(-1)?.blockNumber;
 
         const previousBlockRange = updatedBlockRanges[destinationChainId];
         updateEndBlock(destinationChainId, newEndBlock);
