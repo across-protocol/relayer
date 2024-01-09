@@ -20,7 +20,7 @@
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
 import {
-  Wallet,
+  bnZero,
   winston,
   config,
   Logger,
@@ -36,6 +36,7 @@ import {
   ZERO_ADDRESS,
   getRefund,
   disconnectRedisClients,
+  Signer,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
@@ -50,7 +51,7 @@ let logger: winston.Logger;
 
 const slowRootCache = {};
 
-export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runScript(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
 
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
@@ -88,7 +89,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     mrkdwn += `Bundle proposed at ${mostRecentValidatedBundle.transactionHash}`;
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
-      clients.hubPoolClient.latestBlockNumber;
+      clients.hubPoolClient.latestBlockSearched;
     const poolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentValidatedBundle,
       followingBlockNumber
@@ -113,7 +114,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 
         mrkdwn += `\n\tLeaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`;
         const decimals = tokenInfo.decimals;
-        const l2Token = clients.hubPoolClient.getDestinationTokenForL1Token(l1Token, leaf.chainId);
+        const l2Token = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, leaf.chainId, followingBlockNumber);
         const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
@@ -147,14 +148,14 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               previousLeafExecution.blockNumber > bundleEndBlockForChain.toNumber();
             mrkdwn += `\n\t\t- Previous relayer refund leaf executed after bundle end block for chain: ${previousLeafExecutedAfterBundleEndBlockForChain}`;
             if (previousLeafExecutedAfterBundleEndBlockForChain) {
-              const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0));
+              const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero);
               mrkdwn += `\n\t\t- Subtracting previous leaf's amountToReturn (${fromWei(
                 previousLeafExecution.amountToReturn.toString(),
                 decimals
               )}) and refunds (${fromWei(previousLeafRefundAmount.toString(), decimals)}) from token balance`;
               tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock
                 .sub(previousLeafExecution.amountToReturn)
-                .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0)));
+                .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero));
             }
           }
 
@@ -166,7 +167,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockNumber;
+              clients.hubPoolClient.latestBlockSearched;
             const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
               previousValidatedBundle,
               _followingBlockNumber
@@ -182,7 +183,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               const previousNetSendAmount =
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
               mrkdwn += `\n\t\t- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`;
-              if (previousNetSendAmount.gt(toBN(0))) {
+              if (previousNetSendAmount.gt(bnZero)) {
                 console.log(
                   `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
                 );
@@ -337,7 +338,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             throw new Error(`No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
           }
         } else {
-          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), toBN(0));
+          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), bnZero);
           excess = excess.sub(executedRelayerRefund);
           mrkdwn += `\n\t\t- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`;
         }
@@ -485,7 +486,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
+    const baseSigner = await retrieveSignerFromCLIArgs();
     await runScript(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);

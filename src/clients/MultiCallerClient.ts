@@ -1,8 +1,8 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber } from "ethers";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
   winston,
+  bnZero,
   getNetworkName,
   isDefined,
   isPromiseFulfilled,
@@ -10,7 +10,7 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
   Contract,
-  Wallet,
+  Signer,
   getMultisender,
   getProvider,
 } from "../utils";
@@ -56,7 +56,7 @@ export class MultiCallerClient {
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
-    readonly baseSigner?: Wallet
+    readonly baseSigner?: Signer
   ) {
     this.txnClient = new TransactionClient(logger);
   }
@@ -216,12 +216,12 @@ export class MultiCallerClient {
       txnRequestsToSubmit.forEach((txn, idx) => {
         mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       });
-      this.logger.info({
+      this.logger.debug({
         at: "MultiCallerClient#executeTxnQueue",
         message: `${txnRequestsToSubmit.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
         mrkdwn,
       });
-      this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      this.logger.debug({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
       return [];
     }
 
@@ -245,7 +245,7 @@ export class MultiCallerClient {
 
     const mrkdwn: string[] = [];
     const callData: Multicall2Call[] = [];
-    let gasLimit: BigNumber | undefined = sdkUtils.bnZero;
+    let gasLimit: BigNumber | undefined = bnZero;
     transactions.forEach((txn, idx) => {
       if (!txn.unpermissioned || txn.chainId !== chainId) {
         this.logger.error({
@@ -297,7 +297,7 @@ export class MultiCallerClient {
   _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     const mrkdwn: string[] = [];
     const callData: string[] = [];
-    let gasLimit: BigNumber | undefined = sdkUtils.bnZero;
+    let gasLimit: BigNumber | undefined = bnZero;
 
     const { chainId, contract } = transactions[0];
     transactions.forEach((txn, idx) => {

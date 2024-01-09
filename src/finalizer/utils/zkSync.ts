@@ -1,13 +1,12 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { Contract, ethers, Wallet } from "ethers";
+import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
-import { Provider as zksProvider, types as zkTypes, utils as zkUtils, Wallet as zkWallet } from "zksync-web3";
+import { Provider as zksProvider, types as zkTypes, Wallet as zkWallet } from "zksync-web3";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { convertFromWei, getEthAddressForChain, winston, zkSync as zkSyncUtils } from "../../utils";
+import { convertFromWei, getEthAddressForChain, getUniqueLogIndex, winston, zkSync as zkSyncUtils } from "../../utils";
 import { FinalizerPromise, Withdrawal } from "../types";
 
-type Provider = ethers.providers.Provider;
 type TokensBridged = interfaces.TokensBridged;
 
 type zkSyncWithdrawalData = {
@@ -26,7 +25,7 @@ const TransactionStatus = zkTypes.TransactionStatus;
  */
 export async function zkSyncFinalizer(
   logger: winston.Logger,
-  signer: Wallet,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   oldestBlockToFinalize: number
@@ -36,22 +35,22 @@ export async function zkSyncFinalizer(
 
   const l1Provider = hubPoolClient.hubPool.provider;
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
-  const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
+  const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
 
   // Any block younger than latestBlockToFinalize is ignored.
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
     .filter(({ blockNumber }) => blockNumber > oldestBlockToFinalize);
   const { committed: l2Committed, finalized: l2Finalized } = await sortWithdrawals(l2Provider, withdrawalsToQuery);
-  const candidates = await filterMessageLogs(wallet, l2Provider, l2Finalized);
+  const candidates = await filterMessageLogs(wallet, l2Finalized);
   const withdrawalParams = await getWithdrawalParams(wallet, candidates);
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
 
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      l2ChainId,
+    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
       l2TokenAddress,
-      hubPoolClient.latestBlockNumber
+      l2ChainId,
+      hubPoolClient.latestBlockSearched
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
@@ -109,31 +108,13 @@ async function sortWithdrawals(
  */
 async function filterMessageLogs(
   wallet: zkWallet,
-  l2Provider: Provider,
   tokensBridged: TokensBridged[]
 ): Promise<(TokensBridged & { withdrawalIdx: number })[]> {
-  const l1MessageSent = zkUtils.L1_MESSENGER.getEventTopic("L1MessageSent");
-
-  // Filter transaction hashes for duplicates, then request receipts for each hash.
-  const txnHashes = [...new Set(tokensBridged.map(({ transactionHash }) => transactionHash))];
-  const txnReceipts = Object.fromEntries(
-    await sdkUtils.mapAsync(txnHashes, async (txnHash) => [txnHash, await l2Provider.getTransactionReceipt(txnHash)])
-  );
-
-  // Extract the relevant L1MessageSent events from the transaction.
-  const withdrawals = tokensBridged.map((tokenBridged) => {
-    const { transactionHash, logIndex } = tokenBridged;
-    const txnReceipt = txnReceipts[transactionHash];
-
-    // Search backwards from the TokensBridged log index for the corresponding L1MessageSent event.
-    // @dev Array.findLast() would be an improvement but tsc doesn't currently allow it.
-    const txnLogs = txnReceipt.logs.slice(0, logIndex).reverse();
-    const withdrawal = txnLogs.find((log) => log.topics[0] === l1MessageSent);
-
-    // @dev withdrawalIdx is the "withdrawal number" within the transaction, _not_ the index of the log.
-    const l1MessagesSent = txnReceipt.logs.filter((log) => log.topics[0] === l1MessageSent);
-    const withdrawalIdx = l1MessagesSent.indexOf(withdrawal);
-    return { ...tokenBridged, withdrawalIdx };
+  // For each token bridge event, store a unique log index for the event within the zksync transaction hash.
+  // This is important for bridge transactions containing multiple events.
+  const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
+  const withdrawals = tokensBridged.map((tokenBridged, i) => {
+    return { ...tokenBridged, withdrawalIdx: logIndexesForMessage[i] };
   });
 
   const ready = await sdkUtils.filterAsync(

@@ -27,4 +27,7 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
       0
     );
   }
+  setLpTokenInfo(l1Token: string, lastLpFeeUpdate: number): void {
+    this.lpTokens[l1Token] = { lastLpFeeUpdate };
+  }
 }

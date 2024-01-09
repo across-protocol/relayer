@@ -68,7 +68,7 @@ async function waitOnBlock(spokePoolClient: SpokePoolClient): Promise<void> {
 
   let loop = 0;
   let latest = await provider.getBlockNumber();
-  while (latest <= spokePoolClient.latestBlockNumber) {
+  while (latest <= spokePoolClient.latestBlockSearched) {
     if (loop++ % 5 === 0) {
       await hre.network.provider.send("evm_mine");
     }
@@ -181,7 +181,6 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
         slowDepositors: [],
         relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
-        quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
     );
 

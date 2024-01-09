@@ -12,7 +12,7 @@ import { SpokePoolClient } from "../clients";
 import {
   winston,
   BigNumber,
-  toBN,
+  bnZero,
   assignValidFillToFillsToRefund,
   getRefundInformationFromFill,
   updateTotalRefundAmount,
@@ -70,11 +70,11 @@ export class BundleDataClient {
 
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
     const refunds = [];
-    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.latestBlockNumber === undefined) {
+    if (!this.clients.hubPoolClient.isUpdated) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
     }
 
-    let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
+    let latestBlock = this.clients.hubPoolClient.latestBlockSearched;
     for (let i = 0; i < bundleLookback; i++) {
       const bundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(latestBlock);
       if (bundle !== undefined) {
@@ -114,8 +114,8 @@ export class BundleDataClient {
       this.spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
-      this.clients.hubPoolClient.latestBlockNumber,
-      this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockNumber)
+      this.clients.hubPoolClient.latestBlockSearched,
+      this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)
     );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
@@ -144,7 +144,7 @@ export class BundleDataClient {
           // refunds in the bundle calculation. If relayer refund leaves are executed later and all the executions are
           // within the lookback period but the corresponding deposits/fills are not, we can run into cases where
           // executedAmount > refunds[relayer].
-          refunds[relayer] = executedAmount.gt(refunds[relayer]) ? toBN(0) : refunds[relayer].sub(executedAmount);
+          refunds[relayer] = executedAmount.gt(refunds[relayer]) ? bnZero : refunds[relayer].sub(executedAmount);
         }
       }
     }
@@ -162,7 +162,7 @@ export class BundleDataClient {
   getTotalRefund(refunds: FillsToRefund[], relayer: string, chainId: number, refundToken: string): BigNumber {
     return refunds.reduce((totalRefund, refunds) => {
       return totalRefund.add(this.getRefundsFor(refunds, relayer, chainId, refundToken));
-    }, toBN(0));
+    }, bnZero);
   }
 
   // Common data re-formatting logic shared across all data worker public functions.
@@ -286,8 +286,8 @@ export class BundleDataClient {
         // to find the deposit if it exists.
         const spokePoolClient = spokePoolClients[fill.originChainId];
         const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
-        if (historicalDeposit) {
-          addRefundForValidFill(fill, historicalDeposit, blockRangeForChain);
+        if (historicalDeposit.found) {
+          addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
         } else {
           allInvalidFills.push(fill);
         }

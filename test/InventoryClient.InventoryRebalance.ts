@@ -309,7 +309,7 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
     adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, toBN(0));
     tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth], toBN(0));
     tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc], toBN(0));
+    hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
+    hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
   });
-
-  hubPoolClient.setL1TokensToDestinationTokens({ [mainnetWeth]: l2TokensForWeth, [mainnetUsdc]: l2TokensForUsdc });
 }

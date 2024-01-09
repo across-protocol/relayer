@@ -3,7 +3,7 @@ import {
   winston,
   config,
   startupLogLevel,
-  Wallet,
+  Signer,
   disconnectRedisClients,
   getRedisCache,
 } from "../utils";
@@ -25,7 +25,7 @@ let logger: winston.Logger;
 
 export async function createDataworker(
   _logger: winston.Logger,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<{
   config: DataworkerConfig;
   clients: DataworkerClients;
@@ -53,7 +53,7 @@ export async function createDataworker(
     dataworker,
   };
 }
-export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   let loopStart = Date.now();
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
@@ -117,7 +117,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         spokePoolClients,
         await getRedisCache(logger)
       );
-      await clients.configStoreClient.update();
       const version = clients.configStoreClient.getConfigStoreVersionForTimestamp();
       if (sdkUtils.isUBA(version)) {
         await ubaClient.update();

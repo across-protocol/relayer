@@ -13,6 +13,7 @@ export class RelayerConfig extends CommonConfig {
   readonly skipRelays: boolean;
   readonly skipRebalancing: boolean;
   readonly sendingRelaysEnabled: boolean;
+  readonly sendingRebalancesEnabled: boolean;
   readonly sendingMessageRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly sendingRefundRequestsEnabled: boolean;
@@ -29,11 +30,6 @@ export class RelayerConfig extends CommonConfig {
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
   };
-  // Quote timestamp buffer to protect relayer from edge case where a quote time is > HEAD's latest block.
-  // This exposes relayer to risk that HubPool utilization changes between now and the eventual block mined at that
-  // timestamp, since the ConfigStoreClient.computeRealizedLpFee returns the current lpFee % for quote times >
-  // HEAD
-  readonly quoteTimeBuffer: number;
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
@@ -49,6 +45,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
+      SEND_REBALANCES,
       SEND_MESSAGE_RELAYS,
       SKIP_RELAYS,
       SKIP_REBALANCING,
@@ -57,7 +54,6 @@ export class RelayerConfig extends CommonConfig {
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
-      QUOTE_TIME_BUFFER,
       RELAYER_IGNORE_LIMITS,
     } = env;
     super(env);
@@ -141,6 +137,7 @@ export class RelayerConfig extends CommonConfig {
     this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
+    this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
     this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
     this.skipRelays = SKIP_RELAYS === "true";
     this.skipRebalancing = SKIP_REBALANCING === "true";
@@ -161,7 +158,6 @@ export class RelayerConfig extends CommonConfig {
       });
     // Force default thresholds in MDC config.
     this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
-    this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
   }
 }

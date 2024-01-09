@@ -1,3 +1,4 @@
+import { utils as ethersUtils } from "ethers";
 import {
   winston,
   EMPTY_MERKLE_ROOT,
@@ -202,7 +203,7 @@ export class Dataworker {
     // are executed so we want to make sure that these are all older than the mainnet bundle end block which is
     // sometimes treated as the "latest" mainnet block.
     const mostRecentProposedRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-      this.clients.hubPoolClient.latestBlockNumber
+      this.clients.hubPoolClient.latestBlockSearched
     );
 
     // If there has never been a validated root bundle, then we can always propose a new one:
@@ -269,7 +270,7 @@ export class Dataworker {
     const { configStoreClient, hubPoolClient } = this.clients;
 
     // Check if a bundle is pending.
-    if (!hubPoolClient.isUpdated || !hubPoolClient.latestBlockNumber) {
+    if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient not updated");
     }
     if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
@@ -294,7 +295,7 @@ export class Dataworker {
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      hubPoolClient.latestBlockNumber,
+      hubPoolClient.latestBlockSearched,
       hubPoolClient.chainId
     );
     const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
@@ -349,67 +350,35 @@ export class Dataworker {
       return;
     }
 
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
-    const mainnetBundleEndBlock = getBlockRangeForChain(
+    const { chainId: hubPoolChainId, latestBlockSearched } = this.clients.hubPoolClient;
+    const [mainnetBundleStartBlock, mainnetBundleEndBlock] = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[1];
+    );
 
-    let rootBundleData: ProposeRootBundleReturnType;
+    const isUBA = sdk.clients.isUBAActivatedAtBlock(
+      this.clients.hubPoolClient,
+      mainnetBundleStartBlock,
+      hubPoolChainId
+    );
 
-    const mainnetBundleStartBlock = getBlockRangeForChain(
+    const rootBundleDataProducer = isUBA
+      ? this.UBA_proposeRootBundle(blockRangesForProposal, ubaClient, spokePoolClients, true)
+      : this.Legacy_proposeRootBundle(blockRangesForProposal, spokePoolClients, latestBlockSearched, true);
+
+    this.logger.debug({
+      at: "Dataworker#propose",
+      message: `Proposing ${isUBA ? "UBA" : "Legacy"} root bundle`,
       blockRangesForProposal,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[0];
-    let isUBA = false;
-    if (
-      sdk.clients.isUBAActivatedAtBlock(
-        this.clients.hubPoolClient,
-        mainnetBundleStartBlock,
-        this.clients.hubPoolClient.chainId
-      )
-    ) {
-      isUBA = true;
-    }
-    if (!isUBA) {
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: "Proposing Legacy root bundle",
-        blockRangesForProposal,
-      });
-      const _rootBundleData = await this.Legacy_proposeRootBundle(
-        blockRangesForProposal,
-        spokePoolClients,
-        this.clients.hubPoolClient.latestBlockNumber,
-        true
-      );
-      rootBundleData = {
-        ..._rootBundleData,
-      };
-    } else {
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: "Proposing UBA root bundle",
-        blockRangesForProposal,
-      });
-      const _rootBundleData = await this.UBA_proposeRootBundle(
-        blockRangesForProposal,
-        ubaClient,
-        spokePoolClients,
-        true
-      );
-      rootBundleData = {
-        ..._rootBundleData,
-      };
-    }
+    });
+    const rootBundleData = { ...(await rootBundleDataProducer) };
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
       // that is the actual amount sent over bridges. This also mitigates the chance that a RelayerRefundLeaf is
       // published but its refund currency isn't sent over the bridge in a PoolRebalanceLeaf.
-      const totalUsdRefund = PoolRebalanceUtils.computePoolRebalanceUsdVolume(
+      const totalUsdRefund = await PoolRebalanceUtils.computePoolRebalanceUsdVolume(
         rootBundleData.poolRebalanceLeaves,
         this.clients
       );
@@ -765,18 +734,13 @@ export class Dataworker {
     // Go through all flows in range. For each outflow, add the refund balancing fee to the refund entry
     // of the relayer.
     for (const chainId of enabledChainIds) {
-      const blockRangeForChain = getBlockRangeForChain(
+      const [startBlock, endBlock] = getBlockRangeForChain(
         blockRanges,
         Number(chainId),
         this.chainIdListForBundleEvaluationBlockNumbers
       );
       for (const tokenSymbol of ubaClient.tokens) {
-        const flowsForChain = ubaClient.getModifiedFlows(
-          Number(chainId),
-          tokenSymbol,
-          blockRangeForChain[0],
-          blockRangeForChain[1]
-        );
+        const flowsForChain = ubaClient.getModifiedFlows(Number(chainId), tokenSymbol, startBlock, endBlock);
         flowsForChain.forEach(({ flow, balancingFee }) => {
           // All flows in here are assumed to be valid, so we can use the flow's
           // repayment chain to pay out the refund. But we need to check which
@@ -813,7 +777,7 @@ export class Dataworker {
       (unfilledDeposit: UnfilledDeposit) => {
         const deposit = unfilledDeposit.deposit;
         const destinationChainId = deposit.destinationChainId;
-        const blockRangesForDestChain = getBlockRangeForChain(
+        const [startBlock, endBlock] = getBlockRangeForChain(
           blockRanges,
           destinationChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
@@ -824,7 +788,7 @@ export class Dataworker {
         ).symbol;
         // There should only be one outflow on the deposit.destinationchain matching this deposit ID.
         const matchingOutflow = ubaClient
-          .getModifiedFlows(destinationChainId, tokenSymbol, blockRangesForDestChain[0], blockRangesForDestChain[1])
+          .getModifiedFlows(destinationChainId, tokenSymbol, startBlock, endBlock)
           .find((flow) => flow.flow.depositId === deposit.depositId);
         if (!matchingOutflow || !matchingOutflow?.balancingFee) {
           throw new Error(`No matching outflow with refund balancing fee found for deposit ID ${deposit.depositId}`);
@@ -846,11 +810,7 @@ export class Dataworker {
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
     ubaClient?: UBAClient
   ): Promise<void> {
-    if (
-      !this.clients.hubPoolClient.isUpdated ||
-      this.clients.hubPoolClient.currentTime === undefined ||
-      this.clients.hubPoolClient.latestBlockNumber === undefined
-    ) {
+    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
     }
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
@@ -883,7 +843,7 @@ export class Dataworker {
 
     const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockSearched,
       this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
@@ -1317,7 +1277,7 @@ export class Dataworker {
 
             const followingBlockNumber =
               this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
-              this.clients.hubPoolClient.latestBlockNumber;
+              this.clients.hubPoolClient.latestBlockSearched;
 
             if (!followingBlockNumber) {
               return false;
@@ -1476,9 +1436,24 @@ export class Dataworker {
           ],
         });
         return false;
-      } else {
-        return true;
       }
+
+      const ignoredAddresses = JSON.parse(process.env.IGNORED_ADDRESSES ?? "[]").map((address) =>
+        ethersUtils.getAddress(address)
+      );
+      if (
+        ignoredAddresses?.includes(ethersUtils.getAddress(relayData.depositor)) ||
+        ignoredAddresses?.includes(ethersUtils.getAddress(relayData.recipient))
+      ) {
+        this.logger.warn({
+          at: "Dataworker#_executeSlowFillLeaf",
+          message: "Ignoring slow fill.",
+          leafExecutionArgs: [relayData.depositor, relayData.recipient],
+        });
+        return false;
+      }
+
+      return true;
     });
 
     if (leaves.length === 0) {
@@ -1585,7 +1560,9 @@ export class Dataworker {
           ],
           message: "Executed SlowRelayLeaf 🌿!",
           mrkdwn,
-          unpermissioned: true,
+          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+          // SpokePool.multicall() is fine.
+          unpermissioned: Number(chainId) === 1,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: relayData.destinationChainId === this.clients.hubPoolClient.chainId,
@@ -1608,11 +1585,7 @@ export class Dataworker {
       message: "Executing pool rebalance leaves",
     });
 
-    if (
-      !this.clients.hubPoolClient.isUpdated ||
-      this.clients.hubPoolClient.currentTime === undefined ||
-      this.clients.hubPoolClient.latestBlockNumber === undefined
-    ) {
+    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
     }
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
@@ -1635,7 +1608,7 @@ export class Dataworker {
 
     const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockSearched,
       this.clients.hubPoolClient.chainId
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
@@ -1702,7 +1675,7 @@ export class Dataworker {
 
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       this.clients.hubPoolClient.getLatestProposedRootBundle(),
-      this.clients.hubPoolClient.latestBlockNumber
+      this.clients.hubPoolClient.latestBlockSearched
     );
 
     // Filter out previously executed leaves.
@@ -1883,7 +1856,7 @@ export class Dataworker {
 
   async _updateExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {
     const syncedL1Tokens: string[] = [];
-    l1Tokens.forEach((l1Token) => {
+    await sdk.utils.forEachAsync(l1Tokens, async (l1Token) => {
       // Exit early if we already synced this l1 token on this loop
       if (syncedL1Tokens.includes(l1Token)) {
         return;
@@ -1901,17 +1874,46 @@ export class Dataworker {
         return;
       }
 
+      // Check how liquidReserves will be affected by the exchange rate update and skip it if it wouldn't increase.
+      // Updating exchange rate current or sync-ing pooled tokens is used only to potentially increase liquid
+      // reserves available to the HubPool to execute pool rebalance leaves, particularly fot tokens that haven't
+      // updated recently. If the liquid reserves would not increase, then we skip the update.
+      const hubPool = this.clients.hubPoolClient.hubPool;
+      const multicallInput = [
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+        hubPool.interface.encodeFunctionData("sync", [l1Token]),
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+      ];
+      const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
+      const currentPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[0]);
+      const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[2]);
+      const liquidReservesDelta = updatedPooledTokens.liquidReserves.sub(currentPooledTokens.liquidReserves);
+
+      // If the delta is positive, then the update will increase liquid reserves and
+      // at this point, we want to update the liquid reserves to make more available
+      // for executing a pool rebalance leaf.
+      const chainId = this.clients.hubPoolClient.chainId;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
+
+      if (liquidReservesDelta.lte(0)) {
+        this.logger.debug({
+          at: "Dataworker#_updateExchangeRates",
+          message: `Skipping exchange rate update for ${tokenSymbol} because liquid reserves would not increase`,
+          currentPooledTokens,
+          updatedPooledTokens,
+          liquidReservesDelta,
+        });
+        return;
+      }
+
       if (submitExecution) {
-        const chainId = this.clients.hubPoolClient.chainId;
         this.clients.multiCallerClient.enqueueTransaction({
-          contract: this.clients.hubPoolClient.hubPool,
+          contract: hubPool,
           chainId,
           method: "exchangeRateCurrent",
           args: [l1Token],
           message: "Updated exchange rate ♻️!",
-          mrkdwn: `Updated exchange rate for l1 token: ${
-            this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol
-          }`,
+          mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
           unpermissioned: true,
         });
       }
@@ -1961,7 +1963,7 @@ export class Dataworker {
             return false;
           }
           const followingBlockNumber =
-            hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber || hubPoolClient.latestBlockNumber;
+            hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber || hubPoolClient.latestBlockSearched;
 
           if (followingBlockNumber === undefined) {
             return false;
@@ -2152,7 +2154,9 @@ export class Dataworker {
           args: [rootBundleId, leaf, relayerRefundTree.getHexProof(leaf)],
           message: "Executed RelayerRefundLeaf 🌿!",
           mrkdwn,
-          unpermissioned: true,
+          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+          // SpokePool.multicall() is fine.
+          unpermissioned: Number(chainId) === 1,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
@@ -2318,7 +2322,7 @@ export class Dataworker {
       spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
-      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
       this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock)
     );
