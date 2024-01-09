@@ -87,13 +87,13 @@ export class InventoryClient {
     this.getEnabledChains().forEach((chainId) => {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
       // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
-      // if (this._l1TokenEnabledForChain(l1Token, chainId)) {
-      if (cumulativeBalance.gt(0)) {
-        distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
-          .mul(this.scalar)
-          .div(cumulativeBalance);
+      if (this._l1TokenEnabledForChain(l1Token, chainId)) {
+        if (cumulativeBalance.gt(0)) {
+          distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
+            .mul(this.scalar)
+            .div(cumulativeBalance);
+        }
       }
-      // }
     });
     return distribution;
   }
