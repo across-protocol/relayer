@@ -475,6 +475,26 @@ export class Dataworker {
       logData
     );
 
+    // Helper to update a chain's end block correctly, accounting for soft-pausing if needed.
+    const updateEndBlock = (chainId: number, endBlock?: number): void => {
+      const [currentStartBlock, currentEndBlock] = updatedBlockRanges[chainId];
+      const previousEndBlock = this.clients.hubPoolClient.getLatestBundleEndBlockForChain(
+        chainIds,
+        this.clients.hubPoolClient.latestBlockSearched,
+        chainId
+      );
+
+      endBlock ??= previousEndBlock;
+      assert(
+        endBlock < currentEndBlock,
+        `Invalid block range update for chain ${chainId}: block ${endBlock} >= ${currentEndBlock}`
+      );
+
+      updatedBlockRanges[chainId] = endBlock > currentStartBlock
+        ? [currentStartBlock, endBlock]
+        : [previousEndBlock, previousEndBlock];
+    };
+
     // If invalid fills were detected and they appear to be due to gaps in FundsDeposited events:
     // - Narrow the origin block range to exclude the missing deposit, AND
     // - Narrow the destination block range to exclude the invalid fill.
@@ -493,16 +513,14 @@ export class Dataworker {
           .filter((deposit: DepositWithBlock) => deposit.blockNumber < blockNumber)
           .at(-1);
 
-        if (previousDeposit?.blockNumber ?? startBlock > startBlock) {
-          updatedBlockRanges[originChainId] = [startBlock, previousDeposit.blockNumber];
-          this.logger.debug({
-            at: "Dataworker::narrowBlockRanges",
-            message: `Narrowed proposal block range on ${originChain} due to missing deposit.`,
-            depositId,
-            previousBlockRange: [startBlock, endBlock],
-            newBlockRange: updatedBlockRanges[originChainId],
-          });
-        }
+        updateEndBlock(originChainId, previousDeposit?.blockNumber);
+        this.logger.debug({
+          at: "Dataworker::narrowBlockRanges",
+          message: `Narrowed proposal block range on ${originChain} due to missing deposit.`,
+          depositId,
+          previousBlockRange: [startBlock, endBlock],
+          newBlockRange: updatedBlockRanges[originChainId],
+        });
 
         // Update the endBlock on the destination chain to exclude the invalid fill.
         const destSpokePoolClient = spokePoolClients[destinationChainId];
@@ -515,10 +533,7 @@ export class Dataworker {
             .at(-1);
 
           // Wind back to the bundle end block number to that of the previous fill.
-          const newEndBlock = previousFill?.blockNumber ?? startBlock;
-          updatedBlockRanges[destinationChainId] =
-            newEndBlock > startBlock ? [startBlock, newEndBlock] : [startBlock - 1, startBlock - 1]; // @fix: Must use previous end block!
-
+          updateEndBlock(destinationChainId, previousFill?.blockNumber);
           this.logger.debug({
             at: "Dataworker::narrowBlockRanges",
             message: `Narrowed proposal block range on ${destinationChain} due to missing deposit on ${originChain}.`,
@@ -564,30 +579,21 @@ export class Dataworker {
         const deposit = newUnfilledDeposits[idx];
         const { destinationChainId } = deposit;
         const chain = getNetworkName(deposit.destinationChainId);
-        this.logger.warn({
-          at: "Dataworker::narrowBlockRange",
-          message: `Identified probable missing filledRelay event on ${chain} at block ${fillBlock}.`,
-          deposit,
-        });
 
-        const [startBlock, endBlock] = updatedBlockRanges[destinationChainId];
         const newEndBlock =
           allValidFills
             .filter((fill) => fill.destinationChainId === destinationChainId && fill.blockNumber < fillBlock)
-            .at(-1)?.blockNumber ?? startBlock;
+            .at(-1)?.blockNumber;
 
-        if (newEndBlock < endBlock) {
-          updatedBlockRanges[destinationChainId] =
-            newEndBlock > startBlock ? [startBlock, newEndBlock] : [startBlock - 1, startBlock - 1];
-
-          this.logger.debug({
-            at: "Dataworker::narrowBlockRanges",
-            message: `Narrowed proposal block range on ${chain} due to missing fill event at block ${fillBlock}.`,
-            deposit,
-            previousBlockRange: [startBlock, endBlock],
-            newBlockRange: updatedBlockRanges[destinationChainId],
-          });
-        }
+        const previousBlockRange = updatedBlockRanges[destinationChainId];
+        updateEndBlock(destinationChainId, newEndBlock);
+        this.logger.warn({
+          at: "Dataworker::narrowBlockRanges",
+          message: `Narrowed proposal block range on ${chain} due to missing fill event at block ${fillBlock}.`,
+          deposit,
+          previousBlockRange,
+          newBlockRange: updatedBlockRanges[destinationChainId],
+        });
       }
     });
 
