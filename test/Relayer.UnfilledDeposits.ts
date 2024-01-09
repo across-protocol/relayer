@@ -1,3 +1,4 @@
+import { clients } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient, UBAClient } from "../src/clients";
 import {
   CHAIN_ID_TEST_LIST,
@@ -27,7 +28,6 @@ import {
   simpleDeposit,
   toBNWei,
 } from "./utils";
-import { clients } from "@across-protocol/sdk-v2";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
@@ -109,6 +109,10 @@ describe("Relayer: Unfilled Deposits", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
+    for (const erc20 of [l1Token]) {
+      await profitClient.initToken(erc20);
+    }
+
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -126,7 +130,6 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
       } as unknown as RelayerConfig
@@ -366,6 +369,21 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Old relayer fee pct is unchanged as this is what's included in relay hash
     expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(deposit1.relayerFeePct);
 
+    // @dev The SpokePoolClient expects to know about the deposit _before_ the SpeedUp. In this case,
+    // the deposit was initially early due to time manipulation, and is not treated as a normal deposit,
+    // so the SpokePoolClient needs to re-initialise to capture both Deposit event and SpeedUp in the
+    // same (or later) update. This fits OK with the serverless mode of operating the bot.
+    spokePoolClient_1 = new clients.SpokePoolClient(
+      spyLogger,
+      spokePool_1,
+      hubPoolClient,
+      originChainId,
+      spokePool1DeploymentBlock
+    );
+    relayerInstance.clients.spokePoolClients = Object.fromEntries(
+      [spokePoolClient_1, spokePoolClient_2].map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
+    );
+
     // Cycle forward to the next deposit
     await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
     await updateAllClients();
@@ -465,8 +483,11 @@ describe("Relayer: Unfilled Deposits", async function () {
     await relayerInstance.checkForUnfilledDepositsAndFill();
     // Relayer shouldn't try to relay the fill even though it's unfilled as there has been one invalid fill from this
     // same relayer.
-
-    expect(lastSpyLogIncludes(spy, "Skipping deposit with invalid fills from the same relayer")).to.be.true;
+    expect(
+      spy
+        .getCalls()
+        .find(({ lastArg }) => lastArg.message.includes("Skipping deposit with invalid fills from the same relayer"))
+    ).to.not.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 
@@ -485,15 +506,11 @@ describe("Relayer: Unfilled Deposits", async function () {
     await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
 
-    let unfilledDeposits: RelayerUnfilledDeposit[];
-    unfilledDeposits = await _getUnfilledDeposits();
+    const unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
     expect(unfilledDeposits[0].version).to.equal(highVersion);
 
     // Relayer class should filter out based on its highest supported version.
-    unfilledDeposits = await relayerInstance.getUnfilledDeposits();
-    expect(unfilledDeposits.length).to.equal(0);
-
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });

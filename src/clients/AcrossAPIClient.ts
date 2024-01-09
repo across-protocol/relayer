@@ -1,12 +1,8 @@
-import { isDefined, winston, BigNumber, getL2TokenAddresses } from "../utils";
-import axios, { AxiosError } from "axios";
-import { HubPoolClient } from "./HubPoolClient";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
-import { SpokePoolClientsByChain } from "../interfaces";
 import _ from "lodash";
-
-const { bnZero } = sdkUtils;
+import axios, { AxiosError } from "axios";
+import { SpokePoolClientsByChain } from "../interfaces";
+import { bnZero, isDefined, winston, BigNumber, getL2TokenAddresses, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../utils";
+import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -25,7 +21,7 @@ export class AcrossApiClient {
     readonly hubPoolClient: HubPoolClient,
     readonly spokePoolClients: SpokePoolClientsByChain,
     readonly tokensQuery: string[] = [],
-    readonly timeout: number = 60000
+    readonly timeout: number = 3000
   ) {
     if (Object.keys(tokensQuery).length === 0) {
       this.tokensQuery = Object.entries(TOKEN_SYMBOLS_MAP).map(([, details]) => details.addresses[CHAIN_IDs.MAINNET]);

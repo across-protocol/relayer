@@ -1,5 +1,5 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
-import { assert } from "../utils";
+import { assert, ethers } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -9,6 +9,7 @@ export interface ProcessEnv {
 export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
+  readonly ignoredAddresses: string[];
   readonly maxBlockLookBack: { [key: number]: number };
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
@@ -28,6 +29,7 @@ export class CommonConfig {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
+      IGNORED_ADDRESSES,
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
@@ -56,6 +58,8 @@ export class CommonConfig {
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : Constants.BUNDLE_END_BLOCK_BUFFERS;
+
+    this.ignoredAddresses = JSON.parse(IGNORED_ADDRESSES ?? "[]").map((address) => ethers.utils.getAddress(address));
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
