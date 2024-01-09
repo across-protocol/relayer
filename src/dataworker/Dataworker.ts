@@ -462,8 +462,8 @@ export class Dataworker {
   async narrowProposalBlockRanges(
     blockRanges: number[][],
     spokePoolClients: SpokePoolClientsByChain,
-    isUBA = false,
-    logData = false
+    logData = true,
+    isUBA = false
   ): Promise<number[][]> {
     const chainIds = this.chainIdListForBundleEvaluationBlockNumbers;
     const updatedBlockRanges = Object.fromEntries(chainIds.map((chainId, idx) => [chainId, [...blockRanges[idx]]]));
