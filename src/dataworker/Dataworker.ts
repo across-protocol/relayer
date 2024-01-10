@@ -617,7 +617,6 @@ export class Dataworker {
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
-
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
       await this.clients.bundleDataClient._loadData(blockRangesForProposal, spokePoolClients, false, logData);
 
