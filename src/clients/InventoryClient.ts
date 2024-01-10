@@ -66,10 +66,7 @@ export class InventoryClient {
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
     // We want to skip any l2 token that is not present in the inventory config.
     chainId = Number(chainId);
-    if (
-      chainId !== this.hubPoolClient.chainId &&
-      this.inventoryConfig.tokenConfig?.[l1Token]?.[String(chainId)] === undefined
-    ) {
+    if (chainId !== this.hubPoolClient.chainId && !this._l1TokenEnabledForChain(l1Token, chainId)) {
       return bnZero;
     }
 
@@ -88,10 +85,14 @@ export class InventoryClient {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution: { [chainId: number]: BigNumber } = {};
     this.getEnabledChains().forEach((chainId) => {
-      if (cumulativeBalance.gt(0)) {
-        distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
-          .mul(this.scalar)
-          .div(cumulativeBalance);
+      // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
+      // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
+      if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
+        if (cumulativeBalance.gt(0)) {
+          distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
+            .mul(this.scalar)
+            .div(cumulativeBalance);
+        }
       }
     });
     return distribution;
@@ -273,7 +274,7 @@ export class InventoryClient {
       for (const chainId of this.getEnabledL2Chains()) {
         // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
         // as they're not present on all L2s.
-        if (this.inventoryConfig.tokenConfig?.[l1Token]?.[String(chainId)] === undefined) {
+        if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
           continue;
         }
 
@@ -672,6 +673,10 @@ export class InventoryClient {
     }
     this.logDisabledManagement = true;
     return false;
+  }
+
+  _l1TokenEnabledForChain(l1Token: string, chainId: number): boolean {
+    return this.inventoryConfig.tokenConfig?.[l1Token]?.[String(chainId)] !== undefined;
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
