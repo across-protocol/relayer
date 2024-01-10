@@ -506,7 +506,7 @@ export class Dataworker {
         const originSpokePoolClient = spokePoolClients[originChainId];
         let [startBlock, endBlock] = updatedBlockRanges[originChainId];
 
-        // Find the previous known deposit. This may not be immediastely preceding depositId.
+        // Find the previous known deposit. This may resolve a deposit before the immediately preceding depositId.
         const previousDeposit = originSpokePoolClient
           .getDepositsForDestinationChain(destinationChainId)
           .filter((deposit: DepositWithBlock) => deposit.blockNumber < blockNumber)
