@@ -390,7 +390,7 @@ describe("Dataworker: Propose root bundle", async function () {
       expect(narrowedBlockRanges).to.deep.equal(safeBlockRanges);
     });
 
-    it("Narrows proposal block ranges for missing fills (destination chain fill gaps)", async function () {
+    it.skip("Narrows proposal block ranges for missing fills (destination chain fill gaps)", async function () {
       // Since the SpokePoolClient relies on SpokePoolClient.latestDepositIdQueried, we can't currently detect
       // the _final_ deposit going missing. Some additional refactoring is needed to add this detection.
       const missingDepositIdx = Math.floor(Math.random() * (nDeposits - 2));

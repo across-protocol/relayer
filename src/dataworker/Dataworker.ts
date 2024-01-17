@@ -468,7 +468,7 @@ export class Dataworker {
     const chainIds = this.chainIdListForBundleEvaluationBlockNumbers;
     const updatedBlockRanges = Object.fromEntries(chainIds.map((chainId, idx) => [chainId, [...blockRanges[idx]]]));
 
-    const { deposits, allValidFills, allInvalidFills } = await this.clients.bundleDataClient._loadData(
+    const { allInvalidFills } = await this.clients.bundleDataClient._loadData(
       blockRanges,
       spokePoolClients,
       isUBA,
@@ -542,58 +542,6 @@ export class Dataworker {
           });
         }
       });
-
-    // For each deposit within the origin chain block range for which no or only partial fill events are found,
-    // verify whether the fill has been completed on the destination chain. If the fill has been made to completion
-    // then this is evidence of potential dropped/suppressed events, so narrow the block range to exclude those blocks.
-    const newUnfilledDeposits = deposits.filter(({ originChainId, depositId, amount, blockNumber }) => {
-      if (blockNumber > updatedBlockRanges[originChainId][1]) {
-        return false; // Fill event is already out of scope due to previous narrowing.
-      }
-      return allValidFills.find(
-        (fill) =>
-          fill.depositId === depositId && fill.originChainId === originChainId && fill.totalFilledAmount.eq(amount)
-      )
-        ? false
-        : true;
-    });
-
-    // For each unfilled or partially filled deposit, verify whether it was actually filled by the proposal end block.
-    const fillBlocks = await sdk.utils.mapAsync(newUnfilledDeposits, async (deposit: DepositWithBlock) => {
-      const { spokePool, deploymentBlock } = spokePoolClients[deposit.destinationChainId];
-      const blockRange = updatedBlockRanges[deposit.destinationChainId];
-      const endBlock = blockRange[1];
-
-      // @todo: Some tests rely on this; fix!
-      const startBlock = blockRange[0] > deploymentBlock ? blockRange[0] : deploymentBlock;
-
-      // @todo: Beware the scenario where the fill is completed before the deposit, yet the deposit hash matches 100%.
-      // This corner case must be ruled out or mitigated before merge, because it will cause the proposer to throw.
-      return await sdk.utils.findFillBlock(spokePool, deposit as RelayData, startBlock, endBlock);
-    });
-
-    // Exclude each un- or partially-filled deposit that resolved to a complete fill.
-    fillBlocks.forEach((fillBlock, idx) => {
-      if (isDefined(fillBlock)) {
-        const deposit = newUnfilledDeposits[idx];
-        const { destinationChainId } = deposit;
-        const chain = getNetworkName(deposit.destinationChainId);
-
-        const newEndBlock = allValidFills
-          .filter((fill) => fill.destinationChainId === destinationChainId && fill.blockNumber < fillBlock)
-          .at(-1)?.blockNumber;
-
-        const previousBlockRange = updatedBlockRanges[destinationChainId];
-        updateEndBlock(destinationChainId, newEndBlock);
-        this.logger.warn({
-          at: "Dataworker::narrowBlockRanges",
-          message: `Narrowed proposal block range on ${chain} due to missing fill event at block ${fillBlock}.`,
-          deposit,
-          previousBlockRange,
-          newBlockRange: updatedBlockRanges[destinationChainId],
-        });
-      }
-    });
 
     // Quick sanity check - make sure that the block ranges are coherent. A chain may be soft-paused if it has ongoing
     // RPC issues (block ranges are frozen at the previous proposal endBlock), so ensure that this is also handled.
