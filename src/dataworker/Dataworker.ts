@@ -526,6 +526,7 @@ export class Dataworker {
         const destSpokePoolClient = spokePoolClients[destinationChainId];
         [startBlock, endBlock] = updatedBlockRanges[destinationChainId];
 
+        // The blockNumber is iteratively narrowed in this loop so this fill might already be excluded.
         if (blockNumber <= endBlock) {
           // Find the fill immediately preceding this invalid fill.
           const previousFill = destSpokePoolClient
