@@ -489,6 +489,7 @@ export class Dataworker {
         `Invalid block range update for chain ${chainId}: block ${endBlock} >= ${currentEndBlock}`
       );
 
+      // If endBlock is equal to or before the currentEndBlock then we are "soft-pausing" the chain by setting the bundle start and end block equal to the previous end block. This effectively tells the dataworker to not progress on that chain.
       updatedBlockRanges[chainId] =
         endBlock > currentStartBlock ? [currentStartBlock, endBlock] : [previousEndBlock, previousEndBlock];
     };
