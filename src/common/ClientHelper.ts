@@ -168,9 +168,12 @@ export async function constructSpokePoolClientsWithStartBlocks(
       const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
       const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
 
-      // If we have a custom spoke address for this chain, there may not be a valid registration block
-      // for the spoke in question. Therefore, we can use our custom registration block.
-      // Note: Custom Registration Block is guaranteed to be a number if the custom spoke entry exists.
+      // When using a custom spoke address for this chain, we cannot guarantee the availability
+      // of a tracked deployment block number, since the address originates from an external source.
+      // In such cases, relying on the provided registration block becomes necessary.
+      // This approach ensures that, despite the absence of a tracked deployment block for the
+      // external spoke address, we can still effectively use the registration block
+      // to manage the contract interaction.
       if (isDefined(config.customSpokeAddresses[chainId])) {
         return {
           chainId,
