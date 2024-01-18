@@ -63,6 +63,7 @@ async function findOutstandingClaims(targetAddress: string, logger: winston.Logg
   // I.e. Switch to https://sepolia-api-bridge.scroll.io/api/claimable
   const apiUrl = "https://sepolia-api-bridge.scroll.io/api/claimable";
   const claimList = (
+    (
     await axios.get<{
       data: {
         result: {
@@ -75,7 +76,8 @@ async function findOutstandingClaims(targetAddress: string, logger: winston.Logg
         address: targetAddress,
       },
     })
-  ).data.data.result.map(({ claimInfo, l1Token }) => ({
+    ).data.data?.result ?? []
+  ).map(({ claimInfo, l1Token }) => ({
     ...claimInfo,
     l1Token,
   }));
