@@ -20,6 +20,7 @@ export class CommonConfig {
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
+  readonly customSpokeAddresses: Record<number, { address: string; registrationBlock: number }> = {};
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number };
@@ -40,6 +41,7 @@ export class CommonConfig {
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
+      CUSTOM_SPOKE_ADDRESSES,
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
@@ -73,6 +75,18 @@ export class CommonConfig {
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
+
+    // Sets a custom set of spoke addresses. These values are used *IN ADDITION TO* the addresses
+    // that are resolved from the HubPool contract. This is useful for testing.
+    // Note: This is a map of chainId -> {deployBlock, address}.
+    // Note: All entries here will be overridden by the HubPool contract if it has an entry for the same chainId.
+    this.customSpokeAddresses = CUSTOM_SPOKE_ADDRESSES ? JSON.parse(CUSTOM_SPOKE_ADDRESSES) : {};
+    assert(
+      !Object.entries(this.customSpokeAddresses).some(
+        ([chainId, { address, registrationBlock }]) =>
+          isNaN(Number(chainId)) || !ethers.utils.isAddress(address) || isNaN(Number(registrationBlock))
+      )
+    );
   }
 
   /**

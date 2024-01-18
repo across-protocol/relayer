@@ -168,10 +168,21 @@ export async function constructSpokePoolClientsWithStartBlocks(
       const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
       const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
 
-      // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
-      const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
-      const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
-      return { chainId, contract: spokePoolContract, registrationBlock };
+      // If we have a custom spoke address for this chain, there may not be a valid registration block
+      // for the spoke in question. Therefore, we can use our custom registration block.
+      // Note: Custom Registration Block is guaranteed to be a number if the custom spoke entry exists.
+      if (isDefined(config.customSpokeAddresses[chainId])) {
+        return {
+          chainId,
+          contract: spokePoolContract,
+          registrationBlock: config.customSpokeAddresses[chainId].registrationBlock,
+        };
+      } else {
+        // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
+        const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
+        const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
+        return { chainId, contract: spokePoolContract, registrationBlock };
+      }
     })
   );
 
@@ -298,7 +309,8 @@ export async function constructClients(
     config.hubPoolChainId,
     hubPoolClientSearchSettings,
     await getRedisCache(logger),
-    config.timeToCache
+    config.timeToCache,
+    config.customSpokeAddresses
   );
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
