@@ -33,7 +33,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     );
     // We can insert the custom spoke entry directly into the crossChainContracts map
     // because the HubPoolClient strictly appends data. Additionally, we can place this
-    // entry at the "0th" block so that it is always used & will be overridden by any
+    // entry at the "0th" block so that it is always used & will be overwritten by any
     // future entries resolved by the HubPool.
     if (isDefined(customSpokeAddresses)) {
       Object.entries(customSpokeAddresses).forEach(([_l2ChainId, { address }]) => {
