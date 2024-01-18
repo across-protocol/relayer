@@ -50,7 +50,7 @@ export class HubPoolClient extends clients.HubPoolClient {
         ];
       });
       if (Object.keys(customSpokeAddresses).length > 0) {
-        this.logger.warn({
+        this.logger.info({
           at: "HubPoolClient#constructor",
           message: "HubPoolClient using custom SpokeAddresses.",
           customSpokeAddresses,
