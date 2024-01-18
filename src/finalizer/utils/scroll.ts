@@ -26,17 +26,21 @@ export async function scrollFinalizer(
   signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
-  // Not used, but required for the interface
-  _firstBlockToFinalize: number
+  latestBlockToFinalize: number
 ): Promise<FinalizerPromise> {
   const [l1ChainId, l2ChainId, targetAddress] = [
     hubPoolClient.chainId,
     spokePoolClient.chainId,
     spokePoolClient.spokePool.address,
   ];
-
   const relayContract = getScrollRelayContract(l1ChainId, signer);
-  const outstandingClaims = await findOutstandingClaims(targetAddress, logger);
+  const outstandingClaims = await findOutstandingClaims(targetAddress, latestBlockToFinalize);
+
+  logger.debug({
+    at: "Finalizer#ScrollFinalizer",
+    message: `Detected ${outstandingClaims.length} claims for ${targetAddress}`,
+  });
+
   const [callData, withdrawals] = await Promise.all([
     sdkUtils.mapAsync(outstandingClaims, (claim) => populateClaimTransaction(claim, relayContract)),
     outstandingClaims.map((claim) => populateClaimWithdrawal(claim, l2ChainId, hubPoolClient)),
@@ -51,10 +55,10 @@ export async function scrollFinalizer(
  * Resolves all outstanding claims from Scroll -> Mainnet. This is done by
  * querying the Scroll API for all outstanding claims.
  * @param targetAddress The address to query for outstanding claims
- * @param logger The logger to use for logging
+ * @param latestBlockToFinalize The first block to finalize
  * @returns A list of all outstanding claims
  */
-async function findOutstandingClaims(targetAddress: string, logger: winston.Logger) {
+async function findOutstandingClaims(targetAddress: string, latestBlockToFinalize: number) {
   // By default, the URL link is to the mainnet API. If we want to
   // test on a testnet, we can change the URL to the testnet API.
   // I.e. Switch to https://sepolia-api-bridge.scroll.io/api/claimable
@@ -66,6 +70,7 @@ async function findOutstandingClaims(targetAddress: string, logger: winston.Logg
           result: {
             claimInfo: ScrollClaimInfo;
             l1Token: string;
+            blockNumber: number;
           }[];
         };
       }>(apiUrl, {
@@ -74,14 +79,12 @@ async function findOutstandingClaims(targetAddress: string, logger: winston.Logg
         },
       })
     ).data.data?.result ?? []
-  ).map(({ claimInfo, l1Token }) => ({
-    ...claimInfo,
-    l1Token,
-  }));
-  logger.debug({
-    at: "Finalizer#ScrollFinalizer",
-    message: `Detected ${claimList.length} claims for ${targetAddress}`,
-  });
+  )
+    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
+    .map(({ claimInfo, l1Token }) => ({
+      ...claimInfo,
+      l1Token,
+    }));
   return claimList;
 }
 
