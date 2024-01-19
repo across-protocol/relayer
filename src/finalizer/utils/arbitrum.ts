@@ -59,6 +59,7 @@ async function multicallArbitrumFinalizations(
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
+      executionChainId: hubPoolClient.chainId,
     };
 
     return withdrawal;

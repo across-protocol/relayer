@@ -265,6 +265,7 @@ async function multicallOptimismFinalizations(
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
+      executionChainId: hubPoolClient.chainId,
     };
     return withdrawal;
   });
@@ -296,6 +297,7 @@ async function multicallOptimismL1Proofs(
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "proof",
+      executionChainId: hubPoolClient.chainId,
     };
     return proof;
   });
