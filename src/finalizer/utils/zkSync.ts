@@ -59,6 +59,7 @@ export async function zkSyncFinalizer(
       l1TokenSymbol,
       amount: amountFromWei,
       type: "withdrawal",
+      executionChainId: hubPoolClient.chainId,
     };
 
     return withdrawal;

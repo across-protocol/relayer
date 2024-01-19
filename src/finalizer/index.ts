@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { BigNumber, constants } from "ethers";
-import { groupBy } from "lodash";
+import { BigNumber, Contract, constants } from "ethers";
+import { groupBy, uniq } from "lodash";
 import {
   config,
   startupLogLevel,
@@ -75,7 +75,6 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = await getMultisender(hubChainId, hubSigner);
   const finalizationsToBatch: { txn: Multicall2Call; withdrawal?: Withdrawal }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
@@ -122,6 +121,14 @@ export async function finalize(
       message: `Found ${withdrawals.length} ${network} withdrawals for finalization.`,
     });
   }
+  const multicall2Lookup = Object.fromEntries(
+    await Promise.all(
+      uniq(finalizationsToBatch.map(({ withdrawal }) => Number(withdrawal?.executionChainId)).filter(isDefined)).map(
+        async (chainId) =>
+          [chainId, await getMultisender(chainId, spokePoolClients[chainId].spokePool.signer)] as [number, Contract]
+      )
+    )
+  );
 
   const txnClient = new TransactionClient(logger);
 
@@ -133,8 +140,8 @@ export async function finalize(
   // Ensure each transaction would succeed in isolation.
   const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, withdrawal }) => {
     const txnToSubmit: AugmentedTransaction = {
-      contract: multicall2,
-      chainId: hubChainId,
+      contract: multicall2Lookup[withdrawal.executionChainId],
+      chainId: withdrawal.executionChainId,
       method: "aggregate",
       // aggregate() takes an array of tuples: [calldata: bytes, target: address].
       args: [[_txn]],
@@ -173,19 +180,22 @@ export async function finalize(
     const multicallerClient = new MultiCallerClient(logger);
     let txnHash: string;
     try {
-      const finalizerTxns = finalizations.map(({ txn }) => txn);
-      const txnToSubmit: AugmentedTransaction = {
-        contract: multicall2,
-        chainId: hubChainId,
-        method: "aggregate",
-        args: [finalizerTxns],
-        gasLimit: gasEstimation,
-        gasLimitMultiplier: 2,
-        unpermissioned: true,
-        message: `Batch finalized ${finalizerTxns.length} txns`,
-        mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
-      };
-      multicallerClient.enqueueTransaction(txnToSubmit);
+      const finalizationsByChain = groupBy(finalizations, ({ withdrawal }) => withdrawal?.executionChainId);
+      for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
+        const finalizerTxns = finalizations.map(({ txn }) => txn);
+        const txnToSubmit: AugmentedTransaction = {
+          contract: multicall2Lookup[Number(chainId)],
+          chainId: Number(chainId),
+          method: "aggregate",
+          args: [finalizerTxns],
+          gasLimit: gasEstimation,
+          gasLimitMultiplier: 2,
+          unpermissioned: true,
+          message: `Batch finalized ${finalizerTxns.length} txns`,
+          mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
+        };
+        multicallerClient.enqueueTransaction(txnToSubmit);
+      }
       [txnHash] = await multicallerClient.executeTransactionQueue();
     } catch (_error) {
       const error = _error as Error;
@@ -196,7 +206,6 @@ export async function finalize(
         notificationPath: "across-error",
         finalizations,
       });
-
       return;
     }
 

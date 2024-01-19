@@ -8,6 +8,7 @@ export type Withdrawal = {
   l1TokenSymbol: string;
   amount: string;
   type: "proof" | "withdrawal";
+  executionChainId: number;
 };
 
 export type FinalizerPromise = { callData: Multicall2Call[]; withdrawals: Withdrawal[] };
