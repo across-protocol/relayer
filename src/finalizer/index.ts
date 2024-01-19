@@ -53,8 +53,8 @@ export async function finalize(
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
-  optimisticRollupFinalizationWindow: number = 5 * oneDaySeconds,
-  polygonFinalizationWindow: number = oneDaySeconds
+  optimisticRollupFinalizationWindow = 5 * oneDaySeconds,
+  polygonFinalizationWindow = 5 * oneDaySeconds
 ): Promise<void> {
   const finalizationWindows: { [chainId: number]: number } = {
     10: optimisticRollupFinalizationWindow,
