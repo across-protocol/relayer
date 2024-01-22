@@ -31,6 +31,7 @@ import {
 } from "../common";
 import { ChainFinalizer, Withdrawal } from "./types";
 import { scrollFinalizer } from "./utils/scroll";
+import { cctpFinalizer } from "./utils/cctp";
 const { isDefined } = sdkUtils;
 
 config();
@@ -40,14 +41,16 @@ let logger: winston.Logger;
 const oneDaySeconds = 24 * 60 * 60;
 const oneHourSeconds = 60 * 60;
 
-const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
-  10: opStackFinalizer,
-  137: polygonFinalizer,
-  280: zkSyncFinalizer,
-  324: zkSyncFinalizer,
-  8453: opStackFinalizer,
-  42161: arbitrumOneFinalizer,
-  534352: scrollFinalizer,
+const chainFinalizers: { [chainId: number]: ChainFinalizer[] } = {
+  10: [opStackFinalizer, cctpFinalizer],
+  137: [polygonFinalizer, cctpFinalizer],
+  280: [zkSyncFinalizer],
+  324: [zkSyncFinalizer],
+  //FIXME: Replace 8453 with the commented code below
+  // 8453: [opStackFinalizer, cctpFinalizer],
+  8453: [cctpFinalizer],
+  42161: [arbitrumOneFinalizer, cctpFinalizer],
+  534352: [scrollFinalizer],
 };
 
 export async function finalize(
@@ -105,20 +108,26 @@ export async function finalize(
 
     const network = getNetworkName(chainId);
     logger.debug({ at: "finalize", message: `Spawning ${network} finalizer.`, latestBlockToFinalize });
-    const { callData, withdrawals } = await chainFinalizer(
-      logger,
-      hubSigner,
-      hubPoolClient,
-      client,
-      latestBlockToFinalize
-    );
+    let totalWithdrawalsForChain = 0;
 
-    callData.forEach((txn, idx) => {
-      finalizationsToBatch.push({ txn, withdrawal: withdrawals[idx] });
-    });
+    for (const finalizer of chainFinalizer) {
+      const { callData, withdrawals } = await finalizer(
+        logger,
+        hubSigner,
+        hubPoolClient,
+        client,
+        latestBlockToFinalize
+      );
+
+      callData.forEach((txn, idx) => {
+        finalizationsToBatch.push({ txn, withdrawal: withdrawals[idx] });
+      });
+
+      totalWithdrawalsForChain += withdrawals.length;
+    }
     logger.debug({
       at: "finalize",
-      message: `Found ${withdrawals.length} ${network} withdrawals for finalization.`,
+      message: `Found ${totalWithdrawalsForChain} ${network} withdrawals for finalization.`,
     });
   }
   const multicall2Lookup = Object.fromEntries(

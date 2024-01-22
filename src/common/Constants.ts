@@ -225,3 +225,19 @@ export type Multicall2Call = {
 // These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [10, 324, 8453];
+
+export const chainIdsToCctpDomains: { [chainId: number]: number } = {
+  // Mainnet
+  1: 0, // Mainnet
+  10: 2, // Optimism
+  42161: 3, // Arbitrum
+  8453: 6, // Base
+  137: 7, // Polygon
+
+  // Testnet
+  11155111: 0, // Eth Sepolia
+  11155420: 2, // Optimism Sepolia
+  421614: 3, // Arbitrum Sepolia
+  84532: 6, // Base Sepolia
+  80001: 7, // Polygon PoS Mumbai
+};
