@@ -447,6 +447,9 @@ export class BundleDataClient {
         // 2. A slow fill is valid iff `deposit.outputToken = requestSlowFill.outputToken` &&
         //    `outputToken = <canonical destination token for deposit.inputToken> OR `deposit.inputToken = 0x0` and
         //    `fill.outputToken = <canonical destination token for deposit.inputToken>`.
+        //    - The SpokePool.validateFill function should already validate that the fill is valid but we'll need to
+        //      add the extra slow fill validation step and make sure that even if outputToken and inputToken match
+        //      that they are the same tokens.
         // 3. A fast fill is valid iff `deposit.outputToken == fill.outputToken` OR `deposit.inputToken = 0x0` and
         //    `fill.outputToken = <canonical destination token for deposit.inputToken>`
         // 4. Running balances are incremented by refunds for fills by deposit.inputAmount * (1 - realizedLpFeePct)
