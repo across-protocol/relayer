@@ -237,7 +237,9 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     expect(eligibleFill).to.deep.equal(fill);
   });
 
-  it("Correctly submits requestRefund transactions", async function () {
+  // @note: Requesting refunds for v2 is no longer supported.
+  // @todo: Update test for v3 events after v2 is deprecated.
+  it.skip("Correctly submits requestRefund transactions", async function () {
     const deposit = await buildDeposit(
       hubPoolClient,
       spokePool_1,
@@ -283,7 +285,6 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     expect(refundRequest.transactionHash).to.equal(transactionHash);
   });
 
-  // @note Temporarily disabled, pending upstream fixes in the SDK.
   it("Skips refund requests for invalid fills", async function () {
     const deposit = await buildDeposit(
       hubPoolClient,
@@ -322,7 +323,9 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     expect(refundRequests.length).to.equal(0);
   });
 
-  it("Ignores invalid refund requests", async function () {
+  // @note: Requesting refunds for v2 is no longer supported.
+  // @todo: Update test for v3 events after v2 is deprecated.
+  it.skip("Ignores invalid refund requests", async function () {
     // Submit a deposit.
     const deposit = await buildDeposit(
       hubPoolClient,

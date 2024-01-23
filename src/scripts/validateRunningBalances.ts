@@ -19,6 +19,7 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
   winston,
@@ -250,9 +251,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             );
             // Compute how much the slow fill will execute by checking if any partial fills were sent after
             // the slow fill amount was sent to the spoke pool.
-            const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-              (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
-            );
+            const slowFillsForPoolRebalanceLeaf = slowFills.filter((f) => {
+              const outputToken = sdkUtils.getRelayDataOutputToken(f.relayData);
+              return f.relayData.destinationChainId === leaf.chainId && outputToken === l2Token;
+            });
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
                 const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
@@ -262,9 +264,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                       f.blockNumber <= bundleEndBlockForChain.toNumber() &&
                       f.depositId === slowFillForChain.relayData.depositId
                   );
-                const amountSentForSlowFillLeftUnexecuted = slowFillForChain.relayData.amount.sub(
-                  sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
-                );
+
+                const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+                const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+                const amountSentForSlowFillLeftUnexecuted = outputAmount.sub(totalFilledAmount);
+
                 if (amountSentForSlowFillLeftUnexecuted.gt(0)) {
                   const deductionForSlowFill = getRefund(
                     amountSentForSlowFillLeftUnexecuted,
@@ -291,17 +296,20 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             validatedBundles[x + 1 + 2],
             mostRecentValidatedBundle
           );
-          const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-            (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
-          );
+          const slowFillsForPoolRebalanceLeaf = slowFills.filter((f) => {
+            const outputToken = sdkUtils.getRelayDataOutputToken(f.relayData);
+            return f.relayData.destinationChainId === leaf.chainId && outputToken === l2Token;
+          });
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
               const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
                 .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
                 .filter((f) => f.depositId === slowFillForChain.relayData.depositId);
-              const amountSentForSlowFill = slowFillForChain.relayData.amount.sub(
-                sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
-              );
+
+              const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+              const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+              const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+              const amountSentForSlowFill = outputAmount.sub(totalFilledAmount);
               if (amountSentForSlowFill.gt(0)) {
                 const deductionForSlowFill = getRefund(
                   amountSentForSlowFill,

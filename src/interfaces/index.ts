@@ -74,3 +74,11 @@ export const outflowIsFill = interfaces.outflowIsFill;
 export const outflowIsRefund = interfaces.outflowIsRefund;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
+
+// V2 / V3 interfaces
+export type v2Deposit = interfaces.v2Deposit;
+export type v2DepositWithBlock = interfaces.v2DepositWithBlock;
+export type v2SpeedUp = interfaces.v2SpeedUp;
+export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
+export type v2Fill = interfaces.v2Fill;
+export type v2FillWithBlock = interfaces.v2FillWithBlock;

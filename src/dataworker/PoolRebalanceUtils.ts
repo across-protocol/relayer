@@ -1,4 +1,4 @@
-import { typechain } from "@across-protocol/sdk-v2";
+import { typechain, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
@@ -26,6 +26,7 @@ import {
   getRefund,
   shortenHexString,
   shortenHexStrings,
+  spreadEventWithBlockNumber,
   toBN,
   toBNWei,
   winston,
@@ -58,7 +59,7 @@ export function updateRunningBalanceForFill(
   updateAmount: BigNumber
 ): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    fill.destinationToken,
+    sdkUtils.getFillOutputToken(fill),
     fill.destinationChainId,
     endBlockForMainnet
   );
@@ -72,7 +73,7 @@ export function updateRunningBalanceForDeposit(
   updateAmount: BigNumber
 ): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    deposit.originToken,
+    sdkUtils.getDepositInputToken(deposit),
     deposit.originChainId,
     deposit.quoteBlockNumber
   );
@@ -82,15 +83,14 @@ export function updateRunningBalanceForDeposit(
 export function updateRunningBalanceForEarlyDeposit(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
-  deposit: typechain.FundsDepositedEvent,
+  depositEvent: typechain.FundsDepositedEvent,
   updateAmount: BigNumber
 ): void {
-  // deposit.args is a pure array; there are no mapping to be dereferenced.
-  const originChainId = Number(deposit.args[1].toString());
-  const originToken = deposit.args[6];
+  const deposit = { ...spreadEventWithBlockNumber(depositEvent) } as interfaces.DepositWithBlock;
+  const { originChainId } = deposit;
 
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    originToken,
+    sdkUtils.getDepositInputToken(deposit),
     originChainId,
     // TODO: this must be handled s.t. it doesn't depend on when this is run.
     // For now, tokens do not change their mappings often, so this will work, but
@@ -159,17 +159,17 @@ export function addSlowFillsToRunningBalances(
   hubPoolClient: HubPoolClient,
   unfilledDeposits: UnfilledDeposit[]
 ): void {
-  unfilledDeposits.forEach((unfilledDeposit) => {
+  unfilledDeposits.forEach(({ deposit, unfilledAmount }) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      unfilledDeposit.deposit.originToken,
-      unfilledDeposit.deposit.originChainId,
+      sdkUtils.getDepositInputToken(deposit),
+      deposit.originChainId,
       latestMainnetBlock
     );
     updateRunningBalance(
       runningBalances,
-      unfilledDeposit.deposit.destinationChainId,
+      deposit.destinationChainId,
       l1TokenCounterpart,
-      getRefund(unfilledDeposit.unfilledAmount, unfilledDeposit.deposit.realizedLpFeePct)
+      getRefund(unfilledAmount, deposit.realizedLpFeePct)
     );
   });
 }
@@ -230,7 +230,12 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   // triggered a slow fill payment to be sent to the destination chain.
   await Promise.all(
     allValidFillsInRange
-      .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
+      .filter((fill) => {
+        const outputAmount = sdkUtils.getFillOutputAmount(fill);
+        const fillAmount = sdkUtils.getFillAmount(fill);
+        const totalFilledAmount = sdkUtils.getTotalFilledAmount(fill);
+        return totalFilledAmount.eq(outputAmount) && !fillAmount.eq(outputAmount);
+      })
       .map(async (fill: interfaces.FillWithBlock) => {
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
@@ -266,16 +271,16 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         }
 
         // Recompute how much the matched root bundle sent for this slow fill.
-        const preFeeAmountSentForSlowFill = lastMatchingFillInSameBundle.amount.sub(
-          lastMatchingFillInSameBundle.totalFilledAmount
-        );
+        const outputAmount = sdkUtils.getFillOutputAmount(lastMatchingFillInSameBundle);
+        const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastMatchingFillInSameBundle);
+        const preFeeAmountSentForSlowFill = outputAmount.sub(totalFilledAmount);
 
         // If this fill is a slow fill, then the excess remaining in the contract is equal to the amount sent originally
         // for this slow fill, and the amount filled. If this fill was not a slow fill, then that means the slow fill
         // was never sent, so we need to send the full slow fill back.
         const excess = getRefund(
-          fill.updatableRelayData.isSlowRelay
-            ? preFeeAmountSentForSlowFill.sub(fill.fillAmount)
+          sdkUtils.isSlowFill(fill)
+            ? preFeeAmountSentForSlowFill.sub(sdkUtils.getFillAmount(fill))
             : preFeeAmountSentForSlowFill,
           fill.realizedLpFeePct
         );
@@ -287,10 +292,12 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         if (excesses[fill.destinationChainId] === undefined) {
           excesses[fill.destinationChainId] = {};
         }
-        if (excesses[fill.destinationChainId][fill.destinationToken] === undefined) {
-          excesses[fill.destinationChainId][fill.destinationToken] = [];
+
+        const outputToken = sdkUtils.getFillOutputToken(fill);
+        if (excesses[fill.destinationChainId][outputToken] === undefined) {
+          excesses[fill.destinationChainId][outputToken] = [];
         }
-        excesses[fill.destinationChainId][fill.destinationToken].push({
+        excesses[fill.destinationChainId][outputToken].push({
           excess: excess.toString(),
           lastMatchingFillInSameBundle,
           rootBundleEndBlockContainingFirstFill,
@@ -620,20 +627,16 @@ export function generateMarkdownForRootBundle(
 
   let slowRelayLeavesPretty = "";
   slowRelayLeaves.forEach((leaf, index) => {
-    const decimalsForDestToken = hubPoolClient.getTokenInfo(
-      leaf.relayData.destinationChainId,
-      leaf.relayData.destinationToken
-    ).decimals;
+    const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
+    const outputAmount = sdkUtils.getRelayDataOutputAmount(leaf.relayData);
+    const decimalsForDestToken = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, outputToken).decimals;
     // Shorten keys for ease of reading from Slack.
     leaf.relayData.originChain = leaf.relayData.originChainId;
     leaf.relayData.destinationChain = leaf.relayData.destinationChainId;
     leaf.relayData.depositor = shortenHexString(leaf.relayData.depositor);
     leaf.relayData.recipient = shortenHexString(leaf.relayData.recipient);
-    leaf.relayData.destToken = convertTokenAddressToSymbol(
-      leaf.relayData.destinationChainId,
-      leaf.relayData.destinationToken
-    );
-    leaf.relayData.amount = convertFromWei(leaf.relayData.amount, decimalsForDestToken);
+    leaf.relayData.destToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
+    leaf.relayData.amount = convertFromWei(outputAmount.toString(), decimalsForDestToken);
     // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
     leaf.relayData.realizedLpFee = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
     leaf.relayData.relayerFee = `${formatFeePct(leaf.relayData.relayerFeePct)}%`;

@@ -123,7 +123,7 @@ export function prettyPrintSpokePoolEvents(
     allValidFillsInRangeByDestinationChain: groupObjectCountsByTwoProps(
       allValidFillsInRange,
       "destinationChainId",
-      (fill) => `${fill.originChainId}-->${fill.destinationToken}`
+      (fill) => `${fill.originChainId}-->${utils.getFillOutputToken(fill)}`
     ),
     fillsToRefundInRangeByRepaymentChain: groupObjectCountsByTwoProps(
       allRelayerRefunds,
@@ -137,7 +137,7 @@ export function prettyPrintSpokePoolEvents(
     allInvalidFillsInRangeByDestinationChain: groupObjectCountsByTwoProps(
       allInvalidFillsInRange,
       "destinationChainId",
-      (fill) => `${fill.originChainId}-->${fill.destinationToken}`
+      (fill) => `${fill.originChainId}-->${utils.getFillOutputToken(fill)}`
     ),
   };
 }
@@ -151,8 +151,8 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
       relayData: {
         depositor: deposit.deposit.depositor,
         recipient: deposit.deposit.recipient,
-        destinationToken: deposit.deposit.destinationToken,
-        amount: deposit.deposit.amount,
+        destinationToken: utils.getDepositOutputToken(deposit.deposit),
+        amount: utils.getDepositOutputAmount(deposit.deposit),
         originChainId: deposit.deposit.originChainId,
         destinationChainId: deposit.deposit.destinationChainId,
         realizedLpFeePct: deposit.deposit.realizedLpFeePct,
@@ -367,7 +367,8 @@ export async function _buildPoolRebalanceRoot(
   // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
   // its important that `deposits` are all in this current block range.
   deposits.forEach((deposit: DepositWithBlock) => {
-    updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.amount.mul(-1));
+    const inputAmount = utils.getDepositInputAmount(deposit);
+    updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, inputAmount.mul(-1));
   });
 
   earlyDeposits.forEach((earlyDeposit) => {

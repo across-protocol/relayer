@@ -1,5 +1,7 @@
 import { utils as ethersUtils } from "ethers";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
+  bnZero,
   winston,
   EMPTY_MERKLE_ROOT,
   sortEventsDescending,
@@ -742,11 +744,32 @@ export class Dataworker {
       for (const tokenSymbol of ubaClient.tokens) {
         const flowsForChain = ubaClient.getModifiedFlows(Number(chainId), tokenSymbol, startBlock, endBlock);
         flowsForChain.forEach(({ flow, balancingFee }) => {
-          // All flows in here are assumed to be valid, so we can use the flow's
-          // repayment chain to pay out the refund. But we need to check which
-          // token should be repaid in.
+          // All flows in here are assumed to be valid, so we can use the flow's repayment chain
+          // to pay out the refund. But we need to check which token should be repaid in.
           if (isUbaOutflow(flow)) {
-            const refundToken = outflowIsFill(flow) ? flow.destinationToken : flow.refundToken;
+            let refundToken: string;
+
+            if (outflowIsFill(flow)) {
+              if (sdkUtils.isV2Fill(flow)) {
+                refundToken = flow.destinationToken;
+              } else {
+                // If the fill requests a refund on the destination chain, resolve the refundToken from the inputToken.
+                // This handles refunds where the outputToken is not equivalent to the inputToken (i.e. swaps).
+                const { hubPoolClient } = this.clients;
+                const { originChainId, destinationChainId, inputToken: originToken } = flow;
+
+                // @todo: Should resolve this more precisely.
+                const quoteBlockNumber = hubPoolClient.latestBlockSearched;
+                refundToken = hubPoolClient.getL2TokenForDeposit({
+                  originChainId,
+                  destinationChainId,
+                  originToken,
+                  quoteBlockNumber,
+                });
+              }
+            } else {
+              refundToken = flow.refundToken;
+            }
             updateTotalRefundAmountRaw(fillsToRefund, balancingFee, flow.repaymentChainId, flow.relayer, refundToken);
           }
         });
@@ -782,10 +805,8 @@ export class Dataworker {
           destinationChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
-        const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
-          deposit.destinationToken,
-          destinationChainId
-        ).symbol;
+        const outputToken = sdkUtils.getDepositOutputToken(deposit);
+        const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId).symbol;
         // There should only be one outflow on the deposit.destinationchain matching this deposit ID.
         const matchingOutflow = ubaClient
           .getModifiedFlows(destinationChainId, tokenSymbol, startBlock, endBlock)
@@ -1268,7 +1289,7 @@ export class Dataworker {
           message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
         });
 
-        const slowFillsForChain = client.getFills().filter((fill) => fill.updatableRelayData.isSlowRelay);
+        const slowFillsForChain = client.getFills().filter((fill) => sdkUtils.isSlowFill(fill));
         for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
             if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) {
@@ -1415,6 +1436,9 @@ export class Dataworker {
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
     const leaves = _leaves.filter(({ payoutAdjustmentPct, relayData }) => {
+      const outputToken = sdkUtils.getRelayDataOutputToken(relayData);
+      const outputAmount = sdkUtils.getRelayDataOutputAmount(relayData);
+
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(relayData.message)) {
         this.logger.warn({
@@ -1423,8 +1447,8 @@ export class Dataworker {
           leafExecutionArgs: [
             relayData.depositor,
             relayData.recipient,
-            relayData.destinationToken,
-            relayData.amount,
+            outputToken,
+            outputAmount,
             relayData.originChainId,
             relayData.realizedLpFeePct,
             relayData.relayerFeePct,
@@ -1471,8 +1495,8 @@ export class Dataworker {
           fill.originChainId === relayData.originChainId &&
           fill.depositor === relayData.depositor &&
           fill.destinationChainId === relayData.destinationChainId &&
-          fill.destinationToken === relayData.destinationToken &&
-          fill.amount.eq(relayData.amount) &&
+          sdkUtils.getFillOutputToken(fill) === sdkUtils.getRelayDataOutputToken(relayData) &&
+          sdkUtils.getFillOutputAmount(fill).eq(sdkUtils.getRelayDataOutputAmount(relayData)) &&
           fill.realizedLpFeePct.eq(relayData.realizedLpFeePct) &&
           fill.relayerFeePct.eq(relayData.relayerFeePct) &&
           fill.recipient === relayData.recipient
@@ -1490,23 +1514,26 @@ export class Dataworker {
             throw new Error("Leaf chainId does not match input chainId");
           }
 
-          // Check if fill was a full fill. If so, execution is unnecessary.
-          if (fill && fill.totalFilledAmount.eq(fill.amount)) {
-            return undefined;
-          }
-
           // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-          const amountFilled = fill ? fill.totalFilledAmount : BigNumber.from(0);
+          let amountFilled = bnZero;
+          if (isDefined(fill)) {
+            // If fill was a full fill, execution is unnecessary.
+            amountFilled = sdkUtils.getTotalFilledAmount(fill);
+            if (amountFilled.eq(sdkUtils.getFillOutputAmount(fill))) {
+              return undefined;
+            }
+          }
 
           // Note: the getRefund function just happens to perform the same math we need.
           // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-          const amountRequired = getRefund(relayData.amount.sub(amountFilled), relayData.realizedLpFeePct);
+          // @todo: v3 should use inputToken and inputAmount.
+          // A broader refactor is needed for that.
+          const outputToken = sdkUtils.getRelayDataOutputToken(relayData);
+          const outputAmount = sdkUtils.getRelayDataOutputAmount(relayData);
+          const amountRequired = getRefund(outputAmount.sub(amountFilled), relayData.realizedLpFeePct);
           const success = await balanceAllocator.requestBalanceAllocation(
             relayData.destinationChainId,
-            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
-              relayData.destinationToken,
-              relayData.destinationChainId
-            ),
+            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, relayData.destinationChainId),
             client.spokePool.address,
             amountRequired
           );
@@ -1520,8 +1547,8 @@ export class Dataworker {
               depositId: relayData.depositId,
               fromChain: relayData.originChainId,
               chainId: relayData.destinationChainId,
-              token: relayData.destinationToken,
-              amount: relayData.amount,
+              token: sdkUtils.getRelayDataOutputToken(relayData),
+              outputAmount,
             });
           }
 
@@ -1534,13 +1561,16 @@ export class Dataworker {
     ).filter(isDefined);
 
     fundedLeaves.forEach(({ relayData, payoutAdjustmentPct }) => {
+      const outputToken = sdkUtils.getRelayDataOutputToken(relayData);
+      const outputAmount = sdkUtils.getRelayDataOutputAmount(relayData);
+
       const mrkdwn =
         `rootBundleId: ${rootBundleId}\n` +
         `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
         `Origin chain: ${relayData.originChainId}\n` +
         `Destination chain:${relayData.destinationChainId}\n` +
         `Deposit Id: ${relayData.depositId}\n` +
-        `amount: ${relayData.amount.toString()}`;
+        `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
@@ -1550,8 +1580,8 @@ export class Dataworker {
           args: [
             relayData.depositor,
             relayData.recipient,
-            relayData.destinationToken,
-            relayData.amount,
+            outputToken,
+            outputAmount,
             relayData.originChainId,
             relayData.realizedLpFeePct,
             relayData.relayerFeePct,
