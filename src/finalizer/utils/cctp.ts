@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { ethers } from "hardhat";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../common";
@@ -30,10 +30,9 @@ export async function cctpFinalizer(
 ): Promise<FinalizerPromise> {
   const l1Signer = hubPoolClient.hubPool.signer;
   const l2Signer = spokePoolClient.spokePool.signer;
-
   const [l1ToL2, l2ToL1] = await Promise.all([
-    l1ToL2Finalizer(logger, l2Signer, hubPoolClient, spokePoolClient, latestBlockToFinalize),
-    l2ToL1Finalizer(logger, l1Signer, hubPoolClient, spokePoolClient, latestBlockToFinalize),
+    l1ToL2Finalizer(l2Signer, hubPoolClient, spokePoolClient, latestBlockToFinalize),
+    l2ToL1Finalizer(l1Signer, hubPoolClient, spokePoolClient, latestBlockToFinalize),
   ]);
   console.log({
     withdrawals: [...l1ToL2.withdrawals, ...l2ToL1.withdrawals],
@@ -50,13 +49,16 @@ export async function cctpFinalizer(
 }
 
 async function l1ToL2Finalizer(
-  logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   latestBlockToFinalize: number
 ): Promise<FinalizerPromise> {
-  const decodedMessages = await resolveCCTPRelatedTxnsOnL1(hubPoolClient, spokePoolClient.chainId);
+  const decodedMessages = await resolveCCTPRelatedTxnsOnL1(
+    hubPoolClient,
+    spokePoolClient.chainId,
+    latestBlockToFinalize
+  );
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
@@ -66,13 +68,16 @@ async function l1ToL2Finalizer(
 }
 
 async function l2ToL1Finalizer(
-  logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   latestBlockToFinalize: number
 ): Promise<FinalizerPromise> {
-  const decodedMessages = await resolveCCTPRelatedTxnsOnL2(spokePoolClient, hubPoolClient.chainId);
+  const decodedMessages = await resolveCCTPRelatedTxnsOnL2(
+    spokePoolClient,
+    hubPoolClient.chainId,
+    latestBlockToFinalize
+  );
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
@@ -83,34 +88,67 @@ async function l2ToL1Finalizer(
 
 async function resolveCCTPRelatedTxnsOnL2(
   client: SpokePoolClient,
-  targetDestinationChainId: number
+  targetDestinationChainId: number,
+  latestBlockToFinalize: number
 ): Promise<DecodedCCTPMessage[]> {
   // Resolve the receipts to all collected txns
-  const txnReceipts = [
-    ...(await Promise.all(
-      client
-        .getTokensBridged()
-        .map((bridgeEvent) => client.spokePool.provider.getTransactionReceipt(bridgeEvent.transactionHash))
-    )),
-    // FIXME: REMOVE THIS - ONLY FOR TESTING
-    // await testBaseProvider.getTransactionReceipt("0x98e0e37e0e6272661f773460a1cab48ea744fd3f800ca2d335226b5473182d27"),
-  ];
-  return (
-    await Promise.all(
-      txnReceipts.map((receipt) => _resolveCCTPRelatedTxn(receipt, client.chainId, targetDestinationChainId))
-    )
-  ).filter(isDefined);
+  const txnReceipts = await Promise.all(
+    client
+      .getTokensBridged()
+      .filter((bridgeEvent) => bridgeEvent.blockNumber > latestBlockToFinalize)
+      .map((bridgeEvent) => client.spokePool.provider.getTransactionReceipt(bridgeEvent.transactionHash))
+  );
+
+  // FIXME: REMOVE THIS - ONLY FOR TESTING
+  txnReceipts.push(
+    await testBaseProvider.getTransactionReceipt("0x98e0e37e0e6272661f773460a1cab48ea744fd3f800ca2d335226b5473182d27")
+  );
+
+  return resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);
 }
 
 async function resolveCCTPRelatedTxnsOnL1(
   client: HubPoolClient,
-  targetDestinationChainId: number
+  targetDestinationChainId: number,
+  latestBlockToFinalize: number
 ): Promise<DecodedCCTPMessage[]> {
-  // Grab the last bundle
-  const bundles = client.getNthFullyExecutedRootBundle(1);
-  return [];
+  // Resolve the receipts to all collected txns
+  const txnReceipts = await Promise.all(
+    client
+      .getExecutedRootBundles()
+      .filter((bundle) => bundle.blockNumber > latestBlockToFinalize)
+      .map((bundle) => client.hubPool.provider.getTransactionReceipt(bundle.transactionHash))
+  );
+
+  // FIXME: REMOVE THIS - ONLY FOR TESTING
+  txnReceipts.push(
+    await testSepoliaProvider.getTransactionReceipt(
+      "0x98e0e37e0e6272661f773460a1cab48ea744fd3f800ca2d335226b5473182d27"
+    )
+  );
+
+  return resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);
 }
 
+async function resolveCCTPRelatedTxns(
+  receipts: TransactionReceipt[],
+  currentChainId: number,
+  targetDestinationChainId: number
+): Promise<DecodedCCTPMessage[]> {
+  return (
+    await Promise.all(
+      receipts.map((receipt) => _resolveCCTPRelatedTxn(receipt, currentChainId, targetDestinationChainId))
+    )
+  ).filter(isDefined);
+}
+
+/**
+ * Converts a TransactionReceipt object into a DecodedCCTPMessage object, if possible.
+ * @param receipt The TransactionReceipt object to convert.
+ * @param currentChainId The chainId that the receipt was generated on.
+ * @param targetDestinationChainId The chainId that the message was sent to.
+ * @returns A DecodedCCTPMessage object if the receipt is a CCTP message, otherwise undefined.
+ */
 async function _resolveCCTPRelatedTxn(
   receipt: TransactionReceipt,
   currentChainId: number,
@@ -124,10 +162,13 @@ async function _resolveCCTPRelatedTxn(
     (l) =>
       l.topics[0] === cctpEventTopic && l.address === CONTRACT_ADDRESSES[currentChainId].cctpMessageTransmitter.address
   );
+  // If we can't find a log that contains a MessageSent event, we should return undefined
   if (!log) {
     return undefined;
   }
+  // We need to decode the message bytes from the log data
   const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], log.data)[0];
+  // We need to further decode the message bytes to get the sourceDomain, destinationDomain, nonce, and amount
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = ethers.utils.hexlify(messageBytesArray.slice(4, 8)); // sourceDomain 4 bytes starting index 4
   const destinationDomain = ethers.utils.hexlify(messageBytesArray.slice(8, 12)); // destinationDomain 4 bytes starting index 8
@@ -136,12 +177,15 @@ async function _resolveCCTPRelatedTxn(
   const messageHash = ethers.utils.keccak256(messageBytes);
   const amountSent = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 216 (idx 68 of body after idx 116 which ends the header)
 
+  // Ensure that we're only processing CCTP messages that are destined for the target destination chain
   if (Number(destinationDomain) !== chainIdsToCctpDomains[targetDestinationChainId]) {
     return undefined;
   }
 
+  // Generate the attestation proof for the message. This is required to finalize the message.
   const attestation = await generateCCTPAttestationProof(messageHash);
 
+  // If we can't generate an attestation proof, we should return undefined
   if (!attestation) {
     return undefined;
   }
@@ -157,22 +201,49 @@ async function _resolveCCTPRelatedTxn(
   };
 }
 
+/**
+ * Generates an attestation proof for a given message hash. This is required to finalize a CCTP message.
+ * @param messageHash The message hash to generate an attestation proof for. This is generated by taking the keccak256 hash of the message bytes of the initial transaction log.
+ * @returns The attestation proof for the given message hash. This is a string of the form "0x<attestation proof>".
+ * @throws An error if the attestation proof cannot be generated. We wait a maximum of 10 seconds for the attestation to be generated. If it is not generated in that time, we throw an error.
+ */
 async function generateCCTPAttestationProof(messageHash: string) {
   let maxTries = 5;
   let attestationResponse: { status: string; attestation: string } = { status: "pending", attestation: "" };
   while (attestationResponse.status !== "complete" && maxTries-- > 0) {
-    const httpResponse = await axios.get<{ status: string; attestation: string }>(
-      `https://iris-api-sandbox.circle.com/attestations/${messageHash}`
-    );
-    attestationResponse = httpResponse.data;
-    if (attestationResponse.status === "complete") {
-      break;
+    try {
+      const httpResponse = await axios.get<{ status: string; attestation: string }>(
+        `https://iris-api-sandbox.circle.com/attestations/${messageHash}`
+      );
+      attestationResponse = httpResponse.data;
+      if (attestationResponse.status === "complete") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    } catch (e) {
+      if (e instanceof AxiosError && e.response?.status === 404) {
+        // Not enough time has passed for the attestation to be generated
+        // We should return and try again later
+        return undefined;
+      } else {
+        // An unknown error occurred. We should throw it up the stack
+        throw e;
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  // Attetestation was not able to be generated. We should throw an error
+  if (attestationResponse.status !== "complete") {
+    throw new Error("Failed to generate attestation proof");
   }
   return attestationResponse.attestation;
 }
 
+/**
+ * Generates a series of populated transactions that can be consumed by the Multicall2 contract.
+ * @param messageTransmitter The CCTPMessageTransmitter contract that will be used to populate the transactions.
+ * @param messages The messages to generate transactions for.
+ * @returns A list of populated transactions that can be consumed by the Multicall2 contract.
+ */
 async function generateMultiCallData(
   messageTransmitter: Contract,
   messages: DecodedCCTPMessage[]
@@ -191,6 +262,13 @@ async function generateMultiCallData(
   );
 }
 
+/**
+ * Generates a list of valid withdrawals for a given list of CCTP messages.
+ * @param messages The CCTP messages to generate withdrawals for.
+ * @param sourceChainId The chain that these messages originated from
+ * @param executionChainId The chain that these messages will be executed on
+ * @returns A list of valid withdrawals for a given list of CCTP messages.
+ */
 async function generateWithdrawalData(
   messages: DecodedCCTPMessage[],
   sourceChainId: number,
