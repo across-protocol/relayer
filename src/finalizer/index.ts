@@ -30,6 +30,7 @@ import {
   Multicall2Call,
 } from "../common";
 import { ChainFinalizer, Withdrawal } from "./types";
+import { scrollFinalizer } from "./utils/scroll";
 const { isDefined } = sdkUtils;
 
 config();
@@ -37,6 +38,7 @@ let logger: winston.Logger;
 
 // Filter for optimistic rollups
 const oneDaySeconds = 24 * 60 * 60;
+const oneHourSeconds = 60 * 60;
 
 const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   10: opStackFinalizer,
@@ -45,6 +47,7 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   324: zkSyncFinalizer,
   8453: opStackFinalizer,
   42161: arbitrumOneFinalizer,
+  534352: scrollFinalizer,
 };
 
 export async function finalize(
@@ -63,6 +66,8 @@ export async function finalize(
     324: oneDaySeconds * 4,
     8453: optimisticRollupFinalizationWindow,
     42161: optimisticRollupFinalizationWindow,
+    534352: oneHourSeconds * 4, // Scroll Mainnet
+    534351: oneHourSeconds * 4, // Scroll Sepolia
   };
 
   const hubChainId = hubPoolClient.chainId;
