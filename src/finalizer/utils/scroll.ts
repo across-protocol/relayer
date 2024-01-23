@@ -141,5 +141,6 @@ function populateClaimWithdrawal(
     l1TokenSymbol: l1Token.symbol,
     amount: claim.value,
     type: "withdrawal",
+    executionChainId: hubPoolClient.chainId, // Always on L1
   };
 }
