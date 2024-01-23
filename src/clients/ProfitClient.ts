@@ -243,7 +243,7 @@ export class ProfitClient {
       "gas cost": tokenGasCost, // gas token (i.e. wei)
       "gas token price": gasTokenPriceUsd, // usd/gasToken
     }).forEach(([err, field]) => {
-      if (field.lte(0)) {
+      if (field.lte(bnZero)) {
         throw new Error(`Unable to compute gas cost (${err} unknown)`);
       }
     });
