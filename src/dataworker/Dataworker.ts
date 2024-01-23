@@ -48,6 +48,7 @@ import {
 import _ from "lodash";
 import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk-v2";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -255,6 +256,19 @@ export class Dataworker {
     }
   }
 
+  async _getEndBlockTimestamps(
+    spokePoolClients: SpokePoolClientsByChain,
+    blockRanges: number[][]
+  ): Promise<{ [chainId: number]: number }> {
+    return Object.fromEntries(
+      await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
+        const chainId = this.chainIdListForBundleEvaluationBlockNumbers[index];
+        const spokePoolClient = spokePoolClients[chainId];
+        return [chainId, (await spokePoolClient.spokePool.provider.getBlock(endBlock)).timestamp];
+      })
+    );
+  }
+
   /**
    * Returns the next bundle block ranges if a new proposal is possible, otherwise
    * returns undefined.
@@ -263,10 +277,10 @@ export class Dataworker {
    * of log level
    * @returns Array of blocks ranges to propose for next bundle.
    */
-  _getNextProposalBlockRanges(
+  async _getNextProposalBlockRanges(
     spokePoolClients: SpokePoolClientsByChain,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): number[][] | undefined {
+  ): Promise<number[][] | undefined> {
     const { configStoreClient, hubPoolClient } = this.clients;
 
     // Check if a bundle is pending.
@@ -302,7 +316,7 @@ export class Dataworker {
       spokePoolClients,
       nextBundleMainnetStartBlock
     );
-
+    const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockRangesForProposal);
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
     if (
@@ -310,6 +324,7 @@ export class Dataworker {
       blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
+        endBlockTimestamps,
         this.chainIdListForBundleEvaluationBlockNumbers,
         earliestBlocksInSpokePoolClients
       )
@@ -344,7 +359,7 @@ export class Dataworker {
     // If we are forcing a bundle range, then we should use that instead of the next proposal block ranges.
     const blockRangesForProposal = isDefined(this.forceBundleRange)
       ? this.forceBundleRange
-      : this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+      : await this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
 
     if (!blockRangesForProposal) {
       return;
@@ -1041,6 +1056,7 @@ export class Dataworker {
       blockRange[0],
       rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
+    const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockRangesImpliedByBundleEndBlocks);
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
@@ -1049,6 +1065,7 @@ export class Dataworker {
       blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
+        endBlockTimestamps,
         this.chainIdListForBundleEvaluationBlockNumbers,
         earliestBlocksInSpokePoolClients
       )
@@ -1305,12 +1322,14 @@ export class Dataworker {
             this.clients.configStoreClient,
             matchingRootBundle
           );
+          const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockNumberRanges);
 
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
             blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
+              endBlockTimestamps,
               this.chainIdListForBundleEvaluationBlockNumbers,
               earliestBlocksInSpokePoolClients
             )
@@ -1987,11 +2006,14 @@ export class Dataworker {
         }
 
         const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
+        const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockNumberRanges);
+
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
           blockRangesAreInvalidForSpokeClients(
             spokePoolClients,
             blockNumberRanges,
+            endBlockTimestamps,
             this.chainIdListForBundleEvaluationBlockNumbers,
             earliestBlocksInSpokePoolClients
           )

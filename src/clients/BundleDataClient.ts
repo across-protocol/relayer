@@ -31,7 +31,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients, typechain } from "@across-protocol/sdk-v2";
+import { clients, typechain, utils } from "@across-protocol/sdk-v2";
 const { refundRequestIsValid, isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
@@ -308,6 +308,23 @@ export class BundleDataClient {
       (_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index]
     );
 
+    // @dev Going to leave this in so we can see impact on run-time in prod
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const bundleBlockTimestamps = Object.fromEntries(
+      await utils.mapAsync(allChainIds, async (chainId, index) => {
+        const spokePoolClient = spokePoolClients[chainId];
+        const startBlockForChain = blockRangesForChains[index][0];
+        const endBlockForChain = blockRangesForChains[index][1];
+        return [
+          chainId,
+          [
+            (await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp,
+            (await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp,
+          ],
+        ];
+      })
+    );
+
     const validateRefundRequestAndSaveData = async (refundRequest: RefundRequestWithBlock): Promise<void> => {
       const result = await refundRequestIsValid(spokePoolClients, this.clients.hubPoolClient, refundRequest);
       if (result.valid) {
@@ -348,6 +365,18 @@ export class BundleDataClient {
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
         }
 
+        const blockRangeForChain = getBlockRangeForChain(
+          blockRangesForChains,
+          Number(destinationChainId),
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+
+        /** *****************************
+         *
+         * Handle LEGACY events
+         *
+         * *****************************/
+
         // Store all deposits in range, for use in constructing a pool rebalance root. Save deposits with
         // their quote time block numbers so we can pull the L1 token counterparts for the quote timestamp.
         // We can safely filter `deposits` by the bundle block range because its only used to decrement running
@@ -377,12 +406,6 @@ export class BundleDataClient {
           )
         );
 
-        const blockRangeForChain = getBlockRangeForChain(
-          blockRangesForChains,
-          Number(destinationChainId),
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
-
         // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
         // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
         // return fill events that are younger than the bundle end block.
@@ -398,6 +421,51 @@ export class BundleDataClient {
             .filter((fill) => !isUBA || fill.destinationChainId === fill.repaymentChainId)
             .map((fill) => validateFillAndSaveData(fill, blockRangeForChain))
         );
+
+        /** *****************************
+         *
+         * Handle V3 events
+         *
+         * *****************************/
+
+        // Perform convenient setup:
+        // - Load all deposits, fills, and request slow fills
+        // - Create dictionary keyed by unique bridge ID {originChainId-depositId}
+        // - Store deposits, fills, and slow fill requests in dictionary
+        // - Separately, store all deposits in list sorted by fillDeadline.
+
+        // TODO handle deposit events and modify running balances
+        // TODO handle fill events, validate them, and modify running balances
+        // TODO handle and validate slow fill requests
+
+        // TODO handle refunds for newly expired deposits (that expired between the bundle start block time stamp
+        // and the bundle end block timestamp).
+
+        // const expiredDeposits = getExpiredDeposits(
+        //   bundleBlockTimestamps[originChainId][0],
+        //   bundleBlockTimestamps[originChainId][1]
+        // );
+
+        // We now need to figure out whether these deposits have been filled already.
+        // Of the unfilled deposits, mark those that have slow fill requests from a previous bundle. We'll have
+        // to return balances to the HubPool for those.
+        // 1. If the deposit is within this current bundle then we know definitively whether it has been filled or not.
+        //    So remove the bundle deposits that have expired and were filled already. With the deposits that are
+        //    unfilled, create a new list, "expiredDeposits".
+        // 2. We are now left with deposits that have expired and were sent in a previous bundle.
+        // 3. First, try to see if these deposits are matched with a fill in the dictionary of unique deposits we
+        //    created earlier. Remove such deposits.
+        // 4. If not, then call SpokePool.fillStatuses(). (This does open us up to a griefing vector where someone
+        //    sends many small deposits with a short fill deadline, making us call fillStatuses() many times.
+        //    This is mitigated because the deposit would have to have been sent in a previous bundle but with a
+        //    fillDeadline that ended in this current bundle.)
+        // 6. Remove any deposits whose fillStatus is Filled
+        // 7. For the deposits whose fillStatus is Unfilled, add them to "expiredDeposits".
+        // 8. For the deposits whose fillStatus is RequestedSlowFill, subtract their refund amount from running
+        // balances on the destination chain since we can no longer execute the slow fill leaf that was included
+        // in a previous bundle, and then add them to "expiredDeposits".
+        // 9. We now have the list of expired deposits to refund on the origin chain, add their cumulative
+        // refund amount to runningBalances for the origin chain.
       }
 
       // Handle fills that requested repayment on a different chain and submitted a refund request.

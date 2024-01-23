@@ -70,10 +70,11 @@ export function getEndBlockBuffers(
 export function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
+  endBlockTimestamps: { [chainId: number]: number },
   chainIdListForBundleEvaluationBlockNumbers: number[],
   latestInvalidBundleStartBlock: { [chainId: number]: number }
-): boolean {
-  return blockRanges.some(([start, end], index) => {
+): Promise<boolean> {
+  return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
     if (isNaN(end) || isNaN(start)) {
@@ -83,16 +84,30 @@ export function blockRangesAreInvalidForSpokeClients(
       return false;
     }
 
+    const spokePoolClient = spokePoolClients[chainId];
+
     // If spoke pool client doesn't exist for enabled chain then we clearly cannot query events for this chain.
-    if (spokePoolClients[chainId] === undefined) {
+    if (spokePoolClient === undefined) {
       return true;
     }
 
-    const clientLastBlockQueried = spokePoolClients[chainId].latestBlockSearched;
+    // V3 deposits have a fill deadline which can be set to a maximum of fillDeadlineBuffer + deposit.block.timestamp.
+    // Therefore, we cannot evaluate a block range for expired deposits if the spoke pool client doesn't return us
+    // deposits whose block.timestamp is within fillDeadlineBuffer of the end block time. As a conservative check,
+    // we verify that the time between the end block timestamp and the /first timestamp queried by the
+    // spoke pool client is greater than the fill deadline buffer.
+    if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < spokePoolClient.getFillDeadlineBuffer()) {
+      return false;
+    }
+
+    // We must now assume that all newly expired deposits at the time of the bundle end blocks are contained within
+    // the spoke pool client's memory.
+
+    const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, start);
+    const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
     return bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried;
   });
 }
