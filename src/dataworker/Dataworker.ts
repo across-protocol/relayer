@@ -1553,11 +1553,14 @@ export class Dataworker {
     ).filter(isDefined);
 
     fundedLeaves.forEach(({ relayData, payoutAdjustmentPct }) => {
-      const mrkdwn = `rootBundleId: ${rootBundleId}\nslowRelayRoot: ${slowRelayTree.getHexRoot()}\nOrigin chain: ${
-        relayData.originChainId
-      }\nDestination chain:${relayData.destinationChainId}\nDeposit Id: ${
-        relayData.depositId
-      }\namount: ${relayData.amount.toString()}`;
+      const mrkdwn =
+        `rootBundleId: ${rootBundleId}\n` +
+        `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
+        `Origin chain: ${relayData.originChainId}\n` +
+        `Destination chain:${relayData.destinationChainId}\n` +
+        `Deposit Id: ${relayData.depositId}\n` +
+        `amount: ${relayData.amount.toString()}`;
+
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,
