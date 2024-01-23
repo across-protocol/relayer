@@ -251,5 +251,10 @@ describe("Dataworker block range-related utility methods", async function () {
         }
       )
     ).to.equal(false);
+
+    // Override spoke pool client fill deadline buffer and oldest time searched and check that it returns false 
+    // buffer is not great enough to cover the time between the end block and the oldest time searched by 
+    // the client.
+    // TODO:
   });
 });
