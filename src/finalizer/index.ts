@@ -16,7 +16,14 @@ import {
   Signer,
   winston,
 } from "../utils";
-import { arbitrumOneFinalizer, opStackFinalizer, polygonFinalizer, zkSyncFinalizer } from "./utils";
+import {
+  arbitrumOneFinalizer,
+  opStackFinalizer,
+  polygonFinalizer,
+  zkSyncFinalizer,
+  scrollFinalizer,
+  cctpFinalizer,
+} from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
@@ -30,8 +37,6 @@ import {
   Multicall2Call,
 } from "../common";
 import { ChainFinalizer, Withdrawal } from "./types";
-import { scrollFinalizer } from "./utils/scroll";
-import { cctpFinalizer } from "./utils/cctp";
 const { isDefined } = sdkUtils;
 
 config();
