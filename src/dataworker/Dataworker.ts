@@ -264,7 +264,7 @@ export class Dataworker {
       await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
         const chainId = this.chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
-        return [chainId, (await spokePoolClient.spokePool.provider.getBlock(endBlock)).timestamp];
+        return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
       })
     );
   }
