@@ -472,6 +472,61 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    scrollRelayMessenger: {
+      address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
+      abi: [
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "_from",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "_to",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "_value",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_nonce",
+              type: "uint256",
+            },
+            {
+              internalType: "bytes",
+              name: "_message",
+              type: "bytes",
+            },
+            {
+              components: [
+                {
+                  internalType: "uint256",
+                  name: "batchIndex",
+                  type: "uint256",
+                },
+                {
+                  internalType: "bytes",
+                  name: "merkleProof",
+                  type: "bytes",
+                },
+              ],
+              internalType: "struct IL1ScrollMessenger.L2MessageProof",
+              name: "_proof",
+              type: "tuple",
+            },
+          ],
+          name: "relayMessageWithProof",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ],
+    },
   },
   10: {
     daiOptimismBridge: {
