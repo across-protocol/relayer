@@ -34,7 +34,8 @@ export async function cctpFinalizer(
     l1ToL2Finalizer(l2Signer, hubPoolClient, spokePoolClient, latestBlockToFinalize),
     l2ToL1Finalizer(l1Signer, hubPoolClient, spokePoolClient, latestBlockToFinalize),
   ]);
-  console.log({
+  // FIXME: REMOVE THIS - ONLY FOR TESTING
+  logger.info({
     withdrawals: [...l1ToL2.withdrawals, ...l2ToL1.withdrawals],
     callData: [...l1ToL2.callData, ...l2ToL1.callData],
   });

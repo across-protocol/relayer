@@ -46,7 +46,7 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer[] } = {
   137: [polygonFinalizer, cctpFinalizer],
   280: [zkSyncFinalizer],
   324: [zkSyncFinalizer],
-  //FIXME: Replace 8453 with the commented code below
+  // FIXME: Replace 8453 with the commented code below
   // 8453: [opStackFinalizer, cctpFinalizer],
   8453: [cctpFinalizer],
   42161: [arbitrumOneFinalizer, cctpFinalizer],
