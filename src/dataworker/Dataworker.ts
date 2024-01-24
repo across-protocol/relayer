@@ -1519,7 +1519,7 @@ export class Dataworker {
           if (isDefined(fill)) {
             // If fill was a full fill, execution is unnecessary.
             amountFilled = sdkUtils.getTotalFilledAmount(fill);
-            if (sdkUtils.isV3Fill(fill) || amountFilled.eq(sdkUtils.getFillOutputAmount(fill))) {
+            if (amountFilled.eq(sdkUtils.getFillOutputAmount(fill)) || sdkUtils.isV3Fill(fill)) {
               return undefined;
             }
           }
