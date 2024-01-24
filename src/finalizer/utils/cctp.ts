@@ -63,7 +63,12 @@ async function l1ToL2Finalizer(
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
-    withdrawals: await generateWithdrawalData(decodedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
+    withdrawals: await generateWithdrawalData(
+      decodedMessages,
+      hubPoolClient.chainId,
+      // FIXME: We're overriding this to be sepolia base
+      84532 ?? spokePoolClient.chainId
+    ),
     callData: await generateMultiCallData(contract, decodedMessages),
   };
 }
@@ -82,7 +87,12 @@ async function l2ToL1Finalizer(
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
-    withdrawals: await generateWithdrawalData(decodedMessages, spokePoolClient.chainId, hubPoolClient.chainId),
+    withdrawals: await generateWithdrawalData(
+      decodedMessages,
+      spokePoolClient.chainId,
+      // FIXME: We're overriding this to be sepolia
+      11155111 ?? hubPoolClient.chainId
+    ),
     callData: await generateMultiCallData(contract, decodedMessages),
   };
 }
@@ -124,7 +134,7 @@ async function resolveCCTPRelatedTxnsOnL1(
   // FIXME: REMOVE THIS - ONLY FOR TESTING
   txnReceipts.push(
     await testSepoliaProvider.getTransactionReceipt(
-      "0x98e0e37e0e6272661f773460a1cab48ea744fd3f800ca2d335226b5473182d27"
+      "0xb2339492acd6d569e322b6d4211020042c366577168338356d170a0a1b45ffa6"
     )
   );
 
@@ -280,7 +290,6 @@ async function generateWithdrawalData(
     amount: message.amount,
     type: "withdrawal",
     l2ChainId: sourceChainId,
-    // FIXME: We're overriding this to be sepolia
-    executionChainId: 11155111 ?? executionChainId,
+    executionChainId: executionChainId,
   }));
 }
