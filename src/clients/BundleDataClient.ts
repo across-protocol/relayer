@@ -314,8 +314,7 @@ export class BundleDataClient {
     const bundleBlockTimestamps: { [chainId: string]: number } = Object.fromEntries(
       await utils.mapAsync(allChainIds, async (chainId, index) => {
         const spokePoolClient = spokePoolClients[chainId];
-        const startBlockForChain = blockRangesForChains[index][0];
-        const endBlockForChain = blockRangesForChains[index][1];
+        const [startBlockForChain, endBlockForChain] = blockRangesForChains[index];
         return [
           chainId,
           [
