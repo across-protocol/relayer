@@ -437,7 +437,6 @@ export class Relayer {
     this.fullyFilledDeposits[fillKey] = !zeroFill;
 
     // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    // @todo: Ensure the SpokePoolClient subs in the correct token in update().
     const outputToken = sdkUtils.getDepositOutputToken(deposit);
     this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, fillAmount);
   }
