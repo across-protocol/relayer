@@ -47,7 +47,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     return await super.computeRealizedLpFeePct(deposit);
   }
 
-  // TODO: This should be moved to the SDK. Remove when migrated.
+  // TODO: Replace when the SDK is bumped
   getExecutedRootBundles(): ExecutedRootBundle[] {
     return this.executedRootBundles;
   }
