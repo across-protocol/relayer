@@ -3,7 +3,7 @@ import { Contract } from "ethers";
 import winston from "winston";
 import { MakeOptional, EventSearchConfig } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
-import { DepositWithBlock, ExecutedRootBundle } from "../interfaces";
+import { DepositWithBlock } from "../interfaces";
 
 export class HubPoolClient extends clients.HubPoolClient {
   constructor(
@@ -45,10 +45,5 @@ export class HubPoolClient extends clients.HubPoolClient {
     }
 
     return await super.computeRealizedLpFeePct(deposit);
-  }
-
-  // TODO: Replace when the SDK is bumped
-  getExecutedRootBundles(): ExecutedRootBundle[] {
-    return this.executedRootBundles;
   }
 }
