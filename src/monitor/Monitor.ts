@@ -13,7 +13,6 @@ import {
   TransfersByTokens,
 } from "../interfaces";
 import {
-  assign,
   BigNumber,
   bnZero,
   Contract,
@@ -213,9 +212,8 @@ export class Monitor {
     for (const deposit of unfilledDeposits) {
       const chainId = deposit.deposit.destinationChainId;
       const outputToken = sdkUtils.getDepositOutputToken(deposit.deposit);
-      if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][outputToken]) {
-        assign(unfilledAmountByChainAndToken, [chainId, outputToken], bnZero);
-      }
+      unfilledAmountByChainAndToken[chainId] ??= {};
+      unfilledAmountByChainAndToken[chainId][outputToken] ??= bnZero;
       unfilledAmountByChainAndToken[chainId][outputToken] = unfilledAmountByChainAndToken[chainId][outputToken].add(
         deposit.unfilledAmount
       );
