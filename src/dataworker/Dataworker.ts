@@ -1519,21 +1519,20 @@ export class Dataworker {
           if (isDefined(fill)) {
             // If fill was a full fill, execution is unnecessary.
             amountFilled = sdkUtils.getTotalFilledAmount(fill);
-            if (amountFilled.eq(sdkUtils.getFillOutputAmount(fill))) {
+            if (sdkUtils.isV3Fill(fill) || amountFilled.eq(sdkUtils.getFillOutputAmount(fill))) {
               return undefined;
             }
           }
 
           // Note: the getRefund function just happens to perform the same math we need.
           // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-          // @todo: v3 should use inputToken and inputAmount.
-          // A broader refactor is needed for that.
-          const outputToken = sdkUtils.getRelayDataOutputToken(relayData);
-          const outputAmount = sdkUtils.getRelayDataOutputAmount(relayData);
-          const amountRequired = getRefund(outputAmount.sub(amountFilled), relayData.realizedLpFeePct);
+          const amountRequired = getRefund(relayData.amount.sub(amountFilled), relayData.realizedLpFeePct);
           const success = await balanceAllocator.requestBalanceAllocation(
             relayData.destinationChainId,
-            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, relayData.destinationChainId),
+            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
+              relayData.destinationToken,
+              relayData.destinationChainId
+            ),
             client.spokePool.address,
             amountRequired
           );
@@ -1547,8 +1546,8 @@ export class Dataworker {
               depositId: relayData.depositId,
               fromChain: relayData.originChainId,
               chainId: relayData.destinationChainId,
-              token: sdkUtils.getRelayDataOutputToken(relayData),
-              outputAmount,
+              token: relayData.destinationToken,
+              amount: relayData.amount,
             });
           }
 

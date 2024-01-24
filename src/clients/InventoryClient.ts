@@ -195,7 +195,7 @@ export class InventoryClient {
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. If the tokens are not equivalent
-    // then just take refunds on the destination chain. The operator is responsible for balancing inventory.
+    // then just take repayment on the destination chain. The operator is responsible for balancing inventory.
     const inputToken = sdkUtils.getDepositInputToken(deposit);
     const outputToken = sdkUtils.getDepositOutputToken(deposit);
     if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
