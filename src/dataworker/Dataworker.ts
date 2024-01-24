@@ -261,7 +261,7 @@ export class Dataworker {
     blockRanges: number[][]
   ): Promise<{ [chainId: number]: number }> {
     return Object.fromEntries(
-      await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
+      await sdk.utils.mapAsync(blockRanges, async ([, endBlock], index) => {
         const chainId = this.chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
         return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
