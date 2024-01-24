@@ -459,7 +459,7 @@ export class BundleDataClient {
         //   For each token:
         //     For this chain's block range in the bundle:
         //       Load all deposits:
-        //         If deposit.fillDeadline <= spoke pool current time at bundle end block, then deposit is expired.
+        //         If deposit.fillDeadline <= destination spoke pool current time at bundle end block, its expired:
         //         - Add it to depositsToRefund.
         //         - Increment runningBalances for the origin chain since we'll have to send a refund for it out of the
         //           origin spoke.
@@ -487,8 +487,8 @@ export class BundleDataClient {
         //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
         //        Else, do nothing, as the slow fill request is invalid.
         //     For all other deposits older than this chain's block range (with blockTimestamp < blockRange[0]):
-        //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[originChainId][1]
-        //        and fillDeadline >= bundleBlockTimestamps[originChainId][0].
+        //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[destinationChain][1]
+        //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0].
         //       - We need to figure out whether these older deposits have been filled already and also whether
         //        they have had slow fill payments sent for them in a previous bundle.
         //       - First, see if these deposits are matched with a fill in the dictionary of unique deposits we
