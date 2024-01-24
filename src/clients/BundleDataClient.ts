@@ -458,8 +458,8 @@ export class BundleDataClient {
         // For each chain:
         //   For each token:
         //     For this chain's block range in the bundle:
-        //       Load all deposits:
-        //         If deposit.fillDeadline <= destination spoke pool current time at bundle end block, its expired:
+        //       Load all deposits in block range:
+        //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
         //         - Add it to depositsToRefund.
         //         - Increment runningBalances for the origin chain since we'll have to send a refund for it out of the
         //           origin spoke.
@@ -480,13 +480,13 @@ export class BundleDataClient {
         //              done in a separate step in PoolRebalanceUtils/dataworker.ts after all fills have been processed.
         //              Save this fill/deposit in excessDeposits.
         //        Else, do nothing, as the fill is a SlowFill execution.
-        //        If slow fill request is valid:
+        //        If slow fill request is valid and does not match a fast fill:
         //          - Add it to bundleSlowFills.
         //          - Increment runningBalances for the destination chain since we'll have to send a slow fill payment
         //            for it out of the destination spoke.
         //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
         //        Else, do nothing, as the slow fill request is invalid.
-        //     For all other deposits older than this chain's block range (with blockTimestamp < blockRange[0]):
+        //     For all other deposits older than this chain's block range (with blockNumber < origin blockRange[0]):
         //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[destinationChain][1]
         //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0].
         //       - We need to figure out whether these older deposits have been filled already and also whether
