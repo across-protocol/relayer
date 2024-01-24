@@ -758,7 +758,7 @@ export class Dataworker {
                 const { hubPoolClient } = this.clients;
                 const { originChainId, destinationChainId, inputToken: originToken } = flow;
 
-                // @todo: Should resolve this more precisely.
+                // @todo: Should resolve quoteBlockNumber on mainnet more precisely.
                 const quoteBlockNumber = hubPoolClient.latestBlockSearched;
                 refundToken = hubPoolClient.getL2TokenForDeposit({
                   originChainId,
