@@ -226,6 +226,11 @@ export type Multicall2Call = {
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [10, 324, 8453];
 
+/**
+ * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
+ * and is an internal mappinng maintained by Circle.
+ * @link https://developers.circle.com/stablecoins/docs/supported-domains
+ */
 export const chainIdsToCctpDomains: { [chainId: number]: number } = {
   // Mainnet
   1: 0, // Mainnet
