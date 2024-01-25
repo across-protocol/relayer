@@ -461,8 +461,6 @@ export class BundleDataClient {
         //       Load all deposits in block range:
         //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
         //         - Add it to depositsToRefund.
-        //         - Increment runningBalances for the origin chain since we'll have to send a refund for it out of the
-        //           origin spoke.
         //         Else
         //         - add it to bundleDepositsV3.
         //         - Decrement runningBalances for origin chain.
