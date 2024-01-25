@@ -503,7 +503,8 @@ export class BundleDataClient {
         //          This is mitigated because the deposit would have to have been sent in a previous bundle but with a
         //          fillDeadline that ended in this current bundle. )
         //       - Remove any deposits whose fillStatus is Filled
-        //       - For the deposits whose fillStatus is Unfilled, add them to depositsToRefund.
+        //       - For the deposits whose fillStatus is Unfilled, add them to depositsToRefund and increment running
+        //         balances on the origin chain.
         //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
         //         from running balances on the destination chain since we can no longer execute the slow fill leaf
         //         that was included in a previous bundle, so let's add them to excessDeposits.

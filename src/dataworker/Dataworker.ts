@@ -320,7 +320,7 @@ export class Dataworker {
     // potential proposal
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
         endBlockTimestamps,
@@ -1061,7 +1061,7 @@ export class Dataworker {
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
         endBlockTimestamps,
@@ -1325,7 +1325,7 @@ export class Dataworker {
 
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-            blockRangesAreInvalidForSpokeClients(
+            await blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
               endBlockTimestamps,
@@ -2012,7 +2012,7 @@ export class Dataworker {
 
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-          blockRangesAreInvalidForSpokeClients(
+          await blockRangesAreInvalidForSpokeClients(
             spokePoolClients,
             blockNumberRanges,
             endBlockTimestamps,
