@@ -95,6 +95,8 @@ export async function finalize(
     534351: oneHourSeconds * 4, // Scroll Sepolia
     84532: optimisticRollupFinalizationWindow, // Base Testnet (Sepolia)
     280: oneDaySeconds * 8, // zkSync Goerli
+    59144: oneHourSeconds * 12, // Linea Mainnet
+    59140: oneHourSeconds * 12, // Linea Goerli
   };
 
   const hubChainId = hubPoolClient.chainId;
