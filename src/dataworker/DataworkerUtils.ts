@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils, typechain } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
@@ -13,6 +14,8 @@ import {
   SlowFillLeaf,
   SpokePoolClientsByChain,
   UnfilledDeposit,
+  v2SlowFillLeaf,
+  v3SlowFillLeaf,
 } from "../interfaces";
 import {
   AnyObject,
@@ -146,22 +149,8 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
 } {
-  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map(
-    (deposit: UnfilledDeposit): SlowFillLeaf => ({
-      relayData: {
-        depositor: deposit.deposit.depositor,
-        recipient: deposit.deposit.recipient,
-        destinationToken: utils.getDepositOutputToken(deposit.deposit),
-        amount: utils.getDepositOutputAmount(deposit.deposit),
-        originChainId: deposit.deposit.originChainId,
-        destinationChainId: deposit.deposit.destinationChainId,
-        realizedLpFeePct: deposit.deposit.realizedLpFeePct,
-        relayerFeePct: deposit.deposit.relayerFeePct,
-        depositId: deposit.deposit.depositId,
-        message: deposit.deposit.message,
-      },
-      payoutAdjustmentPct: deposit?.relayerBalancingFee?.toString() ?? "0",
-    })
+  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map((deposit: UnfilledDeposit) =>
+    utils.isV2Deposit(deposit.deposit) ? buildV2SlowFillLeaf(deposit) : buildV3SlowFillLeaf(deposit)
   );
 
   // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
@@ -178,6 +167,51 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   return {
     leaves: sortedLeaves,
     tree: buildSlowRelayTree(sortedLeaves),
+  };
+}
+
+function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): v2SlowFillLeaf {
+  const { deposit } = unfilledDeposit;
+  assert(utils.isV2Deposit(deposit));
+
+  return {
+    relayData: {
+      depositor: deposit.depositor,
+      recipient: deposit.recipient,
+      destinationToken: deposit.destinationToken,
+      amount: deposit.amount,
+      originChainId: deposit.originChainId,
+      destinationChainId: deposit.destinationChainId,
+      realizedLpFeePct: deposit.realizedLpFeePct,
+      relayerFeePct: deposit.relayerFeePct,
+      depositId: deposit.depositId,
+      message: deposit.message,
+    },
+    payoutAdjustmentPct: unfilledDeposit.relayerBalancingFee?.toString() ?? "0",
+  };
+}
+
+function buildV3SlowFillLeaf(unfilledDeposit: UnfilledDeposit): v3SlowFillLeaf {
+  const { deposit } = unfilledDeposit;
+  assert(utils.isV3Deposit(deposit));
+
+  const updatedOutputAmount = deposit.updatedOutputAmount ?? deposit.outputAmount;
+  return {
+    relayData: {
+      depositor: deposit.depositor,
+      recipient: deposit.recipient,
+      exclusiveRelayer: deposit.relayer,
+      inputToken: deposit.inputToken,
+      outputToken: deposit.outputToken,
+      inputAmount: deposit.inputAmount,
+      outputAmount: deposit.outputAmount,
+      originChainId: deposit.originChainId,
+      depositId: deposit.depositId,
+      fillDeadline: deposit.fillDeadline,
+      message: deposit.message,
+    },
+    chainId: deposit.destinationChainId,
+    updatedOutputAmount,
   };
 }
 
