@@ -90,12 +90,12 @@ export async function finalize(
     8453: optimisticRollupFinalizationWindow, // Base Mainnet
     42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet
     534352: oneHourSeconds * 4, // Scroll Mainnet
+    59144: oneHourSeconds * 12, // Linea Mainnet
 
     // Testnets
     534351: oneHourSeconds * 4, // Scroll Sepolia
     84532: optimisticRollupFinalizationWindow, // Base Testnet (Sepolia)
     280: oneDaySeconds * 8, // zkSync Goerli
-    59144: oneHourSeconds * 12, // Linea Mainnet
     59140: oneHourSeconds * 12, // Linea Goerli
   };
 
