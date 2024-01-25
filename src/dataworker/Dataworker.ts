@@ -767,9 +767,8 @@ export class Dataworker {
                   quoteBlockNumber,
                 });
               }
-            } else {
-              refundToken = flow.refundToken;
             }
+
             updateTotalRefundAmountRaw(fillsToRefund, balancingFee, flow.repaymentChainId, flow.relayer, refundToken);
           }
         });

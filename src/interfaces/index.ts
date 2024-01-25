@@ -47,8 +47,6 @@ export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
 export type SlowFill = interfaces.SlowFill;
 export type SlowFillLeaf = interfaces.SlowFillLeaf;
-export type RefundRequest = interfaces.RefundRequest;
-export type RefundRequestWithBlock = interfaces.RefundRequestWithBlock;
 export type RootBundleRelay = interfaces.RootBundleRelay;
 export type RootBundleRelayWithBlock = interfaces.RootBundleRelayWithBlock;
 export type RelayerRefundExecution = interfaces.RelayerRefundExecution;
@@ -71,7 +69,6 @@ export type UBASystemFee = clients.SystemFeeResult;
 export const isUbaInflow = interfaces.isUbaInflow;
 export const isUbaOutflow = interfaces.isUbaOutflow;
 export const outflowIsFill = interfaces.outflowIsFill;
-export const outflowIsRefund = interfaces.outflowIsRefund;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 
