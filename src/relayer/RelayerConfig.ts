@@ -16,7 +16,6 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingRebalancesEnabled: boolean;
   readonly sendingMessageRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
-  readonly sendingRefundRequestsEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
@@ -50,7 +49,6 @@ export class RelayerConfig extends CommonConfig {
       SKIP_RELAYS,
       SKIP_REBALANCING,
       SEND_SLOW_RELAYS,
-      SEND_REFUND_REQUESTS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
@@ -141,7 +139,6 @@ export class RelayerConfig extends CommonConfig {
     this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
     this.skipRelays = SKIP_RELAYS === "true";
     this.skipRebalancing = SKIP_REBALANCING === "true";
-    this.sendingRefundRequestsEnabled = SEND_REFUND_REQUESTS !== "false";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
     (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS

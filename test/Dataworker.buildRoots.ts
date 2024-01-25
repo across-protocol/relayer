@@ -29,7 +29,6 @@ import {
   buildFill,
   buildFillForRepaymentChain,
   buildPoolRebalanceLeafTree,
-  buildRefundRequest,
   buildRelayerRefundTreeWithUnassignedLeafIds,
   buildSlowFill,
   buildSlowRelayLeaves,
@@ -1678,8 +1677,6 @@ describe("Dataworker: Build merkle roots", async function () {
         );
         expect(relayerRefundLeaves1.leaves.length).to.equal(0);
 
-        // Now, send a refund:
-        await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
         await updateAllClients();
         const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(2),
@@ -1693,14 +1690,7 @@ describe("Dataworker: Build merkle roots", async function () {
           [originChainId],
           ubaClient
         );
-        const leaf1 = {
-          chainId: originChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: [relayer.address],
-          refundAmounts: [getRefund(deposit1.amount, ubaRealizedLpFeePct)],
-        };
-        expect(relayerRefundLeaves2.leaves[0]).excludingEvery(["amountToReturn", "leafId"]).to.deep.equal(leaf1);
+        expect(relayerRefundLeaves2.leaves.length).to.equal(0);
       });
       it("Relayer balancing fees are added to refunded amounts to relayers", async function () {
         // Submit 1 deposit and 1 fill on same chain:
@@ -1806,43 +1796,16 @@ describe("Dataworker: Build merkle roots", async function () {
             refundAddresses: [relayer.address],
           });
 
-        // Add a refund, not a fill, to the flows object. Check that refund
-        // is sent to repayment chain.
-        await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
-        await updateAllClients();
-        const refundRequest = spokePoolClient_1.getRefundRequests()[0];
-        ubaClient.setFlows(originChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...refundRequest,
-              matchedDeposit: deposit,
-            },
-            lpFee: toBNWei("0.5"),
-            balancingFee: toBNWei("0.1"),
-            runningBalance: toBNWei("0"),
-            incentiveBalance: toBNWei("0"),
-            netRunningBalanceAdjustment: toBNWei("0"),
-          },
-        ]);
-
         const relayerRefundLeaves3 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
           {},
           poolRebalanceLeaves,
           blockRanges,
-          [refundRequest.repaymentChainId],
+          [],
           ubaClient
         );
         // Expected refund amount is now 1 + new balancing fee.
         expectedRefundAmount = toBNWei("0.1");
-        expect(relayerRefundLeaves3.leaves.length).to.equal(1);
-        expect(relayerRefundLeaves3.leaves[0])
-          .excludingEvery(["amountToReturn", "leafId"])
-          .to.deep.equal({
-            chainId: refundRequest.repaymentChainId,
-            refundAmounts: [expectedRefundAmount],
-            l2TokenAddress: refundRequest.refundToken,
-            refundAddresses: [refundRequest.relayer],
-          });
+        expect(relayerRefundLeaves3.leaves.length).to.equal(0);
       });
     });
     describe("Build slow relay root", function () {

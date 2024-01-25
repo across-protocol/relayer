@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as ethersUtils } from "ethers";
 import {
   winston,
@@ -746,7 +747,8 @@ export class Dataworker {
           // repayment chain to pay out the refund. But we need to check which
           // token should be repaid in.
           if (isUbaOutflow(flow)) {
-            const refundToken = outflowIsFill(flow) ? flow.destinationToken : flow.refundToken;
+            assert(outflowIsFill(flow));
+            const refundToken = flow.destinationToken;
             updateTotalRefundAmountRaw(fillsToRefund, balancingFee, flow.repaymentChainId, flow.relayer, refundToken);
           }
         });

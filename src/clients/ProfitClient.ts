@@ -202,7 +202,6 @@ export class ProfitClient {
     return price;
   }
 
-  // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
   async getTotalGasCost(deposit: Deposit, fillAmount = deposit.amount): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
 
