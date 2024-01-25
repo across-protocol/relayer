@@ -94,9 +94,18 @@ export function blockRangesAreInvalidForSpokeClients(
     // V3 deposits have a fill deadline which can be set to a maximum of fillDeadlineBuffer + deposit.block.timestamp.
     // Therefore, we cannot evaluate a block range for expired deposits if the spoke pool client doesn't return us
     // deposits whose block.timestamp is within fillDeadlineBuffer of the end block time. As a conservative check,
-    // we verify that the time between the end block timestamp and the /first timestamp queried by the
-    // spoke pool client is greater than the fill deadline buffer.
-    if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < spokePoolClient.getFillDeadlineBuffer()) {
+    // we verify that the time between the end block timestamp and the first timestamp queried by the
+    // spoke pool client is greater than the maximum of the fill deadline buffers at the start and end of the block
+    // range. We assume the fill deadline buffer wasn't changed more than once within a bundle.
+    const fillDeadlineBuffers = await Promise.all([
+      spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: start }),
+      spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: end }),
+    ]);
+    const maxFillDeadlineBufferInBlockRange = Math.max(
+      fillDeadlineBuffers[0].toNumber(),
+      fillDeadlineBuffers[1].toNumber()
+    );
+    if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
       return false;
     }
 

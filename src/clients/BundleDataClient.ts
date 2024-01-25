@@ -438,7 +438,13 @@ export class BundleDataClient {
         // Consider going through all events and storing them into the following dictionary
         // for convenient lookup on the second pass when sorting them into the above lists which we'll
         // ultimately return to the dataworker.
-        // const depositHashes: { [depositUuid: string]: { deposits: v3Deposit[]; fills: v3Fill[]; slowFillRequests: SlowFillRequest [] } } = {};
+        // const depositHashes: {
+        //   [relayDataHash: string]: {
+        //    deposits: v3Deposit[];
+        //    fills: v3Fill[];
+        //    slowFillRequests: SlowFillRequest []
+        //    }
+        // } = {};
 
         // Notes:
         // 1. How to decrement slow fill excesses from running balances:
