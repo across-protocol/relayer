@@ -98,11 +98,11 @@ export class MultiCallerClient {
     }
   }
 
-  async executeTransactionQueue(simulate = false): Promise<string[]> {
-    // For compatibility with the existing implementation, flatten all txn hashes into a single array.
-    // To be resolved once the legacy implementation is removed and the callers have been updated.
-    const txnHashes: { [chainId: number]: string[] } = await this.executeTxnQueues(simulate);
-    return Object.values(txnHashes).flat();
+  async executeTransactionQueue(simulate = false): Promise<Record<number, string>> {
+    // For compatibility with the existing implementation, only resolve the first
+    // txn of each chain.
+    const txnHashesByChain = await this.executeTxnQueues(simulate);
+    return Object.fromEntries(Object.entries(txnHashesByChain).map(([chainId, txnHashes]) => [chainId, txnHashes[0]]));
   }
 
   // For each chain, collate the enqueued transactions and process them in parallel.

@@ -1,43 +1,43 @@
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import assert from "assert";
 import { BigNumber, Contract, constants } from "ethers";
 import { groupBy, uniq } from "lodash";
-import {
-  config,
-  startupLogLevel,
-  processEndPollingLoop,
-  getNetworkName,
-  blockExplorerLink,
-  getBlockForTimestamp,
-  getCurrentTime,
-  disconnectRedisClients,
-  getMultisender,
-  getRedisCache,
-  Signer,
-  winston,
-} from "../utils";
-import {
-  arbitrumOneFinalizer,
-  opStackFinalizer,
-  polygonFinalizer,
-  zkSyncFinalizer,
-  scrollFinalizer,
-  cctpL1toL2Finalizer,
-  cctpL2toL1Finalizer,
-} from "./utils";
-import { SpokePoolClientsByChain } from "../interfaces";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
-import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
+  Clients,
+  FINALIZER_TOKENBRIDGE_LOOKBACK,
+  Multicall2Call,
+  ProcessEnv,
   constructClients,
   constructSpokePoolClientsWithLookback,
   updateSpokePoolClients,
-  Clients,
-  ProcessEnv,
-  FINALIZER_TOKENBRIDGE_LOOKBACK,
-  Multicall2Call,
 } from "../common";
+import { DataworkerConfig } from "../dataworker/DataworkerConfig";
+import { SpokePoolClientsByChain } from "../interfaces";
+import {
+  Signer,
+  blockExplorerLink,
+  config,
+  disconnectRedisClients,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getMultisender,
+  getNetworkName,
+  getRedisCache,
+  processEndPollingLoop,
+  startupLogLevel,
+  winston,
+} from "../utils";
 import { ChainFinalizer, CrossChainTransfer } from "./types";
+import {
+  arbitrumOneFinalizer,
+  cctpL1toL2Finalizer,
+  cctpL2toL1Finalizer,
+  opStackFinalizer,
+  polygonFinalizer,
+  scrollFinalizer,
+  zkSyncFinalizer,
+} from "./utils";
 const { isDefined } = sdkUtils;
 
 config();
@@ -67,6 +67,8 @@ const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   137: [polygonFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   8453: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
+
+  84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
 };
 
 export async function finalize(
@@ -79,14 +81,18 @@ export async function finalize(
   polygonFinalizationWindow: number = oneDaySeconds
 ): Promise<void> {
   const finalizationWindows: { [chainId: number]: number } = {
-    10: optimisticRollupFinalizationWindow,
-    137: polygonFinalizationWindow,
-    280: oneDaySeconds * 8,
-    324: oneDaySeconds * 4,
-    8453: optimisticRollupFinalizationWindow,
-    42161: optimisticRollupFinalizationWindow,
+    // Mainnets
+    10: optimisticRollupFinalizationWindow, // Optimism Mainnet
+    137: polygonFinalizationWindow, // Polygon Mainnet
+    324: oneDaySeconds * 4, // zkSync Mainnet
+    8453: optimisticRollupFinalizationWindow, // Base Mainnet
+    42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet
     534352: oneHourSeconds * 4, // Scroll Mainnet
+
+    // Testnets
     534351: oneHourSeconds * 4, // Scroll Sepolia
+    84532: optimisticRollupFinalizationWindow, // Base Testnet (Sepolia)
+    280: oneDaySeconds * 8, // zkSync Goerli
   };
 
   const hubChainId = hubPoolClient.chainId;
@@ -112,8 +118,8 @@ export async function finalize(
 
     // We want to first resolve a possible override for the finalizer, and
     // then fallback to the default finalizer.
-    const chainSpecificFinalizers = chainFinalizerOverrides[chainId] ?? [chainFinalizers[chainId]];
-    assert(chainSpecificFinalizers?.length > 0, `No withdrawal finalizer available for chain ${chainId}`);
+    const chainSpecificFinalizers = (chainFinalizerOverrides[chainId] ?? [chainFinalizers[chainId]]).filter(isDefined);
+    assert(chainSpecificFinalizers?.length > 0, `No finalizer available for chain ${chainId}`);
 
     const finalizationWindow = finalizationWindows[chainId];
     assert(finalizationWindow !== undefined, `No finalization window defined for chain ${chainId}`);
@@ -156,12 +162,20 @@ export async function finalize(
   }
   const multicall2Lookup = Object.fromEntries(
     await Promise.all(
-      configuredChainIds.map(
+      uniq([...configuredChainIds, hubChainId]).map(
         async (chainId) =>
           [chainId, await getMultisender(chainId, spokePoolClients[chainId].spokePool.signer)] as [number, Contract]
       )
     )
   );
+  // Assert that no multicall2Lookup is undefined
+  assert(
+    Object.values(multicall2Lookup).every(isDefined),
+    `Multicall2 lookup is undefined for chain ids: ${Object.entries(multicall2Lookup)
+      .filter(([, v]) => v === undefined)
+      .map(([k]) => k)}`
+  );
+
   const txnClient = new TransactionClient(logger);
 
   let gasEstimation = constants.Zero;
@@ -211,7 +225,7 @@ export async function finalize(
     // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
     // safety features
     const multicallerClient = new MultiCallerClient(logger);
-    let txnHash: string;
+    let txnHashLookup: Record<number, string> = {};
     try {
       const finalizationsByChain = groupBy(
         finalizations,
@@ -232,7 +246,7 @@ export async function finalize(
         };
         multicallerClient.enqueueTransaction(txnToSubmit);
       }
-      [txnHash] = await multicallerClient.executeTransactionQueue();
+      txnHashLookup = await multicallerClient.executeTransactionQueue();
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -259,7 +273,7 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Submitted proof on ${destinationNetwork} to initiate ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜`,
-          transactionHash: blockExplorerLink(txnHash, hubChainId),
+          transactionHash: blockExplorerLink(txnHashLookup[destinationChainId], destinationChainId),
         });
       }
     );
@@ -270,7 +284,7 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
-          transactionHash: blockExplorerLink(txnHash, hubChainId),
+          transactionHash: blockExplorerLink(txnHashLookup[destinationChainId], destinationChainId),
         });
       }
     );
@@ -296,7 +310,8 @@ export async function constructFinalizerClients(
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback
+    config.maxFinalizerLookback,
+    [11155111, 84532]
   );
 
   return {

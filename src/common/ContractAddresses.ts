@@ -514,9 +514,7 @@ export const CONTRACT_ADDRESSES: {
       ],
     },
     cctpMessageTransmitter: {
-      // FIXME: ONLY FOR TESTING DID WE SWITCH OUT THE SEPOLIA ADDRESS
-      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
-      // address: "0x0a992d191deec32afe36203ad87d7d289a738f81",
+      address: "0x0a992d191deec32afe36203ad87d7d289a738f81",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
     scrollRelayMessenger: {
@@ -789,9 +787,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
     cctpMessageTransmitter: {
-      // FIXME: ONLY FOR TESTING DID WE SWITCH OUT THE SEPOLIA ADDRESS
-      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
-      // address: "0xAD09780d193884d503182aD4588450C416D6F9D4",
+      address: "0xAD09780d193884d503182aD4588450C416D6F9D4",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
@@ -849,6 +845,20 @@ export const CONTRACT_ADDRESSES: {
     },
     cctpMessageTransmitter: {
       address: "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+
+  // Testnets
+  11155111: {
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+  84532: {
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
