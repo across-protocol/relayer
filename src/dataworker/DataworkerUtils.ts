@@ -15,7 +15,6 @@ import {
   SpokePoolClientsByChain,
   UnfilledDeposit,
   v2SlowFillLeaf,
-  v3SlowFillLeaf,
 } from "../interfaces";
 import {
   AnyObject,
