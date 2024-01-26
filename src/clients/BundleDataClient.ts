@@ -222,7 +222,8 @@ export class BundleDataClient {
       matchedDeposit: DepositWithBlock,
       blockRangeForChain: number[]
     ) => {
-      // Sanity check, exit early if this fill is a duplicate fill:
+      // Extra check for duplicate fills. These should be blocked at the contract level but might still be included
+      // by the RPC so its worth checking here.
       if (
         allValidFills.some(
           (existingFill) =>
@@ -376,6 +377,9 @@ export class BundleDataClient {
       }
     }
 
+    // Note: We do not check for duplicate slow fills here since `addRefundForValidFill` already checks for duplicate
+    // fills and is the function that populates the `unfilledDeposits` dictionary. Therefore, if there are no duplicate
+    // fills, then there won't be duplicate `matchedDeposits` used to populate `unfilledDeposits`.
     // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
     // out any deposits that are fully filled.
     const unfilledDeposits = flattenAndFilterUnfilledDepositsByOriginChain(unfilledDepositsForOriginChain);
