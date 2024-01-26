@@ -14,7 +14,7 @@ import {
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Multicall2Call } from "../../common";
-import { FinalizerPromise, Withdrawal } from "../types";
+import { FinalizerPromise, CrossChainTransfer } from "../types";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -161,7 +161,7 @@ async function multicallPolygonFinalizations(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+): Promise<{ callData: Multicall2Call[]; crossChainTransfers: CrossChainTransfer[] }> {
   const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
   const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
   const tokensInFinalizableMessages = getL2TokensToFinalize(
@@ -177,7 +177,7 @@ async function multicallPolygonFinalizations(
     )
   );
   callData.push(...callDataRetrievals);
-  const withdrawals = finalizableMessages.map(({ l2TokenAddress, amountToReturn }) => {
+  const crossChainTransfers = finalizableMessages.map(({ l2TokenAddress, amountToReturn }) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
       l2TokenAddress,
       CHAIN_ID,
@@ -185,18 +185,18 @@ async function multicallPolygonFinalizations(
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
-    const withdrawal: Withdrawal = {
-      l2ChainId: CHAIN_ID,
+    const crossChainTransfers: CrossChainTransfer = {
+      originationChainId: CHAIN_ID,
+      destinationChainId: hubPoolClient.chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
-      executionChainId: hubPoolClient.chainId,
     };
-    return withdrawal;
+    return crossChainTransfers;
   });
   return {
     callData,
-    withdrawals,
+    crossChainTransfers,
   };
 }
 
