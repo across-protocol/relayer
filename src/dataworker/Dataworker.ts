@@ -1288,7 +1288,7 @@ export class Dataworker {
           message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
         });
 
-        const slowFillsForChain = client.getFills().filter((fill) => sdkUtils.isSlowFill(fill));
+        const slowFillsForChain = client.getFills().filter(sdkUtils.isSlowFill);
         for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
             if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) {
