@@ -462,7 +462,7 @@ export class Dataworker {
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
-      await this.clients.bundleDataClient._loadData(blockRangesForProposal, spokePoolClients, false, logData);
+      await this.clients.bundleDataClient._loadData(blockRangesForProposal, spokePoolClients, logData);
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
@@ -565,7 +565,6 @@ export class Dataworker {
     const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient._loadData(
       blockRangesForProposal,
       ubaClient.spokePoolClients,
-      true,
       logData
     );
     // Build RelayerRefundRoot:

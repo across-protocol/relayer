@@ -30,8 +30,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients, typechain } from "@across-protocol/sdk-v2";
-const { isUBAActivatedAtBlock } = clients;
+import { typechain } from "@across-protocol/sdk-v2";
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -178,21 +177,11 @@ export class BundleDataClient {
     deposits: DepositWithBlock[];
     earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
-    const mainnetStartBlock = getBlockRangeForChain(
-      blockRangesForChains,
-      this.clients.hubPoolClient.chainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[0];
-    let isUBA = false;
-    if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock, this.clients.hubPoolClient.chainId)) {
-      isUBA = true;
-    }
-    return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
+    return this._loadData(blockRangesForChains, spokePoolClients, logData);
   }
   async _loadData(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    isUBA = false,
     logData = true
   ): Promise<{
     unfilledDeposits: UnfilledDeposit[];
@@ -233,6 +222,16 @@ export class BundleDataClient {
       matchedDeposit: DepositWithBlock,
       blockRangeForChain: number[]
     ) => {
+      // Sanity check, exit early if this fill is a duplicate fill:
+      if (
+        allValidFills.some(
+          (existingFill) =>
+            existingFill.originChainId === fillWithBlock.originChainId &&
+            existingFill.depositId === fillWithBlock.depositId
+        )
+      ) {
+        return;
+      }
       // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
       // time. Note that its important we don't skip fills earlier than the block range at this step because
       // we use allValidFills to find the first fill in the entire history associated with a fill in the block
@@ -372,15 +371,7 @@ export class BundleDataClient {
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
-        // In the UBA model, fills that request repayment on another chain must send a separate refund request
-        // in order to mark their place in the outflow queue for that chain. This is because the UBA determines
-        // fees based on sequencing of events. Pre-UBA, the fee model treats each fill independently so there
-        // is no need to mark a fill's place in line on the repayment chain.
-        await Promise.all(
-          fillsForOriginChain
-            .filter((fill) => !isUBA || fill.destinationChainId === fill.repaymentChainId)
-            .map((fill) => validateFillAndSaveData(fill, blockRangeForChain))
-        );
+        await Promise.all(fillsForOriginChain.map((fill) => validateFillAndSaveData(fill, blockRangeForChain)));
       }
     }
 
