@@ -227,7 +227,8 @@ export class BundleDataClient {
         allValidFills.some(
           (existingFill) =>
             existingFill.originChainId === fillWithBlock.originChainId &&
-            existingFill.depositId === fillWithBlock.depositId
+            existingFill.depositId === fillWithBlock.depositId &&
+            existingFill.totalFilledAmount === fillWithBlock.totalFilledAmount
         )
       ) {
         return;

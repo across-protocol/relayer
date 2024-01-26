@@ -1,5 +1,5 @@
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { Deposit, DepositWithBlock, Fill, RunningBalances } from "../src/interfaces";
+import { Deposit, Fill, RunningBalances } from "../src/interfaces";
 import {
   EMPTY_MERKLE_ROOT,
   compareAddresses,
@@ -35,7 +35,6 @@ import {
   buildSlowRelayTree,
   constructPoolRebalanceTree,
   createSpyLogger,
-  deepEqualsWithBigNumber,
   deployNewTokenMapping,
   enableRoutesOnHubPool,
   ethers,
@@ -51,14 +50,13 @@ import {
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { MockUBAClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient, spokePoolClient_1: SpokePoolClient;
-let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
+let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
+let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let spy: sinon.SinonSpy;
@@ -85,8 +83,6 @@ describe("Dataworker: Build merkle roots", async function () {
       timer,
       spokePoolClients,
       spy,
-      spokePoolClient_1,
-      spokePoolClient_2,
       updateAllClients,
     } = fastDataworkerResult);
   });
