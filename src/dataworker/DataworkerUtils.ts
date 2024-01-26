@@ -150,7 +150,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   tree: MerkleTree<SlowFillLeaf>;
 } {
   const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map((deposit: UnfilledDeposit) =>
-    utils.isV2Deposit(deposit.deposit) ? buildV2SlowFillLeaf(deposit) : buildV3SlowFillLeaf(deposit)
+    buildV2SlowFillLeaf(deposit)
   );
 
   // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
@@ -188,30 +188,6 @@ function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): v2SlowFillLeaf {
       message: deposit.message,
     },
     payoutAdjustmentPct: unfilledDeposit.relayerBalancingFee?.toString() ?? "0",
-  };
-}
-
-function buildV3SlowFillLeaf(unfilledDeposit: UnfilledDeposit): v3SlowFillLeaf {
-  const { deposit } = unfilledDeposit;
-  assert(utils.isV3Deposit(deposit));
-
-  const updatedOutputAmount = deposit.updatedOutputAmount ?? deposit.outputAmount;
-  return {
-    relayData: {
-      depositor: deposit.depositor,
-      recipient: deposit.recipient,
-      exclusiveRelayer: deposit.relayer,
-      inputToken: deposit.inputToken,
-      outputToken: deposit.outputToken,
-      inputAmount: deposit.inputAmount,
-      outputAmount: deposit.outputAmount,
-      originChainId: deposit.originChainId,
-      depositId: deposit.depositId,
-      fillDeadline: deposit.fillDeadline,
-      message: deposit.message,
-    },
-    chainId: deposit.destinationChainId,
-    updatedOutputAmount,
   };
 }
 

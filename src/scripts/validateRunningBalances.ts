@@ -253,11 +253,13 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             // the slow fill amount was sent to the spoke pool.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter((f) => {
               const outputToken = sdkUtils.getRelayDataOutputToken(f.relayData);
-              return f.relayData.destinationChainId === leaf.chainId && outputToken === l2Token;
+              const destinationChainId = sdkUtils.getSlowFillLeafChainId(f);
+              return destinationChainId === leaf.chainId && outputToken === l2Token;
             });
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-                const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
+                const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+                const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
                   .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
                   .filter(
                     (f) =>
@@ -275,6 +277,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                     amountSentForSlowFillLeftUnexecuted,
                     slowFillForChain.relayData.realizedLpFeePct
                   );
+
                   mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
                     deductionForSlowFill.toString(),
                     decimals
@@ -298,13 +301,16 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           );
           const slowFillsForPoolRebalanceLeaf = slowFills.filter((f) => {
             const outputToken = sdkUtils.getRelayDataOutputToken(f.relayData);
-            return f.relayData.destinationChainId === leaf.chainId && outputToken === l2Token;
+            const destinationChainId = sdkUtils.getSlowFillLeafChainId(f);
+            return destinationChainId === leaf.chainId && outputToken === l2Token;
           });
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-              const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
-                .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
-                .filter((f) => f.depositId === slowFillForChain.relayData.depositId);
+              const { relayData } = slowFillForChain;
+              const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+              const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
+                .getFillsForOriginChain(relayData.originChainId)
+                .filter(({ depositId }) => depositId === relayData.depositId);
 
               const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
               const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
