@@ -20,7 +20,7 @@ export type DecodedCCTPMessage = {
  * Note: due to the nature of testnet/mainnet chain ids mapping to the same CCTP domain, we
  *       actually have a mapping of CCTP Domain -> [chainId].
  */
-const invertedCctpDomainsToChainIds = Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
+const cctpDomainsToChainIds = Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
   if (!acc[cctpDomain]) {
     acc[cctpDomain] = [];
   }
@@ -93,8 +93,8 @@ async function _resolveCCTPRelatedTxns(
           const amountSent = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 216 (idx 68 of body after idx 116 which ends the header)
 
           // Perform some extra steps to get the source and destination chain ids
-          const resolvedPossibleSourceChainIds = invertedCctpDomainsToChainIds[Number(sourceDomain)];
-          const resolvedPossibleDestinationChainIds = invertedCctpDomainsToChainIds[Number(destinationDomain)];
+          const resolvedPossibleSourceChainIds = cctpDomainsToChainIds[Number(sourceDomain)];
+          const resolvedPossibleDestinationChainIds = cctpDomainsToChainIds[Number(destinationDomain)];
 
           // Ensure that we're only processing CCTP messages that are both from the source chain and destined for the target destination chain
           if (
