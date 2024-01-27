@@ -139,6 +139,7 @@ export async function finalize(
     // responsible for.
     let totalWithdrawalsForChain = 0;
     let totalDepositsForChain = 0;
+    let totalProofsForChain = 0;
     for (const finalizer of chainSpecificFinalizers) {
       const { callData, crossChainTransfers } = await finalizer(
         logger,
@@ -154,10 +155,11 @@ export async function finalize(
 
       totalWithdrawalsForChain += crossChainTransfers.filter(({ type }) => type === "withdrawal").length;
       totalDepositsForChain += crossChainTransfers.filter(({ type }) => type === "deposit").length;
+      totalProofsForChain += crossChainTransfers.filter(({ type }) => type === "proof").length;
     }
     logger.debug({
       at: "finalize",
-      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits ) for finalization.`,
+      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalProofsForChain} proofs ) for finalization.`,
     });
   }
   const multicall2Lookup = Object.fromEntries(
