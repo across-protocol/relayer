@@ -310,8 +310,7 @@ export async function constructFinalizerClients(
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback,
-    [11155111, 84532]
+    config.maxFinalizerLookback
   );
 
   return {
