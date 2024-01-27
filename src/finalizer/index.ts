@@ -227,7 +227,7 @@ export async function finalize(
     // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
     // safety features
     const multicallerClient = new MultiCallerClient(logger);
-    let txnHashLookup: Record<number, string> = {};
+    let txnHashLookup: Record<number, string[]> = {};
     try {
       const finalizationsByChain = groupBy(
         finalizations,
@@ -248,7 +248,7 @@ export async function finalize(
         };
         multicallerClient.enqueueTransaction(txnToSubmit);
       }
-      txnHashLookup = await multicallerClient.executeTransactionQueue();
+      txnHashLookup = await multicallerClient.executeTxnQueues();
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -275,7 +275,9 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Submitted proof on ${destinationNetwork} to initiate ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜`,
-          transactionHash: blockExplorerLink(txnHashLookup[destinationChainId], destinationChainId),
+          transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
+            blockExplorerLink(txnHash, destinationChainId)
+          ),
         });
       }
     );
@@ -286,7 +288,9 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
-          transactionHash: blockExplorerLink(txnHashLookup[destinationChainId], destinationChainId),
+          transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
+            blockExplorerLink(txnHash, destinationChainId)
+          ),
         });
       }
     );
