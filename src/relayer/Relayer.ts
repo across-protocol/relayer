@@ -1,4 +1,3 @@
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
 import { Deposit, DepositWithBlock, L1Token } from "../interfaces";
@@ -284,9 +283,6 @@ export class Relayer {
       const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
       const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
-        // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
-        // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
         const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
           version,
           deposit,
@@ -484,7 +480,7 @@ export class Relayer {
       ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
       : destinationChainId;
 
-    const refundFee = this.computeRefundFee(version, deposit);
+    const refundFee = bnZero;
     const { profitable, nativeGasCost: gasLimit } = await profitClient.isFillProfitable(
       deposit,
       fillAmount,
@@ -496,47 +492,6 @@ export class Relayer {
       repaymentChainId: profitable ? preferredChainId : undefined,
       gasLimit,
     };
-  }
-
-  protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
-    const { depositId, originChainId } = deposit;
-    if (!sdkUtils.isUBA(version)) {
-      if (deposit.realizedLpFeePct === undefined) {
-        throw new Error(`Chain ${originChainId} deposit ${depositId} is missing realizedLpFeePct`);
-      }
-      return deposit.realizedLpFeePct;
-    }
-
-    const { ubaClient } = this.clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-
-    const { depositBalancingFee, lpFee } = ubaClient.computeFeesForDeposit(deposit);
-    const realizedLpFeePct = depositBalancingFee.add(lpFee);
-
-    const chain = getNetworkName(deposit.originChainId);
-    this.logger.debug({
-      at: "relayer::computeRealizedLpFeePct",
-      message: `Computed UBA system fee for ${chain} depositId ${depositId}: ${realizedLpFeePct}`,
-    });
-
-    return realizedLpFeePct;
-  }
-
-  protected computeRefundFee(version: number, deposit: DepositWithBlock): BigNumber {
-    if (!sdkUtils.isUBA(version)) {
-      return bnZero;
-    }
-
-    const { hubPoolClient, ubaClient } = this.clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-
-    const tokenSymbol = hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId)?.symbol;
-    const relayerBalancingFee = ubaClient.computeBalancingFeeForNextRefund(
-      deposit.destinationChainId,
-      tokenSymbol,
-      deposit.amount
-    );
-    return relayerBalancingFee;
   }
 
   private handleTokenShortfall() {
