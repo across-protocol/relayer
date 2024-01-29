@@ -479,7 +479,8 @@ export class BundleDataClient {
         //              in the refund.
         //            - Increment runningBalances for the repayment chain since we'll have to send a refund for it out of
         //              the repayment spoke.
-        //            - If fillType is ReplacedSlowFill, decrement runningBalances on destination chain since a
+        //            - If fillType is ReplacedSlowFill and there is no RequestSlowFill matching the relayHash in this bundle,
+        //              then decrement runningBalances on destination chain since a
         //              slow fill leaf was included in a previous bundle but cannot be executed. This might have to be
         //              done in a separate step in PoolRebalanceUtils/dataworker.ts after all fills have been processed.
         //              Save this fill/deposit in excessDeposits.
