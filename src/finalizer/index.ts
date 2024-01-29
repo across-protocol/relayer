@@ -164,7 +164,12 @@ export async function finalize(
   }
   const multicall2Lookup = Object.fromEntries(
     await Promise.all(
-      uniq([...configuredChainIds, hubChainId]).map(
+      uniq([
+        // We always want to include the hub chain in the finalization.
+        // since any L2 -> L1 transfers will be finalized on the hub chain.
+        hubChainId,
+        ...configuredChainIds,
+      ]).map(
         async (chainId) =>
           [chainId, await getMultisender(chainId, spokePoolClients[chainId].spokePool.signer)] as [number, Contract]
       )
