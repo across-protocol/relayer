@@ -56,6 +56,7 @@ export async function finalize(
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
+  submitFinalizationTransactions: boolean,
   optimisticRollupFinalizationWindow: number = 5 * oneDaySeconds,
   polygonFinalizationWindow: number = oneDaySeconds
 ): Promise<void> {
@@ -186,7 +187,9 @@ export async function finalize(
         mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
       };
       multicallerClient.enqueueTransaction(txnToSubmit);
-      [txnHash] = await multicallerClient.executeTransactionQueue();
+      // We want to send the opposite of the `submitFinalizationTransactions` flag because
+      // setting to true will simulate the transaction and not actually submit it.
+      [txnHash] = await multicallerClient.executeTransactionQueue(!submitFinalizationTransactions);
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -298,7 +301,8 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
           spokePoolClients,
           process.env.FINALIZER_CHAINS
             ? JSON.parse(process.env.FINALIZER_CHAINS)
-            : commonClients.configStoreClient.getChainIdIndicesForBlock()
+            : commonClients.configStoreClient.getChainIdIndicesForBlock(),
+          config.sendingFinalizationsEnabled
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
