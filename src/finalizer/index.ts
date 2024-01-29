@@ -63,11 +63,12 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
  * Mainly related to CCTP.
  */
 const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
+  // Mainnets
   10: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   137: [polygonFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   8453: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-
+  // Testnets
   84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
 };
 
