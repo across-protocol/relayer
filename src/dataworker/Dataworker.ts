@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as ethersUtils } from "ethers";
 import {
   winston,
@@ -746,7 +747,8 @@ export class Dataworker {
           // repayment chain to pay out the refund. But we need to check which
           // token should be repaid in.
           if (isUbaOutflow(flow)) {
-            const refundToken = outflowIsFill(flow) ? flow.destinationToken : flow.refundToken;
+            assert(outflowIsFill(flow));
+            const refundToken = flow.destinationToken;
             updateTotalRefundAmountRaw(fillsToRefund, balancingFee, flow.repaymentChainId, flow.relayer, refundToken);
           }
         });
@@ -1534,11 +1536,14 @@ export class Dataworker {
     ).filter(isDefined);
 
     fundedLeaves.forEach(({ relayData, payoutAdjustmentPct }) => {
-      const mrkdwn = `rootBundleId: ${rootBundleId}\nslowRelayRoot: ${slowRelayTree.getHexRoot()}\nOrigin chain: ${
-        relayData.originChainId
-      }\nDestination chain:${relayData.destinationChainId}\nDeposit Id: ${
-        relayData.depositId
-      }\namount: ${relayData.amount.toString()}`;
+      const mrkdwn =
+        `rootBundleId: ${rootBundleId}\n` +
+        `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
+        `Origin chain: ${relayData.originChainId}\n` +
+        `Destination chain:${relayData.destinationChainId}\n` +
+        `Deposit Id: ${relayData.depositId}\n` +
+        `amount: ${relayData.amount.toString()}`;
+
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,

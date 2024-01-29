@@ -202,7 +202,6 @@ export class ProfitClient {
     return price;
   }
 
-  // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
   async getTotalGasCost(deposit: Deposit, fillAmount = deposit.amount): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
 
@@ -243,7 +242,7 @@ export class ProfitClient {
       "gas cost": tokenGasCost, // gas token (i.e. wei)
       "gas token price": gasTokenPriceUsd, // usd/gasToken
     }).forEach(([err, field]) => {
-      if (field.lte(0)) {
+      if (field.lte(bnZero)) {
         throw new Error(`Unable to compute gas cost (${err} unknown)`);
       }
     });

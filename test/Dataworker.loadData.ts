@@ -23,7 +23,6 @@ import {
   buildFill,
   buildFillForRepaymentChain,
   buildModifiedFill,
-  buildRefundRequest,
   buildSlowFill,
   buildSlowRelayLeaves,
   buildSlowRelayTree,
@@ -640,82 +639,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     expect(data6.fillsToRefund[destinationChainId][erc20_2.address].realizedLpFees).to.equal(
       getRealizedLpFeeForFills([fill1, fill4])
     );
-  });
-  it("Includes refunds in fills to refund if UBA", async function () {
-    await updateAllClients();
-
-    const deposit1 = await buildDeposit(
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
-
-    // Submit valid full fill for different chain:
-    const fill1 = {
-      ...(await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1, originChainId)),
-      blockTimestamp: (await spokePool_2.provider.getBlock(await getLastBlockNumber())).timestamp,
-    };
-
-    // Normal mode should add to fills to refund to origin chain Id without a refund requested.
-    await updateAllClients();
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
-    expect(data1.fillsToRefund)
-      .excludingEvery(ignoredDepositParams)
-      .to.deep.equal({
-        [originChainId]: {
-          [erc20_1.address]: {
-            fills: [fill1],
-            refunds: { [relayer.address]: getRefundForFills([fill1]) },
-            totalRefundAmount: getRefundForFills([fill1]),
-            realizedLpFees: getRealizedLpFeeForFills([fill1]),
-          },
-        },
-      });
-
-    // UBA mode requires refund request to be sent to add to fills to refund.
-    const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
-      getDefaultBlockRange(1),
-      spokePoolClients,
-      true
-    );
-    expect(data2.fillsToRefund).to.deep.equal({});
-
-    await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
-
-    // Invalid refund requests are ignored:
-    await buildRefundRequest(
-      spokePool_1,
-      relayer,
-      spokePoolClient_2.getFills()[0],
-      erc20_2.address // Diff token.
-    );
-    await buildRefundRequest(
-      spokePool_2, // Diff pool
-      relayer,
-      spokePoolClient_2.getFills()[0],
-      erc20_1.address
-    );
-    await updateAllClients();
-    const data3 = await dataworkerInstance.clients.bundleDataClient._loadData(
-      getDefaultBlockRange(2),
-      spokePoolClients,
-      true
-    );
-    expect(data3.fillsToRefund)
-      .excludingEvery(ignoredDepositParams)
-      .to.deep.equal({
-        [originChainId]: {
-          [erc20_1.address]: {
-            fills: [fill1],
-            refunds: { [relayer.address]: getRefundForFills([fill1]) },
-            totalRefundAmount: getRefundForFills([fill1]),
-          },
-        },
-      });
   });
   it("Returns deposits", async function () {
     await updateAllClients();

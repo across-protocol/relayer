@@ -651,12 +651,16 @@ export function generateMarkdownForRootBundle(
     ? `root:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
     : "No slow relay leaves";
   return (
-    `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
-    `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
-      poolRebalanceRoot
-    )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
-    `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
-    `\n\t*SlowRelay*\n\t${slowRelayMsg}`
+    "\n" +
+    `\t*Bundle blocks*:${bundleBlockRangePretty}\n` +
+    "\t*PoolRebalance*:\n" +
+    `\t\troot:${shortenHexString(poolRebalanceRoot)}...\n` +
+    `\t\tleaves:${poolRebalanceLeavesPretty}\n` +
+    "\t*RelayerRefund*\n" +
+    `\t\troot:${shortenHexString(relayerRefundRoot)}...\n` +
+    `\t\tleaves:${relayerRefundLeavesPretty}\n` +
+    "\t*SlowRelay*\n" +
+    `\t${slowRelayMsg}`
   );
 }
 
