@@ -429,11 +429,16 @@ export class BundleDataClient {
          * *****************************/
 
         // Perform convenient setup:
-        // const bundleDepositsV3: v3Deposit[] = [];
-        // const bundleFillsToRefund: v3FillsToRefund = {};
-        // const bundleSlowFills: v3Deposit[] = [];
-        // const depositsToRefund: v3Deposit[] = [];
-        // const excessDeposits: v3Deposit[] = [];
+        // const bundleDepositsV3: v3Deposit[] = []; // Deposits in bundle block range.
+        // const bundleFillsToRefund: v3FillsToRefund = {}; // Fast Fills that need to be refunded. Some subset of
+        // // the data in each of the keys in this object will be stored as the RelayerRefundLeaf.refundHash
+        // const bundleSlowFills: v3Deposit[] = []; // Slow Fills that need to be sent for slow fill requests
+        // sent in this bundle.
+        // const depositsToRefund: v3Deposit[] = []; // Newly expired deposits in this bundle that need to be refunded. 
+        // const excessDeposits: v3Deposit[] = []; // Deposit data for all Slowfills that were included in a previous
+        // // bundle and can no longer be executed because (1) they were replaced with a FastFill in this bundle or
+        // // (2) the fill deadline has passed. We'll need to decrement running balances for these deposits on the
+        // // destination chain where the slow fill would have been executed.
 
         // Consider going through all events and storing them into the following dictionary
         // for convenient lookup on the second pass when sorting them into the above lists which we'll
@@ -445,6 +450,10 @@ export class BundleDataClient {
         //    slowFillRequests: SlowFillRequest []
         //    }
         // } = {};
+
+        // Performance:
+        // - This algorithm should take O(2N) to run, with one run to set up depositHashes and the second run
+        //  to place the events into the appropriate lists.
 
         // Notes:
         // 1. How to decrement slow fill excesses from running balances:
