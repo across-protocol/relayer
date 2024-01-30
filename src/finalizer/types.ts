@@ -8,7 +8,7 @@ export type CrossChainTransfer = {
   destinationChainId: number;
   l1TokenSymbol: string;
   amount: string;
-  type: "proof" | "withdrawal" | "deposit";
+  type: "misc" | "withdrawal" | "deposit";
 };
 
 export type FinalizerPromise = { callData: Multicall2Call[]; crossChainTransfers: CrossChainTransfer[] };
