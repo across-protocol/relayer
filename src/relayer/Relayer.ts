@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { constants as ethersConstants, utils as ethersUtils } from "ethers";
-import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
+import { utils as ethersUtils } from "ethers";
+import { Deposit, DepositWithBlock, L1Token } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -12,10 +12,8 @@ import {
   buildFillRelayWithUpdatedFeeProps,
   createFormatFunction,
   formatFeePct,
-  getBlockForTimestamp,
   getCurrentTime,
   getNetworkName,
-  getRedisCache,
   getUnfilledDeposits,
   isDefined,
   toBNWei,
@@ -286,9 +284,7 @@ export class Relayer {
       const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
       const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
-        // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
-        // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
+        assert(isDefined(deposit.realizedLpFeePct)); // Sanity check.
         const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
           version,
           deposit,
@@ -463,164 +459,6 @@ export class Relayer {
     this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
-  // Strategy for requesting refunds: Query all refunds requests, and match them to fills.
-  // The remaining fills are eligible for new requests.
-  async requestRefunds(sendRefundRequests = true): Promise<void> {
-    const { multiCallerClient, ubaClient } = this.clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-
-    const spokePoolClients = Object.values(this.clients.spokePoolClients);
-    this.logger.debug({
-      at: "Relayer::requestRefunds",
-      message: "Evaluating chains for fills with outstanding cross-chain refunds",
-      chainIds: spokePoolClients.map(({ chainId }) => chainId),
-    });
-
-    const eligibleFillsByRefundChain: { [chainId: number]: FillWithBlock[] } = Object.fromEntries(
-      spokePoolClients.map(({ chainId }) => [chainId, []])
-    );
-
-    // Bound the event range by the relayer lookback. Must be resolved from an offset (in seconds) to a block number.
-    // Guard getBlockForTimestamp() by maxRelayerLookBack, because getBlockForTimestamp() doesn't work in test (yet).
-    let fromBlocks: { [chainId: number]: number } = {};
-    if (isDefined(this.config.maxRelayerLookBack)) {
-      const blockFinder = undefined;
-      const redis = await getRedisCache(this.logger);
-      const _fromBlocks = await Promise.all(
-        spokePoolClients.map((spokePoolClient) => {
-          const { chainId, deploymentBlock } = spokePoolClient;
-          const lookback = spokePoolClient.getCurrentTime() - this.config.maxRelayerLookBack;
-          return getBlockForTimestamp(chainId, lookback, blockFinder, redis) ?? deploymentBlock;
-        })
-      );
-      fromBlocks = Object.fromEntries(
-        _fromBlocks.map((blockNumber, idx) => [spokePoolClients[idx].chainId, blockNumber])
-      );
-    }
-
-    const refundRequests = await Promise.all(
-      spokePoolClients.map(({ chainId }) => {
-        const fromBlock = fromBlocks[chainId];
-        return ubaClient.getRefundRequests(chainId, { relayer: this.relayerAddress, fromBlock });
-      })
-    );
-
-    // For each refund/repayment Spoke Pool, group its set of refund requests by corresponding destination chain.
-    const refundRequestsByDstChain: { [chainId: number]: RefundRequestWithBlock[] } = Object.fromEntries(
-      spokePoolClients.map(({ chainId }) => [chainId, []])
-    );
-    refundRequests
-      .flat()
-      .forEach((refundRequest) => refundRequestsByDstChain[refundRequest.destinationChainId].push(refundRequest));
-
-    // For each destination Spoke Pool, find any fills that are eligible for a new refund request.
-    const fills = await Promise.all(
-      spokePoolClients.map(({ chainId: destinationChainId }) =>
-        this.findFillsWithoutRefundRequests(
-          destinationChainId,
-          refundRequestsByDstChain[destinationChainId],
-          fromBlocks[destinationChainId]
-        )
-      )
-    );
-    fills.flat().forEach((fill) => eligibleFillsByRefundChain[fill.repaymentChainId].push(fill));
-
-    // Enqueue a refund for each eligible fill.
-    let nRefunds = 0;
-    Object.values(eligibleFillsByRefundChain).forEach((fills) => {
-      nRefunds += fills.length;
-      fills.forEach((fill) => this.requestRefund(fill));
-    });
-
-    const message = `${nRefunds === 0 ? "No" : nRefunds} outstanding fills with eligible cross-chain refunds found.`;
-    const blockRanges = Object.fromEntries(
-      spokePoolClients.map(({ chainId, deploymentBlock, latestBlockSearched }) => {
-        return [chainId, [fromBlocks[chainId] ?? deploymentBlock, latestBlockSearched]];
-      })
-    );
-    this.logger.info({ at: "Relayer::requestRefunds", message, blockRanges });
-
-    await multiCallerClient.executeTransactionQueue(!sendRefundRequests);
-  }
-
-  async findFillsWithoutRefundRequests(
-    destinationChainId: number,
-    refundRequests: RefundRequestWithBlock[],
-    fromBlock: number
-  ): Promise<FillWithBlock[]> {
-    const { ubaClient } = this.clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-
-    const depositIds: { [chainId: number]: number[] } = {};
-
-    refundRequests.forEach(({ originChainId, depositId }) => {
-      depositIds[originChainId] ??= [];
-      depositIds[originChainId].push(depositId);
-    });
-
-    // Find fills where repayment was requested on another chain.
-    const filter = { relayer: this.relayerAddress, fromBlock };
-    const fills = (await ubaClient.getFills(destinationChainId, filter)).filter((fill) => {
-      const { depositId, originChainId, destinationChainId, repaymentChainId } = fill;
-      return repaymentChainId !== destinationChainId && !depositIds[originChainId]?.includes(depositId);
-    });
-
-    if (fills.length > 0) {
-      const fillsByChainId: { [chainId: number]: string[] } = {};
-      fills.forEach(({ destinationChainId, transactionHash }) => {
-        fillsByChainId[destinationChainId] ??= [];
-        fillsByChainId[destinationChainId].push(transactionHash);
-      });
-
-      this.logger.debug({
-        at: "Relayer::findFillsWithoutRefundRequests",
-        message: "Found fills eligible for cross-chain refund requests.",
-        fills: fillsByChainId,
-      });
-    }
-    return fills;
-  }
-
-  protected requestRefund(fill: FillWithBlock): void {
-    const { hubPoolClient, multiCallerClient, spokePoolClients } = this.clients;
-    const {
-      originChainId,
-      depositId,
-      destinationChainId,
-      destinationToken,
-      fillAmount: amount,
-      realizedLpFeePct,
-      repaymentChainId,
-      blockNumber: fillBlock,
-    } = fill;
-
-    const contract = spokePoolClients[repaymentChainId].spokePool;
-    const method = "requestRefund";
-    // @todo: Support specifying max impact against the refund amount (i.e. to mitigate price impact by fills).
-    const maxCount = ethersConstants.MaxUint256;
-
-    // Resolve the refund token from the fill token.
-    const hubPoolToken = hubPoolClient.getL1TokenForL2TokenAtBlock(destinationToken, destinationChainId);
-    const refundToken = hubPoolClient.getL2TokenForL1TokenAtBlock(hubPoolToken, repaymentChainId);
-
-    const args = [
-      refundToken,
-      amount,
-      originChainId,
-      destinationChainId,
-      realizedLpFeePct,
-      depositId,
-      fillBlock,
-      maxCount,
-    ];
-
-    const message = `Submitted refund request on chain ${getNetworkName(repaymentChainId)}.`;
-    const mrkdwn = this.constructRefundRequestMarkdown(fill);
-
-    this.logger.debug({ at: "Relayer::requestRefund", message: "Requesting refund for fill.", fill });
-    multiCallerClient.enqueueTransaction({ chainId: repaymentChainId, contract, method, args, message, mrkdwn });
-  }
-
   protected async resolveRepaymentChain(
     version: number,
     deposit: DepositWithBlock,
@@ -644,7 +482,7 @@ export class Relayer {
       ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
       : destinationChainId;
 
-    const refundFee = this.computeRefundFee(version, deposit);
+    const refundFee = bnZero;
     const { profitable, nativeGasCost: gasLimit } = await profitClient.isFillProfitable(
       deposit,
       fillAmount,
@@ -656,47 +494,6 @@ export class Relayer {
       repaymentChainId: profitable ? preferredChainId : undefined,
       gasLimit,
     };
-  }
-
-  protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
-    const { depositId, originChainId } = deposit;
-    if (!sdkUtils.isUBA(version)) {
-      if (deposit.realizedLpFeePct === undefined) {
-        throw new Error(`Chain ${originChainId} deposit ${depositId} is missing realizedLpFeePct`);
-      }
-      return deposit.realizedLpFeePct;
-    }
-
-    const { ubaClient } = this.clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-
-    const { depositBalancingFee, lpFee } = ubaClient.computeFeesForDeposit(deposit);
-    const realizedLpFeePct = depositBalancingFee.add(lpFee);
-
-    const chain = getNetworkName(deposit.originChainId);
-    this.logger.debug({
-      at: "relayer::computeRealizedLpFeePct",
-      message: `Computed UBA system fee for ${chain} depositId ${depositId}: ${realizedLpFeePct}`,
-    });
-
-    return realizedLpFeePct;
-  }
-
-  protected computeRefundFee(version: number, deposit: DepositWithBlock): BigNumber {
-    if (!sdkUtils.isUBA(version)) {
-      return bnZero;
-    }
-
-    const { hubPoolClient, ubaClient } = this.clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-
-    const tokenSymbol = hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId)?.symbol;
-    const relayerBalancingFee = ubaClient.computeBalancingFeeForNextRefund(
-      deposit.destinationChainId,
-      tokenSymbol,
-      deposit.amount
-    );
-    return relayerBalancingFee;
   }
 
   private handleTokenShortfall() {
@@ -800,23 +597,5 @@ export class Relayer {
     }
 
     return msg;
-  }
-
-  private constructRefundRequestMarkdown(fill: FillWithBlock): string {
-    const { hubPoolClient } = this.clients;
-    const { depositId, destinationChainId, destinationToken } = fill;
-
-    const { symbol, decimals } = hubPoolClient.getL1TokenInfoForL2Token(destinationToken, destinationChainId);
-
-    const refundChain = getNetworkName(fill.repaymentChainId);
-    const originChain = getNetworkName(fill.originChainId);
-    const destinationChain = getNetworkName(destinationChainId);
-
-    const _fillAmount = createFormatFunction(2, 4, false, decimals)(fill.fillAmount.toString());
-
-    return (
-      `🌈 Requested refund on ${refundChain} for ${_fillAmount} ${symbol} for ${originChain} depositId ${depositId},` +
-      ` filled on ${destinationChain}, with relayerFee ${formatFeePct(fill.relayerFeePct)}%.`
-    );
   }
 }

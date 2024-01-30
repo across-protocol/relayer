@@ -4,7 +4,6 @@ import {
   FillsToRefund,
   FillWithBlock,
   ProposedRootBundle,
-  RefundRequestWithBlock,
   UnfilledDeposit,
   UnfilledDepositsForOriginChain,
 } from "../interfaces";
@@ -32,7 +31,7 @@ import {
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { clients, typechain, utils } from "@across-protocol/sdk-v2";
-const { refundRequestIsValid, isUBAActivatedAtBlock } = clients;
+const { isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -325,22 +324,6 @@ export class BundleDataClient {
       })
     );
 
-    const validateRefundRequestAndSaveData = async (refundRequest: RefundRequestWithBlock): Promise<void> => {
-      const result = await refundRequestIsValid(spokePoolClients, this.clients.hubPoolClient, refundRequest);
-      if (result.valid) {
-        const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = result.matchingFill;
-        assignValidFillToFillsToRefund(fillsToRefund, fill, refundRequest.repaymentChainId, refundRequest.refundToken);
-        updateTotalRefundAmount(fillsToRefund, fill, refundRequest.repaymentChainId, refundRequest.refundToken);
-      } else {
-        this.logger.warn({
-          at: "SpokePoolClient#validateRefundRequestAndSaveData",
-          message: "Invalid refund request",
-          refundRequest,
-          invalidReason: result.reason,
-        });
-      }
-    };
-
     for (const originChainId of allChainIds) {
       if (_isChainDisabled(originChainId)) {
         continue;
@@ -518,18 +501,6 @@ export class BundleDataClient {
         //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
         //         from running balances on the destination chain since we can no longer execute the slow fill leaf
         //         that was included in a previous bundle, so let's add them to excessDeposits.
-      }
-
-      // Handle fills that requested repayment on a different chain and submitted a refund request.
-      // These should map with only full fills where fill.destinationChainId !== fill.repaymentChainId.
-      if (isUBA) {
-        const blockRangeForChain = getBlockRangeForChain(
-          blockRangesForChains,
-          Number(originChainId),
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
-        const refundRequests = originClient.getRefundRequests(blockRangeForChain[0], blockRangeForChain[1]);
-        await Promise.all(refundRequests.map(async (refundRequest) => validateRefundRequestAndSaveData(refundRequest)));
       }
     }
 
