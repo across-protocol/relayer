@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
 import { Deposit, DepositWithBlock, L1Token } from "../interfaces";
@@ -283,6 +284,7 @@ export class Relayer {
       const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
       const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
+        assert(isDefined(deposit.realizedLpFeePct)); // Sanity check.
         const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
           version,
           deposit,
