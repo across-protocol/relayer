@@ -174,10 +174,12 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   534352: 0,
   // Testnets:
   5: 0,
+  11155111: 0,
   280: 0,
   420: 0,
   80001: 0,
   84531: 0,
+  84532: 0,
   421613: 0,
   534351: 0,
 };
@@ -214,8 +216,10 @@ export const multicall3Addresses = {
   420: "0xcA11bde05977b3631167028862bE2a173976CA11",
   80001: "0xcA11bde05977b3631167028862bE2a173976CA11",
   84531: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  84532: "0xcA11bde05977b3631167028862bE2a173976CA11",
   421613: "0xcA11bde05977b3631167028862bE2a173976CA11",
   534351: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  11155111: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
@@ -225,3 +229,24 @@ export type Multicall2Call = {
 // These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [10, 324, 8453];
+
+/**
+ * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
+ * and is an internal mappinng maintained by Circle.
+ * @link https://developers.circle.com/stablecoins/docs/supported-domains
+ */
+export const chainIdsToCctpDomains: { [chainId: number]: number } = {
+  // Mainnet
+  1: 0, // Mainnet
+  10: 2, // Optimism
+  42161: 3, // Arbitrum
+  8453: 6, // Base
+  137: 7, // Polygon
+
+  // Testnet
+  11155111: 0, // Eth Sepolia
+  11155420: 2, // Optimism Sepolia
+  421614: 3, // Arbitrum Sepolia
+  84532: 6, // Base Sepolia
+  80001: 7, // Polygon PoS Mumbai
+};

@@ -1,3 +1,44 @@
+// ABI definition for CCTP contracts
+const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "bytes",
+        name: "message",
+        type: "bytes",
+      },
+    ],
+    name: "MessageSent",
+    type: "event",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes",
+        name: "message",
+        type: "bytes",
+      },
+      {
+        internalType: "bytes",
+        name: "attestation",
+        type: "bytes",
+      },
+    ],
+    name: "receiveMessage",
+    outputs: [
+      {
+        internalType: "bool",
+        name: "success",
+        type: "bool",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -472,6 +513,10 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    cctpMessageTransmitter: {
+      address: "0x0a992d191deec32afe36203ad87d7d289a738f81",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
     scrollRelayMessenger: {
       address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
       abi: [
@@ -614,6 +659,10 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    cctpMessageTransmitter: {
+      address: "0x4d41f22c5a0e5c74090899e5a8fb597a8842b3e8",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
   },
   137: {
     withdrawableErc20: {
@@ -641,6 +690,10 @@ export const CONTRACT_ADDRESSES: {
           type: "event",
         },
       ],
+    },
+    cctpMessageTransmitter: {
+      address: "0xF3be9355363857F3e001be68856A2f96b4C39Ba9",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
   324: {
@@ -733,6 +786,10 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    cctpMessageTransmitter: {
+      address: "0xAD09780d193884d503182aD4588450C416D6F9D4",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
   },
   42161: {
     erc20Gateway: {
@@ -785,6 +842,24 @@ export const CONTRACT_ADDRESSES: {
           type: "function",
         },
       ],
+    },
+    cctpMessageTransmitter: {
+      address: "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+
+  // Testnets
+  11155111: {
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+  84532: {
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
 };
