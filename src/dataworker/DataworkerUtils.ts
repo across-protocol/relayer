@@ -164,7 +164,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
     })
   );
 
-  // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
+  // Sort leaves deterministically so that the same root is always produced from the same loadData return value.
   // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
   const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
     // Note: Smaller ID numbers will come first
@@ -206,7 +206,7 @@ export function _buildRelayerRefundRoot(
         return;
       }
 
-      // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
+      // We need to sort leaves deterministically so that the same root is always produced from the same loadData
       // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
       const sortedRefundAddresses = sortRefundAddresses(refunds);
 

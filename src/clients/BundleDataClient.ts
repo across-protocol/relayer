@@ -177,19 +177,6 @@ export class BundleDataClient {
     deposits: DepositWithBlock[];
     earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
-    return this._loadData(blockRangesForChains, spokePoolClients, logData);
-  }
-  async _loadData(
-    blockRangesForChains: number[][],
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
-    logData = true
-  ): Promise<{
-    unfilledDeposits: UnfilledDeposit[];
-    fillsToRefund: FillsToRefund;
-    allValidFills: FillWithBlock[];
-    deposits: DepositWithBlock[];
-    earlyDeposits: typechain.FundsDepositedEvent[];
-  }> {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
