@@ -362,7 +362,7 @@ export class Dataworker {
       blockRangesForProposal,
       spokePoolClients,
       latestBlockSearched,
-      logData,
+      logData
     );
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
@@ -829,7 +829,7 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients,
       rootBundle.proposalBlockNumber,
-      logData,
+      logData
     );
 
     const expectedPoolRebalanceRoot = {
