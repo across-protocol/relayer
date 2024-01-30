@@ -30,7 +30,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { typechain } from "@across-protocol/sdk-v2";
+import { typechain, utils } from "@across-protocol/sdk-v2";
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -211,14 +211,19 @@ export class BundleDataClient {
     ) => {
       // Extra check for duplicate fills. These should be blocked at the contract level but might still be included
       // by the RPC so its worth checking here.
-      if (
-        allValidFills.some(
-          (existingFill) =>
-            existingFill.originChainId === fillWithBlock.originChainId &&
-            existingFill.depositId === fillWithBlock.depositId &&
-            existingFill.totalFilledAmount === fillWithBlock.totalFilledAmount
-        )
-      ) {
+      const duplicateFill = allValidFills.find(
+        (existingFill) =>
+          existingFill.originChainId === fillWithBlock.originChainId &&
+          existingFill.depositId === fillWithBlock.depositId &&
+          utils.getTotalFilledAmount(existingFill).eq(utils.getTotalFilledAmount(fillWithBlock))
+      );
+      if (duplicateFill !== undefined) {
+        this.logger.warn({
+          at: "BundleDataClient#loadData",
+          message: "Tried to add refund for duplicate fill. Skipping.",
+          duplicateFill,
+          matchedDeposit,
+        });
         return;
       }
       // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
