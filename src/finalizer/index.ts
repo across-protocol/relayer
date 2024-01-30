@@ -141,7 +141,7 @@ export async function finalize(
     // responsible for.
     let totalWithdrawalsForChain = 0;
     let totalDepositsForChain = 0;
-    let totalProofsForChain = 0;
+    let totalMiscTxnsForChain = 0;
     for (const finalizer of chainSpecificFinalizers) {
       const { callData, crossChainTransfers } = await finalizer(
         logger,
@@ -157,11 +157,11 @@ export async function finalize(
 
       totalWithdrawalsForChain += crossChainTransfers.filter(({ type }) => type === "withdrawal").length;
       totalDepositsForChain += crossChainTransfers.filter(({ type }) => type === "deposit").length;
-      totalProofsForChain += crossChainTransfers.filter(({ type }) => type === "proof").length;
+      totalMiscTxnsForChain += crossChainTransfers.filter(({ type }) => type === "misc").length;
     }
     logger.debug({
       at: "finalize",
-      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalProofsForChain} proofs ) for finalization.`,
+      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} supporting txns ) for finalization.`,
     });
   }
   const multicall2Lookup = Object.fromEntries(
@@ -268,26 +268,30 @@ export async function finalize(
       return;
     }
 
-    const { transfers = [], proofs = [] } = groupBy(
+    const { transfers = [], misc = [] } = groupBy(
       finalizations.filter(({ crossChainTransfer }) => isDefined(crossChainTransfer)),
       ({ crossChainTransfer: { type } }) => {
-        return type === "proof" ? "proofs" : "transfers";
+        return type === "misc" ? "misc" : "transfers";
       }
     );
 
-    proofs.forEach(
-      ({ crossChainTransfer: { originationChainId, destinationChainId, amount, l1TokenSymbol: symbol } }) => {
-        const originationNetwork = getNetworkName(originationChainId);
-        const destinationNetwork = getNetworkName(destinationChainId);
-        logger.info({
-          at: "Finalizer",
-          message: `Submitted proof on ${destinationNetwork} to initiate ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜`,
-          transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
-            blockExplorerLink(txnHash, destinationChainId)
-          ),
-        });
+    misc.forEach(({ crossChainTransfer }) => {
+      const { originationChainId, destinationChainId, amount, l1TokenSymbol: symbol, type } = crossChainTransfer;
+      // Required for tsc to be happy.
+      if (type !== "misc") {
+        return;
       }
-    );
+      const { miscReason } = crossChainTransfer;
+      const originationNetwork = getNetworkName(originationChainId);
+      const destinationNetwork = getNetworkName(destinationChainId);
+      logger.info({
+        at: "Finalizer",
+        message: `Submitted ${miscReason} on ${destinationNetwork} to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜`,
+        transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
+          blockExplorerLink(txnHash, destinationChainId)
+        ),
+      });
+    });
     transfers.forEach(
       ({ crossChainTransfer: { originationChainId, destinationChainId, type, amount, l1TokenSymbol: symbol } }) => {
         const originationNetwork = getNetworkName(originationChainId);

@@ -56,7 +56,7 @@ export async function polygonFinalizer(
     .getTokensBridged()
     .filter((e) => e.blockNumber >= latestBlockToFinalize);
 
-  return await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
+  return multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
 }
 
 async function getPosClient(mainnetSigner: Signer): Promise<POSClient> {
@@ -161,9 +161,38 @@ async function multicallPolygonFinalizations(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; crossChainTransfers: CrossChainTransfer[] }> {
+): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
+
+  const finalizedBridges = await resolvePolygonBridgeFinalizations(finalizableMessages, posClient, hubPoolClient);
+  const finalizedRetrievals = await resolvePolygonRetrievalFinalizations(finalizableMessages, hubSigner, hubPoolClient);
+
+  return {
+    callData: [...finalizedBridges.callData, ...finalizedRetrievals.callData],
+    crossChainTransfers: [...finalizedBridges.crossChainTransfers, ...finalizedRetrievals.crossChainTransfers],
+  };
+}
+
+async function resolvePolygonBridgeFinalizations(
+  finalizableMessages: PolygonTokensBridged[],
+  posClient: POSClient,
+  hubPoolClient: HubPoolClient
+): Promise<FinalizerPromise> {
   const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
+  const crossChainTransfers = finalizableMessages.map((finalizableMessage) =>
+    resolveCrossChainTransferStructure(finalizableMessage, "withdrawal", hubPoolClient)
+  );
+  return {
+    callData,
+    crossChainTransfers,
+  };
+}
+
+async function resolvePolygonRetrievalFinalizations(
+  finalizableMessages: PolygonTokensBridged[],
+  hubSigner: Signer,
+  hubPoolClient: HubPoolClient
+): Promise<FinalizerPromise> {
   const tokensInFinalizableMessages = getL2TokensToFinalize(
     finalizableMessages.map((polygonTokensBridged) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -171,33 +200,43 @@ async function multicallPolygonFinalizations(
       return tokensBridged;
     })
   );
-  const callDataRetrievals = await Promise.all(
+  const callData = await Promise.all(
     tokensInFinalizableMessages.map((l2Token) =>
       retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
     )
   );
-  callData.push(...callDataRetrievals);
-  const crossChainTransfers = finalizableMessages.map(({ l2TokenAddress, amountToReturn }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      l2TokenAddress,
-      CHAIN_ID,
-      hubPoolClient.latestBlockSearched
-    );
-    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-    const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
-    const crossChainTransfers: CrossChainTransfer = {
-      originationChainId: CHAIN_ID,
-      destinationChainId: hubPoolClient.chainId,
-      l1TokenSymbol: l1TokenInfo.symbol,
-      amount: amountFromWei,
-      type: "withdrawal",
-    };
-    return crossChainTransfers;
-  });
+  const crossChainTransfers = finalizableMessages.map((finalizableMessage) =>
+    resolveCrossChainTransferStructure(finalizableMessage, "misc", hubPoolClient)
+  );
   return {
     callData,
     crossChainTransfers,
   };
+}
+
+function resolveCrossChainTransferStructure(
+  finalizableMessage: PolygonTokensBridged,
+  type: "misc" | "withdrawal",
+  hubPoolClient: HubPoolClient
+): CrossChainTransfer {
+  const { l2TokenAddress, amountToReturn } = finalizableMessage;
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+    l2TokenAddress,
+    CHAIN_ID,
+    hubPoolClient.latestBlockSearched
+  );
+  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+  const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
+  const transferBase = {
+    originationChainId: CHAIN_ID,
+    destinationChainId: hubPoolClient.chainId,
+    l1TokenSymbol: l1TokenInfo.symbol,
+    amount: amountFromWei,
+  };
+
+  const crossChainTransfers: CrossChainTransfer =
+    type === "misc" ? { ...transferBase, type, miscReason: "retrieval" } : { ...transferBase, type };
+  return crossChainTransfers;
 }
 
 function getMainnetTokenBridger(mainnetSigner: Signer): Contract {
