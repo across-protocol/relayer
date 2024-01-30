@@ -286,7 +286,7 @@ export async function finalize(
       const destinationNetwork = getNetworkName(destinationChainId);
       logger.info({
         at: "Finalizer",
-        message: `Submitted ${miscReason} on ${destinationNetwork} to initiate ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜`,
+        message: `Submitted ${miscReason} on ${destinationNetwork} to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜`,
         transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
           blockExplorerLink(txnHash, destinationChainId)
         ),
