@@ -5,7 +5,7 @@ import { Provider as zksProvider, types as zkTypes, Wallet as zkWallet } from "z
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { convertFromWei, getEthAddressForChain, getUniqueLogIndex, winston, zkSync as zkSyncUtils } from "../../utils";
-import { FinalizerPromise, Withdrawal } from "../types";
+import { FinalizerPromise, CrossChainTransfer } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
 
@@ -54,11 +54,12 @@ export async function zkSyncFinalizer(
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
-    const withdrawal: Withdrawal = {
-      l2ChainId,
+    const withdrawal: CrossChainTransfer = {
+      originationChainId: l2ChainId,
       l1TokenSymbol,
       amount: amountFromWei,
       type: "withdrawal",
+      destinationChainId: hubPoolClient.chainId,
     };
 
     return withdrawal;
@@ -75,7 +76,7 @@ export async function zkSyncFinalizer(
     committed: l2Committed,
   });
 
-  return { callData: txns, withdrawals };
+  return { callData: txns, crossChainTransfers: withdrawals };
 }
 
 /**
