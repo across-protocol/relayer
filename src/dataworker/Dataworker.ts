@@ -357,9 +357,13 @@ export class Dataworker {
       message: "Proposing root bundle",
       blockRangesForProposal,
     });
-    const rootBundleData = {
-      ...(await this._proposeRootBundle(blockRangesForProposal, spokePoolClients, latestBlockSearched, true)),
-    };
+    const logData = true;
+    const rootBundleData = await this._proposeRootBundle(
+      blockRangesForProposal,
+      spokePoolClients,
+      latestBlockSearched,
+      logData,
+    );
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
@@ -820,13 +824,13 @@ export class Dataworker {
       );
     }
 
-    const _rootBundleData = await this._proposeRootBundle(
+    const logData = true;
+    const rootBundleData = await this._proposeRootBundle(
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients,
       rootBundle.proposalBlockNumber,
-      true
+      logData,
     );
-    const rootBundleData = { ..._rootBundleData };
 
     const expectedPoolRebalanceRoot = {
       leaves: rootBundleData.poolRebalanceLeaves,
@@ -1016,12 +1020,11 @@ export class Dataworker {
             continue;
           }
 
-          const _rootBundleData = await this._proposeRootBundle(
+          const rootBundleData = await this._proposeRootBundle(
             blockNumberRanges,
             spokePoolClients,
             matchingRootBundle.blockNumber
           );
-          const rootBundleData = { ..._rootBundleData };
 
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
           if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
@@ -1671,13 +1674,11 @@ export class Dataworker {
           continue;
         }
 
-        const _rootBundleData = await this._proposeRootBundle(
+        const { relayerRefundLeaves: leaves, relayerRefundTree: tree } = await this._proposeRootBundle(
           blockNumberRanges,
           spokePoolClients,
           matchingRootBundle.blockNumber
         );
-        const rootBundleData = { ..._rootBundleData };
-        const { relayerRefundLeaves: leaves, relayerRefundTree: tree } = rootBundleData;
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
           this.logger.warn({
