@@ -1,5 +1,5 @@
 import { clients } from "@across-protocol/sdk-v2";
-import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient, UBAClient } from "../src/clients";
+import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -125,7 +125,6 @@ describe("Relayer: Unfilled Deposits", async function () {
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-        ubaClient: {} as unknown as UBAClient, // We don't need this for this test.
       },
       {
         relayerTokens: [],

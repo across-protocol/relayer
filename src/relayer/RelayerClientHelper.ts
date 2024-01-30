@@ -1,7 +1,6 @@
-import assert from "assert";
-import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import winston from "winston";
-import { AcrossApiClient, BundleDataClient, InventoryClient, ProfitClient, TokenClient, UBAClient } from "../clients";
+import { AcrossApiClient, BundleDataClient, InventoryClient, ProfitClient, TokenClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
   CONTRACT_ADDRESSES,
@@ -12,12 +11,11 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { isDefined, Signer, getRedisCache } from "../utils";
+import { Signer } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
-  ubaClient?: UBAClient;
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
@@ -51,16 +49,6 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack,
     enabledChains
   );
-
-  const ubaClient = !sdkUtils.isUBA(commonClients.configStoreClient.configStoreVersion)
-    ? undefined
-    : new UBAClient(
-        new sdkClients.UBAClientConfig(),
-        commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        commonClients.hubPoolClient,
-        spokePoolClients,
-        await getRedisCache(logger)
-      );
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
   // destination chain list.
@@ -128,35 +116,27 @@ export async function constructRelayerClients(
     !config.sendingRebalancesEnabled
   );
 
-  return { ...commonClients, spokePoolClients, ubaClient, tokenClient, profitClient, inventoryClient, acrossApiClient };
+  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-  const { configStoreClient, spokePoolClients } = clients;
+  const { spokePoolClients } = clients;
 
-  const version = configStoreClient.getConfigStoreVersionForTimestamp();
-  if (sdkUtils.isUBA(version)) {
-    const { ubaClient } = clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-    await ubaClient.update();
-  } else {
-    // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
-    // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
-    // having a "first run" update and then a "normal" update that considers this. see previous implementation here
-    // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
-    await updateSpokePoolClients(spokePoolClients, [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "EnabledDepositRoute",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]);
-  }
+  // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
+  // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
+  // having a "first run" update and then a "normal" update that considers this. see previous implementation here
+  // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
+  await updateSpokePoolClients(spokePoolClients, [
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
+    "EnabledDepositRoute",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot",
+  ]);
 
   // Update the token client first so that inventory client has latest balances.
-
   await clients.tokenClient.update();
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
