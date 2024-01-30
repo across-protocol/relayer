@@ -1,19 +1,19 @@
-import { random } from "lodash";
+import { clients } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
-import { CONFIG_STORE_VERSION, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
-import { Deposit } from "../src/interfaces";
+import { CONFIG_STORE_VERSION } from "../src/common";
+import { bnZero, bnOne } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
+  amountToDeposit,
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
   modifyRelayHelper,
   randomAddress,
   repaymentChainId,
-  utf8ToHex,
 } from "./constants";
-import { MockConfigStoreClient, MockInventoryClient, MockProfitClient, MockUBAClient } from "./mocks";
+import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
   Contract,
@@ -30,17 +30,12 @@ import {
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
-  spyLogIncludes,
   originChainId,
   setupTokensForWallet,
   sinon,
   toBNWei,
   winston,
 } from "./utils";
-import { generateNoOpSpokePoolClientsForDefaultChainIndices } from "./utils/UBAUtils";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
-
-const { bnOne } = sdkUtils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -53,7 +48,6 @@ let configStoreClient: ConfigStoreClient, hubPoolClient: clients.HubPoolClient, 
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
-let ubaClient: MockUBAClient;
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   beforeEach(async function () {
@@ -125,14 +119,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
-    ubaClient = new MockUBAClient(
-      hubPoolClient.getL1Tokens().map((x) => x.symbol),
-      hubPoolClient,
-      generateNoOpSpokePoolClientsForDefaultChainIndices(spokePoolClients)
-    );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
-    profitClient.setTokenPrice(l1Token.address, bnOne);
+    for (const erc20 of [l1Token]) {
+      await profitClient.initToken(erc20);
+    }
 
     relayerInstance = new Relayer(
       relayer.address,
@@ -141,7 +132,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         spokePoolClients,
         hubPoolClient,
         configStoreClient,
-        ubaClient,
         tokenClient,
         profitClient,
         multiCallerClient,
@@ -151,7 +141,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       {
         relayerTokens: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
-        quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
     );
 
@@ -206,6 +195,18 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 
+  it("Correctly validates self-relays", async function () {
+    const relayerFeePct = bnZero;
+    for (const testDepositor of [depositor, relayer]) {
+      await deposit(spokePool_1, erc20_1, relayer, testDepositor, destinationChainId, amountToDeposit, relayerFeePct);
+
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      const expectedTransactions = testDepositor.address === relayer.address ? 1 : 0;
+      expect(multiCallerClient.transactionCount()).to.equal(expectedTransactions);
+    }
+  });
+
   it("Ignores deposits older than min deposit confirmation threshold", async function () {
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
@@ -218,7 +219,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         spokePoolClients,
         hubPoolClient,
         configStoreClient,
-        ubaClient,
         tokenClient,
         profitClient,
         multiCallerClient,
@@ -230,7 +230,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         minDepositConfirmations: {
           default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
         },
-        quoteTimeBuffer: 0,
         sendingRelaysEnabled: false,
       } as unknown as RelayerConfig
     );
@@ -241,35 +240,18 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Ignores deposits with quote times in future", async function () {
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const { quoteTimestamp } = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
-    // Set a non-zero quote time buffer, so that deposit quote time + buffer is > latest timestamp in
-    // the HubPool.
-    relayerInstance = new Relayer(
-      relayer.address,
-      spyLogger,
-      {
-        spokePoolClients,
-        hubPoolClient,
-        configStoreClient,
-        ubaClient,
-        tokenClient,
-        profitClient,
-        multiCallerClient,
-        inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-      },
-      {
-        relayerTokens: [],
-        minDepositConfirmations: defaultMinDepositConfirmations,
-        quoteTimeBuffer: 100,
-        sendingRelaysEnabled: false,
-      } as unknown as RelayerConfig
-    );
-
+    // Override hub pool client timestamp to make deposit look like its in the future
     await updateAllClients();
+    hubPoolClient.currentTime = quoteTimestamp - 1;
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+
+    // If we reset the timestamp, the relayer will fill the deposit:
+    hubPoolClient.currentTime = quoteTimestamp;
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(multiCallerClient.transactionCount()).to.equal(1);
   });
 
   it("Ignores deposit with non-empty message", async function () {
@@ -298,10 +280,22 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Dynamic fill simulation fails in test, so the deposit will
       // appear as unprofitable when message filling is enabled.
-      expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.equal(!sendingMessageRelaysEnabled);
+      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message")))
+        .to.not.be.undefined;
       expect(profitClient.anyCapturedUnprofitableFills()).to.equal(sendingMessageRelaysEnabled);
       expect(multiCallerClient.transactionCount()).to.equal(0);
     }
+  });
+
+  it("Ignores deposit from preconfigured addresses", async function () {
+    relayerInstance.config.ignoredAddresses = [depositor.address];
+
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+
+    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Ignoring deposit"))).to.not.be.undefined;
+    expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 
   it("Uses new relayer fee pct on updated deposits", async function () {
@@ -361,7 +355,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
+    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))).to
+      .not.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
@@ -461,7 +456,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Skipping fill for deposit with message")).to.be.true;
+    expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))).to
+      .not.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Deposit is updated again with a nullified message.
@@ -513,7 +509,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         spokePoolClients,
         hubPoolClient,
         configStoreClient,
-        ubaClient,
         tokenClient,
         profitClient,
         multiCallerClient,
@@ -525,7 +520,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         relayerOriginChains: [destinationChainId],
         relayerDestinationChains: [originChainId],
         minDepositConfirmations: defaultMinDepositConfirmations,
-        quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
     );
 
@@ -542,119 +536,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(spyLogIncludes(spy, -3, "Skipping 1 deposits from or to disabled chains.")).to.be.true;
-  });
-
-  it("UBA: Doesn't crash if client cannot support version bump", async function () {
-    // Client is out of sync with on chain version, should crash.
-    await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${UBA_MIN_CONFIG_STORE_VERSION ?? 2}`);
-
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-
-    await updateAllClients();
-  });
-
-  it("UBA: Uses UBA fee model after version bump", async function () {
-    const version = UBA_MIN_CONFIG_STORE_VERSION;
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version);
-    await configStoreClient.update();
-    hubPoolClient = new clients.HubPoolClient(
-      spyLogger,
-      hubPool,
-      configStoreClient as unknown as clients.AcrossConfigStoreClient
-    );
-    relayerInstance = new Relayer(
-      relayer.address,
-      spyLogger,
-      {
-        configStoreClient,
-        hubPoolClient,
-        spokePoolClients,
-        ubaClient,
-        tokenClient,
-        profitClient,
-        multiCallerClient,
-        inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-      },
-      {
-        relayerTokens: [],
-        relayerDestinationChains: [originChainId, destinationChainId],
-        minDepositConfirmations: defaultMinDepositConfirmations,
-        quoteTimeBuffer: 0,
-      } as unknown as RelayerConfig
-    );
-    await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${UBA_MIN_CONFIG_STORE_VERSION ?? 2}`);
-    await updateAllClients();
-
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    const deposit1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await updateAllClients();
-
-    // In UBA Mode, realized Lp fee is not set during update(), so we need to manually overwrite it.
-    const ubaRealizedLpFeePct = toBNWei("0.1");
-    spokePoolClient_1.updateDepositRealizedLpFeePct(deposit1 as Deposit, ubaRealizedLpFeePct);
-
-    // Set the deposit balancing fee.
-    const expectedBalancingFeePct = toBNWei(random(0, 0.249999).toPrecision(9));
-    const expectedLpFeePct = toBNWei(random(0, 0.249999).toPrecision(9));
-    const expectedSystemFeePct = expectedBalancingFeePct.add(expectedLpFeePct);
-    ubaClient.setBalancingFee(originChainId, expectedBalancingFeePct);
-    ubaClient.setLpFee(originChainId, expectedLpFeePct);
-
-    // Fish the DepositWithBlock directly out of the SpokePoolClient;
-    // confirm that the realizedLpFeePct is _not_ the UBA systemFee.
-    const _deposit = spokePoolClients[originChainId].getDepositsForDestinationChain(destinationChainId)[0];
-    expect(_deposit.depositId).to.eq(deposit1?.depositId);
-    expect(_deposit.realizedLpFeePct.gt(0)).to.be.true;
-    expect(_deposit.realizedLpFeePct.eq(expectedSystemFeePct)).to.be.false;
-
-    await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
-    expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
-
-    const tx = await multiCallerClient.executeTransactionQueue();
-    expect(tx.length).to.equal(1); // There should have been exactly one transaction.
-
-    // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
-    const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
-    expect(fillEvents2.length).to.equal(1);
-    expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
-    expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
-    expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
-    expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
-    expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
-    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.realizedLpFeePct).to.equal(expectedSystemFeePct);
-
-    // There should be no fill events on the origin spoke pool.
-    expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);
-
-    // Re-run the execution loop and validate that no additional relays are sent.
-    multiCallerClient.clearTransactionQueue();
-    await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
-    await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
-    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
-  });
-
-  it("UBA: Skips pre UBA deposits", async function () {
-    // In this test we activate the UBA version in the config store but the relayer doesn't have the required version.
-    await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${UBA_MIN_CONFIG_STORE_VERSION ?? 2}`);
-    await updateAllClients();
-
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await updateAllClients();
-
-    await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+    expect(
+      spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping deposit from or to disabled chains"))
+    ).to.not.be.undefined;
   });
 });
 

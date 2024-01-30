@@ -10,12 +10,12 @@ import {
   Event,
   ZERO_ADDRESS,
   getTokenAddress,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
@@ -30,12 +30,11 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC"]);
+    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();

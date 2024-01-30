@@ -10,17 +10,15 @@ import {
   spreadEventWithBlockNumber,
   assign,
   winston,
+  TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
 import { SpokePoolClient } from "../..";
 import { BaseAdapter } from "..";
 import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../../common";
-import { constants } from "@across-protocol/sdk-v2";
 import { OpStackBridge } from "./OpStackBridgeInterface";
 import { WethBridge } from "./WethBridge";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
-
-const { TOKEN_SYMBOLS_MAP } = constants;
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
@@ -64,7 +62,6 @@ export class OpStackAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {

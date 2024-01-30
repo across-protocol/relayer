@@ -1,19 +1,19 @@
 import assert from "assert";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
+import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
+  bnZero,
   assign,
   getRealizedLpFeeForFills,
   getRefundForFills,
   isDefined,
   sortEventsDescending,
   sortEventsAscending,
-  toBN,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-import { clients } from "@across-protocol/sdk-v2";
 import { UBA_MIN_CONFIG_STORE_VERSION } from "../common";
 
 export function getRefundInformationFromFill(
@@ -35,12 +35,17 @@ export function getRefundInformationFromFill(
     hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    fill.destinationChainId,
+  // @todo In v3, destination... must be swapped for origin...
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     fill.destinationToken,
+    fill.destinationChainId,
     endBlockForMainnet
   );
-  const repaymentToken = hubPoolClient.getDestinationTokenForL1Token(l1TokenCounterpart, chainToSendRefundTo);
+  const repaymentToken = hubPoolClient.getL2TokenForL1TokenAtBlock(
+    l1TokenCounterpart,
+    chainToSendRefundTo,
+    endBlockForMainnet
+  );
   return {
     chainToSendRefundTo,
     repaymentToken,
@@ -108,19 +113,7 @@ export function updateTotalRefundAmountRaw(
 }
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
-  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
-}
-
-export function filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
-  return (
-    fillA.depositId === fillB.depositId &&
-    fillA.originChainId === fillB.originChainId &&
-    fillA.amount.eq(fillB.amount) &&
-    fillA.destinationChainId === fillB.destinationChainId &&
-    fillA.relayerFeePct.eq(fillB.relayerFeePct) &&
-    fillA.recipient === fillB.recipient &&
-    fillA.depositor === fillB.depositor
-  );
+  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(bnZero);
 }
 
 export function getLastMatchingFillBeforeBlock(
@@ -129,7 +122,7 @@ export function getLastMatchingFillBeforeBlock(
   lastBlock: number
 ): FillWithBlock {
   return sortEventsDescending(allFills).find(
-    (fill: FillWithBlock) => filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
+    (fill: FillWithBlock) => sdkUtils.filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
   ) as FillWithBlock;
 }
 
@@ -149,7 +142,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
 
   // Find the first fill chronologically for matched deposit for the input fill.
   const allMatchingFills = sortEventsAscending(
-    allValidFills.filter((_fill: FillWithBlock) => filledSameDeposit(_fill, fill))
+    allValidFills.filter((_fill: FillWithBlock) => sdkUtils.filledSameDeposit(_fill, fill))
   );
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
@@ -161,7 +154,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     const depositForFill = await queryHistoricalDepositForFill(spokePoolClientsByChain[fill.originChainId], fill);
     const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
       fill,
-      depositForFill,
+      depositForFill.found ? depositForFill.deposit : undefined,
       allMatchingFills[0].blockNumber
     );
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
@@ -246,13 +239,16 @@ export async function getUnfilledDeposits(
 ): Promise<RelayerUnfilledDeposit[]> {
   const unfilledDeposits: RelayerUnfilledDeposit[] = [];
   const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-
   let earliestBlockNumbers = Object.values(spokePoolClients).map(({ deploymentBlock }) => deploymentBlock);
+
   if (isDefined(depositLookBack)) {
+    const blockFinder = undefined;
+    const redis = await getRedisCache();
     earliestBlockNumbers = await Promise.all(
       Object.values(spokePoolClients).map((spokePoolClient) => {
-        const currentTime = spokePoolClient.getCurrentTime();
-        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - depositLookBack);
+        const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
+        const hints = { lowBlock: spokePoolClient.deploymentBlock };
+        return getBlockForTimestamp(spokePoolClient.chainId, timestamp, blockFinder, redis, hints);
       })
     );
   }

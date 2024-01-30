@@ -14,7 +14,9 @@ import {
 } from "../interfaces";
 import {
   AnyObject,
+  bnZero,
   BigNumber,
+  fixedPointAdjustment as fixedPoint,
   MerkleTree,
   assign,
   compareAddresses,
@@ -55,9 +57,9 @@ export function updateRunningBalanceForFill(
   fill: interfaces.FillWithBlock,
   updateAmount: BigNumber
 ): void {
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    fill.destinationChainId,
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     fill.destinationToken,
+    fill.destinationChainId,
     endBlockForMainnet
   );
   updateRunningBalance(runningBalances, fill.destinationChainId, l1TokenCounterpart, updateAmount);
@@ -69,9 +71,9 @@ export function updateRunningBalanceForDeposit(
   deposit: interfaces.DepositWithBlock,
   updateAmount: BigNumber
 ): void {
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    deposit.originChainId,
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     deposit.originToken,
+    deposit.originChainId,
     deposit.quoteBlockNumber
   );
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
@@ -87,13 +89,13 @@ export function updateRunningBalanceForEarlyDeposit(
   const originChainId = Number(deposit.args[1].toString());
   const originToken = deposit.args[6];
 
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    originChainId,
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     originToken,
+    originChainId,
     // TODO: this must be handled s.t. it doesn't depend on when this is run.
     // For now, tokens do not change their mappings often, so this will work, but
     // to keep the system resilient, this must be updated.
-    hubPoolClient.latestBlockNumber
+    hubPoolClient.latestBlockSearched
   );
 
   updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, updateAmount);
@@ -111,7 +113,7 @@ export function addLastRunningBalance(
         Number(repaymentChainId),
         l1TokenAddress
       );
-      if (!runningBalance.eq(toBN(0))) {
+      if (!runningBalance.eq(bnZero)) {
         updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, runningBalance);
       }
     });
@@ -129,9 +131,9 @@ export function initializeRunningBalancesFromRelayerRepayments(
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(fillsForChain).forEach(
       ([l2TokenAddress, { realizedLpFees: totalRealizedLpFee, totalRefundAmount }]) => {
-        const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-          repaymentChainId,
+        const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
           l2TokenAddress,
+          repaymentChainId,
           latestMainnetBlock
         );
 
@@ -144,7 +146,7 @@ export function initializeRunningBalancesFromRelayerRepayments(
         if (totalRefundAmount) {
           assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
         } else {
-          assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
+          assign(runningBalances, [repaymentChainId, l1TokenCounterpart], bnZero);
         }
       }
     );
@@ -158,9 +160,9 @@ export function addSlowFillsToRunningBalances(
   unfilledDeposits: UnfilledDeposit[]
 ): void {
   unfilledDeposits.forEach((unfilledDeposit) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      unfilledDeposit.deposit.originChainId,
+    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
       unfilledDeposit.deposit.originToken,
+      unfilledDeposit.deposit.originChainId,
       latestMainnetBlock
     );
     updateRunningBalance(
@@ -174,19 +176,39 @@ export function addSlowFillsToRunningBalances(
 
 // TODO: Is summing up absolute values really the best way to compute a root bundle's "volume"? Said another way,
 // how do we measure a root bundle's "impact" or importance?
-export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clients: DataworkerClients): BigNumber {
+export async function computePoolRebalanceUsdVolume(
+  leaves: PoolRebalanceLeaf[],
+  clients: DataworkerClients
+): Promise<BigNumber> {
+  // Fetch the set of unique token addresses from the array of PoolRebalanceLeave objects.
+  // Map the resulting HubPool token addresses to symbol, decimals, and price.
+  const hubPoolTokens = Object.fromEntries(
+    Array.from(new Set(leaves.map(({ l1Tokens }) => l1Tokens).flat()))
+      .map((address) => clients.hubPoolClient.getTokenInfoForL1Token(address))
+      .map(({ symbol, decimals, address }) => [address, { symbol, decimals, price: bnZero }])
+  );
+
+  // Fetch all relevant token prices.
+  const prices = await clients.priceClient.getPricesByAddress(
+    Object.keys(hubPoolTokens).map((address) => address),
+    "usd"
+  );
+
+  // Scale token price to 18 decimals.
+  prices.forEach(({ address, price }) => (hubPoolTokens[address].price = toBNWei(price)));
+
+  const bn10 = toBN(10);
   return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
     return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: string, index: number) => {
-      const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
-      const volume = netSendAmount.abs();
-      const tokenPriceInUsd = clients.profitClient.getPriceOfToken(l1Token);
-      const volumeInUsd = volume.mul(tokenPriceInUsd).div(toBNWei(1));
-      const l1TokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
-      const volumeInUsdScaled = volumeInUsd.mul(toBN(10).pow(18 - l1TokenInfo.decimals));
+      const { decimals, price: usdTokenPrice } = hubPoolTokens[l1Token];
 
-      return sum.add(volumeInUsdScaled);
+      const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
+      const volume = netSendAmount.abs().mul(bn10.pow(18 - decimals)); // Scale volume to 18 decimals.
+
+      const usdVolume = volume.mul(usdTokenPrice).div(fixedPoint);
+      return sum.add(usdVolume);
     }, result);
-  }, toBN(0));
+  }, bnZero);
 }
 
 export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
@@ -212,7 +234,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       .map(async (fill: interfaces.FillWithBlock) => {
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
-            hubPoolClient.latestBlockNumber,
+            hubPoolClient.latestBlockSearched,
             fill,
             allValidFills,
             hubPoolClient,
@@ -235,7 +257,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
         // current fill, then the first fill is in the current bundle and we can exit early.
         const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-          hubPoolClient.latestBlockNumber,
+          hubPoolClient.latestBlockSearched,
           fill.blockNumber,
           fill.destinationChainId
         );
@@ -257,7 +279,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
             : preFeeAmountSentForSlowFill,
           fill.realizedLpFeePct
         );
-        if (excess.eq(toBN(0))) {
+        if (excess.eq(bnZero)) {
           return;
         }
 
@@ -278,7 +300,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
           finalFill: fill,
         });
 
-        updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+        updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(-1));
       })
   );
 
@@ -334,7 +356,7 @@ export function constructPoolRebalanceLeaves(
           if (realizedLpFees[chainId]?.[l1Token]) {
             return realizedLpFees[chainId][l1Token];
           } else {
-            return toBN(0);
+            return bnZero;
           }
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
@@ -343,7 +365,7 @@ export function constructPoolRebalanceLeaves(
           } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
             return getNetSendAmountForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
           } else {
-            return toBN(0);
+            return bnZero;
           }
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
@@ -357,7 +379,7 @@ export function constructPoolRebalanceLeaves(
               return getRunningBalanceForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
             }
           } else {
-            return toBN(0);
+            return bnZero;
           }
         });
         const incentiveBalances =
@@ -367,7 +389,7 @@ export function constructPoolRebalanceLeaves(
             if (incentivePoolBalances[chainId]?.[l1Token]) {
               return incentivePoolBalances[chainId][l1Token];
             } else {
-              return toBN(0);
+              return bnZero;
             }
           });
 
@@ -399,7 +421,7 @@ export function computeDesiredTransferAmountToSpoke(
   // Running balance is negative, but its absolute value is less than the spoke pool target balance threshold.
   // In this case, we transfer nothing.
   if (runningBalance.abs().lt(spokePoolTargetBalance.threshold)) {
-    return toBN(0);
+    return bnZero;
   }
 
   // We are left with the case where the spoke pool is beyond the threshold.
@@ -410,7 +432,7 @@ export function computeDesiredTransferAmountToSpoke(
   // This can only happen if the threshold is less than the target. This is likely due to a misconfiguration.
   // In this case, we transfer nothing until the target is exceeded.
   if (transferSize.lt(0)) {
-    return toBN(0);
+    return bnZero;
   }
 
   // Negate the transfer size because a transfer from spoke to hub is indicated by a negative number.
@@ -454,7 +476,7 @@ export function getWidestPossibleExpectedBlockRange(
   // filled during the challenge period.
   const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
     (chainId: number, index) =>
-      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockSearched - endBlockBuffers[index], 0)
   );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     const lastEndBlockForChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
@@ -629,12 +651,16 @@ export function generateMarkdownForRootBundle(
     ? `root:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
     : "No slow relay leaves";
   return (
-    `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
-    `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
-      poolRebalanceRoot
-    )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
-    `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
-    `\n\t*SlowRelay*\n\t${slowRelayMsg}`
+    "\n" +
+    `\t*Bundle blocks*:${bundleBlockRangePretty}\n` +
+    "\t*PoolRebalance*:\n" +
+    `\t\troot:${shortenHexString(poolRebalanceRoot)}...\n` +
+    `\t\tleaves:${poolRebalanceLeavesPretty}\n` +
+    "\t*RelayerRefund*\n" +
+    `\t\troot:${shortenHexString(relayerRefundRoot)}...\n` +
+    `\t\tleaves:${relayerRefundLeavesPretty}\n` +
+    "\t*SlowRelay*\n" +
+    `\t${slowRelayMsg}`
   );
 }
 

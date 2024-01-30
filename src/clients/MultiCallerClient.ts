@@ -1,13 +1,16 @@
+import { BigNumber } from "ethers";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
   winston,
+  bnZero,
   getNetworkName,
+  isDefined,
   isPromiseFulfilled,
   getTarget,
   TransactionResponse,
   TransactionSimulationResult,
   Contract,
-  Wallet,
+  Signer,
   getMultisender,
   getProvider,
 } from "../utils";
@@ -53,7 +56,7 @@ export class MultiCallerClient {
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
-    readonly baseSigner?: Wallet
+    readonly baseSigner?: Signer
   ) {
     this.txnClient = new TransactionClient(logger);
   }
@@ -213,12 +216,12 @@ export class MultiCallerClient {
       txnRequestsToSubmit.forEach((txn, idx) => {
         mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       });
-      this.logger.info({
+      this.logger.debug({
         at: "MultiCallerClient#executeTxnQueue",
         message: `${txnRequestsToSubmit.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
         mrkdwn,
       });
-      this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      this.logger.debug({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
       return [];
     }
 
@@ -240,25 +243,28 @@ export class MultiCallerClient {
       throw new Error("Multisender not available for this chain");
     }
 
-    if (transactions.some((tx) => !tx.unpermissioned || tx.chainId !== chainId)) {
-      this.logger.error({
-        at: "MultiCallerClient#buildMultiSenderBundle",
-        message: "Some transactions in the queue contain different target chain or are permissioned",
-        transactions: transactions.map(({ contract, chainId, unpermissioned }) => {
-          return { target: getTarget(contract.address), unpermissioned: Boolean(unpermissioned), chainId };
-        }),
-        notificationPath: "across-error",
-      });
-      throw new Error("Multisender bundle data mismatch");
-    }
-
     const mrkdwn: string[] = [];
-    const callData: Multicall2Call[] = transactions.map((txn, idx) => {
+    const callData: Multicall2Call[] = [];
+    let gasLimit: BigNumber | undefined = bnZero;
+    transactions.forEach((txn, idx) => {
+      if (!txn.unpermissioned || txn.chainId !== chainId) {
+        this.logger.error({
+          at: "MultiCallerClient#buildMultiSenderBundle",
+          message: "Some transactions in the queue contain different target chain or are permissioned",
+          transactions: transactions.map(({ contract, chainId, unpermissioned }) => {
+            return { target: getTarget(contract.address), unpermissioned: Boolean(unpermissioned), chainId };
+          }),
+          notificationPath: "across-error",
+        });
+        throw new Error("Multisender bundle data mismatch");
+      }
+
       mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.message ?? "No message"}: ${txn.mrkdwn ?? "No markdown"}`);
-      return {
+      callData.push({
         target: txn.contract.address,
         callData: txn.contract.interface.encodeFunctionData(txn.method, txn.args),
-      };
+      });
+      gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit) ? gasLimit.add(txn.gasLimit) : undefined;
     });
 
     this.logger.debug({
@@ -273,6 +279,7 @@ export class MultiCallerClient {
       contract: multisender,
       method: "aggregate",
       args: [callData],
+      gasLimit,
       gasLimitMultiplier: MULTICALL3_AGGREGATE_GAS_MULTIPLIER,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
@@ -288,33 +295,39 @@ export class MultiCallerClient {
   }
 
   _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
-    // Validate all transactions have the same chainId.
-    const { chainId, contract } = transactions[0];
-    if (transactions.some((tx) => tx.contract.address !== contract.address || tx.chainId !== chainId)) {
-      this.logger.error({
-        at: "MultiCallerClient#_buildMultiCallBundle",
-        message: "Some transactions in the queue contain different target chain or contract address",
-        transactions: transactions.map(({ contract, chainId }) => {
-          return { target: getTarget(contract.address), chainId };
-        }),
-        notificationPath: "across-error",
-      });
-      throw new Error("Multicall bundle data mismatch");
-    }
-
     const mrkdwn: string[] = [];
-    let callData = transactions.map((txn, idx) => {
+    const callData: string[] = [];
+    let gasLimit: BigNumber | undefined = bnZero;
+
+    const { chainId, contract } = transactions[0];
+    transactions.forEach((txn, idx) => {
+      // Basic validation on all transactions to be bundled.
+      if (txn.contract.address !== contract.address || txn.chainId !== chainId) {
+        this.logger.error({
+          at: "MultiCallerClient#_buildMultiCallBundle",
+          message: "Some transactions in the queue contain different target chain or contract address",
+          transactions: transactions.map(({ contract, chainId }) => {
+            return { target: getTarget(contract.address), chainId };
+          }),
+          notificationPath: "across-error",
+        });
+        throw new Error("Multicall bundle data mismatch");
+      }
+
       mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.message ?? "No message"}: ${txn.mrkdwn ?? "No markdown"}`);
-      return txn.contract.interface.encodeFunctionData(txn.method, txn.args);
+      callData.push(txn.contract.interface.encodeFunctionData(txn.method, txn.args));
+
+      // Aggregate the individual gasLimits. If a transaction does not have a gasLimit defined then it has not been
+      // simulated. In this case, drop the aggregation and revert to undefined to force estimation on submission.
+      gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit) ? gasLimit.add(txn.gasLimit) : undefined;
     });
 
-    // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
-    callData = [...new Set(callData)];
     this.logger.debug({
       at: "MultiCallerClient",
       message: `Made multicall bundle for ${getNetworkName(chainId)}.`,
       target: getTarget(contract.address),
       callData,
+      gasLimit,
     });
 
     return {
@@ -322,6 +335,7 @@ export class MultiCallerClient {
       contract,
       method: "multicall",
       args: [callData],
+      gasLimit,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;
