@@ -30,6 +30,7 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingDisputesEnabled: boolean;
   readonly sendingProposalsEnabled: boolean;
   readonly sendingExecutionsEnabled: boolean;
+  readonly sendingFinalizationsEnabled: boolean;
 
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
   // historical events it needs to fetch and parse.
@@ -49,6 +50,7 @@ export class DataworkerConfig extends CommonConfig {
       SPOKE_ROOTS_LOOKBACK_COUNT,
       SEND_DISPUTES,
       SEND_PROPOSALS,
+      SEND_FINALIZATIONS,
       SEND_EXECUTIONS,
       FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
@@ -89,6 +91,7 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
+    this.sendingFinalizationsEnabled = SEND_FINALIZATIONS === "true";
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
 
     this.forcePropose = FORCE_PROPOSAL === "true";

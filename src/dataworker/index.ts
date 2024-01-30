@@ -1,12 +1,4 @@
-import {
-  processEndPollingLoop,
-  winston,
-  config,
-  startupLogLevel,
-  Signer,
-  disconnectRedisClients,
-  getRedisCache,
-} from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -17,8 +9,6 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { UBAClient } from "../clients/UBAClient";
-import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
 
 config();
 let logger: winston.Logger;
@@ -109,27 +99,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         toBlocks
       );
 
-      const ubaClient = new UBAClient(
-        // @dev: Consider customizing this config when using the UBAClient in prod.
-        new sdkClients.UBAClientConfig(),
-        clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        clients.hubPoolClient,
-        spokePoolClients,
-        await getRedisCache(logger)
-      );
-      const version = clients.configStoreClient.getConfigStoreVersionForTimestamp();
-      if (sdkUtils.isUBA(version)) {
-        await ubaClient.update();
-      }
-
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
-        await dataworker.validatePendingRootBundle(
-          spokePoolClients,
-          config.sendingDisputesEnabled,
-          fromBlocks,
-          ubaClient
-        );
+        await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
       }
@@ -139,8 +111,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
@@ -153,8 +124,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
@@ -162,15 +132,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
         await dataworker.executeRelayerRefundLeaves(
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
