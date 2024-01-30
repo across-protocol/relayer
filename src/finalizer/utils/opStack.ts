@@ -297,6 +297,7 @@ async function multicallOptimismL1Proofs(
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "misc",
+      miscReason: "proof",
       destinationChainId: hubPoolClient.chainId,
     };
     return proof;

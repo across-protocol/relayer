@@ -227,13 +227,15 @@ function resolveCrossChainTransferStructure(
   );
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
   const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
-  const crossChainTransfers: CrossChainTransfer = {
+  const transferBase = {
     originationChainId: CHAIN_ID,
     destinationChainId: hubPoolClient.chainId,
     l1TokenSymbol: l1TokenInfo.symbol,
     amount: amountFromWei,
-    type,
   };
+
+  const crossChainTransfers: CrossChainTransfer =
+    type === "misc" ? { ...transferBase, type, miscReason: "retrieval" } : { ...transferBase, type };
   return crossChainTransfers;
 }
 
