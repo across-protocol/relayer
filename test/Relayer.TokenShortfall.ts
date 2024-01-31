@@ -126,7 +126,6 @@ describe("Relayer: Token balance shortfall", async function () {
         multiCallerClient,
         inventoryClient: new MockInventoryClient(new MockCrossChainTransferClient()),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-        ubaClient: null,
       },
       {
         relayerTokens: [],
