@@ -331,7 +331,7 @@ async function run(argv: string[]): Promise<number> {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
     boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
-      wallet: "mnemonic",
+      wallet: "secret",
       decimals: false,
     },
     alias: {
