@@ -207,11 +207,11 @@ export class BundleDataClient {
     // V3 specific objects:
     // const bundleDepositsV3: v3DepositWithBlock[] = []; // Deposits in bundle block range.
     // const bundleEarlyDepositsV3: v3DepositWithBlock[] = []; // Early Deposits in bundle block range.
-    // const bundleSlowFills: { [originChainId: number] : v3Deposit[] } = {}; // Deposits that we need to send slow fills
+    // const bundleSlowFillsV3: { [originChainId: number] : v3Deposit[] } = {}; // Deposits that we need to send slow fills
     // // for in this bundle.
-    // const expiredDepositsToRefund: { [originChainId: number] : v3Deposit[] } = {};
+    // const expiredDepositsToRefundV3: { [originChainId: number] : v3Deposit[] } = {};
     // // Newly expired deposits in this bundle that need to be refunded. 
-    // const excessDeposits: { [destinationChainid: number] : v3Deposit[] } = {}; 
+    // const excessDepositsV3: { [destinationChainid: number] : v3Deposit[] } = {}; 
     // // Deposit data for all Slowfills that were included in a previous
     // // bundle and can no longer be executed because (1) they were replaced with a FastFill in this bundle or
     // // (2) the fill deadline has passed. We'll need to decrement running balances for these deposits on the
@@ -409,23 +409,11 @@ export class BundleDataClient {
          *
          * *****************************/
 
-        // Perform convenient setup:
-        // const bundleDepositsV3: v3Deposit[] = []; // Deposits in bundle block range.
-        // const bundleFillsToRefund: v3FillsToRefund = {}; // Fast Fills that need to be refunded. Some subset of
-        // // the data in each of the keys in this object will be stored as the RelayerRefundLeaf.refundHash
-        // const bundleSlowFills: v3Deposit[] = []; // Slow Fills that need to be sent for slow fill requests
-        // sent in this bundle.
-        // const depositsToRefund: v3Deposit[] = []; // Newly expired deposits in this bundle that need to be refunded. 
-        // const excessDeposits: v3Deposit[] = []; // Deposit data for all Slowfills that were included in a previous
-        // // bundle and can no longer be executed because (1) they were replaced with a FastFill in this bundle or
-        // // (2) the fill deadline has passed. We'll need to decrement running balances for these deposits on the
-        // // destination chain where the slow fill would have been executed.
-
         // Consider going through all events and storing them into the following dictionary
         // for convenient lookup on the second pass when sorting them into the above lists which we'll
         // ultimately return to the dataworker.
-        // const depositHashes: {
-        //   [relayDataHash: string]: {
+        // const v3RelayHashes: {
+        //   [relayHash: string]: {
         //    deposits: v3Deposit[];
         //    fills: v3Fill[];
         //    slowFillRequests: SlowFillRequest []
@@ -456,16 +444,16 @@ export class BundleDataClient {
         //     For this chain's block range in the bundle:
         //       Load all deposits in block range:
         //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
-        //         - Add it to depositsToRefund.
+        //         - Add it to expiredDepositsToRefund.
         //         Else
         //         - add it to bundleDepositsV3.
-        //         - Decrement runningBalances for origin chain.
+        //         - Decrement runningBalances for origin chain in fillsToRefund.
         //       Load all fills and slow fills:
-        //        Validate fill/slow fill. Conveniently can use depositHashes to find the matching deposit quickly, if it exists
+        //        Validate fill/slow fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
         //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
         //        If fill is valid:
         //          If fillType is FastFill or ReplacedSlowFill:
-        //            - Add it to bundleFillsToRefund. The fill/refund should be aware of the lpFee to include
+        //            - Add it to fillsToRefund. The fill/refund should be aware of the lpFee to include
         //              in the refund.
         //            - Increment runningBalances for the repayment chain since we'll have to send a refund for it out of
         //              the repayment spoke.
@@ -473,7 +461,7 @@ export class BundleDataClient {
         //              then decrement runningBalances on destination chain since a
         //              slow fill leaf was included in a previous bundle but cannot be executed. This might have to be
         //              done in a separate step in PoolRebalanceUtils/dataworker.ts after all fills have been processed.
-        //              Save this fill/deposit in excessDeposits.
+        //              Save this fill/deposit in excessDepositsV3.
         //        Else, do nothing, as the fill is a SlowFill execution.
         //        If slow fill request is valid and does not match a fast fill:
         //          - Add it to bundleSlowFills.
