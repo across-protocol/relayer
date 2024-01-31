@@ -8,8 +8,6 @@ import {
   MerkleTree,
   sortEventsAscending,
   isDefined,
-  buildPoolRebalanceLeafTree,
-  updateTotalRefundAmountRaw,
   toBNWei,
   getFillsInRange,
   ZERO_ADDRESS,
@@ -18,8 +16,6 @@ import {
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
-  isUbaOutflow,
-  outflowIsFill,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
   SlowFillLeaf,
@@ -31,7 +27,7 @@ import {
   RelayerRefundLeaf,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient, UBAClient, BalanceAllocator } from "../clients";
+import { SpokePoolClient, BalanceAllocator } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -333,8 +329,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
-    ubaClient?: UBAClient
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
@@ -351,28 +346,24 @@ export class Dataworker {
     }
 
     const { chainId: hubPoolChainId, latestBlockSearched } = this.clients.hubPoolClient;
-    const [mainnetBundleStartBlock, mainnetBundleEndBlock] = getBlockRangeForChain(
+    const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    );
-
-    const isUBA = sdk.clients.isUBAActivatedAtBlock(
-      this.clients.hubPoolClient,
-      mainnetBundleStartBlock,
-      hubPoolChainId
-    );
-
-    const rootBundleDataProducer = isUBA
-      ? this.UBA_proposeRootBundle(blockRangesForProposal, ubaClient, spokePoolClients, true)
-      : this.Legacy_proposeRootBundle(blockRangesForProposal, spokePoolClients, latestBlockSearched, true);
+    )[1];
 
     this.logger.debug({
       at: "Dataworker#propose",
-      message: `Proposing ${isUBA ? "UBA" : "Legacy"} root bundle`,
+      message: "Proposing root bundle",
       blockRangesForProposal,
     });
-    const rootBundleData = { ...(await rootBundleDataProducer) };
+    const logData = true;
+    const rootBundleData = await this._proposeRootBundle(
+      blockRangesForProposal,
+      spokePoolClients,
+      latestBlockSearched,
+      logData
+    );
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
@@ -440,7 +431,7 @@ export class Dataworker {
       slowRelayRoot: rootBundleData.slowFillTree.getHexRoot(),
     });
     if (submitProposals) {
-      this._proposeRootBundle(
+      this.enqueueRootBundleProposal(
         hubPoolChainId,
         blockRangesForProposal,
         rootBundleData.poolRebalanceLeaves,
@@ -453,7 +444,7 @@ export class Dataworker {
     }
   }
 
-  async Legacy_proposeRootBundle(
+  async _proposeRootBundle(
     blockRangesForProposal: number[][],
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBundleEndBlock: number,
@@ -531,284 +522,10 @@ export class Dataworker {
     };
   }
 
-  async UBA_proposeRootBundle(
-    blockRangesForProposal: number[][],
-    ubaClient: UBAClient,
-    spokePoolClients: SpokePoolClientsByChain,
-    logData = false
-  ): Promise<ProposeRootBundleReturnType> {
-    if (!ubaClient) {
-      throw new Error("UBA_proposeRootBundle#Undefined UBA client");
-    }
-    const timerStart = Date.now();
-    const enabledChainIds = Object.keys(spokePoolClients)
-      .filter((chainId) => {
-        const blockRangeForChain = getBlockRangeForChain(
-          blockRangesForProposal,
-          Number(chainId),
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
-        return !PoolRebalanceUtils.isChainDisabled(blockRangeForChain);
-      })
-      .map((x) => Number(x));
-
-    const { poolRebalanceLeaves } = this._UBA_buildPoolRebalanceLeaves(
-      blockRangesForProposal,
-      enabledChainIds,
-      ubaClient
-    );
-    const poolRebalanceTree = buildPoolRebalanceLeafTree(poolRebalanceLeaves);
-
-    // Load data for slow fill and relayer refund leaves. Set UBA mode to true to include
-    // refund requests in the fills to refund list.
-    const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient._loadData(
-      blockRangesForProposal,
-      ubaClient.spokePoolClients,
-      true,
-      logData
-    );
-    // Build RelayerRefundRoot:
-    // 1. Get all fills in range from SpokePoolClient
-    // 2. Get all flows from UBA Client
-    // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
-    // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
-    const relayerRefundTree = this._UBA_buildRelayerRefundLeaves(
-      fillsToRefund,
-      poolRebalanceLeaves,
-      blockRangesForProposal,
-      enabledChainIds,
-      ubaClient
-    );
-
-    // Build SlowRelayRoot:
-    // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
-    // 2. Get all flows from UBA Client
-    // 3. Validate fills by matching them with a deposit flow.
-    const slowFillTree = this._UBA_buildSlowRelayLeaves(ubaClient, blockRangesForProposal, unfilledDeposits);
-
-    if (logData) {
-      this.logger.debug({
-        at: "Dataworker",
-        message: `Time to build root bundles for block ranges ${JSON.stringify(blockRangesForProposal)} : ${
-          Date.now() - timerStart
-        }ms`,
-      });
-      PoolRebalanceUtils.prettyPrintLeaves(this.logger, poolRebalanceTree, poolRebalanceLeaves, "Pool rebalance");
-      PoolRebalanceUtils.prettyPrintLeaves(
-        this.logger,
-        relayerRefundTree.tree,
-        relayerRefundTree.leaves,
-        "Relayer refund"
-      );
-      PoolRebalanceUtils.prettyPrintLeaves(this.logger, slowFillTree.tree, slowFillTree.leaves, "Slow relay");
-    }
-
-    return {
-      poolRebalanceLeaves,
-      poolRebalanceTree,
-      relayerRefundLeaves: relayerRefundTree.leaves,
-      relayerRefundTree: relayerRefundTree.tree,
-      slowFillLeaves: slowFillTree.leaves,
-      slowFillTree: slowFillTree.tree,
-    };
-  }
-
-  /**
-   * Builds pool rebalance leaves for the given block ranges and enabled chains.
-   * @param blockRanges Marks the event range that should be used to form pool rebalance leaf data
-   * @param enabledChainIds Chains that we should create pool rebalance leaves for
-   * @param ubaClient
-   * @returns pool rebalance leaves to propose for `blockRanges`
-   */
-  _UBA_buildPoolRebalanceLeaves(
-    blockRanges: number[][],
-    enabledChainIds: number[],
-    ubaClient: UBAClient
-  ): { poolRebalanceLeaves: PoolRebalanceLeaf[]; runningBalances: RunningBalances } {
-    const mainnetBundleEndBlock = getBlockRangeForChain(
-      blockRanges,
-      this.clients.hubPoolClient.chainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[1];
-
-    // Build PoolRebalanceRoot:
-    // 1. Get all flows in range from UBA Client
-    // 2. Set running balances to closing running balances from latest flows in range per token per chain
-    // 3. Set bundleLpFees to sum of SystemFee.LPFee for all flows in range per token per chain
-    // 4. Set netSendAmount to sum of netRunningBalanceAdjustments for all flows in range per token per chain
-    const poolRebalanceLeafData: {
-      runningBalances: RunningBalances;
-      bundleLpFees: RunningBalances;
-      incentivePoolBalances: RunningBalances;
-      netSendAmounts: RunningBalances;
-    } = {
-      runningBalances: {},
-      bundleLpFees: {},
-      incentivePoolBalances: {},
-      netSendAmounts: {},
-    };
-    for (const chainId of enabledChainIds) {
-      const blockRangeForChain = getBlockRangeForChain(
-        blockRanges,
-        Number(chainId),
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
-      poolRebalanceLeafData.runningBalances[chainId] = {};
-      poolRebalanceLeafData.bundleLpFees[chainId] = {};
-      poolRebalanceLeafData.incentivePoolBalances[chainId] = {};
-      poolRebalanceLeafData.netSendAmounts[chainId] = {};
-      for (const tokenSymbol of ubaClient.tokens) {
-        const l1TokenAddress = this.clients.hubPoolClient
-          .getL1Tokens()
-          .find((l1Token) => l1Token.symbol === tokenSymbol)?.address;
-        if (!l1TokenAddress) {
-          throw new Error("Could not find l1 token address for token symbol: " + tokenSymbol);
-        }
-
-        const flowsForChain = ubaClient.getModifiedFlows(
-          Number(chainId),
-          tokenSymbol,
-          blockRangeForChain[0],
-          blockRangeForChain[1]
-        );
-
-        // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
-        // chain, we'll find the previous running balance for it and use that as the starting point.
-        if (flowsForChain.length > 0) {
-          const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
-          const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
-          const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.lpFee), BigNumber.from(0));
-          const netSendAmount = flowsForChain[flowsForChain.length - 1].netRunningBalanceAdjustment;
-          poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = closingRunningBalance;
-          poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = bundleLpFees;
-          poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] = closingIncentiveBalance;
-          poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = netSendAmount;
-        }
-      }
-    }
-    const poolRebalanceLeaves = PoolRebalanceUtils.constructPoolRebalanceLeaves(
-      mainnetBundleEndBlock,
-      poolRebalanceLeafData.runningBalances,
-      poolRebalanceLeafData.bundleLpFees,
-      this.clients.configStoreClient,
-      this.maxL1TokenCountOverride,
-      poolRebalanceLeafData.incentivePoolBalances,
-      poolRebalanceLeafData.netSendAmounts,
-      true
-    );
-    const runningBalances = poolRebalanceLeafData.runningBalances;
-    return {
-      poolRebalanceLeaves,
-      runningBalances,
-    };
-  }
-
-  /**
-   * Builds relayer refund leaves for the given block ranges and enabled chains.
-   * @param poolRebalanceLeaves Used to determine how to set amountToReturn in relayer refund leaves
-   * @param runningBalances
-   * @param blockRanges
-   * @returns
-   */
-  _UBA_buildRelayerRefundLeaves(
-    fillsToRefund: FillsToRefund,
-    poolRebalanceLeaves: PoolRebalanceLeaf[],
-    blockRanges: number[][],
-    enabledChainIds: number[],
-    ubaClient: UBAClient
-  ): { leaves: RelayerRefundLeaf[]; tree: MerkleTree<RelayerRefundLeaf> } {
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
-    const mainnetBundleEndBlock = getBlockRangeForChain(
-      blockRanges,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[1];
-
-    // Create roots using constructed block ranges.
-    const timerStart = Date.now();
-    this.logger.debug({
-      at: "Dataworker",
-      message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
-    });
-
-    // Go through all flows in range. For each outflow, add the refund balancing fee to the refund entry
-    // of the relayer.
-    for (const chainId of enabledChainIds) {
-      const [startBlock, endBlock] = getBlockRangeForChain(
-        blockRanges,
-        Number(chainId),
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
-      for (const tokenSymbol of ubaClient.tokens) {
-        const flowsForChain = ubaClient.getModifiedFlows(Number(chainId), tokenSymbol, startBlock, endBlock);
-        flowsForChain.forEach(({ flow, balancingFee }) => {
-          // All flows in here are assumed to be valid, so we can use the flow's
-          // repayment chain to pay out the refund. But we need to check which
-          // token should be repaid in.
-          if (isUbaOutflow(flow)) {
-            const refundToken = outflowIsFill(flow) ? flow.destinationToken : flow.refundToken;
-            updateTotalRefundAmountRaw(fillsToRefund, balancingFee, flow.repaymentChainId, flow.relayer, refundToken);
-          }
-        });
-      }
-    }
-    const relayerRefundRoot = _buildRelayerRefundRoot(
-      mainnetBundleEndBlock,
-      fillsToRefund,
-      poolRebalanceLeaves,
-      {}, // runningBalancess unused in UBA model.
-      this.clients,
-      this.maxRefundCountOverride
-        ? this.maxRefundCountOverride
-        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock),
-      true // Instruct function to always set amountToReturn = -netSendAmount iff netSendAmount < 0
-    );
-    return relayerRefundRoot;
-  }
-
-  _UBA_buildSlowRelayLeaves(
-    ubaClient: UBAClient,
-    blockRanges: number[][],
-    unfilledDeposits: UnfilledDeposit[]
-  ): { leaves: SlowFillLeaf[]; tree: MerkleTree<SlowFillLeaf> } {
-    // In UBA mode, each unfilled deposit must be matched with a payout adjustment percent,
-    // which is set equal to the refund balancing fee for the partial fill that triggered the slow fill.
-    const unfilledDepositsWithPayoutAdjustmentPcts: UnfilledDeposit[] = unfilledDeposits.map(
-      (unfilledDeposit: UnfilledDeposit) => {
-        const deposit = unfilledDeposit.deposit;
-        const destinationChainId = deposit.destinationChainId;
-        const [startBlock, endBlock] = getBlockRangeForChain(
-          blockRanges,
-          destinationChainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
-        const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
-          deposit.destinationToken,
-          destinationChainId
-        ).symbol;
-        // There should only be one outflow on the deposit.destinationchain matching this deposit ID.
-        const matchingOutflow = ubaClient
-          .getModifiedFlows(destinationChainId, tokenSymbol, startBlock, endBlock)
-          .find((flow) => flow.flow.depositId === deposit.depositId);
-        if (!matchingOutflow || !matchingOutflow?.balancingFee) {
-          throw new Error(`No matching outflow with refund balancing fee found for deposit ID ${deposit.depositId}`);
-        }
-        return {
-          ...unfilledDeposit,
-          relayerBalancingFee: matchingOutflow.balancingFee,
-        };
-      }
-    );
-    const slowRelayRoot = _buildSlowRelayRoot(unfilledDepositsWithPayoutAdjustmentPcts);
-
-    return slowRelayRoot;
-  }
-
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
-    ubaClient?: UBAClient
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
@@ -856,8 +573,7 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients,
-      ubaClient
+      earliestBlocksInSpokePoolClients
     );
     if (!valid) {
       // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
@@ -892,8 +608,7 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
-    ubaClient?: UBAClient
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
   ): Promise<
     // If valid is false, we get a reason and we might get expected trees.
     | {
@@ -1091,7 +806,6 @@ export class Dataworker {
       };
     }
 
-    let rootBundleData: ProposeRootBundleReturnType;
     const mainnetBundleStartBlock = getBlockRangeForChain(
       blockRangesImpliedByBundleEndBlocks,
       hubPoolChainId,
@@ -1110,37 +824,14 @@ export class Dataworker {
       );
     }
 
-    let isUBA = false;
-    if (
-      sdk.clients.isUBAActivatedAtBlock(
-        this.clients.hubPoolClient,
-        mainnetBundleStartBlock,
-        this.clients.hubPoolClient.chainId
-      )
-    ) {
-      isUBA = true;
-    }
-    if (!isUBA) {
-      const _rootBundleData = await this.Legacy_proposeRootBundle(
-        blockRangesImpliedByBundleEndBlocks,
-        spokePoolClients,
-        rootBundle.proposalBlockNumber,
-        true
-      );
-      rootBundleData = {
-        ..._rootBundleData,
-      };
-    } else {
-      const _rootBundleData = await this.UBA_proposeRootBundle(
-        blockRangesImpliedByBundleEndBlocks,
-        ubaClient,
-        spokePoolClients,
-        true
-      );
-      rootBundleData = {
-        ..._rootBundleData,
-      };
-    }
+    const logData = true;
+    const rootBundleData = await this._proposeRootBundle(
+      blockRangesImpliedByBundleEndBlocks,
+      spokePoolClients,
+      rootBundle.proposalBlockNumber,
+      logData
+    );
+
     const expectedPoolRebalanceRoot = {
       leaves: rootBundleData.poolRebalanceLeaves,
       tree: rootBundleData.poolRebalanceTree,
@@ -1236,8 +927,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
-    ubaClient?: UBAClient
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -1330,38 +1020,12 @@ export class Dataworker {
             continue;
           }
 
-          let rootBundleData: ProposeRootBundleReturnType;
-
-          const mainnetBundleStartBlock = getBlockRangeForChain(
+          const rootBundleData = await this._proposeRootBundle(
             blockNumberRanges,
-            this.clients.hubPoolClient.chainId,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          )[0];
-          let isUBA = false;
-          if (
-            sdk.clients.isUBAActivatedAtBlock(
-              this.clients.hubPoolClient,
-              mainnetBundleStartBlock,
-              this.clients.hubPoolClient.chainId
-            )
-          ) {
-            isUBA = true;
-          }
-          if (!isUBA) {
-            const _rootBundleData = await this.Legacy_proposeRootBundle(
-              blockNumberRanges,
-              spokePoolClients,
-              matchingRootBundle.blockNumber
-            );
-            rootBundleData = {
-              ..._rootBundleData,
-            };
-          } else {
-            const _rootBundleData = await this.UBA_proposeRootBundle(blockNumberRanges, ubaClient, spokePoolClients);
-            rootBundleData = {
-              ..._rootBundleData,
-            };
-          }
+            spokePoolClients,
+            matchingRootBundle.blockNumber
+          );
+
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
           if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
             this.logger.warn({
@@ -1580,8 +1244,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
-    ubaClient?: UBAClient
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -1623,8 +1286,7 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients,
-      ubaClient
+      earliestBlocksInSpokePoolClients
     );
 
     if (!valid) {
@@ -1927,8 +1589,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
-    ubaClient?: UBAClient
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     const { configStoreClient, hubPoolClient } = this.clients;
     this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: "Executing relayer refund leaves" });
@@ -2013,39 +1674,11 @@ export class Dataworker {
           continue;
         }
 
-        let rootBundleData: ProposeRootBundleReturnType;
-
-        const mainnetBundleStartBlock = getBlockRangeForChain(
+        const { relayerRefundLeaves: leaves, relayerRefundTree: tree } = await this._proposeRootBundle(
           blockNumberRanges,
-          hubPoolClient.chainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
-        )[0];
-        let isUBA = false;
-        if (
-          sdk.clients.isUBAActivatedAtBlock(
-            this.clients.hubPoolClient,
-            mainnetBundleStartBlock,
-            this.clients.hubPoolClient.chainId
-          )
-        ) {
-          isUBA = true;
-        }
-        if (!isUBA) {
-          const _rootBundleData = await this.Legacy_proposeRootBundle(
-            blockNumberRanges,
-            spokePoolClients,
-            matchingRootBundle.blockNumber
-          );
-          rootBundleData = {
-            ..._rootBundleData,
-          };
-        } else {
-          const _rootBundleData = await this.UBA_proposeRootBundle(blockNumberRanges, ubaClient, spokePoolClients);
-          rootBundleData = {
-            ..._rootBundleData,
-          };
-        }
-        const { relayerRefundLeaves: leaves, relayerRefundTree: tree } = rootBundleData;
+          spokePoolClients,
+          matchingRootBundle.blockNumber
+        );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
           this.logger.warn({
@@ -2170,7 +1803,7 @@ export class Dataworker {
     });
   }
 
-  _proposeRootBundle(
+  enqueueRootBundleProposal(
     hubPoolChainId: number,
     bundleBlockRange: number[][],
     poolRebalanceLeaves: PoolRebalanceLeaf[],

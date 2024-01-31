@@ -1,12 +1,12 @@
 export function usage(badInput: string | undefined = undefined): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
-  const walletOpts = "mnemonic|privateKey|gckms";
+  const walletOpts = "secret|mnemonic|privateKey|gckms";
 
   usageStr += `
     Usage:
     \tnode ./dist/index.js --help
-    \tnode ./dist/index.js [-h] <--monitor|--relayer>      --wallet <${walletOpts}>
-    \tnode ./dist/index.js [-h] <--dataworker|--finalizer> --wallet <${walletOpts}>
+    \tnode ./dist/index.js [-h] <--monitor|--relayer>      [--wallet <${walletOpts}>]
+    \tnode ./dist/index.js [-h] <--dataworker|--finalizer> [--wallet <${walletOpts}>]
   `.slice(1); // Skip leading newline
 
   // eslint-disable-next-line no-console
