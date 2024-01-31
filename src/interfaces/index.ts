@@ -71,3 +71,15 @@ export const isUbaOutflow = interfaces.isUbaOutflow;
 export const outflowIsFill = interfaces.outflowIsFill;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
+
+// V2 / V3 interfaces
+export type v2Deposit = interfaces.v2Deposit;
+export type v2DepositWithBlock = interfaces.v2DepositWithBlock;
+export type v2SpeedUp = interfaces.v2SpeedUp;
+export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
+export type v2Fill = interfaces.v2Fill;
+export type v2FillWithBlock = interfaces.v2FillWithBlock;
+export type v2RelayData = interfaces.v2RelayData;
+export type v3RelayData = interfaces.v3RelayData;
+export type v2SlowFillLeaf = interfaces.v2SlowFillLeaf;
+export type v3SlowFillLeaf = interfaces.v3SlowFillLeaf;
