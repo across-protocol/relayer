@@ -7,7 +7,6 @@ export const DEFAULT_CONFIG_STORE_VERSION = clients.DEFAULT_CONFIG_STORE_VERSION
 
 // @dev This mocked class must re-implement any customisations in the local extended ConfigStoreClient.
 export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
-  private mockedUBAConfig: interfaces.UBAParsedConfigType | undefined;
   constructor(
     logger: winston.Logger,
     configStore: Contract,
@@ -26,16 +25,5 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
       mockUpdate,
       enabledChainIds
     );
-  }
-
-  public getUBAConfig(
-    l1TokenAddress: string,
-    blockNumber?: number | undefined
-  ): interfaces.UBAParsedConfigType | undefined {
-    return this.mockedUBAConfig ?? super.getUBAConfig(l1TokenAddress, blockNumber);
-  }
-
-  public setUBAConfig(ubaConfig: interfaces.UBAParsedConfigType): void {
-    this.mockedUBAConfig = ubaConfig;
   }
 }
