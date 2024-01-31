@@ -135,7 +135,6 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         multiCallerClient,
         inventoryClient: mockInventoryClient,
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-        ubaClient: null,
       },
       {
         relayerTokens: [],
