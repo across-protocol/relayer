@@ -206,7 +206,6 @@ export class BundleDataClient {
 
     // V3 specific objects:
     // const bundleDepositsV3: v3DepositWithBlock[] = []; // Deposits in bundle block range.
-    // const bundleEarlyDepositsV3: v3DepositWithBlock[] = []; // Early Deposits in bundle block range.
     // const bundleSlowFillsV3: { [originChainId: number] : v3Deposit[] } = {}; // Deposits that we need to send slow fills
     // // for in this bundle.
     // const expiredDepositsToRefundV3: { [originChainId: number] : v3Deposit[] } = {};
