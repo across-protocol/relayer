@@ -1,13 +1,12 @@
-import { utils, typechain } from "@across-protocol/sdk-v2";
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { assign, isFirstFillForDeposit, getRedisCache } from "./";
 import { bnZero } from "./SDKUtils";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { utils, typechain } from "@across-protocol/sdk-v2";
 
 export function getDepositPath(deposit: Deposit): string {
-  const inputToken = utils.getDepositInputToken(deposit);
-  return `${inputToken}-->${deposit.destinationChainId}`;
+  return `${deposit.originToken}-->${deposit.destinationChainId}`;
 }
 
 export function updateUnfilledDepositsWithMatchedDeposit(
@@ -15,17 +14,14 @@ export function updateUnfilledDepositsWithMatchedDeposit(
   matchedDeposit: Deposit,
   unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain
 ): void {
-  const outputAmount = utils.getFillOutputAmount(matchedFill);
-  const totalFilledAmount = utils.getTotalFilledAmount(matchedFill);
-  const unfilledAmount = outputAmount.sub(totalFilledAmount);
-
+  const depositUnfilledAmount = matchedFill.amount.sub(matchedFill.totalFilledAmount);
   const depositKey = `${matchedDeposit.originChainId}+${matchedFill.depositId}`;
   assign(
     unfilledDepositsForOriginChain,
     [depositKey],
     [
       {
-        unfilledAmount,
+        unfilledAmount: depositUnfilledAmount,
         deposit: matchedDeposit,
         // A first partial fill for a deposit is characterized by one whose total filled amount post-fill
         // is equal to the amount sent in the fill, and where the fill amount is greater than zero.

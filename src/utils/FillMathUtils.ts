@@ -1,11 +1,8 @@
-import assert from "assert";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { Fill } from "../interfaces";
 import { bnZero, fixedPointAdjustment as fixedPoint } from "./SDKUtils";
 import { BigNumber } from ".";
 
 export function _getRefundForFill(fill: Fill): BigNumber {
-  assert(sdkUtils.isV2Fill(fill));
   return fill.fillAmount.mul(fixedPoint.sub(fill.realizedLpFeePct)).div(fixedPoint);
 }
 
@@ -14,7 +11,6 @@ export function _getFeeAmount(fillAmount: BigNumber, feePct: BigNumber): BigNumb
 }
 
 export function _getRealizedLpFeeForFill(fill: Fill): BigNumber {
-  assert(sdkUtils.isV2Fill(fill));
   return fill.fillAmount.mul(fill.realizedLpFeePct).div(fixedPoint);
 }
 

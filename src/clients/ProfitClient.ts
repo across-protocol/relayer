@@ -28,7 +28,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
-import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain, v2Deposit } from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from ".";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
@@ -202,9 +202,8 @@ export class ProfitClient {
     return price;
   }
 
-  async getTotalGasCost(deposit: Deposit, fillAmount?: BigNumber): Promise<TransactionCostEstimate> {
+  async getTotalGasCost(deposit: Deposit, fillAmount = deposit.amount): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
-    fillAmount ??= sdkUtils.getDepositOutputAmount(deposit);
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
     // @todo: Simulate this per-token in future, because some ERC20s consume more gas.
@@ -231,11 +230,9 @@ export class ProfitClient {
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
     deposit: Deposit,
-    fillAmount?: BigNumber
+    fillAmount = deposit.amount
   ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
-    fillAmount ??= sdkUtils.getDepositOutputAmount(deposit);
-
     const gasToken = this.resolveGasToken(chainId);
     const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
     let { nativeGasCost, tokenGasCost } = await this.getTotalGasCost(deposit, fillAmount);
@@ -369,9 +366,8 @@ export class ProfitClient {
   getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
     const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     if (!l1TokenInfo) {
-      const inputToken = sdkUtils.getDepositInputToken(deposit);
       throw new Error(
-        `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${inputToken}`
+        `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
       );
     }
     const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.symbol);
@@ -514,7 +510,7 @@ export class ProfitClient {
           : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
       assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
-      const deposit: v2Deposit = {
+      const deposit: Deposit = {
         depositId,
         depositor: TEST_RECIPIENT,
         recipient: TEST_RECIPIENT,

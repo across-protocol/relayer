@@ -1,4 +1,3 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BalanceAllocator } from "../clients";
 import { spokePoolClientsToProviders } from "../common";
 import {
@@ -13,6 +12,7 @@ import {
   TransfersByTokens,
 } from "../interfaces";
 import {
+  assign,
   BigNumber,
   bnZero,
   Contract,
@@ -187,8 +187,7 @@ export class Monitor {
       );
       for (const fill of fills) {
         // Skip notifications for known relay caller addresses, or slow fills.
-        const isSlowRelay = sdkUtils.isSlowFill(fill);
-        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) || isSlowRelay) {
+        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) || fill.updatableRelayData.isSlowRelay) {
           continue;
         }
 
@@ -211,10 +210,11 @@ export class Monitor {
     const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};
     for (const deposit of unfilledDeposits) {
       const chainId = deposit.deposit.destinationChainId;
-      const outputToken = sdkUtils.getDepositOutputToken(deposit.deposit);
-      unfilledAmountByChainAndToken[chainId] ??= {};
-      unfilledAmountByChainAndToken[chainId][outputToken] ??= bnZero;
-      unfilledAmountByChainAndToken[chainId][outputToken] = unfilledAmountByChainAndToken[chainId][outputToken].add(
+      const tokenAddress = deposit.deposit.destinationToken;
+      if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][tokenAddress]) {
+        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], bnZero);
+      }
+      unfilledAmountByChainAndToken[chainId][tokenAddress] = unfilledAmountByChainAndToken[chainId][tokenAddress].add(
         deposit.unfilledAmount
       );
     }

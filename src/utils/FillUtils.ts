@@ -1,14 +1,7 @@
 import assert from "assert";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
-import {
-  DepositWithBlock,
-  Fill,
-  FillsToRefund,
-  FillWithBlock,
-  v2FillWithBlock,
-  SpokePoolClientsByChain,
-} from "../interfaces";
+import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
@@ -34,7 +27,7 @@ export function getRefundInformationFromFill(
 } {
   // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
   // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
-  const chainToSendRefundTo = sdkUtils.isSlowFill(fill) ? fill.destinationChainId : fill.repaymentChainId;
+  const chainToSendRefundTo = fill.updatableRelayData.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
 
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(
@@ -44,7 +37,7 @@ export function getRefundInformationFromFill(
   )[1];
   // @todo In v3, destination... must be swapped for origin...
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    sdkUtils.getFillOutputToken(fill),
+    fill.destinationToken,
     fill.destinationChainId,
     endBlockForMainnet
   );
@@ -87,10 +80,9 @@ export function updateTotalRefundAmount(
 ): void {
   // Don't count slow relays in total refund amount, since we use this amount to conveniently construct
   // relayer refund leaves.
-  if (sdkUtils.isSlowFill(fill)) {
+  if (fill.updatableRelayData.isSlowRelay) {
     return;
   }
-
   const refund = getRefundForFills([fill]);
   updateTotalRefundAmountRaw(fillsToRefund, refund, chainToSendRefundTo, fill.relayer, repaymentToken);
 }
@@ -121,13 +113,7 @@ export function updateTotalRefundAmountRaw(
 }
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
-  if (sdkUtils.isV3Fill(fill)) {
-    return true;
-  }
-
-  const fillAmount = sdkUtils.getFillAmount(fill);
-  const totalFilledAmount = sdkUtils.getTotalFilledAmount(fill);
-  return fillAmount.eq(totalFilledAmount) && fillAmount.gt(bnZero);
+  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(bnZero);
 }
 
 export function getLastMatchingFillBeforeBlock(
@@ -142,23 +128,21 @@ export function getLastMatchingFillBeforeBlock(
 
 export async function getFillDataForSlowFillFromPreviousRootBundle(
   latestMainnetBlock: number,
-  fill: v2FillWithBlock,
-  allValidFills: v2FillWithBlock[],
+  fill: FillWithBlock,
+  allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain
 ): Promise<{
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
 }> {
-  assert(sdkUtils.isV2Fill(fill));
-
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
   // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
 
   // Find the first fill chronologically for matched deposit for the input fill.
   const allMatchingFills = sortEventsAscending(
-    allValidFills.filter((_fill: FillWithBlock) => sdkUtils.isV2Fill(_fill) && sdkUtils.filledSameDeposit(_fill, fill))
+    allValidFills.filter((_fill: FillWithBlock) => sdkUtils.filledSameDeposit(_fill, fill))
   );
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
@@ -168,14 +152,11 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   // deposit as the input fill.
   if (!firstFillForSameDeposit) {
     const depositForFill = await queryHistoricalDepositForFill(spokePoolClientsByChain[fill.originChainId], fill);
-    const matchingFills = (
-      await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
-        fill,
-        depositForFill.found ? depositForFill.deposit : undefined,
-        allMatchingFills[0].blockNumber
-      )
-    ).filter(sdkUtils.isV2Fill) as v2FillWithBlock[];
-
+    const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
+      fill,
+      depositForFill.found ? depositForFill.deposit : undefined,
+      allMatchingFills[0].blockNumber
+    );
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
       message:
@@ -184,7 +165,6 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
       depositForFill,
       matchingFills,
     });
-
     firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));
     if (firstFillForSameDeposit === undefined) {
       throw new Error(

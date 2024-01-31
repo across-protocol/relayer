@@ -1,4 +1,3 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 import {
@@ -62,13 +61,11 @@ export class TokenClient {
   }
 
   hasBalanceForFill(deposit: Deposit, fillAmount: BigNumber): boolean {
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
-    return this.getBalance(deposit.destinationChainId, outputToken).gte(fillAmount);
+    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(fillAmount);
   }
 
   hasBalanceForZeroFill(deposit: Deposit): boolean {
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
-    return this.getBalance(deposit.destinationChainId, outputToken).gte(bnOne);
+    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(bnOne);
   }
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it it will capture the
@@ -84,8 +81,7 @@ export class TokenClient {
 
   captureTokenShortfallForFill(deposit: Deposit, unfilledAmount: BigNumber): void {
     this.logger.debug({ at: "TokenBalanceClient", message: "Handling token shortfall", deposit, unfilledAmount });
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
-    this.captureTokenShortfall(deposit.destinationChainId, outputToken, deposit.depositId, unfilledAmount);
+    this.captureTokenShortfall(deposit.destinationChainId, deposit.destinationToken, deposit.depositId, unfilledAmount);
   }
 
   // Returns the total token shortfall the client has seen. Shortfall is defined as the difference between the total
