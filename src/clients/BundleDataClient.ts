@@ -501,6 +501,10 @@ export class BundleDataClient {
         //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
         //         from running balances on the destination chain since we can no longer execute the slow fill leaf
         //         that was included in a previous bundle, so let's add them to excessDeposits.
+
+        // Clean up:
+        // - Check for duplicate events in any of the above lists.
+
       }
     }
 
