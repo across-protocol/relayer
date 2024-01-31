@@ -174,7 +174,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
         depositForFill.found ? depositForFill.deposit : undefined,
         allMatchingFills[0].blockNumber
       )
-    ).filter(sdkUtils.isV2Fill) as v2FillWithBlock[];
+    ).filter(sdkUtils.isV2Fill);
 
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
