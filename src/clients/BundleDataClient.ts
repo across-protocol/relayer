@@ -360,6 +360,13 @@ export class BundleDataClient {
           Number(destinationChainId),
           this.chainIdListForBundleEvaluationBlockNumbers
         );
+        // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
+        // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
+        // return fill events that are younger than the bundle end block.
+        const fillsForOriginChain = destinationClient
+          .getFillsForOriginChain(Number(originChainId))
+          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
+        await Promise.all(fillsForOriginChain.map((fill) => validateFillAndSaveData(fill, blockRangeForChain)));
 
         /** *****************************
          *
