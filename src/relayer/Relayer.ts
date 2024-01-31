@@ -136,6 +136,18 @@ export class Relayer {
         return false;
       }
 
+      // Filter out deposits that require native swaps.
+      const outputToken = sdkUtils.getDepositOutputToken(deposit);
+      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit including native token swap.",
+          deposit,
+          l1Token,
+        });
+        return false;
+      }
+
       // We query the relayer API to get the deposit limits for different token and destination combinations.
       // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
       // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
