@@ -1090,13 +1090,14 @@ export class Dataworker {
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
-        const { args } = sdkUtils.isV2SlowFillLeaf(leaf)
+        const { method, args } = sdkUtils.isV2SlowFillLeaf(leaf)
           ? this.encodeV2SlowFillLeaf(slowRelayTree, rootBundleId, leaf)
           : this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill leaf with message",
+          method,
           args,
         });
         return false;
