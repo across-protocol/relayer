@@ -1177,7 +1177,7 @@ export class Dataworker {
 
           // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
           let amountFilled = bnZero;
-          const fill = slowFill?.fill;
+          const fill = slowFill.fill;
           if (isDefined(fill)) {
             // If fill was a full fill, execution is unnecessary. V3 fills are full fills by definition.
             amountFilled = sdkUtils.getTotalFilledAmount(fill);
