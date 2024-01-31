@@ -227,6 +227,20 @@ export class BundleDataClient {
     const allInvalidFills: FillWithBlock[] = [];
     const earlyDeposits: typechain.FundsDepositedEvent[] = [];
 
+
+    // V3 specific objects:
+    // const bundleDepositsV3: v3DepositWithBlock[] = []; // Deposits in bundle block range.
+    // const bundleEarlyDepositsV3: v3DepositWithBlock[] = []; // Early Deposits in bundle block range.
+    // const bundleSlowFills: { [originChainId: number] : v3Deposit[] } = {}; // Deposits that we need to send slow fills
+    // // for in this bundle.
+    // const expiredDepositsToRefund: { [originChainId: number] : v3Deposit[] } = {};
+    // // Newly expired deposits in this bundle that need to be refunded. 
+    // const excessDeposits: { [destinationChainid: number] : v3Deposit[] } = {}; 
+    // // Deposit data for all Slowfills that were included in a previous
+    // // bundle and can no longer be executed because (1) they were replaced with a FastFill in this bundle or
+    // // (2) the fill deadline has passed. We'll need to decrement running balances for these deposits on the
+    // // destination chain where the slow fill would have been executed.
+
     // Save refund in-memory for validated fill.
     const addRefundForValidFill = (
       fillWithBlock: FillWithBlock,
@@ -317,8 +331,8 @@ export class BundleDataClient {
         return [
           chainId,
           [
-            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockForChain })).toNumber(),
-            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlockForChain })).toNumber(),
+            Number((await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockForChain })).toNumber()),
+            Number((await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlockForChain })).toNumber()),
           ],
         ];
       })
