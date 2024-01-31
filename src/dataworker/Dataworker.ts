@@ -332,7 +332,7 @@ export class Dataworker {
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
-    // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
+    // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
@@ -452,7 +452,7 @@ export class Dataworker {
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
-      await this.clients.bundleDataClient._loadData(blockRangesForProposal, spokePoolClients, false, logData);
+      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
