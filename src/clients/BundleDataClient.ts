@@ -31,7 +31,6 @@ import {
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { clients, typechain, utils } from "@across-protocol/sdk-v2";
-const { isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -178,29 +177,6 @@ export class BundleDataClient {
     deposits: DepositWithBlock[];
     earlyDeposits: typechain.FundsDepositedEvent[];
   }> {
-    const mainnetStartBlock = getBlockRangeForChain(
-      blockRangesForChains,
-      this.clients.hubPoolClient.chainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[0];
-    let isUBA = false;
-    if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock, this.clients.hubPoolClient.chainId)) {
-      isUBA = true;
-    }
-    return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
-  }
-  async _loadData(
-    blockRangesForChains: number[][],
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
-    isUBA = false,
-    logData = true
-  ): Promise<{
-    unfilledDeposits: UnfilledDeposit[];
-    fillsToRefund: FillsToRefund;
-    allValidFills: FillWithBlock[];
-    deposits: DepositWithBlock[];
-    earlyDeposits: typechain.FundsDepositedEvent[];
-  }> {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
@@ -247,6 +223,23 @@ export class BundleDataClient {
       matchedDeposit: DepositWithBlock,
       blockRangeForChain: number[]
     ) => {
+      // Extra check for duplicate fills. These should be blocked at the contract level but might still be included
+      // by the RPC so its worth checking here.
+      const duplicateFill = allValidFills.find(
+        (existingFill) =>
+          existingFill.originChainId === fillWithBlock.originChainId &&
+          existingFill.depositId === fillWithBlock.depositId &&
+          utils.getTotalFilledAmount(existingFill).eq(utils.getTotalFilledAmount(fillWithBlock))
+      );
+      if (duplicateFill !== undefined) {
+        this.logger.warn({
+          at: "BundleDataClient#loadData",
+          message: "Tried to add refund for duplicate fill. Skipping.",
+          duplicateFill,
+          matchedDeposit,
+        });
+        return;
+      }
       // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
       // time. Note that its important we don't skip fills earlier than the block range at this step because
       // we use allValidFills to find the first fill in the entire history associated with a fill in the block
@@ -403,22 +396,6 @@ export class BundleDataClient {
           )
         );
 
-        // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
-        // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
-        // return fill events that are younger than the bundle end block.
-        const fillsForOriginChain = destinationClient
-          .getFillsForOriginChain(Number(originChainId))
-          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
-        // In the UBA model, fills that request repayment on another chain must send a separate refund request
-        // in order to mark their place in the outflow queue for that chain. This is because the UBA determines
-        // fees based on sequencing of events. Pre-UBA, the fee model treats each fill independently so there
-        // is no need to mark a fill's place in line on the repayment chain.
-        await Promise.all(
-          fillsForOriginChain
-            .filter((fill) => !isUBA || fill.destinationChainId === fill.repaymentChainId)
-            .map((fill) => validateFillAndSaveData(fill, blockRangeForChain))
-        );
-
         /** *****************************
          *
          * Handle V3 events
@@ -522,6 +499,9 @@ export class BundleDataClient {
       }
     }
 
+    // Note: We do not check for duplicate slow fills here since `addRefundForValidFill` already checks for duplicate
+    // fills and is the function that populates the `unfilledDeposits` dictionary. Therefore, if there are no duplicate
+    // fills, then there won't be duplicate `matchedDeposits` used to populate `unfilledDeposits`.
     // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
     // out any deposits that are fully filled.
     const unfilledDeposits = flattenAndFilterUnfilledDepositsByOriginChain(unfilledDepositsForOriginChain);
