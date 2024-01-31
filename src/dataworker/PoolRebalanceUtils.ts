@@ -289,14 +289,9 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         }
 
         // Log excesses for debugging since this logic is so complex.
-        if (excesses[fill.destinationChainId] === undefined) {
-          excesses[fill.destinationChainId] = {};
-        }
-
         const outputToken = sdkUtils.getFillOutputToken(fill);
-        if (excesses[fill.destinationChainId][outputToken] === undefined) {
-          excesses[fill.destinationChainId][outputToken] = [];
-        }
+        excesses[fill.destinationChainId] ??= {};
+        excesses[fill.destinationChainId][outputToken] ??= [];
         excesses[fill.destinationChainId][outputToken].push({
           excess: excess.toString(),
           lastMatchingFillInSameBundle,
