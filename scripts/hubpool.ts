@@ -231,7 +231,7 @@ async function run(argv: string[]): Promise<number> {
     default: {
       chainId: 1,
       event: "ProposeRootBundle",
-      wallet: "mnemonic",
+      wallet: "secret",
       force: false,
     },
     alias: {

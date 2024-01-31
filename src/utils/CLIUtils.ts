@@ -13,7 +13,7 @@ export function retrieveSignerFromCLIArgs(): Promise<Signer> {
   // Call into the process' argv to retrieve the CLI args.
   const args = minimist(process.argv.slice(2));
   // Resolve the wallet type & verify that it is valid.
-  const keyType = (args.wallet as string) ?? "mnemonic";
+  const keyType = (args.wallet as string) ?? "secret";
   if (!isValidKeyType(keyType)) {
     throw new Error(`Unsupported key type (${keyType}); expected one of: ${keyTypes.join(", ")}.`);
   }
