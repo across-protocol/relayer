@@ -18,6 +18,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Deposit, InventoryConfig } from "../src/interfaces";
+import { bnZero, bnOne } from "../src/utils";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
@@ -107,8 +108,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       recipient: owner.address,
       originToken: mainnetWeth,
       destinationToken: l2TokensForWeth[10],
-      realizedLpFeePct: toBN(0),
-      amount: toBN(1),
+      realizedLpFeePct: bnZero,
+      amount: bnOne,
       originChainId: 1,
       destinationChainId: 10,
       relayerFeePct: toBN(1337),
@@ -173,6 +174,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // is below the buffer plus the threshold then the bot should refund on L2.
 
     sampleDepositData.destinationChainId = 42161;
+    sampleDepositData.destinationToken = l2TokensForWeth[42161];
     sampleDepositData.amount = toWei(1.69);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
     expect(lastSpyLogIncludes(spy, 'chainShortfall":"15000000000000000000"')).to.be.true;
