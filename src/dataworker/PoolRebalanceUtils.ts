@@ -628,26 +628,38 @@ export function generateMarkdownForRootBundle(
   let slowRelayLeavesPretty = "";
   slowRelayLeaves.forEach((leaf, index) => {
     const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
-    const outputAmount = sdkUtils.getRelayDataOutputAmount(leaf.relayData);
     const decimalsForDestToken = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, outputToken).decimals;
-    // Shorten keys for ease of reading from Slack.
-    leaf.relayData.originChain = leaf.relayData.originChainId;
-    leaf.relayData.destinationChain = leaf.relayData.destinationChainId;
-    leaf.relayData.depositor = shortenHexString(leaf.relayData.depositor);
-    leaf.relayData.recipient = shortenHexString(leaf.relayData.recipient);
-    leaf.relayData.destToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
-    leaf.relayData.amount = convertFromWei(outputAmount.toString(), decimalsForDestToken);
-    // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
-    leaf.relayData.realizedLpFee = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
-    leaf.relayData.relayerFee = `${formatFeePct(leaf.relayData.relayerFeePct)}%`;
-    leaf.relayData.payoutAdjustmentPct = `${formatFeePct(leaf.payoutAdjustmentPct)}%`;
-    delete leaf.relayData.destinationToken;
-    delete leaf.relayData.realizedLpFeePct;
-    delete leaf.relayData.relayerFeePct;
-    delete leaf.payoutAdjustmentPct;
-    delete leaf.relayData.originChainId;
-    delete leaf.relayData.destinationChainId;
-    slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf.relayData)}`;
+
+    const outputAmount = convertFromWei(
+      sdkUtils.getRelayDataOutputAmount(leaf.relayData).toString(),
+      decimalsForDestToken
+    );
+
+    const slowFill: Record<string, string> = {
+      // Shorten select keys for ease of reading from Slack.
+      depositor: shortenHexString(leaf.relayData.depositor),
+      recipient: shortenHexString(leaf.relayData.recipient),
+      originChainId: leaf.relayData.originChainId,
+      destinationChainId: leaf.relayData.destinationChainId,
+      depositId: leaf.relayData.depositId,
+      message: leaf.relayData.message,
+      // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
+      realizedLpFeePct: `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`,
+    };
+
+    if (sdkUtils.isV2SlowFillLeaf(leaf)) {
+      slowFill.destinationToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
+      slowFill.amount = outputAmount;
+
+      // v2SlowFill payoutAdjustmentPct is incorrectly defined as a string.
+      // It's unconditionally 0 and will be removed, so just BN it on the fly.
+      slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
+    } else {
+      slowFill.outputToken = outputToken;
+      slowFill.outputAmount = outputAmount;
+    }
+
+    slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(slowFill)}`;
   });
 
   const slowRelayMsg = slowRelayLeavesPretty
