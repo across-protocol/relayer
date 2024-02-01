@@ -41,7 +41,7 @@ When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Ac
 
 One, it could use a third party bridge, but this is strongly avoided because it exposes LP capital to additional trust assumptions. Across historically has avoided supporting networks without canonical bridges for this reason, and moreover its been unnecessary as the most popular L2 networks have proven to be those that have spent the time to build out an effective canonical bridge.
 
-Secondly, it could try to incentivize depositors to send capital to the SpokePool that Across can use to refund relayers and execute slow fills. Depositors obviously are incentivized by profit so they must have a reason to deposit on a SpokePool. This is why the UBA fee model introduces a way for Across to know (or anticipate) when it will need more funds on a SpokePool and properly incentivize deposits there.
+Secondly, it could try to incentivize depositors to send capital to the SpokePool that Across can use to refund relayers and execute slow fills. Depositors obviously are incentivized by profit so they must have a reason to deposit on a SpokePool.
 
 ## So, how does Across move capital around?
 
@@ -165,8 +165,6 @@ event FundsDeposited(
 Therefore, `amount`, `originChainId`, `destinationChainId`, `relayerFeePct`, `depositId`, `destinationToken`, `message`, and `recipient` must match. In addition, the fill's matched deposit must have been emitted from the SpokePool at the `originChainId` of the fill. The fill must have been emitted from the SpokePool on the `destinationChainId`.
 
 Finally, the fill's `realizedLpFeePct` must be correct. Currently this is deterministically linked with the deposit's `quoteTimestamp`: there is a correct `realizedLpFeePct` for each `quoteTimestamp`, which is computed by querying the HubPool's "utilization" at the Ethereum block height corresponding to the `quoteTimestamp`. This is described in the [UMIP here](https://github.com/UMAprotocol/UMIPs/blob/e3198578b1d339914afa5243a80e3ac8055fba34/UMIPs/umip-157.md#validating-realizedlpfeepct).
-
-_N.B. This formula for setting the `realizedLpFeePct` will change in the UBA model and will not be primarily linked to the deposit's `quoteTimestamp`._
 
 ## Incorporating slow fills
 

@@ -1,13 +1,9 @@
 import { ethers } from "../utils";
-import { utils } from "@across-protocol/sdk-v2";
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
 export const CONFIG_STORE_VERSION = 2;
-
-// The first version where UBA is in effect.
-export const { UBA_MIN_CONFIG_STORE_VERSION } = utils;
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
