@@ -194,6 +194,8 @@ describe("Dataworker: Build merkle roots", async function () {
     const merkleRoot2 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(3), spokePoolClients);
     const expectedMerkleRoot2 = await buildSlowRelayTree(buildSlowRelayLeaves([deposit5]));
     expect(merkleRoot2.tree.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
+
+    // Add a V3 slow fill
   });
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
@@ -405,6 +407,8 @@ describe("Dataworker: Build merkle roots", async function () {
       };
       const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1, leaf3]);
       expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
+
+      // TODO: Add V3 fill to refund and expired deposit to see if they get added to relayer refund root.
     });
     it("amountToReturn is non 0", async function () {
       await updateAllClients();
@@ -1264,5 +1268,7 @@ describe("Dataworker: Build merkle roots", async function () {
       });
       expect(merkleRoot2.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal(expectedLeaves2);
     });
+    describe("V3 events", function() {
+    })
   });
 });
