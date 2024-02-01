@@ -204,7 +204,7 @@ export class InventoryClient {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       throw new Error(
         `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId}` +
-        ` (${inputToken} != ${outputToken})`
+          ` (${inputToken} != ${outputToken})`
       );
     }
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
