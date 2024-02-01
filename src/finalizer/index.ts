@@ -79,8 +79,8 @@ export async function finalize(
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
   submitFinalizationTransactions: boolean,
-  optimisticRollupFinalizationWindow: = 5 * oneDaySeconds,
-  polygonFinalizationWindow: 5 * oneDaySeconds
+  optimisticRollupFinalizationWindow = 5 * oneDaySeconds,
+  polygonFinalizationWindow = 5 * oneDaySeconds
 ): Promise<void> {
   const finalizationWindows: { [chainId: number]: number } = {
     // Mainnets
