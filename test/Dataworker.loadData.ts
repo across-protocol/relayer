@@ -30,6 +30,7 @@ import {
   expect,
   getDefaultBlockRange,
   getLastBlockNumber,
+  randomAddress,
   sinon,
   spyLogIncludes,
 } from "./utils";
@@ -37,7 +38,9 @@ import {
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit, DepositWithBlock, Fill } from "../src/interfaces";
-import { MAX_UINT_VAL, getRealizedLpFeeForFills, getRefundForFills, toBN } from "../src/utils";
+import { MAX_UINT_VAL, getCurrentTime, getRealizedLpFeeForFills, getRefundForFills, toBN } from "../src/utils";
+import { MockSpokePoolClient } from "./mocks";
+import { interfaces } from "@across-protocol/sdk-v2";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -668,8 +671,43 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  // describe("V3 Events", function () {
-  //   it("Returns deposits", async function () {});
+  describe("V3 Events", function () {
+    it("Returns deposits", async function () {
+        const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
+          const originToken = randomAddress();
+          const message = "0x";
+          const quoteTimestamp = getCurrentTime() - 10;
+          return spokePoolClient.deposit({ originToken, message, quoteTimestamp, destinationChainId } as interfaces.v2DepositWithBlock);
+        };
+        const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
+          const inputToken = randomAddress();
+          const message = "0x";
+          const quoteTimestamp = getCurrentTime() - 10;
+          return spokePoolClient.depositV3({ inputToken, message, quoteTimestamp, destinationChainId } as interfaces.v3DepositWithBlock);
+        };
+        const v3OriginSpokePoolClient = new MockSpokePoolClient(
+          spokePoolClient_1.logger,
+          spokePoolClient_1.spokePool,
+          spokePoolClient_1.chainId,
+          spokePoolClient_1.deploymentBlock
+        );
+        // Inject a series of v2DepositWithBlock and v3DepositWithBlock events.
+        const depositEvents: Event[] = [];
+    
+        // for (let idx = 0; idx < 10; ++idx) {
+          depositEvents.push(generateV3Deposit(v3OriginSpokePoolClient));
+          depositEvents.push(generateV2Deposit(v3OriginSpokePoolClient));
+        // }
+        await v3OriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+        // console.log(v3OriginSpokePoolClient.getDeposits());
+    
+        await updateAllClients();
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+          ...spokePoolClients,
+          [originChainId]: v3OriginSpokePoolClient,
+        });
+        // console.log(data1)
+    });
   //   it("Returns fills to refund", async function () {});
   //   it("Returns slow fills", async function () {});
   //   it("Returns expired deposits", async function () {});
@@ -678,7 +716,7 @@ describe("Dataworker: Load data used in all functions", async function () {
   //   it("Returns refunds from pending bundle", async function () {});
   //   it("Returns refunds from last two bundle", async function () {});
   //   it("Returns refunds from next bundle", async function () {});
-  // });
+  });
 
   it("Can fetch historical deposits not found in spoke pool client's memory", async function () {
     // Send a deposit.
