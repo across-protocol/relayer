@@ -1,3 +1,4 @@
+import assert from "assert";
 import { typechain, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
@@ -23,6 +24,7 @@ import {
   convertFromWei,
   formatFeePct,
   getFillDataForSlowFillFromPreviousRootBundle,
+  getNetworkName,
   getRefund,
   shortenHexString,
   shortenHexStrings,
@@ -623,12 +625,7 @@ export function generateMarkdownForRootBundle(
   let slowRelayLeavesPretty = "";
   slowRelayLeaves.forEach((leaf, index) => {
     const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
-    const decimalsForDestToken = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, outputToken).decimals;
-
-    const outputAmount = convertFromWei(
-      sdkUtils.getRelayDataOutputAmount(leaf.relayData).toString(),
-      decimalsForDestToken
-    );
+    const outputTokenDecimals = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, outputToken).decimals;
 
     const slowFill: Record<string, string> = {
       // Shorten select keys for ease of reading from Slack.
@@ -644,14 +641,27 @@ export function generateMarkdownForRootBundle(
 
     if (sdkUtils.isV2SlowFillLeaf(leaf)) {
       slowFill.destinationToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
-      slowFill.amount = outputAmount;
-
-      // v2SlowFill payoutAdjustmentPct is incorrectly defined as a string.
+      slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
+      // v2SlowFill payoutAdjustmentPct is incidentally defined as a string.
       // It's unconditionally 0 and will be removed, so just BN it on the fly.
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
+      // Scale amounts to 18 decimals for realizedLpFeePct computation.
+      const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
+      const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
+      const updatedOutputAmount = leaf.relayData.updatedOutputAmount.mul(scaleBy);
+      assert(
+        inputAmount.gte(updatedOutputAmount),
+        "Unexpected output amount for slow fill on" +
+          `${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
+      );
+
+      // Infer the realizedLpFeePct from the spread between inputAmount and updatedOutputAmount (sans relayer fee).
+      const realizedLpFeePct = inputAmount.sub(updatedOutputAmount).mul(fixedPoint).div(inputAmount);
+
       slowFill.outputToken = outputToken;
-      slowFill.outputAmount = outputAmount;
+      slowFill.outputAmount = convertFromWei(updatedOutputAmount, 18); // tokens were scaled to 18 decimals.
+      slowFill.realizedLpFeePct = `${formatFeePct(realizedLpFeePct)}%`;
     }
 
     slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(slowFill)}`;
