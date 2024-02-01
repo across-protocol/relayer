@@ -1268,7 +1268,6 @@ describe("Dataworker: Build merkle roots", async function () {
       });
       expect(merkleRoot2.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal(expectedLeaves2);
     });
-    describe("V3 events", function() {
-    })
+    describe("V3 events", function () {});
   });
 });
