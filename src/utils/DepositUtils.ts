@@ -87,6 +87,7 @@ export function getUniqueDepositsInRange(
     .getDepositsForDestinationChain(destinationChain)
     .filter(
       (deposit: DepositWithBlock) =>
+        utils.isV2Deposit(deposit) &&
         deposit.blockNumber <= originChainBlockRange[1] &&
         deposit.blockNumber >= originChainBlockRange[0] &&
         !existingUniqueDeposits.some(

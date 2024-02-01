@@ -21,6 +21,7 @@ import {
   getUniqueDepositsInRange,
   getUniqueEarlyDepositsInRange,
   queryHistoricalDepositForFill,
+  assign,
 } from "../utils";
 import { Clients } from "../common";
 import {
@@ -30,17 +31,43 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { typechain, utils } from "@across-protocol/sdk-v2";
+import { typechain, utils, interfaces } from "@across-protocol/sdk-v2";
 
-type DataCacheValue = {
+type LoadDataReturnValue = {
   unfilledDeposits: UnfilledDeposit[];
   fillsToRefund: FillsToRefund;
   allValidFills: FillWithBlock[];
   deposits: DepositWithBlock[];
   earlyDeposits: typechain.FundsDepositedEvent[];
+  bundleDepositsV3: BundleDepositsV3;
 };
-type DataCache = Record<string, DataCacheValue>;
+type DataCache = Record<string, LoadDataReturnValue>;
 
+// V3 dictionary helper functions
+type ExpiredDepositsToRefundV3 = {
+  [originChainId: number]: {
+    [originToken: string]: interfaces.v3Deposit[];
+  };
+};
+function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: interfaces.v3Deposit): void {
+  const { originChainId, inputToken } = deposit;
+  if (!dict?.[originChainId]?.[inputToken]) {
+    assign(dict, [originChainId, inputToken], []);
+  }
+  dict[originChainId][inputToken].push(deposit);
+}
+type BundleDepositsV3 = {
+  [originChainId: number]: {
+    [originToken: string]: interfaces.v3Deposit[];
+  };
+};
+function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.v3Deposit): void {
+  const { originChainId, inputToken } = deposit;
+  if (!dict?.[originChainId]?.[inputToken]) {
+    assign(dict, [originChainId, inputToken], []);
+  }
+  dict[originChainId][inputToken].push(deposit);
+}
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
   private loadDataCache: DataCache = {};
@@ -60,7 +87,7 @@ export class BundleDataClient {
     this.loadDataCache = {};
   }
 
-  loadDataFromCache(key: string): DataCacheValue {
+  loadDataFromCache(key: string): LoadDataReturnValue {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
     return _.cloneDeep(this.loadDataCache[key]);
@@ -170,13 +197,7 @@ export class BundleDataClient {
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     logData = true
-  ): Promise<{
-    unfilledDeposits: UnfilledDeposit[];
-    fillsToRefund: FillsToRefund;
-    allValidFills: FillWithBlock[];
-    deposits: DepositWithBlock[];
-    earlyDeposits: typechain.FundsDepositedEvent[];
-  }> {
+  ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
@@ -204,11 +225,11 @@ export class BundleDataClient {
     const earlyDeposits: typechain.FundsDepositedEvent[] = [];
 
     // V3 specific objects:
-    // const bundleDepositsV3: { [originChainId: number]: v3DepositWithBlock[] } = []; // Deposits in bundle block range.
+    const bundleDepositsV3: BundleDepositsV3 = {}; // Deposits in bundle block range.
     // const bundleFillsV3: { [repaymentChainId: number]: { fills: v3FillWithBlock[]; refunds: Refund; totalRefundAmount: BigNumber; realizedLpFees: BigNumber } } = []; // Fills to refund in bundle block range.
     // const bundleSlowFillsV3: { [destinationChainId: number] : v3Deposit[] } = {}; // Deposits that we need to send slow fills
     // // for in this bundle.
-    // const expiredDepositsToRefundV3: { [originChainId: number] : { deposits: v3Deposit[]; refunds: Refund; totalRefundAmount: BigNumber } } = {};
+    const expiredDepositsToRefundV3: ExpiredDepositsToRefundV3 = {};
     // // Newly expired deposits in this bundle that need to be refunded.
     // const unexecutableSlowFills: { [destinationChainid: number] : v3Deposit[] } = {};
     // // Deposit data for all Slowfills that were included in a previous
@@ -459,10 +480,36 @@ export class BundleDataClient {
         //   For each token:
         //     For this chain's block range in the bundle:
         //       Load all deposits in block range:
+        //         - add it to bundleDepositsV3.
         //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
         //         - Add it to expiredDepositsToRefund.
-        //         Else
-        //         - add it to bundleDepositsV3.
+        //
+        const originChainBlockRange = getBlockRangeForChain(
+          blockRangesForChains,
+          originChainId,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+        (originClient.getDepositsForDestinationChain(destinationChainId) as interfaces.v3DepositWithBlock[])
+          .filter(
+            (deposit: DepositWithBlock) =>
+              utils.isV3Deposit(deposit) &&
+              deposit.blockNumber <= originChainBlockRange[1] &&
+              deposit.blockNumber >= originChainBlockRange[0] &&
+              !bundleDepositsV3?.[originChainId]?.[deposit.inputToken].some(
+                (existingDeposit) =>
+                  existingDeposit.originChainId === deposit.originChainId &&
+                  existingDeposit.depositId === deposit.depositId
+              )
+          )
+          .forEach((deposit: interfaces.v3DepositWithBlock) => {
+            updateBundleDepositsV3(bundleDepositsV3, deposit);
+            if (deposit.fillDeadline <= bundleBlockTimestamps[destinationChainId][1]) {
+              updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
+            }
+          });
+        console.log("bundle deposits", bundleDepositsV3);
+        console.log("expired deposits", expiredDepositsToRefundV3);
+
         //       Load all fills and slow fills:
         //        Validate fill/slow fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
         //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
@@ -542,7 +589,14 @@ export class BundleDataClient {
       });
     }
 
-    this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills, earlyDeposits };
+    this.loadDataCache[key] = {
+      fillsToRefund,
+      deposits,
+      unfilledDeposits,
+      allValidFills,
+      earlyDeposits,
+      bundleDepositsV3,
+    };
 
     return this.loadDataFromCache(key);
   }
