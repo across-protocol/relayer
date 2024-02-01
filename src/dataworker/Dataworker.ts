@@ -28,8 +28,8 @@ import {
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
-  v2SlowFillLeaf,
-  v3SlowFillLeaf,
+  V2SlowFillLeaf,
+  V3SlowFillLeaf,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -1266,7 +1266,7 @@ export class Dataworker {
   encodeV2SlowFillLeaf(
     slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
-    leaf: v2SlowFillLeaf
+    leaf: V2SlowFillLeaf
   ): { method: string; args: (number | BigNumber | string | string[])[] } {
     const { relayData, payoutAdjustmentPct } = leaf;
 
@@ -1293,8 +1293,8 @@ export class Dataworker {
   encodeV3SlowFillLeaf(
     _slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
-    leaf: v3SlowFillLeaf
-  ): { method: string; args: (number | string[] | v3SlowFillLeaf)[] } {
+    leaf: V3SlowFillLeaf
+  ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
     // const { relayData, chainId, updatedOutputAmount } = leaf;
 
     const method = "executeV3SlowRelayLeaf";

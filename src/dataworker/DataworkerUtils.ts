@@ -14,7 +14,7 @@ import {
   SlowFillLeaf,
   SpokePoolClientsByChain,
   UnfilledDeposit,
-  v2SlowFillLeaf,
+  V2SlowFillLeaf,
 } from "../interfaces";
 import {
   AnyObject,
@@ -169,7 +169,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   };
 }
 
-function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): v2SlowFillLeaf {
+function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V2SlowFillLeaf {
   const { deposit } = unfilledDeposit;
   assert(utils.isV2Deposit(deposit));
 
