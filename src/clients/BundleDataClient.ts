@@ -313,13 +313,32 @@ export class BundleDataClient {
       (_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index]
     );
 
+    // If spoke pools are V3 contracts, then we need to compute start and end timestamps for block ranges to
+    // determine whether fillDeadlines have expired. We also use the following opportunity to go through each
+    // spoke pool client and assert that it is updated.
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const bundleBlockTimestamps: { [chainId: string]: number[] } = Object.fromEntries(
       await utils.mapAsync(allChainIds, async (chainId, index) => {
         const spokePoolClient = spokePoolClients[chainId];
-        const [startBlockForChain, endBlockForChain] = blockRangesForChains[index];
+        if (!spokePoolClient.isUpdated) {
+          throw new Error(`SpokePoolClient with chain ID ${chainId} not updated`);
+        }
+        const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
+        // Force blocks to values that the spoke pool was active, at a minimum. We can assume that in production
+        // the block ranges passed into this function would never contain blocks where the spoke pool wasn't active
+        // or that the spoke pool client hasn't queried. This is because this function will usually be called
+        // in production with block ranges that were validated by
+        // DataworkerUtils.blockRangesAreInvalidForSpokeClients
+        const startBlockForChain = Math.min(
+          Math.max(spokePoolClient.deploymentBlock, _startBlockForChain),
+          spokePoolClient.latestBlockSearched
+        );
+        const endBlockForChain = Math.min(
+          Math.max(spokePoolClient.deploymentBlock, _endBlockForChain),
+          spokePoolClient.latestBlockSearched
+        );
         return [
           chainId,
           [
@@ -336,9 +355,6 @@ export class BundleDataClient {
       }
 
       const originClient = spokePoolClients[originChainId];
-      if (!originClient.isUpdated) {
-        throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
-      }
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       for (const destinationChainId of allChainIds) {
@@ -350,9 +366,7 @@ export class BundleDataClient {
         }
 
         const destinationClient = spokePoolClients[destinationChainId];
-        if (!destinationClient.isUpdated) {
-          throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
-        }
+
         /** *****************************
          *
          * Handle LEGACY events
