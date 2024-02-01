@@ -30,7 +30,6 @@ import {
   expect,
   getDefaultBlockRange,
   getLastBlockNumber,
-  randomAddress,
   sinon,
   spyLogIncludes,
 } from "./utils";
@@ -671,51 +670,70 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe("V3 Events", function () {
+  describe.only("V3 Events", function () {
     it("Returns deposits", async function () {
-        const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
-          const originToken = randomAddress();
-          const message = "0x";
-          const quoteTimestamp = getCurrentTime() - 10;
-          return spokePoolClient.deposit({ originToken, message, quoteTimestamp, destinationChainId } as interfaces.v2DepositWithBlock);
-        };
-        const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
-          const inputToken = randomAddress();
-          const message = "0x";
-          const quoteTimestamp = getCurrentTime() - 10;
-          return spokePoolClient.depositV3({ inputToken, message, quoteTimestamp, destinationChainId } as interfaces.v3DepositWithBlock);
-        };
-        const v3OriginSpokePoolClient = new MockSpokePoolClient(
-          spokePoolClient_1.logger,
-          spokePoolClient_1.spokePool,
-          spokePoolClient_1.chainId,
-          spokePoolClient_1.deploymentBlock
-        );
-        // Inject a series of v2DepositWithBlock and v3DepositWithBlock events.
-        const depositEvents: Event[] = [];
-    
-        // for (let idx = 0; idx < 10; ++idx) {
-          depositEvents.push(generateV3Deposit(v3OriginSpokePoolClient));
-          depositEvents.push(generateV2Deposit(v3OriginSpokePoolClient));
-        // }
-        await v3OriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
-        // console.log(v3OriginSpokePoolClient.getDeposits());
-    
-        await updateAllClients();
-        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
-          ...spokePoolClients,
-          [originChainId]: v3OriginSpokePoolClient,
-        });
-        // console.log(data1)
+      const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
+        const originToken = erc20_1.address;
+        const message = "0x";
+        const quoteTimestamp = getCurrentTime() - 10;
+        return spokePoolClient.deposit({
+          originToken,
+          message,
+          quoteTimestamp,
+          destinationChainId,
+        } as interfaces.v2DepositWithBlock);
+      };
+      const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
+        const inputToken = erc20_1.address;
+        const message = "0x";
+        const quoteTimestamp = getCurrentTime() - 10;
+        return spokePoolClient.depositV3({
+          inputToken,
+          message,
+          quoteTimestamp,
+          destinationChainId,
+        } as interfaces.v3DepositWithBlock);
+      };
+      const v3OriginSpokePoolClient = new MockSpokePoolClient(
+        spokePoolClient_1.logger,
+        spokePoolClient_1.spokePool,
+        spokePoolClient_1.chainId,
+        spokePoolClient_1.deploymentBlock
+      );
+      // Inject a series of v2DepositWithBlock and v3DepositWithBlock events.
+      const depositV3Events: Event[] = [];
+      const depositV2Events: Event[] = [];
+
+      // for (let idx = 0; idx < 10; ++idx) {
+      depositV3Events.push(generateV3Deposit(v3OriginSpokePoolClient));
+      depositV2Events.push(generateV2Deposit(v3OriginSpokePoolClient));
+      // }
+      await v3OriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      // console.log(v3OriginSpokePoolClient.getDeposits());
+
+      await updateAllClients();
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: v3OriginSpokePoolClient,
+      });
+
+      // client correctly sorts events into expected dictionaries.
+      console.log(data1);
+      expect(data1.deposits.map((deposit) => deposit.depositId)).to.deep.equal(
+        depositV2Events.map((event) => event.args.depositId)
+      );
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)).to.deep.equal(
+        depositV3Events.map((event) => event.args.depositId)
+      );
     });
-  //   it("Returns fills to refund", async function () {});
-  //   it("Returns slow fills", async function () {});
-  //   it("Returns expired deposits", async function () {});
-  //   it("Returns unexecutable slow fills", async function () {});
-  //   it("Can fetch historical deposits not found in spoke pool client's memory", async function () {});
-  //   it("Returns refunds from pending bundle", async function () {});
-  //   it("Returns refunds from last two bundle", async function () {});
-  //   it("Returns refunds from next bundle", async function () {});
+    //   it("Returns fills to refund", async function () {});
+    //   it("Returns slow fills", async function () {});
+    //   it("Returns expired deposits", async function () {});
+    //   it("Returns unexecutable slow fills", async function () {});
+    //   it("Can fetch historical deposits not found in spoke pool client's memory", async function () {});
+    //   it("Returns refunds from pending bundle", async function () {});
+    //   it("Returns refunds from last two bundle", async function () {});
+    //   it("Returns refunds from next bundle", async function () {});
   });
 
   it("Can fetch historical deposits not found in spoke pool client's memory", async function () {
