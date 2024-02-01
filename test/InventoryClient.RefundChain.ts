@@ -1,4 +1,5 @@
 import {
+  assertPromiseError,
   BigNumber,
   SignerWithAddress,
   createRefunds,
@@ -18,7 +19,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Deposit, InventoryConfig } from "../src/interfaces";
-import { bnZero, bnOne } from "../src/utils";
+import { ZERO_ADDRESS, bnZero, bnOne, getNetworkName } from "../src/utils";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
@@ -222,6 +223,20 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true; // (20-5)/(140-5)=0.11
+  });
+
+  it.only("Correctly throws when Deposit tokens are not equivalent", async function () {
+    sampleDepositData.amount = toWei(5);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData))
+      .to.equal(sampleDepositData.destinationChainId);
+
+    sampleDepositData.destinationToken = ZERO_ADDRESS;
+    const srcChain = getNetworkName(sampleDepositData.originChainId);
+    const dstChain = getNetworkName(sampleDepositData.destinationChainId);
+    await assertPromiseError(
+      inventoryClient.determineRefundChainId(sampleDepositData),
+      `Unexpected ${dstChain} output token on ${srcChain} deposit`
+    );
   });
 });
 
