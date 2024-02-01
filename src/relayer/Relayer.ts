@@ -136,12 +136,12 @@ export class Relayer {
         return false;
       }
 
-      // Filter out deposits that require native swaps.
+      // Filter out deposits that require in-protocol swaps.
       const outputToken = sdkUtils.getDepositOutputToken(deposit);
       if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
         this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit including native token swap.",
+          message: "Skipping deposit including in-protocol token swap.",
           deposit,
           l1Token,
         });
