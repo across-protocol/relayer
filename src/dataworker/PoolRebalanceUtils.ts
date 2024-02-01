@@ -320,18 +320,16 @@ export function constructPoolRebalanceLeaves(
   runningBalances: interfaces.RunningBalances,
   realizedLpFees: interfaces.RunningBalances,
   configStoreClient: ConfigStoreClient,
-  maxL1TokenCount?: number,
-  incentivePoolBalances?: interfaces.RunningBalances,
-  netSendAmounts?: interfaces.RunningBalances,
-  ubaMode = false
+  maxL1TokenCount?: number
 ): interfaces.PoolRebalanceLeaf[] {
   // Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
   // we'll split up any leaves with too many L1 tokens.
   const leaves: interfaces.PoolRebalanceLeaf[] = [];
   Object.keys(runningBalances)
+    .map((chainId) => Number(chainId))
     // Leaves should be sorted by ascending chain ID
-    .sort((chainIdA, chainIdB) => Number(chainIdA) - Number(chainIdB))
-    .map((chainId: string) => {
+    .sort((chainIdA, chainIdB) => chainIdA - chainIdB)
+    .map((chainId) => {
       // Sort addresses.
       const sortedL1Tokens = Object.keys(runningBalances[chainId]).sort((addressA, addressB) => {
         return compareAddresses(addressA, addressB);
@@ -347,57 +345,30 @@ export function constructPoolRebalanceLeaves(
         const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxL1TokensPerLeaf);
 
         const spokeTargetBalances = l1TokensToIncludeInThisLeaf.map((l1Token) =>
-          configStoreClient.getSpokeTargetBalancesForBlock(l1Token, Number(chainId), latestMainnetBlock)
+          configStoreClient.getSpokeTargetBalancesForBlock(l1Token, chainId, latestMainnetBlock)
         );
 
         // Build leaves using running balances and realized lp fees data for l1Token + chain, or default to
         // zero if undefined.
-        const leafBundleLpFees = l1TokensToIncludeInThisLeaf.map((l1Token) => {
-          if (realizedLpFees[chainId]?.[l1Token]) {
-            return realizedLpFees[chainId][l1Token];
-          } else {
-            return bnZero;
-          }
-        });
-        const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (ubaMode && netSendAmounts?.[chainId] && netSendAmounts[chainId][l1Token]) {
-            return netSendAmounts[chainId][l1Token];
-          } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
-            return getNetSendAmountForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
-          } else {
-            return bnZero;
-          }
-        });
-        const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (runningBalances[chainId]?.[l1Token]) {
-            // If UBA bundle, then we don't need to compare running balance to transfer thresholds or
-            // spoke target balances, as the UBA client already performs similar logic to set the running balances
-            // for each flow. In the UBA, simply take the running balances computed by the UBA client.
-            if (ubaMode) {
-              return runningBalances[chainId][l1Token];
-            } else {
-              return getRunningBalanceForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token]);
-            }
-          } else {
-            return bnZero;
-          }
-        });
-        const incentiveBalances =
-          ubaMode &&
-          incentivePoolBalances &&
-          l1TokensToIncludeInThisLeaf.map((l1Token) => {
-            if (incentivePoolBalances[chainId]?.[l1Token]) {
-              return incentivePoolBalances[chainId][l1Token];
-            } else {
-              return bnZero;
-            }
-          });
+        const leafBundleLpFees = l1TokensToIncludeInThisLeaf.map(
+          (l1Token) => realizedLpFees[chainId]?.[l1Token] ?? bnZero
+        );
+        const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) =>
+          runningBalances[chainId] && runningBalances[chainId][l1Token]
+            ? getNetSendAmountForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token])
+            : bnZero
+        );
+        const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) =>
+          runningBalances[chainId]?.[l1Token]
+            ? getRunningBalanceForL1Token(spokeTargetBalances[index], runningBalances[chainId][l1Token])
+            : bnZero
+        );
 
         leaves.push({
-          chainId: Number(chainId),
+          chainId: chainId,
           bundleLpFees: leafBundleLpFees,
           netSendAmounts: leafNetSendAmounts,
-          runningBalances: leafRunningBalances.concat(incentivePoolBalances ? incentiveBalances : []),
+          runningBalances: leafRunningBalances,
           groupIndex: groupIndexForChainId++,
           leafId: leaves.length,
           l1Tokens: l1TokensToIncludeInThisLeaf,

@@ -1,7 +1,14 @@
 import assert from "assert";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
-import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import {
+  DepositWithBlock,
+  Fill,
+  FillsToRefund,
+  FillWithBlock,
+  V2FillWithBlock,
+  SpokePoolClientsByChain,
+} from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
@@ -14,7 +21,6 @@ import {
   sortEventsAscending,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-import { UBA_MIN_CONFIG_STORE_VERSION } from "../common";
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -27,7 +33,7 @@ export function getRefundInformationFromFill(
 } {
   // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
   // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
-  const chainToSendRefundTo = fill.updatableRelayData.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
+  const chainToSendRefundTo = sdkUtils.isSlowFill(fill) ? fill.destinationChainId : fill.repaymentChainId;
 
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(
@@ -37,7 +43,7 @@ export function getRefundInformationFromFill(
   )[1];
   // @todo In v3, destination... must be swapped for origin...
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    fill.destinationToken,
+    sdkUtils.getFillOutputToken(fill),
     fill.destinationChainId,
     endBlockForMainnet
   );
@@ -80,9 +86,10 @@ export function updateTotalRefundAmount(
 ): void {
   // Don't count slow relays in total refund amount, since we use this amount to conveniently construct
   // relayer refund leaves.
-  if (fill.updatableRelayData.isSlowRelay) {
+  if (sdkUtils.isSlowFill(fill)) {
     return;
   }
+
   const refund = getRefundForFills([fill]);
   updateTotalRefundAmountRaw(fillsToRefund, refund, chainToSendRefundTo, fill.relayer, repaymentToken);
 }
@@ -113,7 +120,13 @@ export function updateTotalRefundAmountRaw(
 }
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
-  return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(bnZero);
+  if (sdkUtils.isV3Fill(fill)) {
+    return true;
+  }
+
+  const fillAmount = sdkUtils.getFillAmount(fill);
+  const totalFilledAmount = sdkUtils.getTotalFilledAmount(fill);
+  return fillAmount.eq(totalFilledAmount) && fillAmount.gt(bnZero);
 }
 
 export function getLastMatchingFillBeforeBlock(
@@ -128,14 +141,16 @@ export function getLastMatchingFillBeforeBlock(
 
 export async function getFillDataForSlowFillFromPreviousRootBundle(
   latestMainnetBlock: number,
-  fill: FillWithBlock,
-  allValidFills: FillWithBlock[],
+  fill: V2FillWithBlock,
+  allValidFills: V2FillWithBlock[],
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain
 ): Promise<{
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
 }> {
+  assert(sdkUtils.isV2Fill(fill));
+
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
   // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
@@ -152,11 +167,14 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   // deposit as the input fill.
   if (!firstFillForSameDeposit) {
     const depositForFill = await queryHistoricalDepositForFill(spokePoolClientsByChain[fill.originChainId], fill);
-    const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
-      fill,
-      depositForFill.found ? depositForFill.deposit : undefined,
-      allMatchingFills[0].blockNumber
-    );
+    const matchingFills = (
+      await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
+        fill,
+        depositForFill.found ? depositForFill.deposit : undefined,
+        allMatchingFills[0].blockNumber
+      )
+    ).filter(sdkUtils.isV2Fill);
+
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
       message:
@@ -165,6 +183,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
       depositForFill,
       matchingFills,
     });
+
     firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));
     if (firstFillForSameDeposit === undefined) {
       throw new Error(
@@ -271,20 +290,7 @@ export async function getUnfilledDeposits(
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
         .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
         .map((deposit) => {
-          let version: number;
-          // To determine if the fill is a UBA fill, we need to check against the UBA bundle start blocks.
-          if (clients.isUBAActivatedAtBlock(hubPoolClient, deposit.blockNumber, deposit.originChainId)) {
-            // Use latest deposit block now to grab version which should be above the UBA activation version.
-            version = hubPoolClient.configStoreClient.getConfigStoreVersionForBlock(deposit.quoteBlockNumber);
-            if (version < UBA_MIN_CONFIG_STORE_VERSION) {
-              throw new Error(
-                `isUBAActivatedAtBlock claims UBA is activated as of deposit block ${deposit.blockNumber} but version at deposit time ${deposit.quoteBlockNumber} is ${version} which is below the minimum UBA version ${UBA_MIN_CONFIG_STORE_VERSION}`
-              );
-            }
-          } else {
-            // Deposit is not a UBA deposit, so use version at deposit quote timestamp:
-            version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
-          }
+          const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
