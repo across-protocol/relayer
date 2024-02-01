@@ -353,7 +353,6 @@ export class BundleDataClient {
         if (!destinationClient.isUpdated) {
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
         }
-
         /** *****************************
          *
          * Handle LEGACY events
@@ -389,6 +388,9 @@ export class BundleDataClient {
           )
         );
 
+        // TODO: Move `blockRangeForChain` out of this Legacy code block and higher up to near the 
+        // `bundleBlockTimestamps` section since its common code. We might also get this naturally when we
+        // deprecate legacy code.
         const blockRangeForChain = getBlockRangeForChain(
           blockRangesForChains,
           Number(destinationChainId),
