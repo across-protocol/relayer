@@ -316,7 +316,7 @@ export class BundleDataClient {
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const bundleBlockTimestamps: { [chainId: string]: number } = Object.fromEntries(
+    const bundleBlockTimestamps: { [chainId: string]: number[] } = Object.fromEntries(
       await utils.mapAsync(allChainIds, async (chainId, index) => {
         const spokePoolClient = spokePoolClients[chainId];
         const [startBlockForChain, endBlockForChain] = blockRangesForChains[index];
@@ -388,7 +388,7 @@ export class BundleDataClient {
           )
         );
 
-        // TODO: Move `blockRangeForChain` out of this Legacy code block and higher up to near the 
+        // TODO: Move `blockRangeForChain` out of this Legacy code block and higher up to near the
         // `bundleBlockTimestamps` section since its common code. We might also get this naturally when we
         // deprecate legacy code.
         const blockRangeForChain = getBlockRangeForChain(
@@ -404,7 +404,6 @@ export class BundleDataClient {
           .getFillsForOriginChain(Number(originChainId))
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
         await Promise.all(fillsForOriginChain.map((fill) => validateFillAndSaveData(fill, blockRangeForChain)));
-
 
         /** *****************************
          *
