@@ -199,7 +199,11 @@ export class InventoryClient {
     const inputToken = sdkUtils.getDepositInputToken(deposit);
     const outputToken = sdkUtils.getDepositOutputToken(deposit);
     if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
-      return destinationChainId;
+      const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
+      throw new Error(
+        `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId}` +
+        ` (${inputToken} != ${outputToken})`
+      );
     }
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
 
