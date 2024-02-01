@@ -252,8 +252,6 @@ export class BundleDataClient {
       assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
       allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
 
-      // Note: the UBA model doesn't use the following realized LP fees data but we keep it for backwards
-      // compatibility.
       updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
       // Save deposit as one that is eligible for a slow fill, since there is a fill

@@ -59,18 +59,6 @@ export type FillsToRefund = interfaces.FillsToRefund;
 export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
 
-// UBA interfaces
-export type UbaInflow = interfaces.UbaInflow;
-export type UbaOutflow = interfaces.UbaOutflow;
-export type UbaFlow = interfaces.UbaFlow;
-export type UBASpokeBalanceType = interfaces.UBASpokeBalanceType;
-export type UBAFeeResult = interfaces.UBAFeeResult;
-export type UBABalancingFee = clients.BalancingFeeReturnType;
-export type UBASystemFee = clients.SystemFeeResult;
-export const isUbaInflow = interfaces.isUbaInflow;
-export const isUbaOutflow = interfaces.isUbaOutflow;
-export const outflowIsFill = interfaces.outflowIsFill;
-
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 
 // V2 / V3 interfaces
