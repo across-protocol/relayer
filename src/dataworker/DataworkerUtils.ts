@@ -22,6 +22,7 @@ import {
   buildSlowRelayTree,
   getDepositPath,
   getFillsInRange,
+  getTimestampsForBundleEndBlocks,
   groupObjectCountsByProp,
   groupObjectCountsByTwoProps,
   isDefined,
@@ -70,9 +71,9 @@ export function getEndBlockBuffers(
 export function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
-  endBlockTimestamps: { [chainId: number]: number },
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  latestInvalidBundleStartBlock: { [chainId: number]: number }
+  latestInvalidBundleStartBlock: { [chainId: number]: number },
+  isV3 = false
 ): Promise<boolean> {
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
@@ -97,16 +98,23 @@ export function blockRangesAreInvalidForSpokeClients(
     // we verify that the time between the end block timestamp and the first timestamp queried by the
     // spoke pool client is greater than the maximum of the fill deadline buffers at the start and end of the block
     // range. We assume the fill deadline buffer wasn't changed more than once within a bundle.
-    const fillDeadlineBuffers = await Promise.all([
-      spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: start }),
-      spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: end }),
-    ]);
-    const maxFillDeadlineBufferInBlockRange = Math.max(
-      fillDeadlineBuffers[0].toNumber(),
-      fillDeadlineBuffers[1].toNumber()
-    );
-    if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
-      return false;
+    if (isV3) {
+      const endBlockTimestamps = await getTimestampsForBundleEndBlocks(
+        spokePoolClients,
+        blockRanges,
+        chainIdListForBundleEvaluationBlockNumbers
+      );
+      const fillDeadlineBuffers = await Promise.all([
+        spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: start }),
+        spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: end }),
+      ]);
+      const maxFillDeadlineBufferInBlockRange = Math.max(
+        fillDeadlineBuffers[0].toNumber(),
+        fillDeadlineBuffers[1].toNumber()
+      );
+      if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
+        return false;
+      }
     }
 
     // We must now assume that all newly expired deposits at the time of the bundle end blocks are contained within

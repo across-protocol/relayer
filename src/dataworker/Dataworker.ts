@@ -110,6 +110,10 @@ export class Dataworker {
     }
   }
 
+  isV3(): boolean {
+    return sdk.utils.isV3(this.clients.configStoreClient.configStoreVersion);
+  }
+
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
   clearCache(): void {
@@ -251,19 +255,6 @@ export class Dataworker {
     }
   }
 
-  async _getEndBlockTimestamps(
-    spokePoolClients: SpokePoolClientsByChain,
-    blockRanges: number[][]
-  ): Promise<{ [chainId: number]: number }> {
-    return Object.fromEntries(
-      await sdk.utils.mapAsync(blockRanges, async ([, endBlock], index) => {
-        const chainId = this.chainIdListForBundleEvaluationBlockNumbers[index];
-        const spokePoolClient = spokePoolClients[chainId];
-        return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
-      })
-    );
-  }
-
   /**
    * Returns the next bundle block ranges if a new proposal is possible, otherwise
    * returns undefined.
@@ -311,7 +302,6 @@ export class Dataworker {
       spokePoolClients,
       nextBundleMainnetStartBlock
     );
-    const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockRangesForProposal);
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
     if (
@@ -319,9 +309,9 @@ export class Dataworker {
       (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
-        endBlockTimestamps,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        earliestBlocksInSpokePoolClients
+        earliestBlocksInSpokePoolClients,
+        this.isV3()
       ))
     ) {
       this.logger.warn({
@@ -770,8 +760,6 @@ export class Dataworker {
       blockRange[0],
       rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
-    const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockRangesImpliedByBundleEndBlocks);
-
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
     if (
@@ -779,9 +767,9 @@ export class Dataworker {
       (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
-        endBlockTimestamps,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        earliestBlocksInSpokePoolClients
+        earliestBlocksInSpokePoolClients,
+        this.isV3()
       ))
     ) {
       this.logger.debug({
@@ -1011,16 +999,14 @@ export class Dataworker {
             this.clients.configStoreClient,
             matchingRootBundle
           );
-          const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockNumberRanges);
-
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
             (await blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
-              endBlockTimestamps,
               this.chainIdListForBundleEvaluationBlockNumbers,
-              earliestBlocksInSpokePoolClients
+              earliestBlocksInSpokePoolClients,
+              this.isV3()
             ))
           ) {
             this.logger.warn({
@@ -1669,16 +1655,14 @@ export class Dataworker {
         }
 
         const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
-        const endBlockTimestamps = await this._getEndBlockTimestamps(spokePoolClients, blockNumberRanges);
-
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
           (await blockRangesAreInvalidForSpokeClients(
             spokePoolClients,
             blockNumberRanges,
-            endBlockTimestamps,
             this.chainIdListForBundleEvaluationBlockNumbers,
-            earliestBlocksInSpokePoolClients
+            earliestBlocksInSpokePoolClients,
+            this.isV3()
           ))
         ) {
           this.logger.warn({
