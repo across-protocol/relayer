@@ -225,10 +225,11 @@ describe("InventoryClient: Refund chain selection", async function () {
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true; // (20-5)/(140-5)=0.11
   });
 
-  it.only("Correctly throws when Deposit tokens are not equivalent", async function () {
+  it("Correctly throws when Deposit tokens are not equivalent", async function () {
     sampleDepositData.amount = toWei(5);
-    expect(await inventoryClient.determineRefundChainId(sampleDepositData))
-      .to.equal(sampleDepositData.destinationChainId);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(
+      sampleDepositData.destinationChainId
+    );
 
     sampleDepositData.destinationToken = ZERO_ADDRESS;
     const srcChain = getNetworkName(sampleDepositData.originChainId);
