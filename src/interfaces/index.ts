@@ -76,9 +76,12 @@ export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 // V2 / V3 interfaces
 export type V2Deposit = interfaces.v2Deposit;
 export type V2DepositWithBlock = interfaces.v2DepositWithBlock;
+export type V3DepositWithBlock = interfaces.v3DepositWithBlock;
 export type V2SpeedUp = interfaces.v2SpeedUp;
+export type V3SpeedUp = interfaces.v3SpeedUp;
 export type V2Fill = interfaces.v2Fill;
 export type V2FillWithBlock = interfaces.v2FillWithBlock;
+export type V3FillWithBlock = interfaces.v3FillWithBlock;
 export type V2RelayData = interfaces.v2RelayData;
 export type V3RelayData = interfaces.v3RelayData;
 export type V2SlowFillLeaf = interfaces.v2SlowFillLeaf;
