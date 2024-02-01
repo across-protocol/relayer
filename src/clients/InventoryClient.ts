@@ -186,16 +186,18 @@ export class InventoryClient {
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
   async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number> {
-    const hubChainId = this.hubPoolClient.chainId;
     const { originChainId, destinationChainId } = deposit;
+    const hubChainId = this.hubPoolClient.chainId;
 
     // Always refund on L1 if the transfer is to L1.
     if (!this.isInventoryManagementEnabled() || destinationChainId === hubChainId) {
       return destinationChainId;
     }
 
-    // The InventoryClient assumes 1:1 equivalency between input and output tokens. If the tokens are not equivalent
-    // then just take repayment on the destination chain. The operator is responsible for balancing inventory.
+    // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
+    // for disparate output tokens, so if one appears here then something is wrong. Throw hard and fast in that case.
+    // In future, fills for disparate output tokens should probably just take refunds on the destination chain and
+    // outsource inventory management to the operator.
     const inputToken = sdkUtils.getDepositInputToken(deposit);
     const outputToken = sdkUtils.getDepositOutputToken(deposit);
     if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
