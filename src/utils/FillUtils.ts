@@ -1,14 +1,7 @@
 import assert from "assert";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
-import {
-  DepositWithBlock,
-  Fill,
-  FillsToRefund,
-  FillWithBlock,
-  V2FillWithBlock,
-  SpokePoolClientsByChain,
-} from "../interfaces";
+import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
@@ -142,23 +135,22 @@ export function getLastMatchingFillBeforeBlock(
 
 export async function getFillDataForSlowFillFromPreviousRootBundle(
   latestMainnetBlock: number,
-  fill: V2FillWithBlock,
-  allValidFills: V2FillWithBlock[],
+  fill: FillWithBlock,
+  allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain
 ): Promise<{
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
 }> {
-  assert(sdkUtils.isV2Fill(fill));
-
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
   // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
 
   // Find the first fill chronologically for matched deposit for the input fill.
+  const versionFilter = sdkUtils.isV2Fill(fill) ? sdkUtils.isV2Fill : sdkUtils.isV3Fill;
   const allMatchingFills = sortEventsAscending(
-    allValidFills.filter((_fill: FillWithBlock) => sdkUtils.isV2Fill(_fill) && sdkUtils.filledSameDeposit(_fill, fill))
+    allValidFills.filter((_fill) => sdkUtils.filledSameDeposit(_fill, fill) && versionFilter(_fill))
   );
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
@@ -174,12 +166,11 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
         depositForFill.found ? depositForFill.deposit : undefined,
         allMatchingFills[0].blockNumber
       )
-    ).filter(sdkUtils.isV2Fill);
+    ).filter(versionFilter);
 
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
-      message:
-        "Queried for fill that triggered a slow fill for a deposit that was fully filled, in order to compute slow fill excess",
+      message: "Queried for partial fill that triggered an unused slow fill, in order to compute slow fill excess",
       fillThatCompletedDeposit: fill,
       depositForFill,
       matchingFills,
@@ -188,7 +179,9 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));
     if (firstFillForSameDeposit === undefined) {
       throw new Error(
-        `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId} after querying historical fills`
+        "FillUtils#getFillDataForSlowFillFromPreviousRootBundle:" +
+          ` Cannot find first fill for for deposit ${fill.depositId}` +
+          ` on chain ${fill.destinationChainId} after querying historical fills`
       );
     }
     // Add non-duplicate fills.
