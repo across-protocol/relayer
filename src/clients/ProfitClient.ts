@@ -28,7 +28,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
-import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain, v2Deposit } from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain, V2Deposit } from "../interfaces";
 import { HubPoolClient } from ".";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
@@ -514,7 +514,7 @@ export class ProfitClient {
           : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
       assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
-      const deposit: v2Deposit = {
+      const deposit: V2Deposit = {
         depositId,
         depositor: TEST_RECIPIENT,
         recipient: TEST_RECIPIENT,
