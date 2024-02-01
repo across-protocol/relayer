@@ -51,16 +51,7 @@ export class Relayer {
 
     const maxVersion = configStoreClient.configStoreVersion;
     return unfilledDeposits.filter(({ deposit, version, invalidFills, unfilledAmount }) => {
-      const {
-        quoteTimestamp,
-        depositId,
-        depositor,
-        recipient,
-        originChainId,
-        destinationChainId,
-        originToken,
-        amount,
-      } = deposit;
+      const { quoteTimestamp, depositId, depositor, recipient, originChainId, destinationChainId } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
       // If we don't have the latest code to support this deposit, skip it.
@@ -129,7 +120,9 @@ export class Relayer {
       }
 
       // Resolve L1 token and perform additional checks
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
+      // @todo: This is only relevant if inputToken and outputToken are equivalent.
+      const inputToken = sdkUtils.getDepositInputToken(deposit);
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
 
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
@@ -137,6 +130,18 @@ export class Relayer {
         this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
           message: "Skipping deposit for unwhitelisted token",
+          deposit,
+          l1Token,
+        });
+        return false;
+      }
+
+      // Filter out deposits that require in-protocol swaps.
+      const outputToken = sdkUtils.getDepositOutputToken(deposit);
+      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit including in-protocol token swap.",
           deposit,
           l1Token,
         });
@@ -154,7 +159,7 @@ export class Relayer {
           limit: acrossApiClient.getLimit(l1Token.address),
           l1Token: l1Token.address,
           depositId,
-          amount,
+          inputAmount: sdkUtils.getDepositInputAmount(deposit),
           unfilledAmount: unfilledAmount.toString(),
           originChainId,
           transactionHash: deposit.transactionHash,
@@ -264,7 +269,8 @@ export class Relayer {
     for (const { deposit, version, unfilledAmount, fillCount } of confirmedUnfilledDeposits) {
       const { slowDepositors } = config;
 
-      const { depositor, recipient, destinationChainId, originToken, originChainId } = deposit;
+      const { depositor, recipient, destinationChainId, originChainId } = deposit;
+      const inputToken = sdkUtils.getDepositInputToken(deposit);
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (slowDepositors?.includes(depositor)) {
@@ -281,7 +287,7 @@ export class Relayer {
         continue;
       }
 
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(originToken, originChainId);
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
       const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
         assert(isDefined(deposit.realizedLpFeePct)); // Sanity check.
@@ -416,8 +422,9 @@ export class Relayer {
       ? ["fillRelayWithUpdatedDeposit", buildFillRelayWithUpdatedFeeProps, "with modified parameters "]
       : ["fillRelay", buildFillRelayProps, ""];
 
+    const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
     // prettier-ignore
-    const message = fillAmount.eq(deposit.amount)
+    const message = fillAmount.eq(outputAmount)
       ? `Filled deposit ${messageModifier}🚀`
       : zeroFill
         ? `Zero filled deposit ${messageModifier}🐌`
@@ -438,7 +445,8 @@ export class Relayer {
     this.fullyFilledDeposits[fillKey] = !zeroFill;
 
     // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
+    const outputToken = sdkUtils.getDepositOutputToken(deposit);
+    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, fillAmount);
   }
 
   /**
@@ -465,10 +473,11 @@ export class Relayer {
     fillAmount: BigNumber,
     hubPoolToken: L1Token
   ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
-    const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const { inventoryClient, profitClient } = this.clients;
+    const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
+    const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
 
-    if (!fillAmount.eq(deposit.amount)) {
+    if (!fillAmount.eq(outputAmount)) {
       const originChain = getNetworkName(originChainId);
       const destinationChain = getNetworkName(destinationChainId);
       this.logger.debug({
@@ -478,7 +487,7 @@ export class Relayer {
       });
     }
 
-    const preferredChainId = fillAmount.eq(deposit.amount)
+    const preferredChainId = fillAmount.eq(outputAmount)
       ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
       : destinationChainId;
 
@@ -582,7 +591,8 @@ export class Relayer {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
-    const amount = createFormatFunction(2, 4, false, decimals)(deposit.amount.toString());
+    const inputAmount = sdkUtils.getDepositInputAmount(deposit);
+    const amount = createFormatFunction(2, 4, false, decimals)(inputAmount.toString());
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);
     const _fillAmount = createFormatFunction(2, 4, false, decimals)(fillAmount.toString());
     const relayerFeePct = formatFeePct(deposit.relayerFeePct);

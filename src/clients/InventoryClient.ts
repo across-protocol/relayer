@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
   BigNumber,
@@ -185,7 +186,7 @@ export class InventoryClient {
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
   async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number> {
-    const { originChainId, originToken, amount, destinationChainId } = deposit;
+    const { originChainId, destinationChainId } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
     // Always refund on L1 if the transfer is to L1.
@@ -193,7 +194,20 @@ export class InventoryClient {
       return destinationChainId;
     }
 
-    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(originToken, originChainId);
+    // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
+    // for disparate output tokens, so if one appears here then something is wrong. Throw hard and fast in that case.
+    // In future, fills for disparate output tokens should probably just take refunds on the destination chain and
+    // outsource inventory management to the operator.
+    const inputToken = sdkUtils.getDepositInputToken(deposit);
+    const outputToken = sdkUtils.getDepositOutputToken(deposit);
+    if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+      const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
+      throw new Error(
+        `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId}` +
+          ` (${inputToken} != ${outputToken})`
+      );
+    }
+    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
     if (
@@ -205,9 +219,11 @@ export class InventoryClient {
     const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
     const chainVirtualBalance = this.getBalanceOnChainForL1Token(destinationChainId, l1Token);
     const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(amount);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+
+    const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
+    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
     let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
     try {
@@ -228,7 +244,7 @@ export class InventoryClient {
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
 
-    const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(amount);
+    const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
     // Compute what the balance will be on the target chain, considering this relay and the finalization of the
     // transfers that are currently flowing through the canonical bridge.
     const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
