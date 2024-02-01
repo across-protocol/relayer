@@ -6,7 +6,7 @@ import {
   Fill,
   FillsToRefund,
   FillWithBlock,
-  v2FillWithBlock,
+  V2FillWithBlock,
   SpokePoolClientsByChain,
 } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
@@ -142,8 +142,8 @@ export function getLastMatchingFillBeforeBlock(
 
 export async function getFillDataForSlowFillFromPreviousRootBundle(
   latestMainnetBlock: number,
-  fill: v2FillWithBlock,
-  allValidFills: v2FillWithBlock[],
+  fill: V2FillWithBlock,
+  allValidFills: V2FillWithBlock[],
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain
 ): Promise<{
