@@ -1,5 +1,4 @@
 import { ethers } from "../utils";
-import { utils } from "@across-protocol/sdk-v2";
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.

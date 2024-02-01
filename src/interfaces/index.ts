@@ -1,4 +1,4 @@
-import { clients, interfaces } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk-v2";
 
 export * from "./InventoryManagement";
 export * from "./SpokePool";
