@@ -177,7 +177,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // latest invalid bundle start blocks below and toBlocks are >= client's last block queried, return false meaning
     // that block ranges can be validated by spoke pool clients.
     expect(
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
@@ -186,7 +186,7 @@ describe("Dataworker block range-related utility methods", async function () {
     ).to.equal(false);
     // Set block range toBlock > client's last block queried. Clients can no longer validate this block range.
     expect(
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched + 3]],
         chainIds,
@@ -196,7 +196,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Bundle block range toBlocks is less than
     // latest invalid bundle start blocks below, so block ranges can't be validated by clients.
     expect(
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
@@ -206,7 +206,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Works even if the condition is true for one chain.
     const optimismDeploymentBlock = getDeployedBlockNumber("SpokePool", 10);
     expect(
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
         [
           [mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched],
@@ -217,7 +217,7 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     ).to.equal(true);
     expect(
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
         [
           [mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched],
@@ -232,7 +232,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // the latest invalid start block. This means that the dataworker will refuse to validate any bundles with clients
     // that don't have early enough data for the first bundle, which started at the deployment block height.
     expect(
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[0, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
@@ -242,7 +242,7 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     ).to.equal(true);
     expect(
-      blockRangesAreInvalidForSpokeClients(
+      await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[0, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
