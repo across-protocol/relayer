@@ -30,7 +30,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients, typechain, utils } from "@across-protocol/sdk-v2";
+import { typechain, utils } from "@across-protocol/sdk-v2";
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -203,14 +203,14 @@ export class BundleDataClient {
     const allInvalidFills: FillWithBlock[] = [];
     const earlyDeposits: typechain.FundsDepositedEvent[] = [];
 
-
     // V3 specific objects:
-    // const bundleDepositsV3: v3DepositWithBlock[] = []; // Deposits in bundle block range.
-    // const bundleSlowFillsV3: { [originChainId: number] : v3Deposit[] } = {}; // Deposits that we need to send slow fills
+    // const bundleDepositsV3: { [originChainId: number]: v3DepositWithBlock[] } = []; // Deposits in bundle block range.
+    // const bundleFillsV3: { [repaymentChainId: number]: { fills: v3FillWithBlock[]; refunds: Refund; totalRefundAmount: BigNumber; realizedLpFees: BigNumber } } = []; // Fills to refund in bundle block range.
+    // const bundleSlowFillsV3: { [destinationChainId: number] : v3Deposit[] } = {}; // Deposits that we need to send slow fills
     // // for in this bundle.
-    // const expiredDepositsToRefundV3: { [originChainId: number] : v3Deposit[] } = {};
-    // // Newly expired deposits in this bundle that need to be refunded. 
-    // const excessDepositsV3: { [destinationChainid: number] : v3Deposit[] } = {}; 
+    // const expiredDepositsToRefundV3: { [originChainId: number] : { deposits: v3Deposit[]; refunds: Refund; totalRefundAmount: BigNumber } } = {};
+    // // Newly expired deposits in this bundle that need to be refunded.
+    // const unexecutableSlowFills: { [destinationChainid: number] : v3Deposit[] } = {};
     // // Deposit data for all Slowfills that were included in a previous
     // // bundle and can no longer be executed because (1) they were replaced with a FastFill in this bundle or
     // // (2) the fill deadline has passed. We'll need to decrement running balances for these deposits on the
@@ -446,26 +446,19 @@ export class BundleDataClient {
         //         - Add it to expiredDepositsToRefund.
         //         Else
         //         - add it to bundleDepositsV3.
-        //         - Decrement runningBalances for origin chain in fillsToRefund.
         //       Load all fills and slow fills:
         //        Validate fill/slow fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
         //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
         //        If fill is valid:
         //          If fillType is FastFill or ReplacedSlowFill:
-        //            - Add it to fillsToRefund. The fill/refund should be aware of the lpFee to include
-        //              in the refund.
-        //            - Increment runningBalances for the repayment chain since we'll have to send a refund for it out of
-        //              the repayment spoke.
+        //            - Add it to fillsToRefund.
         //            - If fillType is ReplacedSlowFill and there is no RequestSlowFill matching the relayHash in this bundle,
-        //              then decrement runningBalances on destination chain since a
-        //              slow fill leaf was included in a previous bundle but cannot be executed. This might have to be
-        //              done in a separate step in PoolRebalanceUtils/dataworker.ts after all fills have been processed.
-        //              Save this fill/deposit in excessDepositsV3.
+        //              then we'll want to decrement runningBalances on destination chain since a
+        //              slow fill leaf was included in a previous bundle but cannot be executed.
+        //              Save this fill/deposit in unexecutableSlowFills.
         //        Else, do nothing, as the fill is a SlowFill execution.
         //        If slow fill request is valid and does not match a fast fill:
         //          - Add it to bundleSlowFills.
-        //          - Increment runningBalances for the destination chain since we'll have to send a slow fill payment
-        //            for it out of the destination spoke.
         //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
         //        Else, do nothing, as the slow fill request is invalid.
         //     For all other deposits older than this chain's block range (with blockNumber < origin blockRange[0]):
@@ -485,11 +478,10 @@ export class BundleDataClient {
         //         balances on the origin chain.
         //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
         //         from running balances on the destination chain since we can no longer execute the slow fill leaf
-        //         that was included in a previous bundle, so let's add them to excessDeposits.
+        //         that was included in a previous bundle, so let's add them to unexecutableSlowFills.
 
         // Clean up:
         // - Check for duplicate events in any of the above lists.
-
       }
     }
 

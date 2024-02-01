@@ -316,13 +316,13 @@ export class Dataworker {
     // potential proposal
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
         endBlockTimestamps,
         this.chainIdListForBundleEvaluationBlockNumbers,
         earliestBlocksInSpokePoolClients
-      )
+      ))
     ) {
       this.logger.warn({
         at: "Dataworke#propose",
@@ -776,13 +776,13 @@ export class Dataworker {
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
         endBlockTimestamps,
         this.chainIdListForBundleEvaluationBlockNumbers,
         earliestBlocksInSpokePoolClients
-      )
+      ))
     ) {
       this.logger.debug({
         at: "Dataworke#validate",
@@ -1015,13 +1015,13 @@ export class Dataworker {
 
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-            await blockRangesAreInvalidForSpokeClients(
+            (await blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
               endBlockTimestamps,
               this.chainIdListForBundleEvaluationBlockNumbers,
               earliestBlocksInSpokePoolClients
-            )
+            ))
           ) {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
@@ -1673,13 +1673,13 @@ export class Dataworker {
 
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-          await blockRangesAreInvalidForSpokeClients(
+          (await blockRangesAreInvalidForSpokeClients(
             spokePoolClients,
             blockNumberRanges,
             endBlockTimestamps,
             this.chainIdListForBundleEvaluationBlockNumbers,
             earliestBlocksInSpokePoolClients
-          )
+          ))
         ) {
           this.logger.warn({
             at: "Dataworke#executeRelayerRefundLeaves",

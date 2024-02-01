@@ -275,6 +275,8 @@ export function _buildRelayerRefundRoot(
     });
   });
 
+  // TODO: Add v3 expired deposits to relayer refund leaf.
+
   // We need to construct a leaf for any pool rebalance leaves with a negative net send amount and NO fills to refund
   // since we need to return tokens from SpokePool to HubPool.
   poolRebalanceLeaves.forEach((leaf) => {
@@ -355,6 +357,11 @@ export async function _buildPoolRebalanceRoot(
   // to the total refund amount for that group.
   const runningBalances: RunningBalances = {};
   const realizedLpFees: RunningBalances = {};
+
+  /**
+   * REFUNDS FOR FAST FILLS
+   */
+
   initializeRunningBalancesFromRelayerRepayments(
     runningBalances,
     realizedLpFees,
@@ -363,8 +370,24 @@ export async function _buildPoolRebalanceRoot(
     fillsToRefund
   );
 
+  // TODO: Add running balances and lp fees for v3 relayer refunds using BundleDataClient.bundleFillsV3. Refunds
+  // should be equal to inputAmount - lpFees so that relayers get to keep the relayer fee. Add the refund amount
+  // to the running balance for the repayment chain.
+
+  /**
+   * PAYMENTS SLOW FILLS
+   */
+
   // Add payments to execute slow fills.
   addSlowFillsToRunningBalances(mainnetBundleEndBlock, runningBalances, clients.hubPoolClient, unfilledDeposits);
+
+  // TODO: Add running balances and lp fees for v3 slow fills using BundleDataClient.bundleSlowFillsV3.
+  // Slow fills should still increment bundleLpFees and updatedOutputAmount should be equal to inputAmount - lpFees.
+  // Increment the updatedOutputAmount to the destination chain.
+
+  /**
+   * EXCESSES FROM UNEXECUTABLE SLOW FILLS
+   */
 
   // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
@@ -378,6 +401,10 @@ export async function _buildPoolRebalanceRoot(
     allValidFillsInRange
   );
 
+  // TODO: Subtract running balances from BundleDataClient.unexecutableSlowFills. These are all slow fills that
+  // failed to execute therefore the amount to return would be the updatedOutputAmount = inputAmount - lpFees.
+  // Decrement the excess amounts from the destination chain running baalnce.
+
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
       at: "Dataworker#DataworkerUtils",
@@ -385,6 +412,10 @@ export async function _buildPoolRebalanceRoot(
       fillsTriggeringExcesses,
     });
   }
+
+  /**
+   * DEPOSITS
+   */
 
   // Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
   // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
@@ -406,6 +437,16 @@ export async function _buildPoolRebalanceRoot(
       earlyDeposit.args[0].mul(-1)
     );
   });
+
+  // TODO: Handle v3Deposits. These decrement running balances from the origin chain equal to the inputAmount.
+  // There should not be early deposits in v3.
+
+  /**
+   * REFUNDS FOR EXPIRED DEPOSITS
+   */
+
+  // TODO: Add expired v3 deposits. These should refund the inputAmount and increment running balances to the
+  // origin chain equal to the inputAmount.
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
   // combination if found.

@@ -671,6 +671,18 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
+  // describe("V3 Events", function () {
+  //   it("Returns deposits", async function () {});
+  //   it("Returns fills to refund", async function () {});
+  //   it("Returns slow fills", async function () {});
+  //   it("Returns expired deposits", async function () {});
+  //   it("Returns unexecutable slow fills", async function () {});
+  //   it("Can fetch historical deposits not found in spoke pool client's memory", async function () {});
+  //   it("Returns refunds from pending bundle", async function () {});
+  //   it("Returns refunds from last two bundle", async function () {});
+  //   it("Returns refunds from next bundle", async function () {});
+  // });
+
   it("Can fetch historical deposits not found in spoke pool client's memory", async function () {
     // Send a deposit.
     await updateAllClients();
