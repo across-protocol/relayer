@@ -220,16 +220,13 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   };
 }
 
-// @dev `runningBalances` is only used in pre-UBA model to determine whether a spoke's running balances
-// are over the target/threshold. In the UBA model, this is handled at the UBA client level.
 export function _buildRelayerRefundRoot(
   endBlockForMainnet: number,
   fillsToRefund: FillsToRefund,
   poolRebalanceLeaves: PoolRebalanceLeaf[],
   runningBalances: RunningBalances,
   clients: DataworkerClients,
-  maxRefundCount: number,
-  isUBA = false
+  maxRefundCount: number
 ): {
   leaves: RelayerRefundLeaf[];
   tree: MerkleTree<RelayerRefundLeaf>;
@@ -249,38 +246,32 @@ export function _buildRelayerRefundRoot(
       // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
       const sortedRefundAddresses = sortRefundAddresses(refunds);
 
+      const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+        l2TokenAddress,
+        repaymentChainId,
+        endBlockForMainnet
+      );
+
+      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+        l1TokenCounterpart,
+        repaymentChainId,
+        endBlockForMainnet
+      );
+
+      // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
+      const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
+        spokePoolTargetBalance,
+        runningBalances[repaymentChainId][l1TokenCounterpart]
+      );
+
       // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
       // refunds.
-
-      // If UBA model, set amount to return to 0 for now until we match this leaf against a pool rebalance leaf. In
-      // the UBA model, the amount to return is simpler to compute: simply set it equal to the negative
-      // net send amount value if the net send amount is negative.
-      let amountToReturn = bnZero;
-      if (!isUBA) {
-        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
-          l2TokenAddress,
-          repaymentChainId,
-          endBlockForMainnet
-        );
-
-        const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
-          l1TokenCounterpart,
-          Number(repaymentChainId),
-          endBlockForMainnet
-        );
-
-        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
-        amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-          spokePoolTargetBalance,
-          runningBalances[repaymentChainId][l1TokenCounterpart]
-        );
-      }
       for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount) {
         relayerRefundLeaves.push({
           groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
           // L2 token address
           amountToReturn: i === 0 ? amountToReturn : bnZero,
-          chainId: Number(repaymentChainId),
+          chainId: repaymentChainId,
           refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
           leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
           l2TokenAddress,
@@ -301,32 +292,26 @@ export function _buildRelayerRefundRoot(
       }
 
       const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(leaf.l1Tokens[index], leaf.chainId);
-      // If we've already seen this leaf, then skip. If UBA, reset the net send amount and then skip.
+      // If we've already seen this leaf, then skip.
       const existingLeaf = relayerRefundLeaves.find(
         (relayerRefundLeaf) =>
           relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
       );
       if (existingLeaf !== undefined) {
-        if (isUBA) {
-          existingLeaf.amountToReturn = netSendAmount.mul(-1);
-        }
         return;
       }
 
-      // If UBA model we don't need to do the following to figure out the amount to return:
-      let amountToReturn = netSendAmount.mul(-1);
-      if (!isUBA) {
-        const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
-          leaf.l1Tokens[index],
-          leaf.chainId,
-          endBlockForMainnet
-        );
+      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+        leaf.l1Tokens[index],
+        leaf.chainId,
+        endBlockForMainnet
+      );
 
-        amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-          spokePoolTargetBalance,
-          runningBalances[leaf.chainId][leaf.l1Tokens[index]]
-        );
-      }
+      const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
+        spokePoolTargetBalance,
+        runningBalances[leaf.chainId][leaf.l1Tokens[index]]
+      );
+
       relayerRefundLeaves.push({
         groupIndex: 0, // Will delete this group index after using it to sort leaves for the same chain ID and
         // L2 token address

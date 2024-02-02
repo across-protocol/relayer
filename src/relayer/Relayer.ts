@@ -242,12 +242,10 @@ export class Relayer {
     // Filter out deposits whose block time does not meet the minimum number of confirmations for the
     // corresponding origin chain. Finally, sort the deposits by the total earnable fee for the relayer.
     const confirmedUnfilledDeposits = unfilledDeposits
-      .filter((x) => {
-        return (
-          x.deposit.blockNumber <=
-          spokePoolClients[x.deposit.originChainId].latestBlockSearched - mdcPerChain[x.deposit.originChainId]
-        );
-      })
+      .filter(
+        ({ deposit: { originChainId, blockNumber } }) =>
+          blockNumber <= spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]
+      )
       .sort((a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
       );
