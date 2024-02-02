@@ -481,9 +481,11 @@ export class BundleDataClient {
           originChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
-        (originClient.getDepositsForDestinationChain(destinationChainId) as interfaces.v3DepositWithBlock[])
+        // TODO: Can remove the "as unknown" cast once SDK is updated to change DepositWithBlock to equal either
+        // V2 or V3 DepositWithBlock
+        (originClient.getDepositsForDestinationChain(destinationChainId) as unknown as interfaces.v3DepositWithBlock[])
           .filter(
-            (deposit: DepositWithBlock) =>
+            (deposit: interfaces.v3DepositWithBlock) =>
               utils.isV3Deposit(deposit) &&
               deposit.blockNumber <= originChainBlockRange[1] &&
               deposit.blockNumber >= originChainBlockRange[0] &&
