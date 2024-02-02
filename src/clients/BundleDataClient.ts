@@ -328,9 +328,9 @@ export class BundleDataClient {
     };
 
     // Infer chain ID's to load from number of block ranges passed in.
-    const allChainIds = blockRangesForChains.map(
-      (_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index]
-    );
+    const allChainIds = blockRangesForChains
+      .map((_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index])
+      .filter((chainId) => !_isChainDisabled(chainId));
 
     // If spoke pools are V3 contracts, then we need to compute start and end timestamps for block ranges to
     // determine whether fillDeadlines have expired.
@@ -359,10 +359,6 @@ export class BundleDataClient {
     );
 
     for (const originChainId of allChainIds) {
-      if (_isChainDisabled(originChainId)) {
-        continue;
-      }
-
       const originClient = spokePoolClients[originChainId];
       if (!originClient.isUpdated) {
         throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
@@ -373,15 +369,12 @@ export class BundleDataClient {
         if (originChainId === destinationChainId) {
           continue;
         }
-        if (_isChainDisabled(destinationChainId)) {
-          continue;
-        }
 
         const destinationClient = spokePoolClients[destinationChainId];
         if (!destinationClient.isUpdated) {
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
         }
-        
+
         /** *****************************
          *
          * Handle LEGACY events
