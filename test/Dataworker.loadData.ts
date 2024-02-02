@@ -90,7 +90,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     await hubPoolClient.update();
 
     // Throws error if spoke pool clients not updated
-    await assertPromiseError(bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients), "SpokePoolClient");
+    await assertPromiseError(
+      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
+      "origin SpokePoolClient"
+    );    
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
 

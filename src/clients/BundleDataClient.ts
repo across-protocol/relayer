@@ -333,17 +333,13 @@ export class BundleDataClient {
     );
 
     // If spoke pools are V3 contracts, then we need to compute start and end timestamps for block ranges to
-    // determine whether fillDeadlines have expired. We also use the following opportunity to go through each
-    // spoke pool client and assert that it is updated.
+    // determine whether fillDeadlines have expired.
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const bundleBlockTimestamps: { [chainId: string]: number[] } = Object.fromEntries(
       await utils.mapAsync(allChainIds, async (chainId, index) => {
         const spokePoolClient = spokePoolClients[chainId];
-        if (!spokePoolClient.isUpdated) {
-          throw new Error(`SpokePoolClient with chain ID ${chainId} not updated`);
-        }
         const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
         // We can assume that in production
         // the block ranges passed into this function would never contain blocks where the the spoke pool client
@@ -368,6 +364,9 @@ export class BundleDataClient {
       }
 
       const originClient = spokePoolClients[originChainId];
+      if (!originClient.isUpdated) {
+        throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
+      }
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       for (const destinationChainId of allChainIds) {
@@ -379,7 +378,10 @@ export class BundleDataClient {
         }
 
         const destinationClient = spokePoolClients[destinationChainId];
-
+        if (!destinationClient.isUpdated) {
+          throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
+        }
+        
         /** *****************************
          *
          * Handle LEGACY events
