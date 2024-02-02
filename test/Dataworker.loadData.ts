@@ -670,30 +670,32 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe.only("V3 Events", function () {
+  describe("V3 Events", function () {
+    const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
+      const originToken = erc20_1.address;
+      const message = "0x";
+      const quoteTimestamp = getCurrentTime() - 10;
+      return spokePoolClient.deposit({
+        originToken,
+        message,
+        quoteTimestamp,
+        destinationChainId,
+        blockNumber: spokePoolClient.latestBlockSearched
+      } as interfaces.v2DepositWithBlock);
+    };
+    const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
+      const inputToken = erc20_1.address;
+      const message = "0x";
+      const quoteTimestamp = getCurrentTime() - 10;
+      return spokePoolClient.depositV3({
+        inputToken,
+        message,
+        quoteTimestamp,
+        destinationChainId,
+        blockNumber: spokePoolClient.latestBlockSearched
+      } as interfaces.v3DepositWithBlock);
+    };
     it("Returns deposits", async function () {
-      const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
-        const originToken = erc20_1.address;
-        const message = "0x";
-        const quoteTimestamp = getCurrentTime() - 10;
-        return spokePoolClient.deposit({
-          originToken,
-          message,
-          quoteTimestamp,
-          destinationChainId,
-        } as interfaces.v2DepositWithBlock);
-      };
-      const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
-        const inputToken = erc20_1.address;
-        const message = "0x";
-        const quoteTimestamp = getCurrentTime() - 10;
-        return spokePoolClient.depositV3({
-          inputToken,
-          message,
-          quoteTimestamp,
-          destinationChainId,
-        } as interfaces.v3DepositWithBlock);
-      };
       const v3OriginSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
         spokePoolClient_1.spokePool,
@@ -704,12 +706,11 @@ describe("Dataworker: Load data used in all functions", async function () {
       const depositV3Events: Event[] = [];
       const depositV2Events: Event[] = [];
 
-      // for (let idx = 0; idx < 10; ++idx) {
-      depositV3Events.push(generateV3Deposit(v3OriginSpokePoolClient));
-      depositV2Events.push(generateV2Deposit(v3OriginSpokePoolClient));
-      // }
+      for (let idx = 0; idx < 10; ++idx) {
+        depositV3Events.push(generateV3Deposit(v3OriginSpokePoolClient));
+        depositV2Events.push(generateV2Deposit(v3OriginSpokePoolClient));
+      }
       await v3OriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
-      // console.log(v3OriginSpokePoolClient.getDeposits());
 
       await updateAllClients();
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
@@ -717,8 +718,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         [originChainId]: v3OriginSpokePoolClient,
       });
 
-      // client correctly sorts events into expected dictionaries.
-      console.log(data1);
+      // client correctly sorts V2/V3 events into expected dictionaries.
       expect(data1.deposits.map((deposit) => deposit.depositId)).to.deep.equal(
         depositV2Events.map((event) => event.args.depositId)
       );

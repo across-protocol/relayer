@@ -479,11 +479,11 @@ export class BundleDataClient {
         // For each chain:
         //   For each token:
         //     For this chain's block range in the bundle:
+
         //       Load all deposits in block range:
         //         - add it to bundleDepositsV3.
         //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
         //         - Add it to expiredDepositsToRefund.
-        //
         const originChainBlockRange = getBlockRangeForChain(
           blockRangesForChains,
           originChainId,
@@ -495,6 +495,7 @@ export class BundleDataClient {
               utils.isV3Deposit(deposit) &&
               deposit.blockNumber <= originChainBlockRange[1] &&
               deposit.blockNumber >= originChainBlockRange[0] &&
+              // Sanity check that deposit is not a duplicate.
               !bundleDepositsV3?.[originChainId]?.[deposit.inputToken].some(
                 (existingDeposit) =>
                   existingDeposit.originChainId === deposit.originChainId &&
@@ -507,8 +508,6 @@ export class BundleDataClient {
               updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
             }
           });
-        console.log("bundle deposits", bundleDepositsV3);
-        console.log("expired deposits", expiredDepositsToRefundV3);
 
         //       Load all fills and slow fills:
         //        Validate fill/slow fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
