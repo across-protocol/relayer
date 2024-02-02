@@ -346,18 +346,12 @@ export class BundleDataClient {
         }
         const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
         // We can assume that in production
-        // the block ranges passed into this function would never contain blocks where the the spoke pool client 
+        // the block ranges passed into this function would never contain blocks where the the spoke pool client
         // hasn't queried. This is because this function will usually be called
         // in production with block ranges that were validated by
         // DataworkerUtils.blockRangesAreInvalidForSpokeClients
-        const startBlockForChain = Math.min(
-          _startBlockForChain,
-          spokePoolClient.latestBlockSearched
-        );
-        const endBlockForChain = Math.min(
-          _endBlockForChain,
-          spokePoolClient.latestBlockSearched
-        );
+        const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
+        const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
         return [
           chainId,
           [

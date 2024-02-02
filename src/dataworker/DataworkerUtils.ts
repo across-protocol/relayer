@@ -116,14 +116,7 @@ export function blockRangesAreInvalidForSpokeClients(
         blockRanges,
         chainIdListForBundleEvaluationBlockNumbers
       );
-      const fillDeadlineBuffers = await Promise.all([
-        spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: start }),
-        spokePoolClient.spokePool.fillDeadlineBuffer({ blockTag: end }),
-      ]);
-      const maxFillDeadlineBufferInBlockRange = Math.max(
-        fillDeadlineBuffers[0].toNumber(),
-        fillDeadlineBuffers[1].toNumber()
-      );
+      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
       if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
         return true;
       }

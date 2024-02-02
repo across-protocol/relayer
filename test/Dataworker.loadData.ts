@@ -681,7 +681,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         message,
         quoteTimestamp,
         destinationChainId,
-        blockNumber: spokePoolClient.latestBlockSearched
+        blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.v2DepositWithBlock);
     };
     const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
@@ -693,10 +694,13 @@ describe("Dataworker: Load data used in all functions", async function () {
         message,
         quoteTimestamp,
         destinationChainId,
-        blockNumber: spokePoolClient.latestBlockSearched
+        blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.v3DepositWithBlock);
     };
     it("Returns deposits", async function () {
+      await updateAllClients();
+
       const v3OriginSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
         spokePoolClient_1.spokePool,
@@ -713,7 +717,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       }
       await v3OriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
 
-      await updateAllClients();
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
         ...spokePoolClients,
         [originChainId]: v3OriginSpokePoolClient,
