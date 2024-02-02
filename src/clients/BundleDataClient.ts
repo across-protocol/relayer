@@ -345,24 +345,24 @@ export class BundleDataClient {
           throw new Error(`SpokePoolClient with chain ID ${chainId} not updated`);
         }
         const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
-        // Force blocks to values that the spoke pool was active, at a minimum. We can assume that in production
-        // the block ranges passed into this function would never contain blocks where the spoke pool wasn't active
-        // or that the spoke pool client hasn't queried. This is because this function will usually be called
+        // We can assume that in production
+        // the block ranges passed into this function would never contain blocks where the the spoke pool client 
+        // hasn't queried. This is because this function will usually be called
         // in production with block ranges that were validated by
         // DataworkerUtils.blockRangesAreInvalidForSpokeClients
         const startBlockForChain = Math.min(
-          Math.max(spokePoolClient.deploymentBlock, _startBlockForChain),
+          _startBlockForChain,
           spokePoolClient.latestBlockSearched
         );
         const endBlockForChain = Math.min(
-          Math.max(spokePoolClient.deploymentBlock, _endBlockForChain),
+          _endBlockForChain,
           spokePoolClient.latestBlockSearched
         );
         return [
           chainId,
           [
-            Number((await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockForChain })).toNumber()),
-            Number((await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlockForChain })).toNumber()),
+            Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
+            Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
           ],
         ];
       })
