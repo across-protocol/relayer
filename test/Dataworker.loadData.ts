@@ -673,7 +673,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
   describe.skip("V3 Events", function () {
     // TODO: Move these functions into /utils
-    const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
+    function generateV2Deposit(spokePoolClient: MockSpokePoolClient): Event {
       const originToken = erc20_1.address;
       const message = "0x";
       const quoteTimestamp = getCurrentTime() - 10;
@@ -685,8 +685,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.v2DepositWithBlock);
-    };
-    const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
+    }
+    function generateV3Deposit(spokePoolClient: MockSpokePoolClient): Event {
       const inputToken = erc20_1.address;
       const message = "0x";
       const quoteTimestamp = getCurrentTime() - 10;
@@ -698,7 +698,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.v3DepositWithBlock);
-    };
+    }
     it("Returns deposits", async function () {
       await updateAllClients();
 
