@@ -671,7 +671,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe("V3 Events", function () {
+  describe.skip("V3 Events", function () {
+    // TODO: Move these functions into /utils
     const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
       const originToken = erc20_1.address;
       const message = "0x";

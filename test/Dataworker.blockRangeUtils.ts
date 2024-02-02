@@ -8,7 +8,7 @@ import { getWidestPossibleExpectedBlockRange } from "../src/dataworker/PoolRebal
 import { originChainId } from "./constants";
 import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
 import { getDeployedBlockNumber } from "@across-protocol/contracts-v2";
-import { MockHubPoolClient, MockV3SpokePoolClient } from "./mocks";
+import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { assert } from "../src/utils";
@@ -265,7 +265,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // current time so that computing bundle end block timestamps gives us realistic numbers.
     const fakeSpokePool = await smock.fake(await sdkUtils.getABI("SpokePoolV3"));
     fakeSpokePool.getCurrentTime.returns(originSpokePoolClient.currentTime);
-    const mockSpokePoolClient = new MockV3SpokePoolClient(
+    const mockSpokePoolClient = new MockSpokePoolClient(
       originSpokePoolClient.logger,
       fakeSpokePool,
       originSpokePoolClient.chainId,
