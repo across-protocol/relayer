@@ -508,7 +508,7 @@ export class BundleDataClient {
       }
     }
 
-    // Process fills now that we've populated relay hash dictionary with fills:
+    // Process fills now that we've populated relay hash dictionary with deposits:
     for (const originChainId of allChainIds) {
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) {
