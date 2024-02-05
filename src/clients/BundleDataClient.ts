@@ -4,6 +4,7 @@ import {
   FillsToRefund,
   FillWithBlock,
   ProposedRootBundle,
+  SlowFillRequestWithBlock,
   SpokePoolClientsByChain,
   UnfilledDeposit,
   UnfilledDepositsForOriginChain,
@@ -480,21 +481,15 @@ export class BundleDataClient {
           if (utils.isV3Deposit(deposit)) {
             const relayDataHash = utils.getV3RelayHashFromEvent(deposit);
 
-            // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
-            // gives us bad data.
             if (!v3RelayHashes[relayDataHash]) {
               // Even if deposit is not in bundle block range, store all deposits we can see in memory in this
               // convenient dictionary.
               v3RelayHashes[relayDataHash] = {
-                deposit: undefined,
+                deposit: deposit,
                 fill: undefined,
                 slowFillRequest: undefined,
               };
-            }
 
-            // Sanity check for duplicate deposits:
-            if (!v3RelayHashes[relayDataHash].deposit) {
-              v3RelayHashes[relayDataHash].deposit = deposit;
               if (deposit.blockNumber <= originChainBlockRange[1] && deposit.blockNumber >= originChainBlockRange[0]) {
                 // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
                 updateBundleDepositsV3(bundleDepositsV3, deposit);
@@ -502,6 +497,9 @@ export class BundleDataClient {
                   updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
                 }
               }
+            } else {
+              // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
+              // gives us bad data.
             }
           }
         });
@@ -528,49 +526,96 @@ export class BundleDataClient {
         //        If fill is valid:
         //          If fillType is FastFill or ReplacedSlowFill:
         //            - Add it to fillsToRefund.
-        //            - If fillType is ReplacedSlowFill and there is no RequestSlowFill matching the relayHash in this bundle,
-        //              then we'll want to decrement runningBalances on destination chain since a
-        //              slow fill leaf was included in a previous bundle but cannot be executed.
-        //              Save this fill/deposit in unexecutableSlowFills.
         //        Else, do nothing, as the fill is a SlowFill execution.
         //        If slow fill request is valid and does not match a fast fill:
         //          - Add it to bundleSlowFills.
         //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
         //        Else, do nothing, as the slow fill request is invalid.
+        //        Now that we've saved slow fill requests and fast fills, go through all fast fills and identify those
+        //        that replaced a slow fill request from a previous bundle.
+        //            - If fillType is ReplacedSlowFill and there is no RequestSlowFill matching the relayHash in this bundle,
+        //              then we'll want to decrement runningBalances on destination chain since a
+        //              slow fill leaf was included in a previous bundle but cannot be executed.
+        //              Save this fill/deposit in unexecutableSlowFills.
+
         destinationClient.getFillsForOriginChain(originChainId).forEach((fill: FillWithBlock) => {
           if (utils.isV3Fill(fill)) {
             const relayDataHash = utils.getV3RelayHashFromEvent(fill);
 
-            // If we've seen this fill before, then skip this deposit. This can happen if our RPC provider
-            // gives us bad data.
+            // Instantiate dictionary if there isn't a deposit matching it.
             if (!v3RelayHashes[relayDataHash]) {
-              // Even if event is not in bundle block range, store it in this convenient dictionary for subsequent
-              // lookups.
+              v3RelayHashes[relayDataHash] = {
+                deposit: undefined,
+                fill: fill,
+                slowFillRequest: undefined,
+              };
+
+              // At this point, we might need to do a historical query for an older deposit in case the
+              // spoke pool client's lookback isn't old enough to find the matching deposit.
+            } else {
+              if (!v3RelayHashes[relayDataHash].fill) {
+                v3RelayHashes[relayDataHash].fill = fill;
+                if (
+                  fill.blockNumber <= destinationChainBlockRange[1] &&
+                  fill.blockNumber >= destinationChainBlockRange[0]
+                ) {
+                  // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
+                  // so this fill is validated.
+                }
+              } else {
+                // If we've seen this fill before, then skip this fill. This can happen if our RPC provider
+                // gives us bad data.
+              }
+            }
+          }
+        });
+
+        destinationClient
+          .getSlowFillRequestsForOriginChain(originChainId)
+          .forEach((slowFillRequest: SlowFillRequestWithBlock) => {
+            const relayDataHash = utils.getV3RelayHashFromEvent(slowFillRequest);
+
+            // Instantiate dictionary if there isn't a deposit or fill matching it.
+            if (!v3RelayHashes[relayDataHash]) {
               v3RelayHashes[relayDataHash] = {
                 deposit: undefined,
                 fill: undefined,
                 slowFillRequest: undefined,
               };
-            }
 
-            // Sanity check for duplicate fills:
-            if (!v3RelayHashes[relayDataHash].fill) {
-              v3RelayHashes[relayDataHash].fill = fill;
-              if (
-                fill.blockNumber <= destinationChainBlockRange[1] &&
-                fill.blockNumber >= destinationChainBlockRange[0]
-              ) {
-                // TODO: Validate fill/slow fill request.
+              // At this point, we might need to do a historical query for an older deposit in case the
+              // spoke pool client's lookback isn't old enough to find the matching deposit.
+            } else {
+              if (!v3RelayHashes[relayDataHash].slowFillRequest) {
+                v3RelayHashes[relayDataHash].slowFillRequest = slowFillRequest;
+
+                // If there is no fill matching the relay hash, then this might be a valid slow fill request
+                // that we should produce a slow fill leaf for.
+                if (
+                  !v3RelayHashes[relayDataHash].fill &&
+                  slowFillRequest.blockNumber <= destinationChainBlockRange[1] &&
+                  slowFillRequest.blockNumber >= destinationChainBlockRange[0]
+                ) {
+                  if (v3RelayHashes[relayDataHash].deposit) {
+                    // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
+                    // so this slow fill request is validated.
+                  }
+                }
+              } else {
+                // If we've seen this request before, then skip this event. This can happen if our RPC provider
+                // gives us bad data.
               }
             }
-          }
-        });
+          });
       }
     }
 
     //     For all other deposits older than this chain's block range (with blockNumber < origin blockRange[0]):
     //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[destinationChain][1]
-    //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0].
+    //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0]. Unfortunately, if a user sets a 
+    //        fillDeadline very far into the past, then they'll never meet this criteria. However, honest users
+    //        should never do this anyways and the contracts block fillDeadline from being smaller than the block
+    //        time of the deposit, so this scenario should be hard to create.
     //       - We need to figure out whether these older deposits have been filled already and also whether
     //        they have had slow fill payments sent for them in a previous bundle.
     //       - First, see if these deposits are matched with a fill in the dictionary of unique deposits we
