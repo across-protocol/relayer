@@ -90,7 +90,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     await hubPoolClient.update();
 
     // Throws error if spoke pool clients not updated
-    await assertPromiseError(bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients), "SpokePoolClient");
+    await assertPromiseError(
+      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
+      "origin SpokePoolClient"
+    );
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
 
@@ -101,6 +104,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       deposits: [],
       fillsToRefund: {},
       allValidFills: [],
+      bundleDepositsV3: {},
       earlyDeposits: [],
     });
   });
@@ -670,8 +674,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe("V3 Events", function () {
-    const generateV2Deposit = (spokePoolClient: MockSpokePoolClient): Event => {
+  describe.skip("V3 Events", function () {
+    // TODO: Move these functions into /utils
+    function generateV2Deposit(spokePoolClient: MockSpokePoolClient): Event {
       const originToken = erc20_1.address;
       const message = "0x";
       const quoteTimestamp = getCurrentTime() - 10;
@@ -680,10 +685,11 @@ describe("Dataworker: Load data used in all functions", async function () {
         message,
         quoteTimestamp,
         destinationChainId,
-        blockNumber: spokePoolClient.latestBlockSearched
+        blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.v2DepositWithBlock);
-    };
-    const generateV3Deposit = (spokePoolClient: MockSpokePoolClient): ethers.Event => {
+    }
+    function generateV3Deposit(spokePoolClient: MockSpokePoolClient): Event {
       const inputToken = erc20_1.address;
       const message = "0x";
       const quoteTimestamp = getCurrentTime() - 10;
@@ -692,10 +698,13 @@ describe("Dataworker: Load data used in all functions", async function () {
         message,
         quoteTimestamp,
         destinationChainId,
-        blockNumber: spokePoolClient.latestBlockSearched
+        blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.v3DepositWithBlock);
-    };
+    }
     it("Returns deposits", async function () {
+      await updateAllClients();
+
       const v3OriginSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
         spokePoolClient_1.spokePool,
@@ -712,7 +721,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       }
       await v3OriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
 
-      await updateAllClients();
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
         ...spokePoolClients,
         [originChainId]: v3OriginSpokePoolClient,

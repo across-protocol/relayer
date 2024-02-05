@@ -286,8 +286,6 @@ export class BundleDataClient {
       assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
       allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
 
-      // Note: the UBA model doesn't use the following realized LP fees data but we keep it for backwards
-      // compatibility.
       updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
       // Save deposit as one that is eligible for a slow fill, since there is a fill
@@ -330,63 +328,52 @@ export class BundleDataClient {
     };
 
     // Infer chain ID's to load from number of block ranges passed in.
-    const allChainIds = blockRangesForChains.map(
-      (_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index]
-    );
+    const allChainIds = blockRangesForChains
+      .map((_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index])
+      .filter((chainId) => !_isChainDisabled(chainId));
 
     // If spoke pools are V3 contracts, then we need to compute start and end timestamps for block ranges to
-    // determine whether fillDeadlines have expired. We also use the following opportunity to go through each
-    // spoke pool client and assert that it is updated.
+    // determine whether fillDeadlines have expired.
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const bundleBlockTimestamps: { [chainId: string]: number[] } = Object.fromEntries(
       await utils.mapAsync(allChainIds, async (chainId, index) => {
         const spokePoolClient = spokePoolClients[chainId];
-        if (!spokePoolClient.isUpdated) {
-          throw new Error(`SpokePoolClient with chain ID ${chainId} not updated`);
-        }
         const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
-        // Force blocks to values that the spoke pool was active, at a minimum. We can assume that in production
-        // the block ranges passed into this function would never contain blocks where the spoke pool wasn't active
-        // or that the spoke pool client hasn't queried. This is because this function will usually be called
+        // We can assume that in production
+        // the block ranges passed into this function would never contain blocks where the the spoke pool client
+        // hasn't queried. This is because this function will usually be called
         // in production with block ranges that were validated by
         // DataworkerUtils.blockRangesAreInvalidForSpokeClients
-        const startBlockForChain = Math.min(
-          Math.max(spokePoolClient.deploymentBlock, _startBlockForChain),
-          spokePoolClient.latestBlockSearched
-        );
-        const endBlockForChain = Math.min(
-          Math.max(spokePoolClient.deploymentBlock, _endBlockForChain),
-          spokePoolClient.latestBlockSearched
-        );
+        const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
+        const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
         return [
           chainId,
           [
-            Number((await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockForChain })).toNumber()),
-            Number((await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlockForChain })).toNumber()),
+            Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
+            Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
           ],
         ];
       })
     );
 
     for (const originChainId of allChainIds) {
-      if (_isChainDisabled(originChainId)) {
-        continue;
-      }
-
       const originClient = spokePoolClients[originChainId];
+      if (!originClient.isUpdated) {
+        throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
+      }
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) {
           continue;
         }
-        if (_isChainDisabled(destinationChainId)) {
-          continue;
-        }
 
         const destinationClient = spokePoolClients[destinationChainId];
+        if (!destinationClient.isUpdated) {
+          throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
+        }
 
         /** *****************************
          *
@@ -489,9 +476,11 @@ export class BundleDataClient {
           originChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
-        (originClient.getDepositsForDestinationChain(destinationChainId) as interfaces.v3DepositWithBlock[])
+        // TODO: Can remove the "as unknown" cast once SDK is updated to change DepositWithBlock to equal either
+        // V2 or V3 DepositWithBlock
+        (originClient.getDepositsForDestinationChain(destinationChainId) as unknown as interfaces.v3DepositWithBlock[])
           .filter(
-            (deposit: DepositWithBlock) =>
+            (deposit: interfaces.v3DepositWithBlock) =>
               utils.isV3Deposit(deposit) &&
               deposit.blockNumber <= originChainBlockRange[1] &&
               deposit.blockNumber >= originChainBlockRange[0] &&
