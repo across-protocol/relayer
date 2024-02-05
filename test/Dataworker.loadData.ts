@@ -37,7 +37,7 @@ import {
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit, DepositWithBlock, Fill } from "../src/interfaces";
-import { MAX_UINT_VAL, getCurrentTime, getRealizedLpFeeForFills, getRefundForFills, toBN } from "../src/utils";
+import { MAX_UINT_VAL, getCurrentTime, getRealizedLpFeeForFills, getRefundForFills, toBN, Event } from "../src/utils";
 import { MockSpokePoolClient } from "./mocks";
 import { interfaces } from "@across-protocol/sdk-v2";
 
@@ -90,10 +90,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await hubPoolClient.update();
 
     // Throws error if spoke pool clients not updated
-    await assertPromiseError(
-      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
-      "origin SpokePoolClient"
-    );
+    await assertPromiseError(bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients), "SpokePoolClient");
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
 
@@ -105,6 +102,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       fillsToRefund: {},
       allValidFills: [],
       bundleDepositsV3: {},
+      expiredDepositsToRefundV3: {},
       earlyDeposits: [],
     });
   });
@@ -674,57 +672,61 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe.skip("V3 Events", function () {
-    // TODO: Move these functions into /utils
-    function generateV2Deposit(spokePoolClient: MockSpokePoolClient): Event {
-      const originToken = erc20_1.address;
-      const message = "0x";
-      const quoteTimestamp = getCurrentTime() - 10;
-      return spokePoolClient.deposit({
-        originToken,
-        message,
-        quoteTimestamp,
-        destinationChainId,
-        blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
-      } as interfaces.v2DepositWithBlock);
-    }
-    function generateV3Deposit(spokePoolClient: MockSpokePoolClient): Event {
-      const inputToken = erc20_1.address;
-      const message = "0x";
-      const quoteTimestamp = getCurrentTime() - 10;
-      return spokePoolClient.depositV3({
-        inputToken,
-        message,
-        quoteTimestamp,
-        destinationChainId,
-        blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
-      } as interfaces.v3DepositWithBlock);
-    }
-    it("Returns deposits", async function () {
+  describe("V3 Events", function () {
+    let mockSpokePoolClient: MockSpokePoolClient;
+    beforeEach(async function () {
       await updateAllClients();
-
-      const v3OriginSpokePoolClient = new MockSpokePoolClient(
+      mockSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
         spokePoolClient_1.spokePool,
         spokePoolClient_1.chainId,
         spokePoolClient_1.deploymentBlock
       );
+      spokePoolClients = {
+        ...spokePoolClients,
+        [originChainId]: mockSpokePoolClient,
+      };
+    });
+    function generateV2Deposit(): Event {
+      return mockSpokePoolClient.deposit({
+        originToken: erc20_1.address,
+        message: "0x",
+        quoteTimestamp: getCurrentTime() - 10,
+        destinationChainId,
+        blockNumber: spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestBlockSearched gets set to the same value.
+      } as interfaces.v2DepositWithBlock);
+    }
+    function generateV3Deposit(eventOverride?: any): Event {
+      return mockSpokePoolClient.depositV3({
+        inputToken: erc20_1.address,
+        message: "0x",
+        quoteTimestamp: getCurrentTime() - 10,
+        fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 7200,
+        destinationChainId,
+        blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestBlockSearched gets set to the same value.
+      } as interfaces.v3DepositWithBlock);
+    }
+    it("Separates V3 and V2 deposits", async function () {
       // Inject a series of v2DepositWithBlock and v3DepositWithBlock events.
       const depositV3Events: Event[] = [];
       const depositV2Events: Event[] = [];
 
       for (let idx = 0; idx < 10; ++idx) {
-        depositV3Events.push(generateV3Deposit(v3OriginSpokePoolClient));
-        depositV2Events.push(generateV2Deposit(v3OriginSpokePoolClient));
+        const random = Math.random();
+        if (random < 0.5) {
+          depositV3Events.push(generateV3Deposit());
+        } else {
+          depositV2Events.push(generateV2Deposit());
+        }
       }
-      await v3OriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
 
-      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
-        ...spokePoolClients,
-        [originChainId]: v3OriginSpokePoolClient,
-      });
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
 
       // client correctly sorts V2/V3 events into expected dictionaries.
       expect(data1.deposits.map((deposit) => deposit.depositId)).to.deep.equal(
@@ -733,6 +735,48 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)).to.deep.equal(
         depositV3Events.map((event) => event.args.depositId)
       );
+    });
+    it("Filters expired deposits", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      // Send unexpired deposit
+      const unexpiredDeposits = [generateV3Deposit()];
+      // Send expired deposit
+      const expiredDeposits = [generateV3Deposit({ fillDeadline: bundleBlockTimestamps[originChainId][1] - 1 })];
+      const depositEvents = [...unexpiredDeposits, ...expiredDeposits];
+      await mockSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)).to.deep.equal(
+        depositEvents.map((event) => event.args.depositId)
+      );
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(
+        data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)
+      ).to.deep.equal(expiredDeposits.map((event) => event.args.depositId));
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
+    it("Filters unexpired deposit out of block range", async function () {
+      // Send deposit behind and after origin chain block range. Should not be included in bundleDeposits.
+      // First generate mock deposit events with some block time between events.
+      const deposits = [
+        generateV3Deposit({ blockNumber: mockSpokePoolClient.eventManager.blockNumber + 1 }),
+        generateV3Deposit({ blockNumber: mockSpokePoolClient.eventManager.blockNumber + 11 }),
+        generateV3Deposit({ blockNumber: mockSpokePoolClient.eventManager.blockNumber + 21 }),
+      ];
+      // Create a block range that contains only the middle deposit.
+      const originChainBlockRange = [deposits[1].blockNumber - 1, deposits[1].blockNumber + 1];
+      // Substitute origin chain bundle block range.
+      const bundleBlockRanges = [originChainBlockRange].concat(getDefaultBlockRange(5).slice(1));
+      await mockSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].depositId).to.equal(deposits[1].args.depositId);
     });
     //   it("Returns fills to refund", async function () {});
     //   it("Returns slow fills", async function () {});

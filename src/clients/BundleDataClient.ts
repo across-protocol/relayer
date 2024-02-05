@@ -4,6 +4,7 @@ import {
   FillsToRefund,
   FillWithBlock,
   ProposedRootBundle,
+  SpokePoolClientsByChain,
   UnfilledDeposit,
   UnfilledDepositsForOriginChain,
 } from "../interfaces";
@@ -40,16 +41,17 @@ type LoadDataReturnValue = {
   deposits: DepositWithBlock[];
   earlyDeposits: typechain.FundsDepositedEvent[];
   bundleDepositsV3: BundleDepositsV3;
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
 };
 type DataCache = Record<string, LoadDataReturnValue>;
 
 // V3 dictionary helper functions
 type ExpiredDepositsToRefundV3 = {
   [originChainId: number]: {
-    [originToken: string]: interfaces.v3Deposit[];
+    [originToken: string]: interfaces.V3Deposit[];
   };
 };
-function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: interfaces.v3Deposit): void {
+function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: interfaces.V3Deposit): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
     assign(dict, [originChainId, inputToken], []);
@@ -58,10 +60,10 @@ function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: inter
 }
 type BundleDepositsV3 = {
   [originChainId: number]: {
-    [originToken: string]: interfaces.v3Deposit[];
+    [originToken: string]: interfaces.V3Deposit[];
   };
 };
-function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.v3Deposit): void {
+function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3Deposit): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
     assign(dict, [originChainId, inputToken], []);
@@ -195,7 +197,7 @@ export class BundleDataClient {
   // on deprecated spoke pools.
   async loadData(
     blockRangesForChains: number[][],
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    spokePoolClients: SpokePoolClientsByChain,
     logData = true
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
@@ -331,38 +333,25 @@ export class BundleDataClient {
     const allChainIds = blockRangesForChains
       .map((_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index])
       .filter((chainId) => !_isChainDisabled(chainId));
+    allChainIds.forEach((chainId) => {
+      const spokePoolClient = spokePoolClients[chainId];
+      if (!spokePoolClient.isUpdated) {
+        throw new Error(`SpokePoolClient for chain ${chainId} not updated.`);
+      }
+    });
 
     // If spoke pools are V3 contracts, then we need to compute start and end timestamps for block ranges to
     // determine whether fillDeadlines have expired.
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const bundleBlockTimestamps: { [chainId: string]: number[] } = Object.fromEntries(
-      await utils.mapAsync(allChainIds, async (chainId, index) => {
-        const spokePoolClient = spokePoolClients[chainId];
-        const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
-        // We can assume that in production
-        // the block ranges passed into this function would never contain blocks where the the spoke pool client
-        // hasn't queried. This is because this function will usually be called
-        // in production with block ranges that were validated by
-        // DataworkerUtils.blockRangesAreInvalidForSpokeClients
-        const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
-        const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
-        return [
-          chainId,
-          [
-            Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
-            Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
-          ],
-        ];
-      })
+    const bundleBlockTimestamps: { [chainId: string]: number[] } = await this.getBundleBlockTimestamps(
+      allChainIds,
+      blockRangesForChains,
+      spokePoolClients
     );
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
-      if (!originClient.isUpdated) {
-        throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
-      }
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       for (const destinationChainId of allChainIds) {
@@ -371,9 +360,6 @@ export class BundleDataClient {
         }
 
         const destinationClient = spokePoolClients[destinationChainId];
-        if (!destinationClient.isUpdated) {
-          throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
-        }
 
         /** *****************************
          *
@@ -424,79 +410,114 @@ export class BundleDataClient {
         // return fill events that are younger than the bundle end block.
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
-          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
+          .filter(
+            (fillWithBlock) => utils.isV2Fill(fillWithBlock) && fillWithBlock.blockNumber <= blockRangeForChain[1]
+          );
         await Promise.all(fillsForOriginChain.map((fill) => validateFillAndSaveData(fill, blockRangeForChain)));
+      }
+    }
 
-        /** *****************************
-         *
-         * Handle V3 events
-         *
-         * *****************************/
+    /** *****************************
+     *
+     * Handle V3 events
+     *
+     * *****************************/
 
-        // Consider going through all events and storing them into the following dictionary
-        // for convenient lookup on the second pass when sorting them into the above lists which we'll
-        // ultimately return to the dataworker.
-        // const v3RelayHashes: {
-        //   [relayHash: string]: {
-        //    deposits: v3Deposit[];
-        //    fills: v3Fill[];
-        //    slowFillRequests: SlowFillRequest []
-        //    }
-        // } = {};
+    // Use this dictionary to conveniently unite all events with the same relay data hash which will make
+    // secondary lookups faster. The goal is to lazily fill up this dictionary with all events in the SpokePool
+    // client's in-memory event cache.
+    const v3RelayHashes: {
+      [relayHash: string]: {
+        // Note: Since there are no partial fills in v3, there should only be one fill per relay hash.
+        // There should also only be one deposit per relay hash since deposit ID's can't be re-used on the
+        // same spoke pool. Moreover, the SpokePool blocks multiple slow fill requests, so
+        // there should also only be one slow fill request per relay hash.
+        deposit: interfaces.V3Deposit;
+        fill: interfaces.V3Fill;
+        slowFillRequest: interfaces.SlowFillRequest;
+      };
+    } = {};
 
-        // Performance:
-        // - This algorithm should take O(2N) to run, with one run to set up depositHashes and the second run
-        //  to place the events into the appropriate lists.
+    // Notes:
+    // 1. How to decrement slow fill excesses from running balances:
+    //      slow fill excess is equal to deposit.updatedOutputAmount = deposit.inputAmount * (1 - realizedLpFeePct)
+    // 2. A slow fill is valid iff `deposit.outputToken = requestSlowFill.outputToken` &&
+    //    `outputToken = <canonical destination token for deposit.inputToken> OR `deposit.inputToken = 0x0` and
+    //    `fill.outputToken = <canonical destination token for deposit.inputToken>`.
+    //    - The SpokePool.validateFill function should already validate that the fill is valid but we'll need to
+    //      add the extra slow fill validation step and make sure that even if outputToken and inputToken match
+    //      that they are the same tokens.
+    // 3. A fast fill is valid iff `deposit.outputToken == fill.outputToken` OR `deposit.inputToken = 0x0` and
+    //    `fill.outputToken = <canonical destination token for deposit.inputToken>`
+    // 4. Running balances are incremented by refunds for fills by deposit.inputAmount * (1 - realizedLpFeePct)
+    // 5. Running balances are incremented by slow fills by deposit.inputAmount * (1 - realizedLpFeePct)
+    //    = slowFill.updatedOutputAmount
 
-        // Notes:
-        // 1. How to decrement slow fill excesses from running balances:
-        //      slow fill excess is equal to deposit.updatedOutputAmount = deposit.inputAmount * (1 - realizedLpFeePct)
-        // 2. A slow fill is valid iff `deposit.outputToken = requestSlowFill.outputToken` &&
-        //    `outputToken = <canonical destination token for deposit.inputToken> OR `deposit.inputToken = 0x0` and
-        //    `fill.outputToken = <canonical destination token for deposit.inputToken>`.
-        //    - The SpokePool.validateFill function should already validate that the fill is valid but we'll need to
-        //      add the extra slow fill validation step and make sure that even if outputToken and inputToken match
-        //      that they are the same tokens.
-        // 3. A fast fill is valid iff `deposit.outputToken == fill.outputToken` OR `deposit.inputToken = 0x0` and
-        //    `fill.outputToken = <canonical destination token for deposit.inputToken>`
-        // 4. Running balances are incremented by refunds for fills by deposit.inputAmount * (1 - realizedLpFeePct)
-        // 5. Running balances are incremented by slow fills by deposit.inputAmount * (1 - realizedLpFeePct)
-        //    = slowFill.updatedOutputAmount
+    // Process all deposits first:
+    for (const originChainId of allChainIds) {
+      const originClient = spokePoolClients[originChainId];
 
-        // For each chain:
-        //   For each token:
-        //     For this chain's block range in the bundle:
+      for (const destinationChainId of allChainIds) {
+        if (originChainId === destinationChainId) {
+          continue;
+        }
 
-        //       Load all deposits in block range:
-        //         - add it to bundleDepositsV3.
-        //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
-        //         - Add it to expiredDepositsToRefund.
         const originChainBlockRange = getBlockRangeForChain(
           blockRangesForChains,
           originChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
+        //       Load all deposits in block range:
+        //         - add it to bundleDepositsV3.
+        //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
+        //         - Add it to expiredDepositsToRefund.
         // TODO: Can remove the "as unknown" cast once SDK is updated to change DepositWithBlock to equal either
         // V2 or V3 DepositWithBlock
-        (originClient.getDepositsForDestinationChain(destinationChainId) as unknown as interfaces.v3DepositWithBlock[])
-          .filter(
-            (deposit: interfaces.v3DepositWithBlock) =>
-              utils.isV3Deposit(deposit) &&
-              deposit.blockNumber <= originChainBlockRange[1] &&
-              deposit.blockNumber >= originChainBlockRange[0] &&
-              // Sanity check that deposit is not a duplicate.
-              !bundleDepositsV3?.[originChainId]?.[deposit.inputToken].some(
-                (existingDeposit) =>
-                  existingDeposit.originChainId === deposit.originChainId &&
-                  existingDeposit.depositId === deposit.depositId
-              )
-          )
-          .forEach((deposit: interfaces.v3DepositWithBlock) => {
-            updateBundleDepositsV3(bundleDepositsV3, deposit);
-            if (deposit.fillDeadline <= bundleBlockTimestamps[destinationChainId][1]) {
-              updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
+        originClient.getDepositsForDestinationChain(destinationChainId).forEach((deposit: DepositWithBlock) => {
+          if (utils.isV3Deposit(deposit)) {
+            const relayDataHash = utils.getV3RelayHashFromEvent(deposit);
+
+            // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
+            // gives us bad data.
+            if (!v3RelayHashes[relayDataHash]) {
+              // Even if deposit is not in bundle block range, store all deposits we can see in memory in this
+              // convenient dictionary.
+              v3RelayHashes[relayDataHash] = {
+                deposit: undefined,
+                fill: undefined,
+                slowFillRequest: undefined,
+              };
             }
-          });
+
+            // Sanity check for duplicate deposits:
+            if (!v3RelayHashes[relayDataHash].deposit) {
+              v3RelayHashes[relayDataHash].deposit = deposit;
+              if (deposit.blockNumber <= originChainBlockRange[1] && deposit.blockNumber >= originChainBlockRange[0]) {
+                // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
+                updateBundleDepositsV3(bundleDepositsV3, deposit);
+                if (deposit.fillDeadline <= bundleBlockTimestamps[destinationChainId][1]) {
+                  updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    // Process fills now that we've populated relay hash dictionary with fills:
+    for (const originChainId of allChainIds) {
+      for (const destinationChainId of allChainIds) {
+        if (originChainId === destinationChainId) {
+          continue;
+        }
+
+        const destinationClient = spokePoolClients[destinationChainId];
+        const destinationChainBlockRange = getBlockRangeForChain(
+          blockRangesForChains,
+          destinationChainId,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
 
         //       Load all fills and slow fills:
         //        Validate fill/slow fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
@@ -513,29 +534,58 @@ export class BundleDataClient {
         //          - Add it to bundleSlowFills.
         //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
         //        Else, do nothing, as the slow fill request is invalid.
-        //     For all other deposits older than this chain's block range (with blockNumber < origin blockRange[0]):
-        //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[destinationChain][1]
-        //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0].
-        //       - We need to figure out whether these older deposits have been filled already and also whether
-        //        they have had slow fill payments sent for them in a previous bundle.
-        //       - First, see if these deposits are matched with a fill in the dictionary of unique deposits we
-        //        created earlier. Remove such deposits.
-        //       - If not, then call SpokePool.fillStatuses() for each of these deposits.
-        //        ( This does open us up to a minor griefing vector where someone
-        //          sends many small deposits with a short fill deadline, making us call fillStatuses() many times.
-        //          This is mitigated because the deposit would have to have been sent in a previous bundle but with a
-        //          fillDeadline that ended in this current bundle. )
-        //       - Remove any deposits whose fillStatus is Filled
-        //       - For the deposits whose fillStatus is Unfilled, add them to depositsToRefund and increment running
-        //         balances on the origin chain.
-        //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
-        //         from running balances on the destination chain since we can no longer execute the slow fill leaf
-        //         that was included in a previous bundle, so let's add them to unexecutableSlowFills.
+        destinationClient.getFillsForOriginChain(originChainId).forEach((fill: FillWithBlock) => {
+          if (utils.isV3Fill(fill)) {
+            const relayDataHash = utils.getV3RelayHashFromEvent(fill);
 
-        // Clean up:
-        // - Check for duplicate events in any of the above lists.
+            // If we've seen this fill before, then skip this deposit. This can happen if our RPC provider
+            // gives us bad data.
+            if (!v3RelayHashes[relayDataHash]) {
+              // Even if event is not in bundle block range, store it in this convenient dictionary for subsequent
+              // lookups.
+              v3RelayHashes[relayDataHash] = {
+                deposit: undefined,
+                fill: undefined,
+                slowFillRequest: undefined,
+              };
+            }
+
+            // Sanity check for duplicate fills:
+            if (!v3RelayHashes[relayDataHash].fill) {
+              v3RelayHashes[relayDataHash].fill = fill;
+              if (
+                fill.blockNumber <= destinationChainBlockRange[1] &&
+                fill.blockNumber >= destinationChainBlockRange[0]
+              ) {
+                // TODO: Validate fill/slow fill request.
+              }
+            }
+          }
+        });
       }
     }
+
+    //     For all other deposits older than this chain's block range (with blockNumber < origin blockRange[0]):
+    //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[destinationChain][1]
+    //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0].
+    //       - We need to figure out whether these older deposits have been filled already and also whether
+    //        they have had slow fill payments sent for them in a previous bundle.
+    //       - First, see if these deposits are matched with a fill in the dictionary of unique deposits we
+    //        created earlier. Remove such deposits.
+    //       - If not, then call SpokePool.fillStatuses() for each of these deposits.
+    //        ( This does open us up to a minor griefing vector where someone
+    //          sends many small deposits with a short fill deadline, making us call fillStatuses() many times.
+    //          This is mitigated because the deposit would have to have been sent in a previous bundle but with a
+    //          fillDeadline that ended in this current bundle. )
+    //       - Remove any deposits whose fillStatus is Filled
+    //       - For the deposits whose fillStatus is Unfilled, add them to depositsToRefund and increment running
+    //         balances on the origin chain.
+    //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
+    //         from running balances on the destination chain since we can no longer execute the slow fill leaf
+    //         that was included in a previous bundle, so let's add them to unexecutableSlowFills.
+
+    // Clean up:
+    // - Check for duplicate events in any of the above lists.
 
     // Note: We do not check for duplicate slow fills here since `addRefundForValidFill` already checks for duplicate
     // fills and is the function that populates the `unfilledDeposits` dictionary. Therefore, if there are no duplicate
@@ -584,8 +634,36 @@ export class BundleDataClient {
       allValidFills,
       earlyDeposits,
       bundleDepositsV3,
+      expiredDepositsToRefundV3,
     };
 
     return this.loadDataFromCache(key);
+  }
+
+  async getBundleBlockTimestamps(
+    chainIds: number[],
+    blockRangesForChains: number[][],
+    spokePoolClients: SpokePoolClientsByChain
+  ): Promise<{ [chainId: string]: number[] }> {
+    return Object.fromEntries(
+      await utils.mapAsync(chainIds, async (chainId, index) => {
+        const spokePoolClient = spokePoolClients[chainId];
+        const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
+        // We can assume that in production
+        // the block ranges passed into this function would never contain blocks where the the spoke pool client
+        // hasn't queried. This is because this function will usually be called
+        // in production with block ranges that were validated by
+        // DataworkerUtils.blockRangesAreInvalidForSpokeClients
+        const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
+        const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
+        return [
+          chainId,
+          [
+            Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
+            Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
+          ],
+        ];
+      })
+    );
   }
 }
