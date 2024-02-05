@@ -350,7 +350,16 @@ export class BundleDataClient {
       spokePoolClients
     );
 
+    /** *****************************
+     *
+     * Handle LEGACY events
+     *
+     * *****************************/
     for (const originChainId of allChainIds) {
+      if (_isChainDisabled(originChainId)) {
+        continue;
+      }
+
       const originClient = spokePoolClients[originChainId];
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
@@ -358,14 +367,11 @@ export class BundleDataClient {
         if (originChainId === destinationChainId) {
           continue;
         }
+        if (_isChainDisabled(destinationChainId)) {
+          continue;
+        }
 
         const destinationClient = spokePoolClients[destinationChainId];
-
-        /** *****************************
-         *
-         * Handle LEGACY events
-         *
-         * *****************************/
 
         // Store all deposits in range, for use in constructing a pool rebalance root. Save deposits with
         // their quote time block numbers so we can pull the L1 token counterparts for the quote timestamp.
@@ -396,9 +402,6 @@ export class BundleDataClient {
           )
         );
 
-        // TODO: Move `blockRangeForChain` out of this Legacy code block and higher up to near the
-        // `bundleBlockTimestamps` section since its common code. We might also get this naturally when we
-        // deprecate legacy code.
         const blockRangeForChain = getBlockRangeForChain(
           blockRangesForChains,
           Number(destinationChainId),
