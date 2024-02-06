@@ -142,6 +142,8 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
 }> {
+  assert(sdkUtils.isV2Fill(fill));
+
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
   // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
