@@ -1,7 +1,8 @@
-import { DepositWithBlock, Fill, FillWithBlock, RefundRequest } from "../../src/interfaces";
-import { toBN } from "../../src/utils";
+import { Fill, FillWithBlock, V2DepositWithBlock, V2Fill } from "../../src/interfaces";
+import { bnZero, toBN } from "../../src/utils";
+import { interfaces } from "@across-protocol/sdk-v2";
 
-export function fillFromDeposit(deposit: DepositWithBlock, relayer: string): Fill {
+export function fillFromDeposit(deposit: V2DepositWithBlock, relayer: string): V2Fill {
   const { recipient, message, relayerFeePct } = deposit;
 
   const fill: Fill = {
@@ -32,6 +33,29 @@ export function fillFromDeposit(deposit: DepositWithBlock, relayer: string): Fil
   };
 
   return fill;
+}
+
+export function V3FillFromDeposit(
+  deposit: interfaces.V3DepositWithBlock, 
+  relayer: string, 
+  repaymentChainId?: number,
+  fillType = interfaces.FillType.FastFill
+): interfaces.V3Fill {
+  const { blockNumber, transactionHash, logIndex, transactionIndex, quoteTimestamp, ...relayData } = deposit;
+  const fill: interfaces.V3Fill = {
+    ...relayData,
+    relayer,
+    realizedLpFeePct: deposit.realizedLpFeePct ?? bnZero,
+    repaymentChainId: repaymentChainId ?? deposit.destinationChainId,
+    updatableRelayData: {
+      recipient: deposit.updatedRecipient,
+      message: deposit.updatedMessage,
+      outputAmount: deposit.updatedOutputAmount,
+      fillType,
+    },
+  };
+  return fill;
+
 }
 
 export function refundRequestFromFill(fill: FillWithBlock, refundToken: string): RefundRequest {

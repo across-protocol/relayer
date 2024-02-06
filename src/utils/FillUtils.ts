@@ -41,12 +41,20 @@ export function getRefundInformationFromFill(
     hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
-  // @todo In v3, destination... must be swapped for origin...
-  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    sdkUtils.getFillOutputToken(fill),
-    fill.destinationChainId,
-    endBlockForMainnet
-  );
+  let l1TokenCounterpart: string;
+  if (sdkUtils.isV3Fill(fill)) {
+    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      fill.inputToken,
+      fill.originChainId,
+      endBlockForMainnet
+    );
+  } else {
+    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      sdkUtils.getFillOutputToken(fill),
+      fill.destinationChainId,
+      endBlockForMainnet
+    );
+  }
   const repaymentToken = hubPoolClient.getL2TokenForL1TokenAtBlock(
     l1TokenCounterpart,
     chainToSendRefundTo,
