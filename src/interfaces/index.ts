@@ -61,12 +61,12 @@ export type TokensBridged = interfaces.TokensBridged;
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 
 // V2 / V3 interfaces
-export type V2Deposit = interfaces.v2Deposit;
-export type V2DepositWithBlock = interfaces.v2DepositWithBlock;
-export type V2SpeedUp = interfaces.v2SpeedUp;
-export type V2Fill = interfaces.v2Fill;
-export type V2FillWithBlock = interfaces.v2FillWithBlock;
-export type V2RelayData = interfaces.v2RelayData;
-export type V3RelayData = interfaces.v3RelayData;
-export type V2SlowFillLeaf = interfaces.v2SlowFillLeaf;
-export type V3SlowFillLeaf = interfaces.v3SlowFillLeaf;
+export type V2Deposit = interfaces.V2Deposit;
+export type V2DepositWithBlock = interfaces.V2DepositWithBlock;
+export type V2SpeedUp = interfaces.V2SpeedUp;
+export type V2Fill = interfaces.V2Fill;
+export type V2FillWithBlock = interfaces.V2FillWithBlock;
+export type V2RelayData = interfaces.V2RelayData;
+export type V3RelayData = interfaces.V3RelayData;
+export type V2SlowFillLeaf = interfaces.V2SlowFillLeaf;
+export type V3SlowFillLeaf = interfaces.V3SlowFillLeaf;
