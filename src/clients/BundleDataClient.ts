@@ -561,6 +561,9 @@ export class BundleDataClient {
                 ) {
                   // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                   // so this fill is validated.
+
+                  // Sanity checks:
+                  // - repayment chain Id should not be 0, thats only for slow fill executions.
                 }
               } else {
                 // If we've seen this fill before, then skip this fill. This can happen if our RPC provider
