@@ -96,7 +96,12 @@ function updateBundleFillsV3(
   repaymentToken: string
 ): void {
   if (!dict?.[repaymentChainId]?.[repaymentToken]) {
-    assign(dict, [repaymentChainId, repaymentToken], {});
+    assign(dict, [repaymentChainId, repaymentToken], {
+      fills: [],
+      totalRefundAmount: bnZero,
+      realizedLpFees: bnZero,
+      refunds: {},
+    });
   }
 
   const bundleFill: BundleFillV3 = { ...fill, lpFeePct };
@@ -107,9 +112,7 @@ function updateBundleFillsV3(
   // All fills update the bundle LP fees.
   const refundObj = dict[repaymentChainId][repaymentToken];
   const realizedLpFee = fill.inputAmount.mul(bundleFill.lpFeePct).div(fixedPointAdjustment);
-  refundObj.realizedLpFees = refundObj.realizedLpFees
-    ? refundObj.realizedLpFees.add(realizedLpFee)
-    : realizedLpFee;
+  refundObj.realizedLpFees = refundObj.realizedLpFees ? refundObj.realizedLpFees.add(realizedLpFee) : realizedLpFee;
 
   // Only fast fills get refunded.
   if (!utils.isSlowFill(fill)) {
@@ -117,8 +120,8 @@ function updateBundleFillsV3(
     refundObj.totalRefundAmount = refundObj.totalRefundAmount
       ? refundObj.totalRefundAmount.add(refundAmount)
       : refundAmount;
-    
-     // Instantiate dictionary if it doesn't exist.
+
+    // Instantiate dictionary if it doesn't exist.
     if (!refundObj.refunds) {
       assign(dict, [repaymentChainId, repaymentToken, "refunds"], {});
     }
@@ -618,7 +621,7 @@ export class BundleDataClient {
                   fill: fill,
                   slowFillRequest: undefined,
                 };
-                console.log(`Searching for old deposit`)
+                console.log("Searching for old deposit");
 
                 // Since there was no deposit matching the relay hash, we need to do a historical query for an
                 // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
@@ -628,7 +631,13 @@ export class BundleDataClient {
                 ) {
                   const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
                   if (historicalDeposit.found) {
-                    updateBundleFillsV3(bundleFillsV3, fill, historicalDeposit.deposit.realizedLpFeePct, chainToSendRefundTo, repaymentToken);
+                    updateBundleFillsV3(
+                      bundleFillsV3,
+                      fill,
+                      historicalDeposit.deposit.realizedLpFeePct,
+                      chainToSendRefundTo,
+                      repaymentToken
+                    );
                   } else {
                     bundleInvalidFillsV3.push(fill);
                   }
@@ -643,7 +652,13 @@ export class BundleDataClient {
                     fill.blockNumber <= destinationChainBlockRange[1] &&
                     fill.blockNumber >= destinationChainBlockRange[0]
                   ) {
-                    updateBundleFillsV3(bundleFillsV3, fill, v3RelayHashes[relayDataHash].deposit.realizedLpFeePct, chainToSendRefundTo, repaymentToken);
+                    updateBundleFillsV3(
+                      bundleFillsV3,
+                      fill,
+                      v3RelayHashes[relayDataHash].deposit.realizedLpFeePct,
+                      chainToSendRefundTo,
+                      repaymentToken
+                    );
                   }
 
                   // If fill is not within bundle range there is nothing more to do since we've already
@@ -762,6 +777,16 @@ export class BundleDataClient {
       });
     }
 
+    // TODO: Create a pretty print for V3 events.
+    if (bundleInvalidFillsV3.length > 0) {
+      this.logger.debug({
+        at: "BundleDataClient#loadData",
+        message: "Finished loading V3 spoke pool data and found some invalid V3 fills in range",
+        blockRangesForChains,
+        bundleInvalidFillsV3,
+      });
+    }
+
     this.loadDataCache[key] = {
       fillsToRefund,
       deposits,
@@ -770,7 +795,7 @@ export class BundleDataClient {
       earlyDeposits,
       bundleDepositsV3,
       expiredDepositsToRefundV3,
-      bundleFillsV3
+      bundleFillsV3,
     };
 
     return this.loadDataFromCache(key);

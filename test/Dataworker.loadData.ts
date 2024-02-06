@@ -34,12 +34,24 @@ import {
   randomAddress,
   sinon,
   spyLogIncludes,
+  v2FillFromDeposit,
 } from "./utils";
 
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit, DepositWithBlock, Fill } from "../src/interfaces";
-import { MAX_UINT_VAL, getCurrentTime, getRealizedLpFeeForFills, getRefundForFills, toBN, Event, bnZero, toBNWei, fixedPointAdjustment } from "../src/utils";
+import {
+  MAX_UINT_VAL,
+  getCurrentTime,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  toBN,
+  Event,
+  bnZero,
+  toBNWei,
+  fixedPointAdjustment,
+  assert,
+} from "../src/utils";
 import { MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 
@@ -106,7 +118,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       bundleDepositsV3: {},
       expiredDepositsToRefundV3: {},
       earlyDeposits: [],
-      bundleFillsV3: {}
+      bundleFillsV3: {},
     });
   });
   describe("Computing refunds for bundles", function () {
@@ -682,13 +694,21 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
       mockOriginSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
-        new Contract(spokePoolClient_1.spokePool.address, await sdkUtils.getABI("SpokePoolV3"), spokePoolClient_1.spokePool.provider),
+        new Contract(
+          spokePoolClient_1.spokePool.address,
+          await sdkUtils.getABI("SpokePoolV3"),
+          spokePoolClient_1.spokePool.provider
+        ),
         spokePoolClient_1.chainId,
         spokePoolClient_1.deploymentBlock
       );
       mockDestinationSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_2.logger,
-        new Contract(spokePoolClient_2.spokePool.address, await sdkUtils.getABI("SpokePoolV3"), spokePoolClient_2.spokePool.provider),
+        new Contract(
+          spokePoolClient_2.spokePool.address,
+          await sdkUtils.getABI("SpokePoolV3"),
+          spokePoolClient_2.spokePool.provider
+        ),
         spokePoolClient_2.chainId,
         spokePoolClient_2.deploymentBlock
       );
@@ -730,10 +750,17 @@ describe("Dataworker: Load data used in all functions", async function () {
       fillEventOverride?: any,
       _relayer = relayer.address,
       _repaymentChainId = repaymentChainId,
+      fillType = interfaces.FillType.FastFill
     ): Event {
-      const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId)
+      const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...fillObject,
+        updatableRelayData: {
+          recipient: fillObject.recipient,
+          message: fillObject.message,
+          outputAmount: fillObject.outputAmount,
+          fillType,
+        },
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.V3FillWithBlock);
@@ -742,9 +769,9 @@ describe("Dataworker: Load data used in all functions", async function () {
       depositEvent: Event,
       fillEventOverride?: any,
       _relayer = relayer.address,
-      _repaymentChainId = repaymentChainId,
+      _repaymentChainId = repaymentChainId
     ): Event {
-      const { args } = depositEvent
+      const { args } = depositEvent;
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...args,
         relayer: _relayer,
@@ -755,7 +782,7 @@ describe("Dataworker: Load data used in all functions", async function () {
           message: depositEvent.message,
           outputAmount: depositEvent.outputAmount,
           fillType: interfaces.FillType.FastFill,
-        },    
+        },
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestBlockSearched gets set to the same value.
       } as interfaces.V3FillWithBlock);
@@ -836,62 +863,67 @@ describe("Dataworker: Load data used in all functions", async function () {
       const fillV3Events: Event[] = [];
 
       // Create three valid deposits
-      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress()}));
-      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress()}));
-      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress()}));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       // Fill deposits from different relayers
-      const relayer2 = randomAddress()
-      fillV3Events.push(generateV3FillFromDeposit(deposits[0]))
-      fillV3Events.push(generateV3FillFromDeposit(deposits[1]))
-      fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2))
+      const relayer2 = randomAddress();
+      fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
       await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
       );
 
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(
-        depositV3Events.length
-      );
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(depositV3Events.length);
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.depositId)).to.deep.equal(
         fillV3Events.map((event) => event.args.depositId)
       );
-      const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
-      const totalV3LpFees = totalGrossRefundAmount.mul(
-        lpFeePct
-      ).div(fixedPointAdjustment);
-      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].realizedLpFees);
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].totalRefundAmount).to.equal(totalGrossRefundAmount.sub(totalV3LpFees));
-      const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].refunds).to.deep.equal(
-        {
-          [relayer.address]: fillV3Events.slice(0, fillV3Events.length-1).reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0)).mul(refundAmountPct).div(fixedPointAdjustment),
-          [relayer2]: fillV3Events[fillV3Events.length-1].args.inputAmount.mul(refundAmountPct).div(fixedPointAdjustment)
-        }
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
+        fillV3Events.map(() => lpFeePct)
       );
+      const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
+      const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
+      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].realizedLpFees);
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].totalRefundAmount).to.equal(
+        totalGrossRefundAmount.sub(totalV3LpFees)
+      );
+      const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].refunds).to.deep.equal({
+        [relayer.address]: fillV3Events
+          .slice(0, fillV3Events.length - 1)
+          .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
+          .mul(refundAmountPct)
+          .div(fixedPointAdjustment),
+        [relayer2]: fillV3Events[fillV3Events.length - 1].args.inputAmount
+          .mul(refundAmountPct)
+          .div(fixedPointAdjustment),
+      });
     });
     it.skip("Validates fill against old deposit", async function () {
       // Send a deposit.
-      const oldDepositEvent = generateV3Deposit({ outputToken: randomAddress()});
+      const oldDepositEvent = generateV3Deposit({ outputToken: randomAddress() });
 
       // Update so binary search uses reasonable initLow and initHigh.
       await mockOriginSpokePoolClient.update();
 
       // Mock spoke pool client needs to believe that the depositId incremented on the spoke pool.
-      let depositIds: number = []
-      for (let i = 0 ; i < oldDepositEvent.blockNumber; i++) {
-        depositIds.push(0)
+      const depositIds: number = [];
+      for (let i = 0; i < oldDepositEvent.blockNumber; i++) {
+        depositIds.push(0);
       }
       for (let i = oldDepositEvent.blockNumber; i < oldDepositEvent.blockNumber + 10; i++) {
-        depositIds.push(1)
+        depositIds.push(1);
       }
       mockOriginSpokePoolClient.setDepositIds(depositIds);
 
-     const fillEvent = generateV3FillFromDepositEvent(oldDepositEvent)
-     await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      const fillEvent = generateV3FillFromDepositEvent(oldDepositEvent);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
 
       expect(mockOriginSpokePoolClient.getDeposits().length).to.equal(0);
 
@@ -902,10 +934,76 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // TODO: Will fail for now because event isn't being emitted from the spoke pool and queryFilter fails
     });
-    it("Separates V3 and V2 fills", async function () {});
-    it("Handles V3 Slow Fill executions", async function () {});
-    it("Filters fills out of block range", async function () {});
-    it("Handles invalid V3 fills", async function () {});
+    it("Handles V3 Slow Fill executions", async function () {
+      generateV3Deposit({ outputToken: randomAddress() });
+      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      // Generate a slow fill execution
+      generateV3FillFromDeposit(deposits[0], {}, relayer.address, destinationChainId, interfaces.FillType.SlowFill);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      const fills = mockDestinationSpokePoolClient.getFills();
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(fills[0].depositId);
+      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].lpFeePct).to.equal(lpFeePct);
+      const totalGrossRefundAmount = fills[0].inputAmount;
+      const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
+      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[destinationChainId][erc20_2.address].realizedLpFees);
+
+      // Refund should be 0 for slow fills
+      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].totalRefundAmount).to.equal(0);
+      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].refunds).to.deep.equal({});
+    });
+    it("Filters fills out of block range", async function () {
+      generateV3Deposit({ outputToken: randomAddress() });
+      generateV3Deposit({ outputToken: randomAddress() });
+      generateV3Deposit({ outputToken: randomAddress() });
+      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      const fills = [
+        generateV3FillFromDeposit(deposits[0], {
+          blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 1,
+        }),
+        generateV3FillFromDeposit(deposits[1], {
+          blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 11,
+        }),
+        generateV3FillFromDeposit(deposits[2], {
+          blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 21,
+        }),
+      ];
+      // Create a block range that contains only the middle event.
+      const destinationChainBlockRange = [fills[1].blockNumber - 1, fills[1].blockNumber + 1];
+      // Substitute destination chain bundle block range.
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      const destinationChainIndex =
+        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
+      bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+        fills[1].args.depositId
+      );
+    });
+    it("Handles invalid V3 fills", async function () {
+      // Generate fill and deposit with random params but the same deposit ID.
+      generateV3Deposit();
+      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      generateV3FillFromDepositEvent(generateV3Deposit());
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      const fills = mockDestinationSpokePoolClient.getFills();
+      assert(fills.length === 1, "Fill was not emitted");
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      expect(data1.bundleFillsV3).to.deep.equal({});
+      expect(spyLogIncludes(spy, -1, "invalid V3 fills in range")).to.be.true;
+    });
     //   it("Returns slow fills", async function () {});
     //   it("Returns expired deposits", async function () {});
     //   it("Returns unexecutable slow fills", async function () {});

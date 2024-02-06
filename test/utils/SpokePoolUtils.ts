@@ -36,8 +36,8 @@ export function fillFromDeposit(deposit: V2DepositWithBlock, relayer: string): V
 }
 
 export function V3FillFromDeposit(
-  deposit: interfaces.V3DepositWithBlock, 
-  relayer: string, 
+  deposit: interfaces.V3DepositWithBlock,
+  relayer: string,
   repaymentChainId?: number,
   fillType = interfaces.FillType.FastFill
 ): interfaces.V3Fill {
@@ -55,7 +55,39 @@ export function V3FillFromDeposit(
     },
   };
   return fill;
+}
 
+export function v2FillFromDeposit(deposit: V2DepositWithBlock, relayer: string, repaymentChainId?: number): V2Fill {
+  const { recipient, message, relayerFeePct } = deposit;
+
+  const fill: Fill = {
+    amount: deposit.amount,
+    depositId: deposit.depositId,
+    originChainId: deposit.originChainId,
+    destinationChainId: deposit.destinationChainId,
+    depositor: deposit.depositor,
+    destinationToken: deposit.destinationToken,
+    relayerFeePct: deposit.relayerFeePct,
+    realizedLpFeePct: deposit.realizedLpFeePct ?? bnZero,
+    recipient,
+    relayer,
+    message,
+
+    // Caller can modify these later.
+    fillAmount: deposit.amount,
+    totalFilledAmount: deposit.amount,
+    repaymentChainId: repaymentChainId ?? deposit.destinationChainId,
+
+    updatableRelayData: {
+      recipient: deposit.updatedRecipient ?? recipient,
+      message: deposit.updatedMessage ?? message,
+      relayerFeePct: deposit.newRelayerFeePct ?? relayerFeePct,
+      isSlowRelay: false,
+      payoutAdjustmentPct: bnZero,
+    },
+  };
+
+  return fill;
 }
 
 export function refundRequestFromFill(fill: FillWithBlock, refundToken: string): RefundRequest {
