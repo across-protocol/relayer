@@ -1175,22 +1175,26 @@ export class Dataworker {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
-          // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-          let amountFilled = bnZero;
-          const fill = slowFill.fill;
-          if (isDefined(fill)) {
-            // If fill was a full fill, execution is unnecessary. V3 fills are full fills by definition.
-            amountFilled = sdkUtils.getTotalFilledAmount(fill);
-            if (amountFilled.eq(sdkUtils.getFillOutputAmount(fill))) {
-              return undefined;
-            }
-          }
-
-          // Note: the getRefund function just happens to perform the same math we need.
-          // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
           const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
           const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
-          const amountRequired = getRefund(outputAmount.sub(amountFilled), slowFill.relayData.realizedLpFeePct);
+          let amountRequired: BigNumber;
+          if (sdkUtils.isV3SlowFillLeaf(slowFill)) {
+            amountRequired = slowFill.updatedOutputAmount;
+          } else {
+            const fill = slowFill.fill;
+            assert(sdkUtils.isV2Fill(fill) || !isDefined(fill)); // Any fill linked with a v2 SlowFill must also be v2.
+
+            // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
+            const totalAmountFilled = fill?.totalFilledAmount ?? bnZero;
+            if (isDefined(fill) && totalAmountFilled.eq(fill.amount)) {
+              // If fill was a full fill, execution is unnecessary.
+              return undefined;
+            }
+
+            // Note: the getRefund function just happens to perform the same math we need.
+            // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
+            amountRequired = getRefund(outputAmount.sub(totalAmountFilled), slowFill.relayData.realizedLpFeePct);
+          }
 
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
@@ -1215,9 +1219,7 @@ export class Dataworker {
 
           // Assume we don't need to add balance in the BalanceAllocator to the HubPool because the slow fill's
           // recipient wouldn't be the HubPool in normal circumstances.
-          return success
-            ? { relayData: slowFill.relayData, payoutAdjustmentPct: slowFill.payoutAdjustmentPct }
-            : undefined;
+          return success ? { ...slowFill } : undefined;
         })
       )
     ).filter(isDefined);

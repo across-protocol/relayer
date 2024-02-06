@@ -187,9 +187,12 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     }
     // Add non-duplicate fills.
     allMatchingFills.push(
-      ...matchingFills.filter(
-        (_fill) => !allMatchingFills.find((existingFill) => existingFill.totalFilledAmount.eq(_fill.totalFilledAmount))
-      )
+      ...matchingFills.filter((_fill) => {
+        const totalFilledAmount = sdkUtils.getTotalFilledAmount(_fill);
+        return !allMatchingFills.find((existingFill) =>
+          sdkUtils.getTotalFilledAmount(existingFill).eq(totalFilledAmount)
+        );
+      })
     );
   }
 

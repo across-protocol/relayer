@@ -298,13 +298,13 @@ export class ProfitClient {
     return minRelayerFeePct as BigNumber;
   }
 
-  appliedRelayerFeePct(deposit: Deposit): BigNumber {
+  appliedRelayerFeePct(deposit: V2Deposit): BigNumber {
     // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
     return max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? bnZero);
   }
 
   async calculateFillProfitability(
-    deposit: Deposit,
+    deposit: V2Deposit,
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token,
@@ -379,7 +379,7 @@ export class ProfitClient {
   }
 
   async getFillProfitability(
-    deposit: Deposit,
+    deposit: V2Deposit,
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token
@@ -419,7 +419,7 @@ export class ProfitClient {
   }
 
   async isFillProfitable(
-    deposit: Deposit,
+    deposit: V2Deposit,
     fillAmount: BigNumber,
     refundFee: BigNumber,
     l1Token: L1Token

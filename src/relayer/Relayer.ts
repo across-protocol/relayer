@@ -203,7 +203,7 @@ export class Relayer {
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
-    const unfilledDeposits = await this._getUnfilledDeposits();
+    const unfilledDeposits = (await this._getUnfilledDeposits()).filter(({ deposit }) => sdkUtils.isV2Deposit(deposit));
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
@@ -471,6 +471,8 @@ export class Relayer {
     fillAmount: BigNumber,
     hubPoolToken: L1Token
   ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
+    assert(sdkUtils.isV2Deposit(deposit)); // temporary
+
     const { inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
@@ -579,7 +581,17 @@ export class Relayer {
       this.constructBaseFillMarkdown(deposit, fillAmount) + ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
-      mrkdwn += ` Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`;
+      if (sdkUtils.isV2Deposit(deposit)) {
+        mrkdwn += ` Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`;
+      } else {
+        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(
+          deposit.destinationChainId,
+          deposit.outputToken
+        );
+        const formatter = createFormatFunction(2, 4, false, decimals);
+        // @todo Would be nice to compute the updated relayerFeePct as well.
+        mrkdwn += ` Reduced output amount: ${formatter(deposit.updatedOutputAmount.toString())} ${symbol}.`;
+      }
     }
 
     return mrkdwn;
