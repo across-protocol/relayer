@@ -749,7 +749,7 @@ describe("Dataworker: Build merkle roots", async function () {
       });
 
       // Should have queried for historical fills that it can no longer see.
-      expect(lastSpyLogIncludes(spy, "Queried for fill that triggered a slow fill")).to.be.true;
+      expect(lastSpyLogIncludes(spy, "Queried for partial fill that triggered an unused slow fill")).to.be.true;
 
       // The excess amount in the contract is now equal to the partial fill amount sent before the slow fill.
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
