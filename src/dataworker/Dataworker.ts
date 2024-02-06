@@ -1215,11 +1215,9 @@ export class Dataworker {
 
           // Assume we don't need to add balance in the BalanceAllocator to the HubPool because the slow fill's
           // recipient wouldn't be the HubPool in normal circumstances.
-          if (!success) {
-            return undefined;
-          }
-
-          return { relayData: slowFill.relayData, payoutAdjustmentPct: slowFill.payoutAdjustmentPct };
+          return success
+            ? { relayData: slowFill.relayData, payoutAdjustmentPct: slowFill.payoutAdjustmentPct }
+            : undefined;
         })
       )
     ).filter(isDefined);
