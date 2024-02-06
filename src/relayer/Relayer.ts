@@ -95,6 +95,35 @@ export class Relayer {
         return false;
       }
 
+      // Resolve L1 token and perform additional checks
+      // @todo: This is only relevant if inputToken and outputToken are equivalent.
+      const inputToken = sdkUtils.getDepositInputToken(deposit);
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+
+      // Skip any L1 tokens that are not specified in the config.
+      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit for unsupported token",
+          deposit,
+          l1Token,
+        });
+        return false;
+      }
+
+      // Filter out deposits that require in-protocol swaps.
+      const outputToken = sdkUtils.getDepositOutputToken(deposit);
+      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit including in-protocol token swap.",
+          deposit,
+          l1Token,
+        });
+        return false;
+      }
+
       // Skip deposit with message if sending fills with messages is not supported.
       if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
         this.logger.warn({
@@ -115,35 +144,6 @@ export class Relayer {
           deposit,
           invalidFills,
           destinationChain,
-        });
-        return false;
-      }
-
-      // Resolve L1 token and perform additional checks
-      // @todo: This is only relevant if inputToken and outputToken are equivalent.
-      const inputToken = sdkUtils.getDepositInputToken(deposit);
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
-
-      // Skip any L1 tokens that are not specified in the config.
-      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit for unwhitelisted token",
-          deposit,
-          l1Token,
-        });
-        return false;
-      }
-
-      // Filter out deposits that require in-protocol swaps.
-      const outputToken = sdkUtils.getDepositOutputToken(deposit);
-      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit including in-protocol token swap.",
-          deposit,
-          l1Token,
         });
         return false;
       }
@@ -271,17 +271,18 @@ export class Relayer {
       const inputToken = sdkUtils.getDepositInputToken(deposit);
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-      if (slowDepositors?.includes(depositor)) {
-        if (sendSlowRelays && fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
+      if (slowDepositors?.includes(depositor) && sendSlowRelays) {
+        if (fillCount === 0) {
           this.logger.debug({
             at: "Relayer",
-            message: "Initiating slow fill for grey listed depositor",
+            message: "Initiating slow fill for greylisted depositor.",
             depositor,
           });
-          this.zeroFillDeposit(deposit);
+          this.requestSlowFill(deposit, fillCount);
         }
-        // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
-        // so we don't fast fill an already slow filled deposit from the slow fill-only list.
+
+        // Regardless of whether we should send a slow fill or not for this depositor, skip
+        // the rest of the loop to ensure this deposit is not subsequently fast-filled.
         continue;
       }
 
@@ -377,7 +378,7 @@ export class Relayer {
         }
         // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
-        if (sendSlowRelays && tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) {
+        if (sendSlowRelays) && tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) {
           this.zeroFillDeposit(deposit);
         }
       }
@@ -389,6 +390,31 @@ export class Relayer {
     if (profitClient.anyCapturedUnprofitableFills()) {
       this.handleUnprofitableFill();
     }
+  }
+
+  requestSlowFill(deposit: Deposit): void {
+    const { tokenClient } = this.clients;
+    if (sdkUtils.isV2Deposit(deposit)) {
+      if (this.clients.tokenClient.hasBalanceForZeroFill(deposit)) {
+        this.zeroFillDeposit(deposit);
+      }
+      return;
+    }
+    const { depositId, originChainId, destinationChainId, inputAmount } = deposit;
+    const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
+    const formatter = createFormatFunction(2, 4, false, decimals);
+    const amount = formatter(inputAmount.toString());
+    const mrkdwn = `Requested slow fill for ${srcChain} depositId ${depositId} of ${amount} ${symbol} to ${dstChain}.`;
+
+    this.clients.multiCallerClient.enqueueTransaction({
+      contract: this.clients[deposit.destinationChainId].spokePool,
+      chainId: deposit.destinationChainId,
+      method: "requestV3SlowFill",
+      args: [],
+      message: "Requested slow fill for deposit.",
+      mrkdwn,
+    });
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
