@@ -91,12 +91,16 @@ const QUERY_HANDLERS: {
   42161: relayFeeCalculator.ArbitrumQueries,
   8453: relayFeeCalculator.BaseQueries,
   // Testnets:
+  11155111: relayFeeCalculator.EthereumSepoliaQueries,
   5: relayFeeCalculator.EthereumGoerliQueries,
   280: relayFeeCalculator.zkSyncGoerliQueries,
   420: relayFeeCalculator.OptimismGoerliQueries,
   80001: relayFeeCalculator.PolygonMumbaiQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
+  84532: relayFeeCalculator.BaseSepoliaQueries,
   421613: relayFeeCalculator.ArbitrumGoerliQueries,
+  421614: relayFeeCalculator.ArbitrumSepoliaQueries,
+  11155420: relayFeeCalculator.OptimismSepoliaQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -460,11 +464,14 @@ export class ProfitClient {
     // Generate list of tokens to retrieve. Map by symbol because tokens like
     // ETH/WETH refer to the same mainnet contract address.
     const tokens: { [_symbol: string]: string } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map(({ symbol }) => {
-        const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-        const address = addresses[1];
-        return [symbol, address];
-      })
+      this.hubPoolClient
+        .getL1Tokens()
+        .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
+        .map(({ symbol }) => {
+          const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
+          const address = addresses[1];
+          return [symbol, address];
+        })
     );
 
     // Also ensure all gas tokens are included in the lookup.

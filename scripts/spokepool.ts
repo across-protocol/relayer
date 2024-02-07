@@ -37,12 +37,12 @@ const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
 
 function printDeposit(log: LogDescription, originChainId: number): void {
-  const { inputToken } = log.args;
+  const { inputToken, originToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
   const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([inputToken], originChainId)[0],
+    tokenSymbol: resolveTokenSymbols([originToken ?? inputToken], originChainId)[0],
     ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
   };
   console.log(
@@ -161,24 +161,40 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     ? toBN(args.relayerFeePct)
     : await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
   const quoteTimestamp = await spokePool.getCurrentTime();
-  const deposit = await (isV2 ? spokePool.depositV2 : spokePool.deposit)(
-    recipient,
-    token.address,
-    amount,
-    toChainId,
-    relayerFeePct,
-    quoteTimestamp,
-    message,
-    maxCount
-  );
-  const { hash: transactionHash } = deposit;
-  console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}`);
-  const receipt = await deposit.wait();
+  try {
+    const deposit = await (isV2 ? spokePool.depositV2 : spokePool.deposit)(
+      recipient,
+      token.address,
+      amount,
+      toChainId,
+      relayerFeePct,
+      quoteTimestamp,
+      message,
+      maxCount
+    );
+    const { hash: transactionHash } = deposit;
+    console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}`);
+    const receipt = await deposit.wait();
 
-  receipt.logs
-    .filter((log) => log.address === spokePool.address)
-    .forEach((log) => printDeposit(spokePool.interface.parseLog(log), fromChainId));
-  return true;
+    receipt.logs
+      .filter((log) => log.address === spokePool.address)
+      .forEach((log) => printDeposit(spokePool.interface.parseLog(log), fromChainId));
+    return true;
+  } catch (err) {
+    console.error("Deposit failed:", err);
+    console.debug("Deposit Parameters: ", {
+      spokeAddress: spokePool.address,
+      recipient,
+      token: token.address,
+      amount,
+      toChainId,
+      relayerFeePct,
+      quoteTimestamp,
+      message,
+      maxCount,
+    });
+    return false;
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
