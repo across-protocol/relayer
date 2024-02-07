@@ -133,6 +133,19 @@ function updateBundleFillsV3(
     }
   }
 }
+type BundleExcessSlowFills = {
+  [destinationChainId: number]: {
+    [destinationToken: string]: interfaces.V3Deposit[];
+  };
+};
+function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: interfaces.V3Deposit): void {
+  const { destinationChainId, outputToken } = deposit;
+  if (!dict?.[destinationChainId]?.[outputToken]) {
+    assign(dict, [destinationChainId, outputToken], []);
+  }
+  dict[destinationChainId][outputToken].push(deposit);
+}
+
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
   private loadDataCache: DataCache = {};
@@ -297,7 +310,7 @@ export class BundleDataClient {
     // // for in this bundle.
     const expiredDepositsToRefundV3: ExpiredDepositsToRefundV3 = {};
     // // Newly expired deposits in this bundle that need to be refunded.
-    // const unexecutableSlowFills: { [destinationChainid: number] : v3Deposit[] } = {};
+    const unexecutableSlowFills: BundleExcessSlowFills = {};
     // // Deposit data for all Slowfills that were included in a previous
     // // bundle and can no longer be executed because (1) they were replaced with a FastFill in this bundle or
     // // (2) the fill deadline has passed. We'll need to decrement running balances for these deposits on the
@@ -588,8 +601,8 @@ export class BundleDataClient {
         //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
         //        If fill is valid:
         //          If fillType is FastFill or ReplacedSlowFill:
-        //            - Add it to bundleV3Fills. If its a fast fill, add it as a refund. All fills should increment
-        //              bundle LP fees and be saved under bundleV3Fills.
+        //            - Add it to bundleV3Fills. If its not a SlowFill, add it as a refund. All fills should increment
+        //              bundle LP fees.
         //        If slow fill request is valid and does not match a fast fill:
         //          - Add it to bundleSlowFills.
         //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
@@ -601,6 +614,7 @@ export class BundleDataClient {
         //              slow fill leaf was included in a previous bundle but cannot be executed.
         //              Save this fill/deposit in unexecutableSlowFills.
 
+        const relayHashesForExcessSlowFills: string[] = [];
         await utils.forEachAsync(
           destinationClient.getFillsForOriginChain(originChainId),
           async (fill: FillWithBlock) => {
@@ -630,7 +644,13 @@ export class BundleDataClient {
                   fill.blockNumber >= destinationChainBlockRange[0]
                 ) {
                   const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
-                  if (historicalDeposit.found) {
+                  // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
+                  // object property values against the deposit's, we
+                  // sanity check it here by comparing the full relay hashes
+                  if (
+                    historicalDeposit.found &&
+                    utils.getV3RelayHashFromEvent(historicalDeposit.deposit) === relayDataHash
+                  ) {
                     updateBundleFillsV3(
                       bundleFillsV3,
                       fill,
@@ -638,6 +658,9 @@ export class BundleDataClient {
                       chainToSendRefundTo,
                       repaymentToken
                     );
+                    if (fill.fillType === interfaces.FillType.ReplacedSlowFill) {
+                      relayHashesForExcessSlowFills.push(relayDataHash);
+                    }
                   } else {
                     bundleInvalidFillsV3.push(fill);
                   }
@@ -659,6 +682,9 @@ export class BundleDataClient {
                       chainToSendRefundTo,
                       repaymentToken
                     );
+                    if (fill.fillType === interfaces.FillType.ReplacedSlowFill) {
+                      relayHashesForExcessSlowFills.push(relayDataHash);
+                    }
                   }
 
                   // If fill is not within bundle range there is nothing more to do since we've already
@@ -672,9 +698,9 @@ export class BundleDataClient {
           }
         );
 
-        destinationClient
-          .getSlowFillRequestsForOriginChain(originChainId)
-          .forEach((slowFillRequest: SlowFillRequestWithBlock) => {
+        await utils.forEachAsync(
+          destinationClient.getSlowFillRequestsForOriginChain(originChainId),
+          async (slowFillRequest: SlowFillRequestWithBlock) => {
             const relayDataHash = utils.getV3RelayHashFromEvent(slowFillRequest);
 
             // Instantiate dictionary if there isn't a deposit or fill matching it.
@@ -682,13 +708,46 @@ export class BundleDataClient {
               v3RelayHashes[relayDataHash] = {
                 deposit: undefined,
                 fill: undefined,
-                slowFillRequest: undefined,
+                slowFillRequest: slowFillRequest,
               };
 
-              // At this point, we might need to do a historical query for an older deposit in case the
-              // spoke pool client's lookback isn't old enough to find the matching deposit.
+              // Since there was no deposit matching the relay hash, we need to do a historical query for an
+              // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
+              if (
+                slowFillRequest.blockNumber <= destinationChainBlockRange[1] &&
+                slowFillRequest.blockNumber >= destinationChainBlockRange[0]
+              ) {
+                const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
+                // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
+                // object property values against the deposit's, we
+                // sanity check it here by comparing the full relay hashes
+                if (
+                  historicalDeposit.found &&
+                  utils.getV3RelayHashFromEvent(historicalDeposit.deposit) === relayDataHash &&
+                  this.clients.hubPoolClient.l2TokensAreEquivalent(
+                    historicalDeposit.deposit.inputToken,
+                    historicalDeposit.deposit.originChainId,
+                    historicalDeposit.deposit.outputToken,
+                    historicalDeposit.deposit.destinationChainId,
+                    historicalDeposit.deposit.quoteBlockNumber
+                  )
+                ) {
+                  // updateBundleFillsV3(
+                  //   bundleFillsV3,
+                  //   fill,
+                  //   historicalDeposit.deposit.realizedLpFeePct,
+                  //   chainToSendRefundTo,
+                  //   repaymentToken
+                  // );
+                } else {
+                  // TODO: Invalid slow fill request. Maybe worth logging.
+                }
+              }
             } else {
               if (!v3RelayHashes[relayDataHash].slowFillRequest) {
+                // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
+                // so this fill is validated.
+                assert(v3RelayHashes[relayDataHash].deposit, "Deposit should exist in relay hash dictionary.");
                 v3RelayHashes[relayDataHash].slowFillRequest = slowFillRequest;
 
                 // If there is no fill matching the relay hash, then this might be a valid slow fill request
@@ -696,7 +755,14 @@ export class BundleDataClient {
                 if (
                   !v3RelayHashes[relayDataHash].fill &&
                   slowFillRequest.blockNumber <= destinationChainBlockRange[1] &&
-                  slowFillRequest.blockNumber >= destinationChainBlockRange[0]
+                  slowFillRequest.blockNumber >= destinationChainBlockRange[0] &&
+                  this.clients.hubPoolClient.l2TokensAreEquivalent(
+                    historicalDeposit.deposit.inputToken,
+                    historicalDeposit.deposit.originChainId,
+                    historicalDeposit.deposit.outputToken,
+                    historicalDeposit.deposit.destinationChainId,
+                    historicalDeposit.deposit.quoteBlockNumber
+                  )
                 ) {
                   if (v3RelayHashes[relayDataHash].deposit) {
                     // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
@@ -708,7 +774,37 @@ export class BundleDataClient {
                 // gives us bad data.
               }
             }
-          });
+          }
+        );
+
+        // Go through the list of fills that replaced slow fill requests in the current bundle and produce
+        // a list of excess slow fills that we need to decrement running balances for on the destination chain.
+        relayHashesForExcessSlowFills.forEach((relayDataHash) => {
+          const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
+          assert(fill.fillType === interfaces.FillType.ReplacedSlowFill, "Fill should be a replaced slow fill.");
+          const destinationBlockRange = getBlockRangeForChain(
+            blockRangesForChains,
+            destinationChainId,
+            this.chainIdListForBundleEvaluationBlockNumbers
+          );
+          if (
+            // If the slow fill request that was replaced by this fill was in an older bundle, then we don't
+            // need to check if the slow fill request was valid since we can assume all bundles in the past
+            // were validated. However, we might as well double check.
+            this.clients.hubPoolClient.l2TokensAreEquivalent(
+              deposit.inputToken,
+              deposit.originChainId,
+              deposit.outputToken,
+              deposit.destinationChainId,
+              deposit.quoteBlockNumber
+            ) &&
+            // If there is a slow fill request in this bundle that matches the relay hash, then there was no slow fill
+            // created that would be considered excess.
+            (!slowFillRequest || slowFillRequest.blockNumber < destinationBlockRange[0])
+          ) {
+            updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
+          }
+        });
       }
     }
 

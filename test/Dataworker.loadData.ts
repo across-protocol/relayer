@@ -34,7 +34,6 @@ import {
   randomAddress,
   sinon,
   spyLogIncludes,
-  v2FillFromDeposit,
 } from "./utils";
 
 import { spokePoolClientsToProviders } from "../src/common";
@@ -1003,6 +1002,9 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
       expect(data1.bundleFillsV3).to.deep.equal({});
       expect(spyLogIncludes(spy, -1, "invalid V3 fills in range")).to.be.true;
+    });
+    it("Filters for fast fills replacing slow fills", async function () {
+      // Fast fill must not match a slow fill in the bundle.
     });
     //   it("Returns slow fills", async function () {});
     //   it("Returns expired deposits", async function () {});
