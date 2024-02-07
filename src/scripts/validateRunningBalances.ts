@@ -21,7 +21,6 @@
 
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
-  BigNumber,
   bnZero,
   winston,
   config,
@@ -274,9 +273,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                 const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
 
                 // For v2 slow fills there must be at least one partial fill; for v3 slow fills there _may_ be a fill.
-                const totalFilledAmount = sdkUtils.isV2SlowFillLeaf(slowFillForChain) || isDefined(lastFill)
-                  ? sdkUtils.getTotalFilledAmount(lastFill)
-                  : bnZero;
+                const totalFilledAmount =
+                  sdkUtils.isV2SlowFillLeaf(slowFillForChain) || isDefined(lastFill)
+                    ? sdkUtils.getTotalFilledAmount(lastFill)
+                    : bnZero;
 
                 const amountSentForSlowFillLeftUnexecuted = outputAmount.sub(totalFilledAmount);
                 if (amountSentForSlowFillLeftUnexecuted.gt(bnZero)) {

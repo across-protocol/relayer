@@ -617,9 +617,7 @@ export function generateMarkdownForRootBundle(
       slowFill.destinationToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
       slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
       // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
-      slowFill.realizedLpFeePct  = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`,
-      // v2SlowFill payoutAdjustmentPct is incidentally defined as a string.
-      // It's unconditionally 0 and will be removed, so just BN it on the fly.
+      slowFill.realizedLpFeePct = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
       assert(sdkUtils.isV3SlowFillLeaf(leaf)); // tsc hinting.

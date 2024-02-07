@@ -148,9 +148,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
 
   // Apply the right version check to fill2 based on the type of fill1.
   const versionFilter = (fill1: Fill, fill2: Fill): boolean =>
-    sdkUtils.isV2Fill(fill1)
-      ? sdkUtils.isV2Fill(fill2)
-      : sdkUtils.isV3Fill(fill2);
+    sdkUtils.isV2Fill(fill1) ? sdkUtils.isV2Fill(fill2) : sdkUtils.isV3Fill(fill2);
 
   // Find the first fill chronologically for matched deposit for the input fill.
   const allMatchingFills = sortEventsAscending(
