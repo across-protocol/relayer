@@ -105,7 +105,7 @@ export function resolveHubChainId(spokeChainId: number): number {
   }
 
   assert(sdkUtils.chainIsTestnet(spokeChainId), `Unsupported testnet SpokePool chain ID: ${spokeChainId}`);
-  return CHAIN_IDs.GOERLI;
+  return CHAIN_IDs.SEPOLIA;
 }
 
 /**
