@@ -19,6 +19,7 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
   winston,
@@ -37,6 +38,7 @@ import {
   getRefund,
   disconnectRedisClients,
   Signer,
+  getSigner,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
@@ -44,7 +46,6 @@ import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUt
 import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
-import { retrieveSignerFromCLIArgs } from "../utils/CLIUtils";
 
 config();
 let logger: winston.Logger;
@@ -250,26 +251,33 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             );
             // Compute how much the slow fill will execute by checking if any partial fills were sent after
             // the slow fill amount was sent to the spoke pool.
-            const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-              (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
-            );
+            const slowFillsForPoolRebalanceLeaf = slowFills.filter((f) => {
+              const outputToken = sdkUtils.getRelayDataOutputToken(f.relayData);
+              const destinationChainId = sdkUtils.getSlowFillLeafChainId(f);
+              return destinationChainId === leaf.chainId && outputToken === l2Token;
+            });
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-                const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
+                const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+                const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
                   .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
                   .filter(
                     (f) =>
                       f.blockNumber <= bundleEndBlockForChain.toNumber() &&
                       f.depositId === slowFillForChain.relayData.depositId
                   );
-                const amountSentForSlowFillLeftUnexecuted = slowFillForChain.relayData.amount.sub(
-                  sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
-                );
+
+                const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+                const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+                const amountSentForSlowFillLeftUnexecuted = outputAmount.sub(totalFilledAmount);
+
                 if (amountSentForSlowFillLeftUnexecuted.gt(0)) {
                   const deductionForSlowFill = getRefund(
                     amountSentForSlowFillLeftUnexecuted,
                     slowFillForChain.relayData.realizedLpFeePct
                   );
+
                   mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
                     deductionForSlowFill.toString(),
                     decimals
@@ -291,17 +299,23 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             validatedBundles[x + 1 + 2],
             mostRecentValidatedBundle
           );
-          const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-            (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
-          );
+          const slowFillsForPoolRebalanceLeaf = slowFills.filter((f) => {
+            const outputToken = sdkUtils.getRelayDataOutputToken(f.relayData);
+            const destinationChainId = sdkUtils.getSlowFillLeafChainId(f);
+            return destinationChainId === leaf.chainId && outputToken === l2Token;
+          });
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-              const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
-                .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
-                .filter((f) => f.depositId === slowFillForChain.relayData.depositId);
-              const amountSentForSlowFill = slowFillForChain.relayData.amount.sub(
-                sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
-              );
+              const { relayData } = slowFillForChain;
+              const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+              const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
+                .getFillsForOriginChain(relayData.originChainId)
+                .filter(({ depositId }) => depositId === relayData.depositId);
+
+              const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+              const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+              const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+              const amountSentForSlowFill = outputAmount.sub(totalFilledAmount);
               if (amountSentForSlowFill.gt(0)) {
                 const deductionForSlowFill = getRefund(
                   amountSentForSlowFill,
@@ -486,7 +500,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner = await retrieveSignerFromCLIArgs();
+    // This script inherits the TokenClient, and it attempts to update token approvals. The disputer already has the
+    // necessary token approvals in place, so use its address. nb. This implies the script can only be used on mainnet.
+    const voidSigner = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
+    const baseSigner = await getSigner({ keyType: "void", cleanEnv: true, roAddress: voidSigner });
     await runScript(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);

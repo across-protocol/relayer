@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils, typechain } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
@@ -13,6 +14,7 @@ import {
   SlowFillLeaf,
   SpokePoolClientsByChain,
   UnfilledDeposit,
+  V2SlowFillLeaf,
 } from "../interfaces";
 import {
   AnyObject,
@@ -149,7 +151,7 @@ export function prettyPrintSpokePoolEvents(
     allValidFillsInRangeByDestinationChain: groupObjectCountsByTwoProps(
       allValidFillsInRange,
       "destinationChainId",
-      (fill) => `${fill.originChainId}-->${fill.destinationToken}`
+      (fill) => `${fill.originChainId}-->${utils.getFillOutputToken(fill)}`
     ),
     fillsToRefundInRangeByRepaymentChain: groupObjectCountsByTwoProps(
       allRelayerRefunds,
@@ -163,7 +165,7 @@ export function prettyPrintSpokePoolEvents(
     allInvalidFillsInRangeByDestinationChain: groupObjectCountsByTwoProps(
       allInvalidFillsInRange,
       "destinationChainId",
-      (fill) => `${fill.originChainId}-->${fill.destinationToken}`
+      (fill) => `${fill.originChainId}-->${utils.getFillOutputToken(fill)}`
     ),
   };
 }
@@ -172,22 +174,8 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
 } {
-  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map(
-    (deposit: UnfilledDeposit): SlowFillLeaf => ({
-      relayData: {
-        depositor: deposit.deposit.depositor,
-        recipient: deposit.deposit.recipient,
-        destinationToken: deposit.deposit.destinationToken,
-        amount: deposit.deposit.amount,
-        originChainId: deposit.deposit.originChainId,
-        destinationChainId: deposit.deposit.destinationChainId,
-        realizedLpFeePct: deposit.deposit.realizedLpFeePct,
-        relayerFeePct: deposit.deposit.relayerFeePct,
-        depositId: deposit.deposit.depositId,
-        message: deposit.deposit.message,
-      },
-      payoutAdjustmentPct: deposit?.relayerBalancingFee?.toString() ?? "0",
-    })
+  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map((deposit: UnfilledDeposit) =>
+    buildV2SlowFillLeaf(deposit)
   );
 
   // Sort leaves deterministically so that the same root is always produced from the same loadData return value.
@@ -204,6 +192,27 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   return {
     leaves: sortedLeaves,
     tree: buildSlowRelayTree(sortedLeaves),
+  };
+}
+
+function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V2SlowFillLeaf {
+  const { deposit } = unfilledDeposit;
+  assert(utils.isV2Deposit(deposit));
+
+  return {
+    relayData: {
+      depositor: deposit.depositor,
+      recipient: deposit.recipient,
+      destinationToken: deposit.destinationToken,
+      amount: deposit.amount,
+      originChainId: deposit.originChainId,
+      destinationChainId: deposit.destinationChainId,
+      realizedLpFeePct: deposit.realizedLpFeePct,
+      relayerFeePct: deposit.relayerFeePct,
+      depositId: deposit.depositId,
+      message: deposit.message,
+    },
+    payoutAdjustmentPct: unfilledDeposit.relayerBalancingFee?.toString() ?? "0",
   };
 }
 
@@ -409,7 +418,8 @@ export async function _buildPoolRebalanceRoot(
   // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
   // its important that `deposits` are all in this current block range.
   deposits.forEach((deposit: DepositWithBlock) => {
-    updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.amount.mul(-1));
+    const inputAmount = utils.getDepositInputAmount(deposit);
+    updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, inputAmount.mul(-1));
   });
 
   earlyDeposits.forEach((earlyDeposit) => {
