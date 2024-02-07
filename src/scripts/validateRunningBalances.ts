@@ -500,8 +500,8 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    // This script inherits the TokenClient, and it attempts to update token approvals.
-    // The disputer bot already has the necessary token approvals in place, so use its address.
+    // This script inherits the TokenClient, and it attempts to update token approvals. The disputer already has the
+    // necessary token approvals in place, so use its address. nb. This implies the script can only be used on mainnet.
     const voidSigner = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
     const baseSigner = await getSigner({ keyType: "void", cleanEnv: true, roAddress: voidSigner });
     await runScript(_logger, baseSigner);
