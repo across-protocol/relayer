@@ -29,6 +29,7 @@ import {
   toBN,
   Event,
   fromWei,
+  isDefined,
   Contract,
   ERC20,
   getProvider,
@@ -250,36 +251,35 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
               validatedBundles[x + 1 + 2],
               mostRecentValidatedBundle
             );
-            // Compute how much the slow fill will execute by checking if any partial fills were sent after
-            // the slow fill amount was sent to the spoke pool.
+            // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
+            // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
               (f) =>
                 sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
                 sdkUtils.getRelayDataOutputToken(f.relayData) === l2Token
             );
+
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
                 const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+                const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
+                  .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
+                  .filter(
+                    (f) =>
+                      f.blockNumber <= bundleEndBlockForChain.toNumber() &&
+                      f.depositId === slowFillForChain.relayData.depositId
+                  );
 
-                let amountSentForSlowFillLeftUnexecuted: BigNumber;
-                if (sdkUtils.isV3SlowFillLeaf(slowFillForChain)) {
-                  amountSentForSlowFillLeftUnexecuted = slowFillForChain.updatedOutputAmount;
-                } else {
-                  const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
-                    .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
-                    .filter(
-                      (f) =>
-                        f.blockNumber <= bundleEndBlockForChain.toNumber() &&
-                        f.depositId === slowFillForChain.relayData.depositId
-                    );
+                const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
 
-                  const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
-                  const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
-                  const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
-                  amountSentForSlowFillLeftUnexecuted = outputAmount.sub(totalFilledAmount);
-                }
+                // For v2 slow fills there must be at least one partial fill; for v3 slow fills there _may_ be a fill.
+                const totalFilledAmount = sdkUtils.isV2SlowFillLeaf(slowFillForChain) || isDefined(lastFill)
+                  ? sdkUtils.getTotalFilledAmount(lastFill)
+                  : bnZero;
 
-                if (amountSentForSlowFillLeftUnexecuted.gt(0)) {
+                const amountSentForSlowFillLeftUnexecuted = outputAmount.sub(totalFilledAmount);
+                if (amountSentForSlowFillLeftUnexecuted.gt(bnZero)) {
                   const deductionForSlowFill = sdkUtils.isV3SlowFillLeaf(slowFillForChain)
                     ? amountSentForSlowFillLeftUnexecuted
                     : getRefund(amountSentForSlowFillLeftUnexecuted, slowFillForChain.relayData.realizedLpFeePct);
