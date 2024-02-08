@@ -36,7 +36,6 @@ import {
   setupTokensForWallet,
   sinon,
   spyLogIncludes,
-  toBN,
   winston,
 } from "./utils";
 
@@ -173,6 +172,8 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       destinationChainId,
       amountToDeposit.mul(2) // 2x the normal deposit size. Bot only has 1x the deposit amount.
     );
+    expect(deposit1).to.exist;
+
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(spyLogIncludes(spy, -2, "Zero filling")).to.be.true;
@@ -183,20 +184,18 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
-    const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
-    expect(fillEvents2.length).to.equal(1);
+    const fillEvent = (await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay())).at(-1);
+    expect(fillEvent).to.exist;
+    expect(fillEvent?.args).to.exist;
 
-    expect(fillEvents2[0].args).to.not.be.undefined;
-    const args = fillEvents2[0].args!;
+    ["depositId", "amount", "destinationChainId", "originChainId", "depositor", "recipient"].forEach((key) => {
+      const val = fillEvent?.args?.[key];
+      expect(val).to.not.be.undefined;
+      expect(deposit1?.[key]).to.equal(val);
+    });
+    expect(fillEvent?.args?.relayerFeePct.eq(deposit1?.relayerFeePct)).to.be.true;
+    expect(fillEvent?.args?.fillAmount).to.equal(1); // 1wei fill size
 
-    expect(args.depositId).to.equal(deposit1.depositId);
-    expect(args.amount).to.equal(deposit1.amount);
-    expect(args.fillAmount).to.equal(1); // 1wei fill size
-    expect(args.destinationChainId).to.equal(deposit1.destinationChainId);
-    expect(args.originChainId).to.equal(deposit1.originChainId);
-    expect(args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(args.depositor).to.equal(deposit1.depositor);
-    expect(args.recipient).to.equal(deposit1.recipient);
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallerClient.clearTransactionQueue();
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
