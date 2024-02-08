@@ -739,7 +739,7 @@ export class BundleDataClient {
                 if (
                   historicalDeposit.found &&
                   utils.getV3RelayHashFromEvent(historicalDeposit.deposit) === relayDataHash &&
-                  this.clients.hubPoolClient.l2TokensAreEquivalent(
+                  this.clients.hubPoolClient.areTokensEquivalent(
                     historicalDeposit.deposit.inputToken,
                     historicalDeposit.deposit.originChainId,
                     historicalDeposit.deposit.outputToken,
@@ -767,7 +767,7 @@ export class BundleDataClient {
                   !v3RelayHashes[relayDataHash].fill &&
                   slowFillRequest.blockNumber <= destinationChainBlockRange[1] &&
                   slowFillRequest.blockNumber >= destinationChainBlockRange[0] &&
-                  this.clients.hubPoolClient.l2TokensAreEquivalent(
+                  this.clients.hubPoolClient.areTokensEquivalent(
                     matchedDeposit.inputToken,
                     matchedDeposit.originChainId,
                     matchedDeposit.outputToken,
@@ -808,7 +808,7 @@ export class BundleDataClient {
             // If the slow fill request that was replaced by this fill was in an older bundle, then we don't
             // need to check if the slow fill request was valid since we can assume all bundles in the past
             // were validated. However, we might as well double check.
-            this.clients.hubPoolClient.l2TokensAreEquivalent(
+            this.clients.hubPoolClient.areTokensEquivalent(
               deposit.inputToken,
               deposit.originChainId,
               deposit.outputToken,
