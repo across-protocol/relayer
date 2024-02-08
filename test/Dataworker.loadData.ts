@@ -695,6 +695,13 @@ describe("Dataworker: Load data used in all functions", async function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockDestinationSpokePool: FakeContract;
     const lpFeePct = toBNWei("0.01");
+    let spokePoolV3Abi;
+    before(async function () {
+      // @dev I load the ABI once here as I've noticed fetching this ABI sometimes fails between it() tests, randomly
+      // as well. We won't need to load the ABI once we get the latest contracts-v2 imported in here so this is a
+      // temporary fix.
+      spokePoolV3Abi = await sdkUtils.getABI("SpokePoolV3");
+    });
     beforeEach(async function () {
       await updateAllClients();
       mockOriginSpokePoolClient = new MockSpokePoolClient(
@@ -707,7 +714,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         spokePoolClient_1.chainId,
         spokePoolClient_1.deploymentBlock
       );
-      mockDestinationSpokePool = await smock.fake(await sdkUtils.getABI("SpokePoolV3"));
+      mockDestinationSpokePool = await smock.fake(spokePoolV3Abi);
       mockDestinationSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_2.logger,
         mockDestinationSpokePool as Contract,
