@@ -8,6 +8,7 @@ import {
   TokenClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
+import { bnZero } from "../src/utils";
 import {
   CHAIN_ID_TEST_LIST,
   amountToDeposit,
@@ -184,14 +185,18 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
     const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
     expect(fillEvents2.length).to.equal(1);
-    expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
-    expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.fillAmount).to.equal(1); // 1wei fill size
-    expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
-    expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
-    expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
-    expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
+
+    expect(fillEvents2[0].args).to.not.be.undefined;
+    const args = fillEvents2[0].args!;
+
+    expect(args.depositId).to.equal(deposit1.depositId);
+    expect(args.amount).to.equal(deposit1.amount);
+    expect(args.fillAmount).to.equal(1); // 1wei fill size
+    expect(args.destinationChainId).to.equal(deposit1.destinationChainId);
+    expect(args.originChainId).to.equal(deposit1.originChainId);
+    expect(args.relayerFeePct).to.equal(deposit1.relayerFeePct);
+    expect(args.depositor).to.equal(deposit1.depositor);
+    expect(args.recipient).to.equal(deposit1.recipient);
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallerClient.clearTransactionQueue();
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
@@ -223,9 +228,9 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         // These parameters don't matter, as the relayer only checks that the rebalance matches
         // the deposit destination chain and L1 token. The amount must be greater than the unfilled
         // deposit amount too.
-        thresholdPct: toBN(0),
-        targetPct: toBN(0),
-        currentAllocPct: toBN(0),
+        thresholdPct: bnZero,
+        targetPct: bnZero,
+        currentAllocPct: bnZero,
         cumulativeBalance: await l1Token.balanceOf(relayer.address),
       };
     });
@@ -247,7 +252,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       it("rebalance amount is too low", async function () {
         mockInventoryClient.addPossibleRebalance({
           ...partialRebalance,
-          balance: toBN(0), // No balance
+          balance: bnZero, // No balance
           amount: deposit1.amount,
           chainId: deposit1.destinationChainId,
           l1Token: l1Token.address,
