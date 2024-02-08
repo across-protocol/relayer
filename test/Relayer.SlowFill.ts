@@ -56,7 +56,7 @@ let relayerInstance: Relayer, mockCrossChainTransferClient: MockCrossChainTransf
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient, mockInventoryClient: MockInventoryClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-describe("Relayer: Zero sized fill for slow relay", async function () {
+describe("Relayer: Initiates slow fill requests", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({
@@ -157,7 +157,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     await updateAllClients();
   });
 
-  it("Correctly sends 1wei sized fill if insufficient token balance", async function () {
+  it("Correctly sends 1wei sized fill for v2 Deposits if insufficient token balance", async function () {
     // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_1.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
@@ -199,6 +199,13 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
   });
+
+  it.skip("Correctly requests slow fill for v3 Deposits if insufficient token balance", async function () {
+    // @todo: Bump contracts-v2 so V3 SpokePool can be used in hre.
+  });
+
+  // @note: v3 slow fill requests don't affect repayment chain selection, so they can be rebalance-agnostic.
+  // This functionality is a candidate for removal once v2 is removed.
   describe("Sends zero fills only if it won't rebalance to fast fill deposit", function () {
     let deposit1: Record<string, unknown> | null = null;
     let partialRebalance: Pick<Rebalance, "thresholdPct" | "targetPct" | "currentAllocPct" | "cumulativeBalance">;
@@ -243,6 +250,9 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       await relayerInstance.checkForUnfilledDepositsAndFill();
       expect(multiCallerClient.transactionCount()).to.equal(0);
     });
+
+    // @note: v3 slow fill requests don't affect repayment chain selection, so they can be rebalance-agnostic.
+    // This functionality is a candidate for removal once v2 is removed.
     describe("Sends zero fill if no rebalance for deposit", function () {
       it("rebalance amount is too low", async function () {
         mockInventoryClient.addPossibleRebalance({
