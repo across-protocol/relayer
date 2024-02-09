@@ -864,9 +864,9 @@ export class BundleDataClient {
       // we should assume it was marked "newly expired" and refunded in a previous bundle.
       if (
         // If there is a valid fill that we saw matching this deposit, then it does not need a refund.
-        validFillHashes.has(relayDataHash) ||
-        (deposit.fillDeadline <= bundleBlockTimestamps[destinationChainId][1] &&
-          deposit.fillDeadline >= bundleBlockTimestamps[destinationChainId][0])
+        !validFillHashes.has(relayDataHash) &&
+        deposit.fillDeadline <= bundleBlockTimestamps[destinationChainId][1] &&
+        deposit.fillDeadline >= bundleBlockTimestamps[destinationChainId][0]
       ) {
         const fillStatus: BigNumber = await spokePoolClients[deposit.destinationChainId].spokePool.fillStatuses(
           relayDataHash
