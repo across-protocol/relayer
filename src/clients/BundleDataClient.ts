@@ -32,6 +32,7 @@ import {
   getImpliedBundleBlockRanges,
   getEndBlockBuffers,
   prettyPrintSpokePoolEvents,
+  prettyPrintV3SpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { typechain, utils, interfaces } from "@across-protocol/sdk-v2";
@@ -598,7 +599,6 @@ export class BundleDataClient {
                   fill: fill,
                   slowFillRequest: undefined,
                 };
-                console.log("Searching for old deposit");
 
                 // TODO: We might be able to remove the following historical query once we deprecate the deposit()
                 // function since there won't be any old, unexpired deposits anymore assuming the spoke pool client
@@ -626,7 +626,7 @@ export class BundleDataClient {
                       repaymentToken
                     );
                     validBundleFillHashes.add(relayDataHash);
-                    if (fill.updatableRelayData.fillType === interfaces.FillType.ReplacedSlowFill) {
+                    if (fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill) {
                       relayHashesForExcessSlowFills.push(relayDataHash);
                     }
                   } else {
@@ -654,7 +654,7 @@ export class BundleDataClient {
                       repaymentToken
                     );
                     validBundleFillHashes.add(relayDataHash);
-                    if (fill.updatableRelayData.fillType === interfaces.FillType.ReplacedSlowFill) {
+                    if (fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill) {
                       relayHashesForExcessSlowFills.push(relayDataHash);
                     }
                   }
@@ -771,7 +771,7 @@ export class BundleDataClient {
         relayHashesForExcessSlowFills.forEach((relayDataHash) => {
           const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
           assert(
-            fill.updatableRelayData.fillType === interfaces.FillType.ReplacedSlowFill,
+            fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill,
             "Fill type should be ReplacedSlowFill."
           );
           const destinationBlockRange = getBlockRangeForChain(
@@ -874,6 +874,15 @@ export class BundleDataClient {
       unfilledDeposits,
       allInvalidFills
     );
+    const v3SpokeEventsReadable = prettyPrintV3SpokePoolEvents(
+      bundleDepositsV3,
+      bundleFillsV3,
+      bundleInvalidFillsV3,
+      bundleSlowFillsV3,
+      expiredDepositsToRefundV3,
+      unexecutableSlowFills
+    );
+    console.log(v3SpokeEventsReadable)
     if (logData) {
       const mainnetRange = getBlockRangeForChain(
         blockRangesForChains,
@@ -885,6 +894,12 @@ export class BundleDataClient {
         message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
         blockRangesForChains,
         ...spokeEventsReadable,
+      });
+      this.logger.debug({
+        at: "BundleDataClient#loadData",
+        message: `Finished loading V3 spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
+        blockRangesForChains,
+        ...v3SpokeEventsReadable,
       });
     }
 
