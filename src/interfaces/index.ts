@@ -46,6 +46,7 @@ export type Fill = interfaces.Fill;
 export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
 export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
+export type SlowFillRequest = interfaces.SlowFillRequest;
 export type SlowFillLeaf = interfaces.SlowFillLeaf;
 export type RootBundleRelay = interfaces.RootBundleRelay;
 export type RootBundleRelayWithBlock = interfaces.RootBundleRelayWithBlock;

@@ -535,7 +535,7 @@ export function buildFillsRefundedDictionary(
           status: FillsRefundedStatusEnum.Filled,
           repaymentChainId: fill.repaymentChainId,
           relayer: fill.relayer,
-          updatableRelayData: fill.updatableRelayData,
+          relayExecutionInfo: fill.relayExecutionInfo,
           lpFeePct: fill.lpFeePct,
         };
       });
