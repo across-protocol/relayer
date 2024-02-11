@@ -60,7 +60,7 @@ export type FillsRefundedEntry =
       lpFeePct: BigNumber;
       repaymentChainId: number;
       relayer: string;
-      updatableRelayData: interfaces.V3RelayExecutionEventInfo;
+      relayExecutionInfo: interfaces.V3RelayExecutionEventInfo;
     }
   // If fill was not sent in this bundle, then either the deposit expired
   // and a refund needs to be sent or a slow fill was created. Otherwise
