@@ -696,7 +696,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe.only("V3 Events", function () {
+  describe("V3 Events", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockDestinationSpokePool: FakeContract;
     const lpFeePct = toBNWei("0.01");
@@ -1486,7 +1486,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // For queryHistoricalDepositForFill to work we need to have a deployment block set for the spoke pool client.
     const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
-    expect(spyLogIncludes(spy, -2, "Located deposit outside of SpokePoolClient's search range")).is.true;
+    expect(spyLogIncludes(spy, -3, "Located deposit outside of SpokePoolClient's search range")).is.true;
     expect(bundleData.fillsToRefund)
       .excludingEvery(["blockTimestamp"])
       .to.deep.equal({
