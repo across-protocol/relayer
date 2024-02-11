@@ -63,7 +63,7 @@ import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { buildFillsRefundedDictionary } from "../src/dataworker/DataworkerUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract
+let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient, bundleDataClient: BundleDataClient;
