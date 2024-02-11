@@ -4,10 +4,8 @@ import {
   FillsToRefund,
   FillWithBlock,
   ProposedRootBundle,
-  Refund,
   SlowFillRequestWithBlock,
   SpokePoolClientsByChain,
-  UnfilledDeposit,
   UnfilledDepositsForOriginChain,
 } from "../interfaces";
 import { SpokePoolClient } from "../clients";
@@ -37,27 +35,19 @@ import {
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { typechain, utils, interfaces } from "@across-protocol/sdk-v2";
+import {
+  BundleDepositsV3,
+  BundleExcessSlowFills,
+  BundleFillsV3,
+  BundleFillV3,
+  BundleSlowFills,
+  ExpiredDepositsToRefundV3,
+  LoadDataReturnValue,
+} from "../interfaces/BundleData";
 
-type LoadDataReturnValue = {
-  unfilledDeposits: UnfilledDeposit[];
-  fillsToRefund: FillsToRefund;
-  allValidFills: FillWithBlock[];
-  deposits: DepositWithBlock[];
-  earlyDeposits: typechain.FundsDepositedEvent[];
-  bundleDepositsV3: BundleDepositsV3;
-  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
-  bundleFillsV3: BundleFillsV3;
-  unexecutableSlowFills: BundleExcessSlowFills;
-  bundleSlowFillsV3: BundleSlowFills;
-};
 type DataCache = Record<string, LoadDataReturnValue>;
 
 // V3 dictionary helper functions
-type ExpiredDepositsToRefundV3 = {
-  [originChainId: number]: {
-    [originToken: string]: interfaces.V3Deposit[];
-  };
-};
 function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: interfaces.V3Deposit): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
@@ -65,11 +55,7 @@ function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: inter
   }
   dict[originChainId][inputToken].push(deposit);
 }
-type BundleDepositsV3 = {
-  [originChainId: number]: {
-    [originToken: string]: interfaces.V3Deposit[];
-  };
-};
+
 function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3Deposit): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
@@ -77,19 +63,7 @@ function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3De
   }
   dict[originChainId][inputToken].push(deposit);
 }
-interface BundleFillV3 extends interfaces.V3Fill {
-  lpFeePct: BigNumber;
-}
-type BundleFillsV3 = {
-  [repaymentChainId: number]: {
-    [repaymentToken: string]: {
-      fills: BundleFillV3[];
-      refunds: Refund;
-      totalRefundAmount: BigNumber;
-      realizedLpFees: BigNumber;
-    };
-  };
-};
+
 function updateBundleFillsV3(
   dict: BundleFillsV3,
   fill: interfaces.V3Fill,
@@ -135,11 +109,7 @@ function updateBundleFillsV3(
     }
   }
 }
-type BundleExcessSlowFills = {
-  [destinationChainId: number]: {
-    [destinationToken: string]: interfaces.V3Deposit[];
-  };
-};
+
 function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: interfaces.V3Deposit): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
@@ -147,16 +117,13 @@ function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: inter
   }
   dict[destinationChainId][outputToken].push(deposit);
 }
-type BundleSlowFills = {
-  [destinationChainId: number]: {
-    [destinationToken: string]: interfaces.V3Deposit[];
-  };
-};
+
 function updateBundleSlowFills(dict: BundleSlowFills, deposit: interfaces.V3Deposit): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
   }
+  assert(deposit.realizedLpFeePct, "Deposit must have realizedLpFeePct to store as BundleSlowFill");
   dict[destinationChainId][outputToken].push(deposit);
 }
 
@@ -677,6 +644,8 @@ export class BundleDataClient {
                     fill.blockNumber <= destinationChainBlockRange[1] &&
                     fill.blockNumber >= destinationChainBlockRange[0]
                   ) {
+                    // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
+                    // be included in the Fill type rather than the Deposit type
                     updateBundleFillsV3(
                       bundleFillsV3,
                       fill,
@@ -747,6 +716,9 @@ export class BundleDataClient {
                     historicalDeposit.deposit.quoteBlockNumber
                   )
                 ) {
+                  // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
+                  // be included in the Fill type rather than the Deposit type, so we'll need
+                  // to compute it fresh here.
                   updateBundleSlowFills(bundleSlowFillsV3, historicalDeposit.deposit);
                 } else {
                   // TODO: Invalid slow fill request. Maybe worth logging.
@@ -778,6 +750,9 @@ export class BundleDataClient {
                   // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                   // so this slow fill request is validated.
                   updateBundleSlowFills(bundleSlowFillsV3, matchedDeposit);
+                  // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
+                  // be included in the Fill type rather than the Deposit type, so we'll need
+                  // to compute it fresh here.
                 }
               } else {
                 // If we've seen this request before, then skip this event. This can happen if our RPC provider

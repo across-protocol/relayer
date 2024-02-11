@@ -22,6 +22,8 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  FillsRefundedData,
+  FillsRefundedStatusEnum,
   getDepositPath,
   getFillsInRange,
   getTimestampsForBundleEndBlocks,
@@ -47,6 +49,7 @@ import {
   sortRefundAddresses,
   sortRelayerRefundLeaves,
 } from "./RelayerRefundUtils";
+import { BundleFillsV3, BundleSlowFills, ExpiredDepositsToRefundV3 } from "../interfaces/BundleData";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -463,6 +466,83 @@ export async function _buildPoolRebalanceRoot(
     leaves,
     tree: buildPoolRebalanceLeafTree(leaves),
   };
+}
+
+/**
+ * @notice Returns all of the fills to refund, slow fills, and expired deposits
+ * in a root bundle. This is designed to be used by the dataworker when proposing a root bundle to post
+ * as proof for their root bundle.
+ * @dev This function can be used to construct data to post to a persistent storage layer (e.g. Arweave/IPFS) that
+ * can be used to construct a proposed SlowRelayRoot and RelayerRefundRoot.
+ * For example, this file should contain the expired deposits and fills to be refunded in this leaf along with all
+ * other leaves from the same relayer refund root bundle and all slow fills from the same root bundle ID.
+ *  Note that this data does not contain all of the data needed to produce the root bundle's poolRebalanceRoot
+ * because it doesn't contain deposits and unexecutable slow fills. However, the goal of the data posted here is
+ * to support real-time status tracking deposits, for which the fills, expired deposits, and slow fills in this
+ * bundle are sufficient.
+ * @dev The params are easily retrieved by calling BundleDataClient.loadData
+ */
+export function buildFillsRefundedDictionary(
+  bundleFillsV3: BundleFillsV3,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
+  bundleSlowFillsV3: BundleSlowFills
+): FillsRefundedData {
+  const dictionary: FillsRefundedData = {};
+  // Each relayDataHash should contain a fill, a slow fill creation, or an expired deposit.
+  // There shouldn't be more than one of these types in a single bundle, otherwise
+  // the bundle data client should have thrown an error.
+
+  Object.entries(bundleFillsV3).forEach(([, dataForToken]) => {
+    Object.entries(dataForToken).forEach(([, { fills }]) => {
+      fills.forEach((fill) => {
+        const relayDataHash = utils.getV3RelayHashFromEvent(fill);
+        assert(
+          !dictionary[relayDataHash],
+          "Duplicate relayDataHash in FillsRefundedEntry found when searching bundleFillsV3"
+        );
+        dictionary[relayDataHash] = {
+          status: FillsRefundedStatusEnum.Filled,
+          repaymentChainId: fill.repaymentChainId,
+          relayer: fill.relayer,
+          updatableRelayData: fill.updatableRelayData,
+          lpFeePct: fill.lpFeePct,
+        };
+      });
+    });
+  });
+
+  Object.entries(expiredDepositsToRefundV3).forEach(([, dataForToken]) => {
+    Object.entries(dataForToken).forEach(([, deposits]) => {
+      deposits.forEach((deposit) => {
+        const relayDataHash = utils.getV3RelayHashFromEvent(deposit);
+        assert(
+          !dictionary[relayDataHash],
+          "Duplicate relayDataHash in FillsRefundedEntry found when searching expiredDepositsToRefundV3"
+        );
+        dictionary[relayDataHash] = {
+          status: FillsRefundedStatusEnum.Expired,
+        };
+      });
+    });
+  });
+
+  Object.entries(bundleSlowFillsV3).forEach(([, dataForToken]) => {
+    Object.entries(dataForToken).forEach(([, deposits]) => {
+      deposits.forEach((depositToSlowFill) => {
+        const relayDataHash = utils.getV3RelayHashFromEvent(depositToSlowFill);
+        assert(
+          !dictionary[relayDataHash],
+          "Duplicate relayDataHash in FillsRefundedEntry found when searching bundleSlowFillsV3"
+        );
+        dictionary[relayDataHash] = {
+          status: FillsRefundedStatusEnum.CreatedSlowFill,
+          lpFeePct: depositToSlowFill.realizedLpFeePct,
+        };
+      });
+    });
+  });
+
+  return dictionary;
 }
 
 /**

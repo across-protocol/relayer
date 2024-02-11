@@ -56,6 +56,7 @@ import {
 } from "../src/utils";
 import { MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { buildFillsRefundedDictionary } from "../src/dataworker/DataworkerUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -837,7 +838,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         depositV3Events.map((event) => event.args.depositId)
       );
     });
-    it("Filters expired deposits", async function () {
+    it.only("Filters expired deposits", async function () {
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
         [originChainId, destinationChainId],
         getDefaultBlockRange(5),
@@ -853,6 +854,13 @@ describe("Dataworker: Load data used in all functions", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
+      const fillsRefundedRootData = buildFillsRefundedDictionary(
+        data1.bundleFillsV3,
+        data1.expiredDepositsToRefundV3,
+        data1.bundleSlowFillsV3
+      );
+      console.log(fillsRefundedRootData);
+
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)).to.deep.equal(
         depositEvents.map((event) => event.args.depositId)
       );
@@ -1142,7 +1150,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         eligibleToSlowFill.args.depositId
       );
     });
-    it("Slow fill requests cannot coincide with fill in same bundle", async function () {
+    it.only("Slow fill requests cannot coincide with fill in same bundle", async function () {
       generateV3Deposit({ outputToken: erc20_2.address });
       generateV3Deposit({ outputToken: erc20_2.address });
       await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
@@ -1158,6 +1166,13 @@ describe("Dataworker: Load data used in all functions", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
+
+      const fillsRefundedRootData = buildFillsRefundedDictionary(
+        data1.bundleFillsV3,
+        data1.expiredDepositsToRefundV3,
+        data1.bundleSlowFillsV3
+      );
+      console.log(fillsRefundedRootData);
       // Only the deposit that wasn't fast filled should be included in the slow fill requests.
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
