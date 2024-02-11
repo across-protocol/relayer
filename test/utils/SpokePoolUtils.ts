@@ -31,23 +31,25 @@ export async function depositV3(
   inputToken: string,
   outputToken: string,
   amount = amountToDeposit,
-  _destinationChainId = destinationChainId,
+  _destinationChainId = destinationChainId
 ): Promise<interfaces.V3DepositWithBlock> {
   const currentTime = await spokePool.getCurrentTime();
-  await spokePool.connect(depositor).depositV3(
-    depositor.address,
-    depositor.address,
-    inputToken,
-    outputToken,
-    amount,
-    amount,
-    _destinationChainId,
-    zeroAddress,
-    currentTime.toNumber(),
-    currentTime.toNumber() + 7200,
-    0,
-    "0x"
-  )
+  await spokePool
+    .connect(depositor)
+    .depositV3(
+      depositor.address,
+      depositor.address,
+      inputToken,
+      outputToken,
+      amount,
+      amount,
+      _destinationChainId,
+      zeroAddress,
+      currentTime.toNumber(),
+      currentTime.toNumber() + 7200,
+      0,
+      "0x"
+    );
   const [events, originChainId] = await Promise.all([
     spokePool.queryFilter(spokePool.filters.V3FundsDeposited()),
     spokePool.chainId(),
@@ -77,29 +79,31 @@ export async function depositV3(
   return depositObject;
 }
 
-export async function fillV3(  
+export async function fillV3(
   spokePool: Contract,
   relayer: SignerWithAddress,
   deposit: interfaces.V3Deposit,
   _repaymentChainId = repaymentChainId
 ): Promise<interfaces.V3FillWithBlock> {
-  await spokePool.connect(relayer).fillV3Relay(
-    [
-      deposit.depositor,
-      deposit.recipient,
-      deposit.exclusiveRelayer,
-      deposit.inputToken ,
-      deposit.outputToken,
-      deposit.inputAmount,
-      deposit.outputAmount,
-      deposit.originChainId,
-      deposit.depositId,
-      deposit.fillDeadline,
-      deposit.exclusivityDeadline,
-      deposit.message
-    ],
-    _repaymentChainId
-  )
+  await spokePool
+    .connect(relayer)
+    .fillV3Relay(
+      [
+        deposit.depositor,
+        deposit.recipient,
+        deposit.exclusiveRelayer,
+        deposit.inputToken,
+        deposit.outputToken,
+        deposit.inputAmount,
+        deposit.outputAmount,
+        deposit.originChainId,
+        deposit.depositId,
+        deposit.fillDeadline,
+        deposit.exclusivityDeadline,
+        deposit.message,
+      ],
+      _repaymentChainId
+    );
   const [events, destinationChainId] = await Promise.all([
     spokePool.queryFilter(spokePool.filters.FilledV3Relay()),
     spokePool.chainId(),
@@ -131,21 +135,22 @@ export async function fillV3(
     transactionHash: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
     transactionIndex: lastEvent.transactionIndex,
-  }
+  };
   return fillObject;
 }
 
 export async function requestSlowFill(
   spokePool: Contract,
   relayer: SignerWithAddress,
-  deposit?: interfaces.V3Deposit,
+  deposit?: interfaces.V3Deposit
 ): Promise<SlowFillRequestWithBlock> {
-  await spokePool.connect(relayer).requestV3SlowFill(
-    [
+  await spokePool
+    .connect(relayer)
+    .requestV3SlowFill([
       deposit.depositor,
       deposit.recipient,
       deposit.exclusiveRelayer,
-      deposit.inputToken ,
+      deposit.inputToken,
       deposit.outputToken,
       deposit.inputAmount,
       deposit.outputAmount,
@@ -153,9 +158,8 @@ export async function requestSlowFill(
       deposit.depositId,
       deposit.fillDeadline,
       deposit.exclusivityDeadline,
-      deposit.message
-    ]
-  )
+      deposit.message,
+    ]);
   const [events, destinationChainId] = await Promise.all([
     spokePool.queryFilter(spokePool.filters.RequestedV3SlowFill()),
     spokePool.chainId(),
@@ -179,7 +183,6 @@ export async function requestSlowFill(
     transactionHash: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
     transactionIndex: lastEvent.transactionIndex,
-  }
+  };
   return requestObject;
-
 }

@@ -15,6 +15,7 @@ import {
   SpokePoolClientsByChain,
   UnfilledDeposit,
   V2SlowFillLeaf,
+  V3FillWithBlock,
 } from "../interfaces";
 import {
   AnyObject,
@@ -22,6 +23,8 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  count2DDictionaryValues,
+  count3DDictionaryValues,
   FillsRefundedData,
   FillsRefundedStatusEnum,
   getDepositPath,
@@ -49,7 +52,13 @@ import {
   sortRefundAddresses,
   sortRelayerRefundLeaves,
 } from "./RelayerRefundUtils";
-import { BundleFillsV3, BundleSlowFills, ExpiredDepositsToRefundV3 } from "../interfaces/BundleData";
+import {
+  BundleDepositsV3,
+  BundleExcessSlowFills,
+  BundleFillsV3,
+  BundleSlowFills,
+  ExpiredDepositsToRefundV3,
+} from "../interfaces/BundleData";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -169,6 +178,28 @@ export function prettyPrintSpokePoolEvents(
       allInvalidFillsInRange,
       "destinationChainId",
       (fill) => `${fill.originChainId}-->${utils.getFillOutputToken(fill)}`
+    ),
+  };
+}
+
+export function prettyPrintV3SpokePoolEvents(
+  bundleDepositsV3: BundleDepositsV3,
+  bundleFillsV3: BundleFillsV3,
+  bundleInvalidFillsV3: V3FillWithBlock[],
+  bundleSlowFillsV3: BundleSlowFills,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
+  unexecutableSlowFills: BundleExcessSlowFills
+): AnyObject {
+  return {
+    bundleDepositsV3: count2DDictionaryValues(bundleDepositsV3),
+    bundleFillsV3: count3DDictionaryValues(bundleFillsV3, "fills"),
+    bundleSlowFillsV3: count2DDictionaryValues(bundleSlowFillsV3),
+    expiredDepositsToRefundV3: count2DDictionaryValues(expiredDepositsToRefundV3),
+    unexecutableSlowFills: count2DDictionaryValues(unexecutableSlowFills),
+    allInvalidFillsInRangeByDestinationChainAndRelayer: groupObjectCountsByTwoProps(
+      bundleInvalidFillsV3,
+      "destinationChainId",
+      (fill) => `${fill.relayer}`
     ),
   };
 }
