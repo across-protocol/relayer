@@ -620,8 +620,6 @@ export function generateMarkdownForRootBundle(
       slowFill.realizedLpFeePct = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
-      assert(sdkUtils.isV3SlowFillLeaf(leaf)); // tsc hinting.
-
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
       const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
       const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
