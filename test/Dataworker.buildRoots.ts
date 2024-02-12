@@ -3,6 +3,7 @@ import { Deposit, Fill, RunningBalances } from "../src/interfaces";
 import {
   EMPTY_MERKLE_ROOT,
   compareAddresses,
+  fixedPointAdjustment,
   getRealizedLpFeeForFills,
   getRefund,
   getRefundForFills,
@@ -40,6 +41,7 @@ import {
   enableRoutesOnHubPool,
   ethers,
   expect,
+  fillV3,
   getDefaultBlockRange,
   lastSpyLogIncludes,
   sampleRateModel,
@@ -48,6 +50,7 @@ import {
   toBN,
   toBNWei,
 } from "./utils";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 // Tested
 import { Dataworker, PoolRebalanceRoot } from "../src/dataworker/Dataworker";
@@ -1352,7 +1355,7 @@ describe("Dataworker: Build merkle roots", async function () {
         initialRoot = merkleRoot1;
       });
       it("Adds bundle deposits from running balances", async function () {
-        const _depositV3 = await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+        const deposit = await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
         await updateAllClients();
         const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
 
@@ -1360,11 +1363,44 @@ describe("Dataworker: Build merkle roots", async function () {
         const expectedRunningBalances: RunningBalances = {
           ...initialRoot.runningBalances,
           [originChainId]: {
-            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(_depositV3.inputAmount),
-          }
+            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(deposit.inputAmount),
+          },
         };
         expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
         expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+      });
+      it("Adds bundle fills from running balances", async function () {
+        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+        await updateAllClients();
+        const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit)[0];
+        await fillV3(spokePool_2, relayer, deposit, destinationChainId);
+        await updateAllClients();
+        const fill = spokePoolClients[destinationChainId].getFills().filter(sdkUtils.isV3Fill)[0];
+        const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
+
+        // Deposits should not add to bundle LP fees, but fills should. LP fees are taken out of running balances
+        // and added to realized LP fees, for fills.
+        const expectedRunningBalances: RunningBalances = {
+          ...initialRoot.runningBalances,
+          [originChainId]: {
+            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(deposit.inputAmount),
+          },
+          [destinationChainId]: {
+            [l1Token_1.address]: initialRoot.runningBalances[destinationChainId][l1Token_1.address].add(
+              fill.inputAmount.mul(toBNWei(1).sub(deposit.realizedLpFeePct)).div(fixedPointAdjustment)
+            ),
+          },
+        };
+        const expectedRealizedLpFees: RunningBalances = {
+          ...initialRoot.realizedLpFees,
+          [destinationChainId]: {
+            [l1Token_1.address]: initialRoot.realizedLpFees[destinationChainId][l1Token_1.address].add(
+              fill.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment)
+            ),
+          },
+        };
+        expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+        expect(expectedRealizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
       });
     });
   });

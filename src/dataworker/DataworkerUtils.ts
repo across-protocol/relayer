@@ -50,6 +50,7 @@ import {
   constructPoolRebalanceLeaves,
   initializeRunningBalancesFromRelayerRepayments,
   subtractExcessFromPreviousSlowFillsFromRunningBalances,
+  updateRunningBalance,
   updateRunningBalanceForDeposit,
   updateRunningBalanceForEarlyDeposit,
 } from "./PoolRebalanceUtils";
@@ -378,6 +379,7 @@ export async function _buildPoolRebalanceRoot(
   unfilledDeposits: UnfilledDeposit[],
   earlyDeposits: typechain.FundsDepositedEvent[],
   bundleV3Deposits: BundleDepositsV3,
+  bundleFillsV3: BundleFillsV3,
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
   maxL1TokenCountOverride: number | undefined,
@@ -406,9 +408,24 @@ export async function _buildPoolRebalanceRoot(
     fillsToRefund
   );
 
-  // TODO: Add running balances and lp fees for v3 relayer refunds using BundleDataClient.bundleFillsV3. Refunds
+  // Add running balances and lp fees for v3 relayer refunds using BundleDataClient.bundleFillsV3. Refunds
   // should be equal to inputAmount - lpFees so that relayers get to keep the relayer fee. Add the refund amount
   // to the running balance for the repayment chain.
+  Object.entries(bundleFillsV3).forEach(([_repaymentChainId, fillsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
+    Object.entries(fillsForChain).forEach(
+      ([l2TokenAddress, { realizedLpFees: totalRealizedLpFee, totalRefundAmount }]) => {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          l2TokenAddress,
+          repaymentChainId,
+          latestMainnetBlock
+        );
+
+        updateRunningBalance(runningBalances, repaymentChainId, l1TokenCounterpart, totalRefundAmount);
+        updateRunningBalance(realizedLpFees, repaymentChainId, l1TokenCounterpart, totalRealizedLpFee);
+      }
+    );
+  });
 
   /**
    * PAYMENTS SLOW FILLS
