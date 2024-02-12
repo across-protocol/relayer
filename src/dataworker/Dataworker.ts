@@ -49,6 +49,7 @@ import {
 import _ from "lodash";
 import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
+import { BundleDepositsV3 } from "../interfaces/BundleData";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -169,7 +170,7 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBlock?: number
   ): Promise<PoolRebalanceRoot> {
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits, bundleDepositsV3 } =
       await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
@@ -194,6 +195,7 @@ export class Dataworker {
       allValidFillsInRange as V2FillWithBlock[],
       unfilledDeposits,
       earlyDeposits,
+      bundleDepositsV3,
       true
     );
   }
@@ -1947,6 +1949,7 @@ export class Dataworker {
     allValidFillsInRange: V2FillWithBlock[],
     unfilledDeposits: UnfilledDeposit[],
     earlyDeposits: sdk.typechain.FundsDepositedEvent[],
+    bundleV3Deposits: BundleDepositsV3,
     logSlowFillExcessData = false
   ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
@@ -1963,9 +1966,9 @@ export class Dataworker {
         allValidFillsInRange,
         unfilledDeposits,
         earlyDeposits,
+        bundleV3Deposits,
         this.clients,
         spokePoolClients,
-        this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
         logSlowFillExcessData ? this.logger : undefined
       );

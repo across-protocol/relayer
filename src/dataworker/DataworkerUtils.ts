@@ -25,6 +25,7 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  compareObjectsByString,
   count2DDictionaryValues,
   count3DDictionaryValues,
   ethers,
@@ -376,9 +377,9 @@ export async function _buildPoolRebalanceRoot(
   allValidFillsInRange: V2FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
   earlyDeposits: typechain.FundsDepositedEvent[],
+  bundleV3Deposits: BundleDepositsV3,
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
-  chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number | undefined,
   logger?: winston.Logger
 ): Promise<PoolRebalanceRoot> {
@@ -474,8 +475,15 @@ export async function _buildPoolRebalanceRoot(
     );
   });
 
-  // TODO: Handle v3Deposits. These decrement running balances from the origin chain equal to the inputAmount.
+  // Handle v3Deposits. These decrement running balances from the origin chain equal to the inputAmount.
   // There should not be early deposits in v3.
+  Object.entries(bundleV3Deposits).forEach(([, depositsForChain]) => {
+    Object.entries(depositsForChain).forEach(([, deposits]) => {
+      deposits.forEach((deposit) => {
+        updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.inputAmount.mul(-1));
+      });
+    });
+  });
 
   /**
    * REFUNDS FOR EXPIRED DEPOSITS
@@ -600,7 +608,7 @@ export function buildFillsRefundedDictionary(
   });
 
   // Flatten dictionary to create leaves now that we've ruled out duplicates.
-  const leaves = Object.values(dictionary);
+  const leaves = Object.values(dictionary).sort((a, b) => compareObjectsByString(a, b, "relayDataHash"));
   const hashFn = (input: FillsRefundedLeaf) =>
     ethers.utils.keccak256(
       ethers.utils.defaultAbiCoder.encode(

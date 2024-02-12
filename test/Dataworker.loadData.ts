@@ -1449,9 +1449,9 @@ describe("Dataworker: Load data used in all functions", async function () {
       const depositObjects = [
         await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address),
         await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address),
-        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address, undefined, undefined, -1)
-      ]
-      
+        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address, undefined, undefined, -1),
+      ];
+
       await spokePoolClient_1.update(["V3FundsDeposited"]);
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(3);
@@ -1460,14 +1460,11 @@ describe("Dataworker: Load data used in all functions", async function () {
       await spokePoolClient_2.update(["RequestedV3SlowFill", "FilledV3Relay"]);
       expect(spokePoolClient_2.getFills().length).to.equal(1);
       expect(spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
-      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
-        getDefaultBlockRange(5),
-        {
-          ...spokePoolClients,
-          [originChainId]: spokePoolClient_1,
-          [destinationChainId]: spokePoolClient_2,
-        }
-      );
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
 
       const fillsRefundedRootData = buildFillsRefundedDictionary(
         data1.bundleFillsV3,
