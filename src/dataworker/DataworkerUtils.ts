@@ -14,6 +14,8 @@ import {
   SlowFillLeaf,
   SpokePoolClientsByChain,
   UnfilledDeposit,
+  V2DepositWithBlock,
+  V2FillWithBlock,
   V2SlowFillLeaf,
   V3FillWithBlock,
 } from "../interfaces";
@@ -366,9 +368,9 @@ export async function _buildPoolRebalanceRoot(
   latestMainnetBlock: number,
   mainnetBundleEndBlock: number,
   fillsToRefund: FillsToRefund,
-  deposits: DepositWithBlock[],
-  allValidFills: FillWithBlock[],
-  allValidFillsInRange: FillWithBlock[],
+  deposits: V2DepositWithBlock[],
+  allValidFills: V2FillWithBlock[],
+  allValidFillsInRange: V2FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
   earlyDeposits: typechain.FundsDepositedEvent[],
   clients: DataworkerClients,
@@ -451,7 +453,7 @@ export async function _buildPoolRebalanceRoot(
   // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
   // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
   // its important that `deposits` are all in this current block range.
-  deposits.forEach((deposit: DepositWithBlock) => {
+  deposits.forEach((deposit: V2DepositWithBlock) => {
     const inputAmount = utils.getDepositInputAmount(deposit);
     updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, inputAmount.mul(-1));
   });

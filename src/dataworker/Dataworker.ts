@@ -16,9 +16,7 @@ import {
   ZERO_ADDRESS,
 } from "../utils";
 import {
-  DepositWithBlock,
   FillsToRefund,
-  FillWithBlock,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
   SlowFillLeaf,
@@ -30,6 +28,8 @@ import {
   RelayerRefundLeaf,
   V2SlowFillLeaf,
   V3SlowFillLeaf,
+  V2DepositWithBlock,
+  V2FillWithBlock,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -181,7 +181,7 @@ export class Dataworker {
       allValidFills,
       blockRangesForChains,
       this.chainIdListForBundleEvaluationBlockNumbers
-    );
+    ).filter(sdkUtils.isV2Fill);
 
     return await this._getPoolRebalanceRoot(
       spokePoolClients,
@@ -189,9 +189,9 @@ export class Dataworker {
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
       fillsToRefund,
-      deposits,
-      allValidFills,
-      allValidFillsInRange,
+      deposits.filter(sdkUtils.isV2Deposit) as V2DepositWithBlock[],
+      allValidFills.filter(sdkUtils.isV2Fill) as V2FillWithBlock[],
+      allValidFillsInRange as V2FillWithBlock[],
       unfilledDeposits,
       earlyDeposits,
       true
@@ -466,7 +466,7 @@ export class Dataworker {
       allValidFills,
       blockRangesForProposal,
       this.chainIdListForBundleEvaluationBlockNumbers
-    );
+    ).filter(sdkUtils.isV2Fill);
 
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const mainnetBundleEndBlock = getBlockRangeForChain(
@@ -480,9 +480,9 @@ export class Dataworker {
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
       fillsToRefund,
-      deposits,
-      allValidFills,
-      allValidFillsInRange,
+      deposits.filter(sdkUtils.isV2Deposit) as V2DepositWithBlock[],
+      allValidFills.filter(sdkUtils.isV2Fill) as V2FillWithBlock[],
+      allValidFillsInRange as V2FillWithBlock[],
       unfilledDeposits,
       earlyDeposits,
       true
@@ -1181,7 +1181,7 @@ export class Dataworker {
 
           // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
           let amountFilled = bnZero;
-          const fill = slowFill.fill;
+          const { fill, ...slowFillLeafData } = slowFill;
           if (isDefined(fill)) {
             // If fill was a full fill, execution is unnecessary. V3 fills are full fills by definition.
             amountFilled = sdkUtils.getTotalFilledAmount(fill);
@@ -1189,12 +1189,16 @@ export class Dataworker {
               return undefined;
             }
           }
+          // @dev At this point, we are only dealing with V2 slow fills because V3 slow fills with matching fills are
+          // by definition fully filled and the slow leaf is unexecutable.
+          assert(sdkUtils.isV2SlowFillLeaf(slowFill), "V3 slow fills should have been filtered out");
+          const slowFillLeaf = slowFillLeafData as V2SlowFillLeaf;
 
           // Note: the getRefund function just happens to perform the same math we need.
           // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
-          const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
-          const amountRequired = getRefund(outputAmount.sub(amountFilled), slowFill.relayData.realizedLpFeePct);
+          const outputToken = sdkUtils.getRelayDataOutputToken(slowFillLeaf.relayData);
+          const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillLeaf.relayData);
+          const amountRequired = getRefund(outputAmount.sub(amountFilled), slowFillLeaf.relayData.realizedLpFeePct);
 
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
@@ -1209,8 +1213,8 @@ export class Dataworker {
               message: "Not executing slow relay leaf due to lack of funds in SpokePool",
               root: slowRelayTree.getHexRoot(),
               bundle: rootBundleId,
-              depositId: slowFill.relayData.depositId,
-              fromChain: slowFill.relayData.originChainId,
+              depositId: slowFillLeaf.relayData.depositId,
+              fromChain: slowFillLeaf.relayData.originChainId,
               chainId: destinationChainId,
               token: outputToken,
               amount: outputAmount,
@@ -1220,7 +1224,7 @@ export class Dataworker {
           // Assume we don't need to add balance in the BalanceAllocator to the HubPool because the slow fill's
           // recipient wouldn't be the HubPool in normal circumstances.
           return success
-            ? { relayData: slowFill.relayData, payoutAdjustmentPct: slowFill.payoutAdjustmentPct }
+            ? { relayData: slowFillLeaf.relayData, payoutAdjustmentPct: slowFillLeaf.payoutAdjustmentPct }
             : undefined;
         })
       )
@@ -1938,9 +1942,9 @@ export class Dataworker {
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
     fillsToRefund: FillsToRefund,
-    deposits: DepositWithBlock[],
-    allValidFills: FillWithBlock[],
-    allValidFillsInRange: FillWithBlock[],
+    deposits: V2DepositWithBlock[],
+    allValidFills: V2FillWithBlock[],
+    allValidFillsInRange: V2FillWithBlock[],
     unfilledDeposits: UnfilledDeposit[],
     earlyDeposits: sdk.typechain.FundsDepositedEvent[],
     logSlowFillExcessData = false

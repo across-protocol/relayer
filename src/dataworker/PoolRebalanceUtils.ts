@@ -71,7 +71,7 @@ export function updateRunningBalanceForFill(
 export function updateRunningBalanceForDeposit(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
-  deposit: interfaces.DepositWithBlock,
+  deposit: interfaces.V2DepositWithBlock,
   updateAmount: BigNumber
 ): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
@@ -218,8 +218,8 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain,
-  allValidFills: interfaces.FillWithBlock[],
-  allValidFillsInRange: interfaces.FillWithBlock[]
+  allValidFills: interfaces.V2FillWithBlock[],
+  allValidFillsInRange: interfaces.V2FillWithBlock[]
 ): Promise<AnyObject> {
   const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
@@ -238,7 +238,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         const totalFilledAmount = sdkUtils.getTotalFilledAmount(fill);
         return totalFilledAmount.eq(outputAmount) && !fillAmount.eq(outputAmount);
       })
-      .map(async (fill: interfaces.FillWithBlock) => {
+      .map(async (fill: interfaces.V2FillWithBlock) => {
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
             hubPoolClient.latestBlockSearched,
@@ -617,21 +617,23 @@ export function generateMarkdownForRootBundle(
       // It's unconditionally 0 and will be removed, so just BN it on the fly.
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
+      // TODO: Use the cast to overcome the tsc error complaining that leaf is of type "never" here.
+      const v3SlowLeaf = leaf as interfaces.V3SlowFillLeaf;
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
       const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
-      const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
-      const updatedOutputAmount = leaf.relayData.updatedOutputAmount.mul(scaleBy);
+      const inputAmount = v3SlowLeaf.relayData.inputAmount.mul(scaleBy);
+      const updatedOutputAmount = v3SlowLeaf.updatedOutputAmount.mul(scaleBy);
       assert(
         inputAmount.gte(updatedOutputAmount),
         "Unexpected output amount for slow fill on" +
-          `${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
+          `${getNetworkName(v3SlowLeaf.relayData.originChainId)} depositId ${v3SlowLeaf.relayData.depositId}`
       );
 
       // Infer the realizedLpFeePct from the spread between inputAmount and updatedOutputAmount (sans relayer fee).
       const realizedLpFeePct = inputAmount.sub(updatedOutputAmount).mul(fixedPoint).div(inputAmount);
 
       slowFill.outputToken = outputToken;
-      slowFill.outputAmount = convertFromWei(updatedOutputAmount, 18); // tokens were scaled to 18 decimals.
+      slowFill.outputAmount = convertFromWei(updatedOutputAmount.toString(), 18); // tokens were scaled to 18 decimals.
       slowFill.realizedLpFeePct = `${formatFeePct(realizedLpFeePct)}%`;
     }
 

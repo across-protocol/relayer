@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, DepositWithBlock, L1Token } from "../interfaces";
+import { Deposit, L1Token, V2Deposit, V2DepositWithBlock } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -265,6 +265,7 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, version, unfilledAmount, fillCount } of confirmedUnfilledDeposits) {
+      assert(sdkUtils.isV2Deposit(deposit), "V3 deposits not supported yet in Relayer");
       const { slowDepositors } = config;
 
       const { depositor, recipient, destinationChainId, originChainId } = deposit;
@@ -391,7 +392,7 @@ export class Relayer {
     }
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
+  fillRelay(deposit: V2Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -451,7 +452,7 @@ export class Relayer {
    * @description Initiate a zero-fill for a deposit.
    * @param deposit Deposit object to zero-fill.
    */
-  zeroFillDeposit(deposit: Deposit): void {
+  zeroFillDeposit(deposit: V2Deposit): void {
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
@@ -467,7 +468,7 @@ export class Relayer {
 
   protected async resolveRepaymentChain(
     version: number,
-    deposit: DepositWithBlock,
+    deposit: V2DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
   ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
@@ -574,7 +575,7 @@ export class Relayer {
     }
   }
 
-  private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
+  private constructRelayFilledMrkdwn(deposit: V2Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
     let mrkdwn =
       this.constructBaseFillMarkdown(deposit, fillAmount) + ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 

@@ -1,5 +1,12 @@
 import { utils, typechain } from "@across-protocol/sdk-v2";
-import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  SlowFillRequest,
+  UnfilledDeposit,
+  UnfilledDepositsForOriginChain,
+} from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { assign, isFirstFillForDeposit, getRedisCache } from "./";
 import { bnZero } from "./SDKUtils";
@@ -128,7 +135,7 @@ export function getUniqueEarlyDepositsInRange(
 // of a deposit older or younger than its fixed lookback.
 export async function queryHistoricalDepositForFill(
   spokePoolClient: SpokePoolClient,
-  fill: Fill
+  fill: Fill | SlowFillRequest
 ): Promise<utils.DepositSearchResult> {
   return utils.queryHistoricalDepositForFill(spokePoolClient, fill, await getRedisCache(spokePoolClient.logger));
 }
