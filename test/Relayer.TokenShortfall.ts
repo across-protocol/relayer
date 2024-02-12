@@ -26,7 +26,7 @@ import {
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  deposit,
+  depositV2,
   destinationChainId,
   enableRoutesOnHubPool,
   ethers,
@@ -154,8 +154,8 @@ describe("Relayer: Token balance shortfall", async function () {
   it("Produces expected logs based on insufficient single token balance", async function () {
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     // Deposit 100 tokens to be relayed, two times.
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     // Seed the relayer with 50 tokens. This is insufficient to fill the relay and should produce the expected log.
     await erc20_2.mint(relayer.address, toBNWei(50));
@@ -169,7 +169,7 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
 
     // Submitting another relay should increment the shortfall and log accordingly. Total shortfall of 250 now.
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 250.00`)).to.be.true;
@@ -191,8 +191,8 @@ describe("Relayer: Token balance shortfall", async function () {
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await spokePool_2.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     // Deposit 100 tokens to be relayed of each token type.
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await deposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_2, erc20_2, depositor, depositor, originChainId);
 
     await updateAllClients();
 
