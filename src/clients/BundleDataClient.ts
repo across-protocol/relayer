@@ -50,7 +50,7 @@ import {
 type DataCache = Record<string, LoadDataReturnValue>;
 
 // V3 dictionary helper functions
-function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: interfaces.V3Deposit): void {
+function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: interfaces.V3DepositWithBlock): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
     assign(dict, [originChainId, inputToken], []);
@@ -58,7 +58,7 @@ function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: inter
   dict[originChainId][inputToken].push(deposit);
 }
 
-function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3Deposit): void {
+function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3DepositWithBlock): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
     assign(dict, [originChainId, inputToken], []);
@@ -68,7 +68,7 @@ function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3De
 
 function updateBundleFillsV3(
   dict: BundleFillsV3,
-  fill: interfaces.V3Fill,
+  fill: interfaces.V3FillWithBlock,
   lpFeePct: BigNumber,
   repaymentChainId: number,
   repaymentToken: string
@@ -112,7 +112,7 @@ function updateBundleFillsV3(
   }
 }
 
-function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: interfaces.V3Deposit): void {
+function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: interfaces.V3DepositWithBlock): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
@@ -120,7 +120,7 @@ function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: inter
   dict[destinationChainId][outputToken].push(deposit);
 }
 
-function updateBundleSlowFills(dict: BundleSlowFills, deposit: interfaces.V3Deposit): void {
+function updateBundleSlowFills(dict: BundleSlowFills, deposit: interfaces.V3DepositWithBlock): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
