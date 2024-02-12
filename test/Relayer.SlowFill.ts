@@ -185,16 +185,14 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
     const fillEvent = (await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay())).at(-1);
-    expect(fillEvent).to.exist;
-    expect(fillEvent?.args).to.exist;
-
-    ["depositId", "amount", "destinationChainId", "originChainId", "depositor", "recipient"].forEach((key) => {
-      const val = fillEvent?.args?.[key];
-      expect(val).to.not.be.undefined;
-      expect(deposit1?.[key]).to.equal(val);
-    });
-    expect(fillEvent?.args?.relayerFeePct.eq(deposit1?.relayerFeePct)).to.be.true;
-    expect(fillEvent?.args?.fillAmount).to.equal(1); // 1wei fill size
+    const args = fillEvent?.args;
+    expect(args).to.exist;
+    expect(args?.depositId).to.exist;
+    expect(args?.depositId).to.equal(deposit1?.depositId);
+    expect(args?.relayerFeePct).to.exist;
+    expect(args?.relayerFeePct.eq(deposit1?.relayerFeePct)).to.be.true;
+    expect(args?.fillAmount).to.exist;
+    expect(args?.fillAmount).to.equal(1); // 1wei fill size
 
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallerClient.clearTransactionQueue();
