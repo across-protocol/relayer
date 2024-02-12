@@ -47,31 +47,17 @@ export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[])
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
 
-export enum FillsRefundedStatusEnum {
-  Filled = "filled",
-  Expired = "expired",
-  CreatedSlowFill = "createdSlowFill",
-}
-export type FillsRefundedEntry =
-  | {
-      // If fill was sent in this bundle, then no slow fill was
-      // created in this bundle.
-      status: FillsRefundedStatusEnum.Filled;
-      lpFeePct: BigNumber;
-      repaymentChainId: number;
-      relayer: string;
-      relayExecutionInfo: interfaces.V3RelayExecutionEventInfo;
-    }
-  // If fill was not sent in this bundle, then either the deposit expired
-  // and a refund needs to be sent or a slow fill was created. Otherwise
-  // we wouldn't see this relayDataHash in this tree.
-  | {
-      status: FillsRefundedStatusEnum.Expired;
-    }
-  | {
-      status: FillsRefundedStatusEnum.CreatedSlowFill;
-      lpFeePct: BigNumber;
-    };
-export type FillsRefundedData = { [relayDataHash: string]: FillsRefundedEntry };
+export type FillsRefundedLeaf = {
+  // If fill was sent in this bundle, then no slow fill was
+  // created in this bundle.
+  status: interfaces.FillStatus;
+  relayDataHash: string;
+  lpFeePct: BigNumber;
+  relayer: string;
+  repaymentChainId: number;
+  paymentAmount: BigNumber;
+  paymentRecipient: string;
+  paymentMessage: string;
+};
 
 export { MerkleTree, RelayerRefundLeaf, RelayerRefundLeafWithGroup, EMPTY_MERKLE_ROOT };

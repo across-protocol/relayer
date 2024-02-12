@@ -847,12 +847,6 @@ describe("Dataworker: Load data used in all functions", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      const fillsRefundedRootData = buildFillsRefundedDictionary(
-        data1.bundleFillsV3,
-        data1.expiredDepositsToRefundV3,
-        data1.bundleSlowFillsV3
-      );
-      console.log(fillsRefundedRootData);
 
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)).to.deep.equal(
         depositEvents.map((event) => event.args.depositId)
@@ -1205,12 +1199,6 @@ describe("Dataworker: Load data used in all functions", async function () {
         spokePoolClients
       );
 
-      const fillsRefundedRootData = buildFillsRefundedDictionary(
-        data1.bundleFillsV3,
-        data1.expiredDepositsToRefundV3,
-        data1.bundleSlowFillsV3
-      );
-      console.log(fillsRefundedRootData);
       // Only the deposit that wasn't fast filled should be included in the slow fill requests.
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
@@ -1455,6 +1443,41 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleDepositsV3).to.deep.equal({});
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
       expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
+    });
+    it("Can use loadData outputs to produce fillsRefundedRoot MerkleTree", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      // Send one deposit to be slow filled, one to be fast filled, and one to be expired to test all three FillStatuses.
+      generateV3Deposit({ outputToken: erc20_2.address });
+      generateV3Deposit({ outputToken: erc20_2.address });
+      generateV3Deposit({
+        fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1,
+        outputToken: erc20_2.address,
+      });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      generateSlowFillRequestFromDeposit(deposits[0]);
+      generateV3FillFromDeposit(deposits[1]);
+      await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill", "FilledV3Relay"]);
+      expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
+      expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      const fillsRefundedRootData = buildFillsRefundedDictionary(
+        data1.bundleFillsV3,
+        data1.expiredDepositsToRefundV3,
+        data1.bundleSlowFillsV3
+      );
+      expect(fillsRefundedRootData.leaves.length).to.equal(3);
+      expect(fillsRefundedRootData.leaves.map((x) => x.status).sort()).to.deep.equal([0, 1, 2]);
     });
   });
 

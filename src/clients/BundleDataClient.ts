@@ -889,7 +889,6 @@ export class BundleDataClient {
       expiredDepositsToRefundV3,
       unexecutableSlowFills
     );
-    console.log(v3SpokeEventsReadable);
     if (logData) {
       const mainnetRange = getBlockRangeForChain(
         blockRangesForChains,

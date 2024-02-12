@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils, typechain } from "@across-protocol/sdk-v2";
+import { utils, typechain, interfaces } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -27,8 +27,9 @@ import {
   buildSlowRelayTree,
   count2DDictionaryValues,
   count3DDictionaryValues,
-  FillsRefundedData,
-  FillsRefundedStatusEnum,
+  ethers,
+  FillsRefundedLeaf,
+  fixedPointAdjustment,
   getDepositPath,
   getFillsInRange,
   getTimestampsForBundleEndBlocks,
@@ -36,7 +37,9 @@ import {
   groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
+  toBNWei,
   winston,
+  ZERO_ADDRESS,
 } from "../utils";
 import { PoolRebalanceRoot } from "./Dataworker";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -519,8 +522,11 @@ export function buildFillsRefundedDictionary(
   bundleFillsV3: BundleFillsV3,
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
   bundleSlowFillsV3: BundleSlowFills
-): FillsRefundedData {
-  const dictionary: FillsRefundedData = {};
+): {
+  leaves: FillsRefundedLeaf[];
+  tree: MerkleTree<FillsRefundedLeaf>;
+} {
+  const dictionary: { [relayHash: string]: FillsRefundedLeaf } = {};
   // Each relayDataHash should contain a fill, a slow fill creation, or an expired deposit.
   // There shouldn't be more than one of these types in a single bundle, otherwise
   // the bundle data client should have thrown an error.
@@ -534,11 +540,14 @@ export function buildFillsRefundedDictionary(
           "Duplicate relayDataHash in FillsRefundedEntry found when searching bundleFillsV3"
         );
         dictionary[relayDataHash] = {
-          status: FillsRefundedStatusEnum.Filled,
-          repaymentChainId: fill.repaymentChainId,
-          relayer: fill.relayer,
-          relayExecutionInfo: fill.relayExecutionInfo,
+          status: interfaces.FillStatus.Filled,
+          relayDataHash,
           lpFeePct: fill.lpFeePct,
+          relayer: fill.relayer,
+          repaymentChainId: fill.repaymentChainId,
+          paymentAmount: fill.relayExecutionInfo.updatedOutputAmount,
+          paymentRecipient: fill.relayExecutionInfo.updatedRecipient,
+          paymentMessage: fill.relayExecutionInfo.updatedMessage,
         };
       });
     });
@@ -553,7 +562,14 @@ export function buildFillsRefundedDictionary(
           "Duplicate relayDataHash in FillsRefundedEntry found when searching expiredDepositsToRefundV3"
         );
         dictionary[relayDataHash] = {
-          status: FillsRefundedStatusEnum.Expired,
+          status: interfaces.FillStatus.Unfilled,
+          relayDataHash,
+          lpFeePct: bnZero,
+          relayer: ZERO_ADDRESS,
+          repaymentChainId: 0,
+          paymentAmount: deposit.inputAmount,
+          paymentRecipient: deposit.depositor,
+          paymentMessage: "0x",
         };
       });
     });
@@ -568,14 +584,41 @@ export function buildFillsRefundedDictionary(
           "Duplicate relayDataHash in FillsRefundedEntry found when searching bundleSlowFillsV3"
         );
         dictionary[relayDataHash] = {
-          status: FillsRefundedStatusEnum.CreatedSlowFill,
+          status: interfaces.FillStatus.RequestedSlowFill,
+          relayDataHash,
           lpFeePct: depositToSlowFill.realizedLpFeePct,
+          relayer: ZERO_ADDRESS,
+          repaymentChainId: 0,
+          paymentAmount: depositToSlowFill.inputAmount
+            .mul(toBNWei(1).sub(depositToSlowFill.realizedLpFeePct))
+            .div(fixedPointAdjustment),
+          paymentRecipient: depositToSlowFill.recipient,
+          paymentMessage: depositToSlowFill.message,
         };
       });
     });
   });
 
-  return dictionary;
+  // Flatten dictionary to create leaves now that we've ruled out duplicates.
+  const leaves = Object.values(dictionary);
+  const hashFn = (input: FillsRefundedLeaf) =>
+    ethers.utils.keccak256(
+      ethers.utils.defaultAbiCoder.encode(
+        ["uint8", "string", "uint256", "address", "uint256", "uint256", "address", "bytes"],
+        [
+          input.status,
+          input.relayDataHash,
+          input.lpFeePct.toString(),
+          input.relayer,
+          input.repaymentChainId,
+          input.paymentAmount.toString(),
+          input.paymentRecipient,
+          input.paymentMessage,
+        ]
+      )
+    );
+  const tree = new MerkleTree<FillsRefundedLeaf>(leaves, hashFn);
+  return { leaves, tree };
 }
 
 /**
