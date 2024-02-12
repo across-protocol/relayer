@@ -1,7 +1,7 @@
 import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts-v2";
-import { utils as sdkUtils, interfaces } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup, SlowFillLeaf } from "../interfaces";
-import { getParamType, utils, BigNumber } from ".";
+import { getParamType, utils } from ".";
 
 export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillLeaf> {
   const hashFn = (input: SlowFillLeaf) => {
@@ -46,18 +46,5 @@ export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[])
   const hashFn = (input: RelayerRefundLeaf) => utils.keccak256(utils.defaultAbiCoder.encode([paramType], [input]));
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
-
-export type FillsRefundedLeaf = {
-  // If fill was sent in this bundle, then no slow fill was
-  // created in this bundle.
-  status: interfaces.FillStatus;
-  relayDataHash: string;
-  lpFeePct: BigNumber;
-  relayer: string;
-  repaymentChainId: number;
-  paymentAmount: BigNumber;
-  paymentRecipient: string;
-  paymentMessage: string;
-};
 
 export { MerkleTree, RelayerRefundLeaf, RelayerRefundLeafWithGroup, EMPTY_MERKLE_ROOT };

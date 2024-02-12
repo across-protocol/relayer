@@ -60,7 +60,6 @@ import {
 } from "../src/utils";
 import { MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { buildFillsRefundedDictionary } from "../src/dataworker/DataworkerUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -1443,36 +1442,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleDepositsV3).to.deep.equal({});
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
       expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
-    });
-    it("Can use loadData outputs to produce fillsRefundedRoot MerkleTree", async function () {
-      // Send one deposit to be slow filled, one to be fast filled, and one to be expired to test all three FillStatuses.
-      const depositObjects = [
-        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address),
-        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address),
-        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address, undefined, undefined, -1),
-      ];
-
-      await spokePoolClient_1.update(["V3FundsDeposited"]);
-      const deposits = spokePoolClient_1.getDeposits();
-      expect(deposits.length).to.equal(3);
-      await requestSlowFill(spokePool_2, relayer, depositObjects[0]);
-      await fillV3(spokePool_2, relayer, depositObjects[1]);
-      await spokePoolClient_2.update(["RequestedV3SlowFill", "FilledV3Relay"]);
-      expect(spokePoolClient_2.getFills().length).to.equal(1);
-      expect(spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
-      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
-        ...spokePoolClients,
-        [originChainId]: spokePoolClient_1,
-        [destinationChainId]: spokePoolClient_2,
-      });
-
-      const fillsRefundedRootData = buildFillsRefundedDictionary(
-        data1.bundleFillsV3,
-        data1.expiredDepositsToRefundV3,
-        data1.bundleSlowFillsV3
-      );
-      expect(fillsRefundedRootData.leaves.length).to.equal(3);
-      expect(fillsRefundedRootData.leaves.map((x) => x.status).sort()).to.deep.equal([0, 1, 2]);
     });
   });
 

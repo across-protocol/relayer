@@ -15,20 +15,6 @@ export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0
   }
 }
 
-export function compareObjectsByString(
-  a: Record<string, unknown>,
-  b: Record<string, unknown>,
-  propName: string
-): number {
-  if (a[propName] < b[propName]) {
-    return -1;
-  }
-  if (a[propName] > b[propName]) {
-    return 1;
-  }
-  return 0;
-}
-
 export function compareAddressesSimple(addressA: string, addressB: string): boolean {
   return addressA.toLowerCase() === addressB.toLowerCase();
 }

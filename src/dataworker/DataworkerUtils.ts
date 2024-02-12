@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils, typechain, interfaces } from "@across-protocol/sdk-v2";
+import { utils, typechain } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -25,12 +25,8 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
-  compareObjectsByString,
   count2DDictionaryValues,
   count3DDictionaryValues,
-  ethers,
-  FillsRefundedLeaf,
-  fixedPointAdjustment,
   getDepositPath,
   getFillsInRange,
   getTimestampsForBundleEndBlocks,
@@ -38,9 +34,7 @@ import {
   groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
-  toBNWei,
   winston,
-  ZERO_ADDRESS,
 } from "../utils";
 import { PoolRebalanceRoot } from "./Dataworker";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -527,123 +521,6 @@ export async function _buildPoolRebalanceRoot(
     leaves,
     tree: buildPoolRebalanceLeafTree(leaves),
   };
-}
-
-/**
- * @notice Returns all of the fills to refund, slow fills, and expired deposits
- * in a root bundle. This is designed to be used by the dataworker when proposing a root bundle to post
- * as proof for their root bundle.
- * @dev This function can be used to construct data to post to a persistent storage layer (e.g. Arweave/IPFS) that
- * can be used to construct a proposed SlowRelayRoot and RelayerRefundRoot.
- * For example, this file should contain the expired deposits and fills to be refunded in this leaf along with all
- * other leaves from the same relayer refund root bundle and all slow fills from the same root bundle ID.
- *  Note that this data does not contain all of the data needed to produce the root bundle's poolRebalanceRoot
- * because it doesn't contain deposits and unexecutable slow fills. However, the goal of the data posted here is
- * to support real-time status tracking deposits, for which the fills, expired deposits, and slow fills in this
- * bundle are sufficient.
- * @dev The params are easily retrieved by calling BundleDataClient.loadData
- */
-export function buildFillsRefundedDictionary(
-  bundleFillsV3: BundleFillsV3,
-  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
-  bundleSlowFillsV3: BundleSlowFills
-): {
-  leaves: FillsRefundedLeaf[];
-  tree: MerkleTree<FillsRefundedLeaf>;
-} {
-  const dictionary: { [relayHash: string]: FillsRefundedLeaf } = {};
-  // Each relayDataHash should contain a fill, a slow fill creation, or an expired deposit.
-  // There shouldn't be more than one of these types in a single bundle, otherwise
-  // the bundle data client should have thrown an error.
-
-  Object.entries(bundleFillsV3).forEach(([, dataForToken]) => {
-    Object.entries(dataForToken).forEach(([, { fills }]) => {
-      fills.forEach((fill) => {
-        const relayDataHash = utils.getV3RelayHashFromEvent(fill);
-        assert(
-          !dictionary[relayDataHash],
-          "Duplicate relayDataHash in FillsRefundedEntry found when searching bundleFillsV3"
-        );
-        dictionary[relayDataHash] = {
-          status: interfaces.FillStatus.Filled,
-          relayDataHash,
-          lpFeePct: fill.lpFeePct,
-          relayer: fill.relayer,
-          repaymentChainId: fill.repaymentChainId,
-          paymentAmount: fill.relayExecutionInfo.updatedOutputAmount,
-          paymentRecipient: fill.relayExecutionInfo.updatedRecipient,
-          paymentMessage: fill.relayExecutionInfo.updatedMessage,
-        };
-      });
-    });
-  });
-
-  Object.entries(expiredDepositsToRefundV3).forEach(([, dataForToken]) => {
-    Object.entries(dataForToken).forEach(([, deposits]) => {
-      deposits.forEach((deposit) => {
-        const relayDataHash = utils.getV3RelayHashFromEvent(deposit);
-        assert(
-          !dictionary[relayDataHash],
-          "Duplicate relayDataHash in FillsRefundedEntry found when searching expiredDepositsToRefundV3"
-        );
-        dictionary[relayDataHash] = {
-          status: interfaces.FillStatus.Unfilled,
-          relayDataHash,
-          lpFeePct: bnZero,
-          relayer: ZERO_ADDRESS,
-          repaymentChainId: 0,
-          paymentAmount: deposit.inputAmount,
-          paymentRecipient: deposit.depositor,
-          paymentMessage: "0x",
-        };
-      });
-    });
-  });
-
-  Object.entries(bundleSlowFillsV3).forEach(([, dataForToken]) => {
-    Object.entries(dataForToken).forEach(([, deposits]) => {
-      deposits.forEach((depositToSlowFill) => {
-        const relayDataHash = utils.getV3RelayHashFromEvent(depositToSlowFill);
-        assert(
-          !dictionary[relayDataHash],
-          "Duplicate relayDataHash in FillsRefundedEntry found when searching bundleSlowFillsV3"
-        );
-        dictionary[relayDataHash] = {
-          status: interfaces.FillStatus.RequestedSlowFill,
-          relayDataHash,
-          lpFeePct: depositToSlowFill.realizedLpFeePct,
-          relayer: ZERO_ADDRESS,
-          repaymentChainId: 0,
-          paymentAmount: depositToSlowFill.inputAmount
-            .mul(toBNWei(1).sub(depositToSlowFill.realizedLpFeePct))
-            .div(fixedPointAdjustment),
-          paymentRecipient: depositToSlowFill.recipient,
-          paymentMessage: depositToSlowFill.message,
-        };
-      });
-    });
-  });
-
-  // Flatten dictionary to create leaves now that we've ruled out duplicates.
-  const leaves = Object.values(dictionary).sort((a, b) => compareObjectsByString(a, b, "relayDataHash"));
-  const hashFn = (input: FillsRefundedLeaf) =>
-    ethers.utils.keccak256(
-      ethers.utils.defaultAbiCoder.encode(
-        ["uint8", "string", "uint256", "address", "uint256", "uint256", "address", "bytes"],
-        [
-          input.status,
-          input.relayDataHash,
-          input.lpFeePct.toString(),
-          input.relayer,
-          input.repaymentChainId,
-          input.paymentAmount.toString(),
-          input.paymentRecipient,
-          input.paymentMessage,
-        ]
-      )
-    );
-  const tree = new MerkleTree<FillsRefundedLeaf>(leaves, hashFn);
-  return { leaves, tree };
 }
 
 /**
