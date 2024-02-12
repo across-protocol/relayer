@@ -19,6 +19,7 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   BigNumber,
@@ -272,6 +273,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
                 const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
                 const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+                assert(
+                  sdkUtils.isV3SlowFillLeaf(slowFillForChain) ||
+                    (isDefined(lastFill) && lastFill.totalFilledAmount.gt(bnZero))
+                );
 
                 // For v2 slow fills there must be at least one partial fill; for v3 slow fills there _may_ be a fill.
                 const totalFilledAmount =
