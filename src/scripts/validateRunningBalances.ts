@@ -254,6 +254,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             );
             // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
             // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
+            // For v2, pre-fee amounts are computed and are normalised to post-fee amounts afterwards.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
               (f) =>
                 sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
@@ -271,24 +272,27 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                       f.depositId === slowFillForChain.relayData.depositId
                   );
 
-                const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                let unexecutedAmount: BigNumber;
                 const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
-                assert(
-                  sdkUtils.isV3SlowFillLeaf(slowFillForChain) ||
-                    (isDefined(lastFill) && lastFill.totalFilledAmount.gt(bnZero))
-                );
+                if (sdkUtils.isV2SlowFillLeaf(slowFillForChain)) {
+                  assert(isDefined(lastFill));
 
-                // For v2 slow fills there must be at least one partial fill; for v3 slow fills there _may_ be a fill.
-                const totalFilledAmount =
-                  sdkUtils.isV2SlowFillLeaf(slowFillForChain) || isDefined(lastFill)
-                    ? sdkUtils.getTotalFilledAmount(lastFill)
-                    : bnZero;
+                  // For v2 slow fills there must be at least one partial fill; for v3 slow fills there _may_ be a fill.
+                  const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                  const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+                  unexecutedAmount = outputAmount.sub(totalFilledAmount);
+                } else {
+                  unexecutedAmount = isDefined(lastFill)
+                    ? bnZero
+                    : slowFillForChain.updatedOutputAmount;
+                }
 
-                const amountSentForSlowFillLeftUnexecuted = outputAmount.sub(totalFilledAmount);
-                if (amountSentForSlowFillLeftUnexecuted.gt(bnZero)) {
+                // For v2 fills, the amounts computed so far were pre-fees. Subtract the LP fee to determine how much
+                // remains to be executed. In v3 the post-fee amount is known, so use it directly.
+                if (unexecutedAmount.gt(bnZero)) {
                   const deductionForSlowFill = sdkUtils.isV3SlowFillLeaf(slowFillForChain)
-                    ? amountSentForSlowFillLeftUnexecuted
-                    : getRefund(amountSentForSlowFillLeftUnexecuted, slowFillForChain.relayData.realizedLpFeePct);
+                    ? unexecutedAmount
+                    : getRefund(unexecutedAmount, slowFillForChain.relayData.realizedLpFeePct);
 
                   mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
                     deductionForSlowFill.toString(),
