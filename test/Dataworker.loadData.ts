@@ -1445,30 +1445,28 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
     });
     it("Can use loadData outputs to produce fillsRefundedRoot MerkleTree", async function () {
-      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
-        [originChainId, destinationChainId],
-        getDefaultBlockRange(5),
-        spokePoolClients
-      );
-
       // Send one deposit to be slow filled, one to be fast filled, and one to be expired to test all three FillStatuses.
-      generateV3Deposit({ outputToken: erc20_2.address });
-      generateV3Deposit({ outputToken: erc20_2.address });
-      generateV3Deposit({
-        fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1,
-        outputToken: erc20_2.address,
-      });
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-      const deposits = mockOriginSpokePoolClient.getDeposits();
-
-      generateSlowFillRequestFromDeposit(deposits[0]);
-      generateV3FillFromDeposit(deposits[1]);
-      await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill", "FilledV3Relay"]);
-      expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
-      expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
+      const depositObjects = [
+        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address),
+        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address),
+        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address, undefined, undefined, -1)
+      ]
+      
+      await spokePoolClient_1.update(["V3FundsDeposited"]);
+      const deposits = spokePoolClient_1.getDeposits();
+      expect(deposits.length).to.equal(3);
+      await requestSlowFill(spokePool_2, relayer, depositObjects[0]);
+      await fillV3(spokePool_2, relayer, depositObjects[1]);
+      await spokePoolClient_2.update(["RequestedV3SlowFill", "FilledV3Relay"]);
+      expect(spokePoolClient_2.getFills().length).to.equal(1);
+      expect(spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
-        spokePoolClients
+        {
+          ...spokePoolClients,
+          [originChainId]: spokePoolClient_1,
+          [destinationChainId]: spokePoolClient_2,
+        }
       );
 
       const fillsRefundedRootData = buildFillsRefundedDictionary(
