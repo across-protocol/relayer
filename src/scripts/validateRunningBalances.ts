@@ -277,11 +277,13 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                 if (sdkUtils.isV2SlowFillLeaf(slowFillForChain)) {
                   assert(isDefined(lastFill));
 
-                  // For v2 slow fills there must be at least one partial fill; for v3 slow fills there _may_ be a fill.
+                  // For v2 there must be at least one partial fill, but there may be multiple. The deposit
+                  // may be filled anywhere up to the outstanding ammount included in the slow fill.
                   const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
                   const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
                   unexecutedAmount = outputAmount.sub(totalFilledAmount);
                 } else {
+                  // For v3 slow fills there _may_ be a fast fill, and if so, the fill is completed.
                   unexecutedAmount = isDefined(lastFill)
                     ? bnZero
                     : slowFillForChain.updatedOutputAmount;
