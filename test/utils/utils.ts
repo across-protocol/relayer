@@ -4,7 +4,7 @@ import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
 import { AcrossConfigStore, FakeContract, MerkleTree } from "@across-protocol/contracts-v2";
 import { constants } from "@across-protocol/sdk-v2";
 import { BigNumber, Contract, providers } from "ethers";
-import chai, { expect } from "chai";
+import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
 import _ from "lodash";
 import sinon from "sinon";
@@ -46,13 +46,10 @@ export const {
   randomAddress,
 } = utils;
 
-chai.use(chaiExclude);
-
 export type SignerWithAddress = utils.SignerWithAddress;
+export { assert, chai, expect, FakeContract };
 
-export { FakeContract };
-const { assert } = chai;
-export { assert, chai, expect };
+chai.use(chaiExclude);
 
 export function deepEqualsWithBigNumber(x: unknown, y: unknown, omitKeys: string[] = []): boolean {
   if (x === undefined || y === undefined) {
