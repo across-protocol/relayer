@@ -152,7 +152,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   tree: MerkleTree<SlowFillLeaf>;
 } {
   const slowRelayLeaves = unfilledDeposits.map((deposit: UnfilledDeposit) =>
-    utils.isV2Deposit(deposit.deposit) ?  buildV2SlowFillLeaf(deposit) : buildV3SlowFillLeaf(deposit)
+    utils.isV2Deposit(deposit.deposit) ? buildV2SlowFillLeaf(deposit) : buildV3SlowFillLeaf(deposit)
   );
 
   // Sort leaves deterministically so that the same root is always produced from the same loadData return value.

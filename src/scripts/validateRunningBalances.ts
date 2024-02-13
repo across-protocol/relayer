@@ -284,9 +284,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                   unexecutedAmount = outputAmount.sub(totalFilledAmount);
                 } else {
                   // For v3 slow fills there _may_ be a fast fill, and if so, the fill is completed.
-                  unexecutedAmount = isDefined(lastFill)
-                    ? bnZero
-                    : slowFillForChain.updatedOutputAmount;
+                  unexecutedAmount = isDefined(lastFill) ? bnZero : slowFillForChain.updatedOutputAmount;
                 }
 
                 // For v2 fills, the amounts computed so far were pre-fees. Subtract the LP fee to determine how much

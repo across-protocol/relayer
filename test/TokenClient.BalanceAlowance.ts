@@ -29,11 +29,10 @@ type TokenBalanceByChain = {
 };
 
 describe("TokenClient: Balance and Allowance", async function () {
-
   // @todo: Why is utils.deepEqualsWithBigNumber suddenly broken in this test?
   // The issue resolves to the use of assert.deepStrictEqual(), which seems to pass through chai to Node's own assert.
   // The object contents _are_ identical but their addresses differ and it seems to object to that. Why now?!
-  const deepEqualsWithBigNumber = (a: TokenBalanceByChain,  b: TokenBalanceByChain): boolean => {
+  const deepEqualsWithBigNumber = (a: TokenBalanceByChain, b: TokenBalanceByChain): boolean => {
     Object.entries(a).forEach(([chainId, balances]) => {
       expect(b[chainId]).to.exist;
 
@@ -45,7 +44,6 @@ describe("TokenClient: Balance and Allowance", async function () {
     });
     return true;
   };
-
 
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
