@@ -263,7 +263,7 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // Create a fake spoke pool so we can manipulate the fill deadline buffer. Make sure it returns a realistic
     // current time so that computing bundle end block timestamps gives us realistic numbers.
-    const fakeSpokePool = await smock.fake(await sdkUtils.getABI("SpokePoolV3"));
+    const fakeSpokePool = await smock.fake(originSpokePoolClient.spokePool.interface);
     fakeSpokePool.getCurrentTime.returns(originSpokePoolClient.currentTime);
     const mockSpokePoolClient = new MockSpokePoolClient(
       originSpokePoolClient.logger,
@@ -332,9 +332,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Finally, reset fill deadline buffer in contracts and reset the override in the mock to test that
     // the client calls from the contracts.
     mockSpokePoolClient.setOldestBlockTimestampOverride(undefined);
-    // const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
     mockSpokePoolClient.setMaxFillDeadlineOverride(undefined);
-    // const fakeSpokePool = await smock.fake(await sdkUtils.getABI("SpokePoolV3"));
     fakeSpokePool.fillDeadlineBuffer.returns(expectedTimeBetweenOldestAndEndBlockTimestamp); // This should be same
     // length as time between oldest time and end block timestamp so it should be a valid block range.
     expect(
