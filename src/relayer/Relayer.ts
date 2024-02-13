@@ -425,7 +425,7 @@ export class Relayer {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
       // @todo (future) infer the updated outputAmount by zeroing the relayer fee in order to print the correct amount.
-      return `Reqested slow fill 🐌 of ${outputAmount} ${symbol}` +
+      return `Requested slow fill 🐌 of ${outputAmount} ${symbol}` +
         ` on ${dstChain} for ${srcChain} depositId ${depositId}.`;
     };
 
