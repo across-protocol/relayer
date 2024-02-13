@@ -15,9 +15,6 @@ import {
   zeroAddress,
 } from "../constants";
 import { BigNumber, Contract, SignerWithAddress } from "./index";
-export { sinon, winston };
-export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
-
 import { AcrossConfigStore, MerkleTree } from "@across-protocol/contracts-v2";
 import { constants } from "@across-protocol/sdk-v2";
 import chai, { expect } from "chai";
@@ -26,6 +23,17 @@ import _ from "lodash";
 import sinon from "sinon";
 import winston from "winston";
 import { ContractsV2SlowFill, SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
+
+export {
+  SpyTransport,
+  bigNumberFormatter,
+  lastSpyLogIncludes,
+  lastSpyLogLevel,
+  spyLogIncludes,
+  spyLogLevel,
+} from "@uma/financial-templates-lib";
+export { sinon, winston };
+export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 
 chai.use(chaiExclude);
 
