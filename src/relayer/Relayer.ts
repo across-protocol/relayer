@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, DepositWithBlock, L1Token, V2Deposit, V3Deposit } from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, V2Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -368,7 +368,7 @@ export class Relayer {
         } else {
           this.logger.debug({
             at: "Relayer",
-            message: "No rebalances for filled token, proceeding to evaluate zero fill",
+            message: "No rebalances for filled token, proceeding to evaluate slow fill request",
             depositL1Token: l1Token.address,
             currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
             crossChainTxns,
@@ -425,16 +425,18 @@ export class Relayer {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
       // @todo (future) infer the updated outputAmount by zeroing the relayer fee in order to print the correct amount.
-      return `Requested slow fill 🐌 of ${outputAmount} ${symbol}` +
-        ` on ${dstChain} for ${srcChain} depositId ${depositId}.`;
+      return (
+        `Requested slow fill 🐌 of ${outputAmount} ${symbol}` +
+        ` on ${dstChain} for ${srcChain} depositId ${depositId}.`
+      );
     };
 
-    const args = [sdkUtils.getRelayDataFromDeposit(deposit)];
+    this.logger.debug({ at: "Relayer", message: "Enqueuing slow fill request.", deposit });
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: "requestSlowFill",
-      args,
+      method: "requestV3SlowFill",
+      args: [deposit],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
