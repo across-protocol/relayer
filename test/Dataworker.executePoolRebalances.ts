@@ -1,9 +1,10 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { MAX_UINT_VAL, toBNWei } from "../src/utils";
+import { bnZero, MAX_UINT_VAL, toBNWei } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
+  ZERO_ADDRESS,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -15,8 +16,6 @@ import {
   ethers,
   expect,
   smock,
-  toBN,
-  zeroAddress,
 } from "./utils";
 
 // Tested
@@ -155,21 +154,21 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // Hardcode multicall output such that it looks like liquid reserves stayed the same
       fakeHubPool.multicall.returns([
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          zeroAddress, // lp token address
+          ZERO_ADDRESS, // lp token address
           true, // enabled
           0, // last lp fee update
-          toBN(0), // utilized reserves
-          toBN(0), // liquid reserves
-          toBN(0), // unaccumulated fees
+          bnZero, // utilized reserves
+          bnZero, // liquid reserves
+          bnZero, // unaccumulated fees
         ]),
-        zeroAddress, // sync output
+        ZERO_ADDRESS, // sync output
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          zeroAddress, // lp token address
+          ZERO_ADDRESS, // lp token address
           true, // enabled
           0, // last lp fee update
-          toBN(0), // utilized reserves
-          toBN(0), // liquid reserves, equal to "current" reserves
-          toBN(0), // unaccumulated fees
+          bnZero, // utilized reserves
+          bnZero, // liquid reserves, equal to "current" reserves
+          bnZero, // unaccumulated fees
         ]),
       ]);
 
@@ -179,21 +178,21 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // Add test when liquid reserves decreases
       fakeHubPool.multicall.returns([
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          zeroAddress, // lp token address
+          ZERO_ADDRESS, // lp token address
           true, // enabled
           0, // last lp fee update
-          toBN(0), // utilized reserves
+          bnZero, // utilized reserves
           toBNWei(1), // liquid reserves
-          toBN(0), // unaccumulated fees
+          bnZero, // unaccumulated fees
         ]),
-        zeroAddress, // sync output
+        ZERO_ADDRESS, // sync output
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          zeroAddress, // lp token address
+          ZERO_ADDRESS, // lp token address
           true, // enabled
           0, // last lp fee update
-          toBN(0), // utilized reserves
+          bnZero, // utilized reserves
           toBNWei(1).sub(1), // liquid reserves, less than "current" reserves
-          toBN(0), // unaccumulated fees
+          bnZero, // unaccumulated fees
         ]),
       ]);
 
@@ -208,21 +207,21 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // Hardcode multicall output such that it looks like liquid reserves increased
       fakeHubPool.multicall.returns([
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          "0x0000000000000000000000000000000000000000", // lp token address
+          ZERO_ADDRESS, // lp token address
           true, // enabled
           0, // last lp fee update
-          toBN(0), // utilized reserves
+          bnZero, // utilized reserves
           toBNWei(1), // liquid reserves
-          toBN(0), // unaccumulated fees
+          bnZero, // unaccumulated fees
         ]),
-        "0x0000000000000000000000000000000000000000",
+        ZERO_ADDRESS,
         hubPool.interface.encodeFunctionResult("pooledTokens", [
-          "0x0000000000000000000000000000000000000000", // lp token address
+          ZERO_ADDRESS, // lp token address
           true, // enabled
           0, // last lp fee update
-          toBN(0), // utilized reserves
+          bnZero, // utilized reserves
           toBNWei(1).add(1), // liquid reserves, higher than "current" reserves
-          toBN(0), // unaccumulated fees
+          bnZero, // unaccumulated fees
         ]),
       ]);
 

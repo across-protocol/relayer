@@ -1,3 +1,4 @@
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
   SignerWithAddress,
@@ -5,13 +6,10 @@ import {
   deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
-  originChainId,
   toBNWei,
   winston,
-  zeroAddress,
 } from "./utils";
 
 import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
@@ -40,7 +38,7 @@ describe("TokenClient: Balance and Allowance", async function () {
       weth: weth_2,
       deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
+    const { hubPool } = await deployAndConfigureHubPool(owner, [], ZERO_ADDRESS, ZERO_ADDRESS);
 
     spokePoolClient_1 = new SpokePoolClient(
       createSpyLogger().spyLogger,

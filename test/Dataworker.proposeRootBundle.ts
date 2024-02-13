@@ -1,6 +1,6 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
-import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
+import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
@@ -13,6 +13,7 @@ import {
   lastSpyLogLevel,
   sinon,
   toBNWei,
+  utf8ToHex,
 } from "./utils";
 
 // Tested

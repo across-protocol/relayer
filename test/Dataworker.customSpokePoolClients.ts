@@ -1,6 +1,6 @@
 import { MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { MAX_UINT_VAL } from "../src/utils";
-import { CHAIN_ID_TEST_LIST, utf8ToHex } from "./constants";
+import { CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
@@ -11,6 +11,7 @@ import {
   sinon,
   spyLogIncludes,
   spyLogLevel,
+  utf8ToHex,
 } from "./utils";
 
 // Tested

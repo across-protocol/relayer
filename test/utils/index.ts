@@ -1,4 +1,4 @@
-export * from "@across-protocol/contracts-v2/dist/test-utils";
+export * as contracts from "@across-protocol/contracts-v2/dist/test-utils";
 export * as uma from "@uma/financial-templates-lib";
 
 export * from "./utils";

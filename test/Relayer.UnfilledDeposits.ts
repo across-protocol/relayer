@@ -4,8 +4,8 @@ import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
   defaultMinDepositConfirmations,
-  modifyRelayHelper,
   originChainId,
+  destinationChainId,
   repaymentChainId,
 } from "./constants";
 import { MockInventoryClient, MockProfitClient, MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
@@ -18,12 +18,12 @@ import {
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  destinationChainId,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
+  modifyRelayHelper,
   setupTokensForWallet,
   simpleDeposit,
   toBNWei,
