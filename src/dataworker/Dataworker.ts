@@ -180,6 +180,7 @@ export class Dataworker {
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
+      expiredDepositsToRefundV3,
     } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
@@ -208,6 +209,7 @@ export class Dataworker {
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
+      expiredDepositsToRefundV3,
       true
     );
   }
@@ -484,6 +486,7 @@ export class Dataworker {
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
+      expiredDepositsToRefundV3,
     } = await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
@@ -512,6 +515,7 @@ export class Dataworker {
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
+      expiredDepositsToRefundV3,
       true
     );
     const relayerRefundRoot = _buildRelayerRefundRoot(
@@ -1978,6 +1982,7 @@ export class Dataworker {
     bundleV3Fills: BundleFillsV3,
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
+    expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
     logSlowFillExcessData = false
   ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
@@ -1998,6 +2003,7 @@ export class Dataworker {
         bundleV3Fills,
         bundleSlowFills,
         unexecutableSlowFills,
+        expiredDepositsToRefundV3,
         this.clients,
         spokePoolClients,
         this.maxL1TokenCountOverride,

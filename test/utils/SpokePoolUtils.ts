@@ -32,7 +32,7 @@ export async function depositV3(
   outputToken: string,
   amount = amountToDeposit,
   _destinationChainId = destinationChainId,
-  fillPeriod = 7200
+  fillDeadline?: number
 ): Promise<interfaces.V3DepositWithBlock> {
   const currentTime = await spokePool.getCurrentTime();
   await spokePool
@@ -47,7 +47,7 @@ export async function depositV3(
       _destinationChainId,
       zeroAddress,
       currentTime.toNumber(),
-      currentTime.toNumber() + fillPeriod,
+      fillDeadline ?? currentTime.toNumber() + 7200,
       0,
       "0x"
     );

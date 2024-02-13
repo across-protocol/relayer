@@ -1488,6 +1488,31 @@ describe("Dataworker: Build merkle roots", async function () {
         expect(expectedRunningBalances2).to.deep.equal(merkleRoot2.runningBalances);
         expect(expectedRealizedLpFees2).to.deep.equal(merkleRoot2.realizedLpFees);
       });
+      it("Adds expired deposits to origin chain running baalnces", async function () {
+        const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+          [originChainId, destinationChainId],
+          getDefaultBlockRange(2),
+          spokePoolClients
+        );
+        const elapsedFillDeadline = bundleBlockTimestamps[destinationChainId][1] - 1;
+
+        await depositV3(
+          spokePool_1,
+          depositor,
+          erc20_1.address,
+          erc20_2.address,
+          undefined,
+          undefined,
+          elapsedFillDeadline
+        );
+        await updateAllClients();
+        const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
+
+        // Origin chain running balance is incremented by refunded deposit which cancels out the subtraction for
+        // bundle deposit.
+        expect(initialRoot.runningBalances).to.deep.equal(merkleRoot1.runningBalances);
+        expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+      });
     });
   });
 });

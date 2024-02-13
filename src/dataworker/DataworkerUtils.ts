@@ -377,6 +377,7 @@ export async function _buildPoolRebalanceRoot(
   bundleFillsV3: BundleFillsV3,
   bundleSlowFillsV3: BundleSlowFills,
   unexecutableSlowFills: BundleExcessSlowFills,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
   maxL1TokenCountOverride: number | undefined,
@@ -435,9 +436,9 @@ export async function _buildPoolRebalanceRoot(
   // Slow fills should still increment bundleLpFees and updatedOutputAmount should be equal to inputAmount - lpFees.
   // Increment the updatedOutputAmount to the destination chain.
   Object.entries(bundleSlowFillsV3).forEach(([_destinationChainId, depositsForChain]) => {
+    const destinationChainId = Number(_destinationChainId);
     Object.entries(depositsForChain).forEach(([outputToken, deposits]) => {
       deposits.forEach((deposit) => {
-        const destinationChainId = Number(_destinationChainId);
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           outputToken,
           destinationChainId,
@@ -535,8 +536,20 @@ export async function _buildPoolRebalanceRoot(
    * REFUNDS FOR EXPIRED DEPOSITS
    */
 
-  // TODO: Add expired v3 deposits. These should refund the inputAmount and increment running balances to the
-  // origin chain equal to the inputAmount.
+  // Add origin chain running balance for expired v3 deposits. These should refund the inputAmount.
+  Object.entries(expiredDepositsToRefundV3).forEach(([_originChainId, depositsForChain]) => {
+    const originChainId = Number(_originChainId);
+    Object.entries(depositsForChain).forEach(([inputToken, deposits]) => {
+      deposits.forEach((deposit) => {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          inputToken,
+          originChainId,
+          latestMainnetBlock
+        );
+        updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, deposit.inputAmount);
+      });
+    });
+  });
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
   // combination if found.
