@@ -1,10 +1,10 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
-import { constants as ethersConstants, providers } from "ethers";
+import { providers } from "ethers";
 import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
-import { Deposit, Fill, FillWithBlock, RelayerRefundLeaf, RunningBalances } from "../../src/interfaces";
-import { TransactionResponse, buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
+import { Deposit, Fill, RelayerRefundLeaf, RunningBalances } from "../../src/interfaces";
+import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -261,7 +261,7 @@ export async function simpleDeposit(
   amountToDeposit: utils.BigNumber = utils.amountToDeposit,
   depositRelayerFeePct: utils.BigNumber = utils.depositRelayerFeePct
 ): Promise<Deposit> {
-  const depositObject = await utils.deposit(
+  const depositObject = await utils.depositV2(
     spokePool,
     token,
     recipient,
@@ -328,7 +328,7 @@ export async function buildDeposit(
   quoteTimestamp?: number,
   message?: string
 ): Promise<Deposit> {
-  const _deposit = await utils.deposit(
+  const _deposit = await utils.depositV2(
     spokePool,
     tokenToDeposit,
     recipientAndDepositor,
@@ -540,44 +540,6 @@ export async function buildFillForRepaymentChain(
   } else {
     return null;
   }
-}
-
-export async function buildRefundRequest(
-  spokePool: Contract,
-  relayer: SignerWithAddress,
-  fill: FillWithBlock,
-  refundToken: string,
-  maxCount?: BigNumber
-): Promise<TransactionResponse> {
-  // @note: These chainIds should align, but don't! @todo: Fix!
-  // const chainId = (await spokePool.provider.getNetwork()).chainId;
-  // assert.isTrue(fill.repaymentChainId === chainId);
-
-  const {
-    originChainId,
-    depositId,
-    destinationChainId,
-    fillAmount: amount,
-    realizedLpFeePct,
-    blockNumber: fillBlock,
-  } = fill;
-
-  maxCount ??= ethersConstants.MaxUint256;
-
-  const refundRequest = await spokePool
-    .connect(relayer)
-    .requestRefund(
-      refundToken,
-      amount,
-      originChainId,
-      destinationChainId,
-      realizedLpFeePct,
-      depositId,
-      fillBlock,
-      maxCount
-    );
-
-  return refundRequest;
 }
 
 // Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented

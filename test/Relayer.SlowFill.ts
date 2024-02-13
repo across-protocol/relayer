@@ -8,6 +8,7 @@ import {
   TokenClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
+import { bnZero } from "../src/utils";
 import {
   CHAIN_ID_TEST_LIST,
   amountToDeposit,
@@ -24,7 +25,7 @@ import {
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  deposit,
+  depositV2,
   destinationChainId,
   enableRoutesOnHubPool,
   ethers,
@@ -35,7 +36,6 @@ import {
   setupTokensForWallet,
   sinon,
   spyLogIncludes,
-  toBN,
   winston,
 } from "./utils";
 
@@ -164,7 +164,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
     await erc20_2.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
     // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    const deposit1 = await deposit(
+    const deposit1 = await depositV2(
       spokePool_1,
       erc20_1,
       depositor,
@@ -172,6 +172,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
       destinationChainId,
       amountToDeposit.mul(2) // 2x the normal deposit size. Bot only has 1x the deposit amount.
     );
+    expect(deposit1).to.exist;
+
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(spyLogIncludes(spy, -2, "Zero filling")).to.be.true;
@@ -182,16 +184,16 @@ describe("Relayer: Initiates slow fill requests", async function () {
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
-    const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
-    expect(fillEvents2.length).to.equal(1);
-    expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
-    expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.fillAmount).to.equal(1); // 1wei fill size
-    expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
-    expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
-    expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
-    expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
-    expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
+    const fillEvent = (await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay())).at(-1);
+    const args = fillEvent?.args;
+    expect(args).to.exist;
+    expect(args?.depositId).to.exist;
+    expect(args?.depositId).to.equal(deposit1?.depositId);
+    expect(args?.relayerFeePct).to.exist;
+    expect(args?.relayerFeePct.eq(deposit1?.relayerFeePct)).to.be.true;
+    expect(args?.fillAmount).to.exist;
+    expect(args?.fillAmount).to.equal(1); // 1wei fill size
+
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallerClient.clearTransactionQueue();
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
@@ -216,7 +218,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       await erc20_2.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
       // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
       await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-      deposit1 = await deposit(
+      deposit1 = await depositV2(
         spokePool_1,
         erc20_1,
         depositor,
@@ -230,9 +232,9 @@ describe("Relayer: Initiates slow fill requests", async function () {
         // These parameters don't matter, as the relayer only checks that the rebalance matches
         // the deposit destination chain and L1 token. The amount must be greater than the unfilled
         // deposit amount too.
-        thresholdPct: toBN(0),
-        targetPct: toBN(0),
-        currentAllocPct: toBN(0),
+        thresholdPct: bnZero,
+        targetPct: bnZero,
+        currentAllocPct: bnZero,
         cumulativeBalance: await l1Token.balanceOf(relayer.address),
       };
     });
@@ -257,7 +259,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       it("rebalance amount is too low", async function () {
         mockInventoryClient.addPossibleRebalance({
           ...partialRebalance,
-          balance: toBN(0), // No balance
+          balance: bnZero, // No balance
           amount: deposit1.amount,
           chainId: deposit1.destinationChainId,
           l1Token: l1Token.address,

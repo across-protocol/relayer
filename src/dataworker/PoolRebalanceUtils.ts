@@ -603,6 +603,7 @@ export function generateMarkdownForRootBundle(
     const destinationChainId = sdkUtils.getSlowFillLeafChainId(leaf);
     const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
 
+    // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
     const slowFill: Record<string, number | string> = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
@@ -620,8 +621,6 @@ export function generateMarkdownForRootBundle(
       slowFill.realizedLpFeePct = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
-      assert(sdkUtils.isV3SlowFillLeaf(leaf)); // tsc hinting.
-
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
       const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
       const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);

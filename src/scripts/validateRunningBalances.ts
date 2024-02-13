@@ -19,6 +19,7 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   BigNumber,
@@ -40,6 +41,7 @@ import {
   getRefund,
   disconnectRedisClients,
   Signer,
+  getSigner,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
@@ -47,7 +49,6 @@ import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUt
 import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
-import { retrieveSignerFromCLIArgs } from "../utils/CLIUtils";
 
 config();
 let logger: winston.Logger;
@@ -253,6 +254,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             );
             // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
             // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
+            // For v2, pre-fee amounts are computed and are normalised to post-fee amounts afterwards.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
               (f) =>
                 sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
@@ -270,20 +272,29 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                       f.depositId === slowFillForChain.relayData.depositId
                   );
 
-                const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                let unexecutedAmount: BigNumber;
                 const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+                if (sdkUtils.isV2SlowFillLeaf(slowFillForChain)) {
+                  assert(isDefined(lastFill));
 
-                // For v2 slow fills there must be at least one partial fill; for v3 slow fills there _may_ be a fill.
-                const totalFilledAmount =
-                  sdkUtils.isV2SlowFillLeaf(slowFillForChain) || isDefined(lastFill)
-                    ? sdkUtils.getTotalFilledAmount(lastFill)
-                    : bnZero;
+                  // For v2 there must be at least one partial fill, but there may be multiple. The deposit
+                  // may be filled anywhere up to the outstanding ammount included in the slow fill.
+                  const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                  const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+                  unexecutedAmount = outputAmount.sub(totalFilledAmount);
+                } else {
+                  // For v3 slow fills there _may_ be a fast fill, and if so, the fill is completed.
+                  unexecutedAmount = isDefined(lastFill)
+                    ? bnZero
+                    : slowFillForChain.updatedOutputAmount;
+                }
 
-                const amountSentForSlowFillLeftUnexecuted = outputAmount.sub(totalFilledAmount);
-                if (amountSentForSlowFillLeftUnexecuted.gt(bnZero)) {
+                // For v2 fills, the amounts computed so far were pre-fees. Subtract the LP fee to determine how much
+                // remains to be executed. In v3 the post-fee amount is known, so use it directly.
+                if (unexecutedAmount.gt(bnZero)) {
                   const deductionForSlowFill = sdkUtils.isV3SlowFillLeaf(slowFillForChain)
-                    ? amountSentForSlowFillLeftUnexecuted
-                    : getRefund(amountSentForSlowFillLeftUnexecuted, slowFillForChain.relayData.realizedLpFeePct);
+                    ? unexecutedAmount
+                    : getRefund(unexecutedAmount, slowFillForChain.relayData.realizedLpFeePct);
 
                   mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
                     deductionForSlowFill.toString(),
@@ -513,7 +524,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
 export async function run(_logger: winston.Logger): Promise<void> {
   try {
-    const baseSigner = await retrieveSignerFromCLIArgs();
+    // This script inherits the TokenClient, and it attempts to update token approvals. The disputer already has the
+    // necessary token approvals in place, so use its address. nb. This implies the script can only be used on mainnet.
+    const voidSigner = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
+    const baseSigner = await getSigner({ keyType: "void", cleanEnv: true, roAddress: voidSigner });
     await runScript(_logger, baseSigner);
   } finally {
     await disconnectRedisClients(logger);
