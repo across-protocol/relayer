@@ -10,7 +10,6 @@ import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src
 import { getDeployedBlockNumber } from "@across-protocol/contracts-v2";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { assert } from "../src/utils";
 
 let dataworkerClients: DataworkerClients;

@@ -27,6 +27,7 @@ import {
   buildSlowRelayTree,
   count2DDictionaryValues,
   count3DDictionaryValues,
+  fixedPointAdjustment,
   getDepositPath,
   getFillsInRange,
   getTimestampsForBundleEndBlocks,
@@ -374,6 +375,7 @@ export async function _buildPoolRebalanceRoot(
   earlyDeposits: typechain.FundsDepositedEvent[],
   bundleV3Deposits: BundleDepositsV3,
   bundleFillsV3: BundleFillsV3,
+  bundleSlowFillsV3: BundleSlowFills,
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
   maxL1TokenCountOverride: number | undefined,
@@ -428,10 +430,24 @@ export async function _buildPoolRebalanceRoot(
   // Add payments to execute slow fills.
   addSlowFillsToRunningBalances(mainnetBundleEndBlock, runningBalances, clients.hubPoolClient, unfilledDeposits);
 
-  // TODO: Add running balances and lp fees for v3 slow fills using BundleDataClient.bundleSlowFillsV3.
+  // Add running balances and lp fees for v3 slow fills using BundleDataClient.bundleSlowFillsV3.
   // Slow fills should still increment bundleLpFees and updatedOutputAmount should be equal to inputAmount - lpFees.
   // Increment the updatedOutputAmount to the destination chain.
-
+  Object.entries(bundleSlowFillsV3).forEach(([_destinationChainId, depositsForChain]) => {
+    Object.entries(depositsForChain).forEach(([outputToken, deposits]) => {
+      deposits.forEach((deposit) => {
+        const destinationChainId = Number(_destinationChainId);
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          outputToken,
+          destinationChainId,
+          latestMainnetBlock
+        );
+        const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
+        updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, deposit.inputAmount.sub(lpFee));
+        updateRunningBalance(realizedLpFees, destinationChainId, l1TokenCounterpart, lpFee);
+      });
+    });
+  });
   /**
    * EXCESSES FROM UNEXECUTABLE SLOW FILLS
    */
