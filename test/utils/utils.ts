@@ -31,7 +31,6 @@ export {
   spyLogLevel,
 } from "@uma/financial-templates-lib";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
-export { BigNumber, Contract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
 export const {
   ethers,
   buildPoolRebalanceLeafTree,
@@ -47,7 +46,7 @@ export const {
 } = utils;
 
 export type SignerWithAddress = utils.SignerWithAddress;
-export { assert, chai, expect, FakeContract };
+export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, utf8ToHex, winston};
 
 chai.use(chaiExclude);
 
