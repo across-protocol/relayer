@@ -1,6 +1,5 @@
 import assert from "assert";
 import { utils as ethersUtils } from "ethers";
-import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
@@ -1474,8 +1473,6 @@ export class Dataworker {
     tree: MerkleTree<PoolRebalanceLeaf>,
     submitExecution: boolean
   ): Promise<void> {
-    const isArbitrum = (chainId: number) => [CHAIN_IDs.ARBITRUM, CHAIN_IDs.ARBITRUM_GOERLI].includes(chainId);
-
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const fundedLeaves = (
       await Promise.all(
@@ -1487,7 +1484,7 @@ export class Dataworker {
             chainId: hubPoolChainId,
           }));
 
-          if (isArbitrum(leaf.chainId)) {
+          if (sdkUtils.chainIsArbitrum(leaf.chainId)) {
             const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
               this.clients.hubPoolClient.hubPool.address
             );
@@ -1541,7 +1538,7 @@ export class Dataworker {
     ).filter(isDefined);
 
     let hubPoolBalance;
-    if (fundedLeaves.some((leaf) => isArbitrum(leaf.chainId))) {
+    if (fundedLeaves.some((leaf) => sdkUtils.chainIsArbitrum(leaf.chainId))) {
       hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
         this.clients.hubPoolClient.hubPool.address
       );
@@ -1550,7 +1547,7 @@ export class Dataworker {
       const proof = tree.getHexProof(leaf);
       const mrkdwn = `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`;
       if (submitExecution) {
-        if (isArbitrum(leaf.chainId)) {
+        if (sdkUtils.chainIsArbitrum(leaf.chainId)) {
           if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf))) {
             this.clients.multiCallerClient.enqueueTransaction({
               contract: this.clients.hubPoolClient.hubPool,
