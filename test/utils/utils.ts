@@ -46,7 +46,7 @@ export const {
 } = utils;
 
 export type SignerWithAddress = utils.SignerWithAddress;
-export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, utf8ToHex, winston};
+export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston};
 
 chai.use(chaiExclude);
 
