@@ -15,16 +15,15 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
+import { originChainId, destinationChainId } from "./constants";
 import {
   assertPromiseError,
   createSpyLogger,
   deployConfigStore,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
   hubPoolFixture,
-  originChainId,
   randomAddress,
   winston,
 } from "./utils";
