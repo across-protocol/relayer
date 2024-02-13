@@ -1,9 +1,10 @@
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
+  BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
-  deepEqualsWithBigNumber,
+  // deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
   deploySpokePoolWithToken,
   ethers,
@@ -21,7 +22,31 @@ let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
+type TokenBalanceByChain = {
+  [chainId: number]: {
+    [token: string]: { balance: BigNumber; allowance: BigNumber };
+  };
+};
+
 describe("TokenClient: Balance and Allowance", async function () {
+
+  // @todo: Why is utils.deepEqualsWithBigNumber suddenly broken in this test?
+  // The issue resolves to the use of assert.deepStrictEqual(), which seems to pass through chai to Node's own assert.
+  // The object contents _are_ identical but their addresses differ and it seems to object to that. Why now?!
+  const deepEqualsWithBigNumber = (a: TokenBalanceByChain,  b: TokenBalanceByChain): boolean => {
+    Object.entries(a).forEach(([chainId, balances]) => {
+      expect(b[chainId]).to.exist;
+
+      Object.entries(balances).forEach(([token, erc20]) => {
+        expect(b[chainId][token]).to.exist;
+        expect(b[chainId][token].balance.eq(erc20.balance)).to.be.true;
+        expect(b[chainId][token].allowance.eq(erc20.allowance)).to.be.true;
+      });
+    });
+    return true;
+  };
+
+
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
