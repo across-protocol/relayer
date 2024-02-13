@@ -15,6 +15,8 @@ import {
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
+  originChainId,
+  destinationChainId,
   repaymentChainId,
 } from "./constants";
 import { MockInventoryClient } from "./mocks";
@@ -25,14 +27,12 @@ import {
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  deposit,
-  destinationChainId,
+  depositV2,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
-  originChainId,
   setupTokensForWallet,
   sinon,
   spyLogIncludes,
@@ -164,7 +164,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     await erc20_2.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
     // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    const deposit1 = await deposit(
+    const deposit1 = await depositV2(
       spokePool_1,
       erc20_1,
       depositor,
@@ -211,7 +211,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       await erc20_2.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
       // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
       await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-      deposit1 = await deposit(
+      deposit1 = await depositV2(
         spokePool_1,
         erc20_1,
         depositor,

@@ -233,12 +233,16 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   await Promise.all(
     allValidFillsInRange
       .filter((fill) => {
+        // @todo This filter implicitly produces an array of v2 fills because it is impossible for v3 fills to pass.
+        // Update the filter such that it also passes v3 fills where a slow fill was initially produced.
         const outputAmount = sdkUtils.getFillOutputAmount(fill);
         const fillAmount = sdkUtils.getFillAmount(fill);
         const totalFilledAmount = sdkUtils.getTotalFilledAmount(fill);
         return totalFilledAmount.eq(outputAmount) && !fillAmount.eq(outputAmount);
       })
       .map(async (fill: interfaces.FillWithBlock) => {
+        assert(sdkUtils.isV2Fill(fill)); // @todo Remove when the above filter permits v3 fills to pass.
+
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
             hubPoolClient.latestBlockSearched,
@@ -535,7 +539,7 @@ export function generateMarkdownForRootBundle(
   relayerRefundLeaves: any[],
   relayerRefundRoot: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  slowRelayLeaves: any[],
+  slowRelayLeaves: SlowFillLeaf[],
   slowRelayRoot: string
 ): string {
   // Create helpful logs to send to slack transport
@@ -596,42 +600,42 @@ export function generateMarkdownForRootBundle(
   let slowRelayLeavesPretty = "";
   slowRelayLeaves.forEach((leaf, index) => {
     const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
-    const outputTokenDecimals = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, outputToken).decimals;
+    const destinationChainId = sdkUtils.getSlowFillLeafChainId(leaf);
+    const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
 
-    const slowFill: Record<string, string> = {
+    // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
+    const slowFill: Record<string, number | string> = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
       recipient: shortenHexString(leaf.relayData.recipient),
       originChainId: leaf.relayData.originChainId,
-      destinationChainId: leaf.relayData.destinationChainId,
+      destinationChainId: destinationChainId,
       depositId: leaf.relayData.depositId,
       message: leaf.relayData.message,
-      // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
-      realizedLpFeePct: `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`,
     };
 
     if (sdkUtils.isV2SlowFillLeaf(leaf)) {
       slowFill.destinationToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
       slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
-      // v2SlowFill payoutAdjustmentPct is incidentally defined as a string.
-      // It's unconditionally 0 and will be removed, so just BN it on the fly.
+      // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
+      slowFill.realizedLpFeePct = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
       const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
       const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
-      const updatedOutputAmount = leaf.relayData.updatedOutputAmount.mul(scaleBy);
+      const updatedOutputAmount = leaf.updatedOutputAmount.mul(scaleBy);
       assert(
         inputAmount.gte(updatedOutputAmount),
         "Unexpected output amount for slow fill on" +
-          `${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
+          ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
       );
 
       // Infer the realizedLpFeePct from the spread between inputAmount and updatedOutputAmount (sans relayer fee).
       const realizedLpFeePct = inputAmount.sub(updatedOutputAmount).mul(fixedPoint).div(inputAmount);
 
       slowFill.outputToken = outputToken;
-      slowFill.outputAmount = convertFromWei(updatedOutputAmount, 18); // tokens were scaled to 18 decimals.
+      slowFill.outputAmount = convertFromWei(updatedOutputAmount.toString(), 18); // tokens were scaled to 18 decimals.
       slowFill.realizedLpFeePct = `${formatFeePct(realizedLpFeePct)}%`;
     }
 

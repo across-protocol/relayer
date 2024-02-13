@@ -1,4 +1,4 @@
-import { DepositWithBlock, Fill, FillWithBlock, RefundRequest } from "../../src/interfaces";
+import { DepositWithBlock, Fill } from "../../src/interfaces";
 import { toBN } from "../../src/utils";
 
 export function fillFromDeposit(deposit: DepositWithBlock, relayer: string): Fill {
@@ -32,21 +32,4 @@ export function fillFromDeposit(deposit: DepositWithBlock, relayer: string): Fil
   };
 
   return fill;
-}
-
-export function refundRequestFromFill(fill: FillWithBlock, refundToken: string): RefundRequest {
-  const refundRequest: RefundRequest = {
-    amount: fill.amount,
-    depositId: fill.depositId,
-    originChainId: fill.originChainId,
-    destinationChainId: fill.destinationChainId,
-    repaymentChainId: fill.repaymentChainId,
-    realizedLpFeePct: fill.realizedLpFeePct,
-    fillBlock: toBN(fill.blockNumber),
-    relayer: fill.relayer,
-    refundToken,
-    previousIdenticalRequests: toBN(0),
-  };
-
-  return refundRequest;
 }

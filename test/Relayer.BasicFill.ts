@@ -9,8 +9,8 @@ import {
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
-  modifyRelayHelper,
-  randomAddress,
+  originChainId,
+  destinationChainId,
   repaymentChainId,
 } from "./constants";
 import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
@@ -23,14 +23,14 @@ import {
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  deposit,
-  destinationChainId,
+  depositV2,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
-  originChainId,
+  modifyRelayHelper,
+  randomAddress,
   setupTokensForWallet,
   sinon,
   toBNWei,
@@ -162,7 +162,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Correctly fetches single unfilled deposit and fills it", async function () {
-    const deposit1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit1 = await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
@@ -198,7 +198,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   it("Correctly validates self-relays", async function () {
     const relayerFeePct = bnZero;
     for (const testDepositor of [depositor, relayer]) {
-      await deposit(spokePool_1, erc20_1, relayer, testDepositor, destinationChainId, amountToDeposit, relayerFeePct);
+      await depositV2(spokePool_1, erc20_1, relayer, testDepositor, destinationChainId, amountToDeposit, relayerFeePct);
 
       await updateAllClients();
       await relayerInstance.checkForUnfilledDepositsAndFill();
@@ -208,7 +208,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Ignores deposits older than min deposit confirmation threshold", async function () {
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     // Set MDC such that the deposit is is ignored. The profit client will return a fill USD amount of $0,
     // so we need to set the MDC for the `0` threshold to be large enough such that the deposit would be ignored.
@@ -240,7 +240,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Ignores deposits with quote times in future", async function () {
-    const { quoteTimestamp } = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const { quoteTimestamp } = await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     // Override hub pool client timestamp to make deposit look like its in the future
     await updateAllClients();
@@ -290,7 +290,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   it("Ignores deposit from preconfigured addresses", async function () {
     relayerInstance.config.ignoredAddresses = [depositor.address];
 
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
 
@@ -488,7 +488,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   it("Shouldn't double fill a deposit", async function () {
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
@@ -533,7 +533,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     routes.forEach(({ from, to, enabled }) => expect(relayerInstance.routeEnabled(from, to)).to.equal(enabled));
 
     // Deposit on originChainId, destined for destinationChainId => expect ignored.
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(
