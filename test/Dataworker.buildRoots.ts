@@ -51,7 +51,7 @@ import {
   toBN,
   toBNWei,
 } from "./utils";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, interfaces } from "@across-protocol/sdk-v2";
 
 // Tested
 import { Dataworker, PoolRebalanceRoot } from "../src/dataworker/Dataworker";
@@ -1410,7 +1410,7 @@ describe("Dataworker: Build merkle roots", async function () {
           spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
         const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
 
-        // Slow fills should add to bundle LP fees.
+        // Slow fills should not add to bundle LP fees.
         const lpFee = deposit.realizedLpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
         const expectedRunningBalances: RunningBalances = {
           ...initialRoot.runningBalances,
@@ -1423,14 +1423,70 @@ describe("Dataworker: Build merkle roots", async function () {
             ),
           },
         };
-        const expectedRealizedLpFees: RunningBalances = {
-          ...initialRoot.realizedLpFees,
+        expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+        expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+      });
+      it("Subtracts unexecutable slow fill amounts from destination chain running balances", async function () {
+        // Send slow fill in first bundle block range:
+        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+        await updateAllClients();
+        const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit)[0];
+        await requestSlowFill(spokePool_2, relayer, deposit);
+        await updateAllClients();
+
+        // Propose first bundle with a destination chain block range that includes up to the slow fiil block.
+        const slowFillRequest =
+          spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
+        const destinationChainBlockRange = [0, slowFillRequest.blockNumber];
+        const blockRange1 = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map(
+          () => destinationChainBlockRange
+        );
+        const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange1, spokePoolClients);
+
+        const lpFee = deposit.realizedLpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
+        const expectedRunningBalances: RunningBalances = {
+          ...initialRoot.runningBalances,
+          [originChainId]: {
+            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(deposit.inputAmount),
+          },
           [destinationChainId]: {
-            [l1Token_1.address]: initialRoot.realizedLpFees[destinationChainId][l1Token_1.address].add(lpFee),
+            [l1Token_1.address]: initialRoot.runningBalances[destinationChainId][l1Token_1.address].add(
+              lpFee.mul(-1).add(slowFillRequest.inputAmount)
+            ),
           },
         };
         expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
-        expect(expectedRealizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+        expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+
+        // Send a fast fill in a second bundle block range.
+        await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
+        await updateAllClients();
+        const fill = spokePoolClients[destinationChainId].getFills().filter(sdkUtils.isV3Fill)[0];
+        expect(fill.relayExecutionInfo.fillType).to.equal(interfaces.FillType.ReplacedSlowFill);
+        const blockRange2 = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map((_chain, index) => [
+          blockRange1[index][1] + 1,
+          getDefaultBlockRange(2)[index][1],
+        ]);
+        const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
+
+        // Add fill to repayment chain running balance and remove slow fill amount from destination chain.
+        const slowFillAmount = lpFee.mul(-1).add(fill.inputAmount);
+        const expectedRunningBalances2: RunningBalances = {
+          // Note: There should be no origin chain entry here since there were no deposits.
+          [destinationChainId]: {
+            [l1Token_1.address]: slowFillAmount.mul(-1),
+          },
+          [repaymentChainId]: {
+            [l1Token_1.address]: slowFillAmount,
+          },
+        };
+        const expectedRealizedLpFees2: RunningBalances = {
+          [repaymentChainId]: {
+            [l1Token_1.address]: lpFee,
+          },
+        };
+        expect(expectedRunningBalances2).to.deep.equal(merkleRoot2.runningBalances);
+        expect(expectedRealizedLpFees2).to.deep.equal(merkleRoot2.realizedLpFees);
       });
     });
   });

@@ -49,7 +49,7 @@ import {
 import _ from "lodash";
 import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
-import { BundleDepositsV3, BundleFillsV3, BundleSlowFills } from "../interfaces/BundleData";
+import { BundleDepositsV3, BundleExcessSlowFills, BundleFillsV3, BundleSlowFills } from "../interfaces/BundleData";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -179,6 +179,7 @@ export class Dataworker {
       bundleDepositsV3,
       bundleFillsV3,
       bundleSlowFillsV3,
+      unexecutableSlowFills,
     } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
@@ -206,6 +207,7 @@ export class Dataworker {
       bundleDepositsV3,
       bundleFillsV3,
       bundleSlowFillsV3,
+      unexecutableSlowFills,
       true
     );
   }
@@ -481,6 +483,7 @@ export class Dataworker {
       bundleDepositsV3,
       bundleFillsV3,
       bundleSlowFillsV3,
+      unexecutableSlowFills,
     } = await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
@@ -508,6 +511,7 @@ export class Dataworker {
       bundleDepositsV3,
       bundleFillsV3,
       bundleSlowFillsV3,
+      unexecutableSlowFills,
       true
     );
     const relayerRefundRoot = _buildRelayerRefundRoot(
@@ -1973,6 +1977,7 @@ export class Dataworker {
     bundleV3Deposits: BundleDepositsV3,
     bundleV3Fills: BundleFillsV3,
     bundleSlowFills: BundleSlowFills,
+    unexecutableSlowFills: BundleExcessSlowFills,
     logSlowFillExcessData = false
   ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
@@ -1992,6 +1997,7 @@ export class Dataworker {
         bundleV3Deposits,
         bundleV3Fills,
         bundleSlowFills,
+        unexecutableSlowFills,
         this.clients,
         spokePoolClients,
         this.maxL1TokenCountOverride,

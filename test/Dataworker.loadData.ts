@@ -1420,7 +1420,6 @@ describe("Dataworker: Load data used in all functions", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      // Send deposit that expires in this bundle.
       const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
 

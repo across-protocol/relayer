@@ -376,6 +376,7 @@ export async function _buildPoolRebalanceRoot(
   bundleV3Deposits: BundleDepositsV3,
   bundleFillsV3: BundleFillsV3,
   bundleSlowFillsV3: BundleSlowFills,
+  unexecutableSlowFills: BundleExcessSlowFills,
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
   maxL1TokenCountOverride: number | undefined,
@@ -442,12 +443,14 @@ export async function _buildPoolRebalanceRoot(
           destinationChainId,
           latestMainnetBlock
         );
-        const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
+        const lpFee = deposit.realizedLpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
         updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, deposit.inputAmount.sub(lpFee));
-        updateRunningBalance(realizedLpFees, destinationChainId, l1TokenCounterpart, lpFee);
+        // Slow fill LP fees are accounted for when the slow fill executes and a V3FilledRelay is emitted. i.e. when
+        // the slow fill execution is included in bundleFillsV3.
       });
     });
   });
+
   /**
    * EXCESSES FROM UNEXECUTABLE SLOW FILLS
    */
@@ -464,9 +467,25 @@ export async function _buildPoolRebalanceRoot(
     allValidFillsInRange
   );
 
-  // TODO: Subtract running balances from BundleDataClient.unexecutableSlowFills. These are all slow fills that
-  // failed to execute therefore the amount to return would be the updatedOutputAmount = inputAmount - lpFees.
-  // Decrement the excess amounts from the destination chain running baalnce.
+  // Subtract destination chain running balances for BundleDataClient.unexecutableSlowFills.
+  // These are all slow fills that are impossible to execute and therefore the amount to return would be
+  // the updatedOutputAmount = inputAmount - lpFees.
+  Object.entries(unexecutableSlowFills).forEach(([_destinationChainId, slowFilledDepositsForChain]) => {
+    const destinationChainId = Number(_destinationChainId);
+    Object.entries(slowFilledDepositsForChain).forEach(([outputToken, slowFilledDeposits]) => {
+      slowFilledDeposits.forEach((deposit) => {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          outputToken,
+          destinationChainId,
+          latestMainnetBlock
+        );
+        const lpFee = deposit.realizedLpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
+        updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, lpFee.sub(deposit.inputAmount));
+        // Slow fills don't add to lpFees, only when the slow fill is executed and a V3FilledRelay is emitted, so
+        // we don't need to subtract it here. Moreover, the HubPoole expects bundleLpFees to be > 0.
+      });
+    });
+  });
 
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
