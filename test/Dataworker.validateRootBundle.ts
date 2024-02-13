@@ -6,12 +6,12 @@ import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
-  createRandomBytes32,
   destinationChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
+  createRandomBytes32,
   SignerWithAddress,
   buildDeposit,
   buildFillForRepaymentChain,
