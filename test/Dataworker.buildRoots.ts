@@ -1,5 +1,5 @@
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { Deposit, Fill, RunningBalances } from "../src/interfaces";
+import { Deposit, Fill, RelayerRefundLeaf, RunningBalances } from "../src/interfaces";
 import {
   EMPTY_MERKLE_ROOT,
   compareAddresses,
@@ -54,7 +54,7 @@ import {
 import { utils as sdkUtils, interfaces } from "@across-protocol/sdk-v2";
 
 // Tested
-import { Dataworker, PoolRebalanceRoot } from "../src/dataworker/Dataworker";
+import { Dataworker } from "../src/dataworker/Dataworker";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
@@ -1274,86 +1274,22 @@ describe("Dataworker: Build merkle roots", async function () {
       expect(merkleRoot2.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal(expectedLeaves2);
     });
     describe("Handles V3 BundleData", function () {
-      let initialRoot: PoolRebalanceRoot;
       beforeEach(async function () {
         await updateAllClients();
-
-        // Submit deposits for multiple L2 tokens.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-        const deposit2 = await buildDeposit(
-          hubPoolClient,
-          spokePool_2,
-          erc20_2,
-          l1Token_1,
-          depositor,
-          originChainId,
-          amountToDeposit.mul(toBN(2))
-        );
-        const deposit3 = await buildDeposit(
-          hubPoolClient,
-          spokePool_2,
-          erc20_2,
-          l1Token_1,
-          depositor,
-          originChainId,
-          amountToDeposit
-        );
         await updateAllClients();
-
-        // Note: Submit fills with repayment chain set to one of the origin or destination chains since we have spoke
-        // pools deployed on those chains.
-
-        // Partial fill deposit1
-        const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
-        const unfilledAmount1 = getRefund(deposit1.amount.sub(fill1.totalFilledAmount), fill1.realizedLpFeePct);
-
-        // Partial fill deposit2
-        const fill2 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.3, originChainId);
-        const fill3 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.2, originChainId);
-        const unfilledAmount3 = getRefund(deposit2.amount.sub(fill3.totalFilledAmount), fill3.realizedLpFeePct);
-
-        // Partial fill deposit3
-        const fill4 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit3, 0.5, originChainId);
-        const unfilledAmount4 = getRefund(deposit3.amount.sub(fill4.totalFilledAmount), fill4.realizedLpFeePct);
-
-        // Prior to root bundle being executed, running balances should be:
-        // - deposited amount
-        // + partial fill refund
-        // + slow fill amount
-        const expectedRunningBalances: RunningBalances = {
-          [destinationChainId]: {
-            [l1Token_1.address]: getRefundForFills([fill1])
-              .sub(deposit2.amount.add(deposit3.amount))
-              .add(unfilledAmount1),
-          },
-          [originChainId]: {
-            [l1Token_1.address]: getRefundForFills([fill2, fill3, fill4])
-              .sub(deposit1.amount)
-              .add(unfilledAmount3)
-              .add(unfilledAmount4),
-          },
-        };
-        const expectedRealizedLpFees: RunningBalances = {
-          [destinationChainId]: {
-            [l1Token_1.address]: getRealizedLpFeeForFills([fill1]),
-          },
-          [originChainId]: {
-            [l1Token_1.address]: getRealizedLpFeeForFills([fill2, fill3, fill4]),
-          },
-        };
-        await updateAllClients();
-        const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
-        expect(merkleRoot1.runningBalances).to.deep.equal(expectedRunningBalances);
-        expect(merkleRoot1.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
-        initialRoot = merkleRoot1;
+        const poolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(
+          getDefaultBlockRange(1),
+          spokePoolClients
+        );
+        expect(poolRebalanceRoot.runningBalances).to.deep.equal({});
+        expect(poolRebalanceRoot.realizedLpFees).to.deep.equal({});
+        const relayerRefundRoot = await dataworkerInstance.buildRelayerRefundRoot(
+          getDefaultBlockRange(1),
+          spokePoolClients,
+          poolRebalanceRoot.leaves,
+          poolRebalanceRoot.runningBalances
+        );
+        expect(relayerRefundRoot.leaves).to.deep.equal([]);
       });
       it("Subtracts bundle deposits from origin chain running balances", async function () {
         const deposit = await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
@@ -1362,13 +1298,12 @@ describe("Dataworker: Build merkle roots", async function () {
 
         // Deposits should not add to bundle LP fees.
         const expectedRunningBalances: RunningBalances = {
-          ...initialRoot.runningBalances,
           [originChainId]: {
-            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(deposit.inputAmount),
+            [l1Token_1.address]: deposit.inputAmount.mul(-1),
           },
         };
         expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
-        expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+        expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
       });
       it("Adds bundle fills to repayment chain running balances", async function () {
         await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
@@ -1383,16 +1318,14 @@ describe("Dataworker: Build merkle roots", async function () {
         // and added to realized LP fees, for fills.
         const lpFee = deposit.realizedLpFeePct.mul(fill.inputAmount).div(fixedPointAdjustment);
         const expectedRunningBalances: RunningBalances = {
-          ...initialRoot.runningBalances,
           [originChainId]: {
-            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(deposit.inputAmount),
+            [l1Token_1.address]: deposit.inputAmount.mul(-1),
           },
           [repaymentChainId]: {
             [l1Token_1.address]: lpFee.mul(-1).add(fill.inputAmount),
           },
         };
         const expectedRealizedLpFees: RunningBalances = {
-          ...initialRoot.realizedLpFees,
           [repaymentChainId]: {
             [l1Token_1.address]: lpFee,
           },
@@ -1413,18 +1346,15 @@ describe("Dataworker: Build merkle roots", async function () {
         // Slow fills should not add to bundle LP fees.
         const lpFee = deposit.realizedLpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
         const expectedRunningBalances: RunningBalances = {
-          ...initialRoot.runningBalances,
           [originChainId]: {
-            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(deposit.inputAmount),
+            [l1Token_1.address]: deposit.inputAmount.mul(-1),
           },
           [destinationChainId]: {
-            [l1Token_1.address]: initialRoot.runningBalances[destinationChainId][l1Token_1.address].add(
-              lpFee.mul(-1).add(slowFillRequest.inputAmount)
-            ),
+            [l1Token_1.address]: slowFillRequest.inputAmount.sub(lpFee),
           },
         };
         expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
-        expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+        expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
       });
       it("Subtracts unexecutable slow fill amounts from destination chain running balances", async function () {
         // Send slow fill in first bundle block range:
@@ -1445,18 +1375,15 @@ describe("Dataworker: Build merkle roots", async function () {
 
         const lpFee = deposit.realizedLpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
         const expectedRunningBalances: RunningBalances = {
-          ...initialRoot.runningBalances,
           [originChainId]: {
-            [l1Token_1.address]: initialRoot.runningBalances[originChainId][l1Token_1.address].sub(deposit.inputAmount),
+            [l1Token_1.address]: deposit.inputAmount.mul(-1),
           },
           [destinationChainId]: {
-            [l1Token_1.address]: initialRoot.runningBalances[destinationChainId][l1Token_1.address].add(
-              lpFee.mul(-1).add(slowFillRequest.inputAmount)
-            ),
+            [l1Token_1.address]: slowFillRequest.inputAmount.sub(lpFee),
           },
         };
         expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
-        expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+        expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
 
         // Send a fast fill in a second bundle block range.
         await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
@@ -1488,7 +1415,7 @@ describe("Dataworker: Build merkle roots", async function () {
         expect(expectedRunningBalances2).to.deep.equal(merkleRoot2.runningBalances);
         expect(expectedRealizedLpFees2).to.deep.equal(merkleRoot2.realizedLpFees);
       });
-      it("Adds expired deposits to origin chain running baalnces", async function () {
+      it("Adds expired deposits to origin chain running balances", async function () {
         const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
           [originChainId, destinationChainId],
           getDefaultBlockRange(2),
@@ -1510,8 +1437,47 @@ describe("Dataworker: Build merkle roots", async function () {
 
         // Origin chain running balance is incremented by refunded deposit which cancels out the subtraction for
         // bundle deposit.
-        expect(initialRoot.runningBalances).to.deep.equal(merkleRoot1.runningBalances);
-        expect(initialRoot.realizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+        const expectedRunningBalances: RunningBalances = {
+          // Note: There should be no origin chain entry here since there were no deposits.
+          [originChainId]: {
+            [l1Token_1.address]: toBN(0),
+          },
+        };
+        expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+        expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
+      });
+      it("Adds V3 fills to relayer refund root", async function () {
+        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+        await updateAllClients();
+        const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit)[0];
+        await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
+        await updateAllClients();
+        spokePoolClients[destinationChainId].getFills().filter(sdkUtils.isV3Fill)[0];
+        const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
+          getDefaultBlockRange(2),
+          spokePoolClients
+        );
+        const merkleRoot1 = await dataworkerInstance.buildRelayerRefundRoot(
+          getDefaultBlockRange(2),
+          spokePoolClients,
+          leaves,
+          runningBalances
+        );
+        // console.log(merkleRoot1.leaves, expectedLeaves)
+
+        // Origin chain should have negative running balance and therefore positive amount to return.
+        const expectedLeaves: RelayerRefundLeaf[] = [
+          {
+            chainId: originChainId,
+            amountToReturn: runningBalances[originChainId][l1Token_1.address].mul(-1),
+            l2TokenAddress: erc20_1.address,
+            refundAddresses: [],
+            refundAmounts: [],
+          },
+        ];
+        expect(expectedLeaves).to.deep.equal(merkleRoot1.leaves);
+
+        // TODO: Test V3 fill inclusion here.
       });
     });
   });

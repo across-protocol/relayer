@@ -49,7 +49,13 @@ import {
 import _ from "lodash";
 import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
-import { BundleDepositsV3, BundleExcessSlowFills, BundleFillsV3, BundleSlowFills } from "../interfaces/BundleData";
+import {
+  BundleDepositsV3,
+  BundleExcessSlowFills,
+  BundleFillsV3,
+  BundleSlowFills,
+  ExpiredDepositsToRefundV3,
+} from "../interfaces/BundleData";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root

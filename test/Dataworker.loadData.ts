@@ -1021,6 +1021,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
+
+      // lpFees should accumulate for slow fill executions.
       expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(fills[0].depositId);
       expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].lpFeePct).to.equal(lpFeePct);
       const totalGrossRefundAmount = fills[0].inputAmount;

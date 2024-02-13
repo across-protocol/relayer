@@ -265,6 +265,9 @@ export function _buildRelayerRefundRoot(
 } {
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
+  // TODO: Handle V3 bundle fills to refund here and expired deposits.
+  // Create a combined `refunds` object
+
   // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
   Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
     const repaymentChainId = Number(_repaymentChainId);
