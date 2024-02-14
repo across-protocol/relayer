@@ -1,10 +1,17 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
-import { providers } from "ethers";
+import { AcrossConfigStore, FakeContract, MerkleTree } from "@across-protocol/contracts-v2";
+import { constants } from "@across-protocol/sdk-v2";
+import { BigNumber, Contract, providers } from "ethers";
+import chai, { assert, expect } from "chai";
+import chaiExclude from "chai-exclude";
+import _ from "lodash";
+import sinon from "sinon";
+import winston from "winston";
 import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
 import { Deposit, Fill, RelayerRefundLeaf, RunningBalances } from "../../src/interfaces";
-import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
+import { buildRelayerRefundTree, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -12,16 +19,7 @@ import {
   amountToDeposit,
   depositRelayerFeePct,
   sampleRateModel,
-  zeroAddress,
 } from "../constants";
-import { BigNumber, Contract, SignerWithAddress } from "./index";
-import { AcrossConfigStore, MerkleTree } from "@across-protocol/contracts-v2";
-import { constants } from "@across-protocol/sdk-v2";
-import chai, { expect } from "chai";
-import chaiExclude from "chai-exclude";
-import _ from "lodash";
-import sinon from "sinon";
-import winston from "winston";
 import { ContractsV2SlowFill, SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
 
 export {
@@ -32,13 +30,25 @@ export {
   spyLogIncludes,
   spyLogLevel,
 } from "@uma/financial-templates-lib";
-export { sinon, winston };
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
+export const {
+  ethers,
+  buildPoolRebalanceLeafTree,
+  buildPoolRebalanceLeaves,
+  buildSlowRelayTree,
+  createRandomBytes32,
+  depositV2,
+  enableRoutes,
+  getContractFactory,
+  hubPoolFixture,
+  modifyRelayHelper,
+  randomAddress,
+} = utils;
+
+export type SignerWithAddress = utils.SignerWithAddress;
+export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
 
 chai.use(chaiExclude);
-
-const assert = chai.assert;
-export { assert, chai };
 
 export function deepEqualsWithBigNumber(x: unknown, y: unknown, omitKeys: string[] = []): boolean {
   if (x === undefined || y === undefined) {
@@ -74,10 +84,10 @@ export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: st
   }
 }
 export async function setupTokensForWallet(
-  contractToApprove: utils.Contract,
-  wallet: utils.SignerWithAddress,
-  tokens: utils.Contract[],
-  weth?: utils.Contract,
+  contractToApprove: Contract,
+  wallet: SignerWithAddress,
+  tokens: Contract[],
+  weth?: Contract,
   seedMultiplier = 1
 ): Promise<void> {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
@@ -125,8 +135,8 @@ export async function deploySpokePoolWithToken(
 }
 
 export async function deployConfigStore(
-  signer: utils.SignerWithAddress,
-  tokensToAdd: utils.Contract[],
+  signer: SignerWithAddress,
+  tokensToAdd: Contract[],
   maxL1TokensPerPoolRebalanceLeaf: number = MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
@@ -164,21 +174,21 @@ export async function deployConfigStore(
 }
 
 export async function deployAndConfigureHubPool(
-  signer: utils.SignerWithAddress,
-  spokePools: { l2ChainId: number; spokePool: utils.Contract }[],
-  finderAddress: string = zeroAddress,
-  timerAddress: string = zeroAddress
+  signer: SignerWithAddress,
+  spokePools: { l2ChainId: number; spokePool: Contract }[],
+  finderAddress: string = ZERO_ADDRESS,
+  timerAddress: string = ZERO_ADDRESS
 ): Promise<{
-  hubPool: utils.Contract;
-  mockAdapter: utils.Contract;
-  l1Token_1: utils.Contract;
-  l1Token_2: utils.Contract;
+  hubPool: Contract;
+  mockAdapter: Contract;
+  l1Token_1: Contract;
+  l1Token_2: Contract;
   hubPoolDeploymentBlock: number;
 }> {
   const lpTokenFactory = await (await utils.getContractFactory("LpTokenFactory", signer)).deploy();
   const hubPool = await (
     await utils.getContractFactory("HubPool", signer)
-  ).deploy(lpTokenFactory.address, finderAddress, zeroAddress, timerAddress);
+  ).deploy(lpTokenFactory.address, finderAddress, ZERO_ADDRESS, timerAddress);
   const receipt = await hubPool.deployTransaction.wait();
 
   const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", signer)).deploy();
@@ -196,16 +206,16 @@ export async function deployAndConfigureHubPool(
 }
 
 export async function deployNewTokenMapping(
-  l2TokenHolder: utils.SignerWithAddress,
-  l1TokenHolder: utils.SignerWithAddress,
-  spokePool: utils.Contract,
-  spokePoolDestination: utils.Contract,
-  configStore: utils.Contract,
-  hubPool: utils.Contract,
+  l2TokenHolder: SignerWithAddress,
+  l1TokenHolder: SignerWithAddress,
+  spokePool: Contract,
+  spokePoolDestination: Contract,
+  configStore: Contract,
+  hubPool: Contract,
   amountToSeedLpPool: BigNumber
 ): Promise<{
-  l2Token: utils.Contract;
-  l1Token: utils.Contract;
+  l2Token: Contract;
+  l1Token: Contract;
 }> {
   // Deploy L2 token and enable it for deposits:
   const spokePoolChainId = await spokePool.chainId();
@@ -251,8 +261,8 @@ export async function deployNewTokenMapping(
 }
 
 export async function enableRoutesOnHubPool(
-  hubPool: utils.Contract,
-  rebalanceRouteTokens: { destinationChainId: number; l1Token: utils.Contract; destinationToken: utils.Contract }[]
+  hubPool: Contract,
+  rebalanceRouteTokens: { destinationChainId: number; l1Token: Contract; destinationToken: Contract }[]
 ): Promise<void> {
   for (const tkn of rebalanceRouteTokens) {
     await hubPool.setPoolRebalanceRoute(tkn.destinationChainId, tkn.l1Token.address, tkn.destinationToken.address);
@@ -261,10 +271,10 @@ export async function enableRoutesOnHubPool(
 }
 
 export async function simpleDeposit(
-  spokePool: utils.Contract,
-  token: utils.Contract,
-  recipient: utils.SignerWithAddress,
-  depositor: utils.SignerWithAddress,
+  spokePool: Contract,
+  token: Contract,
+  recipient: SignerWithAddress,
+  depositor: SignerWithAddress,
   destinationChainId: number = utils.destinationChainId,
   amountToDeposit: utils.BigNumber = utils.amountToDeposit,
   depositRelayerFeePct: utils.BigNumber = utils.depositRelayerFeePct
@@ -281,7 +291,7 @@ export async function simpleDeposit(
   return {
     ...depositObject,
     realizedLpFeePct: toBNWei("0"),
-    destinationToken: zeroAddress,
+    destinationToken: ZERO_ADDRESS,
   };
 }
 
@@ -290,9 +300,9 @@ export async function getLastBlockTime(provider: providers.Provider): Promise<nu
 }
 
 export async function addLiquidity(
-  signer: utils.SignerWithAddress,
-  hubPool: utils.Contract,
-  l1Token: utils.Contract,
+  signer: SignerWithAddress,
+  hubPool: Contract,
+  l1Token: Contract,
   amount: utils.BigNumber
 ): Promise<void> {
   await utils.seedWallet(signer, [l1Token], null, amount);

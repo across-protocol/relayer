@@ -1,4 +1,5 @@
 import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
   MAX_UINT_VAL,
@@ -6,17 +7,14 @@ import {
   createSpyLogger,
   deployAndConfigureHubPool,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
   getContractFactory,
   lastSpyLogIncludes,
-  originChainId,
   sinon,
   toBNWei,
   utf8ToHex,
   winston,
-  zeroAddress,
 } from "./utils";
 
 let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
@@ -47,10 +45,10 @@ describe("TokenClient: Origin token approval", async function () {
     const collateralWhitelist = await (await getContractFactory("AddressWhitelist", owner)).deploy();
     const store = await (
       await getContractFactory("Store", owner)
-    ).deploy({ rawValue: "0" }, { rawValue: "0" }, zeroAddress);
+    ).deploy({ rawValue: "0" }, { rawValue: "0" }, ZERO_ADDRESS);
     await finder.changeImplementationAddress(utf8ToHex("CollateralWhitelist"), collateralWhitelist.address);
     await finder.changeImplementationAddress(utf8ToHex("Store"), store.address);
-    ({ hubPool, l1Token_1 } = await deployAndConfigureHubPool(owner, [], finder.address, zeroAddress));
+    ({ hubPool, l1Token_1 } = await deployAndConfigureHubPool(owner, [], finder.address, ZERO_ADDRESS));
     await collateralWhitelist.addToWhitelist(l1Token_1.address);
     await hubPool.setBond(l1Token_1.address, toBNWei("5"));
     spokePoolClient_1 = new SpokePoolClient(
