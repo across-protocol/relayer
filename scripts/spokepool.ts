@@ -146,6 +146,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(fromChainId));
   signer = signer.connect(provider);
   const spokePool = (await utils.getSpokePoolContract(fromChainId)).connect(signer);
+  const mockSpokePool = (await utils.getSpokePoolContract(fromChainId, true)).connect(signer);
 
   const erc20 = new Contract(token.address, ERC20.abi, signer);
   const allowance = await erc20.allowance(depositor, spokePool.address);
@@ -162,7 +163,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     : await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
   const quoteTimestamp = await spokePool.getCurrentTime();
   try {
-    const deposit = await (isV2 ? spokePool.depositV2 : spokePool.deposit)(
+    const deposit = await (isV2 ? mockSpokePool.depositV2 : spokePool.deposit)(
       recipient,
       token.address,
       amount,

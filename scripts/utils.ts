@@ -123,13 +123,13 @@ export async function getContract(chainId: number, contractName: string): Promis
 /**
  * @description Instantiate an Across SpokePool contract instance.
  * @param chainId Chain ID for the SpokePool deployment.
+ * @param mock Whether or not to use the MockSpokePool ABI. Useful for submitting V2 deposits to V3 contracts.
  * @returns SpokePool contract instance.
  */
-export async function getSpokePoolContract(chainId: number): Promise<Contract> {
+export async function getSpokePoolContract(chainId: number, mock = false): Promise<Contract> {
   const hubChainId = resolveHubChainId(chainId);
   const hubPool = await getContract(hubChainId, "HubPool");
   const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
-
-  const contract = new Contract(spokePoolAddr, contracts.SpokePool__factory.abi);
-  return contract;
+  const factory = mock ? contracts.MockSpokePool__factory : contracts.SpokePool__factory;
+  return new Contract(spokePoolAddr, factory.abi);
 }
