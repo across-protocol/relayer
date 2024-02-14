@@ -620,7 +620,6 @@ export class BundleDataClient {
                       .sub(fill.relayExecutionInfo.updatedOutputAmount)
                       .mul(fixedPointAdjustment)
                       .div(fill.inputAmount);
-                      console.log("lpFeePct for SlowFill", lpFeePct.toString(), fill);
                     updateBundleFillsV3(bundleFillsV3, fill, lpFeePct, chainToSendRefundTo, repaymentToken);
                     validBundleFillHashes.add(relayDataHash);
                   } else {

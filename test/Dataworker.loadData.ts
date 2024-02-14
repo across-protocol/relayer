@@ -1014,12 +1014,20 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
     it("Does not search for old deposit for slow fill execution", async function () {
       const missingDeposit = generateV3Deposit();
-      const expectedLpFeePct = toBNWei("0.25")
+      const expectedLpFeePct = toBNWei("0.25");
       const outputAmountOverride = missingDeposit.args.inputAmount;
       const expectedLpFee = outputAmountOverride.mul(expectedLpFeePct).div(fixedPointAdjustment);
       expect(expectedLpFee).to.be.greaterThan(0);
       const updatedOutputAmount = outputAmountOverride.sub(expectedLpFee);
-      const fillEvent = generateV3FillFromDepositEvent(missingDeposit, {}, relayer.address, destinationChainId, interfaces.FillType.SlowFill, outputAmountOverride, updatedOutputAmount);
+      const fillEvent = generateV3FillFromDepositEvent(
+        missingDeposit,
+        {},
+        relayer.address,
+        destinationChainId,
+        interfaces.FillType.SlowFill,
+        outputAmountOverride,
+        updatedOutputAmount
+      );
       await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
@@ -1028,12 +1036,12 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // There should be a validated fill and positive lp fees, but no refunds.
       expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills.length).to.equal(1);
-      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(fillEvent.args.depositId);
+      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
+        fillEvent.args.depositId
+      );
       expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].lpFeePct).to.equal(expectedLpFeePct);
       expect(expectedLpFee).to.equal(data1.bundleFillsV3[destinationChainId][erc20_2.address].realizedLpFees);
-      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].totalRefundAmount).to.equal(
-        bnZero
-      );
+      expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].totalRefundAmount).to.equal(bnZero);
       expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].refunds).to.deep.equal({});
     });
     it("Handles V3 Slow Fill executions", async function () {
