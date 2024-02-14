@@ -1,4 +1,4 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
+import { BigNumber, toBNWei, assert, toBN, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
@@ -67,11 +67,12 @@ export class RelayerConfig extends CommonConfig {
     this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
-    this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
+    this.inventoryConfig = JSON.parse(
+      RELAYER_INVENTORY_CONFIG?.replace(/0x[a-fA-F0-9]{40}/g, ethers.utils.getAddress) ?? "{}"
+    );
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     if (Object.keys(this.inventoryConfig).length > 0) {
-      this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
       this.inventoryConfig.wrapEtherThreshold = this.inventoryConfig.wrapEtherThreshold
         ? toBNWei(this.inventoryConfig.wrapEtherThreshold)
         : toBNWei(1); // default to keeping 2 Eth on the target chains and wrapping the rest to WETH.
