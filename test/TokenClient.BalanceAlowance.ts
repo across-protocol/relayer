@@ -22,12 +22,6 @@ let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-type TokenBalanceByChain = {
-  [chainId: number]: {
-    [token: string]: { balance: BigNumber; allowance: BigNumber };
-  };
-};
-
 describe("TokenClient: Balance and Allowance", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
