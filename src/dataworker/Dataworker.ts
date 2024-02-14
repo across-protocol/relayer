@@ -1191,7 +1191,9 @@ export class Dataworker {
             fill.destinationChainId === sdkUtils.getSlowFillLeafChainId(slowFill) &&
             fill.depositor === relayData.depositor &&
             fill.recipient === relayData.recipient &&
-            sdkUtils.getDepositInputToken(fill) === sdkUtils.getDepositInputToken(relayData) &&
+            (sdkUtils.isV3Fill(fill) && sdkUtils.isV3RelayData(relayData)
+              ? fill.inputToken === relayData.inputToken
+              : true) &&
             sdkUtils.getFillOutputToken(fill) === sdkUtils.getRelayDataOutputToken(relayData) &&
             sdkUtils.getFillOutputAmount(fill).eq(sdkUtils.getRelayDataOutputAmount(relayData)) &&
             fill.message === relayData.message
