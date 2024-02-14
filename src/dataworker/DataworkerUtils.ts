@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils, typechain } from "@across-protocol/sdk-v2";
+import { utils, typechain, interfaces } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -255,6 +255,8 @@ function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V2SlowFillLeaf {
 export function _buildRelayerRefundRoot(
   endBlockForMainnet: number,
   fillsToRefund: FillsToRefund,
+  bundleFillsV3: BundleFillsV3,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
   poolRebalanceLeaves: PoolRebalanceLeaf[],
   runningBalances: RunningBalances,
   clients: DataworkerClients,
@@ -267,16 +269,81 @@ export function _buildRelayerRefundRoot(
 
   // TODO: Handle V3 bundle fills to refund here and expired deposits.
   // Create a combined `refunds` object
-
-  // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
-  Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
-    const repaymentChainId = Number(_repaymentChainId);
-    Object.entries(fillsForChain).forEach(([l2TokenAddress, fillsForToken]) => {
-      const refunds = fillsForToken.refunds;
+  const combinedRefunds: {
+    [repaymentChainId: number]: {
+      [repaymentToken: string]: interfaces.Refund;
+    };
+  } = {};
+  Object.entries(bundleFillsV3).forEach(([repaymentChainId, fillsForChain]) => {
+    if (combinedRefunds[repaymentChainId] === undefined) {
+      combinedRefunds[repaymentChainId] = {};
+    }
+    Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
+      // refunds can be undefined if these fills were all slow fill executions.
       if (refunds === undefined) {
         return;
       }
+      if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
+        combinedRefunds[repaymentChainId][l2TokenAddress] = refunds;
+      } else {
+        // Each refunds object should have a unique refund address so we can add new ones to the
+        // existing dictionary.
+        combinedRefunds[repaymentChainId][l2TokenAddress] = {
+          ...combinedRefunds[repaymentChainId][l2TokenAddress],
+          ...refunds,
+        };
+      }
+    });
+  });
+  Object.entries(expiredDepositsToRefundV3).forEach(([originChainId, depositsForChain]) => {
+    if (combinedRefunds[originChainId] === undefined) {
+      combinedRefunds[originChainId] = {};
+    }
+    Object.entries(depositsForChain).forEach(([l2TokenAddress, deposits]) => {
+      deposits.forEach((deposit) => {
+        if (combinedRefunds[originChainId][l2TokenAddress] === undefined) {
+          combinedRefunds[originChainId][l2TokenAddress] = { [deposit.depositor]: deposit.inputAmount };
+        } else {
+          const existingRefundAmount = combinedRefunds[originChainId][l2TokenAddress][deposit.depositor];
+          if (existingRefundAmount === undefined) {
+            combinedRefunds[originChainId][l2TokenAddress][deposit.depositor] = deposit.inputAmount;
+          } else {
+            combinedRefunds[originChainId][l2TokenAddress][deposit.depositor] = existingRefundAmount.add(
+              deposit.inputAmount
+            );
+          }
+        }
+      });
+    });
+  });
+  Object.entries(fillsToRefund).forEach(([repaymentChainId, fillsForChain]) => {
+    if (combinedRefunds[repaymentChainId] === undefined) {
+      combinedRefunds[repaymentChainId] = {};
+    }
+    Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
+      // refunds can be undefined if these fills were all slow fill executions.
+      if (refunds === undefined) {
+        return;
+      }
+      if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
+        combinedRefunds[repaymentChainId][l2TokenAddress] = refunds;
+      } else {
+        Object.entries(refunds).forEach(([refundAddress, refundAmount]) => {
+          const existingRefundAmount = combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress];
+          if (existingRefundAmount === undefined) {
+            combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress] = refundAmount;
+          } else {
+            combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress] = existingRefundAmount.add(refundAmount);
+          }
+        });
+      }
+    });
+  });
 
+  // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
+  Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
+    Object.entries(refundsForChain).forEach(([l2TokenAddress, refunds]) => {
       // We need to sort leaves deterministically so that the same root is always produced from the same loadData
       // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
       const sortedRefundAddresses = sortRefundAddresses(refunds);

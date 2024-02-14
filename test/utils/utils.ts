@@ -3,7 +3,7 @@ import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
 import { providers } from "ethers";
 import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
-import { Deposit, Fill, RelayerRefundLeaf, RunningBalances } from "../../src/interfaces";
+import { Deposit, Fill, RelayerRefundLeaf, RunningBalances, V3SlowFillLeaf } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
@@ -573,6 +573,32 @@ export function buildSlowRelayLeaves(
         return Number(relayA.depositId) - Number(relayB.depositId);
       }
     });
+}
+
+export function buildV3SlowRelayLeaves(deposits: V3Deposit[], lpFee: BigNumber): V3SlowFillLeaf[] {
+  const chainId = deposits[0].destinationChainId;
+  assert.isTrue(deposits.every(({ destinationChainId }) => chainId === destinationChainId));
+  return deposits.map((deposit) => {
+    const slowFillLeaf: V3SlowFillLeaf = {
+      relayData: {
+        depositor: deposit.depositor,
+        recipient: deposit.recipient,
+        exclusiveRelayer: deposit.exclusiveRelayer,
+        inputToken: deposit.inputToken,
+        outputToken: deposit.outputToken,
+        inputAmount: deposit.inputAmount,
+        outputAmount: deposit.outputAmount,
+        originChainId: deposit.originChainId,
+        depositId: deposit.depositId,
+        fillDeadline: deposit.fillDeadline,
+        exclusivityDeadline: deposit.exclusivityDeadline,
+        message: deposit.message,
+      },
+      chainId,
+      updatedOutputAmount: deposit.inputAmount.mul(lpFee).div(toBNWei(1)),
+    };
+    return slowFillLeaf;
+  });
 }
 
 // Adds `leafId` to incomplete input `leaves` and then constructs a relayer refund leaf tree.
