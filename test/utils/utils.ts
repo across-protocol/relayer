@@ -19,7 +19,7 @@ export { sinon, winston };
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 
 import { AcrossConfigStore, MerkleTree } from "@across-protocol/contracts-v2";
-import { constants } from "@across-protocol/sdk-v2";
+import { constants, interfaces } from "@across-protocol/sdk-v2";
 import chai, { expect } from "chai";
 import chaiExclude from "chai-exclude";
 import _ from "lodash";
@@ -575,30 +575,38 @@ export function buildSlowRelayLeaves(
     });
 }
 
-export function buildV3SlowRelayLeaves(deposits: V3Deposit[], lpFee: BigNumber): V3SlowFillLeaf[] {
+export function buildV3SlowRelayLeaves(deposits: interfaces.V3Deposit[], lpFee: BigNumber): V3SlowFillLeaf[] {
   const chainId = deposits[0].destinationChainId;
   assert.isTrue(deposits.every(({ destinationChainId }) => chainId === destinationChainId));
-  return deposits.map((deposit) => {
-    const slowFillLeaf: V3SlowFillLeaf = {
-      relayData: {
-        depositor: deposit.depositor,
-        recipient: deposit.recipient,
-        exclusiveRelayer: deposit.exclusiveRelayer,
-        inputToken: deposit.inputToken,
-        outputToken: deposit.outputToken,
-        inputAmount: deposit.inputAmount,
-        outputAmount: deposit.outputAmount,
-        originChainId: deposit.originChainId,
-        depositId: deposit.depositId,
-        fillDeadline: deposit.fillDeadline,
-        exclusivityDeadline: deposit.exclusivityDeadline,
-        message: deposit.message,
-      },
-      chainId,
-      updatedOutputAmount: deposit.inputAmount.mul(lpFee).div(toBNWei(1)),
-    };
-    return slowFillLeaf;
-  });
+  return deposits
+    .map((deposit) => {
+      const slowFillLeaf: V3SlowFillLeaf = {
+        relayData: {
+          depositor: deposit.depositor,
+          recipient: deposit.recipient,
+          exclusiveRelayer: deposit.exclusiveRelayer,
+          inputToken: deposit.inputToken,
+          outputToken: deposit.outputToken,
+          inputAmount: deposit.inputAmount,
+          outputAmount: deposit.outputAmount,
+          originChainId: deposit.originChainId,
+          depositId: deposit.depositId,
+          fillDeadline: deposit.fillDeadline,
+          exclusivityDeadline: deposit.exclusivityDeadline,
+          message: deposit.message,
+        },
+        chainId,
+        updatedOutputAmount: deposit.inputAmount.mul(lpFee).div(toBNWei(1)),
+      };
+      return slowFillLeaf;
+    })
+    .sort(({ relayData: relayA }, { relayData: relayB }) => {
+      if (relayA.originChainId !== relayB.originChainId) {
+        return Number(relayA.originChainId) - Number(relayB.originChainId);
+      } else {
+        return Number(relayA.depositId) - Number(relayB.depositId);
+      }
+    });
 }
 
 // Adds `leafId` to incomplete input `leaves` and then constructs a relayer refund leaf tree.

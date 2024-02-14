@@ -18,6 +18,7 @@ import {
   V2FillWithBlock,
   V2SlowFillLeaf,
   V3FillWithBlock,
+  V3SlowFillLeaf,
 } from "../interfaces";
 import {
   AnyObject,
@@ -206,13 +207,26 @@ export function prettyPrintV3SpokePoolEvents(
   };
 }
 
-export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
+export function _buildSlowRelayRoot(
+  unfilledDeposits: UnfilledDeposit[],
+  bundleSlowFillsV3: BundleSlowFills
+): {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
 } {
   const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map((deposit: UnfilledDeposit) =>
     buildV2SlowFillLeaf(deposit)
   );
+
+  // Append V3 slow fills to the V2 leaf list
+  Object.entries(bundleSlowFillsV3).forEach(([, depositsForChain]) => {
+    Object.entries(depositsForChain).forEach(([, deposits]) => {
+      deposits.forEach((deposit) => {
+        const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit);
+        slowRelayLeaves.push(v3SlowFillLeaf);
+      });
+    });
+  });
 
   // Sort leaves deterministically so that the same root is always produced from the same loadData return value.
   // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
@@ -249,6 +263,30 @@ function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V2SlowFillLeaf {
       message: deposit.message,
     },
     payoutAdjustmentPct: unfilledDeposit.relayerBalancingFee?.toString() ?? "0",
+  };
+}
+
+function buildV3SlowFillLeaf(deposit: interfaces.V3Deposit): V3SlowFillLeaf {
+  assert(utils.isV3Deposit(deposit));
+  const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
+
+  return {
+    relayData: {
+      depositor: deposit.depositor,
+      recipient: deposit.recipient,
+      exclusiveRelayer: deposit.exclusiveRelayer,
+      inputToken: deposit.inputToken,
+      outputToken: deposit.outputToken,
+      inputAmount: deposit.inputAmount,
+      outputAmount: deposit.outputAmount,
+      originChainId: deposit.originChainId,
+      depositId: deposit.depositId,
+      fillDeadline: deposit.fillDeadline,
+      exclusivityDeadline: deposit.exclusivityDeadline,
+      message: deposit.message,
+    },
+    chainId: deposit.destinationChainId,
+    updatedOutputAmount: deposit.inputAmount.sub(lpFee),
   };
 }
 

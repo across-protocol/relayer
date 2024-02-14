@@ -137,8 +137,11 @@ export class Dataworker {
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient }
   ): Promise<RootBundle> {
-    const { unfilledDeposits } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
-    return _buildSlowRelayRoot(unfilledDeposits);
+    const { unfilledDeposits, bundleSlowFillsV3 } = await this.clients.bundleDataClient.loadData(
+      blockRangesForChains,
+      spokePoolClients
+    );
+    return _buildSlowRelayRoot(unfilledDeposits, bundleSlowFillsV3);
   }
 
   async buildRelayerRefundRoot(
@@ -541,7 +544,7 @@ export class Dataworker {
         ? this.maxRefundCountOverride
         : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock)
     );
-    const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
+    const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits, bundleSlowFillsV3);
 
     if (logData) {
       this.logger.debug({
@@ -1188,6 +1191,7 @@ export class Dataworker {
             fill.destinationChainId === sdkUtils.getSlowFillLeafChainId(slowFill) &&
             fill.depositor === relayData.depositor &&
             fill.recipient === relayData.recipient &&
+            sdkUtils.getDepositInputToken(fill) === sdkUtils.getDepositInputToken(relayData) &&
             sdkUtils.getFillOutputToken(fill) === sdkUtils.getRelayDataOutputToken(relayData) &&
             sdkUtils.getFillOutputAmount(fill).eq(sdkUtils.getRelayDataOutputAmount(relayData)) &&
             fill.message === relayData.message
@@ -1225,7 +1229,7 @@ export class Dataworker {
 
           // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
           let amountFilled = bnZero;
-          const { fill, ...slowFillLeafData } = slowFill;
+          const { fill, ...slowFillLeaf } = slowFill;
           if (isDefined(fill)) {
             // If fill was a full fill, execution is unnecessary. V3 fills are full fills by definition.
             amountFilled = sdkUtils.getTotalFilledAmount(fill);
@@ -1233,16 +1237,13 @@ export class Dataworker {
               return undefined;
             }
           }
-          // @dev At this point, we are only dealing with V2 slow fills because V3 slow fills with matching fills are
-          // by definition fully filled and the slow leaf is unexecutable.
-          assert(sdkUtils.isV2SlowFillLeaf(slowFill), "V3 slow fills should have been filtered out");
-          const slowFillLeaf = slowFillLeafData as V2SlowFillLeaf;
 
           // Note: the getRefund function just happens to perform the same math we need.
           // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
           const outputToken = sdkUtils.getRelayDataOutputToken(slowFillLeaf.relayData);
           const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillLeaf.relayData);
-          const amountRequired = getRefund(outputAmount.sub(amountFilled), slowFillLeaf.relayData.realizedLpFeePct);
+          const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(slowFillLeaf);
+          const amountRequired = getRefund(outputAmount.sub(amountFilled), lpFeePct);
 
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
@@ -1267,9 +1268,7 @@ export class Dataworker {
 
           // Assume we don't need to add balance in the BalanceAllocator to the HubPool because the slow fill's
           // recipient wouldn't be the HubPool in normal circumstances.
-          return success
-            ? { relayData: slowFillLeaf.relayData, payoutAdjustmentPct: slowFillLeaf.payoutAdjustmentPct }
-            : undefined;
+          return success ? slowFill : undefined;
         })
       )
     ).filter(isDefined);
@@ -1341,15 +1340,14 @@ export class Dataworker {
   }
 
   encodeV3SlowFillLeaf(
-    _slowRelayTree: MerkleTree<SlowFillLeaf>,
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
     leaf: V3SlowFillLeaf
   ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
-    // const { relayData, chainId, updatedOutputAmount } = leaf;
+    const { relayData, chainId, updatedOutputAmount } = leaf;
 
     const method = "executeV3SlowRelayLeaf";
-    // const proof = slowRelayTree.getHexProof({ relayData, chainId, updatedOutputAmount })
-    const proof = ["xxx todo"];
+    const proof = slowRelayTree.getHexProof({ relayData, chainId, updatedOutputAmount });
     const args = [leaf, rootBundleId, proof];
 
     return { method, args };

@@ -594,24 +594,26 @@ export function generateMarkdownForRootBundle(
   });
 
   let slowRelayLeavesPretty = "";
-  slowRelayLeaves.forEach((leaf, index) => {
+  slowRelayLeaves.forEach((leaf: interfaces.SlowFillLeaf, index) => {
     const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
-    const outputTokenDecimals = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, outputToken).decimals;
+    const destinationChainId = sdkUtils.getSlowFillLeafChainId(leaf);
+    const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
+    const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
     const slowFill: Record<string, string> = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
       recipient: shortenHexString(leaf.relayData.recipient),
-      originChainId: leaf.relayData.originChainId,
-      destinationChainId: leaf.relayData.destinationChainId,
-      depositId: leaf.relayData.depositId,
+      originChainId: leaf.relayData.originChainId.toString(),
+      destinationChainId: destinationChainId.toString(),
+      depositId: leaf.relayData.depositId.toString(),
       message: leaf.relayData.message,
       // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
-      realizedLpFeePct: `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`,
+      realizedLpFeePct: `${formatFeePct(lpFeePct)}%`,
     };
 
     if (sdkUtils.isV2SlowFillLeaf(leaf)) {
-      slowFill.destinationToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
+      slowFill.destinationToken = convertTokenAddressToSymbol(destinationChainId, outputToken);
       slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
       // v2SlowFill payoutAdjustmentPct is incidentally defined as a string.
       // It's unconditionally 0 and will be removed, so just BN it on the fly.
