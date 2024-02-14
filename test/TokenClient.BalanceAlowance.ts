@@ -1,10 +1,9 @@
+import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
-  BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
-  // deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
   deploySpokePoolWithToken,
   ethers,
@@ -13,8 +12,6 @@ import {
   winston,
 } from "./utils";
 
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
-
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
@@ -22,29 +19,7 @@ let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-type TokenBalanceByChain = {
-  [chainId: number]: {
-    [token: string]: { balance: BigNumber; allowance: BigNumber };
-  };
-};
-
 describe("TokenClient: Balance and Allowance", async function () {
-  // @todo: Why is utils.deepEqualsWithBigNumber suddenly broken in this test?
-  // The issue resolves to the use of assert.deepStrictEqual(), which seems to pass through chai to Node's own assert.
-  // The object contents _are_ identical but their addresses differ and it seems to object to that. Why now?!
-  const deepEqualsWithBigNumber = (a: TokenBalanceByChain, b: TokenBalanceByChain): boolean => {
-    Object.entries(a).forEach(([chainId, balances]) => {
-      expect(b[chainId]).to.exist;
-
-      Object.entries(balances).forEach(([token, erc20]) => {
-        expect(b[chainId][token]).to.exist;
-        expect(b[chainId][token].balance.eq(erc20.balance)).to.be.true;
-        expect(b[chainId][token].allowance.eq(erc20.allowance)).to.be.true;
-      });
-    });
-    return true;
-  };
-
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
@@ -96,7 +71,8 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData)).to.be.true;
+    const tokenData = tokenClient.getAllTokenData();
+    expect(tokenData).to.deep.equal(expectedData);
 
     // Check some balance/allowances directly.
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(0));
@@ -119,7 +95,9 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(1337), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData1)).to.be.true;
+    const tokenData1 = tokenClient.getAllTokenData();
+    expect(tokenData1).to.deep.equal(expectedData1);
+
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42069));
     expect(tokenClient.getBalance(destinationChainId, weth_2.address)).to.equal(toBNWei(1337));
 
