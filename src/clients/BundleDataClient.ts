@@ -611,29 +611,43 @@ export class BundleDataClient {
                   fill.blockNumber <= destinationChainBlockRange[1] &&
                   fill.blockNumber >= destinationChainBlockRange[0]
                 ) {
-                  const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
-                  if (historicalDeposit.found && utils.isV3Deposit(historicalDeposit.deposit)) {
-                    const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
-                    // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
-                    // object property values against the deposit's, we
-                    // sanity check it here by comparing the full relay hashes
-                    if (utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash) {
-                      updateBundleFillsV3(
-                        bundleFillsV3,
-                        fill,
-                        matchedDeposit.realizedLpFeePct,
-                        chainToSendRefundTo,
-                        repaymentToken
-                      );
-                      validBundleFillHashes.add(relayDataHash);
-                      if (fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill) {
-                        relayHashesForExcessSlowFills.push(relayDataHash);
+                  // If fill is a slow fill, then no need to query a historical deposit for it since we can assume
+                  // all slow fills are valid.
+                  if (fill.relayExecutionInfo.fillType === interfaces.FillType.SlowFill) {
+                    // We can back out the lp fee for slow fill executions by using the difference between
+                    // the input amount and the updated or "executed" output amount.
+                    const lpFeePct = fill.inputAmount
+                      .sub(fill.relayExecutionInfo.updatedOutputAmount)
+                      .mul(fixedPointAdjustment)
+                      .div(fill.inputAmount);
+                      console.log("lpFeePct for SlowFill", lpFeePct.toString(), fill);
+                    updateBundleFillsV3(bundleFillsV3, fill, lpFeePct, chainToSendRefundTo, repaymentToken);
+                    validBundleFillHashes.add(relayDataHash);
+                  } else {
+                    const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
+                    if (historicalDeposit.found && utils.isV3Deposit(historicalDeposit.deposit)) {
+                      const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
+                      // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
+                      // object property values against the deposit's, we
+                      // sanity check it here by comparing the full relay hashes
+                      if (utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash) {
+                        updateBundleFillsV3(
+                          bundleFillsV3,
+                          fill,
+                          matchedDeposit.realizedLpFeePct,
+                          chainToSendRefundTo,
+                          repaymentToken
+                        );
+                        validBundleFillHashes.add(relayDataHash);
+                        if (fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill) {
+                          relayHashesForExcessSlowFills.push(relayDataHash);
+                        }
+                      } else {
+                        bundleInvalidFillsV3.push(fill);
                       }
                     } else {
                       bundleInvalidFillsV3.push(fill);
                     }
-                  } else {
-                    bundleInvalidFillsV3.push(fill);
                   }
                 }
               } else {
