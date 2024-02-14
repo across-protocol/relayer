@@ -1,7 +1,8 @@
 import { Contract, bnZero } from "../../src/utils";
 import { interfaces } from "@across-protocol/sdk-v2";
-import { amountToDeposit, destinationChainId, zeroAddress, SignerWithAddress, repaymentChainId } from "../constants";
+import { amountToDeposit, destinationChainId, SignerWithAddress, repaymentChainId } from "../constants";
 import { SlowFillRequestWithBlock } from "../../src/interfaces";
+import { ZERO_ADDRESS } from "@uma/common";
 
 export function V3FillFromDeposit(
   deposit: interfaces.V3DepositWithBlock,
@@ -45,7 +46,7 @@ export async function depositV3(
       amount,
       amount,
       _destinationChainId,
-      zeroAddress,
+      ZERO_ADDRESS,
       currentTime.toNumber(),
       fillDeadline ?? currentTime.toNumber() + 7200,
       0,

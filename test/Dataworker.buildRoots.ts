@@ -36,7 +36,6 @@ import {
   buildSlowRelayLeaves,
   buildSlowRelayTree,
   buildV3SlowRelayLeaves,
-  buildV3SlowRelayTree,
   constructPoolRebalanceTree,
   createSpyLogger,
   deployNewTokenMapping,
@@ -53,6 +52,7 @@ import {
   sinon,
   toBN,
   toBNWei,
+  buildV3SlowRelayTree,
 } from "./utils";
 import { utils as sdkUtils, interfaces } from "@across-protocol/sdk-v2";
 
@@ -1440,7 +1440,7 @@ describe("Dataworker: Build merkle roots", async function () {
       const expectedRunningBalances: RunningBalances = {
         // Note: There should be no origin chain entry here since there were no deposits.
         [originChainId]: {
-          [l1Token_1.address]: toBN(0),
+          [l1Token_1.address]: BigNumber.from(0),
         },
       };
       expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
@@ -1512,7 +1512,7 @@ describe("Dataworker: Build merkle roots", async function () {
           [l1Token_1.address]: deposit.inputAmount.mul(-1),
         },
         [destinationChainId]: {
-          [l1Token_1.address]: bnZero,
+          [l1Token_1.address]: toBN(0),
         },
       };
       const expectedRealizedLpFees: RunningBalances = {
@@ -1631,7 +1631,7 @@ describe("Dataworker: Build merkle roots", async function () {
         },
         {
           chainId: destinationChainId,
-          amountToReturn: bnZero,
+          amountToReturn: toBN(0),
           l2TokenAddress: erc20_2.address,
           leafId: 1,
           refundAddresses: [relayer.address],
