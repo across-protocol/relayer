@@ -575,11 +575,12 @@ export function buildSlowRelayLeaves(
     });
 }
 
-export function buildV3SlowRelayLeaves(deposits: interfaces.V3Deposit[], lpFee: BigNumber): V3SlowFillLeaf[] {
+export function buildV3SlowRelayLeaves(deposits: interfaces.V3Deposit[], lpFeePct: BigNumber): V3SlowFillLeaf[] {
   const chainId = deposits[0].destinationChainId;
   assert.isTrue(deposits.every(({ destinationChainId }) => chainId === destinationChainId));
   return deposits
     .map((deposit) => {
+      const lpFee = deposit.inputAmount.mul(lpFeePct).div(toBNWei(1));
       const slowFillLeaf: V3SlowFillLeaf = {
         relayData: {
           depositor: deposit.depositor,
@@ -596,7 +597,7 @@ export function buildV3SlowRelayLeaves(deposits: interfaces.V3Deposit[], lpFee: 
           message: deposit.message,
         },
         chainId,
-        updatedOutputAmount: deposit.inputAmount.mul(lpFee).div(toBNWei(1)),
+        updatedOutputAmount: deposit.inputAmount.sub(lpFee),
       };
       return slowFillLeaf;
     })
