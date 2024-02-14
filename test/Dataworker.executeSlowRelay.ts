@@ -52,7 +52,6 @@ describe("Dataworker: Execute slow relays", async function () {
       multiCallerClient,
       updateAllClients,
       spokePoolClients,
-      spy,
     } = await setupDataworker(ethers, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, 0));
   });
   it("Simple lifecycle", async function () {
