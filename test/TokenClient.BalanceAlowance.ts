@@ -1,6 +1,5 @@
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
-  BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
