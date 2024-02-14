@@ -14,13 +14,12 @@ import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
-  buildPoolRebalanceLeaves,
   destinationChainId,
   mockTreeRoot,
-  modifyRelayHelper,
   originChainId,
   refundProposalLiveness,
   repaymentChainId,
+  sampleRateModel,
 } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -31,6 +30,7 @@ import {
   buildFill,
   buildFillForRepaymentChain,
   buildPoolRebalanceLeafTree,
+  buildPoolRebalanceLeaves,
   buildRelayerRefundTreeWithUnassignedLeafIds,
   buildSlowFill,
   buildSlowRelayLeaves,
@@ -48,7 +48,7 @@ import {
   getDefaultBlockRange,
   lastSpyLogIncludes,
   requestSlowFill,
-  sampleRateModel,
+  modifyRelayHelper,
   setupTokensForWallet,
   sinon,
   toBN,

@@ -15,6 +15,8 @@ import {
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
+  originChainId,
+  destinationChainId,
   repaymentChainId,
 } from "./constants";
 import { MockInventoryClient } from "./mocks";
@@ -26,13 +28,11 @@ import {
   deployConfigStore,
   deploySpokePoolWithToken,
   depositV2,
-  destinationChainId,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
-  originChainId,
   setupTokensForWallet,
   sinon,
   spyLogIncludes,
