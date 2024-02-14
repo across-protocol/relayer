@@ -347,7 +347,7 @@ async function run(argv: string[]): Promise<number> {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
     boolean: ["decimals", "v2"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
-      wallet: "privateKey",
+      wallet: "secret",
       decimals: false,
       v2: false,
     },
