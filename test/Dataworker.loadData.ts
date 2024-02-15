@@ -1073,7 +1073,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
 
       // There should be a validated fill and positive lp fees, but no refunds.
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.not.deep.equal({});
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address]).to.not.deep.equal({});
       expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills.length).to.equal(1);
       expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
         fillEvent.args.depositId
