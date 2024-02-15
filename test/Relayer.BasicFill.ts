@@ -55,7 +55,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await hubPoolClient.update();
     await tokenClient.update();
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update()]);
-  }
+  };
 
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
@@ -169,7 +169,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   });
 
   describe("Across v2", async function () {
-
     it("Correctly fetches single unfilled deposit and fills it", async function () {
       const deposit1 = await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
@@ -207,7 +206,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     it("Correctly validates self-relays", async function () {
       const relayerFeePct = bnZero;
       for (const testDepositor of [depositor, relayer]) {
-        await depositV2(spokePool_1, erc20_1, relayer, testDepositor, destinationChainId, amountToDeposit, relayerFeePct);
+        await depositV2(
+          spokePool_1,
+          erc20_1,
+          relayer,
+          testDepositor,
+          destinationChainId,
+          amountToDeposit,
+          relayerFeePct
+        );
 
         await updateAllClients();
         await relayerInstance.checkForUnfilledDepositsAndFill();
@@ -364,8 +371,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       );
       await updateAllClients();
       await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))).to
-        .not.be.undefined;
+      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message")))
+        .to.not.be.undefined;
       expect(multiCallerClient.transactionCount()).to.equal(0);
 
       // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
@@ -465,8 +472,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))).to
-        .not.be.undefined;
+      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message")))
+        .to.not.be.undefined;
       expect(multiCallerClient.transactionCount()).to.equal(0);
 
       // Deposit is updated again with a nullified message.
@@ -550,7 +557,4 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       ).to.not.be.undefined;
     });
   });
-
-  describe("Across v3", async function () { });
 });
-
