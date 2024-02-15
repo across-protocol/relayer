@@ -166,14 +166,14 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat2:")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 150.00`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "blocking deposits: 0,1")).to.be.true;
 
     // Submitting another relay should increment the shortfall and log accordingly. Total shortfall of 250 now.
     await depositV2(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 250.00`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, "blocking deposits: 2,1,0")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "blocking deposits: 0,1,2")).to.be.true;
 
     // Mint more tokens to the relayer to fill the shortfall. Mint enough to just cover the most recent relay. The
     // Other relays should not be filled.
@@ -181,7 +181,7 @@ describe("Relayer: Token balance shortfall", async function () {
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 190.00`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "blocking deposits: 1,2")).to.be.true;
 
     const tx = await multiCallerClient.executeTransactionQueue();
     expect(lastSpyLogIncludes(spy, "Relayed depositId 2")).to.be.true;
