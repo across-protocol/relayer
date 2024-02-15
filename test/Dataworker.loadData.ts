@@ -696,7 +696,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe.only("V3 Events", function () {
+  describe("V3 Events", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockDestinationSpokePool: FakeContract;
     const lpFeePct = toBNWei("0.01");
