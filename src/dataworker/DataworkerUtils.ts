@@ -151,7 +151,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
 } {
-  const slowRelayLeaves = unfilledDeposits.map((deposit: UnfilledDeposit) =>
+  const slowRelayLeaves = unfilledDeposits.map((deposit) =>
     utils.isV2Deposit(deposit.deposit) ? buildV2SlowFillLeaf(deposit) : buildV3SlowFillLeaf(deposit)
   );
 
