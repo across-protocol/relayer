@@ -696,7 +696,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     ).to.deep.equal([]);
   });
 
-  describe("V3 Events", function () {
+  describe.only("V3 Events", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockDestinationSpokePool: FakeContract;
     const lpFeePct = toBNWei("0.01");
@@ -759,9 +759,9 @@ describe("Dataworker: Load data used in all functions", async function () {
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...fillObject,
         relayExecutionInfo: {
-          recipient: fillObject.recipient,
-          message: fillObject.message,
-          outputAmount: fillObject.outputAmount,
+          updatedRecipient: fillObject.updatedRecipient,
+          updatedMessage: fillObject.updatedMessage,
+          updatedOutputAmount: fillObject.updatedOutputAmount,
           fillType,
         },
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
@@ -785,9 +785,9 @@ describe("Dataworker: Load data used in all functions", async function () {
         realizedLpFeePct: fillEventOverride?.realizedLpFeePct ?? bnZero,
         repaymentChainId: _repaymentChainId,
         relayExecutionInfo: {
-          recipient: depositEvent.recipient,
-          message: depositEvent.message,
-          outputAmount: updatedOutputAmount,
+          updatedRecipient: depositEvent.updatedRecipient,
+          updatedMessage: depositEvent.updatedMessage,
+          updatedOutputAmount: updatedOutputAmount,
           fillType,
         },
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client

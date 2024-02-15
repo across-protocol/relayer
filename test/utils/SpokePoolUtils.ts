@@ -17,9 +17,9 @@ export function V3FillFromDeposit(
     realizedLpFeePct: deposit.realizedLpFeePct ?? bnZero,
     repaymentChainId: repaymentChainId ?? deposit.destinationChainId,
     relayExecutionInfo: {
-      recipient: deposit.updatedRecipient,
-      message: deposit.updatedMessage,
-      outputAmount: deposit.updatedOutputAmount,
+      updatedRecipient: deposit.updatedRecipient,
+      updatedMessage: deposit.updatedMessage,
+      updatedOutputAmount: deposit.updatedOutputAmount,
       fillType,
     },
   };
