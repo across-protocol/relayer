@@ -192,7 +192,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
-    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
   });
 
   it("Correctly validates self-relays", async function () {
@@ -236,7 +236,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
   });
 
   it("Ignores deposits with quote times in future", async function () {
@@ -246,7 +246,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await updateAllClients();
     hubPoolClient.currentTime = quoteTimestamp - 1;
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
 
     // If we reset the timestamp, the relayer will fill the deposit:
     hubPoolClient.currentTime = quoteTimestamp;
@@ -414,7 +414,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
-    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
   });
 
   it("Selects the correct message in an updated deposit", async function () {
