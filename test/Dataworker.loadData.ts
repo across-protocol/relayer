@@ -1154,6 +1154,19 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(spyLogIncludes(spy, -1, "invalid V3 fills in range")).to.be.true;
     });
+    it("Matches fill with deposit with outputToken = 0x0", async function() {
+      await depositV3(spokePool_1, depositor, erc20_1.address, ZERO_ADDRESS);
+      await spokePoolClient_1.update();
+      const deposit = spokePoolClient_1.getDeposits()[0];
+      await fillV3(spokePool_2, relayer, deposit);
+      await spokePoolClient_2.update();
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+    })
     it("Filters for fast fills replacing slow fills from older bundles", async function () {
       // Generate a deposit that cannot be slow filled, to test that its ignored as a slow fill excess.
       // Generate a second deposit that can be slow filled but will be slow filled in an older bundle
