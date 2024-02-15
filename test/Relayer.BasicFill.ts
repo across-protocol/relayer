@@ -1,5 +1,6 @@
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { V2FillWithBlock, V3FillWithBlock } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { bnZero, bnOne } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
@@ -9,6 +10,7 @@ import {
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
+  depositRelayerFeePct,
   originChainId,
   destinationChainId,
   repaymentChainId,
@@ -16,6 +18,7 @@ import {
 import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
+  BigNumber,
   Contract,
   SignerWithAddress,
   buildDeposit,
@@ -24,10 +27,13 @@ import {
   deployConfigStore,
   deploySpokePoolWithToken,
   depositV2,
+  depositV3,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
+  getUpdatedV3DepositSignature,
+  getV3RelayHash,
   lastSpyLogIncludes,
   modifyRelayHelper,
   randomAddress,
@@ -38,6 +44,9 @@ import {
 } from "./utils";
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
+  const { EMPTY_MESSAGE } = constants;
+  const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
   let hubPool: Contract, configStore: Contract, l1Token: Contract;
   let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -555,6 +564,284 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(
         spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping deposit from or to disabled chains"))
       ).to.not.be.undefined;
+    });
+  });
+
+  describe("Relayer: Check for Unfilled v3 Deposits and Fill", async function () {
+    let inputToken: string, outputToken: string;
+    let inputAmount: BigNumber, outputAmount: BigNumber;
+
+    beforeEach(async function () {
+      inputToken = erc20_1.address;
+      inputAmount = await erc20_1.balanceOf(depositor.address);
+      outputToken = erc20_2.address;
+      outputAmount = inputAmount.sub(depositRelayerFeePct.mul(inputAmount).div(fixedPoint));
+    });
+
+    it("Correctly fetches single unfilled deposit and fills it", async function () {
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(lastSpyLogIncludes(spy, "Filling v3 deposit")).to.be.true;
+      expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
+
+      const tx = await multiCallerClient.executeTransactionQueue();
+      expect(tx.length).to.equal(1); // There should have been exactly one transaction.
+
+      await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
+      const fills = spokePoolClient_2
+        .getFillsForOriginChain(deposit.originChainId)
+        .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>);
+      expect(fills.length).to.equal(1);
+      const fill = fills.at(-1)!;
+
+      expect(getV3RelayHash(fill, fill.destinationChainId)).to.equal(
+        getV3RelayHash(deposit, deposit.destinationChainId)
+      );
+
+      // Re-run the execution loop and validate that no additional relays are sent.
+      multiCallerClient.clearTransactionQueue();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
+      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
+    });
+
+    it("Correctly validates self-relays", async function () {
+      outputAmount = inputAmount.sub(bnOne);
+      for (const testDepositor of [depositor, relayer]) {
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          testDepositor,
+          inputToken,
+          inputAmount,
+          outputToken,
+          outputAmount
+        );
+
+        await updateAllClients();
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        const expectedTransactions = testDepositor.address === relayer.address ? 1 : 0;
+        expect(multiCallerClient.transactionCount()).to.equal(expectedTransactions);
+      }
+    });
+
+    it("Ignores expired deposits", async function () {
+      const spokePoolTime = (await spokePool_2.getCurrentTime()).toNumber();
+      const fillDeadline = spokePoolTime + 1;
+
+      // Make a deposit and then increment SpokePool time beyond it.
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount, {
+        fillDeadline,
+      });
+      await spokePool_2.setCurrentTime(fillDeadline);
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+    });
+
+    it("Ignores exclusive deposits", async function () {
+      for (const exclusiveRelayer of [randomAddress(), relayerInstance.relayerAddress]) {
+        const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
+        const exclusivityDeadline = currentTime + 1;
+
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          depositor,
+          inputToken,
+          inputAmount.div(2),
+          outputToken,
+          outputAmount.div(2),
+          { exclusivityDeadline, exclusiveRelayer }
+        );
+        const relayerIsExclusive = relayerInstance.relayerAddress === exclusiveRelayer;
+        await updateAllClients();
+
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect(multiCallerClient.transactionCount()).to.equal(relayerIsExclusive ? 1 : 0);
+
+        if (relayerIsExclusive) {
+          continue;
+        }
+
+        await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
+        await updateAllClients();
+
+        // Relayer can unconditionally fill after the exclusivityDeadline.
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect(multiCallerClient.transactionCount()).to.equal(1);
+      }
+    });
+
+    it("Ignores deposits older than min deposit confirmation threshold", async function () {
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+
+      // Set MDC such that the deposit is is ignored. The profit client will return a fill USD amount of $0,
+      // so we need to set the MDC for the `0` threshold to be large enough such that the deposit would be ignored.
+      relayerInstance = new Relayer(
+        relayer.address,
+        spyLogger,
+        {
+          spokePoolClients,
+          hubPoolClient,
+          configStoreClient,
+          tokenClient,
+          profitClient,
+          multiCallerClient,
+          inventoryClient: new MockInventoryClient(),
+          acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
+        },
+        {
+          relayerTokens: [],
+          minDepositConfirmations: {
+            default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
+          },
+          sendingRelaysEnabled: false,
+        } as unknown as RelayerConfig
+      );
+
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
+    });
+
+    it("Ignores deposit with non-empty message", async function () {
+      const { profitClient } = relayerInstance.clients;
+      inputAmount = inputAmount.div(2); // Permit 2 deposits.
+
+      for (const sendingMessageRelaysEnabled of [false, true]) {
+        relayerInstance.config.sendingMessageRelaysEnabled = sendingMessageRelaysEnabled;
+        profitClient.clearUnprofitableFills();
+
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          depositor,
+          inputToken,
+          inputAmount,
+          outputToken,
+          outputAmount,
+          { message: "0x0000" }
+        );
+
+        await updateAllClients();
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+
+        // Dynamic fill simulation fails in test, so the deposit will
+        // appear as unprofitable when message filling is enabled.
+        expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message")))
+          .to.not.be.undefined;
+        expect(profitClient.anyCapturedUnprofitableFills()).to.equal(sendingMessageRelaysEnabled);
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+      }
+    });
+
+    it("Ignores deposit from preconfigured addresses", async function () {
+      relayerInstance.config.ignoredAddresses = [depositor.address];
+
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+
+      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Ignoring deposit"))).to.not.be.undefined;
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+    });
+
+    it("Uses lowest outputAmount on updated deposits", async function () {
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      // Relayer will ignore any deposit with a non empty message. Test this by first modifying the deposit's
+      // message to be non-empty. Then, reset it to 0x and check that it ignores it.
+      // Send 3 updates. Check that only the one with the lowest updated outputAmount is used.
+      const updates = [
+        { ignored: true, outputAmount: outputAmount.sub(1), recipient: randomAddress(), message: "0x12" },
+        { ignored: true, outputAmount: outputAmount.sub(1), recipient: randomAddress(), message: "0x1212" },
+        { ignored: false, outputAmount: outputAmount.sub(2), recipient: randomAddress(), message: EMPTY_MESSAGE },
+      ];
+
+      for (const update of updates) {
+        const signature = await getUpdatedV3DepositSignature(
+          depositor,
+          deposit.depositId,
+          originChainId,
+          update.outputAmount,
+          update.recipient,
+          update.message
+        );
+
+        await spokePool_1
+          .connect(depositor)
+          .speedUpV3Deposit(
+            depositor.address,
+            deposit.depositId,
+            update.outputAmount,
+            update.recipient,
+            update.message,
+            signature
+          );
+
+        await updateAllClients();
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        if (update.ignored) {
+          expect(
+            spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))
+          ).to.not.be.undefined;
+          expect(multiCallerClient.transactionCount()).to.equal(0);
+        } else {
+          // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
+          expect(lastSpyLogIncludes(spy, "Filling v3 deposit")).to.be.true;
+          expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
+
+          const tx = await multiCallerClient.executeTransactionQueue();
+          expect(tx.length).to.equal(1); // There should have been exactly one transaction.
+
+          await spokePoolClient_2.update();
+          const fills = spokePoolClient_2
+            .getFillsForRelayer(relayer.address)
+            .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>);
+          expect(fills.length).to.equal(1);
+          const fill = fills.at(-1)!;
+
+          expect(sdkUtils.isV3Fill(fill)).to.be.true;
+          expect(getV3RelayHash(fill, fill.destinationChainId)).to.equal(
+            getV3RelayHash(deposit, deposit.destinationChainId)
+          );
+
+          expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
+          expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;
+
+          expect(fill.relayExecutionInfo.updatedRecipient).to.not.equal(deposit.recipient);
+          expect(fill.relayExecutionInfo.updatedRecipient).to.equal(update.recipient);
+
+          expect(fill.relayExecutionInfo.updatedMessage).to.equal(deposit.message);
+          expect(fill.relayExecutionInfo.updatedMessage.toString()).to.equal(update.message);
+        }
+      }
+
+      // Re-run the execution loop and validate that no additional relays are sent.
+      multiCallerClient.clearTransactionQueue();
+      await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
+      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
     });
   });
 });

@@ -48,6 +48,7 @@ export const {
   depositV2,
   enableRoutes,
   getContractFactory,
+  getUpdatedV3DepositSignature,
   hubPoolFixture,
   modifyRelayHelper,
   randomAddress,
