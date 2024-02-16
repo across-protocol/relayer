@@ -202,7 +202,7 @@ export class Relayer {
     multiCallerClient.clearTransactionQueue();
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
-    // per chain, which is based on the deposit volume we could fill.
+    // per chain, which is based on the deposit volume we could fill. @todo: Remove v2 filtering.
     const unfilledDeposits = (await this._getUnfilledDeposits()).filter(({ deposit }) => sdkUtils.isV2Deposit(deposit));
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
@@ -239,25 +239,15 @@ export class Relayer {
       minDepositConfirmations: config.minDepositConfirmations,
     });
 
-    // Filter out deposits whose block time does not meet the minimum number of confirmations for the
-    // corresponding origin chain. Finally, sort the deposits by the total earnable fee for the relayer.
-    const confirmedUnfilledDeposits = unfilledDeposits
-      .filter(
-        ({ deposit: { originChainId, blockNumber } }) =>
-          blockNumber <= spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]
-      )
-      .sort((a, b) =>
-        a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
-      );
-    if (confirmedUnfilledDeposits.length > 0) {
-      this.logger.debug({
-        at: "Relayer",
-        message: "Unfilled deposits found",
-        number: confirmedUnfilledDeposits.length,
-      });
-    } else {
-      this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
-    }
+    // Filter out deposits whose block time does not meet the minimum number of confirmations for the origin chain.
+    const confirmedUnfilledDeposits = unfilledDeposits.filter(
+      ({ deposit: { originChainId, blockNumber } }) =>
+        blockNumber <= spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]
+    );
+    this.logger.debug({
+      at: "Relayer::checkForUnfilledDepositsAndFill",
+      message: `${confirmedUnfilledDeposits.length} unfilled deposits found`,
+    });
 
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.

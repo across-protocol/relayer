@@ -1129,7 +1129,7 @@ export class Dataworker {
     const chainId = client.chainId;
 
     const sortedFills = client.getFills();
-    const leavesWithLatestFills = leaves.map((slowFill) => {
+    const latestFills = leaves.map((slowFill) => {
       const { relayData } = slowFill;
 
       // Start with the most recent fills and search backwards.
@@ -1164,39 +1164,38 @@ export class Dataworker {
         return false;
       });
 
-      return { ...slowFill, fill };
+      return fill;
     });
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
-        leavesWithLatestFills.map(async (slowFill) => {
+        leaves.map(async (slowFill, idx) => {
           const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFill);
           if (destinationChainId !== chainId) {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
-          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
           const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
+          const fill = latestFills[idx];
           let amountRequired: BigNumber;
-          if (sdkUtils.isV3SlowFillLeaf(slowFill)) {
-            amountRequired = slowFill.updatedOutputAmount;
+          if (sdkUtils.isV3SlowFillLeaf<V3SlowFillLeaf, V2SlowFillLeaf>(slowFill)) {
+            amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
           } else {
-            const fill = slowFill.fill;
-            assert(sdkUtils.isV2Fill(fill) || !isDefined(fill)); // Any fill linked with a v2 SlowFill must also be v2.
-
             // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-            const totalAmountFilled = fill?.totalFilledAmount ?? bnZero;
-            if (isDefined(fill) && totalAmountFilled.eq(fill.amount)) {
-              // If fill was a full fill, execution is unnecessary.
-              return undefined;
-            }
+            const totalFilledAmount = isDefined(fill) ? sdkUtils.getTotalFilledAmount(fill) : bnZero;
 
             // Note: the getRefund function just happens to perform the same math we need.
             // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-            amountRequired = getRefund(outputAmount.sub(totalAmountFilled), slowFill.relayData.realizedLpFeePct);
+            amountRequired = getRefund(outputAmount.sub(totalFilledAmount), slowFill.relayData.realizedLpFeePct);
           }
 
+          // If the fill has been completed there's no need to execute the slow fill leaf.
+          if (amountRequired.eq(bnZero)) {
+            return undefined;
+          }
+
+          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
@@ -1220,7 +1219,6 @@ export class Dataworker {
 
           // Assume we don't need to add balance in the BalanceAllocator to the HubPool because the slow fill's
           // recipient wouldn't be the HubPool in normal circumstances.
-          return success ? { ...slowFill } : undefined;
         })
       )
     ).filter(isDefined);

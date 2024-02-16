@@ -1,10 +1,10 @@
+import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
-  // deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
   deploySpokePoolWithToken,
   ethers,
@@ -12,8 +12,6 @@ import {
   toBNWei,
   winston,
 } from "./utils";
-
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
@@ -96,7 +94,8 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData)).to.be.true;
+    const tokenData = tokenClient.getAllTokenData();
+    expect(tokenData).to.deep.equal(expectedData);
 
     // Check some balance/allowances directly.
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(0));
@@ -119,7 +118,9 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(1337), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData1)).to.be.true;
+    const tokenData1 = tokenClient.getAllTokenData();
+    expect(tokenData1).to.deep.equal(expectedData1);
+
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42069));
     expect(tokenClient.getBalance(destinationChainId, weth_2.address)).to.equal(toBNWei(1337));
 
