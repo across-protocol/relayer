@@ -975,23 +975,14 @@ export class BundleDataClient {
         // DataworkerUtils.blockRangesAreInvalidForSpokeClients
         const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
         const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
-        const [
-          startTime,
-          endTime
-        ] = [
+        const [startTime, endTime] = [
           Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
           Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
         ];
         // Sanity checks:
         assert(endTime >= startTime, "End time should be greater than start time.");
         assert(startTime > 0, "Start time should be greater than 0.");
-        return [
-          chainId,
-          [
-            startTime,
-            endTime          
-          ],
-        ];
+        return [chainId, [startTime, endTime]];
       })
     );
   }
