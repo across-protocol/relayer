@@ -3,7 +3,6 @@ import { Contract } from "ethers";
 import winston from "winston";
 import { MakeOptional, EventSearchConfig } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
-import { DepositWithBlock } from "../interfaces";
 
 export class HubPoolClient extends clients.HubPoolClient {
   constructor(
@@ -33,10 +32,7 @@ export class HubPoolClient extends clients.HubPoolClient {
   }
 
   async computeRealizedLpFeePct(
-    deposit: Pick<
-      DepositWithBlock,
-      "quoteTimestamp" | "amount" | "originChainId" | "originToken" | "destinationChainId" | "blockNumber"
-    >
+    deposit: clients.V2PartialDepositWithBlock | clients.V3PartialDepositWithBlock
   ): Promise<interfaces.RealizedLpFee> {
     if (deposit.quoteTimestamp > this.currentTime) {
       throw new Error(
