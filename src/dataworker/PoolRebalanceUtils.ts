@@ -612,7 +612,7 @@ export function generateMarkdownForRootBundle(
       realizedLpFeePct: `${formatFeePct(lpFeePct)}%`,
     };
 
-    if (sdkUtils.isV2SlowFillLeaf(leaf)) {
+    if (sdkUtils.isV2SlowFillLeaf<interfaces.V2SlowFillLeaf, interfaces.V3SlowFillLeaf>(leaf)) {
       slowFill.destinationToken = convertTokenAddressToSymbol(destinationChainId, outputToken);
       slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
       // v2SlowFill payoutAdjustmentPct is incidentally defined as a string.
@@ -620,7 +620,7 @@ export function generateMarkdownForRootBundle(
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
       // TODO: Use the cast to overcome the tsc error complaining that leaf is of type "never" here.
-      const v3SlowLeaf = leaf as interfaces.V3SlowFillLeaf;
+      const v3SlowLeaf = leaf;
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
       const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
       const inputAmount = v3SlowLeaf.relayData.inputAmount.mul(scaleBy);

@@ -219,8 +219,8 @@ export function _buildSlowRelayRoot(
   );
 
   // Append V3 slow fills to the V2 leaf list
-  Object.entries(bundleSlowFillsV3).forEach(([, depositsForChain]) => {
-    Object.entries(depositsForChain).forEach(([, deposits]) => {
+  Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
+    Object.values(depositsForChain).forEach((deposits) => {
       deposits.forEach((deposit) => {
         const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit);
         slowRelayLeaves.push(v3SlowFillLeaf);

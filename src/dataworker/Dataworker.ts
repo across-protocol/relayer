@@ -1179,7 +1179,7 @@ export class Dataworker {
     const chainId = client.chainId;
 
     const sortedFills = client.getFills();
-    const leavesWithLatestFills = leaves.map((slowFill) => {
+    const latestFills = leaves.map((slowFill) => {
       const { relayData } = slowFill;
 
       // Start with the most recent fills and search backwards.
@@ -1217,36 +1217,38 @@ export class Dataworker {
         return false;
       });
 
-      return { ...slowFill, fill };
+      return fill;
     });
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
-        leavesWithLatestFills.map(async (slowFill) => {
+        leaves.map(async (slowFill, idx) => {
           const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFill);
           if (destinationChainId !== chainId) {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
-          // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-          let amountFilled = bnZero;
-          const { fill, ...slowFillLeaf } = slowFill;
-          if (isDefined(fill)) {
-            // If fill was a full fill, execution is unnecessary. V3 fills are full fills by definition.
-            amountFilled = sdkUtils.getTotalFilledAmount(fill);
-            if (amountFilled.eq(sdkUtils.getFillOutputAmount(fill))) {
-              return undefined;
-            }
+          const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
+          const fill = latestFills[idx];
+          let amountRequired: BigNumber;
+          if (sdkUtils.isV3SlowFillLeaf<V3SlowFillLeaf, V2SlowFillLeaf>(slowFill)) {
+            amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
+          } else {
+            // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
+            const totalFilledAmount = isDefined(fill) ? sdkUtils.getTotalFilledAmount(fill) : bnZero;
+
+            // Note: the getRefund function just happens to perform the same math we need.
+            // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
+            amountRequired = getRefund(outputAmount.sub(totalFilledAmount), slowFill.relayData.realizedLpFeePct);
           }
 
-          // Note: the getRefund function just happens to perform the same math we need.
-          // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-          const outputToken = sdkUtils.getRelayDataOutputToken(slowFillLeaf.relayData);
-          const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillLeaf.relayData);
-          const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(slowFillLeaf);
-          const amountRequired = getRefund(outputAmount.sub(amountFilled), lpFeePct);
+          // If the fill has been completed there's no need to execute the slow fill leaf.
+          if (amountRequired.eq(bnZero)) {
+            return undefined;
+          }
 
+          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
@@ -1260,8 +1262,8 @@ export class Dataworker {
               message: "Not executing slow relay leaf due to lack of funds in SpokePool",
               root: slowRelayTree.getHexRoot(),
               bundle: rootBundleId,
-              depositId: slowFillLeaf.relayData.depositId,
-              fromChain: slowFillLeaf.relayData.originChainId,
+              depositId: slowFill.relayData.depositId,
+              fromChain: slowFill.relayData.originChainId,
               chainId: destinationChainId,
               token: outputToken,
               amount: outputAmount,
