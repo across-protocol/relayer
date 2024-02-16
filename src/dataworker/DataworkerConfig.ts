@@ -1,4 +1,10 @@
 import { CommonConfig, ProcessEnv } from "../common";
+import {
+  ArweaveGatewayInterface,
+  ArweaveGatewayInterfaceSS,
+  ArweaveWalletJWKInterface,
+  ArweaveWalletJWKInterfaceSS,
+} from "../interfaces";
 import { BigNumber, assert, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
@@ -39,6 +45,9 @@ export class DataworkerConfig extends CommonConfig {
 
   readonly bufferToPropose: number;
 
+  readonly arweaveWalletJWK: ArweaveWalletJWKInterface;
+  readonly arweaveGateway: ArweaveGatewayInterface;
+
   constructor(env: ProcessEnv) {
     const {
       ROOT_BUNDLE_EXECUTION_THRESHOLD,
@@ -58,6 +67,8 @@ export class DataworkerConfig extends CommonConfig {
       DATAWORKER_FAST_START_BUNDLE,
       FORCE_PROPOSAL,
       FORCE_PROPOSAL_BUNDLE_RANGE,
+      ARWEAVE_WALLET_JWK,
+      ARWEAVE_GATEWAY,
     } = env;
     super(env);
 
@@ -150,5 +161,13 @@ export class DataworkerConfig extends CommonConfig {
         `dataworkerFastStartBundle=${this.dataworkerFastStartBundle} should be >= dataworkerFastLookbackCount=${this.dataworkerFastLookbackCount}`
       );
     }
+    // Load the Arweave wallet JWK from the environment.
+    const _arweaveWalletJWK = JSON.parse(ARWEAVE_WALLET_JWK);
+    assert(ArweaveWalletJWKInterfaceSS.is(_arweaveWalletJWK), "Invalid Arweave wallet JWK");
+    this.arweaveWalletJWK = _arweaveWalletJWK;
+    // Load the Arweave gateway from the environment.
+    const _arweaveGateway = JSON.parse(ARWEAVE_GATEWAY);
+    assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
+    this.arweaveGateway = _arweaveGateway;
   }
 }

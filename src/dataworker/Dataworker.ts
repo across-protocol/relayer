@@ -503,6 +503,20 @@ export class Dataworker {
       unexecutableSlowFills,
       expiredDepositsToRefundV3,
     } = await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
+
+    const arweaveBundleStorageHash = await this.clients.arweaveClient.set(
+      {
+        bundleStorageVersion: "1",
+        bundleBlockRanges: blockRangesForProposal,
+        bundleDepositsV3,
+        expiredDepositsToRefundV3,
+        bundleFillsV3,
+        unexecutableSlowFills,
+        bundleSlowFillsV3,
+      },
+      "bundle"
+    );
+
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
