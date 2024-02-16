@@ -142,16 +142,17 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
 }> {
-  assert(sdkUtils.isV2Fill(fill));
-
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
   // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
 
+  // Apply the right version check to fill2 based on the type of fill1.
+  const versionFilter = (fill1: Fill, fill2: Fill): boolean =>
+    sdkUtils.isV2Fill(fill1) ? sdkUtils.isV2Fill(fill2) : sdkUtils.isV3Fill(fill2);
+
   // Find the first fill chronologically for matched deposit for the input fill.
-  const versionFilter = sdkUtils.isV2Fill(fill) ? sdkUtils.isV2Fill : sdkUtils.isV3Fill;
   const allMatchingFills = sortEventsAscending(
-    allValidFills.filter((_fill) => sdkUtils.filledSameDeposit(_fill, fill) && versionFilter(_fill))
+    allValidFills.filter((_fill) => sdkUtils.filledSameDeposit(_fill, fill) && versionFilter(fill, _fill))
   );
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
@@ -167,7 +168,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
         depositForFill.found ? depositForFill.deposit : undefined,
         allMatchingFills[0].blockNumber
       )
-    ).filter(versionFilter);
+    ).filter((_fill) => versionFilter(fill, _fill));
 
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
@@ -187,9 +188,12 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     }
     // Add non-duplicate fills.
     allMatchingFills.push(
-      ...matchingFills.filter(
-        (_fill) => !allMatchingFills.find((existingFill) => existingFill.totalFilledAmount.eq(_fill.totalFilledAmount))
-      )
+      ...matchingFills.filter((_fill) => {
+        const totalFilledAmount = sdkUtils.getTotalFilledAmount(_fill);
+        return !allMatchingFills.find((existingFill) =>
+          sdkUtils.getTotalFilledAmount(existingFill).eq(totalFilledAmount)
+        );
+      })
     );
   }
 
