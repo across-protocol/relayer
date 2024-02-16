@@ -305,7 +305,7 @@ export function _buildRelayerRefundRoot(
 } {
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
-  // Create a combined `refunds` object containing refunds for V2 + V3 fills 
+  // Create a combined `refunds` object containing refunds for V2 + V3 fills
   // and expired deposits.
   const combinedRefunds: {
     [repaymentChainId: number]: {

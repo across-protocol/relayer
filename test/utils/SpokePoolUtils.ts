@@ -1,8 +1,8 @@
 import { Contract, bnZero } from "../../src/utils";
 import { interfaces } from "@across-protocol/sdk-v2";
-import { amountToDeposit, destinationChainId, SignerWithAddress, repaymentChainId } from "../constants";
+import { repaymentChainId } from "../constants";
 import { SlowFillRequestWithBlock } from "../../src/interfaces";
-import { ZERO_ADDRESS } from "@uma/common";
+import { SignerWithAddress } from "./utils"
 
 export function V3FillFromDeposit(
   deposit: interfaces.V3DepositWithBlock,
