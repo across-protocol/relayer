@@ -312,7 +312,7 @@ export class ProfitClient {
   }
 
   async calculateFillProfitability(
-    deposit: Deposit,
+    deposit: V2Deposit,
     fillAmount: BigNumber,
     lpFeePct: BigNumber,
     l1Token: L1Token,
@@ -477,7 +477,7 @@ export class ProfitClient {
   }
 
   async getFillProfitability(
-    deposit: Deposit,
+    deposit: V2Deposit,
     fillAmount: BigNumber,
     lpFeePct: BigNumber,
     l1Token: L1Token
@@ -548,7 +548,7 @@ export class ProfitClient {
   }
 
   async isFillProfitable(
-    deposit: Deposit,
+    deposit: V2Deposit,
     fillAmount: BigNumber,
     lpFeePct: BigNumber,
     l1Token: L1Token
