@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, L1Token, V2Deposit, V2DepositWithBlock } from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, V2Deposit, V2DepositWithBlock } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -255,7 +255,6 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, version, unfilledAmount, fillCount } of confirmedUnfilledDeposits) {
-      assert(sdkUtils.isV2Deposit(deposit), "V3 deposits not supported yet in Relayer");
       const { slowDepositors } = config;
 
       const { depositor, recipient, destinationChainId, originChainId } = deposit;
@@ -433,7 +432,7 @@ export class Relayer {
     });
   }
 
-  fillRelay(deposit: V2Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -499,7 +498,7 @@ export class Relayer {
 
   protected async resolveRepaymentChain(
     version: number,
-    deposit: V2DepositWithBlock,
+    deposit: DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
   ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {

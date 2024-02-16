@@ -9,6 +9,8 @@ import {
   UnfilledDepositsForOriginChain,
   V3DepositWithBlock,
   V3FillWithBlock,
+  FillType,
+  FillStatus,
 } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import {
@@ -37,7 +39,7 @@ import {
   prettyPrintV3SpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { typechain, utils, interfaces } from "@across-protocol/sdk-v2";
+import { typechain, utils } from "@across-protocol/sdk-v2";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,
@@ -101,9 +103,7 @@ function updateBundleFillsV3(
       : refundAmount;
 
     // Instantiate dictionary if it doesn't exist.
-    if (!refundObj.refunds) {
-      assign(dict, [repaymentChainId, repaymentToken, "refunds"], {});
-    }
+    refundObj.refunds ??= {};
 
     if (refundObj.refunds[fill.relayer]) {
       refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refundAmount);
@@ -547,10 +547,9 @@ export class BundleDataClient {
               } else if (deposit.blockNumber < originChainBlockRange[0]) {
                 olderDepositHashes.add(relayDataHash);
               }
-            } else {
-              // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
-              // gives us bad data.
             }
+            // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
+            // gives us bad data.
           }
         });
       }
@@ -614,7 +613,7 @@ export class BundleDataClient {
                 ) {
                   // If fill is a slow fill, then no need to query a historical deposit for it since we can assume
                   // all slow fills are valid.
-                  if (fill.relayExecutionInfo.fillType === interfaces.FillType.SlowFill) {
+                  if (fill.relayExecutionInfo.fillType === FillType.SlowFill) {
                     // We can back out the lp fee for slow fill executions by using the difference between
                     // the input amount and the updated or "executed" output amount.
                     const lpFeePct = fill.inputAmount
@@ -625,28 +624,27 @@ export class BundleDataClient {
                     validBundleFillHashes.add(relayDataHash);
                   } else {
                     const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
-                    if (historicalDeposit.found && utils.isV3Deposit(historicalDeposit.deposit)) {
+                    if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+                      bundleInvalidFillsV3.push(fill);
+                    } else {
                       const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
                       // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
                       // object property values against the deposit's, we
                       // sanity check it here by comparing the full relay hashes
-                      if (utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash) {
-                        updateBundleFillsV3(
-                          bundleFillsV3,
-                          fill,
-                          matchedDeposit.realizedLpFeePct,
-                          chainToSendRefundTo,
-                          repaymentToken
-                        );
-                        validBundleFillHashes.add(relayDataHash);
-                        if (fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill) {
-                          relayHashesForExcessSlowFills.push(relayDataHash);
-                        }
-                      } else {
+                      if (utils.getV3RelayHashFromEvent(matchedDeposit) !== relayDataHash) {
                         bundleInvalidFillsV3.push(fill);
                       }
-                    } else {
-                      bundleInvalidFillsV3.push(fill);
+                      updateBundleFillsV3(
+                        bundleFillsV3,
+                        fill,
+                        matchedDeposit.realizedLpFeePct,
+                        chainToSendRefundTo,
+                        repaymentToken
+                      );
+                      validBundleFillHashes.add(relayDataHash);
+                      if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
+                        relayHashesForExcessSlowFills.push(relayDataHash);
+                      }
                     }
                   }
                 }
@@ -671,17 +669,15 @@ export class BundleDataClient {
                       repaymentToken
                     );
                     validBundleFillHashes.add(relayDataHash);
-                    if (fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill) {
+                    if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
                       relayHashesForExcessSlowFills.push(relayDataHash);
                     }
                   }
-
-                  // If fill is not within bundle range there is nothing more to do since we've already
-                  // added the fill to the relay hash dictionary.
-                } else {
-                  // If we've seen this fill before, then skip this fill. This can happen if our RPC provider
-                  // gives us bad data.
+                // If fill is not within bundle range there is nothing more to do since we've already
+                // added the fill to the relay hash dictionary.
                 }
+                // If we've seen this fill before, then skip this fill. This can happen if our RPC provider
+                // gives us bad data.
               }
             }
           }
@@ -719,32 +715,31 @@ export class BundleDataClient {
                 slowFillRequest.blockNumber >= destinationChainBlockRange[0]
               ) {
                 const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
-                if (historicalDeposit.found && utils.isV3Deposit(historicalDeposit.deposit)) {
-                  const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
-                  if (
-                    // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
-                    // object property values against the deposit's, we
-                    // sanity check it here by comparing the full relay hashes
-                    utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash &&
-                    this.clients.hubPoolClient.areTokensEquivalent(
-                      matchedDeposit.inputToken,
-                      matchedDeposit.originChainId,
-                      matchedDeposit.outputToken,
-                      matchedDeposit.destinationChainId,
-                      matchedDeposit.quoteBlockNumber
-                    )
+                if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+                  // TODO: Invalid slow fill request. Maybe worth logging.
+                  return;
+                }
+                const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
+                if (
+                  // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
+                  // object property values against the deposit's, we
+                  // sanity check it here by comparing the full relay hashes
+                  utils.getV3RelayHashFromEvent(matchedDeposit) !== relayDataHash ||
+                  !this.clients.hubPoolClient.areTokensEquivalent(
+                    matchedDeposit.inputToken,
+                    matchedDeposit.originChainId,
+                    matchedDeposit.outputToken,
+                    matchedDeposit.destinationChainId,
+                    matchedDeposit.quoteBlockNumber
+                  )
                   ) {
-                    // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
-                    // be included in the Fill type rather than the Deposit type, so we'll need
-                    // to compute it fresh here.
-                    updateBundleSlowFills(bundleSlowFillsV3, historicalDeposit.deposit);
-                  } else {
                     // TODO: Invalid slow fill request. Maybe worth logging.
                   }
-                } else {
-                  // TODO: Invalid slow fill request. Maybe worth logging.
+                  // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
+                  // be included in the Fill type rather than the Deposit type, so we'll need
+                  // to compute it fresh here.
+                  updateBundleSlowFills(bundleSlowFillsV3, historicalDeposit.deposit);
                 }
-              }
             } else {
               if (!v3RelayHashes[relayDataHash].slowFillRequest) {
                 // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
@@ -775,10 +770,9 @@ export class BundleDataClient {
                   // be included in the Fill type rather than the Deposit type, so we'll need
                   // to compute it fresh here.
                 }
-              } else {
+              }
                 // If we've seen this request before, then skip this event. This can happen if our RPC provider
                 // gives us bad data.
-              }
             }
           }
         );
@@ -792,7 +786,7 @@ export class BundleDataClient {
         relayHashesForExcessSlowFills.forEach((relayDataHash) => {
           const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
           assert(
-            fill.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill,
+            fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill,
             "Fill type should be ReplacedSlowFill."
           );
           const destinationBlockRange = getBlockRangeForChain(
@@ -867,9 +861,9 @@ export class BundleDataClient {
         const fillStatus: BigNumber = await spokePoolClients[deposit.destinationChainId].spokePool.fillStatuses(
           relayDataHash
         );
-        if (fillStatus.eq(interfaces.FillStatus.Unfilled)) {
+        if (fillStatus.eq(FillStatus.Unfilled)) {
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
-        } else if (fillStatus.eq(interfaces.FillStatus.RequestedSlowFill)) {
+        } else if (fillStatus.eq(FillStatus.RequestedSlowFill)) {
           updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         }

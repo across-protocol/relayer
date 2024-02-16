@@ -58,6 +58,8 @@ export type Refund = interfaces.Refund;
 export type FillsToRefund = interfaces.FillsToRefund;
 export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
+const { FillType, FillStatus } = interfaces;
+export { FillType, FillStatus };
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 
