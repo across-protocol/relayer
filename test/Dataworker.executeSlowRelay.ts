@@ -144,7 +144,15 @@ describe("Dataworker: Execute slow relays", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
-    await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+    await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
     await updateAllClients();
     const deposit = spokePoolClients[originChainId].getDeposits()[0];
     await requestSlowFill(spokePool_2, depositor, deposit);
@@ -195,7 +203,15 @@ describe("Dataworker: Execute slow relays", async function () {
   it("Ignores V3 slow fills that were replaced by a fast fill", async function () {
     await updateAllClients();
 
-    await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+    await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
     await updateAllClients();
     const deposit = spokePoolClients[originChainId].getDeposits()[0];
     await requestSlowFill(spokePool_2, depositor, deposit);

@@ -8,6 +8,7 @@ import {
   SpokePoolClientsByChain,
   UnfilledDepositsForOriginChain,
   V3DepositWithBlock,
+  V3FillWithBlock,
 } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import {
@@ -50,7 +51,7 @@ import {
 type DataCache = Record<string, LoadDataReturnValue>;
 
 // V3 dictionary helper functions
-function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: interfaces.V3DepositWithBlock): void {
+function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: V3DepositWithBlock): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
     assign(dict, [originChainId, inputToken], []);
@@ -58,7 +59,7 @@ function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: inter
   dict[originChainId][inputToken].push(deposit);
 }
 
-function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3DepositWithBlock): void {
+function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: V3DepositWithBlock): void {
   const { originChainId, inputToken } = deposit;
   if (!dict?.[originChainId]?.[inputToken]) {
     assign(dict, [originChainId, inputToken], []);
@@ -68,7 +69,7 @@ function updateBundleDepositsV3(dict: BundleDepositsV3, deposit: interfaces.V3De
 
 function updateBundleFillsV3(
   dict: BundleFillsV3,
-  fill: interfaces.V3FillWithBlock,
+  fill: V3FillWithBlock,
   lpFeePct: BigNumber,
   repaymentChainId: number,
   repaymentToken: string
@@ -112,7 +113,7 @@ function updateBundleFillsV3(
   }
 }
 
-function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: interfaces.V3DepositWithBlock): void {
+function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: V3DepositWithBlock): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
@@ -120,7 +121,7 @@ function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: inter
   dict[destinationChainId][outputToken].push(deposit);
 }
 
-function updateBundleSlowFills(dict: BundleSlowFills, deposit: interfaces.V3DepositWithBlock): void {
+function updateBundleSlowFills(dict: BundleSlowFills, deposit: V3DepositWithBlock): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
@@ -288,7 +289,7 @@ export class BundleDataClient {
     // V3 specific objects:
     const bundleDepositsV3: BundleDepositsV3 = {}; // Deposits in bundle block range.
     const bundleFillsV3: BundleFillsV3 = {}; // Fills to refund in bundle block range.
-    const bundleInvalidFillsV3: interfaces.V3FillWithBlock[] = []; // Fills that are not valid in this bundle.
+    const bundleInvalidFillsV3: V3FillWithBlock[] = []; // Fills that are not valid in this bundle.
     const bundleSlowFillsV3: BundleSlowFills = {}; // Deposits that we need to send slow fills
     // for in this bundle.
     const expiredDepositsToRefundV3: ExpiredDepositsToRefundV3 = {};
@@ -495,9 +496,9 @@ export class BundleDataClient {
         // There should also only be one deposit per relay hash since deposit ID's can't be re-used on the
         // same spoke pool. Moreover, the SpokePool blocks multiple slow fill requests, so
         // there should also only be one slow fill request per relay hash.
-        deposit: interfaces.V3DepositWithBlock;
-        fill: interfaces.V3FillWithBlock;
-        slowFillRequest: interfaces.SlowFillRequestWithBlock;
+        deposit: V3DepositWithBlock;
+        fill: V3FillWithBlock;
+        slowFillRequest: SlowFillRequestWithBlock;
       };
     } = {};
 

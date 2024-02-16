@@ -958,7 +958,15 @@ describe("Dataworker: Load data used in all functions", async function () {
       // because queryHistoricalDepositForFill eth_call's the contract.
 
       // Send a deposit.
-      const depositObject = await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -988,7 +996,15 @@ describe("Dataworker: Load data used in all functions", async function () {
       // because queryHistoricalDepositForFill eth_call's the contract.
 
       // Send a deposit.
-      const depositObject = await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -1155,7 +1171,15 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(spyLogIncludes(spy, -1, "invalid V3 fills in range")).to.be.true;
     });
     it("Matches fill with deposit with outputToken = 0x0", async function () {
-      await depositV3(spokePool_1, depositor, erc20_1.address, ZERO_ADDRESS);
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        ZERO_ADDRESS,
+        amountToDeposit
+      );
       await spokePoolClient_1.update();
       const deposit = spokePoolClient_1.getDeposits()[0];
       await fillV3(spokePool_2, relayer, deposit);
@@ -1174,17 +1198,36 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       const depositWithMissingSlowFillRequest = await depositV3(
         spokePool_1,
+        destinationChainId,
         depositor,
         erc20_1.address,
-        erc20_2.address
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
       );
       await requestSlowFill(spokePool_2, relayer, depositWithMissingSlowFillRequest);
       const missingSlowFillRequestBlock = await spokePool_2.provider.getBlockNumber();
       await mineRandomBlocks();
 
       const depositsWithSlowFillRequests = [
-        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_1.address),
-        await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address),
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          depositor,
+          erc20_1.address,
+          amountToDeposit,
+          erc20_1.address,
+          amountToDeposit
+        ),
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          depositor,
+          erc20_1.address,
+          amountToDeposit,
+          erc20_2.address,
+          amountToDeposit
+        )
       ];
 
       await spokePoolClient_1.update();
@@ -1329,7 +1372,15 @@ describe("Dataworker: Load data used in all functions", async function () {
       // because queryHistoricalDepositForFill eth_call's the contract.
 
       // Send a deposit.
-      const depositObject = await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -1397,7 +1448,15 @@ describe("Dataworker: Load data used in all functions", async function () {
       // because queryHistoricalDepositForFill eth_call's the contract.
 
       // Send a deposit.
-      const depositObject = await depositV3(spokePool_1, depositor, erc20_1.address, erc20_2.address);
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );      
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -1428,7 +1487,15 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Send a deposit. We'll set output token to a random token to invalidate the slow fill request (e.g.
       // input and output are not "equivalent" tokens)
       const invalidOutputToken = erc20_1;
-      const depositObject = await depositV3(spokePool_1, depositor, erc20_1.address, invalidOutputToken.address);
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        invalidOutputToken.address,
+        amountToDeposit
+      );      
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -1458,7 +1525,15 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
     it("Slow fill request for deposit that isn't eligible for slow fill", async function () {
       const invalidOutputToken = erc20_1;
-      const depositObject = await depositV3(spokePool_1, depositor, erc20_1.address, invalidOutputToken.address);
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        invalidOutputToken.address,
+        amountToDeposit
+      );
       await spokePoolClient_1.update();
 
       await requestSlowFill(spokePool_2, relayer, depositObject);

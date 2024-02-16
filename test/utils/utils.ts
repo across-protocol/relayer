@@ -10,7 +10,14 @@ import _ from "lodash";
 import sinon from "sinon";
 import winston from "winston";
 import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
-import { Deposit, Fill, RelayerRefundLeaf, RunningBalances, V3SlowFillLeaf } from "../../src/interfaces";
+import {
+  Deposit,
+  Fill,
+  RelayerRefundLeaf,
+  RunningBalances,
+  V3DepositWithBlock,
+  V3SlowFillLeaf,
+} from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
