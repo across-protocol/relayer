@@ -198,6 +198,22 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   return true;
 }
 
+// Just a convenience constant to help with printing the fill that's about to be sent.
+const FILL_ARG_NAMES = [
+  "depositor",
+  "recipient",
+  "destinationToken",
+  "amount",
+  "maxTokensToSend",
+  "repaymentChainId",
+  "originChainId",
+  "realizedLpFeePct",
+  "relayerFeePct",
+  "depositId",
+  "message",
+  "maxCount",
+];
+
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
   const { txnHash, depositId: depositIdArg, execute } = args;
   const chainId = Number(args.chainId);
@@ -268,24 +284,9 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     MaxUint256.toString(), // maxCount
   ];
 
-  const fillArgNames = [
-    "depositor",
-    "recipient",
-    "destinationToken",
-    "amount",
-    "maxTokensToSend",
-    "repaymentChainId",
-    "originChainId",
-    "realizedLpFeePct",
-    "relayerFeePct",
-    "depositId",
-    "message",
-    "maxCount",
-  ];
-
   const txnToSend = await destSpokePool.populateTransaction.fillRelay(...fill);
   console.group("Fill Arguments");
-  fill.forEach((e, i) => console.log(`${fillArgNames[i]}: ${e.toString()}`));
+  fill.forEach((e, i) => console.log(`${FILL_ARG_NAMES[i]}: ${e.toString()}`));
   console.groupEnd();
 
   console.group("Fill Txn Info");
