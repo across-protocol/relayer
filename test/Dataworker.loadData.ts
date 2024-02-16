@@ -1227,7 +1227,7 @@ describe("Dataworker: Load data used in all functions", async function () {
           amountToDeposit,
           erc20_2.address,
           amountToDeposit
-        )
+        ),
       ];
 
       await spokePoolClient_1.update();
@@ -1456,7 +1456,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         amountToDeposit,
         erc20_2.address,
         amountToDeposit
-      );      
+      );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -1495,7 +1495,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         amountToDeposit,
         invalidOutputToken.address,
         amountToDeposit
-      );      
+      );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.

@@ -8,11 +8,7 @@ export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   }
 
   public async getMaxFillDeadlineInRange(startBlock: number, endBlock: number): Promise<number> {
-    if (this.maxFillDeadlineOverride !== undefined) {
-      return this.maxFillDeadlineOverride;
-    } else {
-      return super.getMaxFillDeadlineInRange(startBlock, endBlock);
-    }
+    return this.maxFillDeadlineOverride ?? super.getMaxFillDeadlineInRange(startBlock, endBlock);
   }
 
   public setOldestBlockTimestampOverride(oldestBlockTimestampOverride?: number): void {
@@ -20,10 +16,6 @@ export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   }
 
   public getOldestTime(): number {
-    if (this.oldestBlockTimestampOverride !== undefined) {
-      return this.oldestBlockTimestampOverride;
-    } else {
-      return super.getOldestTime();
-    }
+    return this.oldestBlockTimestampOverride ?? super.getOldestTime();
   }
 }

@@ -31,6 +31,8 @@ import {
   V3SlowFillLeaf,
   V2DepositWithBlock,
   V2FillWithBlock,
+  V3DepositWithBlock,
+  V3FillWithBlock,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -215,9 +217,9 @@ export class Dataworker {
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
       fillsToRefund,
-      deposits.filter(sdkUtils.isV2Deposit) as V2DepositWithBlock[],
-      allValidFills.filter(sdkUtils.isV2Fill) as V2FillWithBlock[],
-      allValidFillsInRange as V2FillWithBlock[],
+      deposits.filter(sdkUtils.isV2Deposit<V2DepositWithBlock, V3DepositWithBlock>),
+      allValidFills.filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>),
+      allValidFillsInRange.filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>),
       unfilledDeposits,
       earlyDeposits,
       bundleDepositsV3,

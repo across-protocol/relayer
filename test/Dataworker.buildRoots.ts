@@ -1463,9 +1463,9 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit,
         erc20_2.address,
         amountToDeposit,
-         {
+        {
           fillDeadline: elapsedFillDeadline,
-         }
+        }
       );
       await updateAllClients();
       const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);

@@ -313,9 +313,7 @@ export function _buildRelayerRefundRoot(
     };
   } = {};
   Object.entries(bundleFillsV3).forEach(([repaymentChainId, fillsForChain]) => {
-    if (combinedRefunds[repaymentChainId] === undefined) {
-      combinedRefunds[repaymentChainId] = {};
-    }
+    combinedRefunds[repaymentChainId] ??= {};
     Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
       // refunds can be undefined if these fills were all slow fill executions.
       if (refunds === undefined) {
@@ -334,30 +332,22 @@ export function _buildRelayerRefundRoot(
     });
   });
   Object.entries(expiredDepositsToRefundV3).forEach(([originChainId, depositsForChain]) => {
-    if (combinedRefunds[originChainId] === undefined) {
-      combinedRefunds[originChainId] = {};
-    }
+    combinedRefunds[originChainId] ??= {};
     Object.entries(depositsForChain).forEach(([l2TokenAddress, deposits]) => {
       deposits.forEach((deposit) => {
         if (combinedRefunds[originChainId][l2TokenAddress] === undefined) {
           combinedRefunds[originChainId][l2TokenAddress] = { [deposit.depositor]: deposit.inputAmount };
         } else {
           const existingRefundAmount = combinedRefunds[originChainId][l2TokenAddress][deposit.depositor];
-          if (existingRefundAmount === undefined) {
-            combinedRefunds[originChainId][l2TokenAddress][deposit.depositor] = deposit.inputAmount;
-          } else {
-            combinedRefunds[originChainId][l2TokenAddress][deposit.depositor] = existingRefundAmount.add(
-              deposit.inputAmount
-            );
-          }
+          combinedRefunds[originChainId][l2TokenAddress][deposit.depositor] = deposit.inputAmount.add(
+            existingRefundAmount ?? bnZero
+          );
         }
       });
     });
   });
   Object.entries(fillsToRefund).forEach(([repaymentChainId, fillsForChain]) => {
-    if (combinedRefunds[repaymentChainId] === undefined) {
-      combinedRefunds[repaymentChainId] = {};
-    }
+    combinedRefunds[repaymentChainId] ??= {};
     Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
       // refunds can be undefined if these fills were all slow fill executions.
       if (refunds === undefined) {
@@ -368,11 +358,9 @@ export function _buildRelayerRefundRoot(
       } else {
         Object.entries(refunds).forEach(([refundAddress, refundAmount]) => {
           const existingRefundAmount = combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress];
-          if (existingRefundAmount === undefined) {
-            combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress] = refundAmount;
-          } else {
-            combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress] = existingRefundAmount.add(refundAmount);
-          }
+          combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress] = refundAmount.add(
+            existingRefundAmount ?? bnZero
+          );
         });
       }
     });
