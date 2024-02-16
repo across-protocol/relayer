@@ -1177,35 +1177,30 @@ export class Dataworker {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
-          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
           const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
           const fill = latestFills[idx];
           let amountRequired: BigNumber;
           if (sdkUtils.isV3SlowFillLeaf<V3SlowFillLeaf, V2SlowFillLeaf>(slowFill)) {
-            if (isDefined(fill)) {
-              assert(sdkUtils.isV3Fill(fill));
-              assert(
-                getV3RelayHash(fill, fill.destinationChainId) === getV3RelayHash(slowFill.relayData, slowFill.chainId)
-              );
-              return undefined; // Any valid V3 fill means execution is unnecessary;
-            }
-            amountRequired = slowFill.updatedOutputAmount;
+            amountRequired = isDefined(fill)
+              ? bnZero
+              : slowFill.updatedOutputAmount;
           } else {
             // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-            let totalAmountFilled = bnZero;
-            if (isDefined(fill)) {
-              assert(sdkUtils.isV2Fill(fill));
-              totalAmountFilled = fill.totalFilledAmount;
-              if (totalAmountFilled.eq(fill.amount)) {
-                return undefined; // If there's no outstanding amount, execution is unnecessary.
-              }
-            }
+            const totalFilledAmount = isDefined(fill)
+              ? sdkUtils.getTotalFilledAmount(fill)
+              : bnZero;
 
             // Note: the getRefund function just happens to perform the same math we need.
             // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-            amountRequired = getRefund(outputAmount.sub(totalAmountFilled), slowFill.relayData.realizedLpFeePct);
+            amountRequired = getRefund(outputAmount.sub(totalFilledAmount), slowFill.relayData.realizedLpFeePct);
           }
 
+          // If the fill has been completed there's no need to execute the slow fill leaf.
+          if (amountRequired.eq(bnZero)) {
+            return undefined;
+          }
+
+          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
