@@ -81,6 +81,8 @@ export type PoolRebalanceRoot = {
 
 type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 
+const { getV3RelayHash } = sdkUtils;
+
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
@@ -1128,7 +1130,7 @@ export class Dataworker {
     const chainId = client.chainId;
 
     const sortedFills = client.getFills();
-    const leavesWithLatestFills = leaves.map((slowFill) => {
+    const latestFills = leaves.map((slowFill) => {
       const { relayData } = slowFill;
 
       // Start with the most recent fills and search backwards.
@@ -1163,13 +1165,13 @@ export class Dataworker {
         return false;
       });
 
-      return { ...slowFill, fill };
+      return fill;
     });
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
-        leavesWithLatestFills.map(async (slowFill) => {
+        leaves.map(async (slowFill, idx) => {
           const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFill);
           if (destinationChainId !== chainId) {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
@@ -1177,18 +1179,26 @@ export class Dataworker {
 
           const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
           const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
+          const fill = latestFills[idx];
           let amountRequired: BigNumber;
-          if (sdkUtils.isV3SlowFillLeaf(slowFill)) {
+          if (sdkUtils.isV3SlowFillLeaf<V3SlowFillLeaf, V2SlowFillLeaf>(slowFill)) {
+            if (isDefined(fill)) {
+              assert(sdkUtils.isV3Fill(fill));
+              assert(
+                getV3RelayHash(fill, fill.destinationChainId) === getV3RelayHash(slowFill.relayData, slowFill.chainId)
+              );
+              return undefined; // Any valid V3 fill means execution is unnecessary;
+            }
             amountRequired = slowFill.updatedOutputAmount;
           } else {
-            const fill = slowFill.fill;
-            assert(sdkUtils.isV2Fill(fill) || !isDefined(fill)); // Any fill linked with a v2 SlowFill must also be v2.
-
             // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-            const totalAmountFilled = fill?.totalFilledAmount ?? bnZero;
-            if (isDefined(fill) && totalAmountFilled.eq(fill.amount)) {
-              // If fill was a full fill, execution is unnecessary.
-              return undefined;
+            let totalAmountFilled = bnZero;
+            if (isDefined(fill)) {
+              assert(sdkUtils.isV2Fill(fill));
+              totalAmountFilled = fill.totalFilledAmount;
+              if (totalAmountFilled.eq(fill.amount)) {
+                return undefined; // If there's no outstanding amount, execution is unnecessary.
+              }
             }
 
             // Note: the getRefund function just happens to perform the same math we need.
