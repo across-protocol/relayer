@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, L1Token, V2Deposit } from "../interfaces";
+import { Deposit, L1Token, V2Deposit, V2DepositWithBlock } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -433,7 +433,7 @@ export class Relayer {
     });
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
+  fillRelay(deposit: V2Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -612,7 +612,7 @@ export class Relayer {
     }
   }
 
-  private constructRelayFilledMrkdwn(deposit: V2Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
+  private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
     let mrkdwn =
       this.constructBaseFillMarkdown(deposit, fillAmount) + ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
