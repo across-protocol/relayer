@@ -120,6 +120,7 @@ function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: V3Dep
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
   }
+  assert(deposit.realizedLpFeePct, "Deposit must have realizedLpFeePct to store as BundleSlowFill");
   dict[destinationChainId][outputToken].push(deposit);
 }
 
@@ -974,11 +975,21 @@ export class BundleDataClient {
         // DataworkerUtils.blockRangesAreInvalidForSpokeClients
         const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
         const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
+        const [
+          startTime,
+          endTime
+        ] = [
+          Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
+          Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
+        ];
+        // Sanity checks:
+        assert(endTime >= startTime, "End time should be greater than start time.");
+        assert(startTime > 0, "Start time should be greater than 0.");
         return [
           chainId,
           [
-            Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
-            Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
+            startTime,
+            endTime          
           ],
         ];
       })
