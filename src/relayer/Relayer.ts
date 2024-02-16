@@ -203,7 +203,7 @@ export class Relayer {
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
-    const unfilledDeposits = (await this._getUnfilledDeposits());
+    const unfilledDeposits = await this._getUnfilledDeposits();
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
