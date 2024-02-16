@@ -81,8 +81,6 @@ export type PoolRebalanceRoot = {
 
 type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 
-const { getV3RelayHash } = sdkUtils;
-
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
@@ -1181,14 +1179,10 @@ export class Dataworker {
           const fill = latestFills[idx];
           let amountRequired: BigNumber;
           if (sdkUtils.isV3SlowFillLeaf<V3SlowFillLeaf, V2SlowFillLeaf>(slowFill)) {
-            amountRequired = isDefined(fill)
-              ? bnZero
-              : slowFill.updatedOutputAmount;
+            amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
           } else {
             // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-            const totalFilledAmount = isDefined(fill)
-              ? sdkUtils.getTotalFilledAmount(fill)
-              : bnZero;
+            const totalFilledAmount = isDefined(fill) ? sdkUtils.getTotalFilledAmount(fill) : bnZero;
 
             // Note: the getRefund function just happens to perform the same math we need.
             // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
