@@ -27,6 +27,8 @@ type relayerFeeQuery = {
   amount: string;
   recipientAddress?: string;
   message?: string;
+  skipAmountLimit?: string;
+  timestamp?: number;
 };
 
 const { ACROSS_API_HOST = "across.to" } = process.env;
@@ -74,15 +76,28 @@ function printFill(log: LogDescription): void {
 }
 
 async function getRelayerFeePct(params: relayerFeeQuery, timeout = 5000): Promise<BigNumber> {
+  const quoteData = await getSuggestedFees(params, timeout);
+  if (!isDefined(quoteData["relayFeePct"])) {
+    throw new Error("relayFeePct missing from suggested-fees response");
+  }
+  return toBN(quoteData["relayFeePct"]);
+}
+
+async function getLpFeePct(params: relayerFeeQuery, timeout = 5000): Promise<BigNumber> {
+  const quoteData = await getSuggestedFees(params, timeout);
+  if (!isDefined(quoteData["lpFeePct"])) {
+    throw new Error("lpFeePct missing from suggested-fees response");
+  }
+  return toBN(quoteData["lpFeePct"]);
+}
+
+async function getSuggestedFees(params: relayerFeeQuery, timeout: number) {
   const path = "api/suggested-fees";
   const url = `https://${ACROSS_API_HOST}/${path}`;
 
   try {
     const quote = await axios.get(url, { timeout, params });
-    if (!isDefined(quote.data["relayFeePct"])) {
-      throw new Error("relayFeePct missing from suggested-fees response");
-    }
-    return toBN(quote.data["relayFeePct"]);
+    return quote.data;
   } catch (err) {
     if (isAxiosError(err) && err.response.status >= 400) {
       throw new Error(`Failed to get quote for deposit (${err.response.data})`);
@@ -179,6 +194,131 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   receipt.logs
     .filter((log) => log.address === spokePool.address)
     .forEach((log) => printDeposit(spokePool.interface.parseLog(log)));
+
+  return true;
+}
+
+async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
+  const { txnHash, depositId: depositIdArg, execute } = args;
+  const chainId = Number(args.chainId);
+
+  if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
+    throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
+  }
+
+  const originProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
+  const originSpokePool = await utils.getSpokePoolContract(chainId);
+  const spokePools: { [chainId: number]: Contract } = {};
+
+  const txn = await originProvider.getTransactionReceipt(txnHash);
+
+  const fundsDeposited = originSpokePool.interface.getEventTopic("FundsDeposited");
+  const depositLogs = txn.logs
+    .filter(({ topics, address }) => topics[0] === fundsDeposited && address === originSpokePool.address)
+    .map((log) => originSpokePool.interface.parseLog(log));
+
+  if (depositLogs.length === 0) {
+    throw new Error("No deposits found in txn");
+  }
+
+  let deposit: ethers.utils.LogDescription;
+  if (depositIdArg === undefined) {
+    if (depositLogs.length > 1) {
+      throw new Error("Multiple deposits in transaction. Must provide depositId");
+    }
+
+    deposit = depositLogs[0];
+  } else {
+    const foundDeposit = depositLogs.find((log) => log.args["depositId"] === depositId);
+    if (foundDeposit === undefined) {
+      throw new Error(`No deposit found for id ${args["depositId"]}`);
+    }
+    deposit = foundDeposit;
+  }
+
+  const { depositId, relayerFeePct, originToken, quoteTimestamp, amount, depositor, recipient, message } = deposit.args;
+  const originChainId = Number(deposit.args.originChainId.toString());
+  const destinationChainId = Number(deposit.args.destinationChainId.toString());
+  const destSpokePool = spokePools[destinationChainId] ?? (await utils.getSpokePoolContract(destinationChainId));
+
+  const originTokenInfo = utils.resolveToken(originToken, originChainId);
+  const destinationTokenInfo = utils.resolveToken(originTokenInfo.symbol, destinationChainId);
+  const destinationToken = destinationTokenInfo.address;
+  const realizedLpFeePct = await getLpFeePct({
+    originChainId,
+    destinationChainId,
+    token: originToken,
+    amount: amount.toString(),
+    skipAmountLimit: "true",
+    timestamp: Number(quoteTimestamp.toString()),
+  });
+
+  const fill = [
+    depositor, // depositor
+    recipient, // recipient
+    destinationToken, // destinationToken
+    amount, // amount
+    MaxUint256.toString(), // maxTokensToSend
+    destinationChainId, // repaymentChainId
+    originChainId, // originChainId
+    realizedLpFeePct, // realizedLpFeePct
+    relayerFeePct, // relayerFeePct
+    depositId, // depositId
+    message, // message
+    MaxUint256.toString(), // maxCount
+  ];
+
+  const fillArgNames = [
+    "depositor",
+    "recipient",
+    "destinationToken",
+    "amount",
+    "maxTokensToSend",
+    "repaymentChainId",
+    "originChainId",
+    "realizedLpFeePct",
+    "relayerFeePct",
+    "depositId",
+    "message",
+    "maxCount",
+  ];
+
+  const txnToSend = await destSpokePool.populateTransaction.fillRelay(...fill);
+  console.group("Fill Arguments");
+  fill.forEach((e, i) => console.log(`${fillArgNames[i]}: ${e.toString()}`));
+  console.groupEnd();
+
+  console.group("Fill Txn Info");
+  console.log(`to: ${txnToSend.to}`);
+  console.log(`value: ${txnToSend.value || "0"}`);
+  console.log(`data: ${txnToSend.data}`);
+  console.groupEnd();
+
+  if (execute) {
+    const question = "Are you sure you want to send this fill?";
+    const questionAccepted = await utils.askYesNoQuestion(question);
+    if (!questionAccepted) {
+      return true;
+    }
+
+    const sender = await signer.getAddress();
+    const destProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(destinationChainId));
+    const destSigner = signer.connect(destProvider);
+
+    const erc20 = new Contract(destinationToken, ERC20.abi, destSigner);
+    const allowance = await erc20.allowance(sender, destSpokePool.address);
+    if (amount.gt(allowance)) {
+      const approvalAmount = amount.mul(5);
+      const approval = await erc20.approve(destSpokePool.address, approvalAmount);
+      console.log(`Approving SpokePool for ${approvalAmount} ${originTokenInfo.symbol}: ${approval.hash}.`);
+      await approval.wait();
+      console.log("Approval complete...");
+    }
+
+    const fillTxn = await destSigner.sendTransaction(txnToSend);
+    const receipt = await fillTxn.wait();
+    console.log(`Tx hash: ${receipt.transactionHash}`);
+  }
 
   return true;
 }
@@ -307,7 +447,7 @@ function usage(badInput?: string): boolean {
     " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
-  // const fillArgs = "--from <originChainId> --hash <depositHash>"; @todo: future
+  const fillArgs = "--chainId <originChainId> --txnHash <depositHash> [--depositId <depositId>] [--execute]";
 
   const pad = "deposit".length;
   usageStr += `
@@ -315,6 +455,7 @@ function usage(badInput?: string): boolean {
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
     \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
+    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 
@@ -325,11 +466,11 @@ async function run(argv: string[]): Promise<number> {
   const configOpts = ["chainId"];
   const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct", "message"];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
-  const fillOpts = [];
+  const fillOpts = ["txnHash", "chainId", "depositId"];
   const fetchDepositOpts = ["chainId", "depositId"];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
-    boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
+    boolean: ["decimals", "execute"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "secret",
       decimals: false,
@@ -362,7 +503,9 @@ async function run(argv: string[]): Promise<number> {
     case "fetch":
       result = await fetchTxn(args, signer);
       break;
-    case "fill": // @todo Not supported yet...
+    case "fill":
+      result = await fillDeposit(args, signer);
+      break;
     default:
       return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
