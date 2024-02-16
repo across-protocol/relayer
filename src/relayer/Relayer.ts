@@ -202,8 +202,8 @@ export class Relayer {
     multiCallerClient.clearTransactionQueue();
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
-    // per chain, which is based on the deposit volume we could fill.
-    const unfilledDeposits = await this._getUnfilledDeposits();
+    // per chain, which is based on the deposit volume we could fill. @todo: Remove v2 filtering.
+    const unfilledDeposits = (await this._getUnfilledDeposits()).filter(({ deposit }) => sdkUtils.isV2Deposit(deposit));
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
@@ -502,6 +502,8 @@ export class Relayer {
     fillAmount: BigNumber,
     hubPoolToken: L1Token
   ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
+    assert(sdkUtils.isV2Deposit(deposit)); // temporary
+
     const { inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
