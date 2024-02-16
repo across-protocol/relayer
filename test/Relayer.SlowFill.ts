@@ -28,10 +28,12 @@ import {
   deployConfigStore,
   deploySpokePoolWithToken,
   depositV2,
+  depositV3,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
+  getV3RelayHash,
   lastSpyLogIncludes,
   setupTokensForWallet,
   sinon,
@@ -56,7 +58,7 @@ let relayerInstance: Relayer, mockCrossChainTransferClient: MockCrossChainTransf
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient, mockInventoryClient: MockInventoryClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
-describe("Relayer: Zero sized fill for slow relay", async function () {
+describe("Relayer: Initiates slow fill requests", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({
@@ -157,7 +159,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     await updateAllClients();
   });
 
-  it("Correctly sends 1wei sized fill if insufficient token balance", async function () {
+  it("Correctly sends 1wei sized fill for v2 Deposits if insufficient token balance", async function () {
     // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_1.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
@@ -201,6 +203,59 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
   });
+
+  it("Correctly requests slow fill for v3 Deposits if insufficient token balance", async function () {
+    // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
+    const balance = await erc20_1.balanceOf(relayer.address);
+    await erc20_2.connect(relayer).transfer(depositor.address, balance.sub(amountToDeposit));
+
+    const inputToken = erc20_1.address;
+    const inputAmount = await erc20_1.balanceOf(depositor.address);
+    const outputToken = erc20_2.address;
+    const outputAmount = balance.sub(1);
+
+    const relayerBalance = await erc20_2.connect(relayer).balanceOf(relayer.address);
+    expect(relayerBalance.lt(outputAmount)).to.be.true;
+
+    // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      inputToken,
+      inputAmount,
+      outputToken,
+      outputAmount
+    );
+    expect(deposit).to.exist;
+
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(multiCallerClient.transactionCount()).to.equal(1); // Should be requestV3SlowFill()
+    expect(spyLogIncludes(spy, -2, "Enqueuing slow fill request.")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+
+    const tx = await multiCallerClient.executeTransactionQueue();
+    expect(tx.length).to.equal(1);
+
+    // Verify that the slowFill request was received by the destination SpokePoolClient.
+    await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
+    let slowFillRequest = spokePoolClient_2.getSlowFillRequest(deposit);
+    expect(slowFillRequest).to.exist;
+    slowFillRequest = slowFillRequest!; // tsc coersion
+
+    expect(getV3RelayHash(slowFillRequest, slowFillRequest.destinationChainId)).to.equal(
+      getV3RelayHash(deposit, deposit.destinationChainId)
+    );
+
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+  });
+
+  // @note: v3 slow fill requests don't affect repayment chain selection, so they can be rebalance-agnostic.
+  // This functionality is a candidate for removal once v2 is removed.
   describe("Sends zero fills only if it won't rebalance to fast fill deposit", function () {
     let deposit1: Record<string, unknown> | null = null;
     let partialRebalance: Pick<Rebalance, "thresholdPct" | "targetPct" | "currentAllocPct" | "cumulativeBalance">;
@@ -245,6 +300,9 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       await relayerInstance.checkForUnfilledDepositsAndFill();
       expect(multiCallerClient.transactionCount()).to.equal(0);
     });
+
+    // @note: v3 slow fill requests don't affect repayment chain selection, so they can be rebalance-agnostic.
+    // This functionality is a candidate for removal once v2 is removed.
     describe("Sends zero fill if no rebalance for deposit", function () {
       it("rebalance amount is too low", async function () {
         mockInventoryClient.addPossibleRebalance({
