@@ -305,8 +305,8 @@ export function _buildRelayerRefundRoot(
 } {
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
-  // TODO: Handle V3 bundle fills to refund here and expired deposits.
-  // Create a combined `refunds` object
+  // Create a combined `refunds` object containing refunds for V2 + V3 fills 
+  // and expired deposits.
   const combinedRefunds: {
     [repaymentChainId: number]: {
       [repaymentToken: string]: interfaces.Refund;
@@ -408,8 +408,6 @@ export function _buildRelayerRefundRoot(
       }
     });
   });
-
-  // TODO: Add v3 expired deposits to relayer refund leaf.
 
   // We need to construct a leaf for any pool rebalance leaves with a negative net send amount and NO fills to refund
   // since we need to return tokens from SpokePool to HubPool.

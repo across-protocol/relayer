@@ -933,7 +933,6 @@ export class BundleDataClient {
       });
     }
 
-    // TODO: Create a pretty print for V3 events.
     if (bundleInvalidFillsV3.length > 0) {
       this.logger.debug({
         at: "BundleDataClient#loadData",

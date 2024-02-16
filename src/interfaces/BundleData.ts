@@ -16,8 +16,6 @@ export interface BundleFillV3 extends interfaces.V3FillWithBlock {
   lpFeePct: BigNumber;
 }
 
-// TODO: Consider not including `refunds`, `totalRefundAmount`, and `realizedLpFees` in the type as they can
-// be computed pretty easily in O(n) time by the caller of loadData using this dictionary.
 export type BundleFillsV3 = {
   [repaymentChainId: number]: {
     [repaymentToken: string]: {

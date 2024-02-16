@@ -26,61 +26,6 @@ export function V3FillFromDeposit(
   return fill;
 }
 
-export async function depositV3(
-  spokePool: Contract,
-  depositor: SignerWithAddress,
-  inputToken: string,
-  outputToken: string,
-  amount = amountToDeposit,
-  _destinationChainId = destinationChainId,
-  fillDeadline?: number
-): Promise<interfaces.V3DepositWithBlock> {
-  const currentTime = await spokePool.getCurrentTime();
-  await spokePool
-    .connect(depositor)
-    .depositV3(
-      depositor.address,
-      depositor.address,
-      inputToken,
-      outputToken,
-      amount,
-      amount,
-      _destinationChainId,
-      ZERO_ADDRESS,
-      currentTime.toNumber(),
-      fillDeadline ?? currentTime.toNumber() + 7200,
-      0,
-      "0x"
-    );
-  const [events, originChainId] = await Promise.all([
-    spokePool.queryFilter(spokePool.filters.V3FundsDeposited()),
-    spokePool.chainId(),
-  ]);
-  const lastEvent = events[events.length - 1];
-  const depositObject: interfaces.V3DepositWithBlock = {
-    ...lastEvent.args,
-    inputToken: lastEvent.args?.inputToken,
-    outputToken: lastEvent.args?.outputToken,
-    inputAmount: lastEvent.args?.inputAmount,
-    outputAmount: lastEvent.args?.outputAmount,
-    destinationChainId: lastEvent.args?.destinationChainId,
-    depositId: lastEvent.args?.depositId,
-    quoteTimestamp: lastEvent.args?.quoteTimestamp,
-    fillDeadline: lastEvent.args?.fillDeadline,
-    exclusivityDeadline: lastEvent.args?.exclusivityDeadline,
-    depositor: lastEvent.args?.depositor,
-    recipient: lastEvent.args?.recipient,
-    exclusiveRelayer: lastEvent.args?.exclusiveRelayer,
-    message: lastEvent.args?.message,
-    originChainId,
-    blockNumber: lastEvent.blockNumber,
-    transactionHash: lastEvent.transactionHash,
-    logIndex: lastEvent.logIndex,
-    transactionIndex: lastEvent.transactionIndex,
-  };
-  return depositObject;
-}
-
 export async function fillV3(
   spokePool: Contract,
   relayer: SignerWithAddress,
