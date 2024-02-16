@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, L1Token, V2Deposit, V2DepositWithBlock } from "../interfaces";
+import { Deposit, L1Token, V2Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -22,7 +22,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
-const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
+const { bnUint256Max, isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const zeroFillAmount = bnOne;
 
@@ -269,7 +269,7 @@ export class Relayer {
             message: "Initiating slow fill for grey listed depositor",
             depositor,
           });
-          this.zeroFillDeposit(deposit);
+          this.requestSlowFill(deposit, fillCount);
         }
         // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
         // so we don't fast fill an already slow filled deposit from the slow fill-only list.
@@ -359,17 +359,17 @@ export class Relayer {
         } else {
           this.logger.debug({
             at: "Relayer",
-            message: "No rebalances for filled token, proceeding to evaluate zero fill",
+            message: "No rebalances for filled token, proceeding to evaluate slow fill request",
             depositL1Token: l1Token.address,
             currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
             crossChainTxns,
             rebalances,
           });
         }
-        // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
-        // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
-        if (sendSlowRelays && tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) {
-          this.zeroFillDeposit(deposit);
+
+        // If we don't have enough balance to fill the deposit, consider requesting a slow fill.
+        if (sendSlowRelays) {
+          this.requestSlowFill(deposit, fillCount);
         }
       }
     }
@@ -382,7 +382,58 @@ export class Relayer {
     }
   }
 
-  fillRelay(deposit: V2Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
+  requestSlowFill(deposit: Deposit, fillCount: number): void {
+    // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
+    // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
+    if (!isMessageEmpty(deposit.message)) {
+      this.logger.warn({
+        at: "Relayer::zeroFillDeposit",
+        message: "Suppressing slow fill request for deposit with message.",
+        deposit,
+      });
+      return;
+    }
+
+    const { hubPoolClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+    if (sdkUtils.isV2Deposit(deposit)) {
+      if (fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
+        this.zeroFillDeposit(deposit);
+      }
+      return;
+    }
+
+    const { originChainId, destinationChainId, depositId, outputToken } = deposit;
+    const spokePoolClient = spokePoolClients[destinationChainId];
+    const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
+    if (isDefined(slowFillRequest)) {
+      return; // Slow fill has already been requested; nothing to do.
+    }
+
+    const formatSlowFillRequestMarkdown = (): string => {
+      const { symbol, decimals } = hubPoolClient.getTokenInfo(destinationChainId, outputToken);
+      const formatter = createFormatFunction(2, 4, false, decimals);
+      const outputAmount = formatter(deposit.outputAmount);
+      const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
+
+      // @todo (future) infer the updated outputAmount by zeroing the relayer fee in order to print the correct amount.
+      return (
+        `Requested slow fill 🐌 of ${outputAmount} ${symbol}` +
+        ` on ${dstChain} for ${srcChain} depositId ${depositId}.`
+      );
+    };
+
+    this.logger.debug({ at: "Relayer", message: "Enqueuing slow fill request.", deposit });
+    multiCallerClient.enqueueTransaction({
+      chainId: destinationChainId,
+      contract: spokePoolClient.spokePool,
+      method: "requestV3SlowFill",
+      args: [deposit],
+      message: "Requested slow fill for deposit.",
+      mrkdwn: formatSlowFillRequestMarkdown(),
+    });
+  }
+
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -443,16 +494,6 @@ export class Relayer {
    * @param deposit Deposit object to zero-fill.
    */
   zeroFillDeposit(deposit: V2Deposit): void {
-    // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
-    // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
-    if (!isMessageEmpty(deposit.message)) {
-      this.logger.warn({
-        at: "Relayer::zeroFillDeposit",
-        message: "Suppressing zero-fill for deposit with message.",
-        deposit,
-      });
-      return;
-    }
     this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
@@ -462,6 +503,8 @@ export class Relayer {
     fillAmount: BigNumber,
     hubPoolToken: L1Token
   ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
+    assert(sdkUtils.isV2Deposit(deposit)); // temporary
+
     const { inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
@@ -479,6 +522,10 @@ export class Relayer {
     const preferredChainId = fillAmount.eq(outputAmount)
       ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
       : destinationChainId;
+
+    if (sdkUtils.isV3Deposit(deposit)) {
+      return { repaymentChainId: undefined, gasLimit: bnUint256Max };
+    }
 
     const refundFee = bnZero;
     const { profitable, nativeGasCost: gasLimit } = await profitClient.isFillProfitable(
@@ -570,7 +617,17 @@ export class Relayer {
       this.constructBaseFillMarkdown(deposit, fillAmount) + ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
-      mrkdwn += ` Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`;
+      if (sdkUtils.isV2Deposit(deposit)) {
+        mrkdwn += ` Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`;
+      } else {
+        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(
+          deposit.destinationChainId,
+          deposit.outputToken
+        );
+        const formatter = createFormatFunction(2, 4, false, decimals);
+        // @todo Would be nice to compute the updated relayerFeePct as well.
+        mrkdwn += ` Reduced output amount: ${formatter(deposit.updatedOutputAmount.toString())} ${symbol}.`;
+      }
     }
 
     return mrkdwn;

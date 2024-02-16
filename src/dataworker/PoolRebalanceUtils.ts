@@ -535,7 +535,7 @@ export function generateMarkdownForRootBundle(
   relayerRefundLeaves: any[],
   relayerRefundRoot: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  slowRelayLeaves: any[],
+  slowRelayLeaves: SlowFillLeaf[],
   slowRelayRoot: string
 ): string {
   // Create helpful logs to send to slack transport
@@ -600,7 +600,8 @@ export function generateMarkdownForRootBundle(
     const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
-    const slowFill: Record<string, string> = {
+    // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
+    const slowFill: Record<string, number | string> = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
       recipient: shortenHexString(leaf.relayData.recipient),
@@ -615,20 +616,18 @@ export function generateMarkdownForRootBundle(
     if (sdkUtils.isV2SlowFillLeaf<interfaces.V2SlowFillLeaf, interfaces.V3SlowFillLeaf>(leaf)) {
       slowFill.destinationToken = convertTokenAddressToSymbol(destinationChainId, outputToken);
       slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
-      // v2SlowFill payoutAdjustmentPct is incidentally defined as a string.
-      // It's unconditionally 0 and will be removed, so just BN it on the fly.
+      // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
+      slowFill.realizedLpFeePct = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
-      // TODO: Use the cast to overcome the tsc error complaining that leaf is of type "never" here.
-      const v3SlowLeaf = leaf;
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
       const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
-      const inputAmount = v3SlowLeaf.relayData.inputAmount.mul(scaleBy);
-      const updatedOutputAmount = v3SlowLeaf.updatedOutputAmount.mul(scaleBy);
+      const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
+      const updatedOutputAmount = leaf.updatedOutputAmount.mul(scaleBy);
       assert(
         inputAmount.gte(updatedOutputAmount),
         "Unexpected output amount for slow fill on" +
-          `${getNetworkName(v3SlowLeaf.relayData.originChainId)} depositId ${v3SlowLeaf.relayData.depositId}`
+          ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
       );
 
       // Infer the realizedLpFeePct from the spread between inputAmount and updatedOutputAmount (sans relayer fee).

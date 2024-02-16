@@ -7,6 +7,7 @@ import {
   EMPTY_MERKLE_ROOT,
   sortEventsDescending,
   BigNumber,
+  getNetworkName,
   getRefund,
   MerkleTree,
   sortEventsAscending,
@@ -1529,13 +1530,13 @@ export class Dataworker {
       await Promise.all(
         leaves.map(async (leaf) => {
           const requests = leaf.netSendAmounts.map((amount, i) => ({
-            amount: amount.gte(0) ? amount : BigNumber.from(0),
+            amount: amount.gt(bnZero) ? amount : bnZero,
             tokens: [leaf.l1Tokens[i]],
             holder: this.clients.hubPoolClient.hubPool.address,
             chainId: hubPoolChainId,
           }));
 
-          if (leaf.chainId === 42161) {
+          if (sdkUtils.chainIsArbitrum(leaf.chainId)) {
             const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
               this.clients.hubPoolClient.hubPool.address
             );
@@ -1549,7 +1550,9 @@ export class Dataworker {
             }
           }
 
-          const success = await balanceAllocator.requestBalanceAllocations(requests.filter((req) => req.amount.gt(0)));
+          const success = await balanceAllocator.requestBalanceAllocations(
+            requests.filter((req) => req.amount.gt(bnZero))
+          );
 
           if (!success) {
             // Note: this is an error because the HubPool should generally not run out of funds to put into
@@ -1569,7 +1572,7 @@ export class Dataworker {
             if (leaf.chainId === hubPoolChainId) {
               await Promise.all(
                 leaf.netSendAmounts.map(async (amount, i) => {
-                  if (amount.gt(0)) {
+                  if (amount.gt(bnZero)) {
                     await balanceAllocator.addUsed(
                       leaf.chainId,
                       leaf.l1Tokens[i],
@@ -1587,7 +1590,7 @@ export class Dataworker {
     ).filter(isDefined);
 
     let hubPoolBalance;
-    if (fundedLeaves.some((leaf) => leaf.chainId === 42161)) {
+    if (fundedLeaves.some((leaf) => sdkUtils.chainIsArbitrum(leaf.chainId))) {
       hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
         this.clients.hubPoolClient.hubPool.address
       );
@@ -1596,14 +1599,14 @@ export class Dataworker {
       const proof = tree.getHexProof(leaf);
       const mrkdwn = `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`;
       if (submitExecution) {
-        if (leaf.chainId === 42161) {
+        if (sdkUtils.chainIsArbitrum(leaf.chainId)) {
           if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf))) {
             this.clients.multiCallerClient.enqueueTransaction({
               contract: this.clients.hubPoolClient.hubPool,
               chainId: hubPoolChainId,
               method: "loadEthForL2Calls",
               args: [],
-              message: "Loaded ETH for message to Arbitrum 📨!",
+              message: `Loaded ETH for message to ${getNetworkName(leaf.chainId)} 📨!`,
               mrkdwn,
               value: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
             });

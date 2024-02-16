@@ -2,7 +2,7 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
 import { AcrossConfigStore, FakeContract, MerkleTree } from "@across-protocol/contracts-v2";
-import { constants } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber, Contract, providers } from "ethers";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
@@ -45,6 +45,7 @@ export const {
   modifyRelayHelper,
   randomAddress,
 } = utils;
+export const { getV3RelayHash } = sdkUtils;
 
 export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
@@ -84,6 +85,7 @@ export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: st
     }
   }
 }
+
 export async function setupTokensForWallet(
   contractToApprove: Contract,
   wallet: SignerWithAddress,
@@ -91,14 +93,16 @@ export async function setupTokensForWallet(
   weth?: Contract,
   seedMultiplier = 1
 ): Promise<void> {
+  const approveToken = async (token: Contract) => {
+    const balance = await token.balanceOf(wallet.address);
+    await token.connect(wallet).approve(contractToApprove.address, balance);
+  };
+
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
-  await Promise.all(
-    tokens.map((token) =>
-      token.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit.mul(seedMultiplier))
-    )
-  );
+  await Promise.all(tokens.map(approveToken));
+
   if (weth) {
-    await weth.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit);
+    await approveToken(weth);
   }
 }
 
@@ -298,6 +302,89 @@ export async function simpleDeposit(
 
 export async function getLastBlockTime(provider: providers.Provider): Promise<number> {
   return (await provider.getBlock(await provider.getBlockNumber())).timestamp;
+}
+
+export async function depositV3(
+  spokePool: Contract,
+  destinationChainId: number,
+  signer: SignerWithAddress,
+  inputToken: string,
+  inputAmount: BigNumber,
+  outputToken: string,
+  outputAmount: BigNumber,
+  opts: {
+    destinationChainId?: number;
+    recipient?: string;
+    quoteTimestamp?: number;
+    message?: string;
+    fillDeadline?: number;
+    exclusivityDeadline?: number;
+    exclusiveRelayer?: string;
+  } = {}
+): Promise<V3DepositWithBlock> {
+  const depositor = signer.address;
+  const recipient = opts.recipient ?? depositor;
+
+  const [spokePoolTime, fillDeadlineBuffer] = (
+    await Promise.all([spokePool.getCurrentTime(), spokePool.fillDeadlineBuffer()])
+  ).map((n) => Number(n));
+
+  const quoteTimestamp = opts.quoteTimestamp ?? spokePoolTime;
+  const message = opts.message ?? constants.EMPTY_MESSAGE;
+  const fillDeadline = opts.fillDeadline ?? spokePoolTime + fillDeadlineBuffer;
+  const exclusivityDeadline = opts.exclusivityDeadline ?? 0;
+  const exclusiveRelayer = opts.exclusiveRelayer ?? ZERO_ADDRESS;
+
+  await spokePool
+    .connect(signer)
+    .depositV3(
+      depositor,
+      recipient,
+      inputToken,
+      outputToken,
+      inputAmount,
+      outputAmount,
+      destinationChainId,
+      exclusiveRelayer,
+      quoteTimestamp,
+      fillDeadline,
+      exclusivityDeadline,
+      message
+    );
+
+  const [events, originChainId] = await Promise.all([
+    spokePool.queryFilter(spokePool.filters.V3FundsDeposited()),
+    spokePool.chainId(),
+  ]);
+
+  const lastEvent = events.at(-1);
+  let args = lastEvent?.args;
+  assert.exists(args);
+  args = args!; // tsc coersion
+
+  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
+
+  return {
+    depositId: args.depositId,
+    originChainId: Number(originChainId),
+    destinationChainId: Number(args.destinationChainId),
+    depositor: args.depositor,
+    recipient: args.recipient,
+    inputToken: args.inputToken,
+    inputAmount: args.inputAmount,
+    outputToken: args.outputToken,
+    outputAmount: args.outputAmount,
+    quoteTimestamp: args.quoteTimestamp,
+    message: args.message,
+    fillDeadline: args.fillDeadline,
+    exclusivityDeadline: args.exclusivityDeadline,
+    exclusiveRelayer: args.exclusiveRelayer,
+    quoteBlockNumber: 0, // @todo
+    blockNumber,
+    transactionHash,
+    transactionIndex,
+    logIndex,
+  };
 }
 
 export async function addLiquidity(
