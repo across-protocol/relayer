@@ -1,4 +1,12 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Signer,
+  disconnectRedisClients,
+  isDefined,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -53,6 +61,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   loopStart = Date.now();
 
+  let dataToPersist: Record<string, unknown> = undefined;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
@@ -107,12 +116,15 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       if (config.proposerEnabled) {
-        await dataworker.proposeRootBundle(
+        const persistedProposerData = await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
           fromBlocks
         );
+        if (persistedProposerData && Object.keys(persistedProposerData).length > 0) {
+          dataToPersist = { ...(dataToPersist ?? {}), proposer: persistedProposerData };
+        }
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
       }
@@ -145,6 +157,18 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       await clients.multiCallerClient.executeTransactionQueue();
+
+      // Only if we get to this point & we've sent a proposal do we want to persist the data.
+      if (config.persistingBundlesEnabled && isDefined(dataToPersist) && Object.keys(dataToPersist).length > 0) {
+        const hashTxn = await clients.arweaveClient.set(dataToPersist, "proposal");
+        logger.info({
+          at: "Dataworker#index",
+          message: `Persisted proposal data to Arweave with transaction hash: ${hashTxn}`,
+          hash: hashTxn,
+          address: await clients.arweaveClient.getAddress(),
+          balance: await clients.arweaveClient.getBalance(),
+        });
+      }
 
       logger.debug({
         at: "Dataworker#index",
