@@ -1687,6 +1687,33 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
       expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
     });
+    it("Does not add prior bundle expired deposits that did not request a slow fill in a prior bundle to unexecutable slow fills", async function () {
+      // Send deposit that expires in this bundle.
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+
+      // Let's make fill status for the relay hash always return Unfilled.
+      const expiredDepositHash = sdkUtils.getV3RelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
+      mockDestinationSpokePool.fillStatuses.whenCalledWith(expiredDepositHash).returns(interfaces.FillStatus.Unfilled);
+
+      // Now, load a bundle that doesn't include the deposit in its range.
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      const oldOriginChainToBlock = getDefaultBlockRange(5)[0][1];
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      bundleBlockRanges[originChainIndex] = [expiredDeposit.blockNumber + 1, oldOriginChainToBlock];
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+
+      // Now, there is no bundle deposit but still an expired deposit to refund.
+      // There is also an unexecutable slow fill.
+      expect(data1.bundleDepositsV3).to.deep.equal({});
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.unexecutableSlowFills).to.deep.equal({});
+    });
     it("Does not add unexecutable slow fill for prior bundle expired deposits that requested a slow fill if slow fill request is in current bundle", async function () {
       // Send deposit that expires in this bundle.
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(

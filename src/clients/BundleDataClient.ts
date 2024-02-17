@@ -496,6 +496,52 @@ export class BundleDataClient {
      *
      * *****************************/
 
+    // The methodology here is roughly as follows
+    // - Query deposits from SpokePoolClients
+    //  - If deposit is in block range, add it to bundleDepositsV3
+    //  - If deposit is expired or from an older bundle, stash it away as a deposit that may require an expired
+    //    deposit refund.
+    // - Query fills from SpokePoolClients
+
+    // TODO: Remove below with new methodology explained above.
+    //       Load all fills:
+    //        Validate fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
+    //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
+    //        If fill is valid:
+    //            - Add it to bundleV3Fills. If its not a SlowFill, add it as a refund. All fills should increment
+    //              bundle LP fees.
+    //       Load all slow fill requests:
+    //        Validate slow fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
+    //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
+    //        If slow fill request is valid and does not match a fast fill in the bundle:
+    //          - Add it to bundleSlowFills.
+    //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
+    //        Else, do nothing, as the slow fill request is invalid.
+    //        Now that we've saved slow fill requests and fast fills, go through all fast fills and identify those
+    //        that replaced a slow fill request from a previous bundle.
+    //            - If fillType is ReplacedSlowFill and there is no RequestSlowFill matching the relayHash in this bundle,
+    //              then we'll want to decrement runningBalances on destination chain since a
+    //              slow fill leaf was included in a previous bundle but cannot be executed.
+    //              Save this fill/deposit in unexecutableSlowFills.
+    //     For all other deposits older than this chain's block range (with blockNumber < origin blockRange[0]):
+    //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[destinationChain][1]
+    //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0].
+    //       - We need to figure out whether these older deposits have been filled already and also whether
+    //        they have had slow fill payments sent for them in a previous bundle.
+    //       - First, see if these deposits are matched with a fill in the dictionary of unique deposits we
+    //        created earlier. Remove such deposits.
+    //       - If not, then call SpokePool.fillStatuses() for each of these deposits.
+    //        ( This does open us up to a minor griefing vector where someone
+    //          sends many small deposits with a short fill deadline, making us call fillStatuses() many times.
+    //          This is mitigated because the deposit would have to have been sent in a previous bundle but with a
+    //          fillDeadline that ended in this current bundle. )
+    //       - Remove any deposits whose fillStatus is Filled
+    //       - For the deposits whose fillStatus is Unfilled, add them to depositsToRefund and increment running
+    //         balances on the origin chain.
+    //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
+    //         from running balances on the destination chain since we can no longer execute the slow fill leaf
+    //         that was included in a previous bundle, so let's add them to unexecutableSlowFills.
+
     // Use this dictionary to conveniently unite all events with the same relay data hash which will make
     // secondary lookups faster. The goal is to lazily fill up this dictionary with all events in the SpokePool
     // client's in-memory event cache.
@@ -530,10 +576,6 @@ export class BundleDataClient {
           originChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
-        //       Load all deposits in block range:
-        //         - add it to bundleDepositsV3.
-        //         If deposit.fillDeadline < bundleBlockTimestamps[destinationChain][1], its expired:
-        //         - Add it to expiredDepositsToRefund.
         originClient
           .getDepositsForDestinationChain(destinationChainId)
           .filter(utils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)
@@ -552,6 +594,10 @@ export class BundleDataClient {
               slowFillRequest: undefined,
             };
 
+            // If deposit block is within origin chain bundle block range, then save as bundle deposit.
+            // If deposit is in bundle and it has expired, additionally save it as an expired deposit.
+            // If deposit is not in the bundle block range, then save it as an older deposit that
+            // may have expired.
             if (deposit.blockNumber <= originChainBlockRange[1] && deposit.blockNumber >= originChainBlockRange[0]) {
               // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
               updateBundleDepositsV3(bundleDepositsV3, deposit);
@@ -583,13 +629,6 @@ export class BundleDataClient {
           destinationChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
-
-        //       Load all fills:
-        //        Validate fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
-        //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
-        //        If fill is valid:
-        //            - Add it to bundleV3Fills. If its not a SlowFill, add it as a refund. All fills should increment
-        //              bundle LP fees.
 
         // Keep track of fast fills that replaced slow fills, which we'll use to create "unexecutable" slow fills
         // if the slow fill request was sent in a prior bundle.
@@ -692,14 +731,6 @@ export class BundleDataClient {
           }
         );
 
-        //       Load all slow fill requests:
-        //        Validate slow fill. Conveniently can use relayHashes to find the matching deposit quickly, if it exists
-        //         or fallback to queryHistoricalDepositForV3Fill if depositId < spokePoolClient.firstDepositIdSearched.
-        //        If slow fill request is valid and does not match a fast fill in the bundle:
-        //          - Add it to bundleSlowFills.
-        //          - The fill should have an lpFee so we can use it to derive the updatedOutputAmount
-        //        Else, do nothing, as the slow fill request is invalid.
-
         await utils.forEachAsync(
           destinationClient.getSlowFillRequestsForOriginChain(originChainId),
           async (slowFillRequest: SlowFillRequestWithBlock) => {
@@ -796,12 +827,6 @@ export class BundleDataClient {
           }
         );
 
-        //        Now that we've saved slow fill requests and fast fills, go through all fast fills and identify those
-        //        that replaced a slow fill request from a previous bundle.
-        //            - If fillType is ReplacedSlowFill and there is no RequestSlowFill matching the relayHash in this bundle,
-        //              then we'll want to decrement runningBalances on destination chain since a
-        //              slow fill leaf was included in a previous bundle but cannot be executed.
-        //              Save this fill/deposit in unexecutableSlowFills.
         fastFillsReplacingSlowFills.forEach((relayDataHash) => {
           const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
           assert(
@@ -845,24 +870,6 @@ export class BundleDataClient {
       }
     });
 
-    //     For all other deposits older than this chain's block range (with blockNumber < origin blockRange[0]):
-    //       - Check for newly expired deposits where fillDeadline <= bundleBlockTimestamps[destinationChain][1]
-    //        and fillDeadline >= bundleBlockTimestamps[destinationChain][0].
-    //       - We need to figure out whether these older deposits have been filled already and also whether
-    //        they have had slow fill payments sent for them in a previous bundle.
-    //       - First, see if these deposits are matched with a fill in the dictionary of unique deposits we
-    //        created earlier. Remove such deposits.
-    //       - If not, then call SpokePool.fillStatuses() for each of these deposits.
-    //        ( This does open us up to a minor griefing vector where someone
-    //          sends many small deposits with a short fill deadline, making us call fillStatuses() many times.
-    //          This is mitigated because the deposit would have to have been sent in a previous bundle but with a
-    //          fillDeadline that ended in this current bundle. )
-    //       - Remove any deposits whose fillStatus is Filled
-    //       - For the deposits whose fillStatus is Unfilled, add them to depositsToRefund and increment running
-    //         balances on the origin chain.
-    //       - For the deposits whose fillStatus is RequestedSlowFill, we'll need to subtract their refund amount
-    //         from running balances on the destination chain since we can no longer execute the slow fill leaf
-    //         that was included in a previous bundle, so let's add them to unexecutableSlowFills.
     await utils.forEachAsync([...olderDepositHashes], async (relayDataHash) => {
       const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
       assert(deposit, "Deposit should exist in relay hash dictionary.");
@@ -885,8 +892,11 @@ export class BundleDataClient {
         if (!fillStatus.eq(FillStatus.Filled)) {
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         }
+        // If fill status is RequestedSlowFill, then we might need to mark down an unexecutable
+        // slow fill that we're going to replace with an expired deposit refund.
         // If deposit cannot be slow filled, then exit early.
         if (
+          // !fillStatus.eq(FillStatus.RequestedSlowFill) ||
           !this.clients.hubPoolClient.areTokensEquivalent(
             deposit.inputToken,
             deposit.originChainId,
@@ -910,9 +920,6 @@ export class BundleDataClient {
         }
       }
     });
-
-    // Clean up:
-    // - Check for duplicate events in any of the above lists.
 
     // Note: We do not check for duplicate slow fills here since `addRefundForValidFill` already checks for duplicate
     // fills and is the function that populates the `unfilledDeposits` dictionary. Therefore, if there are no duplicate
