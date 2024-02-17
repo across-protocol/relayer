@@ -1668,7 +1668,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
 
-      // Let's make fill status for the relay hash always return Filled.
+      // Let's make fill status for the relay hash always return RequestedSlowFill.
       const expiredDepositHash = sdkUtils.getV3RelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
       mockDestinationSpokePool.fillStatuses
         .whenCalledWith(expiredDepositHash)

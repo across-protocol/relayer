@@ -568,6 +568,7 @@ export class BundleDataClient {
 
     // Process fills now that we've populated relay hash dictionary with deposits:
     const validBundleFillHashes: Set<string> = new Set<string>();
+    const validSlowFillRequestHashes: Set<string> = new Set<string>();
     const validFillHashes: Set<string> = new Set<string>();
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
@@ -732,6 +733,7 @@ export class BundleDataClient {
                 ) {
                   // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                   // so this slow fill request is validated.
+                  validSlowFillRequestHashes.add(relayDataHash);
                   updateBundleSlowFills(bundleSlowFillsV3, matchedDeposit);
                   // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
                   // be included in the Fill type rather than the Deposit type, so we'll need
@@ -785,6 +787,7 @@ export class BundleDataClient {
               // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
               // be included in the Fill type rather than the Deposit type, so we'll need
               // to compute it fresh here.
+              validSlowFillRequestHashes.add(relayDataHash);
               updateBundleSlowFills(bundleSlowFillsV3, historicalDeposit.deposit);
             }
           }
@@ -877,9 +880,10 @@ export class BundleDataClient {
         if (fillStatus.eq(FillStatus.Unfilled)) {
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         } else if (fillStatus.eq(FillStatus.RequestedSlowFill)) {
-          // We can mark these slow fill requests as unexecutable because if we had seen the slow fill request 
-          // matching this deposit, then we would have exited earlier
-          updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
+          // Mark slow fill request as unexecutable if it was not sent in this bundle.
+          if (!validSlowFillRequestHashes.has(relayDataHash)) {
+            updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
+          }
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         }
       }
