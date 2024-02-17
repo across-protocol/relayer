@@ -1296,7 +1296,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Only one deposit is eligible to be slow filled because its input and output tokens are equivalent.
       generateV3Deposit({ outputToken: randomAddress() });
       const eligibleToSlowFill = generateV3Deposit({ outputToken: erc20_2.address });
-      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       generateSlowFillRequestFromDeposit(deposits[0]);
