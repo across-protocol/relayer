@@ -492,7 +492,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return rootBundleData.dataToPersistToDALayer;
+    return submitProposals ? rootBundleData.dataToPersistToDALayer : undefined;
   }
 
   async _proposeRootBundle(

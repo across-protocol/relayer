@@ -122,7 +122,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           config.sendingProposalsEnabled,
           fromBlocks
         );
-        if (isDefined(persistedProposerData) && Object.keys(persistedProposerData).length > 0) {
+        if (
+          config.sendingProposalsEnabled &&
+          isDefined(persistedProposerData) &&
+          Object.keys(persistedProposerData).length > 0
+        ) {
           dataToPersist = { ...(dataToPersist ?? {}), proposer: persistedProposerData };
         }
       } else {
