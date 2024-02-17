@@ -529,7 +529,7 @@ export class BundleDataClient {
         );
         //       Load all deposits in block range:
         //         - add it to bundleDepositsV3.
-        //         If deposit.fillDeadline <= bundleBlockTimestamps[destinationChain][1], its expired:
+        //         If deposit.fillDeadline < bundleBlockTimestamps[destinationChain][1], its expired:
         //         - Add it to expiredDepositsToRefund.
         originClient
           .getDepositsForDestinationChain(destinationChainId)
@@ -556,7 +556,7 @@ export class BundleDataClient {
               // that would eliminate any deposits in this bundle with a very low fillDeadline like equal to 0
               // for example. Those should be impossible to create but technically should be included in this
               // bundle of refunded deposits.
-              if (deposit.fillDeadline <= bundleBlockTimestamps[destinationChainId][1]) {
+              if (deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1]) {
                 expiredBundleDepositHashes.add(relayDataHash);
               }
             } else if (deposit.blockNumber < originChainBlockRange[0]) {
@@ -719,13 +719,16 @@ export class BundleDataClient {
                   !v3RelayHashes[relayDataHash].fill &&
                   slowFillRequest.blockNumber <= destinationChainBlockRange[1] &&
                   slowFillRequest.blockNumber >= destinationChainBlockRange[0] &&
+                  // Input and Output tokens must be equivalent on the deposit for this to be slow filled.
                   this.clients.hubPoolClient.areTokensEquivalent(
                     matchedDeposit.inputToken,
                     matchedDeposit.originChainId,
                     matchedDeposit.outputToken,
                     matchedDeposit.destinationChainId,
                     matchedDeposit.quoteBlockNumber
-                  )
+                  ) &&
+                  // Deposit must not have expired in this bundle.
+                  slowFillRequest.fillDeadline >= bundleBlockTimestamps[destinationChainId][1]
                 ) {
                   // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                   // so this slow fill request is validated.
@@ -765,13 +768,16 @@ export class BundleDataClient {
                 // object property values against the deposit's, we
                 // sanity check it here by comparing the full relay hashes
                 utils.getV3RelayHashFromEvent(matchedDeposit) !== relayDataHash ||
+                // Input and Output tokens must be equivalent on the deposit for this to be slow filled.
                 !this.clients.hubPoolClient.areTokensEquivalent(
                   matchedDeposit.inputToken,
                   matchedDeposit.originChainId,
                   matchedDeposit.outputToken,
                   matchedDeposit.destinationChainId,
                   matchedDeposit.quoteBlockNumber
-                )
+                ) ||
+                // Deposit must not have expired in this bundle.
+                slowFillRequest.fillDeadline < bundleBlockTimestamps[destinationChainId][1]
               ) {
                 // TODO: Invalid slow fill request. Maybe worth logging.
                 return;
@@ -862,7 +868,7 @@ export class BundleDataClient {
       if (
         // If there is a valid fill that we saw matching this deposit, then it does not need a refund.
         !validFillHashes.has(relayDataHash) &&
-        deposit.fillDeadline <= bundleBlockTimestamps[destinationChainId][1] &&
+        deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1] &&
         deposit.fillDeadline >= bundleBlockTimestamps[destinationChainId][0]
       ) {
         const fillStatus: BigNumber = await spokePoolClients[deposit.destinationChainId].spokePool.fillStatuses(
@@ -871,6 +877,8 @@ export class BundleDataClient {
         if (fillStatus.eq(FillStatus.Unfilled)) {
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         } else if (fillStatus.eq(FillStatus.RequestedSlowFill)) {
+          // We can mark these slow fill requests as unexecutable because if we had seen the slow fill request 
+          // matching this deposit, then we would have exited earlier
           updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         }

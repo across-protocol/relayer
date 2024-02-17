@@ -1443,6 +1443,30 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
     });
+    it("Slow fill request for deposit that expired in bundle", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      // Send expired deposit
+      generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      // Send valid slow fill request
+      generateSlowFillRequestFromDeposit(deposits[0]);
+      await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      // Slow fill request should not be created, instead deposit should be refunded as an expired one
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
+    });
     it("Searches for old deposit for slow fill request but cannot find matching one", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
