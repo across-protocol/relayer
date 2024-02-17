@@ -38,8 +38,8 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingExecutionsEnabled: boolean;
   readonly sendingFinalizationsEnabled: boolean;
 
-  // This variable should be set if the user wants to persist bundles to Arweave.
-  readonly persistingBundlesEnabled: boolean;
+  // This variable should be set if the user wants to persist data to Arweave.
+  readonly persistingDataEnabled: boolean;
 
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
   // historical events it needs to fetch and parse.
@@ -70,7 +70,7 @@ export class DataworkerConfig extends CommonConfig {
       DATAWORKER_FAST_START_BUNDLE,
       FORCE_PROPOSAL,
       FORCE_PROPOSAL_BUNDLE_RANGE,
-      PERSIST_BUNDLES_TO_ARWEAVE,
+      PERSIST_DATA_TO_ARWEAVE,
       ARWEAVE_WALLET_JWK,
       ARWEAVE_GATEWAY,
     } = env;
@@ -166,8 +166,8 @@ export class DataworkerConfig extends CommonConfig {
       );
     }
 
-    this.persistingBundlesEnabled = PERSIST_BUNDLES_TO_ARWEAVE === "true";
-    if (this.persistingBundlesEnabled) {
+    this.persistingDataEnabled = PERSIST_DATA_TO_ARWEAVE === "true";
+    if (this.persistingDataEnabled) {
       // Load the Arweave wallet JWK from the environment.
       const _arweaveWalletJWK = JSON.parse(ARWEAVE_WALLET_JWK ?? "{}");
       assert(ArweaveWalletJWKInterfaceSS.is(_arweaveWalletJWK), "Invalid Arweave wallet JWK");

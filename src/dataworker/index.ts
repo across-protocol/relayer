@@ -1,12 +1,4 @@
-import {
-  processEndPollingLoop,
-  winston,
-  config,
-  startupLogLevel,
-  Signer,
-  disconnectRedisClients,
-  isDefined,
-} from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -61,7 +53,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   loopStart = Date.now();
 
-  let dataToPersist: Record<string, unknown> = undefined;
+  let dataToPersist: Record<string, unknown> = {};
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
@@ -122,13 +114,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           config.sendingProposalsEnabled,
           fromBlocks
         );
-        if (
-          config.sendingProposalsEnabled &&
-          isDefined(persistedProposerData) &&
-          Object.keys(persistedProposerData).length > 0
-        ) {
-          dataToPersist = { ...(dataToPersist ?? {}), proposer: persistedProposerData };
-        }
+        dataToPersist = { ...dataToPersist, proposer: persistedProposerData };
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
       }
@@ -162,8 +148,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
       await clients.multiCallerClient.executeTransactionQueue();
 
-      // Only if we get to this point & we've sent a proposal do we want to persist the data.
-      if (config.persistingBundlesEnabled && isDefined(dataToPersist) && Object.keys(dataToPersist).length > 0) {
+      // If we have data and persisting is enabled, post it to Arweave.
+      if (config.persistingDataEnabled && Object.keys(dataToPersist).length > 0) {
         const hashTxn = await clients.arweaveClient.set(dataToPersist, "proposal");
         logger.info({
           at: "Dataworker#index",
