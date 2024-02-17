@@ -881,7 +881,7 @@ export class BundleDataClient {
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         } else if (fillStatus.eq(FillStatus.RequestedSlowFill)) {
           // Mark slow fill request as unexecutable if it was not sent in this bundle.
-          if (!validSlowFillRequestHashes.has(relayDataHash)) {
+          if (!validBundleSlowFillRequestHashes.has(relayDataHash)) {
             updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
           }
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
