@@ -896,7 +896,7 @@ export class BundleDataClient {
         // slow fill that we're going to replace with an expired deposit refund.
         // If deposit cannot be slow filled, then exit early.
         if (
-          // !fillStatus.eq(FillStatus.RequestedSlowFill) ||
+          !fillStatus.eq(FillStatus.RequestedSlowFill) ||
           !this.clients.hubPoolClient.areTokensEquivalent(
             deposit.inputToken,
             deposit.originChainId,
