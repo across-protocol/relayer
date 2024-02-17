@@ -59,9 +59,9 @@ export async function constructDataworkerClients(
   const arweaveClient = new caching.ArweaveClient(
     config.arweaveWalletJWK,
     logger,
-    config.arweaveGateway.url,
-    config.arweaveGateway.protocol,
-    config.arweaveGateway.port
+    config.arweaveGateway?.url,
+    config.arweaveGateway?.protocol,
+    config.arweaveGateway?.port
   );
 
   return {
