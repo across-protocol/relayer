@@ -39,7 +39,6 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingFinalizationsEnabled: boolean;
 
   // This variable should be set if the user wants to persist bundles to Arweave.
-  // Note: sendingProposalsEnabled must be true for this to work.
   readonly persistingBundlesEnabled: boolean;
 
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
@@ -168,11 +167,6 @@ export class DataworkerConfig extends CommonConfig {
     }
 
     this.persistingBundlesEnabled = PERSIST_BUNDLES_TO_ARWEAVE === "true";
-    assert(
-      !this.persistingBundlesEnabled || this.sendingProposalsEnabled,
-      "persistingBundlesEnabled requires sendingProposalsEnabled"
-    );
-
     if (this.persistingBundlesEnabled) {
       // Load the Arweave wallet JWK from the environment.
       const _arweaveWalletJWK = JSON.parse(ARWEAVE_WALLET_JWK ?? "{}");
