@@ -122,7 +122,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           config.sendingProposalsEnabled,
           fromBlocks
         );
-        if (persistedProposerData && Object.keys(persistedProposerData).length > 0) {
+        if (isDefined(persistedProposerData) && Object.keys(persistedProposerData).length > 0) {
           dataToPersist = { ...(dataToPersist ?? {}), proposer: persistedProposerData };
         }
       } else {
@@ -163,7 +163,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         const hashTxn = await clients.arweaveClient.set(dataToPersist, "proposal");
         logger.info({
           at: "Dataworker#index",
-          message: `Persisted proposal data to Arweave with transaction hash: ${hashTxn}`,
+          message: `Persisted data to Arweave with transaction hash: ${hashTxn}`,
           hash: hashTxn,
           address: await clients.arweaveClient.getAddress(),
           balance: await clients.arweaveClient.getBalance(),
