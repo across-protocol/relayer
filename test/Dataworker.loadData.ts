@@ -1658,7 +1658,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
     });
-    it("Adds prior bundle expired deposits that requested a slow fill to unexecutable slow fills", async function () {
+    it("Adds prior bundle expired deposits that requested a slow fill in a prior bundle to unexecutable slow fills", async function () {
       // Send deposit that expires in this bundle.
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
         [originChainId, destinationChainId],
@@ -1686,6 +1686,42 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleDepositsV3).to.deep.equal({});
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
       expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
+    });
+    it("Does not add unexecutable slow fill for prior bundle expired deposits that requested a slow fill if slow fill request is in current bundle", async function () {
+      // Send deposit that expires in this bundle.
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+
+      // If the slow fill request took place in the current bundle, then it is not marked as unexecutable since
+      // it would not have produced a slow fill request.
+      const deposit = mockOriginSpokePoolClient.getDeposits()[0];
+      generateSlowFillRequestFromDeposit(deposit);
+      await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
+
+      // Let's make fill status for the relay hash always return RequestedSlowFill.
+      const expiredDepositHash = sdkUtils.getV3RelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
+      mockDestinationSpokePool.fillStatuses
+        .whenCalledWith(expiredDepositHash)
+        .returns(interfaces.FillStatus.RequestedSlowFill);
+
+      // Now, load a bundle that doesn't include the deposit in its range.
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      const oldOriginChainToBlock = getDefaultBlockRange(5)[0][1];
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      bundleBlockRanges[originChainIndex] = [expiredDeposit.blockNumber + 1, oldOriginChainToBlock];
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+
+      // Now, there is no bundle deposit but still an expired deposit to refund.
+      // There is also no unexecutable slow fill because the slow fill request was sent in this bundle.
+      expect(data1.bundleDepositsV3).to.deep.equal({});
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.unexecutableSlowFills).to.deep.equal({});
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
     });
   });
 
