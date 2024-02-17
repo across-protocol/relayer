@@ -905,7 +905,7 @@ export class BundleDataClient {
           destinationChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
-        if (!slowFillRequest || slowFillRequest < destinationBlockRange[0]) {
+        if (!slowFillRequest || slowFillRequest.blockNumber < destinationBlockRange[0]) {
           updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
         }
       }
