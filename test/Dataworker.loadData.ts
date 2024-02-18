@@ -742,7 +742,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         realizedLpFeePct: eventOverride?.realizedLpFeePct ?? bnZero,
         message: "0x",
         quoteTimestamp: getCurrentTime() - 10,
-        fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 7200,
+        fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
         destinationChainId,
         blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestBlockSearched gets set to the same value.
