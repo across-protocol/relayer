@@ -668,7 +668,8 @@ export class BundleDataClient {
                     repaymentToken
                   );
                   // If fill replaced a slow fill request, then mark it as one that might have created an
-                  // unexecutable slow fill.
+                  // unexecutable slow fill. We can't know for sure until we check the slow fill request
+                  // events.
                   if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
                     fastFillsReplacingSlowFills.push(relayDataHash);
                   }
@@ -677,7 +678,8 @@ export class BundleDataClient {
               return;
             }
 
-            // Instantiate dictionary if there isn't a deposit matching it.
+            // At this point, there is no relay hash dictionary entry for this fill, so we need to
+            // instantiate the entry.
             v3RelayHashes[relayDataHash] = {
               deposit: undefined,
               fill: fill,
@@ -695,7 +697,10 @@ export class BundleDataClient {
               fill.blockNumber >= destinationChainBlockRange[0]
             ) {
               // If fill is a slow fill, then no need to query a historical deposit for it since we can assume
-              // all slow fills are valid.
+              // all slow fills are valid. However, note that electing to skip the queryHistoricalDepositForFill
+              // call does mean that we're trusting the RPC providers to not return us an invalid Fill with
+              // this fill type that doesn't actually match a deposit, since there is no other way for these types
+              // of fills to be emitted.
               if (fill.relayExecutionInfo.fillType === FillType.SlowFill) {
                 // We can back out the lp fee for slow fill executions by using the difference between
                 // the input amount and the updated or "executed" output amount.
