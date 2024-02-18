@@ -701,7 +701,17 @@ export class BundleDataClient {
               // call does mean that we're trusting the RPC providers to not return us an invalid Fill with
               // this fill type that doesn't actually match a deposit, since there is no other way for these types
               // of fills to be emitted.
-              if (fill.relayExecutionInfo.fillType === FillType.SlowFill) {
+              if (
+                fill.relayExecutionInfo.fillType === FillType.SlowFill &&
+                // Sanity check that the tokens are equivalent for this slow fills.
+                this.clients.hubPoolClient.areTokensEquivalent(
+                  fill.inputToken,
+                  fill.originChainId,
+                  fill.outputToken,
+                  fill.destinationChainId,
+                  fill.quoteBlockNumber
+                )
+              ) {
                 // We can back out the lp fee for slow fill executions by using the difference between
                 // the input amount and the updated or "executed" output amount.
                 const lpFeePct = fill.inputAmount
