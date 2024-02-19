@@ -71,7 +71,7 @@ type RootBundle = {
   tree: MerkleTree<SlowFillLeaf>;
 };
 
-type DataToPersistToDALayerType = {
+export type BundleDataToPersistToDALayerType = {
   bundleBlockRanges: number[][];
   bundleDepositsV3: BundleDepositsV3;
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
@@ -87,7 +87,7 @@ type ProposeRootBundleReturnType = {
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
   slowFillLeaves: SlowFillLeaf[];
   slowFillTree: MerkleTree<SlowFillLeaf>;
-  dataToPersistToDALayer: DataToPersistToDALayerType;
+  dataToPersistToDALayer: BundleDataToPersistToDALayerType;
 };
 
 export type PoolRebalanceRoot = {
@@ -380,7 +380,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<DataToPersistToDALayerType> {
+  ): Promise<BundleDataToPersistToDALayerType> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a

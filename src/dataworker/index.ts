@@ -1,6 +1,14 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Signer,
+  disconnectRedisClients,
+  isDefined,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
-import { Dataworker } from "./Dataworker";
+import { BundleDataToPersistToDALayerType, Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
@@ -9,6 +17,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
+import { persistDataToArweave } from "./DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -53,7 +62,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   loopStart = Date.now();
 
-  let dataToPersist: Record<string, unknown> = {};
+  let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
@@ -108,13 +117,12 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       if (config.proposerEnabled) {
-        const persistedProposerData = await dataworker.proposeRootBundle(
+        bundleDataToPersist = await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
           fromBlocks
         );
-        dataToPersist = { ...dataToPersist, proposer: persistedProposerData };
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
       }
@@ -146,15 +154,15 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
 
-      if (config.persistingDataEnabled) {
-        const hashTxn = await clients.arweaveClient.set(dataToPersist, "proposal");
-        logger.info({
-          at: "Dataworker#index",
-          message: `Persisted data to Arweave with transaction hash: ${hashTxn}`,
-          hash: hashTxn,
-          address: await clients.arweaveClient.getAddress(),
-          balance: await clients.arweaveClient.getBalance(),
-        });
+      // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
+      // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
+      if (config.persistingBundleData && isDefined(bundleDataToPersist)) {
+        await persistDataToArweave(
+          clients.arweaveClient,
+          bundleDataToPersist,
+          logger,
+          `bundles-${bundleDataToPersist.bundleBlockRanges}`
+        );
       }
 
       await clients.multiCallerClient.executeTransactionQueue();
