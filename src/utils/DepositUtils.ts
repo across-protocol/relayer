@@ -6,6 +6,10 @@ import {
   SlowFillRequest,
   UnfilledDeposit,
   UnfilledDepositsForOriginChain,
+  V2Deposit,
+  V2DepositWithBlock,
+  V3Deposit,
+  V3DepositWithBlock,
 } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { assign, isFirstFillForDeposit, getRedisCache } from "./";
@@ -83,8 +87,8 @@ export function getUniqueDepositsInRange(
   destinationChain: number,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   originClient: SpokePoolClient,
-  existingUniqueDeposits: DepositWithBlock[]
-): DepositWithBlock[] {
+  existingUniqueDeposits: V2DepositWithBlock[]
+): V2DepositWithBlock[] {
   const originChainBlockRange = getBlockRangeForChain(
     blockRangesForChains,
     originChain,
@@ -93,15 +97,14 @@ export function getUniqueDepositsInRange(
   return originClient
     .getDepositsForDestinationChain(destinationChain)
     .filter(
-      (deposit: DepositWithBlock) =>
-        utils.isV2Deposit(deposit) &&
+      (deposit) =>
         deposit.blockNumber <= originChainBlockRange[1] &&
         deposit.blockNumber >= originChainBlockRange[0] &&
         !existingUniqueDeposits.some(
           (existingDeposit) =>
             existingDeposit.originChainId === deposit.originChainId && existingDeposit.depositId === deposit.depositId
         )
-    ) as DepositWithBlock[];
+    ).filter(utils.isV2Deposit<V2DepositWithBlock, V3DepositWithBlock>);
 }
 
 export function getUniqueEarlyDepositsInRange(

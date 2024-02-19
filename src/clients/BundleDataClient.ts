@@ -1,8 +1,6 @@
 import * as _ from "lodash";
 import {
-  DepositWithBlock,
   FillsToRefund,
-  FillWithBlock,
   ProposedRootBundle,
   SlowFillRequestWithBlock,
   SpokePoolClientsByChain,
@@ -290,9 +288,9 @@ export class BundleDataClient {
     const unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain = {};
     const fillsToRefund: FillsToRefund = {};
     const allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[] = [];
-    const deposits: DepositWithBlock[] = [];
-    const allValidFills: FillWithBlock[] = [];
-    const allInvalidFills: FillWithBlock[] = [];
+    const deposits: V2DepositWithBlock[] = [];
+    const allValidFills: V2FillWithBlock[] = [];
+    const allInvalidFills: V2FillWithBlock[] = [];
     const earlyDeposits: typechain.FundsDepositedEvent[] = [];
 
     // V3 specific objects:
@@ -311,8 +309,8 @@ export class BundleDataClient {
 
     // Save refund in-memory for validated fill.
     const addRefundForValidFill = (
-      fillWithBlock: FillWithBlock,
-      matchedDeposit: DepositWithBlock,
+      fillWithBlock: V2FillWithBlock,
+      matchedDeposit: V2DepositWithBlock,
       blockRangeForChain: number[]
     ) => {
       // Extra check for duplicate fills. These should be blocked at the contract level but might still be included
@@ -371,9 +369,10 @@ export class BundleDataClient {
       updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
     };
 
-    const validateFillAndSaveData = async (fill: FillWithBlock, blockRangeForChain: number[]): Promise<void> => {
+    const validateFillAndSaveData = async (fill: V2FillWithBlock, blockRangeForChain: number[]): Promise<void> => {
       const originClient = spokePoolClients[fill.originChainId];
       const matchedDeposit = originClient.getDepositForFill(fill);
+      assert(utils.isV2Deposit(matchedDeposit));
       if (matchedDeposit) {
         addRefundForValidFill(fill, matchedDeposit, blockRangeForChain);
       } else {
@@ -383,6 +382,7 @@ export class BundleDataClient {
         const spokePoolClient = spokePoolClients[fill.originChainId];
         const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
         if (historicalDeposit.found) {
+          assert(utils.isV2Deposit(historicalDeposit.deposit));
           addRefundForValidFill(fill, historicalDeposit.deposit, blockRangeForChain);
         } else {
           allInvalidFills.push(fill);
@@ -498,8 +498,8 @@ export class BundleDataClient {
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
           .filter(
-            (fillWithBlock) => utils.isV2Fill(fillWithBlock) && fillWithBlock.blockNumber <= blockRangeForChain[1]
-          );
+            (fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]
+          ).filter(utils.isV2Fill<V2FillWithBlock,V3FillWithBlock>);
         await Promise.all(fillsForOriginChain.map((fill) => validateFillAndSaveData(fill, blockRangeForChain)));
       }
     }
