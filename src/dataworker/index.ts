@@ -146,10 +146,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
 
-      await clients.multiCallerClient.executeTransactionQueue();
-
-      // If we have data and persisting is enabled, post it to Arweave.
-      if (config.persistingDataEnabled && Object.keys(dataToPersist).length > 0) {
+      if (config.persistingDataEnabled) {
         const hashTxn = await clients.arweaveClient.set(dataToPersist, "proposal");
         logger.info({
           at: "Dataworker#index",
@@ -159,6 +156,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           balance: await clients.arweaveClient.getBalance(),
         });
       }
+
+      await clients.multiCallerClient.executeTransactionQueue();
 
       logger.debug({
         at: "Dataworker#index",
