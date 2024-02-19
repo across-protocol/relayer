@@ -127,7 +127,13 @@ export function blockRangesAreInvalidForSpokeClients(
         blockRanges,
         chainIdListForBundleEvaluationBlockNumbers
       );
-      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
+      // TODO: Change this to query the max fill deadline between the values at the start and the end block after
+      // we've fully migrated to V3. This is set to only query at the end block right now to deal with the
+      // V2 to V3 migration bundle that contains a start block prior to the V3 upgrade. At this block, the
+      // fill deadline buffer will not be in the SpokePool Proxy's ABI so it will fail. We could handle this dynamically
+      // but because its a one-time change and I think the fill deadline buffer is unlikely to change during this
+      // bundle, that this is a safe temporary fix.
+      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(/* start*/ end, end);
       if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
         return true;
       }
