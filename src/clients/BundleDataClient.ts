@@ -372,8 +372,8 @@ export class BundleDataClient {
     const validateFillAndSaveData = async (fill: V2FillWithBlock, blockRangeForChain: number[]): Promise<void> => {
       const originClient = spokePoolClients[fill.originChainId];
       const matchedDeposit = originClient.getDepositForFill(fill);
-      assert(utils.isV2Deposit(matchedDeposit));
       if (matchedDeposit) {
+        assert(utils.isV2Deposit(matchedDeposit));
         addRefundForValidFill(fill, matchedDeposit, blockRangeForChain);
       } else {
         // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
