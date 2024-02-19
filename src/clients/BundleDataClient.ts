@@ -497,9 +497,8 @@ export class BundleDataClient {
         // return fill events that are younger than the bundle end block.
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
-          .filter(
-            (fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]
-          ).filter(utils.isV2Fill<V2FillWithBlock,V3FillWithBlock>);
+          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1])
+          .filter(utils.isV2Fill<V2FillWithBlock, V3FillWithBlock>);
         await Promise.all(fillsForOriginChain.map((fill) => validateFillAndSaveData(fill, blockRangeForChain)));
       }
     }

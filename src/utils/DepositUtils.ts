@@ -1,14 +1,11 @@
 import { utils, typechain } from "@across-protocol/sdk-v2";
 import {
   Deposit,
-  DepositWithBlock,
   Fill,
   SlowFillRequest,
   UnfilledDeposit,
   UnfilledDepositsForOriginChain,
-  V2Deposit,
   V2DepositWithBlock,
-  V3Deposit,
   V3DepositWithBlock,
 } from "../interfaces";
 import { SpokePoolClient } from "../clients";
@@ -104,7 +101,8 @@ export function getUniqueDepositsInRange(
           (existingDeposit) =>
             existingDeposit.originChainId === deposit.originChainId && existingDeposit.depositId === deposit.depositId
         )
-    ).filter(utils.isV2Deposit<V2DepositWithBlock, V3DepositWithBlock>);
+    )
+    .filter(utils.isV2Deposit<V2DepositWithBlock, V3DepositWithBlock>);
 }
 
 export function getUniqueEarlyDepositsInRange(
