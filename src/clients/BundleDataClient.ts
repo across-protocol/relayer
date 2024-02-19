@@ -31,6 +31,7 @@ import {
   assign,
   assert,
   fixedPointAdjustment,
+  isDefined,
 } from "../utils";
 import { Clients } from "../common";
 import {
@@ -136,6 +137,7 @@ function updateBundleSlowFills(dict: BundleSlowFills, deposit: V3DepositWithBloc
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
   private loadDataCache: DataCache = {};
+  private bundleTimestampCache: { [chainId: number]: number[] } = {};
 
   // eslint-disable-next-line no-useless-constructor
   constructor(
@@ -156,6 +158,10 @@ export class BundleDataClient {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
     return _.cloneDeep(this.loadDataCache[key]);
+  }
+
+  bundleTimestampsFromCache(): { [chainId: number]: number[] } {
+    return _.cloneDeep(this.bundleTimestampCache);
   }
 
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
@@ -408,17 +414,25 @@ export class BundleDataClient {
     // determine whether fillDeadlines have expired.
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
-    const bundleBlockTimestamps: { [chainId: string]: number[] } = await this.getBundleBlockTimestamps(
-      allChainIds,
-      blockRangesForChains,
-      spokePoolClients
-    );
-    this.logger.debug({
-      at: "BundleDataClient#loadData",
-      message: "Bundle block timestamps",
-      bundleBlockTimestamps,
-      blockRangesForChains,
-    });
+    const _cachedBundleTimestamps = this.bundleTimestampsFromCache();
+    let bundleBlockTimestamps: { [chainId: string]: number[] } = {};
+    _cachedBundleTimestamps;
+    if (Object.keys(_cachedBundleTimestamps).length === 0) {
+      bundleBlockTimestamps = await this.getBundleBlockTimestamps(
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        blockRangesForChains,
+        spokePoolClients
+      );
+      this.bundleTimestampCache = bundleBlockTimestamps;
+      this.logger.debug({
+        at: "BundleDataClient#loadData",
+        message: "Bundle block timestamps",
+        bundleBlockTimestamps,
+        blockRangesForChains,
+      });
+    } else {
+      bundleBlockTimestamps = _cachedBundleTimestamps;
+    }
 
     /** *****************************
      *
@@ -1009,25 +1023,32 @@ export class BundleDataClient {
     spokePoolClients: SpokePoolClientsByChain
   ): Promise<{ [chainId: string]: number[] }> {
     return Object.fromEntries(
-      await utils.mapAsync(chainIds, async (chainId, index) => {
-        const spokePoolClient = spokePoolClients[chainId];
-        const [_startBlockForChain, _endBlockForChain] = blockRangesForChains[index];
-        // We can assume that in production
-        // the block ranges passed into this function would never contain blocks where the spoke pool client
-        // hasn't queried. This is because this function will usually be called
-        // in production with block ranges that were validated by
-        // DataworkerUtils.blockRangesAreInvalidForSpokeClients
-        const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
-        const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
-        const [startTime, endTime] = [
-          Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
-          Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
-        ];
-        // Sanity checks:
-        assert(endTime >= startTime, "End time should be greater than start time.");
-        assert(startTime > 0, "Start time should be greater than 0.");
-        return [chainId, [startTime, endTime]];
-      })
+      (
+        await utils.mapAsync(chainIds, async (chainId, index) => {
+          const blockRangeForChain = blockRangesForChains[index];
+          if (isChainDisabled(blockRangeForChain)) {
+            return;
+          }
+          const [_startBlockForChain, _endBlockForChain] = blockRangeForChain;
+          const spokePoolClient = spokePoolClients[chainId];
+
+          // We can assume that in production
+          // the block ranges passed into this function would never contain blocks where the spoke pool client
+          // hasn't queried. This is because this function will usually be called
+          // in production with block ranges that were validated by
+          // DataworkerUtils.blockRangesAreInvalidForSpokeClients
+          const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
+          const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
+          const [startTime, endTime] = [
+            Number((await spokePoolClient.spokePool.provider.getBlock(startBlockForChain)).timestamp),
+            Number((await spokePoolClient.spokePool.provider.getBlock(endBlockForChain)).timestamp),
+          ];
+          // Sanity checks:
+          assert(endTime >= startTime, "End time should be greater than start time.");
+          assert(startTime > 0, "Start time should be greater than 0.");
+          return [chainId, [startTime, endTime]];
+        })
+      ).filter(isDefined)
     );
   }
 }
