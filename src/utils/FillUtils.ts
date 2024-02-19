@@ -7,6 +7,7 @@ import {
   FillsToRefund,
   FillWithBlock,
   SpokePoolClientsByChain,
+  V2Fill,
   V2FillWithBlock,
 } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
@@ -23,7 +24,7 @@ import {
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getRefundInformationFromFill(
-  fill: Fill,
+  fill: V2Fill,
   hubPoolClient: HubPoolClient,
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
@@ -41,20 +42,11 @@ export function getRefundInformationFromFill(
     hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
-  let l1TokenCounterpart: string;
-  if (sdkUtils.isV3Fill(fill)) {
-    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      fill.inputToken,
-      fill.originChainId,
-      endBlockForMainnet
-    );
-  } else {
-    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      sdkUtils.getFillOutputToken(fill),
-      fill.destinationChainId,
-      endBlockForMainnet
-    );
-  }
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+    sdkUtils.getFillOutputToken(fill),
+    fill.destinationChainId,
+    endBlockForMainnet
+  );
   const repaymentToken = hubPoolClient.getL2TokenForL1TokenAtBlock(
     l1TokenCounterpart,
     chainToSendRefundTo,

@@ -93,6 +93,7 @@ export function blockRangesAreInvalidForSpokeClients(
   latestInvalidBundleStartBlock: { [chainId: number]: number },
   isV3 = false
 ): Promise<boolean> {
+  assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
