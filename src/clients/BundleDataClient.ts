@@ -696,43 +696,26 @@ export class BundleDataClient {
               fill.blockNumber <= destinationChainBlockRange[1] &&
               fill.blockNumber >= destinationChainBlockRange[0]
             ) {
-              // If fill is a slow fill, then no need to query a historical deposit for it since we can assume
-              // all slow fills are valid. However, note that electing to skip the queryHistoricalDepositForFill
-              // call does mean that we're trusting the RPC providers to not return us an invalid Fill with
-              // this fill type that doesn't actually match a deposit, since there is no other way for these types
-              // of fills to be emitted.
-              // Moeover, we don't need to validate the slow fill request such as checking its input and output
-              // token equivalence, since we can assume slow fills are always valid.
-              if (fill.relayExecutionInfo.fillType === FillType.SlowFill) {
-                // We can back out the lp fee for slow fill executions by using the difference between
-                // the input amount and the updated or "executed" output amount.
-                const lpFeePct = fill.inputAmount
-                  .sub(fill.relayExecutionInfo.updatedOutputAmount)
-                  .mul(fixedPointAdjustment)
-                  .div(fill.inputAmount);
-                updateBundleFillsV3(bundleFillsV3, fill, lpFeePct, chainToSendRefundTo, repaymentToken);
+              const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
+              if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+                bundleInvalidFillsV3.push(fill);
               } else {
-                const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
-                if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+                const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
+                // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
+                // object property values against the deposit's, we
+                // sanity check it here by comparing the full relay hashes
+                if (utils.getV3RelayHashFromEvent(matchedDeposit) !== relayDataHash) {
                   bundleInvalidFillsV3.push(fill);
-                } else {
-                  const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
-                  // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
-                  // object property values against the deposit's, we
-                  // sanity check it here by comparing the full relay hashes
-                  if (utils.getV3RelayHashFromEvent(matchedDeposit) !== relayDataHash) {
-                    bundleInvalidFillsV3.push(fill);
-                  }
-                  updateBundleFillsV3(
-                    bundleFillsV3,
-                    fill,
-                    matchedDeposit.realizedLpFeePct,
-                    chainToSendRefundTo,
-                    repaymentToken
-                  );
-                  if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
-                    fastFillsReplacingSlowFills.push(relayDataHash);
-                  }
+                }
+                updateBundleFillsV3(
+                  bundleFillsV3,
+                  fill,
+                  matchedDeposit.realizedLpFeePct,
+                  chainToSendRefundTo,
+                  repaymentToken
+                );
+                if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
+                  fastFillsReplacingSlowFills.push(relayDataHash);
                 }
               }
             }
