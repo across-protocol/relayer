@@ -240,13 +240,15 @@ export function getFillsInRange(
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): V2FillWithBlock[] {
+  const blockRanges = Object.fromEntries(
+    chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [
+      chainId,
+      getBlockRangeForChain(blockRangesForChains, chainId, chainIdListForBundleEvaluationBlockNumbers),
+    ])
+  );
   return fills.filter((fill) => {
-    const blockRangeForChain = getBlockRangeForChain(
-      blockRangesForChains,
-      fill.destinationChainId,
-      chainIdListForBundleEvaluationBlockNumbers
-    );
-    return fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0];
+    const [startBlock, endBlock] = blockRanges[fill.destinationChainId];
+    return fill.blockNumber >= startBlock && fill.blockNumber <= endBlock;
   });
 }
 
