@@ -4,9 +4,7 @@ import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
-  DepositWithBlock,
   FillsToRefund,
-  FillWithBlock,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
@@ -150,11 +148,11 @@ export function blockRangesAreInvalidForSpokeClients(
 export function prettyPrintSpokePoolEvents(
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  deposits: DepositWithBlock[],
-  allValidFills: FillWithBlock[],
+  deposits: V2DepositWithBlock[],
+  allValidFills: V2FillWithBlock[],
   allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[],
   unfilledDeposits: UnfilledDeposit[],
-  allInvalidFills: FillWithBlock[]
+  allInvalidFills: V2FillWithBlock[]
 ): AnyObject {
   const allInvalidFillsInRange = getFillsInRange(
     allInvalidFills,

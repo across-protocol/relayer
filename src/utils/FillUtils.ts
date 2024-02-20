@@ -236,10 +236,10 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
 }
 
 export function getFillsInRange(
-  fills: FillWithBlock[],
+  fills: V2FillWithBlock[],
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
-): FillWithBlock[] {
+): V2FillWithBlock[] {
   return fills.filter((fill) => {
     const blockRangeForChain = getBlockRangeForChain(
       blockRangesForChains,

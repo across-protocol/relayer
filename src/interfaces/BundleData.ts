@@ -41,8 +41,8 @@ export type BundleSlowFills = {
 export type LoadDataReturnValue = {
   unfilledDeposits: interfaces.UnfilledDeposit[];
   fillsToRefund: interfaces.FillsToRefund;
-  allValidFills: interfaces.FillWithBlock[];
-  deposits: interfaces.DepositWithBlock[];
+  allValidFills: interfaces.V2FillWithBlock[];
+  deposits: interfaces.V2DepositWithBlock[];
   earlyDeposits: typechain.FundsDepositedEvent[];
   bundleDepositsV3: BundleDepositsV3;
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;

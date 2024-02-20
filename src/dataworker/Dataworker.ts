@@ -31,8 +31,6 @@ import {
   V3SlowFillLeaf,
   V2DepositWithBlock,
   V2FillWithBlock,
-  V3DepositWithBlock,
-  V3FillWithBlock,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -209,7 +207,7 @@ export class Dataworker {
       allValidFills,
       blockRangesForChains,
       this.chainIdListForBundleEvaluationBlockNumbers
-    ).filter(sdkUtils.isV2Fill);
+    );
 
     return await this._getPoolRebalanceRoot(
       spokePoolClients,
@@ -217,9 +215,9 @@ export class Dataworker {
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
       fillsToRefund,
-      deposits.filter(sdkUtils.isV2Deposit<V2DepositWithBlock, V3DepositWithBlock>),
-      allValidFills.filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>),
-      allValidFillsInRange.filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>),
+      deposits,
+      allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       earlyDeposits,
       bundleDepositsV3,
@@ -509,7 +507,7 @@ export class Dataworker {
       allValidFills,
       blockRangesForProposal,
       this.chainIdListForBundleEvaluationBlockNumbers
-    ).filter(sdkUtils.isV2Fill);
+    );
 
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const mainnetBundleEndBlock = getBlockRangeForChain(
@@ -523,9 +521,9 @@ export class Dataworker {
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
       fillsToRefund,
-      deposits.filter(sdkUtils.isV2Deposit) as V2DepositWithBlock[],
-      allValidFills.filter(sdkUtils.isV2Fill) as V2FillWithBlock[],
-      allValidFillsInRange as V2FillWithBlock[],
+      deposits,
+      allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       earlyDeposits,
       bundleDepositsV3,
