@@ -571,7 +571,7 @@ export class Relayer {
       : destinationChainId;
 
     const { realizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
-      ? await hubPoolClient.computeRealizedLpFeePct(deposit)
+      ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: preferredChainId })
       : deposit;
 
     const {

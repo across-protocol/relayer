@@ -12,7 +12,7 @@ import {
   V2DepositWithBlock,
   V2FillWithBlock,
 } from "../interfaces";
-import { SpokePoolClient } from "../clients";
+import { HubPoolClient, LpFeeRequest, SpokePoolClient } from "../clients";
 import {
   winston,
   BigNumber,
@@ -130,6 +130,31 @@ function updateBundleSlowFills(dict: BundleSlowFills, deposit: V3DepositWithBloc
   }
   assert(deposit.realizedLpFeePct, "Deposit must have realizedLpFeePct to store as BundleSlowFill");
   dict[destinationChainId][outputToken].push(deposit);
+}
+
+async function computeV3LPFees(
+  hubPoolClient: HubPoolClient,
+  v3Fills: V3FillWithBlock[],
+  deposits: { [relayDataHash: string]: { deposit?: V3DepositWithBlock } }
+): Promise<{ [relayDataHash: string]: BigNumber }> {
+  // Filter all fills for those matched by deposits and transform the results
+  const lpFeesInputs: { [hash: string]: LpFeeRequest } = Object.fromEntries(
+    v3Fills
+      .map((fill) => ({ hash: utils.getV3RelayHashFromEvent(fill), fill }))
+      .filter(({ hash }) => isDefined(deposits[hash]?.deposit))
+      .map(({ hash, fill: { originChainId, inputToken, inputAmount, repaymentChainId: paymentChainId } }) => {
+        const { quoteTimestamp } = deposits[hash].deposit;
+        return [hash, { originChainId, inputToken, inputAmount, paymentChainId, quoteTimestamp }];
+      })
+  );
+
+  const lpFeeRequests = Object.values(lpFeesInputs);
+  if (lpFeeRequests.length === 0) {
+    return {};
+  }
+
+  const lpFeePcts = await hubPoolClient.batchComputeRealizedLpFeePct(lpFeeRequests);
+  return Object.fromEntries(Object.values(lpFeesInputs).map((hash, idx) => [hash, lpFeePcts[idx]]));
 }
 
 // @notice Shared client for computing data needed to construct or validate a bundle.
@@ -647,92 +672,83 @@ export class BundleDataClient {
         // Keep track of fast fills that replaced slow fills, which we'll use to create "unexecutable" slow fills
         // if the slow fill request was sent in a prior bundle.
         const fastFillsReplacingSlowFills: string[] = [];
-        await utils.forEachAsync(
-          destinationClient
-            .getFillsForOriginChain(originChainId)
-            .filter(utils.isV3Fill<V3FillWithBlock, V2FillWithBlock>),
-          async (fill) => {
-            const relayDataHash = utils.getV3RelayHashFromEvent(fill);
+        const v3Fills = destinationClient
+          .getFillsForOriginChain(originChainId)
+          .filter(utils.isV3Fill<V3FillWithBlock, V2FillWithBlock>);
 
-            const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
-              fill,
-              this.clients.hubPoolClient,
-              blockRangesForChains,
-              this.chainIdListForBundleEvaluationBlockNumbers
-            );
+        const lpFeePcts = await computeV3LPFees(this.clients.hubPoolClient, v3Fills, v3RelayHashes);
+        await utils.forEachAsync(v3Fills, async (fill) => {
+          const relayDataHash = utils.getV3RelayHashFromEvent(fill);
 
-            if (v3RelayHashes[relayDataHash]) {
-              if (!v3RelayHashes[relayDataHash].fill) {
-                assert(v3RelayHashes[relayDataHash].deposit, "Deposit should exist in relay hash dictionary.");
-                // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
-                // so this fill is validated.
-                v3RelayHashes[relayDataHash].fill = fill;
-                if (
-                  fill.blockNumber <= destinationChainBlockRange[1] &&
-                  fill.blockNumber >= destinationChainBlockRange[0]
-                ) {
-                  // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
-                  // be included in the Fill type rather than the Deposit type
-                  updateBundleFillsV3(
-                    bundleFillsV3,
-                    fill,
-                    v3RelayHashes[relayDataHash].deposit.realizedLpFeePct,
-                    chainToSendRefundTo,
-                    repaymentToken
-                  );
-                  // If fill replaced a slow fill request, then mark it as one that might have created an
-                  // unexecutable slow fill. We can't know for sure until we check the slow fill request
-                  // events.
-                  if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
-                    fastFillsReplacingSlowFills.push(relayDataHash);
-                  }
-                }
-              }
-              return;
-            }
+          const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
+            fill,
+            this.clients.hubPoolClient,
+            blockRangesForChains,
+            this.chainIdListForBundleEvaluationBlockNumbers
+          );
 
-            // At this point, there is no relay hash dictionary entry for this fill, so we need to
-            // instantiate the entry.
-            v3RelayHashes[relayDataHash] = {
-              deposit: undefined,
-              fill: fill,
-              slowFillRequest: undefined,
-            };
-
-            // TODO: We might be able to remove the following historical query once we deprecate the deposit()
-            // function since there won't be any old, unexpired deposits anymore assuming the spoke pool client
-            // lookbacks have been validated, which they should be before we run this function.
-
-            // Since there was no deposit matching the relay hash, we need to do a historical query for an
-            // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
-            if (
-              fill.blockNumber <= destinationChainBlockRange[1] &&
-              fill.blockNumber >= destinationChainBlockRange[0]
-            ) {
-              const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
-              if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
-                bundleInvalidFillsV3.push(fill);
-              } else {
-                const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
-                // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
-                // object property values against the deposit's, we
-                // sanity check it here by comparing the full relay hashes. If there's an error here then the
-                // historical deposit query is not working as expected.
-                assert(utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash);
-                updateBundleFillsV3(
-                  bundleFillsV3,
-                  fill,
-                  matchedDeposit.realizedLpFeePct,
-                  chainToSendRefundTo,
-                  repaymentToken
-                );
+          if (v3RelayHashes[relayDataHash]) {
+            if (!v3RelayHashes[relayDataHash].fill) {
+              assert(v3RelayHashes[relayDataHash].deposit, "Deposit should exist in relay hash dictionary.");
+              // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
+              // so this fill is validated.
+              v3RelayHashes[relayDataHash].fill = fill;
+              if (
+                fill.blockNumber <= destinationChainBlockRange[1] &&
+                fill.blockNumber >= destinationChainBlockRange[0]
+              ) {
+                // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
+                // be included in the Fill type rather than the Deposit type
+                updateBundleFillsV3(bundleFillsV3, fill, lpFeePcts[relayDataHash], chainToSendRefundTo, repaymentToken);
+                // If fill replaced a slow fill request, then mark it as one that might have created an
+                // unexecutable slow fill. We can't know for sure until we check the slow fill request
+                // events.
                 if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
                   fastFillsReplacingSlowFills.push(relayDataHash);
                 }
               }
             }
+            return;
           }
-        );
+
+          // At this point, there is no relay hash dictionary entry for this fill, so we need to
+          // instantiate the entry.
+          v3RelayHashes[relayDataHash] = {
+            deposit: undefined,
+            fill: fill,
+            slowFillRequest: undefined,
+          };
+
+          // TODO: We might be able to remove the following historical query once we deprecate the deposit()
+          // function since there won't be any old, unexpired deposits anymore assuming the spoke pool client
+          // lookbacks have been validated, which they should be before we run this function.
+
+          // Since there was no deposit matching the relay hash, we need to do a historical query for an
+          // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
+          if (fill.blockNumber <= destinationChainBlockRange[1] && fill.blockNumber >= destinationChainBlockRange[0]) {
+            const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
+            if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+              bundleInvalidFillsV3.push(fill);
+            } else {
+              const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
+              // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
+              // object property values against the deposit's, we
+              // sanity check it here by comparing the full relay hashes. If there's an error here then the
+              // historical deposit query is not working as expected.
+              assert(utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash);
+              updateBundleFillsV3(
+                bundleFillsV3,
+                fill,
+                matchedDeposit.realizedLpFeePct,
+                chainToSendRefundTo,
+                repaymentToken
+              );
+              if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
+                fastFillsReplacingSlowFills.push(relayDataHash);
+              }
+            }
+          }
+        });
 
         await utils.forEachAsync(
           destinationClient.getSlowFillRequestsForOriginChain(originChainId),
