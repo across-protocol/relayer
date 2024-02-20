@@ -45,8 +45,8 @@ export type DepositWithBlock = interfaces.DepositWithBlock;
 export type Fill = interfaces.Fill;
 export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
-export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
 export type SlowFillRequest = interfaces.SlowFillRequest;
+export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
 export type SlowFillLeaf = interfaces.SlowFillLeaf;
 export type RootBundleRelay = interfaces.RootBundleRelay;
 export type RootBundleRelayWithBlock = interfaces.RootBundleRelayWithBlock;
@@ -58,8 +58,7 @@ export type Refund = interfaces.Refund;
 export type FillsToRefund = interfaces.FillsToRefund;
 export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
-const { FillType, FillStatus } = interfaces;
-export { FillType, FillStatus };
+export const { FillType, FillStatus } = interfaces;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 

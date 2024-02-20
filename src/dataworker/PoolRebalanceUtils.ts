@@ -238,7 +238,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         const totalFilledAmount = sdkUtils.getTotalFilledAmount(fill);
         return totalFilledAmount.eq(outputAmount) && !fillAmount.eq(outputAmount);
       })
-      .map(async (fill: interfaces.V2FillWithBlock) => {
+      .map(async (fill) => {
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
             hubPoolClient.latestBlockSearched,
@@ -594,7 +594,7 @@ export function generateMarkdownForRootBundle(
   });
 
   let slowRelayLeavesPretty = "";
-  slowRelayLeaves.forEach((leaf: interfaces.SlowFillLeaf, index) => {
+  slowRelayLeaves.forEach((leaf, index) => {
     const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
     const destinationChainId = sdkUtils.getSlowFillLeafChainId(leaf);
     const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
@@ -616,8 +616,6 @@ export function generateMarkdownForRootBundle(
     if (sdkUtils.isV2SlowFillLeaf<interfaces.V2SlowFillLeaf, interfaces.V3SlowFillLeaf>(leaf)) {
       slowFill.destinationToken = convertTokenAddressToSymbol(destinationChainId, outputToken);
       slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
-      // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
-      slowFill.realizedLpFeePct = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
@@ -630,12 +628,8 @@ export function generateMarkdownForRootBundle(
           ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
       );
 
-      // Infer the realizedLpFeePct from the spread between inputAmount and updatedOutputAmount (sans relayer fee).
-      const realizedLpFeePct = inputAmount.sub(updatedOutputAmount).mul(fixedPoint).div(inputAmount);
-
       slowFill.outputToken = outputToken;
       slowFill.outputAmount = convertFromWei(updatedOutputAmount.toString(), 18); // tokens were scaled to 18 decimals.
-      slowFill.realizedLpFeePct = `${formatFeePct(realizedLpFeePct)}%`;
     }
 
     slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(slowFill)}`;
