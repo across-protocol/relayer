@@ -1093,11 +1093,20 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Send one valid fill as a base test case.
       generateV3FillFromDepositEvent(depositEvent);
       await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      const validFill = mockDestinationSpokePoolClient.getFills()[0];
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
       );
+      const lpFee = validFill.inputAmount.mul(lpFeePct).div(fixedPointAdjustment);
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].totalRefundAmount).to.equal(
+        validFill.inputAmount.sub(lpFee)
+      );
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].refunds).to.deep.equal({
+        [validFill.relayer]: validFill.inputAmount.sub(lpFee),
+      });
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].realizedLpFees).to.equal(lpFee);
       expect(spyLogIncludes(spy, -1, "invalid V3 fills in range")).to.be.true;
     });
     it("Matches fill with deposit with outputToken = 0x0", async function () {
