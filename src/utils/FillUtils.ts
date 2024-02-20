@@ -1,7 +1,15 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
-import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import {
+  DepositWithBlock,
+  Fill,
+  FillsToRefund,
+  FillWithBlock,
+  SpokePoolClientsByChain,
+  V2FillWithBlock,
+  V3FillWithBlock,
+} from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
@@ -34,12 +42,20 @@ export function getRefundInformationFromFill(
     hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
-  // @todo In v3, destination... must be swapped for origin...
-  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    sdkUtils.getFillOutputToken(fill),
-    fill.destinationChainId,
-    endBlockForMainnet
-  );
+  let l1TokenCounterpart: string;
+  if (sdkUtils.isV3Fill(fill)) {
+    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      fill.inputToken,
+      fill.originChainId,
+      endBlockForMainnet
+    );
+  } else {
+    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      sdkUtils.getFillOutputToken(fill),
+      fill.destinationChainId,
+      endBlockForMainnet
+    );
+  }
   const repaymentToken = hubPoolClient.getL2TokenForL1TokenAtBlock(
     l1TokenCounterpart,
     chainToSendRefundTo,
@@ -134,28 +150,24 @@ export function getLastMatchingFillBeforeBlock(
 
 export async function getFillDataForSlowFillFromPreviousRootBundle(
   latestMainnetBlock: number,
-  fill: FillWithBlock,
-  allValidFills: FillWithBlock[],
+  fill: V2FillWithBlock,
+  allValidFills: V2FillWithBlock[],
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain
 ): Promise<{
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
 }> {
+  assert(sdkUtils.isV2Fill(fill));
+  assert(allValidFills.every(sdkUtils.isV2Fill));
+
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
   // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
 
-  // Apply the right version check to fill2 based on the type of fill1.
-  const versionFilter = (fill1: Fill, fill2: Fill): boolean =>
-    sdkUtils.isV2Fill(fill1) ? sdkUtils.isV2Fill(fill2) : sdkUtils.isV3Fill(fill2);
-
   // Find the first fill chronologically for matched deposit for the input fill.
   const allMatchingFills = sortEventsAscending(
-    allValidFills.filter(
-      (_fill) =>
-        _fill.depositId === fill.depositId && sdkUtils.filledSameDeposit(_fill, fill) && versionFilter(fill, _fill)
-    )
+    allValidFills.filter((_fill) => _fill.depositId === fill.depositId && sdkUtils.filledSameDeposit(_fill, fill))
   );
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
@@ -165,13 +177,14 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   // deposit as the input fill.
   if (!firstFillForSameDeposit) {
     const depositForFill = await queryHistoricalDepositForFill(spokePoolClientsByChain[fill.originChainId], fill);
+    assert(depositForFill.found && sdkUtils.isV2Deposit(depositForFill.deposit));
     const matchingFills = (
       await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
         fill,
         depositForFill.found ? depositForFill.deposit : undefined,
         allMatchingFills[0].blockNumber
       )
-    ).filter((_fill) => versionFilter(fill, _fill));
+    ).filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>);
 
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
@@ -223,10 +236,10 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
 }
 
 export function getFillsInRange(
-  fills: FillWithBlock[],
+  fills: V2FillWithBlock[],
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
-): FillWithBlock[] {
+): V2FillWithBlock[] {
   const blockRanges = Object.fromEntries(
     chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [
       chainId,

@@ -218,8 +218,8 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain,
-  allValidFills: interfaces.FillWithBlock[],
-  allValidFillsInRange: interfaces.FillWithBlock[]
+  allValidFills: interfaces.V2FillWithBlock[],
+  allValidFillsInRange: interfaces.V2FillWithBlock[]
 ): Promise<AnyObject> {
   const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
@@ -233,16 +233,12 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   await Promise.all(
     allValidFillsInRange
       .filter((fill) => {
-        // @todo This filter implicitly produces an array of v2 fills because it is impossible for v3 fills to pass.
-        // Update the filter such that it also passes v3 fills where a slow fill was initially produced.
         const outputAmount = sdkUtils.getFillOutputAmount(fill);
         const fillAmount = sdkUtils.getFillAmount(fill);
         const totalFilledAmount = sdkUtils.getTotalFilledAmount(fill);
         return totalFilledAmount.eq(outputAmount) && !fillAmount.eq(outputAmount);
       })
-      .map(async (fill: interfaces.FillWithBlock) => {
-        assert(sdkUtils.isV2Fill(fill)); // @todo Remove when the above filter permits v3 fills to pass.
-
+      .map(async (fill) => {
         const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
           await getFillDataForSlowFillFromPreviousRootBundle(
             hubPoolClient.latestBlockSearched,
@@ -602,23 +598,24 @@ export function generateMarkdownForRootBundle(
     const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
     const destinationChainId = sdkUtils.getSlowFillLeafChainId(leaf);
     const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
+    const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
-    const slowFill: Record<string, number | string> = {
+    const slowFill: Record<string, string> = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
       recipient: shortenHexString(leaf.relayData.recipient),
-      originChainId: leaf.relayData.originChainId,
-      destinationChainId: destinationChainId,
-      depositId: leaf.relayData.depositId,
+      originChainId: leaf.relayData.originChainId.toString(),
+      destinationChainId: destinationChainId.toString(),
+      depositId: leaf.relayData.depositId.toString(),
       message: leaf.relayData.message,
+      // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
+      realizedLpFeePct: `${formatFeePct(lpFeePct)}%`,
     };
 
-    if (sdkUtils.isV2SlowFillLeaf(leaf)) {
-      slowFill.destinationToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, outputToken);
+    if (sdkUtils.isV2SlowFillLeaf<interfaces.V2SlowFillLeaf, interfaces.V3SlowFillLeaf>(leaf)) {
+      slowFill.destinationToken = convertTokenAddressToSymbol(destinationChainId, outputToken);
       slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
-      // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
-      slowFill.realizedLpFeePct = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
       slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
     } else {
       // Scale amounts to 18 decimals for realizedLpFeePct computation.
@@ -631,12 +628,8 @@ export function generateMarkdownForRootBundle(
           ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
       );
 
-      // Infer the realizedLpFeePct from the spread between inputAmount and updatedOutputAmount (sans relayer fee).
-      const realizedLpFeePct = inputAmount.sub(updatedOutputAmount).mul(fixedPoint).div(inputAmount);
-
       slowFill.outputToken = outputToken;
       slowFill.outputAmount = convertFromWei(updatedOutputAmount.toString(), 18); // tokens were scaled to 18 decimals.
-      slowFill.realizedLpFeePct = `${formatFeePct(realizedLpFeePct)}%`;
     }
 
     slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(slowFill)}`;
