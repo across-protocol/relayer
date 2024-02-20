@@ -61,7 +61,6 @@ import {
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { cloneDeep } from "lodash";
-import { HubPool } from "@across-protocol/contracts-v2";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -705,10 +704,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     beforeEach(async function () {
       await updateAllClients();
       mockHubPoolClient = new MockHubPoolClient(
-        hubPoolClient.logger, 
-        hubPoolClient.hubPool, 
+        hubPoolClient.logger,
+        hubPoolClient.hubPool,
         configStoreClient,
-        hubPoolClient.deploymentBlock, 
+        hubPoolClient.deploymentBlock,
         hubPoolClient.chainId
       );
       // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
@@ -734,9 +733,9 @@ describe("Dataworker: Load data used in all functions", async function () {
       await mockHubPoolClient.update();
       await mockOriginSpokePoolClient.update();
       await mockDestinationSpokePoolClient.update();
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address)
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address)
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address)
+      mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
+      mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
+      mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
       const bundleDataClient = new BundleDataClient(
         dataworkerInstance.logger,
         {
@@ -753,7 +752,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         dataworkerInstance.maxRefundCountOverride,
         dataworkerInstance.maxL1TokenCountOverride,
         dataworkerInstance.blockRangeEndBlockBuffer
-      )
+      );
     });
     function generateV2Deposit(): Event {
       return mockOriginSpokePoolClient.deposit({

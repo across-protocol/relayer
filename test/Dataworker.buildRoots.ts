@@ -1,5 +1,14 @@
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { Deposit, Fill, RelayerRefundLeaf, RunningBalances, V2DepositWithBlock, V2FillWithBlock, V3DepositWithBlock, V3FillWithBlock } from "../src/interfaces";
+import {
+  Deposit,
+  Fill,
+  RelayerRefundLeaf,
+  RunningBalances,
+  V2DepositWithBlock,
+  V2FillWithBlock,
+  V3DepositWithBlock,
+  V3FillWithBlock,
+} from "../src/interfaces";
 import {
   EMPTY_MERKLE_ROOT,
   bnZero,
@@ -1326,15 +1335,21 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
       await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
       await updateAllClients();
-      const fill = spokePoolClients[destinationChainId].getFills().filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
+      const fill = spokePoolClients[destinationChainId]
+        .getFills()
+        .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
       const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
 
       // Deposits should not add to bundle LP fees, but fills should. LP fees are taken out of running balances
       // and added to realized LP fees, for fills.
-      const lpFeePct = (await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: fill.destinationChainId })).realizedLpFeePct;
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: fill.destinationChainId })
+      ).realizedLpFeePct;
       const lpFee = lpFeePct.mul(fill.inputAmount).div(fixedPointAdjustment);
       const expectedRunningBalances: RunningBalances = {
         [originChainId]: {
@@ -1363,14 +1378,18 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
       await requestSlowFill(spokePool_2, relayer, deposit);
       await updateAllClients();
       const slowFillRequest = spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
       const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
 
       // Slow fills should not add to bundle LP fees.
-      const lpFeePct = (await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })).realizedLpFeePct;
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
       const lpFee = lpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
       const expectedRunningBalances: RunningBalances = {
         [originChainId]: {
@@ -1395,7 +1414,9 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
       await requestSlowFill(spokePool_2, relayer, deposit);
       await updateAllClients();
 
@@ -1407,7 +1428,9 @@ describe("Dataworker: Build merkle roots", async function () {
       );
       const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange1, spokePoolClients);
 
-      const lpFeePct = (await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })).realizedLpFeePct;
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
       const lpFee = lpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
       const expectedRunningBalances: RunningBalances = {
         [originChainId]: {
@@ -1423,7 +1446,9 @@ describe("Dataworker: Build merkle roots", async function () {
       // Send a fast fill in a second bundle block range.
       await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
       await updateAllClients();
-      const fill = spokePoolClients[destinationChainId].getFills().filter(sdkUtils.isV3Fill<V3FillWithBlock,V2FillWithBlock>)[0];
+      const fill = spokePoolClients[destinationChainId]
+        .getFills()
+        .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
       expect(fill.relayExecutionInfo.fillType).to.equal(interfaces.FillType.ReplacedSlowFill);
       const blockRange2 = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map((_chain, index) => [
         blockRange1[index][1] + 1,
@@ -1495,7 +1520,9 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
       await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
       await updateAllClients();
       const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
@@ -1510,7 +1537,9 @@ describe("Dataworker: Build merkle roots", async function () {
       );
 
       // Origin chain should have negative running balance and therefore positive amount to return.
-      const lpFeePct = (await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })).realizedLpFeePct;
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
       const lpFee = lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
       const refundAmount = deposit.inputAmount.sub(lpFee);
       const expectedLeaves: RelayerRefundLeaf[] = [
@@ -1544,8 +1573,12 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
-      const lpFeePct = (await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })).realizedLpFeePct;
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
       const slowFills = buildV3SlowRelayLeaves([deposit], lpFeePct);
 
       // Relay slow root to destination chain
@@ -1619,7 +1652,9 @@ describe("Dataworker: Build merkle roots", async function () {
         }
       );
       await updateAllClients();
-      const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
       const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
         getDefaultBlockRange(2),
         spokePoolClients
@@ -1668,7 +1703,9 @@ describe("Dataworker: Build merkle roots", async function () {
       );
       await updateAllClients();
       await buildFillForRepaymentChain(spokePool_2, relayer, depositV2, 1, destinationChainId);
-      const _depositV3 = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
+      const _depositV3 = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
       await fillV3(spokePool_2, relayer, _depositV3, destinationChainId);
       await updateAllClients();
       const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
@@ -1682,10 +1719,14 @@ describe("Dataworker: Build merkle roots", async function () {
         runningBalances
       );
 
-      const fillV2 = spokePoolClients[destinationChainId].getFills().filter(sdkUtils.isV2Fill<V2FillWithBlock,V3FillWithBlock>)[0];
+      const fillV2 = spokePoolClients[destinationChainId]
+        .getFills()
+        .filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>)[0];
       const lpFeeV2 = fillV2.realizedLpFeePct.mul(fillV2.amount).div(fixedPointAdjustment);
       const fillV2RefundAmount = fillV2.amount.sub(lpFeeV2);
-      const lpFeePctV3 = (await hubPoolClient.computeRealizedLpFeePct({ ..._depositV3, paymentChainId: _depositV3.destinationChainId })).realizedLpFeePct;
+      const lpFeePctV3 = (
+        await hubPoolClient.computeRealizedLpFeePct({ ..._depositV3, paymentChainId: _depositV3.destinationChainId })
+      ).realizedLpFeePct;
       const lpFeeV3 = lpFeePctV3.mul(_depositV3.inputAmount).div(fixedPointAdjustment);
       const fillV3RefundAmount = lpFeeV3.mul(-1).add(_depositV3.inputAmount);
       const expectedLeaves: RelayerRefundLeaf[] = [
@@ -1719,12 +1760,16 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      const deposit = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
       await requestSlowFill(spokePool_2, relayer, deposit);
       await updateAllClients();
       const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(2), spokePoolClients);
 
-      const lpFeePct = (await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })).realizedLpFeePct;
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
       const expectedSlowFillLeaves = buildV3SlowRelayLeaves([deposit], lpFeePct);
       expect(merkleRoot1.leaves).to.deep.equal(expectedSlowFillLeaves);
     });
@@ -1762,8 +1807,12 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      const _depositV3 = spokePoolClients[originChainId].getDeposits().filter(sdkUtils.isV3Deposit<V3DepositWithBlock,V2DepositWithBlock>)[0];
-      const lpFeePct = (await hubPoolClient.computeRealizedLpFeePct({ ..._depositV3, paymentChainId: _depositV3.destinationChainId })).realizedLpFeePct;
+      const _depositV3 = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ..._depositV3, paymentChainId: _depositV3.destinationChainId })
+      ).realizedLpFeePct;
       const v3SlowFillLeaves = buildV3SlowRelayLeaves([_depositV3], lpFeePct);
 
       // Partial fill the V2 deposit

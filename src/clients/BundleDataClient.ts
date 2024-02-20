@@ -937,39 +937,45 @@ export class BundleDataClient {
 
     // Batch compute V3 lp fees.
     const promises = [
-      validatedBundleV3Fills.length > 0 ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
-        validatedBundleV3Fills.map((fill) => {
-          const { chainToSendRefundTo: paymentChainId } = getRefundInformationFromFill(
-            fill,
-            this.clients.hubPoolClient,
-            blockRangesForChains,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          );
-          return {
-            ...fill,
-            paymentChainId,
-          };
-        })
-      ) : [],
-      validatedBundleSlowFills.length > 0 ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
-        validatedBundleSlowFills.map((deposit) => {
-          const { realizedLpFeePct, ...v3Deposit } = deposit;
-          return {
-            ...v3Deposit,
-            paymentChainId: deposit.destinationChainId,
-          };
-        })
-      ) : [],
-      validatedBundleUnexecutableSlowFills.length > 0 ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
-        validatedBundleUnexecutableSlowFills.map((deposit) => {
-          const { realizedLpFeePct, ...v3Deposit } = deposit;
-          return {
-            ...v3Deposit,
-            paymentChainId: deposit.destinationChainId,
-          };
-        })
-      ): [],
-    ]
+      validatedBundleV3Fills.length > 0
+        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+            validatedBundleV3Fills.map((fill) => {
+              const { chainToSendRefundTo: paymentChainId } = getRefundInformationFromFill(
+                fill,
+                this.clients.hubPoolClient,
+                blockRangesForChains,
+                this.chainIdListForBundleEvaluationBlockNumbers
+              );
+              return {
+                ...fill,
+                paymentChainId,
+              };
+            })
+          )
+        : [],
+      validatedBundleSlowFills.length > 0
+        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+            validatedBundleSlowFills.map((deposit) => {
+              const { realizedLpFeePct, ...v3Deposit } = deposit;
+              return {
+                ...v3Deposit,
+                paymentChainId: deposit.destinationChainId,
+              };
+            })
+          )
+        : [],
+      validatedBundleUnexecutableSlowFills.length > 0
+        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+            validatedBundleUnexecutableSlowFills.map((deposit) => {
+              const { realizedLpFeePct, ...v3Deposit } = deposit;
+              return {
+                ...v3Deposit,
+                paymentChainId: deposit.destinationChainId,
+              };
+            })
+          )
+        : [],
+    ];
     const [v3FillLpFees, v3SlowFillLpFees, v3UnexecutableSlowFillLpFees] = await Promise.all(promises);
     v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {
       const fill = validatedBundleV3Fills[idx];
@@ -989,7 +995,6 @@ export class BundleDataClient {
       const deposit = validatedBundleUnexecutableSlowFills[idx];
       updateBundleExcessSlowFills(unexecutableSlowFills, { ...deposit, realizedLpFeePct });
     });
-
 
     // Note: We do not check for duplicate slow fills here since `addRefundForValidFill` already checks for duplicate
     // fills and is the function that populates the `unfilledDeposits` dictionary. Therefore, if there are no duplicate
@@ -1099,6 +1104,8 @@ export class BundleDataClient {
           // Sanity checks:
           assert(endTime >= startTime, "End time should be greater than start time.");
           assert(startTime > 0, "Start time should be greater than 0.");
+          assert(Math.abs(Date.now() / 1000 - endTime) <= 21600, "End time should be within 6 hours of now.");
+          assert(endTime - startTime <= 43200, "End time shouldn't be more than 12 hours more than start time");
           return [chainId, [startTime, endTime]];
         })
       ).filter(isDefined)

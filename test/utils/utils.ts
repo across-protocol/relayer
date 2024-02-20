@@ -410,14 +410,12 @@ export async function addLiquidity(
 // Submits a deposit transaction and returns the Deposit struct that that clients interact with.
 export async function buildDepositStruct(
   deposit: Omit<V2Deposit, "destinationToken" | "realizedLpFeePct">,
-  hubPoolClient: HubPoolClient,
+  hubPoolClient: HubPoolClient
 ): Promise<V2Deposit & { quoteBlockNumber: number; blockNumber: number }> {
-  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
-    {
-      ...deposit,
-      paymentChainId: deposit.destinationChainId
-    }
-  );
+  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+    ...deposit,
+    paymentChainId: deposit.destinationChainId,
+  });
 
   return {
     ...deposit,
