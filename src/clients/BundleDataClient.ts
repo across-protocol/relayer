@@ -579,17 +579,17 @@ export class BundleDataClient {
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
+      const originChainBlockRange = getBlockRangeForChain(
+        blockRangesForChains,
+        originChainId,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
 
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) {
           continue;
         }
 
-        const originChainBlockRange = getBlockRangeForChain(
-          blockRangesForChains,
-          originChainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
         originClient
           .getDepositsForDestinationChain(destinationChainId)
           .filter(utils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)
