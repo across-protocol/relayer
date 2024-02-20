@@ -100,7 +100,7 @@ export class Relayer {
       // Filters specific to v3.
       if (sdkUtils.isV3Deposit(deposit)) {
         // Technically it's the destination SpokePool timestamp that matters, but host timestamp should be good enough.
-        const currentTime = getCurrentTime();
+        const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
         if (deposit.fillDeadline <= currentTime) {
           return false;
         }
