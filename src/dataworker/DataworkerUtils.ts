@@ -84,7 +84,7 @@ export function getEndBlockBuffers(
 // TODO: Move to SDK-v2 since this implements UMIP logic about validating block ranges.
 // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
 // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
-export function blockRangesAreInvalidForSpokeClients(
+export async function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -92,6 +92,14 @@ export function blockRangesAreInvalidForSpokeClients(
   isV3 = false
 ): Promise<boolean> {
   assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
+  let endBlockTimestamps: { [chainId: number]: number } | undefined;
+  if (isV3) {
+    endBlockTimestamps = await getTimestampsForBundleEndBlocks(
+      spokePoolClients,
+      blockRanges,
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+  }
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
@@ -120,12 +128,8 @@ export function blockRangesAreInvalidForSpokeClients(
       return true;
     }
 
-    if (isV3) {
-      const endBlockTimestamps = await getTimestampsForBundleEndBlocks(
-        spokePoolClients,
-        blockRanges,
-        chainIdListForBundleEvaluationBlockNumbers
-      );
+    if (endBlockTimestamps !== undefined) {
+      assert(Object.keys(endBlockTimestamps).length === blockRanges.length);
       // TODO: Change this to query the max fill deadline between the values at the start and the end block after
       // we've fully migrated to V3. This is set to only query at the end block right now to deal with the
       // V2 to V3 migration bundle that contains a start block prior to the V3 upgrade. At this block, the

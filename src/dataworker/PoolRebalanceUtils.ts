@@ -601,7 +601,7 @@ export function generateMarkdownForRootBundle(
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
-    const slowFill: Record<string, number | string> = {
+    const slowFill: Record<string, string> = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
       recipient: shortenHexString(leaf.relayData.recipient),
