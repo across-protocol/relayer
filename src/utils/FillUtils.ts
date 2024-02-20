@@ -8,6 +8,7 @@ import {
   FillWithBlock,
   SpokePoolClientsByChain,
   V2FillWithBlock,
+  V3FillWithBlock,
 } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
 import {
@@ -166,10 +167,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
 
   // Find the first fill chronologically for matched deposit for the input fill.
   const allMatchingFills = sortEventsAscending(
-    allValidFills.filter(
-      (_fill) =>
-        _fill.depositId === fill.depositId && sdkUtils.filledSameDeposit(_fill, fill) && versionFilter(fill, _fill)
-    )
+    allValidFills.filter((_fill) => _fill.depositId === fill.depositId && sdkUtils.filledSameDeposit(_fill, fill))
   );
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
@@ -180,11 +178,13 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   if (!firstFillForSameDeposit) {
     const depositForFill = await queryHistoricalDepositForFill(spokePoolClientsByChain[fill.originChainId], fill);
     assert(depositForFill.found && sdkUtils.isV2Deposit(depositForFill.deposit));
-    const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
-      fill,
-      depositForFill.found ? depositForFill.deposit : undefined,
-      allMatchingFills[0].blockNumber
-    );
+    const matchingFills = (
+      await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
+        fill,
+        depositForFill.found ? depositForFill.deposit : undefined,
+        allMatchingFills[0].blockNumber
+      )
+    ).filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>);
 
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
