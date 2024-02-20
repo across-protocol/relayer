@@ -22,21 +22,26 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
+const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const zeroFillAmount = bnOne;
 
 export class Relayer {
+  public readonly relayerAddress: string;
+
   // Track by originChainId since depositId is issued on the origin chain.
   // Key is in the form of "chainId-depositId".
   private fullyFilledDeposits: { [key: string]: boolean } = {};
 
   constructor(
-    readonly relayerAddress: string,
+    relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
-  ) {}
+  ) {
+    this.relayerAddress = getAddress(relayerAddress);
+  }
 
   /**
    * @description Retrieve the complete array of unfilled deposits and filter out deposits we can't or choose
@@ -66,19 +71,6 @@ export class Relayer {
         return false;
       }
 
-      if (
-        ignoredAddresses?.includes(ethersUtils.getAddress(depositor)) ||
-        ignoredAddresses?.includes(ethersUtils.getAddress(recipient))
-      ) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Ignoring deposit",
-          depositor,
-          recipient,
-        });
-        return false;
-      }
-
       if (!this.routeEnabled(originChainId, destinationChainId)) {
         this.logger.debug({
           at: "Relayer::getUnfilledDeposits",
@@ -93,6 +85,29 @@ export class Relayer {
       // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
       if (quoteTimestamp > hubPoolClient.currentTime) {
         return false;
+      }
+
+      if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Ignoring deposit",
+          depositor,
+          recipient,
+        });
+        return false;
+      }
+
+      // Filters specific to v3.
+      if (sdkUtils.isV3Deposit(deposit)) {
+        // Technically it's the destination SpokePool timestamp that matters, but host timestamp should be good enough.
+        const currentTime = getCurrentTime();
+        if (deposit.fillDeadline <= currentTime) {
+          return false;
+        }
+
+        if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
+          return false;
+        }
       }
 
       // Skip deposit with message if sending fills with messages is not supported.

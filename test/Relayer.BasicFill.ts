@@ -2,7 +2,7 @@ import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { V2FillWithBlock, V3FillWithBlock } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnZero, bnOne } from "../src/utils";
+import { bnZero, bnOne, delay, getCurrentTime } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -44,6 +44,15 @@ import {
 } from "./utils";
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
+  // The relayer references host time; spin the wheels until the deposit expires. This is annoying because hre time
+  // runs ahead of host time and the SpokePoolClient doesn't permit chain time to move backwards, so the test takes
+  // a few seconds. This should only be visible when tests aren't run in parallel (--parallel). @todo: improve!
+  const waitForHostTime = async (timestamp: number): Promise<void> => {
+    do {
+      await delay(1);
+    } while (getCurrentTime() < timestamp);
+  };
+
   const { EMPTY_MESSAGE } = constants;
   const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 
@@ -632,6 +641,64 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         await relayerInstance.checkForUnfilledDepositsAndFill();
         const expectedTransactions = testDepositor.address === relayer.address ? 1 : 0;
         expect(multiCallerClient.transactionCount()).to.equal(expectedTransactions);
+      }
+    });
+
+    it("Ignores expired deposits", async function () {
+      const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
+      const fillDeadline = currentTime + 1;
+      expect(fillDeadline > getCurrentTime()).to.be.true; // Sanity check
+
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount, {
+        fillDeadline,
+      });
+      await updateAllClients();
+
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(1);
+      multiCallerClient.clearTransactionQueue();
+
+      await waitForHostTime(fillDeadline);
+
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(0);
+    });
+
+    it("Ignores exclusive deposits", async function () {
+      const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
+      const exclusivityDeadline = currentTime + 1;
+      expect(exclusivityDeadline > getCurrentTime()).to.be.true; // Sanity check
+
+      for (const exclusiveRelayer of [randomAddress(), relayerInstance.relayerAddress]) {
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          depositor,
+          inputToken,
+          inputAmount.div(2),
+          outputToken,
+          outputAmount.div(2),
+          { exclusivityDeadline, exclusiveRelayer }
+        );
+        const relayerIsExclusive = relayerInstance.relayerAddress === exclusiveRelayer;
+
+        await updateAllClients();
+
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect(multiCallerClient.transactionCount()).to.equal(relayerIsExclusive ? 1 : 0);
+
+        if (relayerIsExclusive) {
+          continue;
+        }
+
+        multiCallerClient.clearTransactionQueue();
+        await waitForHostTime(exclusivityDeadline);
+
+        // Relayer can unconditionally fill after the exclusivityDeadline.
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+        await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect(multiCallerClient.transactionCount()).to.equal(1);
       }
     });
 
