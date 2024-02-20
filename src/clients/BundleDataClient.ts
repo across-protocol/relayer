@@ -1104,8 +1104,6 @@ export class BundleDataClient {
           // Sanity checks:
           assert(endTime >= startTime, "End time should be greater than start time.");
           assert(startTime > 0, "Start time should be greater than 0.");
-          assert(Math.abs(Date.now() / 1000 - endTime) <= 21600, "End time should be within 6 hours of now.");
-          assert(endTime - startTime <= 43200, "End time shouldn't be more than 12 hours more than start time");
           return [chainId, [startTime, endTime]];
         })
       ).filter(isDefined)
