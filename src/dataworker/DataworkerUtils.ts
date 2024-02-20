@@ -15,6 +15,7 @@ import {
   SpokePoolClientsByChain,
   UnfilledDeposit,
   V2SlowFillLeaf,
+  V3SlowFillLeaf,
 } from "../interfaces";
 import {
   AnyObject,
@@ -22,12 +23,14 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  fixedPointAdjustment as fixedPoint,
   getDepositPath,
   getFillsInRange,
   groupObjectCountsByProp,
   groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
+  toBNWei,
   winston,
 } from "../utils";
 import { PoolRebalanceRoot } from "./Dataworker";
@@ -148,8 +151,8 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
 } {
-  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map((deposit: UnfilledDeposit) =>
-    buildV2SlowFillLeaf(deposit)
+  const slowRelayLeaves = unfilledDeposits.map((deposit) =>
+    utils.isV2Deposit(deposit.deposit) ? buildV2SlowFillLeaf(deposit) : buildV3SlowFillLeaf(deposit)
   );
 
   // Sort leaves deterministically so that the same root is always produced from the same loadData return value.
@@ -187,6 +190,33 @@ function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V2SlowFillLeaf {
       message: deposit.message,
     },
     payoutAdjustmentPct: unfilledDeposit.relayerBalancingFee?.toString() ?? "0",
+  };
+}
+
+function buildV3SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V3SlowFillLeaf {
+  const { deposit } = unfilledDeposit;
+  assert(utils.isV3Deposit(deposit));
+
+  // Temporarily assume LP fee of 1 bps. todo: This _must_ be set in the UnfilledDeposit.
+  const recipientPct = toBNWei(1).sub(toBNWei(0.0001));
+  const updatedOutputAmount = deposit.inputAmount.mul(recipientPct).div(fixedPoint);
+  return {
+    relayData: {
+      originChainId: deposit.originChainId,
+      depositId: deposit.depositId,
+      depositor: deposit.depositor,
+      recipient: deposit.recipient,
+      inputToken: deposit.inputToken,
+      inputAmount: deposit.inputAmount,
+      outputToken: deposit.outputToken,
+      outputAmount: deposit.outputAmount,
+      message: deposit.message,
+      fillDeadline: deposit.fillDeadline,
+      exclusivityDeadline: deposit.exclusivityDeadline,
+      exclusiveRelayer: deposit.exclusiveRelayer,
+    },
+    chainId: deposit.destinationChainId,
+    updatedOutputAmount,
   };
 }
 
