@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
   BigNumber,
@@ -34,6 +34,9 @@ export type Rebalance = {
   cumulativeBalance: BigNumber;
   amount: BigNumber;
 };
+
+const { CHAIN_IDs } = constants;
+
 export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
@@ -52,7 +55,7 @@ export class InventoryClient {
     readonly bundleRefundLookback = 2,
     readonly simMode = false
   ) {
-    this.scalar = toBN(10).pow(18);
+    this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
   }
 
@@ -89,7 +92,7 @@ export class InventoryClient {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
       // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
       if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
-        if (cumulativeBalance.gt(0)) {
+        if (cumulativeBalance.gt(bnZero)) {
           distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
             .mul(this.scalar)
             .div(cumulativeBalance);
@@ -110,11 +113,11 @@ export class InventoryClient {
   getCurrentAllocationPct(l1Token: string, chainId: number): BigNumber {
     // If there is nothing over all chains, return early.
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    if (cumulativeBalance.eq(0)) {
+    if (cumulativeBalance.eq(bnZero)) {
       return bnZero;
     }
 
-    const shortfall = this.getTokenShortFall(l1Token, chainId) || bnZero;
+    const shortfall = this.getTokenShortFall(l1Token, chainId);
     const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -210,10 +213,7 @@ export class InventoryClient {
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
-    if (
-      this.inventoryConfig.tokenConfig?.[l1Token] === undefined ||
-      this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined
-    ) {
+    if (this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined) {
       return destinationChainId;
     }
     const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
@@ -283,7 +283,7 @@ export class InventoryClient {
     // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
     for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
-      if (cumulativeBalance.eq(0)) {
+      if (cumulativeBalance.eq(bnZero)) {
         continue;
       }
 
@@ -345,7 +345,7 @@ export class InventoryClient {
         const { balance, amount, l1Token, chainId } = rebalance;
 
         // This is the balance left after any assumed rebalances from earlier loop iterations.
-        const unallocatedBalance = this.tokenClient.getBalance(1, l1Token);
+        const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
 
         // If the amount required in the rebalance is less than the total amount of this token on L1 then we can execute
         // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
@@ -493,7 +493,7 @@ export class InventoryClient {
             const unwrapWethTarget = this.inventoryConfig.tokenConfig?.[l1Weth]?.[chainId.toString()]?.unwrapWethTarget;
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
-            if (chainId === 137 || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
+            if (chainId === CHAIN_IDs.POLYGON || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
               return null;
             }
             return { chainId, unwrapWethThreshold, unwrapWethTarget };
@@ -608,11 +608,10 @@ export class InventoryClient {
         );
       }
       const { symbol, decimals } = tokenInfo;
-      if (!logData[symbol]) {
-        logData[symbol] = {};
-      }
       const formatter = createFormatFunction(2, 4, false, decimals);
       cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(l1Token).toString());
+      logData[symbol] ??= {};
+
       Object.entries(distributionForToken).forEach(([_chainId, amount]) => {
         const chainId = Number(_chainId);
         logData[symbol][chainId] = {
