@@ -123,8 +123,9 @@ export class Dataworker {
     }
   }
 
-  isV3(): boolean {
-    return sdk.utils.isV3(this.clients.configStoreClient.configStoreVersion);
+  isV3(blockNumber: number): boolean {
+    const versionAtBlock = this.clients.configStoreClient.getConfigStoreVersionForBlock(blockNumber);
+    return sdk.utils.isV3(versionAtBlock);
   }
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
@@ -338,6 +339,12 @@ export class Dataworker {
       spokePoolClients,
       nextBundleMainnetStartBlock
     );
+    const mainnetBlockRange = getBlockRangeForChain(
+      blockRangesForProposal,
+      hubPoolClient.chainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
     if (
@@ -347,7 +354,7 @@ export class Dataworker {
         blockRangesForProposal,
         this.chainIdListForBundleEvaluationBlockNumbers,
         earliestBlocksInSpokePoolClients,
-        this.isV3()
+        this.isV3(mainnetBlockRange[0])
       ))
     ) {
       this.logger.warn({
@@ -813,6 +820,11 @@ export class Dataworker {
       blockRange[0],
       rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
+    const mainnetBlockRange = getBlockRangeForChain(
+      blockRangesImpliedByBundleEndBlocks,
+      hubPoolChainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
     if (
@@ -822,7 +834,7 @@ export class Dataworker {
         blockRangesImpliedByBundleEndBlocks,
         this.chainIdListForBundleEvaluationBlockNumbers,
         earliestBlocksInSpokePoolClients,
-        this.isV3()
+        this.isV3(mainnetBlockRange[0])
       ))
     ) {
       this.logger.debug({
@@ -863,11 +875,7 @@ export class Dataworker {
       };
     }
 
-    const mainnetBundleStartBlock = getBlockRangeForChain(
-      blockRangesImpliedByBundleEndBlocks,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[0];
+    const mainnetBundleStartBlock = mainnetBlockRange[0];
 
     // Check if we have the right code to validate a bundle for the given block ranges.
     const versionAtProposalBlock =
@@ -1052,6 +1060,11 @@ export class Dataworker {
             this.clients.configStoreClient,
             matchingRootBundle
           );
+          const mainnetBlockRange = getBlockRangeForChain(
+            blockNumberRanges,
+            this.clients.hubPoolClient.chainId,
+            this.chainIdListForBundleEvaluationBlockNumbers
+          );
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
             (await blockRangesAreInvalidForSpokeClients(
@@ -1059,7 +1072,7 @@ export class Dataworker {
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers,
               earliestBlocksInSpokePoolClients,
-              this.isV3()
+              this.isV3(mainnetBlockRange[0])
             ))
           ) {
             this.logger.warn({
@@ -1771,6 +1784,11 @@ export class Dataworker {
         }
 
         const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
+        const mainnetBlockRanges = getBlockRangeForChain(
+          blockNumberRanges,
+          hubPoolClient.chainId,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
           (await blockRangesAreInvalidForSpokeClients(
@@ -1778,7 +1796,7 @@ export class Dataworker {
             blockNumberRanges,
             this.chainIdListForBundleEvaluationBlockNumbers,
             earliestBlocksInSpokePoolClients,
-            this.isV3()
+            this.isV3(mainnetBlockRanges[0])
           ))
         ) {
           this.logger.warn({

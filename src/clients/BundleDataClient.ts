@@ -736,13 +736,13 @@ export class BundleDataClient {
               if (!v3RelayHashes[relayDataHash].slowFillRequest) {
                 // At this point, the v3RelayHashes entry already existed meaning that there is either a matching
                 // fill or deposit.
+                v3RelayHashes[relayDataHash].slowFillRequest = slowFillRequest;
                 if (v3RelayHashes[relayDataHash].fill) {
                   // If there is a fill matching the relay hash, then this slow fill request can't be used
                   // to create a slow fill for a filled deposit.
                   return;
                 }
                 assert(v3RelayHashes[relayDataHash].deposit, "Deposit should exist in relay hash dictionary.");
-                v3RelayHashes[relayDataHash].slowFillRequest = slowFillRequest;
                 const matchedDeposit = v3RelayHashes[relayDataHash].deposit;
 
                 // Input and Output tokens must be equivalent on the deposit for this to be slow filled.
