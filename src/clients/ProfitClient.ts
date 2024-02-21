@@ -366,7 +366,7 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
 
     // If the gas price is unknown, assume the relay is unprofitable.
-    const profitable = gasTokenPriceUsd.gt(bnZero) && netRelayerFeePct.gte(minRelayerFeePct);
+    const profitable = netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeePct,
@@ -440,7 +440,6 @@ export class ProfitClient {
       equivalentTokens &&
       inputTokenPriceUsd.gt(bnZero) &&
       outputTokenPriceUsd.gt(bnZero) &&
-      gasTokenPriceUsd.gt(bnZero) &&
       netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
