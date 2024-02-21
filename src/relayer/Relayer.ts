@@ -640,7 +640,9 @@ export class Relayer {
         const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, deposit.originChainId);
 
         const inputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
-        const relayerFeePct = formatFeePct(sdkUtils.isV2Deposit(deposit) ? deposit.relayerFeePct : bnZero); // @todo
+
+        // @todo Consider whether to add v3 realizedLpFee logging. Use 0 for now.
+        const relayerFeePct = formatFeePct(sdkUtils.isV2Deposit(deposit) ? deposit.relayerFeePct : bnZero);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${inputAmount} ${symbol}` +
           ` with a relayerFeePct ${relayerFeePct}% and gas cost ${gasFormatFunction(gasCost)}` +

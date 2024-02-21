@@ -364,8 +364,6 @@ export class ProfitClient {
     // Determine profitability.
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd).sub(refundFeeUsd);
     const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
-
-    // If the gas price is unknown, assume the relay is unprofitable.
     const profitable = netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
@@ -433,7 +431,7 @@ export class ProfitClient {
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
     const netRelayerFeePct = inputAmountUsd.gt(bnZero) ? netRelayerFeeUsd.mul(fixedPoint).div(inputAmountUsd) : bnZero;
 
-    // If token price or gas price is unknown, assume the relay is unprofitable. Force non-equivalent tokens
+    // If either token prices are unknown, assume the relay is unprofitable. Force non-equivalent tokens
     // to be unprofitable for now. The relayer may be updated in future to support in-protocol swaps.
     const equivalentTokens = outputTokenInfo.address === inputTokenInfo.address;
     const profitable =
@@ -467,7 +465,7 @@ export class ProfitClient {
     if (!l1TokenInfo) {
       const inputToken = sdkUtils.getDepositInputToken(deposit);
       throw new Error(
-        `ProfitClient::getFillAmountInUsd missing l1TokenInfo for deposit with origin token: ${inputToken}`
+        `ProfitClient#getFillAmountInUsd missing l1TokenInfo for deposit with origin token: ${inputToken}`
       );
     }
     const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.symbol);
