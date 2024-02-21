@@ -129,13 +129,12 @@ export async function blockRangesAreInvalidForSpokeClients(
       return true;
     }
 
-    if (endBlockTimestamps !== undefined) {
-      return true;
-      // const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
-      // if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
-      //   return true;
-      // }
-    }
+    // if (endBlockTimestamps !== undefined) {
+    // const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
+    // if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
+    //   return true;
+    // }
+    // }
     // We must now assume that all newly expired deposits at the time of the bundle end blocks are contained within
     // the spoke pool client's memory.
 
