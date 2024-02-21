@@ -87,10 +87,6 @@ export async function constructSpokePoolClientsForFastDataworker(
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
-    "V3FundsDeposited",
-    "RequestedSpeedUpV3Deposit",
-    "RequestedV3SlowFill",
-    "FilledV3Relay",
   ]);
   return spokePoolClients;
 }

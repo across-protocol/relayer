@@ -3,7 +3,7 @@ import { ethers } from "../utils";
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
-export const CONFIG_STORE_VERSION = 3;
+export const CONFIG_STORE_VERSION = 2;
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
