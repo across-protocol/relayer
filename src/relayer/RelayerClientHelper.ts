@@ -128,16 +128,13 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // having a "first run" update and then a "normal" update that considers this. see previous implementation here
   // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
   await updateSpokePoolClients(spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
-    "EnabledDepositRoute",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
     "RequestedV3SlowFill",
     "FilledV3Relay",
+    "EnabledDepositRoute",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot",
   ]);
 
   // Update the token client first so that inventory client has latest balances.
