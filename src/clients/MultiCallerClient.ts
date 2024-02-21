@@ -24,7 +24,7 @@ import lodash from "lodash";
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
 // For example, a NodeJS error might result in a reason string that includes more than just the contract r
 // evert reason.
-export const knownRevertReasons = new Set(["relay filled", "Already claimed", "RelayFilled"]);
+export const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
 // there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
@@ -33,6 +33,7 @@ export const knownRevertReasons = new Set(["relay filled", "Already claimed", "R
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
 export const unknownRevertReasons = [
   "missing revert data in call exception; Transaction reverted without a reason string",
+  // execution reverted is the error reason when a require statement with a custom error is thrown.
   "execution reverted",
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
