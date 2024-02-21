@@ -300,7 +300,7 @@ export class Relayer {
         );
         if (isDefined(repaymentChainId)) {
           const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
-          this.fillRelay(deposit, repaymentChainId, gasLimit);
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
@@ -308,7 +308,7 @@ export class Relayer {
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
         // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
         // expensive fills on (for example) mainnet.
-        this.fillRelay(deposit, destinationChainId);
+        this.fillRelay(deposit, unfilledAmount, destinationChainId);
       } else {
         // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
         // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
@@ -445,7 +445,7 @@ export class Relayer {
     });
   }
 
-  fillRelay(deposit: Deposit, repaymentChainId: number, gasLimit?: BigNumber): void {
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried.
@@ -461,8 +461,12 @@ export class Relayer {
     }
 
     sdkUtils.isV2Deposit(deposit)
-      ? this.fillV2Relay(deposit, sdkUtils.getDepositOutputAmount(deposit), repaymentChainId, gasLimit)
+      ? this.fillV2Relay(deposit, fillAmount, repaymentChainId, gasLimit)
       : this.fillV3Relay(deposit, repaymentChainId, gasLimit);
+
+    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
+    const outputToken = sdkUtils.getDepositOutputToken(deposit);
+    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, fillAmount);
 
     // All fills routed through `fillRelay()` will complete the relay.
     this.fullyFilledDeposits[fillKey] = true;
@@ -528,10 +532,6 @@ export class Relayer {
       message,
       mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount),
     });
-
-    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
-    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, fillAmount);
   }
 
   /**
