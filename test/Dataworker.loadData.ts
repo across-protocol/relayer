@@ -1301,6 +1301,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(deposits[1].depositId);
+      expect(data1.unexecutableSlowFills).to.deep.equal({});
     });
     it("Handles slow fill requests out of block range", async function () {
       generateV3Deposit({ outputToken: erc20_2.address });
