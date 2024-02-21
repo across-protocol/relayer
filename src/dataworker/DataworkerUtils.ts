@@ -99,6 +99,7 @@ export async function blockRangesAreInvalidForSpokeClients(
       blockRanges,
       chainIdListForBundleEvaluationBlockNumbers
     );
+    assert(Object.keys(endBlockTimestamps).length === Object.values(spokePoolClients).filter(isDefined).length);
   }
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
@@ -129,7 +130,6 @@ export async function blockRangesAreInvalidForSpokeClients(
     }
 
     if (endBlockTimestamps !== undefined) {
-      assert(Object.keys(endBlockTimestamps).length === blockRanges.length);
       // TODO: Change this to query the max fill deadline between the values at the start and the end block after
       // we've fully migrated to V3. This is set to only query at the end block right now to deal with the
       // V2 to V3 migration bundle that contains a start block prior to the V3 upgrade. At this block, the
