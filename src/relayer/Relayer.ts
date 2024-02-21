@@ -97,6 +97,20 @@ export class Relayer {
         return false;
       }
 
+      // Skip any L1 tokens that are not specified in the config.
+      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+      const inputToken = sdkUtils.getDepositInputToken(deposit);
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit for unwhitelisted token",
+          deposit,
+          l1Token,
+        });
+        return false;
+      }
+
       // Filters specific to v3.
       if (sdkUtils.isV3Deposit(deposit)) {
         // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
@@ -106,6 +120,19 @@ export class Relayer {
         }
 
         if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
+          return false;
+        }
+
+        // Filter out deposits that require in-protocol swaps.
+        // Resolve L1 token and perform additional checks
+        // @todo: This is only relevant if inputToken and outputToken are equivalent.
+        const outputToken = sdkUtils.getDepositOutputToken(deposit);
+        if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+          this.logger.debug({
+            at: "Relayer::getUnfilledDeposits",
+            message: "Skipping deposit including in-protocol token swap.",
+            deposit,
+          });
           return false;
         }
       }
@@ -130,35 +157,6 @@ export class Relayer {
           deposit,
           invalidFills,
           destinationChain,
-        });
-        return false;
-      }
-
-      // Resolve L1 token and perform additional checks
-      // @todo: This is only relevant if inputToken and outputToken are equivalent.
-      const inputToken = sdkUtils.getDepositInputToken(deposit);
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
-
-      // Skip any L1 tokens that are not specified in the config.
-      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit for unwhitelisted token",
-          deposit,
-          l1Token,
-        });
-        return false;
-      }
-
-      // Filter out deposits that require in-protocol swaps.
-      const outputToken = sdkUtils.getDepositOutputToken(deposit);
-      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit including in-protocol token swap.",
-          deposit,
-          l1Token,
         });
         return false;
       }
