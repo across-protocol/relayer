@@ -1283,7 +1283,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     it("Slow fill requests cannot coincide with fill in same bundle", async function () {
       generateV3Deposit({ outputToken: erc20_2.address });
       generateV3Deposit({ outputToken: erc20_2.address });
-      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       generateSlowFillRequestFromDeposit(deposits[0]);
@@ -1301,6 +1301,23 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(deposits[1].depositId);
+      expect(data1.unexecutableSlowFills).to.deep.equal({});
+    });
+    it("Replacing a slow fill request with a fast fill in same bundle doesn't create unexecutable slow fill", async function () {
+      generateV3Deposit({ outputToken: erc20_2.address });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      generateSlowFillRequestFromDeposit(deposits[0]);
+      generateV3FillFromDeposit(deposits[0], undefined, undefined, undefined, interfaces.FillType.ReplacedSlowFill);
+      await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill", "FilledV3Relay"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
       expect(data1.unexecutableSlowFills).to.deep.equal({});
     });
     it("Handles slow fill requests out of block range", async function () {
