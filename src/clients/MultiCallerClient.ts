@@ -43,6 +43,7 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
   "fillV3Relay",
   "fillV3RelayWithUpdatedDeposit",
   "requestV3SlowFill",
+  "executeV3SlowRelayLeaf",
   "executeSlowRelayLeaf",
   "executeRelayerRefundLeaf",
   "executeRootBundle",
