@@ -138,6 +138,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "RequestedSpeedUpV3Deposit",
     "RequestedV3SlowFill",
     "FilledV3Relay",
+
   ]);
 
   // Update the token client first so that inventory client has latest balances.
