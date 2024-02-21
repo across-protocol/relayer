@@ -34,7 +34,7 @@ import { HubPoolClient } from ".";
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const { isError, isEthersError } = typeguards;
-const { formatEther } = ethersUtils;
+const { formatEther, formatUnits } = ethersUtils;
 const {
   EMPTY_MESSAGE,
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
@@ -400,11 +400,11 @@ export class ProfitClient {
         message: `${l1Token.symbol} deposit ${depositId} on chain ${originChainId} is ${profitable}`,
         deposit,
         l1Token,
-        fillAmount: formatEther(fillAmount),
+        fillAmount: formatUnits(fillAmount, l1Token.decimals),
         fillAmountUsd: formatEther(fill.fillAmountUsd),
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
         nativeGasCost: fill.nativeGasCost,
-        tokenGasCost: formatEther(fill.tokenGasCost),
+        tokenGasCost: formatUnits(fill.tokenGasCost, l1Token.decimals),
         gasPadding: this.gasPadding,
         gasMultiplier: this.gasMultiplier,
         gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),

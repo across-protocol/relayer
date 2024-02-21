@@ -15,6 +15,7 @@ import {
   Fill,
   RelayerRefundLeaf,
   RunningBalances,
+  V2Deposit,
   V3DepositWithBlock,
   V3SlowFillLeaf,
 } from "../../src/interfaces";
@@ -408,21 +409,17 @@ export async function addLiquidity(
 
 // Submits a deposit transaction and returns the Deposit struct that that clients interact with.
 export async function buildDepositStruct(
-  deposit: Omit<Deposit, "destinationToken" | "realizedLpFeePct">,
-  hubPoolClient: HubPoolClient,
-  l1TokenForDepositedToken: Contract
-): Promise<Deposit & { quoteBlockNumber: number; blockNumber: number }> {
-  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
-    {
-      ...deposit,
-      blockNumber: (await hubPoolClient.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number,
-    },
-    l1TokenForDepositedToken.address
-  );
+  deposit: Omit<V2Deposit, "destinationToken" | "realizedLpFeePct">,
+  hubPoolClient: HubPoolClient
+): Promise<V2Deposit & { quoteBlockNumber: number; blockNumber: number }> {
+  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+    ...deposit,
+    paymentChainId: deposit.destinationChainId,
+  });
 
   return {
     ...deposit,
-    destinationToken: hubPoolClient.getL2TokenForDeposit(deposit),
+    destinationToken: hubPoolClient.getL2TokenForDeposit({ ...deposit, quoteBlockNumber: quoteBlock }),
     quoteBlockNumber: quoteBlock,
     realizedLpFeePct,
     blockNumber: await getLastBlockNumber(),
@@ -440,7 +437,7 @@ export async function buildDeposit(
   relayerFeePct = depositRelayerFeePct,
   quoteTimestamp?: number,
   message?: string
-): Promise<Deposit> {
+): Promise<V2Deposit> {
   const _deposit = await utils.depositV2(
     spokePool,
     tokenToDeposit,
@@ -455,7 +452,7 @@ export async function buildDeposit(
 
   // Sanity Check: Ensure that the deposit was successful.
   expect(_deposit).to.not.be.null;
-  return await buildDepositStruct(_deposit, hubPoolClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit, hubPoolClient);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.

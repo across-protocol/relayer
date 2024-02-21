@@ -114,21 +114,25 @@ function updateBundleFillsV3(
   }
 }
 
-function updateBundleExcessSlowFills(dict: BundleExcessSlowFills, deposit: V3DepositWithBlock): void {
+function updateBundleExcessSlowFills(
+  dict: BundleExcessSlowFills,
+  deposit: V3DepositWithBlock & { realizedLpFeePct: BigNumber }
+): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
   }
-  assert(deposit.realizedLpFeePct, "Deposit must have realizedLpFeePct to store as BundleSlowFill");
   dict[destinationChainId][outputToken].push(deposit);
 }
 
-function updateBundleSlowFills(dict: BundleSlowFills, deposit: V3DepositWithBlock): void {
+function updateBundleSlowFills(
+  dict: BundleSlowFills,
+  deposit: V3DepositWithBlock & { realizedLpFeePct: BigNumber }
+): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
   }
-  assert(deposit.realizedLpFeePct, "Deposit must have realizedLpFeePct to store as BundleSlowFill");
   dict[destinationChainId][outputToken].push(deposit);
 }
 
@@ -630,6 +634,9 @@ export class BundleDataClient {
     }
 
     // Process fills now that we've populated relay hash dictionary with deposits:
+    const validatedBundleV3Fills: (V3FillWithBlock & { quoteTimestamp: number })[] = [];
+    const validatedBundleSlowFills: V3DepositWithBlock[] = [];
+    const validatedBundleUnexecutableSlowFills: V3DepositWithBlock[] = [];
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
       for (const destinationChainId of allChainIds) {
@@ -654,13 +661,6 @@ export class BundleDataClient {
           async (fill) => {
             const relayDataHash = utils.getV3RelayHashFromEvent(fill);
 
-            const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
-              fill,
-              this.clients.hubPoolClient,
-              blockRangesForChains,
-              this.chainIdListForBundleEvaluationBlockNumbers
-            );
-
             if (v3RelayHashes[relayDataHash]) {
               if (!v3RelayHashes[relayDataHash].fill) {
                 assert(v3RelayHashes[relayDataHash].deposit, "Deposit should exist in relay hash dictionary.");
@@ -671,15 +671,10 @@ export class BundleDataClient {
                   fill.blockNumber <= destinationChainBlockRange[1] &&
                   fill.blockNumber >= destinationChainBlockRange[0]
                 ) {
-                  // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
-                  // be included in the Fill type rather than the Deposit type
-                  updateBundleFillsV3(
-                    bundleFillsV3,
-                    fill,
-                    v3RelayHashes[relayDataHash].deposit.realizedLpFeePct,
-                    chainToSendRefundTo,
-                    repaymentToken
-                  );
+                  validatedBundleV3Fills.push({
+                    ...fill,
+                    quoteTimestamp: v3RelayHashes[relayDataHash].deposit.quoteTimestamp,
+                  });
                   // If fill replaced a slow fill request, then mark it as one that might have created an
                   // unexecutable slow fill. We can't know for sure until we check the slow fill request
                   // events.
@@ -719,13 +714,11 @@ export class BundleDataClient {
                 // sanity check it here by comparing the full relay hashes. If there's an error here then the
                 // historical deposit query is not working as expected.
                 assert(utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash);
-                updateBundleFillsV3(
-                  bundleFillsV3,
-                  fill,
-                  matchedDeposit.realizedLpFeePct,
-                  chainToSendRefundTo,
-                  repaymentToken
-                );
+                validatedBundleV3Fills.push({
+                  ...fill,
+                  quoteTimestamp: matchedDeposit.quoteTimestamp,
+                });
+
                 if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
                   fastFillsReplacingSlowFills.push(relayDataHash);
                 }
@@ -776,10 +769,7 @@ export class BundleDataClient {
                 ) {
                   // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                   // so this slow fill request relay data is correct.
-                  updateBundleSlowFills(bundleSlowFillsV3, matchedDeposit);
-                  // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
-                  // be included in the Fill type rather than the Deposit type, so we'll need
-                  // to compute it fresh here.
+                  validatedBundleSlowFills.push(matchedDeposit);
                 }
               }
               return;
@@ -832,10 +822,7 @@ export class BundleDataClient {
                 // TODO: Invalid slow fill request. Maybe worth logging.
                 return;
               }
-              // TODO: Once realizedLpFeePct is based on repaymentChain and originChain, it will
-              // be included in the Fill type rather than the Deposit type, so we'll need
-              // to compute it fresh here.
-              updateBundleSlowFills(bundleSlowFillsV3, historicalDeposit.deposit);
+              validatedBundleSlowFills.push(matchedDeposit);
             }
           }
         );
@@ -869,9 +856,7 @@ export class BundleDataClient {
             // created that would be considered excess.
             (!slowFillRequest || slowFillRequest.blockNumber < destinationBlockRange[0])
           ) {
-            // @dev The dataworker will be able to reconstruct the slow fill updatedOutputAmount using the deposit
-            // realizedLpFeePct and outputAmount.
-            updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
+            validatedBundleUnexecutableSlowFills.push(deposit);
           }
         });
       }
@@ -945,9 +930,70 @@ export class BundleDataClient {
           ) &&
           (!slowFillRequest || slowFillRequest.blockNumber < destinationBlockRange[0])
         ) {
-          updateBundleExcessSlowFills(unexecutableSlowFills, deposit);
+          validatedBundleUnexecutableSlowFills.push(deposit);
         }
       }
+    });
+
+    // Batch compute V3 lp fees.
+    const promises = [
+      validatedBundleV3Fills.length > 0
+        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+            validatedBundleV3Fills.map((fill) => {
+              const { chainToSendRefundTo: paymentChainId } = getRefundInformationFromFill(
+                fill,
+                this.clients.hubPoolClient,
+                blockRangesForChains,
+                this.chainIdListForBundleEvaluationBlockNumbers
+              );
+              return {
+                ...fill,
+                paymentChainId,
+              };
+            })
+          )
+        : [],
+      validatedBundleSlowFills.length > 0
+        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+            validatedBundleSlowFills.map((deposit) => {
+              const { realizedLpFeePct, ...v3Deposit } = deposit;
+              return {
+                ...v3Deposit,
+                paymentChainId: deposit.destinationChainId,
+              };
+            })
+          )
+        : [],
+      validatedBundleUnexecutableSlowFills.length > 0
+        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+            validatedBundleUnexecutableSlowFills.map((deposit) => {
+              const { realizedLpFeePct, ...v3Deposit } = deposit;
+              return {
+                ...v3Deposit,
+                paymentChainId: deposit.destinationChainId,
+              };
+            })
+          )
+        : [],
+    ];
+    const [v3FillLpFees, v3SlowFillLpFees, v3UnexecutableSlowFillLpFees] = await Promise.all(promises);
+    v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {
+      const fill = validatedBundleV3Fills[idx];
+      const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
+        fill,
+        this.clients.hubPoolClient,
+        blockRangesForChains,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+      updateBundleFillsV3(bundleFillsV3, fill, realizedLpFeePct, chainToSendRefundTo, repaymentToken);
+    });
+    v3SlowFillLpFees.forEach(({ realizedLpFeePct }, idx) => {
+      const deposit = validatedBundleSlowFills[idx];
+      updateBundleSlowFills(bundleSlowFillsV3, { ...deposit, realizedLpFeePct });
+    });
+    v3UnexecutableSlowFillLpFees.forEach(({ realizedLpFeePct }, idx) => {
+      const deposit = validatedBundleUnexecutableSlowFills[idx];
+      updateBundleExcessSlowFills(unexecutableSlowFills, { ...deposit, realizedLpFeePct });
     });
 
     // Note: We do not check for duplicate slow fills here since `addRefundForValidFill` already checks for duplicate
