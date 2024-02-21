@@ -1,4 +1,4 @@
-import { ethers, expect, smock } from "./utils";
+import { ethers, expect } from "./utils";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 // Tested
@@ -8,9 +8,7 @@ import { getWidestPossibleExpectedBlockRange } from "../src/dataworker/PoolRebal
 import { originChainId } from "./constants";
 import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
 import { getDeployedBlockNumber } from "@across-protocol/contracts-v2";
-import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
-import { assert } from "../src/utils";
+import { MockHubPoolClient } from "./mocks";
 
 let dataworkerClients: DataworkerClients;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -154,7 +152,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Only use public chain IDs because getDeploymentBlockNumber will only work for real chain ID's. This is a hack
     // and getDeploymentBlockNumber should be changed to work in test environments.
     const _spokePoolClients = { [chainId]: spokePoolClients[chainId] };
-    let chainIds = [chainId];
+    const chainIds = [chainId];
 
     // Look if bundle range from block is before the latest invalid
     // bundle start block. If so, then the range is invalid.
