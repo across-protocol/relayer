@@ -386,7 +386,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
   // @note: This test is not relevant because refund fees were never introdued.
   // tbd on whether to update or rewrite it to test that verifies the input lpFeePct is respected.
-  it.only("Considers LP fees when computing profitability", async () => {
+  it("Considers LP fees when computing profitability", async () => {
     const inputAmounts = [".01", "0.1", 1, 10, 100, 1_000, 100_000];
     const lpFeeMultipliers = [0.1, 1, 10];
     const baseLpFeePct = toBNWei("0.0001");
@@ -455,12 +455,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(
-              deposit,
-              outputAmount,
-              lpFeePct,
-              l1Token
-            );
+            const { profitable } = await profitClient.isFillProfitable(deposit, outputAmount, lpFeePct, l1Token);
             expect(profitable).to.equal(expected.profitable);
           }
         }
