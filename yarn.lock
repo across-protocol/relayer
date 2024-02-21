@@ -41,26 +41,6 @@
     axios "^1.6.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts-v2@2.5.0-beta.7":
-  version "2.5.0-beta.7"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.5.0-beta.7.tgz#9410efc9e39b8b1b6e814dcd416e6017f7d40abd"
-  integrity sha512-/u6VB5QZwi9i7EDRBYNGMne+/ZXTI1XbHzEEI4+Z1Bb6xKvKjTsJJsStz7wwBplGAWCkmRLVxCbJtfN2o0iUSw==
-  dependencies:
-    "@across-protocol/constants-v2" "^1.0.11"
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/abstract-provider" "5.7.0"
-    "@ethersproject/abstract-signer" "5.7.0"
-    "@ethersproject/bignumber" "5.7.0"
-    "@openzeppelin/contracts" "4.9.3"
-    "@openzeppelin/contracts-upgradeable" "4.9.3"
-    "@scroll-tech/contracts" "^0.1.0"
-    "@uma/common" "^2.34.0"
-    "@uma/contracts-node" "^0.4.17"
-    "@uma/core" "^2.56.0"
-    axios "^1.6.2"
-    zksync-web3 "^0.14.3"
-
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
@@ -70,10 +50,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.22.2":
-  version "0.22.2"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.22.2.tgz#d07f39f5d7d54bb65ab6ffd752f191c57f16b020"
-  integrity sha512-K34JHw5gC0LVL/+1muyCYR4Char3QrPCNAR/phQiiy98PQzAvgJIi7ah7eD7QhBuNkY9vxD9N5oEC9ZNsjitUA==
+"@across-protocol/sdk-v2@0.22.4":
+  version "0.22.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.22.4.tgz#b20e41f45c5c3522482d7ad953caed45f48b1d5d"
+  integrity sha512-y6Yy66zrYsTHfHWpVYgMTgMlx1K9F/50LWRDUPOJGPM2Czv+iE2emdqnxz8Im90qSfgQ0akHJpD4zFVgqxEq5Q==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants-v2" "^1.0.11"
