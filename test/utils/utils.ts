@@ -10,7 +10,15 @@ import _ from "lodash";
 import sinon from "sinon";
 import winston from "winston";
 import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient } from "../../src/clients";
-import { Deposit, Fill, RelayerRefundLeaf, RunningBalances, V3DepositWithBlock } from "../../src/interfaces";
+import {
+  Deposit,
+  Fill,
+  RelayerRefundLeaf,
+  RunningBalances,
+  V2Deposit,
+  V3DepositWithBlock,
+  V3SlowFillLeaf,
+} from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
@@ -36,6 +44,7 @@ export const {
   buildPoolRebalanceLeafTree,
   buildPoolRebalanceLeaves,
   buildSlowRelayTree,
+  buildV3SlowRelayTree,
   createRandomBytes32,
   depositV2,
   enableRoutes,
@@ -401,21 +410,17 @@ export async function addLiquidity(
 
 // Submits a deposit transaction and returns the Deposit struct that that clients interact with.
 export async function buildDepositStruct(
-  deposit: Omit<Deposit, "destinationToken" | "realizedLpFeePct">,
-  hubPoolClient: HubPoolClient,
-  l1TokenForDepositedToken: Contract
-): Promise<Deposit & { quoteBlockNumber: number; blockNumber: number }> {
-  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
-    {
-      ...deposit,
-      blockNumber: (await hubPoolClient.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number,
-    },
-    l1TokenForDepositedToken.address
-  );
+  deposit: Omit<V2Deposit, "destinationToken" | "realizedLpFeePct">,
+  hubPoolClient: HubPoolClient
+): Promise<V2Deposit & { quoteBlockNumber: number; blockNumber: number }> {
+  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+    ...deposit,
+    paymentChainId: deposit.destinationChainId,
+  });
 
   return {
     ...deposit,
-    destinationToken: hubPoolClient.getL2TokenForDeposit(deposit),
+    destinationToken: hubPoolClient.getL2TokenForDeposit({ ...deposit, quoteBlockNumber: quoteBlock }),
     quoteBlockNumber: quoteBlock,
     realizedLpFeePct,
     blockNumber: await getLastBlockNumber(),
@@ -433,7 +438,7 @@ export async function buildDeposit(
   relayerFeePct = depositRelayerFeePct,
   quoteTimestamp?: number,
   message?: string
-): Promise<Deposit> {
+): Promise<V2Deposit> {
   const _deposit = await utils.depositV2(
     spokePool,
     tokenToDeposit,
@@ -448,7 +453,7 @@ export async function buildDeposit(
 
   // Sanity Check: Ensure that the deposit was successful.
   expect(_deposit).to.not.be.null;
-  return await buildDepositStruct(_deposit, hubPoolClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit, hubPoolClient);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
@@ -672,6 +677,41 @@ export function buildSlowRelayLeaves(
         payoutAdjustmentPct: BigNumber.from(payoutAdjustmentPcts[i]?.toString() ?? "0"),
       };
     }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
+    .sort(({ relayData: relayA }, { relayData: relayB }) => {
+      if (relayA.originChainId !== relayB.originChainId) {
+        return Number(relayA.originChainId) - Number(relayB.originChainId);
+      } else {
+        return Number(relayA.depositId) - Number(relayB.depositId);
+      }
+    });
+}
+
+export function buildV3SlowRelayLeaves(deposits: interfaces.V3Deposit[], lpFeePct: BigNumber): V3SlowFillLeaf[] {
+  const chainId = deposits[0].destinationChainId;
+  assert.isTrue(deposits.every(({ destinationChainId }) => chainId === destinationChainId));
+  return deposits
+    .map((deposit) => {
+      const lpFee = deposit.inputAmount.mul(lpFeePct).div(toBNWei(1));
+      const slowFillLeaf: V3SlowFillLeaf = {
+        relayData: {
+          depositor: deposit.depositor,
+          recipient: deposit.recipient,
+          exclusiveRelayer: deposit.exclusiveRelayer,
+          inputToken: deposit.inputToken,
+          outputToken: deposit.outputToken,
+          inputAmount: deposit.inputAmount,
+          outputAmount: deposit.outputAmount,
+          originChainId: deposit.originChainId,
+          depositId: deposit.depositId,
+          fillDeadline: deposit.fillDeadline,
+          exclusivityDeadline: deposit.exclusivityDeadline,
+          message: deposit.message,
+        },
+        chainId,
+        updatedOutputAmount: deposit.inputAmount.sub(lpFee),
+      };
+      return slowFillLeaf;
+    })
     .sort(({ relayData: relayA }, { relayData: relayB }) => {
       if (relayA.originChainId !== relayB.originChainId) {
         return Number(relayA.originChainId) - Number(relayB.originChainId);

@@ -1,12 +1,10 @@
 import assert from "assert";
-import { utils, typechain } from "@across-protocol/sdk-v2";
+import { utils, typechain, interfaces } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
-  DepositWithBlock,
   FillsToRefund,
-  FillWithBlock,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
@@ -14,7 +12,10 @@ import {
   SlowFillLeaf,
   SpokePoolClientsByChain,
   UnfilledDeposit,
+  V2DepositWithBlock,
+  V2FillWithBlock,
   V2SlowFillLeaf,
+  V3FillWithBlock,
   V3SlowFillLeaf,
 } from "../interfaces";
 import {
@@ -23,14 +24,16 @@ import {
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
   buildSlowRelayTree,
-  fixedPointAdjustment as fixedPoint,
+  count2DDictionaryValues,
+  count3DDictionaryValues,
+  fixedPointAdjustment,
   getDepositPath,
   getFillsInRange,
+  getTimestampsForBundleEndBlocks,
   groupObjectCountsByProp,
   groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
-  toBNWei,
   winston,
 } from "../utils";
 import { PoolRebalanceRoot } from "./Dataworker";
@@ -41,6 +44,7 @@ import {
   constructPoolRebalanceLeaves,
   initializeRunningBalancesFromRelayerRepayments,
   subtractExcessFromPreviousSlowFillsFromRunningBalances,
+  updateRunningBalance,
   updateRunningBalanceForDeposit,
   updateRunningBalanceForEarlyDeposit,
 } from "./PoolRebalanceUtils";
@@ -49,6 +53,13 @@ import {
   sortRefundAddresses,
   sortRelayerRefundLeaves,
 } from "./RelayerRefundUtils";
+import {
+  BundleDepositsV3,
+  BundleExcessSlowFills,
+  BundleFillsV3,
+  BundleSlowFills,
+  ExpiredDepositsToRefundV3,
+} from "../interfaces/BundleData";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 
 export function getEndBlockBuffers(
@@ -70,15 +81,26 @@ export function getEndBlockBuffers(
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => blockRangeEndBlockBuffer[chainId] ?? 0);
 }
 
+// TODO: Move to SDK-v2 since this implements UMIP logic about validating block ranges.
 // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
 // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
-export function blockRangesAreInvalidForSpokeClients(
+export async function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  latestInvalidBundleStartBlock: { [chainId: number]: number }
-): boolean {
-  return blockRanges.some(([start, end], index) => {
+  latestInvalidBundleStartBlock: { [chainId: number]: number },
+  isV3 = false
+): Promise<boolean> {
+  assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
+  let endBlockTimestamps: { [chainId: number]: number } | undefined;
+  if (isV3) {
+    endBlockTimestamps = await getTimestampsForBundleEndBlocks(
+      spokePoolClients,
+      blockRanges,
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+  }
+  return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
     if (isNaN(end) || isNaN(start)) {
@@ -88,28 +110,53 @@ export function blockRangesAreInvalidForSpokeClients(
       return false;
     }
 
+    const spokePoolClient = spokePoolClients[chainId];
+
     // If spoke pool client doesn't exist for enabled chain then we clearly cannot query events for this chain.
-    if (spokePoolClients[chainId] === undefined) {
+    if (spokePoolClient === undefined) {
       return true;
     }
 
-    const clientLastBlockQueried = spokePoolClients[chainId].latestBlockSearched;
+    const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
 
+    // If range start block is less than the earliest spoke pool client we can validate or the range end block
+    // is greater than the latest client end block, then ranges are invalid.
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, start);
-    return bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried;
+    const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
+    if (bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried) {
+      return true;
+    }
+
+    if (endBlockTimestamps !== undefined) {
+      assert(Object.keys(endBlockTimestamps).length === blockRanges.length);
+      // TODO: Change this to query the max fill deadline between the values at the start and the end block after
+      // we've fully migrated to V3. This is set to only query at the end block right now to deal with the
+      // V2 to V3 migration bundle that contains a start block prior to the V3 upgrade. At this block, the
+      // fill deadline buffer will not be in the SpokePool Proxy's ABI so it will fail. We could handle this dynamically
+      // but because its a one-time change and I think the fill deadline buffer is unlikely to change during this
+      // bundle, that this is a safe temporary fix.
+      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(/* start*/ end, end);
+      if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
+        return true;
+      }
+    }
+    // We must now assume that all newly expired deposits at the time of the bundle end blocks are contained within
+    // the spoke pool client's memory.
+
+    // If we get to here, block ranges are valid, return false.
+    return false;
   });
 }
 
 export function prettyPrintSpokePoolEvents(
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  deposits: DepositWithBlock[],
-  allValidFills: FillWithBlock[],
+  deposits: V2DepositWithBlock[],
+  allValidFills: V2FillWithBlock[],
   allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[],
   unfilledDeposits: UnfilledDeposit[],
-  allInvalidFills: FillWithBlock[]
+  allInvalidFills: V2FillWithBlock[]
 ): AnyObject {
   const allInvalidFillsInRange = getFillsInRange(
     allInvalidFills,
@@ -147,13 +194,48 @@ export function prettyPrintSpokePoolEvents(
   };
 }
 
-export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
+export function prettyPrintV3SpokePoolEvents(
+  bundleDepositsV3: BundleDepositsV3,
+  bundleFillsV3: BundleFillsV3,
+  bundleInvalidFillsV3: V3FillWithBlock[],
+  bundleSlowFillsV3: BundleSlowFills,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
+  unexecutableSlowFills: BundleExcessSlowFills
+): AnyObject {
+  return {
+    bundleDepositsV3: count2DDictionaryValues(bundleDepositsV3),
+    bundleFillsV3: count3DDictionaryValues(bundleFillsV3, "fills"),
+    bundleSlowFillsV3: count2DDictionaryValues(bundleSlowFillsV3),
+    expiredDepositsToRefundV3: count2DDictionaryValues(expiredDepositsToRefundV3),
+    unexecutableSlowFills: count2DDictionaryValues(unexecutableSlowFills),
+    allInvalidFillsInRangeByDestinationChainAndRelayer: groupObjectCountsByTwoProps(
+      bundleInvalidFillsV3,
+      "destinationChainId",
+      (fill) => `${fill.relayer}`
+    ),
+  };
+}
+
+export function _buildSlowRelayRoot(
+  unfilledDeposits: UnfilledDeposit[],
+  bundleSlowFillsV3: BundleSlowFills
+): {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
 } {
-  const slowRelayLeaves = unfilledDeposits.map((deposit) =>
-    utils.isV2Deposit(deposit.deposit) ? buildV2SlowFillLeaf(deposit) : buildV3SlowFillLeaf(deposit)
+  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map((deposit: UnfilledDeposit) =>
+    buildV2SlowFillLeaf(deposit)
   );
+
+  // Append V3 slow fills to the V2 leaf list
+  Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
+    Object.values(depositsForChain).forEach((deposits) => {
+      deposits.forEach((deposit) => {
+        const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit);
+        slowRelayLeaves.push(v3SlowFillLeaf);
+      });
+    });
+  });
 
   // Sort leaves deterministically so that the same root is always produced from the same loadData return value.
   // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
@@ -193,36 +275,35 @@ function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V2SlowFillLeaf {
   };
 }
 
-function buildV3SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V3SlowFillLeaf {
-  const { deposit } = unfilledDeposit;
+function buildV3SlowFillLeaf(deposit: interfaces.V3Deposit): V3SlowFillLeaf {
   assert(utils.isV3Deposit(deposit));
+  const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
 
-  // Temporarily assume LP fee of 1 bps. todo: This _must_ be set in the UnfilledDeposit.
-  const recipientPct = toBNWei(1).sub(toBNWei(0.0001));
-  const updatedOutputAmount = deposit.inputAmount.mul(recipientPct).div(fixedPoint);
   return {
     relayData: {
-      originChainId: deposit.originChainId,
-      depositId: deposit.depositId,
       depositor: deposit.depositor,
       recipient: deposit.recipient,
+      exclusiveRelayer: deposit.exclusiveRelayer,
       inputToken: deposit.inputToken,
-      inputAmount: deposit.inputAmount,
       outputToken: deposit.outputToken,
+      inputAmount: deposit.inputAmount,
       outputAmount: deposit.outputAmount,
-      message: deposit.message,
+      originChainId: deposit.originChainId,
+      depositId: deposit.depositId,
       fillDeadline: deposit.fillDeadline,
       exclusivityDeadline: deposit.exclusivityDeadline,
-      exclusiveRelayer: deposit.exclusiveRelayer,
+      message: deposit.message,
     },
     chainId: deposit.destinationChainId,
-    updatedOutputAmount,
+    updatedOutputAmount: deposit.inputAmount.sub(lpFee),
   };
 }
 
 export function _buildRelayerRefundRoot(
   endBlockForMainnet: number,
   fillsToRefund: FillsToRefund,
+  bundleFillsV3: BundleFillsV3,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
   poolRebalanceLeaves: PoolRebalanceLeaf[],
   runningBalances: RunningBalances,
   clients: DataworkerClients,
@@ -233,15 +314,71 @@ export function _buildRelayerRefundRoot(
 } {
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
-  // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
-  Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
-    const repaymentChainId = Number(_repaymentChainId);
-    Object.entries(fillsForChain).forEach(([l2TokenAddress, fillsForToken]) => {
-      const refunds = fillsForToken.refunds;
+  // Create a combined `refunds` object containing refunds for V2 + V3 fills
+  // and expired deposits.
+  const combinedRefunds: {
+    [repaymentChainId: number]: {
+      [repaymentToken: string]: interfaces.Refund;
+    };
+  } = {};
+  Object.entries(bundleFillsV3).forEach(([repaymentChainId, fillsForChain]) => {
+    combinedRefunds[repaymentChainId] ??= {};
+    Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
+      // refunds can be undefined if these fills were all slow fill executions.
       if (refunds === undefined) {
         return;
       }
+      if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
+        combinedRefunds[repaymentChainId][l2TokenAddress] = refunds;
+      } else {
+        // Each refunds object should have a unique refund address so we can add new ones to the
+        // existing dictionary.
+        combinedRefunds[repaymentChainId][l2TokenAddress] = {
+          ...combinedRefunds[repaymentChainId][l2TokenAddress],
+          ...refunds,
+        };
+      }
+    });
+  });
+  Object.entries(expiredDepositsToRefundV3).forEach(([originChainId, depositsForChain]) => {
+    combinedRefunds[originChainId] ??= {};
+    Object.entries(depositsForChain).forEach(([l2TokenAddress, deposits]) => {
+      deposits.forEach((deposit) => {
+        if (combinedRefunds[originChainId][l2TokenAddress] === undefined) {
+          combinedRefunds[originChainId][l2TokenAddress] = { [deposit.depositor]: deposit.inputAmount };
+        } else {
+          const existingRefundAmount = combinedRefunds[originChainId][l2TokenAddress][deposit.depositor];
+          combinedRefunds[originChainId][l2TokenAddress][deposit.depositor] = deposit.inputAmount.add(
+            existingRefundAmount ?? bnZero
+          );
+        }
+      });
+    });
+  });
+  Object.entries(fillsToRefund).forEach(([repaymentChainId, fillsForChain]) => {
+    combinedRefunds[repaymentChainId] ??= {};
+    Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
+      // refunds can be undefined if these fills were all slow fill executions.
+      if (refunds === undefined) {
+        return;
+      }
+      if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
+        combinedRefunds[repaymentChainId][l2TokenAddress] = refunds;
+      } else {
+        Object.entries(refunds).forEach(([refundAddress, refundAmount]) => {
+          const existingRefundAmount = combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress];
+          combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress] = refundAmount.add(
+            existingRefundAmount ?? bnZero
+          );
+        });
+      }
+    });
+  });
 
+  // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
+  Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
+    Object.entries(refundsForChain).forEach(([l2TokenAddress, refunds]) => {
       // We need to sort leaves deterministically so that the same root is always produced from the same loadData
       // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
       const sortedRefundAddresses = sortRefundAddresses(refunds);
@@ -334,14 +471,18 @@ export async function _buildPoolRebalanceRoot(
   latestMainnetBlock: number,
   mainnetBundleEndBlock: number,
   fillsToRefund: FillsToRefund,
-  deposits: DepositWithBlock[],
-  allValidFills: FillWithBlock[],
-  allValidFillsInRange: FillWithBlock[],
+  deposits: V2DepositWithBlock[],
+  allValidFills: V2FillWithBlock[],
+  allValidFillsInRange: V2FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
   earlyDeposits: typechain.FundsDepositedEvent[],
+  bundleV3Deposits: BundleDepositsV3,
+  bundleFillsV3: BundleFillsV3,
+  bundleSlowFillsV3: BundleSlowFills,
+  unexecutableSlowFills: BundleExcessSlowFills,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
-  chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number | undefined,
   logger?: winston.Logger
 ): Promise<PoolRebalanceRoot> {
@@ -355,6 +496,11 @@ export async function _buildPoolRebalanceRoot(
   // to the total refund amount for that group.
   const runningBalances: RunningBalances = {};
   const realizedLpFees: RunningBalances = {};
+
+  /**
+   * REFUNDS FOR FAST FILLS
+   */
+
   initializeRunningBalancesFromRelayerRepayments(
     runningBalances,
     realizedLpFees,
@@ -363,8 +509,55 @@ export async function _buildPoolRebalanceRoot(
     fillsToRefund
   );
 
+  // Add running balances and lp fees for v3 relayer refunds using BundleDataClient.bundleFillsV3. Refunds
+  // should be equal to inputAmount - lpFees so that relayers get to keep the relayer fee. Add the refund amount
+  // to the running balance for the repayment chain.
+  Object.entries(bundleFillsV3).forEach(([_repaymentChainId, fillsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
+    Object.entries(fillsForChain).forEach(
+      ([l2TokenAddress, { realizedLpFees: totalRealizedLpFee, totalRefundAmount }]) => {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          l2TokenAddress,
+          repaymentChainId,
+          latestMainnetBlock
+        );
+
+        updateRunningBalance(runningBalances, repaymentChainId, l1TokenCounterpart, totalRefundAmount);
+        updateRunningBalance(realizedLpFees, repaymentChainId, l1TokenCounterpart, totalRealizedLpFee);
+      }
+    );
+  });
+
+  /**
+   * PAYMENTS SLOW FILLS
+   */
+
   // Add payments to execute slow fills.
   addSlowFillsToRunningBalances(mainnetBundleEndBlock, runningBalances, clients.hubPoolClient, unfilledDeposits);
+
+  // Add running balances and lp fees for v3 slow fills using BundleDataClient.bundleSlowFillsV3.
+  // Slow fills should still increment bundleLpFees and updatedOutputAmount should be equal to inputAmount - lpFees.
+  // Increment the updatedOutputAmount to the destination chain.
+  Object.entries(bundleSlowFillsV3).forEach(([_destinationChainId, depositsForChain]) => {
+    const destinationChainId = Number(_destinationChainId);
+    Object.entries(depositsForChain).forEach(([outputToken, deposits]) => {
+      deposits.forEach((deposit) => {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          outputToken,
+          destinationChainId,
+          latestMainnetBlock
+        );
+        const lpFee = deposit.realizedLpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
+        updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, deposit.inputAmount.sub(lpFee));
+        // Slow fill LP fees are accounted for when the slow fill executes and a V3FilledRelay is emitted. i.e. when
+        // the slow fill execution is included in bundleFillsV3.
+      });
+    });
+  });
+
+  /**
+   * EXCESSES FROM UNEXECUTABLE SLOW FILLS
+   */
 
   // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
@@ -378,6 +571,26 @@ export async function _buildPoolRebalanceRoot(
     allValidFillsInRange
   );
 
+  // Subtract destination chain running balances for BundleDataClient.unexecutableSlowFills.
+  // These are all slow fills that are impossible to execute and therefore the amount to return would be
+  // the updatedOutputAmount = inputAmount - lpFees.
+  Object.entries(unexecutableSlowFills).forEach(([_destinationChainId, slowFilledDepositsForChain]) => {
+    const destinationChainId = Number(_destinationChainId);
+    Object.entries(slowFilledDepositsForChain).forEach(([outputToken, slowFilledDeposits]) => {
+      slowFilledDeposits.forEach((deposit) => {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          outputToken,
+          destinationChainId,
+          latestMainnetBlock
+        );
+        const lpFee = deposit.realizedLpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
+        updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, lpFee.sub(deposit.inputAmount));
+        // Slow fills don't add to lpFees, only when the slow fill is executed and a V3FilledRelay is emitted, so
+        // we don't need to subtract it here. Moreover, the HubPoole expects bundleLpFees to be > 0.
+      });
+    });
+  });
+
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
       at: "Dataworker#DataworkerUtils",
@@ -386,11 +599,15 @@ export async function _buildPoolRebalanceRoot(
     });
   }
 
+  /**
+   * DEPOSITS
+   */
+
   // Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
   // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
   // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
   // its important that `deposits` are all in this current block range.
-  deposits.forEach((deposit: DepositWithBlock) => {
+  deposits.forEach((deposit: V2DepositWithBlock) => {
     const inputAmount = utils.getDepositInputAmount(deposit);
     updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, inputAmount.mul(-1));
   });
@@ -406,6 +623,35 @@ export async function _buildPoolRebalanceRoot(
       // into a type that is more digestable rather than a raw event.
       earlyDeposit.args[0].mul(-1)
     );
+  });
+
+  // Handle v3Deposits. These decrement running balances from the origin chain equal to the inputAmount.
+  // There should not be early deposits in v3.
+  Object.entries(bundleV3Deposits).forEach(([, depositsForChain]) => {
+    Object.entries(depositsForChain).forEach(([, deposits]) => {
+      deposits.forEach((deposit) => {
+        updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, deposit.inputAmount.mul(-1));
+      });
+    });
+  });
+
+  /**
+   * REFUNDS FOR EXPIRED DEPOSITS
+   */
+
+  // Add origin chain running balance for expired v3 deposits. These should refund the inputAmount.
+  Object.entries(expiredDepositsToRefundV3).forEach(([_originChainId, depositsForChain]) => {
+    const originChainId = Number(_originChainId);
+    Object.entries(depositsForChain).forEach(([inputToken, deposits]) => {
+      deposits.forEach((deposit) => {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
+          inputToken,
+          originChainId,
+          latestMainnetBlock
+        );
+        updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, deposit.inputAmount);
+      });
+    });
   });
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}

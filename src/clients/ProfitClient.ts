@@ -35,7 +35,7 @@ import { HubPoolClient } from ".";
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const { isError, isEthersError } = typeguards;
-const { formatEther } = ethersUtils;
+const { formatEther, formatUnits } = ethersUtils;
 const {
   EMPTY_MESSAGE,
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,

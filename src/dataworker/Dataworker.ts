@@ -17,9 +17,7 @@ import {
   ZERO_ADDRESS,
 } from "../utils";
 import {
-  DepositWithBlock,
   FillsToRefund,
-  FillWithBlock,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
   SlowFillLeaf,
@@ -31,6 +29,8 @@ import {
   RelayerRefundLeaf,
   V2SlowFillLeaf,
   V3SlowFillLeaf,
+  V2DepositWithBlock,
+  V2FillWithBlock,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -50,6 +50,13 @@ import {
 import _ from "lodash";
 import { spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
+import {
+  BundleDepositsV3,
+  BundleExcessSlowFills,
+  BundleFillsV3,
+  BundleSlowFills,
+  ExpiredDepositsToRefundV3,
+} from "../interfaces/BundleData";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -116,6 +123,10 @@ export class Dataworker {
     }
   }
 
+  isV3(): boolean {
+    return sdk.utils.isV3(this.clients.configStoreClient.configStoreVersion);
+  }
+
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
   clearCache(): void {
@@ -127,8 +138,11 @@ export class Dataworker {
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient }
   ): Promise<RootBundle> {
-    const { unfilledDeposits } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
-    return _buildSlowRelayRoot(unfilledDeposits);
+    const { unfilledDeposits, bundleSlowFillsV3 } = await this.clients.bundleDataClient.loadData(
+      blockRangesForChains,
+      spokePoolClients
+    );
+    return _buildSlowRelayRoot(unfilledDeposits, bundleSlowFillsV3);
   }
 
   async buildRelayerRefundRoot(
@@ -146,13 +160,18 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    const { fillsToRefund } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+    const { fillsToRefund, bundleFillsV3, expiredDepositsToRefundV3 } = await this.clients.bundleDataClient.loadData(
+      blockRangesForChains,
+      spokePoolClients
+    );
     const maxRefundCount = this.maxRefundCountOverride
       ? this.maxRefundCountOverride
       : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
     return _buildRelayerRefundRoot(
       endBlockForMainnet,
       fillsToRefund,
+      bundleFillsV3,
+      expiredDepositsToRefundV3,
       poolRebalanceLeaves,
       runningBalances,
       this.clients,
@@ -166,8 +185,18 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBlock?: number
   ): Promise<PoolRebalanceRoot> {
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
-      await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+    const {
+      fillsToRefund,
+      deposits,
+      allValidFills,
+      unfilledDeposits,
+      earlyDeposits,
+      bundleDepositsV3,
+      bundleFillsV3,
+      bundleSlowFillsV3,
+      unexecutableSlowFills,
+      expiredDepositsToRefundV3,
+    } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForChains,
@@ -191,6 +220,11 @@ export class Dataworker {
       allValidFillsInRange,
       unfilledDeposits,
       earlyDeposits,
+      bundleDepositsV3,
+      bundleFillsV3,
+      bundleSlowFillsV3,
+      unexecutableSlowFills,
+      expiredDepositsToRefundV3,
       true
     );
   }
@@ -265,10 +299,10 @@ export class Dataworker {
    * of log level
    * @returns Array of blocks ranges to propose for next bundle.
    */
-  _getNextProposalBlockRanges(
+  async _getNextProposalBlockRanges(
     spokePoolClients: SpokePoolClientsByChain,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): number[][] | undefined {
+  ): Promise<number[][] | undefined> {
     const { configStoreClient, hubPoolClient } = this.clients;
 
     // Check if a bundle is pending.
@@ -304,17 +338,17 @@ export class Dataworker {
       spokePoolClients,
       nextBundleMainnetStartBlock
     );
-
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        earliestBlocksInSpokePoolClients
-      )
+        earliestBlocksInSpokePoolClients,
+        this.isV3()
+      ))
     ) {
       this.logger.warn({
         at: "Dataworke#propose",
@@ -345,7 +379,7 @@ export class Dataworker {
     // If we are forcing a bundle range, then we should use that instead of the next proposal block ranges.
     const blockRangesForProposal = isDefined(this.forceBundleRange)
       ? this.forceBundleRange
-      : this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+      : await this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
 
     if (!blockRangesForProposal) {
       return;
@@ -457,8 +491,18 @@ export class Dataworker {
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits, earlyDeposits } =
-      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
+    const {
+      fillsToRefund,
+      deposits,
+      allValidFills,
+      unfilledDeposits,
+      earlyDeposits,
+      bundleDepositsV3,
+      bundleFillsV3,
+      bundleSlowFillsV3,
+      unexecutableSlowFills,
+      expiredDepositsToRefundV3,
+    } = await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
@@ -482,11 +526,18 @@ export class Dataworker {
       allValidFillsInRange,
       unfilledDeposits,
       earlyDeposits,
+      bundleDepositsV3,
+      bundleFillsV3,
+      bundleSlowFillsV3,
+      unexecutableSlowFills,
+      expiredDepositsToRefundV3,
       true
     );
     const relayerRefundRoot = _buildRelayerRefundRoot(
       mainnetBundleEndBlock,
       fillsToRefund,
+      bundleFillsV3,
+      expiredDepositsToRefundV3,
       poolRebalanceRoot.leaves,
       poolRebalanceRoot.runningBalances,
       this.clients,
@@ -494,7 +545,7 @@ export class Dataworker {
         ? this.maxRefundCountOverride
         : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock)
     );
-    const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
+    const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits, bundleSlowFillsV3);
 
     if (logData) {
       this.logger.debug({
@@ -762,17 +813,17 @@ export class Dataworker {
       blockRange[0],
       rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
-
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        earliestBlocksInSpokePoolClients
-      )
+        earliestBlocksInSpokePoolClients,
+        this.isV3()
+      ))
     ) {
       this.logger.debug({
         at: "Dataworke#validate",
@@ -1001,15 +1052,15 @@ export class Dataworker {
             this.clients.configStoreClient,
             matchingRootBundle
           );
-
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-            blockRangesAreInvalidForSpokeClients(
+            (await blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers,
-              earliestBlocksInSpokePoolClients
-            )
+              earliestBlocksInSpokePoolClients,
+              this.isV3()
+            ))
           ) {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
@@ -1141,6 +1192,9 @@ export class Dataworker {
             fill.destinationChainId === sdkUtils.getSlowFillLeafChainId(slowFill) &&
             fill.depositor === relayData.depositor &&
             fill.recipient === relayData.recipient &&
+            (sdkUtils.isV3Fill(fill) && sdkUtils.isV3RelayData(relayData)
+              ? fill.inputToken === relayData.inputToken
+              : true) &&
             sdkUtils.getFillOutputToken(fill) === sdkUtils.getRelayDataOutputToken(relayData) &&
             sdkUtils.getFillOutputAmount(fill).eq(sdkUtils.getRelayDataOutputAmount(relayData)) &&
             fill.message === relayData.message
@@ -1291,15 +1345,14 @@ export class Dataworker {
   }
 
   encodeV3SlowFillLeaf(
-    _slowRelayTree: MerkleTree<SlowFillLeaf>,
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
     leaf: V3SlowFillLeaf
   ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
-    // const { relayData, chainId, updatedOutputAmount } = leaf;
+    const { relayData, chainId, updatedOutputAmount } = leaf;
 
     const method = "executeV3SlowRelayLeaf";
-    // const proof = slowRelayTree.getHexProof({ relayData, chainId, updatedOutputAmount })
-    const proof = ["xxx todo"];
+    const proof = slowRelayTree.getHexProof({ relayData, chainId, updatedOutputAmount });
     const args = [leaf, rootBundleId, proof];
 
     return { method, args };
@@ -1720,12 +1773,13 @@ export class Dataworker {
         const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-          blockRangesAreInvalidForSpokeClients(
+          (await blockRangesAreInvalidForSpokeClients(
             spokePoolClients,
             blockNumberRanges,
             this.chainIdListForBundleEvaluationBlockNumbers,
-            earliestBlocksInSpokePoolClients
-          )
+            earliestBlocksInSpokePoolClients,
+            this.isV3()
+          ))
         ) {
           this.logger.warn({
             at: "Dataworke#executeRelayerRefundLeaves",
@@ -1937,11 +1991,16 @@ export class Dataworker {
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
     fillsToRefund: FillsToRefund,
-    deposits: DepositWithBlock[],
-    allValidFills: FillWithBlock[],
-    allValidFillsInRange: FillWithBlock[],
+    deposits: V2DepositWithBlock[],
+    allValidFills: V2FillWithBlock[],
+    allValidFillsInRange: V2FillWithBlock[],
     unfilledDeposits: UnfilledDeposit[],
     earlyDeposits: sdk.typechain.FundsDepositedEvent[],
+    bundleV3Deposits: BundleDepositsV3,
+    bundleV3Fills: BundleFillsV3,
+    bundleSlowFills: BundleSlowFills,
+    unexecutableSlowFills: BundleExcessSlowFills,
+    expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
     logSlowFillExcessData = false
   ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
@@ -1958,9 +2017,13 @@ export class Dataworker {
         allValidFillsInRange,
         unfilledDeposits,
         earlyDeposits,
+        bundleV3Deposits,
+        bundleV3Fills,
+        bundleSlowFills,
+        unexecutableSlowFills,
+        expiredDepositsToRefundV3,
         this.clients,
         spokePoolClients,
-        this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
         logSlowFillExcessData ? this.logger : undefined
       );
