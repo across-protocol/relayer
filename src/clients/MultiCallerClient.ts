@@ -31,8 +31,11 @@ export const knownRevertReasons = new Set(["relay filled", "Already claimed", "R
 // a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
 // to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
-export const unknownRevertReason =
-  "missing revert data in call exception; Transaction reverted without a reason string";
+export const unknownRevertReasons = [
+  "missing revert data in call exception; Transaction reverted without a reason string",
+  // execution reverted is the error reason when a require statement with a custom error is thrown.
+  "execution reverted",
+];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
   "fillRelay",
@@ -443,7 +446,11 @@ export class MultiCallerClient {
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
     const { transaction: _txn, reason } = txn;
     const knownReason = [...knownRevertReasons].some((knownReason) => reason.includes(knownReason));
-    return knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason.includes(unknownRevertReason));
+    return (
+      knownReason ||
+      (unknownRevertReasonMethodsToIgnore.has(_txn.method) &&
+        unknownRevertReasons.some((_reason) => reason.includes(_reason)))
+    );
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
