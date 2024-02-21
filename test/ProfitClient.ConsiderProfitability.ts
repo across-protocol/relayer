@@ -545,9 +545,12 @@ describe("ProfitClient: Consider relay profit", () => {
   });
 
   it("Captures unprofitable fills", () => {
-    const deposit = { relayerFeePct: toBNWei("0.003"), originChainId: 1, depositId: 42 } as DepositWithBlock;
-    const gasCost = toGWei(random(1, 100_000));
-    profitClient.captureUnprofitableFill(deposit, toBNWei(1), gasCost);
-    expect(profitClient.getUnprofitableFills()).to.deep.equal({ 1: [{ deposit, fillAmount: toBNWei(1), gasCost }] });
+    const deposit = { originChainId: 1, depositId: 42 } as V3DepositWithBlock;
+    const fillAmount = toBNWei(1);
+    const relayerFeePct = toBNWei("0.001");
+    const lpFeePct = toBNWei("0.002");
+    const gasCost = toGWei("0.003");
+    profitClient.captureUnprofitableFill(deposit, fillAmount, lpFeePct, relayerFeePct, gasCost);
+    expect(profitClient.getUnprofitableFills()).to.deep.equal({ 1: [{ deposit, fillAmount, lpFeePct, relayerFeePct, gasCost }] });
   });
 });
