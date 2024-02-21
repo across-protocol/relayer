@@ -1,21 +1,22 @@
 import { assert } from "chai";
 import { random } from "lodash";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { ConfigStoreClient, FillProfit, SpokePoolClient, V2FillProfit } from "../src/clients";
-import { Deposit, DepositWithBlock, V2Deposit } from "../src/interfaces";
+import { ConfigStoreClient, FillProfit, SpokePoolClient, V2FillProfit, V3FillProfit } from "../src/clients";
+import { Deposit, DepositWithBlock, V2Deposit, V3Deposit } from "../src/interfaces";
 import {
   bnZero,
   bnOne,
   BigNumber,
   fixedPointAdjustment as fixedPoint,
   formatFeePct,
+  getCurrentTime,
   toBN,
   toBNWei,
   toGWei,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
-import { originChainId, destinationChainId } from "./constants";
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   assertPromiseError,
   createSpyLogger,
@@ -42,7 +43,7 @@ const minRelayerFeePct = toBNWei(minRelayerFeeBps).div(1e4);
 const maxRelayerFeeBps = 50;
 const maxRelayerFeePct = toBNWei(maxRelayerFeeBps).div(1e4);
 
-function testProfitability(
+function testV2Profitability(
   deposit: V2Deposit,
   fillAmountUsd: BigNumber,
   gasCostUsd: BigNumber,
@@ -66,6 +67,27 @@ function testProfitability(
     grossRelayerFeeUsd,
     netRelayerFeePct,
     relayerCapitalUsd,
+    netRelayerFeeUsd,
+    profitable,
+  };
+}
+
+function testV3Profitability(
+  inputAmountUsd: BigNumber,
+  outputAmountUsd: BigNumber,
+  gasCostUsd: BigNumber,
+  lpFeeUsd: BigNumber
+): Pick<V3FillProfit, "grossRelayerFeeUsd" | "netRelayerFeePct" | "netRelayerFeeUsd" | "profitable"> {
+  const grossRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd).sub(lpFeeUsd);
+  const netRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd.add(lpFeeUsd.add(gasCostUsd)));
+  const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(inputAmountUsd);
+
+  const minRelayerFeeUsd = inputAmountUsd.mul(minRelayerFeePct).div(fixedPoint);
+  const profitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
+
+  return {
+    grossRelayerFeeUsd,
+    netRelayerFeePct,
     netRelayerFeeUsd,
     profitable,
   };
@@ -334,7 +356,7 @@ describe("ProfitClient: Consider relay profit", () => {
             const relayerFeePct = _relayerFeePct.gt(maxRelayerFeePct) ? maxRelayerFeePct : _relayerFeePct;
             deposit.relayerFeePct = relayerFeePct;
 
-            const expected = testProfitability(deposit, fillAmountUsd, gasCostUsd, zeroRefundFee);
+            const expected = testV2Profitability(deposit, fillAmountUsd, gasCostUsd, zeroRefundFee);
             spyLogger.debug({
               message: `Expect ${l1Token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
               fillAmount,
@@ -364,57 +386,79 @@ describe("ProfitClient: Consider relay profit", () => {
 
   // @note: This test is not relevant because refund fees were never introdued.
   // tbd on whether to update or rewrite it to test that verifies the input lpFeePct is respected.
-  it.skip("Considers refund fees when computing profitability", async () => {
-    const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
-    const refundFeeMultipliers = ["-0.1", "-0.01", "-0.001", "-0.0001", 0.0001, 0.001, 0.01, 0.1, 1];
-    const relayerFeePct = toBN(0.0001);
+  it.only("Considers LP fees when computing profitability", async () => {
+    const inputAmounts = [".01", "0.1", 1, 10, 100, 1_000, 100_000];
+    const lpFeeMultipliers = [0.1, 1, 10];
+    const baseLpFeePct = toBNWei("0.0001");
+    const relayerFeePct = minRelayerFeePct.add(baseLpFeePct);
 
     for (const destinationChainId of chainIds) {
-      const deposit = { amount: bnOne, destinationChainId, relayerFeePct, message } as Deposit;
-
-      randomiseGasCost(destinationChainId);
-      const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
-
       for (const l1Token of Object.values(tokens)) {
-        const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
-        hubPoolClient.setTokenInfoToReturn(l1Token);
+        const inputToken = l1Token.address;
+        const outputToken = inputToken;
 
-        for (const _fillAmount of fillAmounts) {
-          const fillAmount = toBNWei(_fillAmount);
-          const nativeFillAmount = toBNWei(_fillAmount, l1Token.decimals);
-          spyLogger.debug({ message: `Testing fillAmount ${formatEther(fillAmount)}.` });
+        hubPoolClient.setTokenMapping(inputToken, originChainId, inputToken);
+        hubPoolClient.setTokenMapping(outputToken, destinationChainId, outputToken);
+        await hubPoolClient.update();
 
-          const fillAmountUsd = fillAmount.mul(tokenPriceUsd).div(fixedPoint);
-          const gasCostPct = gasCostUsd.mul(fixedPoint).div(fillAmountUsd);
+        const tokenScalar = toBN(10).pow(18 - l1Token.decimals);
+        const tokenPriceUsd = profitClient.getPriceOfToken(inputToken);
 
-          for (const multiplier of refundFeeMultipliers) {
-            const feeMultiplier = toBNWei(multiplier);
-            const refundFee = fillAmount.mul(feeMultiplier).div(fixedPoint);
-            const nativeRefundFee = nativeFillAmount.mul(feeMultiplier).div(fixedPoint);
-            const refundFeeUsd = refundFee.mul(tokenPriceUsd).div(fixedPoint);
-            const expected = testProfitability(deposit, fillAmountUsd, gasCostUsd, refundFeeUsd);
+        for (const _inputAmount of inputAmounts) {
+          const inputAmount = toBNWei(_inputAmount);
+          const scaledInputAmount = inputAmount.mul(tokenScalar);
+          const inputAmountUsd = scaledInputAmount.mul(tokenPriceUsd).div(fixedPoint);
+
+          for (const lpFeeMultiplier of lpFeeMultipliers) {
+            const lpFeePct = baseLpFeePct.mul(toBNWei(lpFeeMultiplier)).div(fixedPoint);
+            const lpFee = scaledInputAmount.mul(lpFeePct).div(fixedPoint);
+            const lpFeeUsd = lpFee.mul(tokenPriceUsd).div(fixedPoint);
+
+            // relayer eats the LP fee.
+            const outputAmount = inputAmount.mul(fixedPoint.sub(relayerFeePct)).div(fixedPoint);
+            const scaledOutputAmount = outputAmount.mul(tokenScalar);
+            const outputAmountUsd = scaledOutputAmount.mul(tokenPriceUsd).div(fixedPoint);
+
+            const quoteTimestamp = getCurrentTime();
+            const deposit: V3Deposit = {
+              originChainId,
+              destinationChainId,
+              depositId: Math.ceil(Math.random() * 10_000),
+              depositor: randomAddress(),
+              recipient: randomAddress(),
+              inputToken,
+              inputAmount,
+              outputToken,
+              outputAmount,
+              message,
+              quoteTimestamp,
+              fillDeadline: quoteTimestamp,
+              exclusivityDeadline: 0,
+              exclusiveRelayer: ZERO_ADDRESS,
+            };
+            const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
+
+            const expected = testV3Profitability(inputAmountUsd, outputAmountUsd, gasCostUsd, lpFeeUsd);
             spyLogger.debug({
               message: `Expect ${l1Token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
               tokenPrice: formatEther(tokenPriceUsd),
-              fillAmount: formatEther(fillAmount),
-              fillAmountUsd: formatEther(fillAmountUsd),
+              outputAmount: formatEther(outputAmount),
+              outputAmountUsd: formatEther(outputAmountUsd),
               gasCostUsd: formatEther(gasCostUsd),
-              refundFee: formatEther(refundFee),
-              feeMultiplier: formatEther(feeMultiplier),
-              refundFeeUsd: formatEther(refundFeeUsd),
+              lpFee: formatEther(lpFee),
+              lpFeeMultiplier: formatEther(toBNWei(lpFeeMultiplier)),
+              lpFeeUsd: formatEther(lpFeeUsd),
               grossRelayerFeePct: `${formatFeePct(relayerFeePct)} %`,
-              gasCostPct: `${formatFeePct(gasCostPct)} %`,
-              relayerCapitalUsd: formatEther(expected.relayerCapitalUsd),
               minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
-              minRelayerFeeUsd: formatEther(minRelayerFeePct.mul(fillAmountUsd).div(fixedPoint)),
+              minRelayerFeeUsd: formatEther(minRelayerFeePct.mul(inputAmountUsd).div(fixedPoint)),
               netRelayerFeePct: `${formatFeePct(expected.netRelayerFeePct)} %`,
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
             const { profitable } = await profitClient.isFillProfitable(
               deposit,
-              nativeFillAmount,
-              nativeRefundFee,
+              outputAmount,
+              lpFeePct,
               l1Token
             );
             expect(profitable).to.equal(expected.profitable);
