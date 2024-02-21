@@ -128,7 +128,7 @@ export class Relayer {
         // @todo: This is only relevant if inputToken and outputToken are equivalent.
         const outputToken = sdkUtils.getDepositOutputToken(deposit);
         if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
-          this.logger.debug({
+          this.logger.warn({
             at: "Relayer::getUnfilledDeposits",
             message: "Skipping deposit including in-protocol token swap.",
             deposit,
