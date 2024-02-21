@@ -71,6 +71,29 @@ export function groupObjectCountsByProp(objects: any[], getProp: (obj: any) => s
   }, {});
 }
 
+export function count2DDictionaryValues(dictionary: { [key: string]: { [key2: string]: any[] } }): {
+  [key: string]: { [key2: string]: number };
+} {
+  return Object.entries(dictionary).reduce((output, [key, innerDict]) => {
+    const innerDictOutput = Object.entries(innerDict).reduce((innerOutput, [key2, vals]) => {
+      return { ...innerOutput, [key2]: vals.length };
+    }, {});
+    return { ...output, [key]: innerDictOutput };
+  }, {});
+}
+
+export function count3DDictionaryValues(
+  dictionary: { [key: string]: { [key2: string]: any } },
+  innerPropName: string
+): { [key: string]: { [key2: string]: number } } {
+  return Object.entries(dictionary).reduce((output, [key, innerDict]) => {
+    const innerDictOutput = Object.entries(innerDict).reduce((innerOutput, [key2, vals]) => {
+      return { ...innerOutput, [key2]: vals[innerPropName].length };
+    }, {});
+    return { ...output, [key]: innerDictOutput };
+  }, {});
+}
+
 /**
  * Deletes keys from an object and returns new copy of object without ignored keys
  * @param ignoredKeys

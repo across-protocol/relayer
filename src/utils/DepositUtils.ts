@@ -1,5 +1,13 @@
 import { utils, typechain } from "@across-protocol/sdk-v2";
-import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
+import {
+  Deposit,
+  Fill,
+  SlowFillRequest,
+  UnfilledDeposit,
+  UnfilledDepositsForOriginChain,
+  V2DepositWithBlock,
+  V3DepositWithBlock,
+} from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { assign, isFirstFillForDeposit, getRedisCache } from "./";
 import { bnZero } from "./SDKUtils";
@@ -76,8 +84,8 @@ export function getUniqueDepositsInRange(
   destinationChain: number,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   originClient: SpokePoolClient,
-  existingUniqueDeposits: DepositWithBlock[]
-): DepositWithBlock[] {
+  existingUniqueDeposits: V2DepositWithBlock[]
+): V2DepositWithBlock[] {
   const originChainBlockRange = getBlockRangeForChain(
     blockRangesForChains,
     originChain,
@@ -86,14 +94,15 @@ export function getUniqueDepositsInRange(
   return originClient
     .getDepositsForDestinationChain(destinationChain)
     .filter(
-      (deposit: DepositWithBlock) =>
+      (deposit) =>
         deposit.blockNumber <= originChainBlockRange[1] &&
         deposit.blockNumber >= originChainBlockRange[0] &&
         !existingUniqueDeposits.some(
           (existingDeposit) =>
             existingDeposit.originChainId === deposit.originChainId && existingDeposit.depositId === deposit.depositId
         )
-    ) as DepositWithBlock[];
+    )
+    .filter(utils.isV2Deposit<V2DepositWithBlock, V3DepositWithBlock>);
 }
 
 export function getUniqueEarlyDepositsInRange(
@@ -127,7 +136,7 @@ export function getUniqueEarlyDepositsInRange(
 // of a deposit older or younger than its fixed lookback.
 export async function queryHistoricalDepositForFill(
   spokePoolClient: SpokePoolClient,
-  fill: Fill
+  fill: Fill | SlowFillRequest
 ): Promise<utils.DepositSearchResult> {
   return utils.queryHistoricalDepositForFill(spokePoolClient, fill, await getRedisCache(spokePoolClient.logger));
 }
