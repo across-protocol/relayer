@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, DepositWithBlock, L1Token, V2Deposit, V3Deposit } from "../interfaces";
+import { Deposit, DepositWithBlock, FillStatus, L1Token, V2Deposit, V3Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -55,7 +55,7 @@ export class Relayer {
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
 
     const maxVersion = configStoreClient.configStoreVersion;
-    return unfilledDeposits.filter(({ deposit, version, invalidFills, unfilledAmount }) => {
+    return sdkUtils.filterAsync(unfilledDeposits, async ({ deposit, version, invalidFills, unfilledAmount }) => {
       const { quoteTimestamp, depositId, depositor, recipient, originChainId, destinationChainId } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
@@ -131,6 +131,17 @@ export class Relayer {
           this.logger.debug({
             at: "Relayer::getUnfilledDeposits",
             message: "Skipping deposit including in-protocol token swap.",
+            deposit,
+          });
+          return false;
+        }
+
+        const destSpokePool = this.clients.spokePoolClients[destinationChainId].spokePool;
+        const fillStatus = await sdkUtils.relayFillStatus(destSpokePool, deposit, "latest", destinationChainId);
+        if (fillStatus === FillStatus.Filled) {
+          this.logger.debug({
+            at: "Relayer::getUnfilledDeposits",
+            message: "Skipping deposit that was already filled.",
             deposit,
           });
           return false;
