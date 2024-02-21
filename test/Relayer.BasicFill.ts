@@ -637,7 +637,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     it("Ignores expired deposits", async function () {
       const spokePoolTime = (await spokePool_2.getCurrentTime()).toNumber();
-      const fillDeadline = spokePoolTime + 1;
+      const fillDeadline = spokePoolTime + 60;
 
       // Make a deposit and then increment SpokePool time beyond it.
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount, {
@@ -651,7 +651,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     it("Ignores exclusive deposits", async function () {
       for (const exclusiveRelayer of [randomAddress(), relayerInstance.relayerAddress]) {
         const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
-        const exclusivityDeadline = currentTime + 1;
+        const exclusivityDeadline = currentTime + 60;
 
         await depositV3(
           spokePool_1,
