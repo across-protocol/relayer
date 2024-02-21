@@ -302,16 +302,17 @@ export class Relayer {
       const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
       const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
-        const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
-          deposit,
-          unfilledAmount,
-          l1Token
-        );
+        const {
+          repaymentChainId,
+          realizedLpFeePct,
+          relayerFeePct,
+          gasLimit: gasCost,
+        } = await this.resolveRepaymentChain(deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
           const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
           this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
-          profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
+          profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, gasCost);
         }
       } else if (selfRelay) {
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
@@ -638,7 +639,13 @@ export class Relayer {
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const { deposit, fillAmount, gasCost: _gasCost } = unprofitableDeposits[chainId][depositId];
+        const {
+          deposit,
+          fillAmount,
+          lpFeePct: _lpFeePct,
+          relayerFeePct: _relayerFeePct,
+          gasCost: _gasCost,
+        } = unprofitableDeposits[chainId][depositId];
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
@@ -653,10 +660,11 @@ export class Relayer {
         const inputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
 
         // @todo Consider whether to add v3 realizedLpFee logging. Use 0 for now.
-        const relayerFeePct = formatFeePct(sdkUtils.isV2Deposit(deposit) ? deposit.relayerFeePct : bnZero);
+        const relayerFeePct = formatFeePct(_relayerFeePct);
+        const lpFeePct = formatFeePct(_lpFeePct);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${inputAmount} ${symbol}` +
-          ` with a relayerFeePct ${relayerFeePct}% and gas cost ${gasFormatFunction(gasCost)}` +
+          ` with a relayerFeePct ${relayerFeePct}%, lpFeePct ${lpFeePct}, and gas cost ${gasFormatFunction(gasCost)}` +
           ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
       });

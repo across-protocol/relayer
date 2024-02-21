@@ -79,8 +79,9 @@ export type FillProfit = V2FillProfit | V3FillProfit;
 type UnprofitableFill = {
   deposit: DepositWithBlock;
   fillAmount: BigNumber;
+  lpFeePct: BigNumber;
+  relayerFeePct: BigNumber;
   gasCost: BigNumber;
-  nativeGasCost: BigNumber;
 };
 
 // @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
@@ -576,9 +577,27 @@ export class ProfitClient {
     };
   }
 
-  captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber, gasCost: BigNumber): void {
-    this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount, gasCost });
-    assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount, gasCost }]);
+  captureUnprofitableFill(
+    deposit: DepositWithBlock,
+    fillAmount: BigNumber,
+    lpFeePct: BigNumber,
+    relayerFeePct: BigNumber,
+    gasCost: BigNumber
+  ): void {
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Handling unprofitable fill",
+      deposit,
+      fillAmount,
+      lpFeePct,
+      relayerFeePct,
+      gasCost,
+    });
+    assign(
+      this.unprofitableFills,
+      [deposit.originChainId],
+      [{ deposit, fillAmount, lpFeePct, relayerFeePct, gasCost }]
+    );
   }
 
   anyCapturedUnprofitableFills(): boolean {
