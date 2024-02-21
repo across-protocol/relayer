@@ -306,13 +306,14 @@ export class Relayer {
           repaymentChainId,
           realizedLpFeePct,
           relayerFeePct,
-          gasLimit: gasCost,
+          gasLimit: _gasCost,
+          tokenGasCost,
         } = await this.resolveRepaymentChain(deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
-          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
+          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasCost;
           this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
-          profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, gasCost);
+          profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, tokenGasCost);
         }
       } else if (selfRelay) {
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
@@ -561,6 +562,7 @@ export class Relayer {
     repaymentChainId?: number;
     realizedLpFeePct: BigNumber;
     relayerFeePct: BigNumber;
+    tokenGasCost: BigNumber;
   }> {
     const { hubPoolClient, inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
@@ -587,14 +589,16 @@ export class Relayer {
     const {
       profitable,
       nativeGasCost: gasLimit,
+      tokenGasCost,
       grossRelayerFeePct: relayerFeePct,
     } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
 
     return {
-      gasLimit,
       repaymentChainId: profitable ? preferredChainId : undefined,
       realizedLpFeePct,
       relayerFeePct,
+      tokenGasCost,
+      gasLimit,
     };
   }
 
@@ -650,7 +654,6 @@ export class Relayer {
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
         }
-        const gasCost = _gasCost.toString();
 
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
@@ -659,7 +662,7 @@ export class Relayer {
 
         const inputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
 
-        // @todo Consider whether to add v3 realizedLpFee logging. Use 0 for now.
+        const gasCost = gasFormatFunction(_gasCost.toString());
         const relayerFeePct = formatFeePct(_relayerFeePct);
         const lpFeePct = formatFeePct(_lpFeePct);
         depositMrkdwn +=
