@@ -48,10 +48,15 @@ export async function getTimestampsForBundleEndBlocks(
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): Promise<{ [chainId: number]: number }> {
   return Object.fromEntries(
-    await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
-      const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
-      const spokePoolClient = spokePoolClients[chainId];
-      return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
-    })
+    (
+      await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
+        const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
+        const spokePoolClient = spokePoolClients[chainId];
+        if (spokePoolClient === undefined) {
+          return;
+        }
+        return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+      })
+    ).filter(isDefined)
   );
 }
