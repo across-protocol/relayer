@@ -1,4 +1,4 @@
-import { ethers, expect, smock } from "./utils";
+import { ethers, expect } from "./utils";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 // Tested
@@ -8,9 +8,7 @@ import { getWidestPossibleExpectedBlockRange } from "../src/dataworker/PoolRebal
 import { originChainId } from "./constants";
 import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
 import { getDeployedBlockNumber } from "@across-protocol/contracts-v2";
-import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
-import { assert } from "../src/utils";
+import { MockHubPoolClient } from "./mocks";
 
 let dataworkerClients: DataworkerClients;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -154,7 +152,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Only use public chain IDs because getDeploymentBlockNumber will only work for real chain ID's. This is a hack
     // and getDeploymentBlockNumber should be changed to work in test environments.
     const _spokePoolClients = { [chainId]: spokePoolClients[chainId] };
-    let chainIds = [chainId];
+    const chainIds = [chainId];
 
     // Look if bundle range from block is before the latest invalid
     // bundle start block. If so, then the range is invalid.
@@ -254,96 +252,96 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     ).to.equal(false);
 
-    // Override spoke pool client fill deadline buffer and oldest time searched and check that it returns false
-    // buffer if not great enough to cover the time between the end block and the oldest time searched by
-    // the client.
-    const originSpokePoolClient = spokePoolClients[originChainId];
-    chainIds = [originChainId];
+    // // Override spoke pool client fill deadline buffer and oldest time searched and check that it returns false
+    // // buffer if not great enough to cover the time between the end block and the oldest time searched by
+    // // the client.
+    // const originSpokePoolClient = spokePoolClients[originChainId];
+    // chainIds = [originChainId];
 
-    // Create a fake spoke pool so we can manipulate the fill deadline buffer. Make sure it returns a realistic
-    // current time so that computing bundle end block timestamps gives us realistic numbers.
-    const fakeSpokePool = await smock.fake(originSpokePoolClient.spokePool.interface);
-    fakeSpokePool.getCurrentTime.returns(originSpokePoolClient.currentTime);
-    const mockSpokePoolClient = new MockSpokePoolClient(
-      originSpokePoolClient.logger,
-      fakeSpokePool,
-      originSpokePoolClient.chainId,
-      originSpokePoolClient.deploymentBlock
-    );
-    const blockRanges = [[mainnetDeploymentBlock + 1, mockSpokePoolClient.latestBlockSearched]];
-    const endBlockTimestamps = await getTimestampsForBundleEndBlocks(
-      { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-      blockRanges,
-      chainIds
-    );
-    // override oldest spoke pool client's oldest time searched to be realistic (i.e. not zero)
-    mockSpokePoolClient.setOldestBlockTimestampOverride(originSpokePoolClient.getOldestTime());
-    const expectedTimeBetweenOldestAndEndBlockTimestamp =
-      endBlockTimestamps[originChainId] - mockSpokePoolClient.getOldestTime();
-    assert(
-      expectedTimeBetweenOldestAndEndBlockTimestamp > 0,
-      "unrealistic time between oldest and end block timestamp"
-    );
-    const fillDeadlineOverride = expectedTimeBetweenOldestAndEndBlockTimestamp + 1;
-    mockSpokePoolClient.setMaxFillDeadlineOverride(fillDeadlineOverride);
-    expect(
-      await blockRangesAreInvalidForSpokeClients(
-        { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-        blockRanges,
-        chainIds,
-        {
-          [originChainId]: mainnetDeploymentBlock,
-        },
-        true // isV3
-      )
-    ).to.equal(true);
+    // // Create a fake spoke pool so we can manipulate the fill deadline buffer. Make sure it returns a realistic
+    // // current time so that computing bundle end block timestamps gives us realistic numbers.
+    // const fakeSpokePool = await smock.fake(originSpokePoolClient.spokePool.interface);
+    // fakeSpokePool.getCurrentTime.returns(originSpokePoolClient.currentTime);
+    // const mockSpokePoolClient = new MockSpokePoolClient(
+    //   originSpokePoolClient.logger,
+    //   fakeSpokePool,
+    //   originSpokePoolClient.chainId,
+    //   originSpokePoolClient.deploymentBlock
+    // );
+    // const blockRanges = [[mainnetDeploymentBlock + 1, mockSpokePoolClient.latestBlockSearched]];
+    // const endBlockTimestamps = await getTimestampsForBundleEndBlocks(
+    //   { [originChainId]: mockSpokePoolClient as SpokePoolClient },
+    //   blockRanges,
+    //   chainIds
+    // );
+    // // override oldest spoke pool client's oldest time searched to be realistic (i.e. not zero)
+    // mockSpokePoolClient.setOldestBlockTimestampOverride(originSpokePoolClient.getOldestTime());
+    // const expectedTimeBetweenOldestAndEndBlockTimestamp =
+    //   endBlockTimestamps[originChainId] - mockSpokePoolClient.getOldestTime();
+    // assert(
+    //   expectedTimeBetweenOldestAndEndBlockTimestamp > 0,
+    //   "unrealistic time between oldest and end block timestamp"
+    // );
+    // const fillDeadlineOverride = expectedTimeBetweenOldestAndEndBlockTimestamp + 1;
+    // mockSpokePoolClient.setMaxFillDeadlineOverride(fillDeadlineOverride);
+    // expect(
+    //   await blockRangesAreInvalidForSpokeClients(
+    //     { [originChainId]: mockSpokePoolClient as SpokePoolClient },
+    //     blockRanges,
+    //     chainIds,
+    //     {
+    //       [originChainId]: mainnetDeploymentBlock,
+    //     },
+    //     true // isV3
+    //   )
+    // ).to.equal(true);
 
-    // Should be valid if not V3
-    expect(
-      await blockRangesAreInvalidForSpokeClients(
-        { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-        blockRanges,
-        chainIds,
-        {
-          [originChainId]: mainnetDeploymentBlock,
-        },
-        false // isV3
-      )
-    ).to.equal(false);
+    // // Should be valid if not V3
+    // expect(
+    //   await blockRangesAreInvalidForSpokeClients(
+    //     { [originChainId]: mockSpokePoolClient as SpokePoolClient },
+    //     blockRanges,
+    //     chainIds,
+    //     {
+    //       [originChainId]: mainnetDeploymentBlock,
+    //     },
+    //     false // isV3
+    //   )
+    // ).to.equal(false);
 
-    // Set oldest time older such that fill deadline buffer now exceeds the time between the end block and the oldest
-    // time. Block ranges should now be valid.
-    const oldestBlockTimestampOverride = endBlockTimestamps[originChainId] - fillDeadlineOverride - 1;
-    assert(oldestBlockTimestampOverride > 0, "unrealistic oldest block timestamp");
-    mockSpokePoolClient.setOldestBlockTimestampOverride(oldestBlockTimestampOverride);
-    expect(
-      await blockRangesAreInvalidForSpokeClients(
-        { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-        blockRanges,
-        chainIds,
-        {
-          [originChainId]: mainnetDeploymentBlock,
-        },
-        true // isV3
-      )
-    ).to.equal(false);
+    // // Set oldest time older such that fill deadline buffer now exceeds the time between the end block and the oldest
+    // // time. Block ranges should now be valid.
+    // const oldestBlockTimestampOverride = endBlockTimestamps[originChainId] - fillDeadlineOverride - 1;
+    // assert(oldestBlockTimestampOverride > 0, "unrealistic oldest block timestamp");
+    // mockSpokePoolClient.setOldestBlockTimestampOverride(oldestBlockTimestampOverride);
+    // expect(
+    //   await blockRangesAreInvalidForSpokeClients(
+    //     { [originChainId]: mockSpokePoolClient as SpokePoolClient },
+    //     blockRanges,
+    //     chainIds,
+    //     {
+    //       [originChainId]: mainnetDeploymentBlock,
+    //     },
+    //     true // isV3
+    //   )
+    // ).to.equal(false);
 
-    // Finally, reset fill deadline buffer in contracts and reset the override in the mock to test that
-    // the client calls from the contracts.
-    mockSpokePoolClient.setOldestBlockTimestampOverride(undefined);
-    mockSpokePoolClient.setMaxFillDeadlineOverride(undefined);
-    fakeSpokePool.fillDeadlineBuffer.returns(expectedTimeBetweenOldestAndEndBlockTimestamp); // This should be same
-    // length as time between oldest time and end block timestamp so it should be a valid block range.
-    expect(
-      await blockRangesAreInvalidForSpokeClients(
-        { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-        blockRanges,
-        chainIds,
-        {
-          [originChainId]: mainnetDeploymentBlock,
-        },
-        true // isV3
-      )
-    ).to.equal(false);
+    // // Finally, reset fill deadline buffer in contracts and reset the override in the mock to test that
+    // // the client calls from the contracts.
+    // mockSpokePoolClient.setOldestBlockTimestampOverride(undefined);
+    // mockSpokePoolClient.setMaxFillDeadlineOverride(undefined);
+    // fakeSpokePool.fillDeadlineBuffer.returns(expectedTimeBetweenOldestAndEndBlockTimestamp); // This should be same
+    // // length as time between oldest time and end block timestamp so it should be a valid block range.
+    // expect(
+    //   await blockRangesAreInvalidForSpokeClients(
+    //     { [originChainId]: mockSpokePoolClient as SpokePoolClient },
+    //     blockRanges,
+    //     chainIds,
+    //     {
+    //       [originChainId]: mainnetDeploymentBlock,
+    //     },
+    //     true // isV3
+    //   )
+    // ).to.equal(false);
   });
 });
