@@ -58,7 +58,7 @@ import {
   assert,
   ZERO_ADDRESS,
 } from "../src/utils";
-import { MockSpokePoolClient } from "./mocks";
+import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { cloneDeep } from "lodash";
 
@@ -698,10 +698,20 @@ describe("Dataworker: Load data used in all functions", async function () {
 
   describe("V3 Events", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
+    let mockHubPoolClient: MockHubPoolClient;
     let mockDestinationSpokePool: FakeContract;
     const lpFeePct = toBNWei("0.01");
     beforeEach(async function () {
       await updateAllClients();
+      mockHubPoolClient = new MockHubPoolClient(
+        hubPoolClient.logger,
+        hubPoolClient.hubPool,
+        configStoreClient,
+        hubPoolClient.deploymentBlock,
+        hubPoolClient.chainId
+      );
+      // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
+      mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
       mockOriginSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
         spokePoolClient_1.spokePool,
@@ -720,10 +730,29 @@ describe("Dataworker: Load data used in all functions", async function () {
         [originChainId]: mockOriginSpokePoolClient,
         [destinationChainId]: mockDestinationSpokePoolClient,
       };
-      // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
-      mockOriginSpokePoolClient.setDefaultRealizedLpFeePct(lpFeePct);
+      await mockHubPoolClient.update();
       await mockOriginSpokePoolClient.update();
       await mockDestinationSpokePoolClient.update();
+      mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
+      mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
+      mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
+      const bundleDataClient = new BundleDataClient(
+        dataworkerInstance.logger,
+        {
+          ...dataworkerInstance.clients.bundleDataClient.clients,
+          hubPoolClient: mockHubPoolClient as unknown as HubPoolClient,
+        },
+        dataworkerInstance.clients.bundleDataClient.spokePoolClients,
+        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers
+      );
+      dataworkerInstance = new Dataworker(
+        dataworkerInstance.logger,
+        { ...dataworkerInstance.clients, bundleDataClient },
+        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
+        dataworkerInstance.maxRefundCountOverride,
+        dataworkerInstance.maxL1TokenCountOverride,
+        dataworkerInstance.blockRangeEndBlockBuffer
+      );
     });
     function generateV2Deposit(): Event {
       return mockOriginSpokePoolClient.deposit({
