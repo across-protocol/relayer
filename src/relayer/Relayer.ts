@@ -306,11 +306,11 @@ export class Relayer {
           repaymentChainId,
           realizedLpFeePct,
           relayerFeePct,
-          gasLimit: _gasCost,
-          tokenGasCost,
+          gasLimit: _gasLimit,
+          tokenGasCost: gasCost,
         } = await this.resolveRepaymentChain(deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
-          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasCost;
+          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
           this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, tokenGasCost);
