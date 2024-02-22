@@ -18,7 +18,7 @@ import {
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
-import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
+import { Deposit, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
