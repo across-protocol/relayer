@@ -53,7 +53,7 @@ export class InventoryClient {
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
-    readonly bundleRefundLookback = 1,
+    readonly bundleRefundLookback = 2,
     readonly simMode = false
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
