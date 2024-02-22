@@ -199,7 +199,7 @@ export class BundleDataClient {
     const { fillsToRefund, bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       bundleEvaluationBlockRanges,
       this.spokePoolClients,
-      true
+      false
     );
     const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
 
