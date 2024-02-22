@@ -313,7 +313,7 @@ export class Relayer {
           const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
           this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
         } else {
-          profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, tokenGasCost);
+          profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, gasCost);
         }
       } else if (selfRelay) {
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
