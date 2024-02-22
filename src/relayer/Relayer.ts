@@ -597,6 +597,7 @@ export class Relayer {
     const {
       profitable,
       nativeGasCost: gasLimit,
+      // gross relayer fee is equal to total fee minus the lp fee.
       grossRelayerFeePct: relayerFeePct,
     } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
 
@@ -604,50 +605,79 @@ export class Relayer {
     // is not profitable, then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
     // in the frontend-v2 repo which assumes that repayment is the destination chain. If this is profitable, then
-    // use it.
+    // go ahead and use the preferred chain as repayment and log the lp fee loss. This is a temporary solution
+    // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
+    // we come up with a smarter profitability check.
     if (!profitable && preferredChainId === hubPoolClient.chainId && preferredChainId !== destinationChainId) {
       this.logger.debug({
         at: "Relayer",
-        message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId}`,
+        message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId} profitability.`,
         deposit: { originChain, depositId, destinationChain, depositHash },
       });
-      const { realizedLpFeePct: fallbackRealizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
+      const { realizedLpFeePct: destinationChainLpFeePct } = sdkUtils.isV3Deposit(deposit)
         ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: destinationChainId })
         : deposit;
       const fallbackProfitability = await profitClient.isFillProfitable(
         deposit,
         fillAmount,
-        realizedLpFeePct,
+        destinationChainLpFeePct,
         hubPoolToken
       );
       if (fallbackProfitability.profitable) {
-        this.logger.debug({
+        // This is the delta in the gross relayer fee. If negative, then the preferred chain would have had a higher
+        // gross relayer fee, and therefore represents a loss to the relayer.
+        const deltaRelayerFee = fallbackProfitability.grossRelayerFeePct.sub(relayerFeePct);
+        this.logger.info({
           at: "Relayer",
-          message: `Alternative repayment chain ${destinationChainId} is profitable.`,
-          deposit: { originChain, depositId, destinationChain, depositHash },
-          realizedLpFeePct: fallbackRealizedLpFeePct,
-          relayerFeePct: fallbackProfitability.grossRelayerFeePct,
-          inputAmount,
-          outputAmount,
-          hubPoolToken: hubPoolToken.symbol,
+          message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chain ${preferredChainId} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on preferred chain as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
+            deltaRelayerFee
+          )}%`,
+          deposit: {
+            originChain,
+            destinationChain,
+            token: hubPoolToken.symbol,
+            txnHash: blockExplorerLink(depositHash, originChainId),
+          },
+          preferredChain: getNetworkName(preferredChainId),
+          preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+          destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
+          // The delta will cut into the gross relayer fee. If negative, then taking the repayment on destination chain
+          // would have been more profitable to the relayer because the lp fee would have been lower.
+          deltaLpFeePct: `${formatFeePct(realizedLpFeePct.sub(destinationChainLpFeePct))}%`,
+          // relayer fee is the gross relayer fee using the destination chain lp fee: inputAmount - outputAmount - lpFee.
+          preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
+          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
+          deltaRelayerFee: `${formatFeePct(deltaRelayerFee)}%`,
         });
+
+        // We've checked that the user set the output amount honestly and assumed that the payment would be on
+        // destination chain, therefore we will fill them using the original preferred chain to maintain
+        // inventory assumptions and also quote the original relayer fee pct.
         return {
-          gasLimit: fallbackProfitability.nativeGasCost,
-          repaymentChainId: destinationChainId,
-          realizedLpFeePct: fallbackRealizedLpFeePct,
-          relayerFeePct: fallbackProfitability.grossRelayerFeePct,
+          gasLimit,
+          repaymentChainId: preferredChainId,
+          realizedLpFeePct,
+          relayerFeePct,
         };
       } else {
         // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
         this.logger.debug({
           at: "Relayer",
-          message: `Alternative repayment chain ${destinationChainId} is also not profitable.`,
-          deposit: { originChain, depositId, destinationChain, depositHash },
-          realizedLpFeePct: fallbackRealizedLpFeePct,
-          relayerFeePct: fallbackProfitability.grossRelayerFeePct,
-          inputAmount,
-          outputAmount,
-          hubPoolToken: hubPoolToken.symbol,
+          message: `Taking repayment on destination chain ${destinationChainId} would also not be profitable.`,
+          deposit: {
+            originChain,
+            depositId,
+            destinationChain,
+            depositHash,
+            token: hubPoolToken.symbol,
+            inputAmount,
+            outputAmount,
+          },
+          preferredChain: getNetworkName(preferredChainId),
+          preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+          destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
+          preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
+          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
         });
       }
     }
@@ -655,12 +685,17 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer",
       message: `Preferred chain ${preferredChainId} is${profitable ? "" : " not"} profitable.`,
-      deposit: { originChain, depositId, destinationChain, depositHash },
-      realizedLpFeePct,
-      relayerFeePct,
-      inputAmount,
-      outputAmount,
-      hubPoolToken: hubPoolToken.symbol,
+      deposit: {
+        originChain,
+        depositId,
+        destinationChain,
+        depositHash,
+        token: hubPoolToken.symbol,
+        inputAmount,
+        outputAmount,
+      },
+      preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+      preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
     });
 
     return {
