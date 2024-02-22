@@ -72,7 +72,7 @@ export class CommonConfig {
     }
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
-    this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 1);
+    this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
   }
 
   /**
