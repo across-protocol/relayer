@@ -909,7 +909,8 @@ export class BundleDataClient {
         // If we haven't seen a fill matching this deposit, then we need to rule out that it was filled a long time ago
         // by checkings its on-chain fill status.
         const fillStatus: BigNumber = await spokePoolClients[deposit.destinationChainId].spokePool.fillStatuses(
-          relayDataHash
+          relayDataHash,
+          { blockTag: destinationChainId[1] }
         );
         // If there is no matching fill and the deposit expired in this bundle and the fill status on-chain is not
         // Filled, then we can to refund it as an expired deposit.
