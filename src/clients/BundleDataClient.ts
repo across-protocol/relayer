@@ -640,6 +640,11 @@ export class BundleDataClient {
     const validatedBundleUnexecutableSlowFills: V3DepositWithBlock[] = [];
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
+      const originChainBlockRange = getBlockRangeForChain(
+        blockRangesForChains,
+        originChainId,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) {
           continue;
@@ -707,7 +712,11 @@ export class BundleDataClient {
               fill.blockNumber >= destinationChainBlockRange[0]
             ) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
-              if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+              if (
+                !historicalDeposit.found ||
+                !utils.isV3Deposit(historicalDeposit.deposit) ||
+                historicalDeposit.deposit.blockNumber > originChainBlockRange[1]
+              ) {
                 bundleInvalidFillsV3.push(fill);
               } else {
                 const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
@@ -797,7 +806,11 @@ export class BundleDataClient {
               slowFillRequest.blockNumber >= destinationChainBlockRange[0]
             ) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
-              if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+              if (
+                !historicalDeposit.found ||
+                !utils.isV3Deposit(historicalDeposit.deposit) ||
+                historicalDeposit.deposit.blockNumber > originChainBlockRange[1]
+              ) {
                 // TODO: Invalid slow fill request. Maybe worth logging.
                 return;
               }
