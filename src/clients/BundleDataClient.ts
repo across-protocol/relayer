@@ -640,11 +640,6 @@ export class BundleDataClient {
     const validatedBundleUnexecutableSlowFills: V3DepositWithBlock[] = [];
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
-      const originChainBlockRange = getBlockRangeForChain(
-        blockRangesForChains,
-        originChainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) {
           continue;
