@@ -299,6 +299,8 @@ export type CombinedRefunds = {
   };
 };
 
+// Create a combined `refunds` object containing refunds for V2 + V3 fills
+// and expired deposits.
 export function getRefundsFromBundle(
   bundleFillsV3: BundleFillsV3,
   fillsToRefund: FillsToRefund,
@@ -380,8 +382,6 @@ export function _buildRelayerRefundRoot(
 } {
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
-  // Create a combined `refunds` object containing refunds for V2 + V3 fills
-  // and expired deposits.
   const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
 
   // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
