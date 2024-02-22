@@ -601,20 +601,20 @@ export class Relayer {
       grossRelayerFeePct: relayerFeePct,
     } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
 
-    // If preferred chain is mainnet and that is different from the destination chain and the preferred chain
+    // If preferred chain is different from the destination chain and the preferred chain
     // is not profitable, then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
     // in the frontend-v2 repo which assumes that repayment is the destination chain. If this is profitable, then
     // go ahead and use the preferred chain as repayment and log the lp fee loss. This is a temporary solution
     // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
     // we come up with a smarter profitability check.
-    if (!profitable && preferredChainId === hubPoolClient.chainId && preferredChainId !== destinationChainId) {
+    if (!profitable && preferredChainId !== destinationChainId && sdkUtils.isV3Deposit(deposit)) {
       this.logger.debug({
         at: "Relayer",
         message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId} profitability.`,
         deposit: { originChain, depositId, destinationChain, depositHash },
       });
-      const { realizedLpFeePct: destinationChainLpFeePct } = sdkUtils.isV3Deposit(deposit)
+      const { realizedLpFeePct: destinationChainLpFeePct } = deposit
         ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: destinationChainId })
         : deposit;
       const fallbackProfitability = await profitClient.isFillProfitable(
