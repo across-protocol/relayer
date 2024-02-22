@@ -211,7 +211,7 @@ export class InventoryClient {
           ` (${inputToken} != ${outputToken})`
       );
     }
-    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
+    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
     if (this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined) {
