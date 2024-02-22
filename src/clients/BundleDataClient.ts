@@ -860,6 +860,7 @@ export class BundleDataClient {
             // created that would be considered excess.
             (!slowFillRequest || slowFillRequest.blockNumber < destinationBlockRange[0])
           ) {
+            if (deposit.destinationChainId === 10) return ;
             validatedBundleUnexecutableSlowFills.push(deposit);
           }
         });
