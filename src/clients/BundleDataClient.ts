@@ -712,11 +712,7 @@ export class BundleDataClient {
               fill.blockNumber >= destinationChainBlockRange[0]
             ) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
-              if (
-                !historicalDeposit.found ||
-                !utils.isV3Deposit(historicalDeposit.deposit) ||
-                historicalDeposit.deposit.blockNumber > originChainBlockRange[1]
-              ) {
+              if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
                 bundleInvalidFillsV3.push(fill);
               } else {
                 const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
@@ -806,11 +802,7 @@ export class BundleDataClient {
               slowFillRequest.blockNumber >= destinationChainBlockRange[0]
             ) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
-              if (
-                !historicalDeposit.found ||
-                !utils.isV3Deposit(historicalDeposit.deposit) ||
-                historicalDeposit.deposit.blockNumber > originChainBlockRange[1]
-              ) {
+              if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
                 // TODO: Invalid slow fill request. Maybe worth logging.
                 return;
               }
