@@ -307,7 +307,7 @@ export class Relayer {
           realizedLpFeePct,
           relayerFeePct,
           gasLimit: _gasLimit,
-          tokenGasCost: gasCost,
+          gasCost,
         } = await this.resolveRepaymentChain(deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
           const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
@@ -562,7 +562,7 @@ export class Relayer {
     repaymentChainId?: number;
     realizedLpFeePct: BigNumber;
     relayerFeePct: BigNumber;
-    tokenGasCost: BigNumber;
+    gasCost: BigNumber;
   }> {
     const { hubPoolClient, inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
@@ -589,7 +589,7 @@ export class Relayer {
     const {
       profitable,
       nativeGasCost: gasLimit,
-      tokenGasCost,
+      tokenGasCost: gasCost,
       grossRelayerFeePct: relayerFeePct,
     } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
 
@@ -597,7 +597,7 @@ export class Relayer {
       repaymentChainId: profitable ? preferredChainId : undefined,
       realizedLpFeePct,
       relayerFeePct,
-      tokenGasCost,
+      gasCost,
       gasLimit,
     };
   }
