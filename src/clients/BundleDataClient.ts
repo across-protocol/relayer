@@ -229,8 +229,7 @@ export class BundleDataClient {
       this.spokePoolClients,
       false
     );
-    const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
-    return combinedRefunds;
+    return getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
   }
 
   deductExecutedRefunds(allRefunds: CombinedRefunds, bundleContainingRefunds: ProposedRootBundle): CombinedRefunds {
