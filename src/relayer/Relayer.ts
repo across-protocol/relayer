@@ -574,6 +574,7 @@ export class Relayer {
     const { hubPoolClient, inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
+    const inputAmount = sdkUtils.getDepositInputAmount(deposit);
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
@@ -624,6 +625,11 @@ export class Relayer {
           at: "Relayer",
           message: `Alternative repayment chain ${destinationChainId} is profitable.`,
           deposit: { originChain, depositId, destinationChain, depositHash },
+          realizedLpFeePct: fallbackRealizedLpFeePct,
+          relayerFeePct: fallbackProfitability.grossRelayerFeePct,
+          inputAmount,
+          outputAmount,
+          hubPoolToken: hubPoolToken.symbol,
         });
         return {
           gasLimit: fallbackProfitability.nativeGasCost,
@@ -637,9 +643,25 @@ export class Relayer {
           at: "Relayer",
           message: `Alternative repayment chain ${destinationChainId} is also not profitable.`,
           deposit: { originChain, depositId, destinationChain, depositHash },
+          realizedLpFeePct: fallbackRealizedLpFeePct,
+          relayerFeePct: fallbackProfitability.grossRelayerFeePct,
+          inputAmount,
+          outputAmount,
+          hubPoolToken: hubPoolToken.symbol,
         });
       }
     }
+
+    this.logger.debug({
+      at: "Relayer",
+      message: `Preferred chain ${preferredChainId} is${profitable ? "" : " not"} profitable.`,
+      deposit: { originChain, depositId, destinationChain, depositHash },
+      realizedLpFeePct,
+      relayerFeePct,
+      inputAmount,
+      outputAmount,
+      hubPoolToken: hubPoolToken.symbol,
+    });
 
     return {
       gasLimit,
