@@ -596,6 +596,7 @@ export class BundleDataClient {
 
         originClient
           .getDepositsForDestinationChain(destinationChainId)
+          .filter((deposit) => deposit.blockNumber <= originChainBlockRange[1])
           .filter(utils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)
           .forEach((deposit) => {
             const relayDataHash = utils.getV3RelayHashFromEvent(deposit);
@@ -657,6 +658,7 @@ export class BundleDataClient {
         await utils.forEachAsync(
           destinationClient
             .getFillsForOriginChain(originChainId)
+            .filter((fill) => fill.blockNumber <= destinationChainBlockRange[1])
             .filter(utils.isV3Fill<V3FillWithBlock, V2FillWithBlock>),
           async (fill) => {
             const relayDataHash = utils.getV3RelayHashFromEvent(fill);
@@ -728,7 +730,9 @@ export class BundleDataClient {
         );
 
         await utils.forEachAsync(
-          destinationClient.getSlowFillRequestsForOriginChain(originChainId),
+          destinationClient
+            .getSlowFillRequestsForOriginChain(originChainId)
+            .filter((request) => request.blockNumber <= destinationChainBlockRange[1]),
           async (slowFillRequest: SlowFillRequestWithBlock) => {
             const relayDataHash = utils.getV3RelayHashFromEvent(slowFillRequest);
 
