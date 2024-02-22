@@ -29,6 +29,7 @@ import {
   sampleRateModel,
 } from "../constants";
 import { ContractsV2SlowFill, SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
+import { CombinedRefunds } from "../../src/dataworker/DataworkerUtils";
 
 export {
   SpyTransport,
@@ -805,25 +806,10 @@ export function getDefaultBlockRange(toBlockOffset: number): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
 }
 
-export function createRefunds(
-  address: string,
-  refundAmount: BigNumber,
-  token: string
-): Record<
-  string,
-  {
-    refunds: Record<string, BigNumber>;
-    fills: Fill[];
-    totalRefundAmount: BigNumber;
-    realizedLpFees: BigNumber;
-  }
-> {
+export function createRefunds(address: string, refundAmount: BigNumber, token: string): CombinedRefunds {
   return {
     [token]: {
-      refunds: { [address]: refundAmount },
-      fills: [],
-      totalRefundAmount: toBN(0),
-      realizedLpFees: toBN(0),
+      [address]: refundAmount,
     },
   };
 }
