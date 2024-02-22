@@ -18,9 +18,10 @@ import {
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
-import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
+import { Deposit, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
+import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
@@ -159,7 +160,7 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundles.
     // Allow caller to set how many bundles to look back for refunds. The default is set to 2 which means
     // we'll look back only at the two latest valid bundle unless the caller overrides.
-    const refundsToConsider: FillsToRefund[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
+    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
       this.bundleRefundLookback
     );
 
@@ -230,6 +231,7 @@ export class InventoryClient {
       // Consider any refunds from executed and to-be executed bundles.
       totalRefundsPerChain = await this.getBundleRefunds(l1Token);
     } catch (e) {
+      this.log("Failed to get bundle refunds, defaulting refund chain to hub chain");
       // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
       // Inventory management can always rebalance from Mainnet to other chains easily if needed.
       return hubChainId;
