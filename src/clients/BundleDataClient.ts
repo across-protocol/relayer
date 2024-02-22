@@ -40,7 +40,6 @@ import {
   prettyPrintV3SpokePoolEvents,
   getRefundsFromBundle,
   CombinedRefunds,
-  blockRangesAreInvalidForSpokeClients,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { typechain, utils } from "@across-protocol/sdk-v2";
