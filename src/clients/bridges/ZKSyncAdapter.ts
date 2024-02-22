@@ -12,7 +12,7 @@ import {
   getTokenAddress,
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
-import { SpokePoolClient } from "../SpokePoolClient";
+import { SpokePoolClient } from "../.";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
