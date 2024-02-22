@@ -564,10 +564,10 @@ export class Relayer {
     const { hubPoolClient, inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
+    const originChain = getNetworkName(originChainId);
+    const destinationChain = getNetworkName(destinationChainId);
 
     if (!fillAmount.eq(outputAmount)) {
-      const originChain = getNetworkName(originChainId);
-      const destinationChain = getNetworkName(destinationChainId);
       this.logger.debug({
         at: "Relayer",
         message: `Skipping repayment chain determination for partial fill on ${destinationChain}`,
@@ -588,6 +588,48 @@ export class Relayer {
       nativeGasCost: gasLimit,
       grossRelayerFeePct: relayerFeePct,
     } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
+
+    // If preferred chain is mainnet and that is different from the destination chain and the preferred chain
+    // is not profitable, then check if the destination chain is profitable.
+    // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
+    // in the frontend-v2 repo which assumes that repayment is the destination chain. If this is profitable, then
+    // use it.
+    if (!profitable && preferredChainId === hubPoolClient.chainId && preferredChainId !== destinationChainId) {
+      this.logger.debug({
+        at: "Relayer",
+        message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId}`,
+        deposit: { originChain, depositId, destinationChain, depositHash },
+      });
+      const { realizedLpFeePct: fallbackRealizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
+        ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: destinationChainId })
+        : deposit;
+      const fallbackProfitability = await profitClient.isFillProfitable(
+        deposit,
+        fillAmount,
+        realizedLpFeePct,
+        hubPoolToken
+      );
+      if (fallbackProfitability.profitable) {
+        this.logger.debug({
+          at: "Relayer",
+          message: `Alternative repayment chain ${destinationChainId} is profitable.`,
+          deposit: { originChain, depositId, destinationChain, depositHash },
+        });
+        return {
+          gasLimit: fallbackProfitability.nativeGasCost,
+          repaymentChainId: destinationChainId,
+          realizedLpFeePct: fallbackRealizedLpFeePct,
+          relayerFeePct: fallbackProfitability.grossRelayerFeePct,
+        };
+      } else {
+        // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
+        this.logger.debug({
+          at: "Relayer",
+          message: `Alternative repayment chain ${destinationChainId} is also not profitable.`,
+          deposit: { originChain, depositId, destinationChain, depositHash },
+        });
+      }
+    }
 
     return {
       gasLimit,
