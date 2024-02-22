@@ -56,8 +56,8 @@ export class Relayer {
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
 
     const maxVersion = configStoreClient.configStoreVersion;
-    return sdkUtils.filterAsync(unfilledDeposits, async ({ deposit, version, invalidFills, unfilledAmount }) => {
-      const { quoteTimestamp, depositId, depositor, recipient, originChainId, destinationChainId } = deposit;
+    return sdkUtils.filterAsync(unfilledDeposits, async ({ deposit, version, invalidFills }) => {
+      const { depositId, depositor, recipient, originChainId, destinationChainId, inputToken, outputToken } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
       // If we don't have the latest code to support this deposit, skip it.
@@ -84,7 +84,7 @@ export class Relayer {
       }
 
       // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-      if (quoteTimestamp > hubPoolClient.currentTime) {
+      if (deposit.quoteTimestamp > hubPoolClient.currentTime) {
         return false;
       }
 
@@ -100,7 +100,6 @@ export class Relayer {
 
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      const inputToken = sdkUtils.getDepositInputToken(deposit);
       const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
       if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
         this.logger.debug({
@@ -112,41 +111,34 @@ export class Relayer {
         return false;
       }
 
-      // Filters specific to v3.
-      if (sdkUtils.isV3Deposit(deposit)) {
-        // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-        const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
-        if (deposit.fillDeadline <= currentTime) {
-          return false;
-        }
+      // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
+      const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
+      if (deposit.fillDeadline <= currentTime) {
+        return false;
+      }
 
-        if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
-          return false;
-        }
+      if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
+        return false;
+      }
 
-        // Filter out deposits that require in-protocol swaps.
-        // Resolve L1 token and perform additional checks
-        // @todo: This is only relevant if inputToken and outputToken are equivalent.
-        const outputToken = sdkUtils.getDepositOutputToken(deposit);
-        if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
-          this.logger.warn({
-            at: "Relayer::getUnfilledDeposits",
-            message: "Skipping deposit including in-protocol token swap.",
-            deposit,
-          });
-          return false;
-        }
+      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+        this.logger.warn({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit including in-protocol token swap.",
+          deposit,
+        });
+        return false;
+      }
 
-        const destSpokePool = this.clients.spokePoolClients[destinationChainId].spokePool;
-        const fillStatus = await sdkUtils.relayFillStatus(destSpokePool, deposit, "latest", destinationChainId);
-        if (fillStatus === FillStatus.Filled) {
-          this.logger.debug({
-            at: "Relayer::getUnfilledDeposits",
-            message: "Skipping deposit that was already filled.",
-            deposit,
-          });
-          return false;
-        }
+      const destSpokePool = this.clients.spokePoolClients[destinationChainId].spokePool;
+      const fillStatus = await sdkUtils.relayFillStatus(destSpokePool, deposit, "latest", destinationChainId);
+      if (fillStatus === FillStatus.Filled) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit that was already filled.",
+          deposit,
+        });
+        return false;
       }
 
       // Skip deposit with message if sending fills with messages is not supported.
@@ -177,15 +169,16 @@ export class Relayer {
       // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
       // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
       // queries for limits on supported tokens.
-      if (acrossApiClient.updatedLimits && unfilledAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
+      const { inputAmount } = deposit;
+      if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
         this.logger.warn({
           at: "Relayer::getUnfilledDeposits",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit: acrossApiClient.getLimit(l1Token.address),
           l1Token: l1Token.address,
           depositId,
-          inputAmount: sdkUtils.getDepositInputAmount(deposit),
-          unfilledAmount: unfilledAmount.toString(),
+          inputToken,
+          inputAmount,
           originChainId,
           transactionHash: deposit.transactionHash,
         });
@@ -231,14 +224,12 @@ export class Relayer {
     const unfilledDeposits = await this._getUnfilledDeposits();
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
-      const unfilledAmountUsd = profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
-      if (!agg[curr.deposit.originChainId]) {
-        agg[curr.deposit.originChainId] = bnZero;
-      }
-      agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
-      return agg;
-    }, {});
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits
+      .reduce((agg, { deposit }) => {
+        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        return agg;
+      }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(config.minDepositConfirmations)
