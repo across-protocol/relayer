@@ -293,23 +293,17 @@ function buildV3SlowFillLeaf(deposit: interfaces.V3Deposit): V3SlowFillLeaf {
   };
 }
 
-export function _buildRelayerRefundRoot(
-  endBlockForMainnet: number,
-  fillsToRefund: FillsToRefund,
-  bundleFillsV3: BundleFillsV3,
-  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
-  poolRebalanceLeaves: PoolRebalanceLeaf[],
-  runningBalances: RunningBalances,
-  clients: DataworkerClients,
-  maxRefundCount: number
-): {
-  leaves: RelayerRefundLeaf[];
-  tree: MerkleTree<RelayerRefundLeaf>;
-} {
-  const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+export type CombinedRefunds = {
+  [repaymentChainId: number]: {
+    [repaymentToken: string]: interfaces.Refund;
+  };
+};
 
-  // Create a combined `refunds` object containing refunds for V2 + V3 fills
-  // and expired deposits.
+export function getRefundsFromBundle(
+  bundleFillsV3: BundleFillsV3,
+  fillsToRefund: FillsToRefund,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
+): CombinedRefunds {
   const combinedRefunds: {
     [repaymentChainId: number]: {
       [repaymentToken: string]: interfaces.Refund;
@@ -368,6 +362,27 @@ export function _buildRelayerRefundRoot(
       }
     });
   });
+  return combinedRefunds;
+}
+
+export function _buildRelayerRefundRoot(
+  endBlockForMainnet: number,
+  fillsToRefund: FillsToRefund,
+  bundleFillsV3: BundleFillsV3,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
+  poolRebalanceLeaves: PoolRebalanceLeaf[],
+  runningBalances: RunningBalances,
+  clients: DataworkerClients,
+  maxRefundCount: number
+): {
+  leaves: RelayerRefundLeaf[];
+  tree: MerkleTree<RelayerRefundLeaf>;
+} {
+  const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+
+  // Create a combined `refunds` object containing refunds for V2 + V3 fills
+  // and expired deposits.
+  const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
 
   // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
   Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {

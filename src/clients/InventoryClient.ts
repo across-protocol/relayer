@@ -21,6 +21,7 @@ import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
+import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
@@ -52,7 +53,7 @@ export class InventoryClient {
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
-    readonly bundleRefundLookback = 2,
+    readonly bundleRefundLookback = 1,
     readonly simMode = false
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
@@ -159,7 +160,7 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundles.
     // Allow caller to set how many bundles to look back for refunds. The default is set to 2 which means
     // we'll look back only at the two latest valid bundle unless the caller overrides.
-    const refundsToConsider: FillsToRefund[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
+    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
       this.bundleRefundLookback
     );
 
@@ -210,7 +211,7 @@ export class InventoryClient {
           ` (${inputToken} != ${outputToken})`
       );
     }
-    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
+    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
     if (this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined) {

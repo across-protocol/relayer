@@ -38,6 +38,9 @@ import {
   getEndBlockBuffers,
   prettyPrintSpokePoolEvents,
   prettyPrintV3SpokePoolEvents,
+  getRefundsFromBundle,
+  CombinedRefunds,
+  blockRangesAreInvalidForSpokeClients,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { typechain, utils } from "@across-protocol/sdk-v2";
@@ -166,7 +169,7 @@ export class BundleDataClient {
     return _.cloneDeep(this.bundleTimestampCache);
   }
 
-  async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
+  async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<CombinedRefunds[]> {
     const refunds = [];
     if (!this.clients.hubPoolClient.isUpdated) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
@@ -187,18 +190,23 @@ export class BundleDataClient {
   }
 
   // Return refunds from input bundle.
-  async getPendingRefundsFromBundle(bundle: ProposedRootBundle): Promise<FillsToRefund> {
+  async getPendingRefundsFromBundle(bundle: ProposedRootBundle): Promise<CombinedRefunds> {
     // Reconstruct latest bundle block range.
     const bundleEvaluationBlockRanges = getImpliedBundleBlockRanges(
       this.clients.hubPoolClient,
       this.clients.configStoreClient,
       bundle
     );
-    const { fillsToRefund } = await this.loadData(bundleEvaluationBlockRanges, this.spokePoolClients, false);
+    const { fillsToRefund, bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
+      bundleEvaluationBlockRanges,
+      this.spokePoolClients,
+      true
+    );
+    const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
 
     // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
     // We have to deduct the executed amounts from the total refund amounts.
-    return this.deductExecutedRefunds(fillsToRefund, bundle);
+    return this.deductExecutedRefunds(combinedRefunds, bundle);
   }
 
   // Return refunds from the next valid bundle. This will contain any refunds that have been sent but are not included
@@ -206,7 +214,7 @@ export class BundleDataClient {
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
   // - Not yet proposed bundles
-  async getNextBundleRefunds(): Promise<FillsToRefund> {
+  async getNextBundleRefunds(): Promise<CombinedRefunds> {
     const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       this.spokePoolClients,
@@ -217,10 +225,16 @@ export class BundleDataClient {
     );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
-    return (await this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false)).fillsToRefund;
+    const { fillsToRefund, bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
+      futureBundleEvaluationBlockRanges,
+      this.spokePoolClients,
+      false
+    );
+    const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
+    return combinedRefunds;
   }
 
-  deductExecutedRefunds(allRefunds: FillsToRefund, bundleContainingRefunds: ProposedRootBundle): FillsToRefund {
+  deductExecutedRefunds(allRefunds: CombinedRefunds, bundleContainingRefunds: ProposedRootBundle): CombinedRefunds {
     for (const chainIdStr of Object.keys(allRefunds)) {
       const chainId = Number(chainIdStr);
       const executedRefunds = this.spokePoolClients[chainId].getExecutedRefunds(
@@ -228,7 +242,7 @@ export class BundleDataClient {
       );
 
       for (const tokenAddress of Object.keys(allRefunds[chainId])) {
-        const refunds = allRefunds[chainId][tokenAddress].refunds;
+        const refunds = allRefunds[chainId][tokenAddress];
         if (executedRefunds[tokenAddress] === undefined || refunds === undefined) {
           continue;
         }
@@ -249,15 +263,15 @@ export class BundleDataClient {
     return allRefunds;
   }
 
-  getRefundsFor(bundleRefunds: FillsToRefund, relayer: string, chainId: number, token: string): BigNumber {
+  getRefundsFor(bundleRefunds: CombinedRefunds, relayer: string, chainId: number, token: string): BigNumber {
     if (!bundleRefunds[chainId] || !bundleRefunds[chainId][token]) {
       return BigNumber.from(0);
     }
-    const allRefunds = bundleRefunds[chainId][token].refunds;
+    const allRefunds = bundleRefunds[chainId][token];
     return allRefunds && allRefunds[relayer] ? allRefunds[relayer] : BigNumber.from(0);
   }
 
-  getTotalRefund(refunds: FillsToRefund[], relayer: string, chainId: number, refundToken: string): BigNumber {
+  getTotalRefund(refunds: CombinedRefunds[], relayer: string, chainId: number, refundToken: string): BigNumber {
     return refunds.reduce((totalRefund, refunds) => {
       return totalRefund.add(this.getRefundsFor(refunds, relayer, chainId, refundToken));
     }, bnZero);
@@ -428,12 +442,14 @@ export class BundleDataClient {
         spokePoolClients
       );
       this.bundleTimestampCache = bundleBlockTimestamps;
-      this.logger.debug({
-        at: "BundleDataClient#loadData",
-        message: "Bundle block timestamps",
-        bundleBlockTimestamps,
-        blockRangesForChains,
-      });
+      if (logData) {
+        this.logger.debug({
+          at: "BundleDataClient#loadData",
+          message: "Bundle block timestamps",
+          bundleBlockTimestamps,
+          blockRangesForChains,
+        });
+      }
     } else {
       bundleBlockTimestamps = _cachedBundleTimestamps;
     }
