@@ -474,6 +474,19 @@ export class ProfitClient {
         })
     );
 
+    // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
+    // Note: we should batch these up and log them all at once to avoid spamming the logs.
+    const unknownTokens = Object.keys(tokens).filter((symbol) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
+    if (unknownTokens.length > 0) {
+      this.logger.warn({
+        at: "ProfitClient#updateTokenPrices",
+        message: "Filtered out unknown token(s) that don't have a corresponding entry in TOKEN_SYMBOLS_MAP.",
+        unknownTokens,
+        resolvedTokens: Object.keys(tokens),
+        availableTokens: Object.keys(TOKEN_SYMBOLS_MAP),
+      });
+    }
+
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
