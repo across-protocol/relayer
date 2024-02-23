@@ -476,7 +476,9 @@ export class ProfitClient {
 
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
-    const unknownTokens = Object.keys(tokens).filter((symbol) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
+    const unknownTokens = this.hubPoolClient
+      .getL1Tokens()
+      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
     if (unknownTokens.length > 0) {
       this.logger.warn({
         at: "ProfitClient#updateTokenPrices",
