@@ -103,7 +103,7 @@ describe("Monitor", async function () {
       0
     ));
 
-    const defaultMonitorEnvVars = {
+    defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
       ENDING_BLOCK_NUMBER: "100",
       UTILIZATION_ENABLED: "true",
