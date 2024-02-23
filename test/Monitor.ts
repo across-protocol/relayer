@@ -114,7 +114,7 @@ describe("Monitor", async function () {
       WHITELISTED_RELAYERS: "",
       MONITOR_REPORT_ENABLED: "true",
       MONITOR_REPORT_INTERVAL: "10",
-      MONITORED_RELAYERS: `["${depositor.address}"]`
+      MONITORED_RELAYERS: `["${depositor.address}"]`,
     };
     const monitorConfig = new MonitorConfig(defaultMonitorEnvVars);
 
@@ -300,7 +300,7 @@ describe("Monitor", async function () {
       l2Token.address,
       amountToDeposit,
       l1Token.address,
-      amountToDeposit.mul(99).div(100),
+      amountToDeposit.mul(99).div(100)
     );
     await fillV3Relay(spokePool_2, deposit, depositor);
     await monitorInstance.update();
@@ -346,7 +346,7 @@ describe("Monitor", async function () {
       inputToken,
       amountToDeposit,
       outputToken,
-      amountToDeposit,
+      amountToDeposit
     );
 
     await monitorInstance.update();
