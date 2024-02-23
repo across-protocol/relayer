@@ -36,13 +36,13 @@ const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { MaxUint256, Zero } = ethers.constants;
 const { isAddress } = ethers.utils;
 
-function printDeposit(log: LogDescription, originChainId: number): void {
-  const { inputToken, originToken } = log.args;
+function printDeposit(log: LogDescription): void {
+  const { originChainId, originToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
   const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([originToken ?? inputToken], originChainId)[0],
+    tokenSymbol: resolveTokenSymbols([originToken], originChainId)[0],
     ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
   };
   console.log(
@@ -127,7 +127,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
   const recipient = (args.recipient as string) ?? depositor;
   const message = (args.message as string) ?? sdkConsts.EMPTY_MESSAGE;
-  const isV2 = String(args.v2) === "true";
+
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
     return false;
@@ -146,7 +146,6 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(fromChainId));
   signer = signer.connect(provider);
   const spokePool = (await utils.getSpokePoolContract(fromChainId)).connect(signer);
-  const mockSpokePool = (await utils.getSpokePoolContract(fromChainId, true)).connect(signer);
 
   const erc20 = new Contract(token.address, ERC20.abi, signer);
   const allowance = await erc20.allowance(depositor, spokePool.address);
@@ -162,40 +161,26 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     ? toBN(args.relayerFeePct)
     : await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
   const quoteTimestamp = await spokePool.getCurrentTime();
-  try {
-    const deposit = await (isV2 ? mockSpokePool.depositV2 : spokePool.deposit)(
-      recipient,
-      token.address,
-      amount,
-      toChainId,
-      relayerFeePct,
-      quoteTimestamp,
-      message,
-      maxCount
-    );
-    const { hash: transactionHash } = deposit;
-    console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}`);
-    const receipt = await deposit.wait();
 
-    receipt.logs
-      .filter((log) => log.address === spokePool.address)
-      .forEach((log) => printDeposit(spokePool.interface.parseLog(log), fromChainId));
-    return true;
-  } catch (err) {
-    console.error("Deposit failed:", err);
-    console.debug("Deposit Parameters: ", {
-      spokeAddress: spokePool.address,
-      recipient,
-      token: token.address,
-      amount,
-      toChainId,
-      relayerFeePct,
-      quoteTimestamp,
-      message,
-      maxCount,
-    });
-    return false;
-  }
+  const deposit = await spokePool.deposit(
+    recipient,
+    token.address,
+    amount,
+    toChainId,
+    relayerFeePct,
+    quoteTimestamp,
+    message,
+    maxCount
+  );
+  const { hash: transactionHash } = deposit;
+  console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}.`);
+  const receipt = await deposit.wait();
+
+  receipt.logs
+    .filter((log) => log.address === spokePool.address)
+    .forEach((log) => printDeposit(spokePool.interface.parseLog(log)));
+
+  return true;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -304,7 +289,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
   }
 
   deposits.forEach((deposit) => {
-    printDeposit(spokePool.interface.parseLog(deposit), chainId);
+    printDeposit(spokePool.interface.parseLog(deposit));
   });
 
   fills.forEach((fill) => {
@@ -319,8 +304,7 @@ function usage(badInput?: string): boolean {
   const walletOpts = "mnemonic|privateKey";
   const depositArgs =
     "--from <originChainId> --to <destinationChainId>" +
-    " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals] [--v2]" +
-    " --relayerFeePct <feePct>";
+    " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
   // const fillArgs = "--from <originChainId> --hash <depositHash>"; @todo: future
@@ -328,9 +312,9 @@ function usage(badInput?: string): boolean {
   const pad = "deposit".length;
   usageStr += `
     Usage:
-    \tyarn ts-node ./scripts/spokepool ${"deposit".padEnd(pad)} --wallet <${walletOpts}> ${depositArgs}
-    \tyarn ts-node ./scripts/spokepool ${"dump".padEnd(pad)} --wallet <${walletOpts}> ${dumpConfigArgs}
-    \tyarn ts-node ./scripts/spokepool ${"fetch".padEnd(pad)} --wallet <${walletOpts}> ${fetchArgs}
+    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
+    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
+    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 
@@ -345,11 +329,10 @@ async function run(argv: string[]): Promise<number> {
   const fetchDepositOpts = ["chainId", "depositId"];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
-    boolean: ["decimals", "v2"], // @dev tbd whether this is good UX or not...may need to change.
+    boolean: ["decimals"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "secret",
       decimals: false,
-      v2: false,
     },
     alias: {
       transactionHash: "txnHash",
@@ -394,7 +377,6 @@ if (require.main === module) {
     })
     .catch(async (error) => {
       console.error("Process exited with", error);
-      console.trace();
       process.exitCode = NODE_APP_ERR;
     });
 }
