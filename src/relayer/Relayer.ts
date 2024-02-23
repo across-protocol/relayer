@@ -605,7 +605,7 @@ export class Relayer {
     // is not profitable, then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
     // in the frontend-v2 repo which assumes that repayment is the destination chain. If this is profitable, then
-    // go ahead and use the preferred chain as repayment and log the lp fee loss. This is a temporary solution
+    // go ahead and use the preferred chain as repayment and log the lp fee delta. This is a temporary solution
     // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
     // we come up with a smarter profitability check.
     if (!profitable && preferredChainId !== destinationChainId && sdkUtils.isV3Deposit(deposit)) {
@@ -624,9 +624,10 @@ export class Relayer {
         hubPoolToken
       );
       if (fallbackProfitability.profitable) {
-        // This is the delta in the gross relayer fee. If negative, then the preferred chain would have had a higher
-        // gross relayer fee, and therefore represents a loss to the relayer.
-        const deltaRelayerFee = fallbackProfitability.grossRelayerFeePct.sub(relayerFeePct);
+        // This is the delta in the gross relayer fee. If negative, then the destination chain would have had a higher
+        // gross relayer fee, and therefore represents a virtual loss to the relayer. However, the relayer is
+        // maintaining its inventory allocation by sticking to its preferred repayment chain.
+        const deltaRelayerFee = relayerFeePct.sub(fallbackProfitability.grossRelayerFeePct);
         this.logger.info({
           at: "Relayer",
           message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chain ${preferredChainId} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on preferred chain as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
@@ -643,7 +644,7 @@ export class Relayer {
           destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
           // The delta will cut into the gross relayer fee. If negative, then taking the repayment on destination chain
           // would have been more profitable to the relayer because the lp fee would have been lower.
-          deltaLpFeePct: `${formatFeePct(realizedLpFeePct.sub(destinationChainLpFeePct))}%`,
+          deltaLpFeePct: `${formatFeePct(destinationChainLpFeePct.sub(realizedLpFeePct))}%`,
           // relayer fee is the gross relayer fee using the destination chain lp fee: inputAmount - outputAmount - lpFee.
           preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
           destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
