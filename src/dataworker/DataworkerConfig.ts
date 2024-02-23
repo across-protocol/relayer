@@ -123,10 +123,16 @@ export class DataworkerConfig extends CommonConfig {
         assert(Array.isArray(bundleRange), `forceProposalBundleRange[${index}] is not an array`);
         assert(bundleRange.length === 2, `forceProposalBundleRange[${index}] does not have length 2`);
         const [start, end] = bundleRange;
-        assert(typeof start === "number", `forceProposalBundleRange[${index}][start] is not a number`);
-        assert(typeof end === "number", `forceProposalBundleRange[${index}][end] is not a number`);
-        assert(start > 0, `forceProposalBundleRange[${index}][start] is not positive`);
-        assert(end > 0, `forceProposalBundleRange[${index}][end] is not positive`);
+        assert(
+          typeof start === "number" && Number.isInteger(start),
+          `forceProposalBundleRange[${index}][start] is not a number`
+        );
+        assert(
+          typeof end === "number" && Number.isInteger(end),
+          `forceProposalBundleRange[${index}][end] is not a number`
+        );
+        assert(start >= 0, `forceProposalBundleRange[${index}][start] is not non-negative`);
+        assert(end >= 0, `forceProposalBundleRange[${index}][end] is not non-negative`);
         assert(start <= end, `forceProposalBundleRange[${index}][start] >= forceProposalBundleRange[${index}][end]`);
       });
     } else {

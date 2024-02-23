@@ -60,7 +60,11 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   420: 0,
   80001: 0,
   84531: 0,
+  84532: 0,
   421613: 0,
+  421614: 0,
+  11155111: 0,
+  11155420: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
@@ -118,7 +122,11 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   420: 10000,
   80001: 10000,
   84531: 10000,
+  84532: 10000,
   421613: 10000,
+  421614: 10000,
+  11155111: 10000,
+  11155420: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
@@ -135,7 +143,11 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   420: 0,
   80001: 0,
   84531: 0,
+  84532: 0,
   421613: 0,
+  421614: 0,
+  11155111: 0,
+  11155420: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
@@ -170,14 +182,16 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   534352: 0,
   // Testnets:
   5: 0,
-  11155111: 0,
   280: 0,
   420: 0,
   80001: 0,
   84531: 0,
   84532: 0,
   421613: 0,
+  421614: 0,
   534351: 0,
+  11155111: 0,
+  11155420: 0,
 };
 
 // Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
