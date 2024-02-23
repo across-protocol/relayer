@@ -177,29 +177,6 @@ export class Monitor {
     }
   }
 
-  async checkUnknownRelayers(): Promise<void> {
-    const chainIds = this.monitorChains;
-    this.logger.debug({ at: "Monitor#checkUnknownRelayers", message: "Checking for unknown relayers", chainIds });
-    for (const chainId of chainIds) {
-      const fills = this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
-        this.spokePoolsBlocks[chainId].startingBlock,
-        this.spokePoolsBlocks[chainId].endingBlock
-      );
-      for (const fill of fills) {
-        // Skip notifications for known relay caller addresses, or slow fills.
-        const isSlowRelay = sdkUtils.isSlowFill(fill);
-        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) || isSlowRelay) {
-          continue;
-        }
-
-        const mrkdwn =
-          `An unknown relayer ${blockExplorerLink(fill.relayer, chainId)}` +
-          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${blockExplorerLink(fill.transactionHash, chainId)}`;
-        this.logger.warn({ at: "Monitor#checkUnknownRelayers", message: "Unknown relayer 🛺", mrkdwn });
-      }
-    }
-  }
-
   async reportUnfilledDeposits(): Promise<void> {
     const unfilledDeposits = await getUnfilledDeposits(
       this.clients.spokePoolClients,
