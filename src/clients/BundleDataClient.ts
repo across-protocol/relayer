@@ -734,7 +734,7 @@ export class BundleDataClient {
                   ...fill,
                   quoteTimestamp: matchedDeposit.quoteTimestamp,
                 });
-
+                v3RelayHashes[relayDataHash].deposit = matchedDeposit;
                 if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
                   fastFillsReplacingSlowFills.push(relayDataHash);
                 }
@@ -821,6 +821,7 @@ export class BundleDataClient {
               // sanity check it here by comparing the full relay hashes. If there's an error here then the
               // historical deposit query is not working as expected.
               assert(utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash);
+              v3RelayHashes[relayDataHash].deposit = matchedDeposit;
 
               // Note: we don't need to query for a historical fill at this point because a fill
               // cannot precede a slow fill request and if the fill came after the slow fill request,
