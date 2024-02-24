@@ -39,8 +39,6 @@ export const knownRevertReasons = new Set([
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
 export const unknownRevertReasons = [
   "missing revert data in call exception; Transaction reverted without a reason string",
-  // execution reverted is the error reason when a require statement with a custom error is thrown.
-  "execution reverted",
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
