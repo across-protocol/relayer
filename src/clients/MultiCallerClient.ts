@@ -38,7 +38,7 @@ export const knownRevertReasons = new Set([
 // to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
 export const unknownRevertReasons = [
-  "missing revert data in call exception; Transaction reverted without a reason string"
+  "missing revert data in call exception; Transaction reverted without a reason string",
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
