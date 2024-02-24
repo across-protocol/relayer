@@ -231,7 +231,6 @@ export class InventoryClient {
       // Consider any refunds from executed and to-be executed bundles.
       totalRefundsPerChain = await this.getBundleRefunds(l1Token);
     } catch (e) {
-      console.error(e)
       this.log("Failed to get bundle refunds, defaulting refund chain to hub chain");
       // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
       // Inventory management can always rebalance from Mainnet to other chains easily if needed.
