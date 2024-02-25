@@ -22,8 +22,7 @@ import lodash from "lodash";
 // Use this list of Smart Contract revert reasons to filter out transactions that revert in the
 // Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
-// For example, a NodeJS error might result in a reason string that includes more than just the contract r
-// evert reason.
+// For example, a NodeJS error might result in a reason string that includes more than just the contract revert reason.
 export const knownRevertReasons = new Set([
   "nonce has already been used",
   "replacement fee too low",
@@ -41,6 +40,7 @@ export const knownRevertReasons = new Set([
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
 export const unknownRevertReasons = [
   "missing revert data in call exception; Transaction reverted without a reason string",
+  "execution reverted",
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
