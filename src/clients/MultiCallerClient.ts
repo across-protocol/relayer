@@ -26,10 +26,12 @@ import lodash from "lodash";
 // evert reason.
 export const knownRevertReasons = new Set([
   "nonce has already been used",
+  "replacement fee too low",
   "relay filled",
   "Already claimed",
   "RelayFilled",
   "ClaimedMerkleLeaf",
+  "InvalidSlowFillRequest",
 ]);
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
@@ -39,8 +41,6 @@ export const knownRevertReasons = new Set([
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
 export const unknownRevertReasons = [
   "missing revert data in call exception; Transaction reverted without a reason string",
-  // execution reverted is the error reason when a require statement with a custom error is thrown.
-  "execution reverted",
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
@@ -451,11 +451,14 @@ export class MultiCallerClient {
   // string that includes more than just the contract revert reason.
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
     const { transaction: _txn, reason } = txn;
-    const knownReason = [...knownRevertReasons].some((knownReason) => reason.includes(knownReason));
+    const lowerCaseReason = reason.toLowerCase();
+    const knownReason = [...knownRevertReasons].some((knownReason) =>
+      lowerCaseReason.includes(knownReason.toLowerCase())
+    );
     return (
       knownReason ||
       (unknownRevertReasonMethodsToIgnore.has(_txn.method) &&
-        unknownRevertReasons.some((_reason) => reason.includes(_reason)))
+        unknownRevertReasons.some((_reason) => lowerCaseReason.includes(_reason.toLowerCase())))
     );
   }
 
