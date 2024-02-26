@@ -601,7 +601,7 @@ export class Relayer {
       profitable,
       nativeGasCost: gasLimit,
       tokenGasCost: gasCost,
-      grossRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee. 
+      grossRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
     } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
     // If preferred chain is different from the destination chain and the preferred chain
     // is not profitable, then check if the destination chain is profitable.
@@ -657,10 +657,11 @@ export class Relayer {
         // destination chain, therefore we will fill them using the original preferred chain to maintain
         // inventory assumptions and also quote the original relayer fee pct.
         return {
-          gasLimit,
           repaymentChainId: preferredChainId,
           realizedLpFeePct,
           relayerFeePct,
+          gasCost,
+          gasLimit,
         };
       } else {
         // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
