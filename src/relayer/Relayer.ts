@@ -773,7 +773,7 @@ export class Relayer {
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${symbol}` +
-          ` and output amount ${formattedOutputAmount} ${symbol}`+
+          ` and output amount ${formattedOutputAmount} ${symbol}` +
           ` from ${getNetworkName(deposit.originChainId)}` +
           ` to ${getNetworkName(deposit.destinationChainId)}` +
           ` with relayerFeePct ${formattedRelayerFeePct} %,` +
