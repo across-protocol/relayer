@@ -1,15 +1,11 @@
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, DepositWithBlock, FillStatus, L1Token, V2Deposit, V3Deposit } from "../interfaces";
+import { DepositWithBlock, FillStatus, L1Token, V3Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
-  bnOne,
   RelayerUnfilledDeposit,
   blockExplorerLink,
-  buildFillRelayProps,
-  buildFillRelayWithUpdatedFeeProps,
   createFormatFunction,
   formatFeePct,
   getCurrentTime,
@@ -26,7 +22,6 @@ import { RelayerConfig } from "./RelayerConfig";
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
-const zeroFillAmount = bnOne;
 
 export class Relayer {
   public readonly relayerAddress: string;
@@ -272,7 +267,7 @@ export class Relayer {
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    for (const { deposit, unfilledAmount, fillCount } of confirmedUnfilledDeposits) {
+    for (const { deposit, unfilledAmount } of confirmedUnfilledDeposits) {
       const { slowDepositors } = config;
 
       const { depositor, recipient, destinationChainId, originChainId } = deposit;
@@ -280,13 +275,13 @@ export class Relayer {
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (slowDepositors?.includes(depositor)) {
-        if (sendSlowRelays && fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
+        if (sendSlowRelays) {
           this.logger.debug({
             at: "Relayer",
             message: "Initiating slow fill for grey listed depositor",
             depositor,
           });
-          this.requestSlowFill(deposit, fillCount);
+          this.requestSlowFill(deposit);
         }
         // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
         // so we don't fast fill an already slow filled deposit from the slow fill-only list.
@@ -310,9 +305,11 @@ export class Relayer {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, gasCost);
         }
       } else if (selfRelay) {
-        const { realizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
-          ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: destinationChainId })
-          : deposit;
+        const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+          ...deposit,
+          paymentChainId: destinationChainId,
+        });
+
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
         // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
         // expensive fills on (for example) mainnet.
@@ -389,7 +386,7 @@ export class Relayer {
 
         // If we don't have enough balance to fill the deposit, consider requesting a slow fill.
         if (sendSlowRelays) {
-          this.requestSlowFill(deposit, fillCount);
+          this.requestSlowFill(deposit);
         }
       }
     }
@@ -402,26 +399,19 @@ export class Relayer {
     }
   }
 
-  requestSlowFill(deposit: Deposit, fillCount: number): void {
+  requestSlowFill(deposit: V3Deposit): void {
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
       this.logger.warn({
-        at: "Relayer::zeroFillDeposit",
+        at: "Relayer#requestSlowFill",
         message: "Suppressing slow fill request for deposit with message.",
         deposit,
       });
       return;
     }
 
-    const { hubPoolClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
-    if (sdkUtils.isV2Deposit(deposit)) {
-      if (fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
-        this.zeroFillDeposit(deposit);
-      }
-      return;
-    }
-
+    const { hubPoolClient, spokePoolClients, multiCallerClient } = this.clients;
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
@@ -454,7 +444,7 @@ export class Relayer {
   }
 
   fillRelay(
-    deposit: Deposit,
+    deposit: V3Deposit,
     fillAmount: BigNumber,
     repaymentChainId: number,
     realizedLpFeePct: BigNumber,
@@ -474,20 +464,6 @@ export class Relayer {
       return;
     }
 
-    sdkUtils.isV2Deposit(deposit)
-      ? this.fillV2Relay(deposit, fillAmount, repaymentChainId, gasLimit)
-      : this.fillV3Relay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
-
-    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
-    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, fillAmount);
-
-    // All fills routed through `fillRelay()` will complete the relay.
-    this.fullyFilledDeposits[fillKey] = true;
-  }
-
-  fillV3Relay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
-    assert(sdkUtils.isV3Deposit(deposit));
     const { spokePoolClients, multiCallerClient } = this.clients;
     this.logger.debug({ at: "Relayer", message: "Filling v3 deposit.", deposit, repaymentChainId, realizedLpFeePct });
 
@@ -511,49 +487,12 @@ export class Relayer {
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
-  }
 
-  fillV2Relay(deposit: V2Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
-    const zeroFill = fillAmount.eq(zeroFillAmount);
-    this.logger.debug({
-      at: "Relayer",
-      message: zeroFill ? "Zero filling" : "Filling deposit",
-      deposit,
-      repaymentChainId,
-    });
+    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
+    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.outputToken, fillAmount);
 
-    // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
-    // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
-    // original hash with the old fee hasn't been filled.
-    const [method, argBuilder, messageModifier] = isDepositSpedUp(deposit)
-      ? ["fillRelayWithUpdatedDeposit", buildFillRelayWithUpdatedFeeProps, "with modified parameters "]
-      : ["fillRelay", buildFillRelayProps, ""];
-
-    const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
-    // prettier-ignore
-    const message = fillAmount.eq(outputAmount)
-      ? `Filled deposit ${messageModifier}🚀`
-      : zeroFill
-        ? `Zero filled deposit ${messageModifier}🐌`
-        : `Partially filled deposit ${messageModifier}📫`;
-
-    this.clients.multiCallerClient.enqueueTransaction({
-      contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool,
-      chainId: deposit.destinationChainId,
-      method,
-      args: argBuilder(deposit, repaymentChainId, fillAmount),
-      gasLimit,
-      message,
-      mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount, deposit.realizedLpFeePct),
-    });
-  }
-
-  /**
-   * @description Initiate a zero-fill for a deposit.
-   * @param deposit Deposit object to zero-fill.
-   */
-  zeroFillDeposit(deposit: V2Deposit): void {
-    this.fillV2Relay(deposit, zeroFillAmount, deposit.destinationChainId);
+    // All fills routed through `fillRelay()` will complete the relay.
+    this.fullyFilledDeposits[fillKey] = true;
   }
 
   protected async resolveRepaymentChain(
@@ -586,9 +525,10 @@ export class Relayer {
       ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
       : destinationChainId;
 
-    const { realizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
-      ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: preferredChainId })
-      : deposit;
+    const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+      ...deposit,
+      paymentChainId: preferredChainId,
+    });
 
     const {
       profitable,
@@ -609,9 +549,11 @@ export class Relayer {
         message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId} profitability.`,
         deposit: { originChain, depositId, destinationChain, depositHash },
       });
-      const { realizedLpFeePct: destinationChainLpFeePct } = deposit
-        ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: destinationChainId })
-        : deposit;
+      const { realizedLpFeePct: destinationChainLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+        ...deposit,
+        paymentChainId: destinationChainId,
+      });
+
       const fallbackProfitability = await profitClient.isFillProfitable(
         deposit,
         fillAmount,
@@ -742,36 +684,46 @@ export class Relayer {
     const { hubPoolClient, profitClient } = this.clients;
     const unprofitableDeposits = profitClient.getUnprofitableFills();
 
+    const formatAmount = (chainId: number, token: string, amount: BigNumber): { symbol: string; amount: string } => {
+      const { symbol, decimals } = hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
+      return { symbol, amount: createFormatFunction(2, 4, false, decimals)(amount.toString()) };
+    };
+
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const { deposit, fillAmount, lpFeePct, relayerFeePct, gasCost } = unprofitableDeposits[chainId][depositId];
+        const { deposit, lpFeePct, relayerFeePct, gasCost } = unprofitableDeposits[chainId][depositId];
 
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
         }
 
-        const { symbol, decimals } = hubPoolClient.getTokenInfoForDeposit(deposit);
-        const formatFunction = createFormatFunction(2, 4, false, decimals);
-        const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, deposit.originChainId);
+        const { originChainId, destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = deposit;
+        const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, originChainId);
 
-        const formattedInputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
-        const formattedOutputAmount = formatFunction(fillAmount.toString());
-
-        const { symbol: gasTokenSymbol, decimals: gasTokenDecimals } = profitClient.resolveGasToken(
-          deposit.destinationChainId
+        const { symbol: inputSymbol, amount: formattedInputAmount } = formatAmount(
+          originChainId,
+          inputToken,
+          inputAmount
         );
-        const formattedGasCost = createFormatFunction(2, 10, false, gasTokenDecimals)(gasCost.toString());
+        const { symbol: outputSymbol, amount: formattedOutputAmount } = formatAmount(
+          destinationChainId,
+          outputToken,
+          outputAmount
+        );
 
+        const { symbol: gasTokenSymbol, decimals: gasTokenDecimals } = profitClient.resolveGasToken(destinationChainId);
+        const formattedGasCost = createFormatFunction(2, 10, false, gasTokenDecimals)(gasCost.toString());
         const formattedRelayerFeePct = formatFeePct(relayerFeePct);
         const formattedLpFeePct = formatFeePct(lpFeePct);
 
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
-          ` of input amount ${formattedInputAmount} ${symbol} and output amount ${formattedOutputAmount} ${symbol}` +
-          ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
+          ` of input amount ${formattedInputAmount} ${inputSymbol}` +
+          ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
+          ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
           ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%,` +
           ` and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`;
       });
@@ -787,7 +739,7 @@ export class Relayer {
   }
 
   private constructRelayFilledMrkdwn(
-    deposit: Deposit,
+    deposit: V3Deposit,
     repaymentChainId: number,
     fillAmount: BigNumber,
     realizedLpFeePct: BigNumber
@@ -797,57 +749,37 @@ export class Relayer {
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
-      if (sdkUtils.isV2Deposit(deposit)) {
-        mrkdwn += ` Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`;
-      } else {
-        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(
-          deposit.destinationChainId,
-          deposit.outputToken
-        );
-        const formatter = createFormatFunction(2, 4, false, decimals);
-        // @todo Would be nice to compute the updated relayerFeePct as well.
-        mrkdwn += ` Reduced output amount: ${formatter(deposit.updatedOutputAmount.toString())} ${symbol}.`;
-      }
+      const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(
+        deposit.destinationChainId,
+        deposit.outputToken
+      );
+      const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
+      mrkdwn += ` Reduced output amount: ${updatedOutputAmount} ${symbol}.`;
     }
 
     return mrkdwn;
   }
 
-  private constructBaseFillMarkdown(deposit: Deposit, fillAmount: BigNumber, _realizedLpFeePct: BigNumber): string {
+  private constructBaseFillMarkdown(deposit: V3Deposit, fillAmount: BigNumber, _realizedLpFeePct: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);
-    const inputAmount = sdkUtils.getDepositInputAmount(deposit);
-    const _inputAmount = createFormatFunction(2, 4, false, decimals)(inputAmount.toString());
+    const inputAmount = createFormatFunction(2, 4, false, decimals)(deposit.inputAmount.toString());
 
-    let msg = `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${_inputAmount} ${symbol}`;
-    if (sdkUtils.isV2Deposit(deposit)) {
-      const _fillAmount = createFormatFunction(2, 4, false, decimals)(fillAmount.toString());
-      const _relayerFeePct = formatFeePct(deposit.relayerFeePct);
-      const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
-      msg +=
-        ` with depositor ${depositor}. Fill amount of ${_fillAmount} ${symbol}` +
-        ` with relayerFee ${_relayerFeePct}% & realizedLpFee ${realizedLpFeePct}%.`;
-
-      if (fillAmount.eq(zeroFillAmount)) {
-        msg += " Has been zero filled due to a token shortfall! This will initiate a slow relay for this deposit.";
-      }
-    } else {
-      const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
-      const _totalFeePct = deposit.inputAmount
-        .sub(deposit.outputAmount)
-        .mul(fixedPointAdjustment)
-        .div(deposit.inputAmount);
-      const totalFeePct = formatFeePct(_totalFeePct);
-      const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
-        this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
-      const outputAmount = deposit.outputAmount;
-      const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(outputAmount.toString());
-      msg +=
-        ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
-        ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
-    }
+    let msg = `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
+    const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
+    const _totalFeePct = deposit.inputAmount
+      .sub(deposit.outputAmount)
+      .mul(fixedPointAdjustment)
+      .div(deposit.inputAmount);
+    const totalFeePct = formatFeePct(_totalFeePct);
+    const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
+      this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+    const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
+    msg +=
+      ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
+      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
 
     return msg;
   }
