@@ -9,7 +9,6 @@ export interface BotModes {
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
-  unknownRelayerCallersEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -50,7 +49,6 @@ export class MonitorConfig extends CommonConfig {
       MONITOR_REPORT_ENABLED,
       UTILIZATION_ENABLED,
       UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED,
-      UNKNOWN_RELAYER_CALLERS_ENABLED,
       UTILIZATION_THRESHOLD,
       WHITELISTED_DATA_WORKERS,
       WHITELISTED_RELAYERS,
@@ -68,7 +66,6 @@ export class MonitorConfig extends CommonConfig {
       reportEnabled: MONITOR_REPORT_ENABLED === "true",
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
-      unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
     };
 
