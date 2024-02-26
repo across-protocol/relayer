@@ -752,13 +752,8 @@ export class Relayer {
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const {
-          deposit,
-          fillAmount,
-          lpFeePct: _lpFeePct,
-          relayerFeePct: _relayerFeePct,
-          gasCost: _gasCost,
-        } = unprofitableDeposits[chainId][depositId];
+        const { deposit, fillAmount, lpFeePct, relayerFeePct, gasCost } = unprofitableDeposits[chainId][depositId];
+
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
@@ -766,19 +761,24 @@ export class Relayer {
 
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
-        const gasFormatFunction = createFormatFunction(2, 10, false, 18);
         const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, deposit.originChainId);
 
-        const inputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
+        const formattedInputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
+        const formattedOutputAmount = formatFunction(fillAmount.toString());
 
-        const gasCost = gasFormatFunction(_gasCost.toString());
-        const relayerFeePct = formatFeePct(_relayerFeePct);
-        const lpFeePct = formatFeePct(_lpFeePct);
+        const formattedGasCost = createFormatFunction(2, 10, false, 18)(gasCost.toString());
+        const formattedRelayerFeePct = formatFeePct(relayerFeePct);
+        const formattedLpFeePct = formatFeePct(lpFeePct);
+
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${inputAmount} ${symbol}` +
-          ` with a relayerFeePct ${relayerFeePct}%, lpFeePct ${lpFeePct}, and gas cost ${gasCost}` +
-          ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
-          ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
+          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
+          ` of input amount ${formattedInputAmount} ${symbol}` +
+          ` and output amount ${formattedOutputAmount} ${symbol}`+
+          ` from ${getNetworkName(deposit.originChainId)}` +
+          ` to ${getNetworkName(deposit.destinationChainId)}` +
+          ` with relayerFeePct ${formattedRelayerFeePct} %,` +
+          ` lpFeePct ${formattedLpFeePct} %,` +
+          ` and gas cost ${formattedGasCost} is unprofitable!\n`;
       });
 
       if (depositMrkdwn) {
