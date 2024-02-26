@@ -33,12 +33,6 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         logger.debug({ at: "Monitor#index", message: "UnknownRootBundleCallers monitor disabled" });
       }
 
-      if (config.botModes.unknownRelayerCallersEnabled) {
-        await acrossMonitor.checkUnknownRelayers();
-      } else {
-        logger.debug({ at: "Monitor#index", message: "UnknownRelayerCallers monitor disabled" });
-      }
-
       if (config.botModes.stuckRebalancesEnabled) {
         await acrossMonitor.checkStuckRebalances();
       } else {

@@ -68,6 +68,7 @@ export type V2FillProfit = FillProfitCommon & {
 };
 
 export type V3FillProfit = FillProfitCommon & {
+  totalFeePct: BigNumber; // Total fee as a portion of the fill amount.
   inputTokenPriceUsd: BigNumber;
   inputAmountUsd: BigNumber;
   outputTokenPriceUsd: BigNumber;
@@ -412,6 +413,8 @@ export class ProfitClient {
     const scaledOutputAmount = effectiveOutputAmount.mul(outputTokenScalar);
     const outputAmountUsd = scaledOutputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
 
+    const totalFeePct = inputAmountUsd.sub(outputAmountUsd).mul(fixedPoint).div(inputAmountUsd);
+
     // Normalise token amounts to USD terms.
     const scaledLpFeeAmount = scaledInputAmount.mul(lpFeePct).div(fixedPoint);
     const lpFeeUsd = scaledLpFeeAmount.mul(inputTokenPriceUsd).div(fixedPoint);
@@ -442,6 +445,7 @@ export class ProfitClient {
       netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
+      totalFeePct,
       inputTokenPriceUsd,
       inputAmountUsd,
       outputTokenPriceUsd,
@@ -524,6 +528,7 @@ export class ProfitClient {
           inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
           outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
           outputTokenAmountUsd: formatEther(fill.outputAmountUsd),
+          totalFeePct: `${formatFeePct(fill.totalFeePct)}%`,
           lpFeePct: `${formatFeePct(lpFeePct)}%`,
           grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
           nativeGasCost: fill.nativeGasCost,

@@ -4,7 +4,6 @@ import { spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
-  FillsToRefund,
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
@@ -35,6 +34,7 @@ import {
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
+import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 export const REBALANCE_FINALIZE_GRACE_PERIOD = 60 * 60 * 4; // 4 hours.
 export const ALL_CHAINS_NAME = "All chains";
@@ -174,29 +174,6 @@ export class Monitor {
     }
     for (const event of disputedBundles) {
       this.notifyIfUnknownCaller(event.disputer, BundleAction.DISPUTED, event.transactionHash);
-    }
-  }
-
-  async checkUnknownRelayers(): Promise<void> {
-    const chainIds = this.monitorChains;
-    this.logger.debug({ at: "Monitor#checkUnknownRelayers", message: "Checking for unknown relayers", chainIds });
-    for (const chainId of chainIds) {
-      const fills = this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
-        this.spokePoolsBlocks[chainId].startingBlock,
-        this.spokePoolsBlocks[chainId].endingBlock
-      );
-      for (const fill of fills) {
-        // Skip notifications for known relay caller addresses, or slow fills.
-        const isSlowRelay = sdkUtils.isSlowFill(fill);
-        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) || isSlowRelay) {
-          continue;
-        }
-
-        const mrkdwn =
-          `An unknown relayer ${blockExplorerLink(fill.relayer, chainId)}` +
-          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${blockExplorerLink(fill.transactionHash, chainId)}`;
-        this.logger.warn({ at: "Monitor#checkUnknownRelayers", message: "Unknown relayer 🛺", mrkdwn });
-      }
     }
   }
 
@@ -582,7 +559,7 @@ export class Monitor {
   }
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
-    const validatedBundleRefunds: FillsToRefund[] =
+    const validatedBundleRefunds: CombinedRefunds[] =
       await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(this.monitorConfig.bundleRefundLookback);
     const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
 
@@ -794,7 +771,7 @@ export class Monitor {
   }
 
   private updateRelayerRefunds(
-    fillsToRefundPerChain: FillsToRefund,
+    fillsToRefundPerChain: CombinedRefunds,
     relayerBalanceTable: RelayerBalanceTable,
     relayer: string,
     balanceType: BalanceType
@@ -809,11 +786,11 @@ export class Monitor {
       for (const tokenAddress of Object.keys(fillsToRefund)) {
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
-        if (fillsToRefund[tokenAddress].refunds === undefined) {
+        if (fillsToRefund[tokenAddress] === undefined) {
           continue;
         }
 
-        const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
+        const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(
