@@ -224,12 +224,14 @@ export class Relayer {
     const unfilledDeposits = await this._getUnfilledDeposits();
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits
-      .reduce((agg, { deposit }) => {
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce(
+      (agg, { deposit }) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
         agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
         return agg;
-      }, {});
+      },
+      {}
+    );
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(config.minDepositConfirmations)

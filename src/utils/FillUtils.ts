@@ -301,7 +301,8 @@ export async function getUnfilledDeposits(
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
       const destinationClient = spokePoolClients[destinationChain];
-      const deposits = originClient.getDepositsForDestinationChain(destinationChain)
+      const deposits = originClient
+        .getDepositsForDestinationChain(destinationChain)
         .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>);
 
       const unfilledDepositsForDestinationChain = deposits
@@ -312,7 +313,9 @@ export async function getUnfilledDeposits(
         });
 
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
-      unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(bnZero)));
+      unfilledDeposits.push(
+        ...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(bnZero))
+      );
     }
   });
 
