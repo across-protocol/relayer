@@ -2,7 +2,6 @@ import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import {
-  DepositWithBlock,
   Fill,
   FillsToRefund,
   FillWithBlock,
