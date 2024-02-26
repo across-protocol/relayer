@@ -2,10 +2,11 @@ import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { V2FillWithBlock, V3FillWithBlock } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnOne } from "../src/utils";
+import { bnZero, bnOne } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
+  amountToDeposit,
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
@@ -20,10 +21,12 @@ import {
   BigNumber,
   Contract,
   SignerWithAddress,
+  buildDeposit,
   createSpyLogger,
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
+  depositV2,
   depositV3,
   enableRoutesOnHubPool,
   ethers,
@@ -31,9 +34,11 @@ import {
   getLastBlockTime,
   getV3RelayHash,
   lastSpyLogIncludes,
+  modifyRelayHelper,
   randomAddress,
   setupTokensForWallet,
   sinon,
+  toBNWei,
   updateDeposit,
   winston,
 } from "./utils";
