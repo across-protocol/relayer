@@ -776,7 +776,7 @@ export class Relayer {
         const lpFeePct = formatFeePct(_lpFeePct);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${inputAmount} ${symbol}` +
-          ` with a relayerFeePct ${relayerFeePct}%, lpFeePct ${lpFeePct}, and gas cost ${gasFormatFunction(gasCost)}` +
+          ` with a relayerFeePct ${relayerFeePct}%, lpFeePct ${lpFeePct}, and gas cost ${gasCost}` +
           ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
       });
