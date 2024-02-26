@@ -21,7 +21,7 @@ import {
   V3FillWithBlock,
   V3SlowFillLeaf,
 } from "../../src/interfaces";
-import { buildRelayerRefundTree, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
+import { buildRelayerRefundTree, isDefined, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -397,6 +397,37 @@ export async function depositV3(
     transactionIndex,
     logIndex,
   };
+}
+
+export async function updateDeposit(
+  spokePool: Contract,
+  deposit: V3Deposit,
+  depositor: SignerWithAddress
+): Promise<string> {
+  const { updatedRecipient, updatedOutputAmount, updatedMessage } = deposit;
+  assert.ok(isDefined(updatedRecipient));
+  assert.ok(isDefined(updatedOutputAmount));
+  assert.ok(isDefined(updatedMessage));
+  const signature = await getUpdatedV3DepositSignature(
+    depositor,
+    deposit.depositId,
+    deposit.originChainId,
+    updatedOutputAmount!,
+    updatedRecipient!,
+    updatedMessage!
+  );
+
+  await spokePool
+    .connect(depositor)
+    .speedUpV3Deposit(
+      depositor.address,
+      deposit.depositId,
+      updatedOutputAmount,
+      updatedRecipient,
+      updatedMessage,
+      signature
+    );
+  return signature;
 }
 
 export async function fillV3Relay(
