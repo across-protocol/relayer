@@ -10,8 +10,8 @@
     "node": ">=16.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants-v2": "1.0.11",
-    "@across-protocol/contracts-v2": "2.5.0-beta.7",
+    "@across-protocol/constants-v2": "1.0.11-beta.espresso.1",
+    "@across-protocol/contracts-v2": "2.5.0-beta.espresso.1",
     "@across-protocol/sdk-v2": "0.22.6",
     "@arbitrum/sdk": "^3.1.3",
     "@defi-wonderland/smock": "^2.3.5",
