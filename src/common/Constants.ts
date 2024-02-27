@@ -119,6 +119,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   80001: 10000,
   84531: 10000,
   421613: 10000,
+  11155111: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
@@ -136,6 +137,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   80001: 0,
   84531: 0,
   421613: 0,
+  11155111: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
