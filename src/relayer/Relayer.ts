@@ -746,7 +746,8 @@ export class Relayer {
   }
 
   private handleUnprofitableFill() {
-    const unprofitableDeposits = this.clients.profitClient.getUnprofitableFills();
+    const { hubPoolClient, profitClient } = this.clients;
+    const unprofitableDeposits = profitClient.getUnprofitableFills();
 
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
@@ -759,26 +760,27 @@ export class Relayer {
           return;
         }
 
-        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+        const { symbol, decimals } = hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, deposit.originChainId);
 
         const formattedInputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
         const formattedOutputAmount = formatFunction(fillAmount.toString());
 
-        const formattedGasCost = createFormatFunction(2, 10, false, 18)(gasCost.toString());
+        const { symbol: gasTokenSymbol, decimals: gasTokenDecimals } = profitClient.resolveGasToken(
+          deposit.destinationChainId
+        );
+        const formattedGasCost = createFormatFunction(2, 10, false, gasTokenDecimals)(gasCost.toString());
+
         const formattedRelayerFeePct = formatFeePct(relayerFeePct);
         const formattedLpFeePct = formatFeePct(lpFeePct);
 
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
-          ` of input amount ${formattedInputAmount} ${symbol}` +
-          ` and output amount ${formattedOutputAmount} ${symbol}` +
-          ` from ${getNetworkName(deposit.originChainId)}` +
-          ` to ${getNetworkName(deposit.destinationChainId)}` +
-          ` with relayerFeePct ${formattedRelayerFeePct} %,` +
-          ` lpFeePct ${formattedLpFeePct} %,` +
-          ` and gas cost ${formattedGasCost} is unprofitable!\n`;
+          ` of input amount ${formattedInputAmount} ${symbol} and output amount ${formattedOutputAmount} ${symbol}` +
+          ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
+          ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%,` +
+          ` and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`;
       });
 
       if (depositMrkdwn) {
