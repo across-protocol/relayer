@@ -20,6 +20,7 @@ export type ERC20 = {
 const fallbackProviders: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "https://eth.llamarpc.com",
   [CHAIN_IDs.GOERLI]: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
+  [CHAIN_IDs.SEPOLIA]: "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
 };
 
 async function askQuestion(query: string) {
@@ -105,7 +106,7 @@ export function resolveHubChainId(spokeChainId: number): number {
   }
 
   assert(sdkUtils.chainIsTestnet(spokeChainId), `Unsupported testnet SpokePool chain ID: ${spokeChainId}`);
-  return CHAIN_IDs.GOERLI;
+  return CHAIN_IDs.SEPOLIA;
 }
 
 /**
