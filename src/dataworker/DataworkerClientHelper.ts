@@ -81,12 +81,13 @@ export async function constructSpokePoolClientsForFastDataworker(
     endBlocks
   );
   await updateSpokePoolClients(spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
     "FilledRelay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
+    "V3FundsDeposited",
+    "RequestedV3SlowFill",
+    "FilledV3Relay",
   ]);
   return spokePoolClients;
 }

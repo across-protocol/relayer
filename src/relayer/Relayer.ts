@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { Deposit, DepositWithBlock, L1Token, V2Deposit } from "../interfaces";
+import { Deposit, DepositWithBlock, FillStatus, L1Token, V2Deposit, V3Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -18,25 +18,31 @@ import {
   isDefined,
   toBNWei,
   winston,
+  fixedPointAdjustment,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 
-const { bnUint256Max, isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
+const { getAddress } = ethersUtils;
+const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const zeroFillAmount = bnOne;
 
 export class Relayer {
+  public readonly relayerAddress: string;
+
   // Track by originChainId since depositId is issued on the origin chain.
   // Key is in the form of "chainId-depositId".
   private fullyFilledDeposits: { [key: string]: boolean } = {};
 
   constructor(
-    readonly relayerAddress: string,
+    relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
-  ) {}
+  ) {
+    this.relayerAddress = getAddress(relayerAddress);
+  }
 
   /**
    * @description Retrieve the complete array of unfilled deposits and filter out deposits we can't or choose
@@ -50,7 +56,7 @@ export class Relayer {
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
 
     const maxVersion = configStoreClient.configStoreVersion;
-    return unfilledDeposits.filter(({ deposit, version, invalidFills, unfilledAmount }) => {
+    return sdkUtils.filterAsync(unfilledDeposits, async ({ deposit, version, invalidFills, unfilledAmount }) => {
       const { quoteTimestamp, depositId, depositor, recipient, originChainId, destinationChainId } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
 
@@ -62,19 +68,6 @@ export class Relayer {
           latestVersionSupported: maxVersion,
           latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
           deposit,
-        });
-        return false;
-      }
-
-      if (
-        ignoredAddresses?.includes(ethersUtils.getAddress(depositor)) ||
-        ignoredAddresses?.includes(ethersUtils.getAddress(recipient))
-      ) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Ignoring deposit",
-          depositor,
-          recipient,
         });
         return false;
       }
@@ -93,6 +86,67 @@ export class Relayer {
       // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
       if (quoteTimestamp > hubPoolClient.currentTime) {
         return false;
+      }
+
+      if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Ignoring deposit",
+          depositor,
+          recipient,
+        });
+        return false;
+      }
+
+      // Skip any L1 tokens that are not specified in the config.
+      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+      const inputToken = sdkUtils.getDepositInputToken(deposit);
+      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+        this.logger.debug({
+          at: "Relayer::getUnfilledDeposits",
+          message: "Skipping deposit for unwhitelisted token",
+          deposit,
+          l1Token,
+        });
+        return false;
+      }
+
+      // Filters specific to v3.
+      if (sdkUtils.isV3Deposit(deposit)) {
+        // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
+        const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
+        if (deposit.fillDeadline <= currentTime) {
+          return false;
+        }
+
+        if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
+          return false;
+        }
+
+        // Filter out deposits that require in-protocol swaps.
+        // Resolve L1 token and perform additional checks
+        // @todo: This is only relevant if inputToken and outputToken are equivalent.
+        const outputToken = sdkUtils.getDepositOutputToken(deposit);
+        if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+          this.logger.warn({
+            at: "Relayer::getUnfilledDeposits",
+            message: "Skipping deposit including in-protocol token swap.",
+            deposit,
+          });
+          return false;
+        }
+
+        const destSpokePool = this.clients.spokePoolClients[destinationChainId].spokePool;
+        const fillStatus = await sdkUtils.relayFillStatus(destSpokePool, deposit, "latest", destinationChainId);
+        if (fillStatus === FillStatus.Filled) {
+          this.logger.debug({
+            at: "Relayer::getUnfilledDeposits",
+            message: "Skipping deposit that was already filled.",
+            deposit,
+          });
+          return false;
+        }
       }
 
       // Skip deposit with message if sending fills with messages is not supported.
@@ -115,35 +169,6 @@ export class Relayer {
           deposit,
           invalidFills,
           destinationChain,
-        });
-        return false;
-      }
-
-      // Resolve L1 token and perform additional checks
-      // @todo: This is only relevant if inputToken and outputToken are equivalent.
-      const inputToken = sdkUtils.getDepositInputToken(deposit);
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
-
-      // Skip any L1 tokens that are not specified in the config.
-      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit for unwhitelisted token",
-          deposit,
-          l1Token,
-        });
-        return false;
-      }
-
-      // Filter out deposits that require in-protocol swaps.
-      const outputToken = sdkUtils.getDepositOutputToken(deposit);
-      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit including in-protocol token swap.",
-          deposit,
-          l1Token,
         });
         return false;
       }
@@ -232,7 +257,7 @@ export class Relayer {
       })
     );
     this.logger.debug({
-      at: "Relayer",
+      at: "Relayer::checkForUnfilledDepositsAndFill",
       message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
@@ -254,7 +279,7 @@ export class Relayer {
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    for (const { deposit, version, unfilledAmount, fillCount } of confirmedUnfilledDeposits) {
+    for (const { deposit, unfilledAmount, fillCount } of confirmedUnfilledDeposits) {
       const { slowDepositors } = config;
 
       const { depositor, recipient, destinationChainId, originChainId } = deposit;
@@ -278,24 +303,25 @@ export class Relayer {
       const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
       const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
-        assert(isDefined(deposit.realizedLpFeePct)); // Sanity check.
-        const { repaymentChainId, gasLimit: gasCost } = await this.resolveRepaymentChain(
-          version,
-          deposit,
-          unfilledAmount,
-          l1Token
-        );
+        const {
+          repaymentChainId,
+          gasLimit: gasCost,
+          realizedLpFeePct,
+        } = await this.resolveRepaymentChain(deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
           const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
-          this.fillRelay(deposit, unfilledAmount, repaymentChainId, gasLimit);
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId, realizedLpFeePct, gasLimit);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
         }
       } else if (selfRelay) {
+        const { realizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
+          ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: destinationChainId })
+          : deposit;
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
         // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
         // expensive fills on (for example) mainnet.
-        this.fillRelay(deposit, unfilledAmount, destinationChainId);
+        this.fillRelay(deposit, unfilledAmount, destinationChainId, realizedLpFeePct);
       } else {
         // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
         // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
@@ -432,20 +458,67 @@ export class Relayer {
     });
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
+  fillRelay(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    repaymentChainId: number,
+    realizedLpFeePct: BigNumber,
+    gasLimit?: BigNumber
+  ): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
-    // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
+    // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried.
     const fillKey = `${deposit.originChainId}-${deposit.depositId}`;
     if (this.fullyFilledDeposits[fillKey]) {
       this.logger.debug({
         at: "Relayer",
-        message: "Skipping deposit already filled by this relayer",
+        message: "Skipping deposit already filled by this relayer.",
         originChainId: deposit.originChainId,
         depositId: deposit.depositId,
       });
       return;
     }
+
+    sdkUtils.isV2Deposit(deposit)
+      ? this.fillV2Relay(deposit, fillAmount, repaymentChainId, gasLimit)
+      : this.fillV3Relay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+
+    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
+    const outputToken = sdkUtils.getDepositOutputToken(deposit);
+    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, fillAmount);
+
+    // All fills routed through `fillRelay()` will complete the relay.
+    this.fullyFilledDeposits[fillKey] = true;
+  }
+
+  fillV3Relay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
+    assert(sdkUtils.isV3Deposit(deposit));
+    const { spokePoolClients, multiCallerClient } = this.clients;
+    this.logger.debug({ at: "Relayer", message: "Filling v3 deposit.", deposit, repaymentChainId, realizedLpFeePct });
+
+    const [method, messageModifier, args] = !isDepositSpedUp(deposit)
+      ? ["fillV3Relay", "", [deposit, repaymentChainId]]
+      : [
+          "fillV3RelayWithUpdatedDeposit",
+          " with updated parameters ",
+          [
+            deposit,
+            repaymentChainId,
+            deposit.updatedOutputAmount,
+            deposit.updatedRecipient,
+            deposit.updatedMessage,
+            deposit.speedUpSignature,
+          ],
+        ];
+
+    const message = `Filled v3 deposit ${messageModifier}🚀`;
+    const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, deposit.outputAmount, realizedLpFeePct);
+    const contract = spokePoolClients[deposit.destinationChainId].spokePool;
+    const chainId = deposit.destinationChainId;
+    multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+  }
+
+  fillV2Relay(deposit: V2Deposit, fillAmount: BigNumber, repaymentChainId: number, gasLimit?: BigNumber): void {
     const zeroFill = fillAmount.eq(zeroFillAmount);
     this.logger.debug({
       at: "Relayer",
@@ -476,16 +549,8 @@ export class Relayer {
       args: argBuilder(deposit, repaymentChainId, fillAmount),
       gasLimit,
       message,
-      mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount),
+      mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount, deposit.realizedLpFeePct),
     });
-
-    // @dev: Only zero fills _or_ fills that complete the transfer are attempted, so zeroFill indicates whether the
-    // deposit was filled to completion. @todo: Revisit in the future when we implement partial fills.
-    this.fullyFilledDeposits[fillKey] = !zeroFill;
-
-    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
-    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, fillAmount);
   }
 
   /**
@@ -493,24 +558,27 @@ export class Relayer {
    * @param deposit Deposit object to zero-fill.
    */
   zeroFillDeposit(deposit: V2Deposit): void {
-    this.fillRelay(deposit, zeroFillAmount, deposit.destinationChainId);
+    this.fillV2Relay(deposit, zeroFillAmount, deposit.destinationChainId);
   }
 
   protected async resolveRepaymentChain(
-    version: number,
     deposit: DepositWithBlock,
     fillAmount: BigNumber,
     hubPoolToken: L1Token
-  ): Promise<{ repaymentChainId?: number; gasLimit: BigNumber }> {
-    assert(sdkUtils.isV2Deposit(deposit)); // temporary
-
-    const { inventoryClient, profitClient } = this.clients;
+  ): Promise<{
+    gasLimit: BigNumber;
+    repaymentChainId?: number;
+    realizedLpFeePct: BigNumber;
+    relayerFeePct: BigNumber;
+  }> {
+    const { hubPoolClient, inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
     const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
+    const inputAmount = sdkUtils.getDepositInputAmount(deposit);
+    const originChain = getNetworkName(originChainId);
+    const destinationChain = getNetworkName(destinationChainId);
 
     if (!fillAmount.eq(outputAmount)) {
-      const originChain = getNetworkName(originChainId);
-      const destinationChain = getNetworkName(destinationChainId);
       this.logger.debug({
         at: "Relayer",
         message: `Skipping repayment chain determination for partial fill on ${destinationChain}`,
@@ -522,21 +590,120 @@ export class Relayer {
       ? await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address)
       : destinationChainId;
 
-    if (sdkUtils.isV3Deposit(deposit)) {
-      return { repaymentChainId: undefined, gasLimit: bnUint256Max };
+    const { realizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
+      ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: preferredChainId })
+      : deposit;
+
+    const {
+      profitable,
+      nativeGasCost: gasLimit,
+      // gross relayer fee is equal to total fee minus the lp fee.
+      grossRelayerFeePct: relayerFeePct,
+    } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
+
+    // If preferred chain is different from the destination chain and the preferred chain
+    // is not profitable, then check if the destination chain is profitable.
+    // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
+    // in the frontend-v2 repo which assumes that repayment is the destination chain. If this is profitable, then
+    // go ahead and use the preferred chain as repayment and log the lp fee delta. This is a temporary solution
+    // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
+    // we come up with a smarter profitability check.
+    if (!profitable && preferredChainId !== destinationChainId && sdkUtils.isV3Deposit(deposit)) {
+      this.logger.debug({
+        at: "Relayer",
+        message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId} profitability.`,
+        deposit: { originChain, depositId, destinationChain, depositHash },
+      });
+      const { realizedLpFeePct: destinationChainLpFeePct } = deposit
+        ? await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: destinationChainId })
+        : deposit;
+      const fallbackProfitability = await profitClient.isFillProfitable(
+        deposit,
+        fillAmount,
+        destinationChainLpFeePct,
+        hubPoolToken
+      );
+      if (fallbackProfitability.profitable) {
+        // This is the delta in the gross relayer fee. If negative, then the destination chain would have had a higher
+        // gross relayer fee, and therefore represents a virtual loss to the relayer. However, the relayer is
+        // maintaining its inventory allocation by sticking to its preferred repayment chain.
+        const deltaRelayerFee = relayerFeePct.sub(fallbackProfitability.grossRelayerFeePct);
+        this.logger.info({
+          at: "Relayer",
+          message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chain ${preferredChainId} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on preferred chain as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
+            deltaRelayerFee
+          )}%`,
+          deposit: {
+            originChain,
+            destinationChain,
+            token: hubPoolToken.symbol,
+            txnHash: blockExplorerLink(depositHash, originChainId),
+          },
+          preferredChain: getNetworkName(preferredChainId),
+          preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+          destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
+          // The delta will cut into the gross relayer fee. If negative, then taking the repayment on destination chain
+          // would have been more profitable to the relayer because the lp fee would have been lower.
+          deltaLpFeePct: `${formatFeePct(destinationChainLpFeePct.sub(realizedLpFeePct))}%`,
+          // relayer fee is the gross relayer fee using the destination chain lp fee: inputAmount - outputAmount - lpFee.
+          preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
+          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
+          deltaRelayerFee: `${formatFeePct(deltaRelayerFee)}%`,
+        });
+
+        // We've checked that the user set the output amount honestly and assumed that the payment would be on
+        // destination chain, therefore we will fill them using the original preferred chain to maintain
+        // inventory assumptions and also quote the original relayer fee pct.
+        return {
+          gasLimit,
+          repaymentChainId: preferredChainId,
+          realizedLpFeePct,
+          relayerFeePct,
+        };
+      } else {
+        // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
+        this.logger.debug({
+          at: "Relayer",
+          message: `Taking repayment on destination chain ${destinationChainId} would also not be profitable.`,
+          deposit: {
+            originChain,
+            depositId,
+            destinationChain,
+            depositHash,
+            token: hubPoolToken.symbol,
+            inputAmount,
+            outputAmount,
+          },
+          preferredChain: getNetworkName(preferredChainId),
+          preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+          destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
+          preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
+          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
+        });
+      }
     }
 
-    const refundFee = bnZero;
-    const { profitable, nativeGasCost: gasLimit } = await profitClient.isFillProfitable(
-      deposit,
-      fillAmount,
-      refundFee,
-      hubPoolToken
-    );
+    this.logger.debug({
+      at: "Relayer",
+      message: `Preferred chain ${preferredChainId} is${profitable ? "" : " not"} profitable.`,
+      deposit: {
+        originChain,
+        depositId,
+        destinationChain,
+        depositHash,
+        token: hubPoolToken.symbol,
+        inputAmount,
+        outputAmount,
+      },
+      preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+      preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
+    });
 
     return {
-      repaymentChainId: profitable ? preferredChainId : undefined,
       gasLimit,
+      repaymentChainId: profitable ? preferredChainId : undefined,
+      realizedLpFeePct,
+      relayerFeePct,
     };
   }
 
@@ -592,11 +759,14 @@ export class Relayer {
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);
         const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, deposit.originChainId);
+
+        const inputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
+
+        // @todo Consider whether to add v3 realizedLpFee logging. Use 0 for now.
+        const relayerFeePct = formatFeePct(sdkUtils.isV2Deposit(deposit) ? deposit.relayerFeePct : bnZero);
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${formatFunction(
-            deposit.amount.toString()
-          )} ${symbol}` +
-          ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% and gas cost ${gasFormatFunction(gasCost)}` +
+          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${inputAmount} ${symbol}` +
+          ` with a relayerFeePct ${relayerFeePct}% and gas cost ${gasFormatFunction(gasCost)}` +
           ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
       });
@@ -611,9 +781,15 @@ export class Relayer {
     }
   }
 
-  private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
+  private constructRelayFilledMrkdwn(
+    deposit: Deposit,
+    repaymentChainId: number,
+    fillAmount: BigNumber,
+    realizedLpFeePct: BigNumber
+  ): string {
     let mrkdwn =
-      this.constructBaseFillMarkdown(deposit, fillAmount) + ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
+      this.constructBaseFillMarkdown(deposit, fillAmount, realizedLpFeePct) +
+      ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
       if (sdkUtils.isV2Deposit(deposit)) {
@@ -632,23 +808,40 @@ export class Relayer {
     return mrkdwn;
   }
 
-  private constructBaseFillMarkdown(deposit: Deposit, fillAmount: BigNumber): string {
+  private constructBaseFillMarkdown(deposit: Deposit, fillAmount: BigNumber, _realizedLpFeePct: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
-    const inputAmount = sdkUtils.getDepositInputAmount(deposit);
-    const amount = createFormatFunction(2, 4, false, decimals)(inputAmount.toString());
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);
-    const _fillAmount = createFormatFunction(2, 4, false, decimals)(fillAmount.toString());
-    const relayerFeePct = formatFeePct(deposit.relayerFeePct);
-    const realizedLpFeePct = formatFeePct(deposit.realizedLpFeePct);
+    const inputAmount = sdkUtils.getDepositInputAmount(deposit);
+    const _inputAmount = createFormatFunction(2, 4, false, decimals)(inputAmount.toString());
 
-    let msg =
-      `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${amount} ${symbol},` +
-      ` with depositor ${depositor}. Fill amount of ${_fillAmount} ${symbol} with` +
-      ` relayerFee ${relayerFeePct}% & realizedLpFee ${realizedLpFeePct}%.`;
-    if (fillAmount.eq(zeroFillAmount)) {
-      msg += " Has been zero filled due to a token shortfall! This will initiate a slow relay for this deposit.";
+    let msg = `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${_inputAmount} ${symbol}`;
+    if (sdkUtils.isV2Deposit(deposit)) {
+      const _fillAmount = createFormatFunction(2, 4, false, decimals)(fillAmount.toString());
+      const _relayerFeePct = formatFeePct(deposit.relayerFeePct);
+      const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
+      msg +=
+        ` with depositor ${depositor}. Fill amount of ${_fillAmount} ${symbol}` +
+        ` with relayerFee ${_relayerFeePct}% & realizedLpFee ${realizedLpFeePct}%.`;
+
+      if (fillAmount.eq(zeroFillAmount)) {
+        msg += " Has been zero filled due to a token shortfall! This will initiate a slow relay for this deposit.";
+      }
+    } else {
+      const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
+      const _totalFeePct = deposit.inputAmount
+        .sub(deposit.outputAmount)
+        .mul(fixedPointAdjustment)
+        .div(deposit.inputAmount);
+      const totalFeePct = formatFeePct(_totalFeePct);
+      const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
+        this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+      const outputAmount = deposit.outputAmount;
+      const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(outputAmount.toString());
+      msg +=
+        ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
+        ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
     }
 
     return msg;

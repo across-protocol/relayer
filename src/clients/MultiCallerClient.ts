@@ -22,20 +22,34 @@ import lodash from "lodash";
 // Use this list of Smart Contract revert reasons to filter out transactions that revert in the
 // Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
-// For example, a NodeJS error might result in a reason string that includes more than just the contract r
-// evert reason.
-export const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+// For example, a NodeJS error might result in a reason string that includes more than just the contract revert reason.
+export const knownRevertReasons = new Set([
+  "nonce has already been used",
+  "replacement fee too low",
+  "relay filled",
+  "Already claimed",
+  "RelayFilled",
+  "ClaimedMerkleLeaf",
+  "InvalidSlowFillRequest",
+]);
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
 // there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
 // a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
 // to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
-export const unknownRevertReason =
-  "missing revert data in call exception; Transaction reverted without a reason string";
+export const unknownRevertReasons = [
+  "missing revert data in call exception; Transaction reverted without a reason string",
+  "execution reverted",
+];
 export const unknownRevertReasonMethodsToIgnore = new Set([
+  "multicall",
   "fillRelay",
   "fillRelayWithUpdatedFee",
+  "fillV3Relay",
+  "fillV3RelayWithUpdatedDeposit",
+  "requestV3SlowFill",
+  "executeV3SlowRelayLeaf",
   "executeSlowRelayLeaf",
   "executeRelayerRefundLeaf",
   "executeRootBundle",
@@ -437,8 +451,15 @@ export class MultiCallerClient {
   // string that includes more than just the contract revert reason.
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
     const { transaction: _txn, reason } = txn;
-    const knownReason = [...knownRevertReasons].some((knownReason) => reason.includes(knownReason));
-    return knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason.includes(unknownRevertReason));
+    const lowerCaseReason = reason.toLowerCase();
+    const knownReason = [...knownRevertReasons].some((knownReason) =>
+      lowerCaseReason.includes(knownReason.toLowerCase())
+    );
+    return (
+      knownReason ||
+      (unknownRevertReasonMethodsToIgnore.has(_txn.method) &&
+        unknownRevertReasons.some((_reason) => lowerCaseReason.includes(_reason.toLowerCase())))
+    );
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may

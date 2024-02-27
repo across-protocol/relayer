@@ -99,6 +99,7 @@ export async function blockRangesAreInvalidForSpokeClients(
       blockRanges,
       chainIdListForBundleEvaluationBlockNumbers
     );
+    assert(Object.keys(endBlockTimestamps).length === Object.values(spokePoolClients).filter(isDefined).length);
   }
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
@@ -129,14 +130,7 @@ export async function blockRangesAreInvalidForSpokeClients(
     }
 
     if (endBlockTimestamps !== undefined) {
-      assert(Object.keys(endBlockTimestamps).length === blockRanges.length);
-      // TODO: Change this to query the max fill deadline between the values at the start and the end block after
-      // we've fully migrated to V3. This is set to only query at the end block right now to deal with the
-      // V2 to V3 migration bundle that contains a start block prior to the V3 upgrade. At this block, the
-      // fill deadline buffer will not be in the SpokePool Proxy's ABI so it will fail. We could handle this dynamically
-      // but because its a one-time change and I think the fill deadline buffer is unlikely to change during this
-      // bundle, that this is a safe temporary fix.
-      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(/* start*/ end, end);
+      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
       if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
         return true;
       }
@@ -299,23 +293,19 @@ function buildV3SlowFillLeaf(deposit: interfaces.V3Deposit): V3SlowFillLeaf {
   };
 }
 
-export function _buildRelayerRefundRoot(
-  endBlockForMainnet: number,
-  fillsToRefund: FillsToRefund,
-  bundleFillsV3: BundleFillsV3,
-  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
-  poolRebalanceLeaves: PoolRebalanceLeaf[],
-  runningBalances: RunningBalances,
-  clients: DataworkerClients,
-  maxRefundCount: number
-): {
-  leaves: RelayerRefundLeaf[];
-  tree: MerkleTree<RelayerRefundLeaf>;
-} {
-  const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+export type CombinedRefunds = {
+  [repaymentChainId: number]: {
+    [repaymentToken: string]: interfaces.Refund;
+  };
+};
 
-  // Create a combined `refunds` object containing refunds for V2 + V3 fills
-  // and expired deposits.
+// Create a combined `refunds` object containing refunds for V2 + V3 fills
+// and expired deposits.
+export function getRefundsFromBundle(
+  bundleFillsV3: BundleFillsV3,
+  fillsToRefund: FillsToRefund,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
+): CombinedRefunds {
   const combinedRefunds: {
     [repaymentChainId: number]: {
       [repaymentToken: string]: interfaces.Refund;
@@ -374,6 +364,25 @@ export function _buildRelayerRefundRoot(
       }
     });
   });
+  return combinedRefunds;
+}
+
+export function _buildRelayerRefundRoot(
+  endBlockForMainnet: number,
+  fillsToRefund: FillsToRefund,
+  bundleFillsV3: BundleFillsV3,
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
+  poolRebalanceLeaves: PoolRebalanceLeaf[],
+  runningBalances: RunningBalances,
+  clients: DataworkerClients,
+  maxRefundCount: number
+): {
+  leaves: RelayerRefundLeaf[];
+  tree: MerkleTree<RelayerRefundLeaf>;
+} {
+  const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+
+  const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
 
   // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
   Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {

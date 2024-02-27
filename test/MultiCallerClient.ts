@@ -4,6 +4,7 @@ import {
   knownRevertReasons,
   unknownRevertReason,
   unknownRevertReasonMethodsToIgnore,
+  unknownRevertReasons,
 } from "../src/clients";
 import { bnOne, BigNumber, TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
@@ -288,15 +289,17 @@ describe("MultiCallerClient", async function () {
     }
 
     // Verify that the defined "unknown" revert reason against known methods is ignored.
-    txn.args = [{ result: unknownRevertReason }];
-    for (const method of unknownRevertReasonMethodsToIgnore) {
-      txn.method = method;
-      txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
+    for (const unknownRevertReason of unknownRevertReasons) {
+      txn.args = [{ result: unknownRevertReason }];
+      for (const method of unknownRevertReasonMethodsToIgnore) {
+        txn.method = method;
+        txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
 
-      const result = await multiCaller.simulateTransactionQueue([txn]);
-      expect(result.length).to.equal(0);
-      expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
-      expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
+        const result = await multiCaller.simulateTransactionQueue([txn]);
+        expect(result.length).to.equal(0);
+        expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
+        expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
+      }
     }
 
     // Verify that unexpected revert reason against both known and "unknown" methods are logged.
