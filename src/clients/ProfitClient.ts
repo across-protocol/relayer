@@ -80,8 +80,9 @@ export type FillProfit = V2FillProfit | V3FillProfit;
 type UnprofitableFill = {
   deposit: DepositWithBlock;
   fillAmount: BigNumber;
+  lpFeePct: BigNumber;
+  relayerFeePct: BigNumber;
   gasCost: BigNumber;
-  nativeGasCost: BigNumber;
 };
 
 // @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
@@ -553,12 +554,13 @@ export class ProfitClient {
     fillAmount: BigNumber,
     lpFeePct: BigNumber,
     l1Token: L1Token
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "grossRelayerFeePct">> {
+  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "grossRelayerFeePct">> {
     let profitable = false;
     let grossRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
+    let tokenGasCost = uint256Max;
     try {
-      ({ profitable, grossRelayerFeePct, nativeGasCost } = await this.getFillProfitability(
+      ({ profitable, grossRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
         deposit,
         fillAmount,
         lpFeePct,
@@ -577,13 +579,32 @@ export class ProfitClient {
     return {
       profitable: profitable || this.isTestnet,
       nativeGasCost,
+      tokenGasCost,
       grossRelayerFeePct,
     };
   }
 
-  captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber, gasCost: BigNumber): void {
-    this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount, gasCost });
-    assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount, gasCost }]);
+  captureUnprofitableFill(
+    deposit: DepositWithBlock,
+    fillAmount: BigNumber,
+    lpFeePct: BigNumber,
+    relayerFeePct: BigNumber,
+    gasCost: BigNumber
+  ): void {
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Handling unprofitable fill",
+      deposit,
+      fillAmount,
+      lpFeePct,
+      relayerFeePct,
+      gasCost,
+    });
+    assign(
+      this.unprofitableFills,
+      [deposit.originChainId],
+      [{ deposit, fillAmount, lpFeePct, relayerFeePct, gasCost }]
+    );
   }
 
   anyCapturedUnprofitableFills(): boolean {

@@ -298,14 +298,16 @@ export class Relayer {
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount) && !selfRelay) {
         const {
           repaymentChainId,
-          gasLimit: gasCost,
           realizedLpFeePct,
+          relayerFeePct,
+          gasLimit: _gasLimit,
+          gasCost,
         } = await this.resolveRepaymentChain(deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
-          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : gasCost;
+          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
           this.fillRelay(deposit, unfilledAmount, repaymentChainId, realizedLpFeePct, gasLimit);
         } else {
-          profitClient.captureUnprofitableFill(deposit, unfilledAmount, gasCost);
+          profitClient.captureUnprofitableFill(deposit, unfilledAmount, realizedLpFeePct, relayerFeePct, gasCost);
         }
       } else if (selfRelay) {
         const { realizedLpFeePct } = sdkUtils.isV3Deposit(deposit)
@@ -563,6 +565,7 @@ export class Relayer {
     repaymentChainId?: number;
     realizedLpFeePct: BigNumber;
     relayerFeePct: BigNumber;
+    gasCost: BigNumber;
   }> {
     const { hubPoolClient, inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
@@ -590,10 +593,9 @@ export class Relayer {
     const {
       profitable,
       nativeGasCost: gasLimit,
-      // gross relayer fee is equal to total fee minus the lp fee.
-      grossRelayerFeePct: relayerFeePct,
+      tokenGasCost: gasCost,
+      grossRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
     } = await profitClient.isFillProfitable(deposit, fillAmount, realizedLpFeePct, hubPoolToken);
-
     // If preferred chain is different from the destination chain and the preferred chain
     // is not profitable, then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
@@ -648,10 +650,11 @@ export class Relayer {
         // destination chain, therefore we will fill them using the original preferred chain to maintain
         // inventory assumptions and also quote the original relayer fee pct.
         return {
-          gasLimit,
           repaymentChainId: preferredChainId,
           realizedLpFeePct,
           relayerFeePct,
+          gasCost,
+          gasLimit,
         };
       } else {
         // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
@@ -693,10 +696,11 @@ export class Relayer {
     });
 
     return {
-      gasLimit,
       repaymentChainId: profitable ? preferredChainId : undefined,
       realizedLpFeePct,
       relayerFeePct,
+      gasCost,
+      gasLimit,
     };
   }
 
@@ -735,33 +739,41 @@ export class Relayer {
   }
 
   private handleUnprofitableFill() {
-    const unprofitableDeposits = this.clients.profitClient.getUnprofitableFills();
+    const { hubPoolClient, profitClient } = this.clients;
+    const unprofitableDeposits = profitClient.getUnprofitableFills();
 
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const { deposit, fillAmount, gasCost: _gasCost } = unprofitableDeposits[chainId][depositId];
+        const { deposit, fillAmount, lpFeePct, relayerFeePct, gasCost } = unprofitableDeposits[chainId][depositId];
+
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
         }
-        const gasCost = _gasCost.toString();
 
-        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+        const { symbol, decimals } = hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
-        const gasFormatFunction = createFormatFunction(2, 10, false, 18);
         const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, deposit.originChainId);
 
-        const inputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
+        const formattedInputAmount = formatFunction(sdkUtils.getDepositInputAmount(deposit).toString());
+        const formattedOutputAmount = formatFunction(fillAmount.toString());
 
-        // @todo Consider whether to add v3 realizedLpFee logging. Use 0 for now.
-        const relayerFeePct = formatFeePct(sdkUtils.isV2Deposit(deposit) ? deposit.relayerFeePct : bnZero);
+        const { symbol: gasTokenSymbol, decimals: gasTokenDecimals } = profitClient.resolveGasToken(
+          deposit.destinationChainId
+        );
+        const formattedGasCost = createFormatFunction(2, 10, false, gasTokenDecimals)(gasCost.toString());
+
+        const formattedRelayerFeePct = formatFeePct(relayerFeePct);
+        const formattedLpFeePct = formatFeePct(lpFeePct);
+
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink}) of amount ${inputAmount} ${symbol}` +
-          ` with a relayerFeePct ${relayerFeePct}% and gas cost ${gasFormatFunction(gasCost)}` +
+          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
+          ` of input amount ${formattedInputAmount} ${symbol} and output amount ${formattedOutputAmount} ${symbol}` +
           ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
-          ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
+          ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%,` +
+          ` and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`;
       });
 
       if (depositMrkdwn) {
