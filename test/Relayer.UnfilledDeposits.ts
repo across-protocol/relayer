@@ -181,7 +181,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
       .to.deep.equal(
         deposits
-          .sort((a, b) => a.destinationChainId > b.destinationChainId ? 1 : -1)
+          .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
           .map((deposit) => ({
             unfilledAmount: deposit.outputAmount,
             deposit,
