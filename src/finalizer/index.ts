@@ -37,6 +37,8 @@ import {
   polygonFinalizer,
   scrollFinalizer,
   zkSyncFinalizer,
+  lineaL2ToL1Finalizer,
+  lineaL1ToL2Finalizer,
 } from "./utils";
 const { isDefined } = sdkUtils;
 
@@ -60,7 +62,7 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
 /**
  * A list of finalizers that should be run for each chain. Note: we do this
  * because some chains have multiple finalizers that need to be run.
- * Mainly related to CCTP.
+ * Mainly related to CCTP and Linea
  */
 const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   // Mainnets
@@ -70,6 +72,8 @@ const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   // Testnets
   84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
+  5: [lineaL1ToL2Finalizer],
+  59140: [lineaL2ToL1Finalizer],
 };
 
 export async function finalize(
@@ -89,14 +93,15 @@ export async function finalize(
     324: oneDaySeconds * 4, // zkSync Mainnet
     8453: optimisticRollupFinalizationWindow, // Base Mainnet
     42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet
+    59144: oneHourSeconds * 36, // Linea Mainnet: 8-32 hours
     534352: oneHourSeconds * 4, // Scroll Mainnet
-    59144: oneHourSeconds * 12, // Linea Mainnet
 
     // Testnets
     534351: oneHourSeconds * 4, // Scroll Sepolia
     84532: optimisticRollupFinalizationWindow, // Base Testnet (Sepolia)
+    59140: oneHourSeconds * 36, // Linea Goerli: 8-32 hours
     280: oneDaySeconds * 8, // zkSync Goerli
-    59140: oneHourSeconds * 12, // Linea Goerli
+    5: oneHourSeconds * 8,
   };
 
   const hubChainId = hubPoolClient.chainId;
@@ -163,7 +168,7 @@ export async function finalize(
     }
     logger.debug({
       at: "finalize",
-      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} supporting txns ) for finalization.`,
+      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
     });
   }
   const multicall2Lookup = Object.fromEntries(
@@ -286,9 +291,11 @@ export async function finalize(
       const { miscReason } = crossChainTransfer;
       const originationNetwork = getNetworkName(originationChainId);
       const destinationNetwork = getNetworkName(destinationChainId);
+      const infoLogMessage =
+        amount && symbol ? `to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜` : "";
       logger.info({
         at: "Finalizer",
-        message: `Submitted ${miscReason} on ${destinationNetwork} to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜`,
+        message: `Submitted ${miscReason} on ${destinationNetwork} ` + infoLogMessage,
         transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
           blockExplorerLink(txnHash, destinationChainId)
         ),

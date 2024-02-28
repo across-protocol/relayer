@@ -851,6 +851,11 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
+  59144: {
+    lineaMessageService: {
+      address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
+    },
+  },
 
   // Testnets
   11155111: {
@@ -865,12 +870,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
-  59144: {
-    lineaMessageService: {
-      address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
-    },
-  },
-  // testnets
   5: {
     lineaMessageService: {
       address: "0x70BaD09280FD342D02fe64119779BC1f0791BAC2",
