@@ -153,9 +153,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     await Promise.all([spokePool_1, spokePool_2].map((spokePool) => spokePool.setCurrentTime(currentTime)));
     await updateAllClients();
 
-    _getUnfilledDeposits = async (): Promise<RelayerUnfilledDeposit[]> => {
-      return await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, hubPoolClient);
-    };
+    _getUnfilledDeposits = async (): Promise<RelayerUnfilledDeposit[]> =>
+      Object.values(await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, hubPoolClient)).flat();
     unfilledDeposits = [];
 
     const tokenBalance = await erc20_1.balanceOf(depositor.address);
@@ -181,13 +180,15 @@ describe("Relayer: Unfilled Deposits", async function () {
     expect(unfilledDeposits)
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
       .to.deep.equal(
-        deposits.map((deposit) => ({
-          unfilledAmount: deposit.outputAmount,
-          deposit,
-          fillCount: 0,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        }))
+        deposits
+          .sort((a, b) => a.destinationChainId > b.destinationChainId ? 1 : -1)
+          .map((deposit) => ({
+            unfilledAmount: deposit.outputAmount,
+            deposit,
+            fillCount: 0,
+            invalidFills: [],
+            version: configStoreClient.configStoreVersion,
+          }))
       );
   });
 
