@@ -111,7 +111,11 @@ const QUERY_HANDLERS: {
   420: relayFeeCalculator.OptimismGoerliQueries,
   80001: relayFeeCalculator.PolygonMumbaiQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
+  84532: relayFeeCalculator.BaseSepoliaQueries,
   421613: relayFeeCalculator.ArbitrumGoerliQueries,
+  421614: relayFeeCalculator.ArbitrumSepoliaQueries,
+  11155111: relayFeeCalculator.EthereumSepoliaQueries,
+  11155420: relayFeeCalculator.OptimismSepoliaQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -618,13 +622,31 @@ export class ProfitClient {
   protected async updateTokenPrices(): Promise<void> {
     // Generate list of tokens to retrieve. Map by symbol because tokens like
     // ETH/WETH refer to the same mainnet contract address.
-    const tokens: { [symbol: string]: string } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map(({ symbol }) => {
-        const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-        const address = addresses[1];
-        return [symbol, address];
-      })
+    const tokens: { [_symbol: string]: string } = Object.fromEntries(
+      this.hubPoolClient
+        .getL1Tokens()
+        .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
+        .map(({ symbol }) => {
+          const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
+          const address = addresses[1];
+          return [symbol, address];
+        })
     );
+
+    // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
+    // Note: we should batch these up and log them all at once to avoid spamming the logs.
+    const unknownTokens = this.hubPoolClient
+      .getL1Tokens()
+      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
+    if (unknownTokens.length > 0) {
+      this.logger.warn({
+        at: "ProfitClient#updateTokenPrices",
+        message: "Filtered out unknown token(s) that don't have a corresponding entry in TOKEN_SYMBOLS_MAP.",
+        unknownTokens,
+        resolvedTokens: Object.keys(tokens),
+        availableTokens: Object.keys(TOKEN_SYMBOLS_MAP),
+      });
+    }
 
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {

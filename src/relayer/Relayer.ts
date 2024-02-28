@@ -243,7 +243,10 @@ export class Relayer {
     const mdcPerChain = Object.fromEntries(
       Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
         const usdThreshold = minimumDepositConfirmationThresholds.find((_usdThreshold) => {
-          return toBNWei(_usdThreshold).gte(unfilledAmount);
+          return (
+            toBNWei(_usdThreshold).gte(unfilledAmount) &&
+            isDefined(config.minDepositConfirmations[_usdThreshold][chainId])
+          );
         });
         // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
         return [chainId, config.minDepositConfirmations[usdThreshold ?? "default"][chainId]];
