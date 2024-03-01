@@ -134,12 +134,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           config.sendingExecutionsEnabled,
           fromBlocks
         );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks
-        );
+
+        // The Polygon_SpokePool cannot execute relayer refunds and fills in the same atomic transaction so
+        // skip the following if there are any polygon transactions in the queue.
+        if (clients.multiCallerClient.getQueuedTransactions(137).length > 0) {
+          await dataworker.executeRelayerRefundLeaves(
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingExecutionsEnabled,
+            fromBlocks
+          );
+        } else {
+          logger[startupLogLevel(config)]({
+            at: "Dataworker#index",
+            message: "Skipping relayer refunds this run due to having Polygon slow fills in queue",
+          });
+        }
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
