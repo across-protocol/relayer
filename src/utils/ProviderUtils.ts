@@ -10,6 +10,7 @@ import {
   PROVIDER_CACHE_TTL,
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
   BLOCK_NUMBER_TTL,
+  DEFAULT_NO_TTL_DISTANCE,
 } from "../common";
 import { delay, getOriginFromURL, Logger } from "./";
 import { compareArrayResultsWithIgnoredKeys, compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
@@ -106,6 +107,12 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
   }
 }
 
+enum CacheType {
+  NONE, // Do not cache
+  WITH_TTL, // Cache with TTL
+  NO_TTL, // Cache with infinite TTL
+}
+
 class CacheProvider extends RateLimitedProvider {
   public readonly getBlockByNumberPrefix: string;
   public readonly getLogsCachePrefix: string;
@@ -116,6 +123,8 @@ class CacheProvider extends RateLimitedProvider {
   constructor(
     providerCacheNamespace: string,
     readonly redisClient?: RedisClient,
+    // Note: if not provided, this is set to POSITIVE_INFINITY, meaning the TTL is infinite (i.e. no TTL).
+    readonly noTtlBlockDistance: number = Number.POSITIVE_INFINITY,
     ...jsonRpcConstructorParams: ConstructorParameters<typeof RateLimitedProvider>
   ) {
     super(...jsonRpcConstructorParams);
@@ -141,7 +150,9 @@ class CacheProvider extends RateLimitedProvider {
     this.baseTTL = _ttl;
   }
   override async send(method: string, params: Array<any>): Promise<any> {
-    if (this.redisClient && (await this.shouldCache(method, params))) {
+    const cacheType = this.redisClient ? await this.cacheType(method, params) : CacheType.NONE;
+
+    if (cacheType !== CacheType.NONE) {
       const redisKey = this.buildRedisKey(method, params);
 
       // Attempt to pull the result from the cache.
@@ -155,11 +166,21 @@ class CacheProvider extends RateLimitedProvider {
       // Cache does not have the result. Query it directly and cache.
       const result = await super.send(method, params);
 
-      // Apply a random margin to spread expiry over a larger time window.
-      const ttl = this.baseTTL + Math.ceil(lodash.random(-ttl_modifier, ttl_modifier, true) * this.baseTTL);
-
-      // Commit result to redis.
-      await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, ttl);
+      // Note: use swtich to ensure all enum cases are handled.
+      switch (cacheType) {
+        case CacheType.WITH_TTL:
+          {
+            // Apply a random margin to spread expiry over a larger time window.
+            const ttl = this.baseTTL + Math.ceil(lodash.random(-ttl_modifier, ttl_modifier, true) * this.baseTTL);
+            await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, ttl);
+          }
+          break;
+        case CacheType.NO_TTL:
+          await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, Number.POSITIVE_INFINITY);
+          break;
+        default:
+          throw new Error(`Unexpected Cache type: ${cacheType}`);
+      }
 
       // Return the cached result.
       return result;
@@ -182,7 +203,7 @@ class CacheProvider extends RateLimitedProvider {
     }
   }
 
-  private async shouldCache(method: string, params: Array<any>): Promise<boolean> {
+  private async cacheType(method: string, params: Array<any>): Promise<CacheType> {
     // Today, we only cache eth_getLogs and eth_call.
     if (method === "eth_getLogs") {
       const [{ fromBlock, toBlock }] = params;
@@ -195,14 +216,14 @@ class CacheProvider extends RateLimitedProvider {
       // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
       // This would result in the result of the above being NaN.
       if (Number.isNaN(fromBlockNumber) || Number.isNaN(toBlockNumber)) {
-        return false;
+        return CacheType.NONE;
       }
 
       if (toBlockNumber < fromBlockNumber) {
         throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
       }
 
-      return this.canCacheInformationFromBlock(toBlock);
+      return this.cacheTypeForBlock(toBlock);
     } else if ("eth_call" === method || "eth_getBlockByNumber" === method) {
       // Pull out the block tag from params. Its position in params is dependent on the method.
       // We are only interested in numeric block tags, which would be hex-encoded strings.
@@ -211,25 +232,37 @@ class CacheProvider extends RateLimitedProvider {
 
       // If the block number isn't present or is a text string, this will be NaN and we return false.
       if (Number.isNaN(blockNumber)) {
-        return false;
+        return CacheType.NONE;
       }
 
       // If the block is old enough to cache, cache the call.
-      return this.canCacheInformationFromBlock(blockNumber);
+      return this.cacheTypeForBlock(blockNumber);
     } else {
-      return false;
+      return CacheType.NONE;
     }
   }
 
-  private async canCacheInformationFromBlock(blockNumber: number) {
+  private async cacheTypeForBlock(blockNumber: number): Promise<CacheType> {
     // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
     // the block that is allowed. This means if a block has been retrieved within the last n seconds, no provider
     // query will be made.
     const currentBlockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
 
-    // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
-    const firstUnsafeBlockNumber = currentBlockNumber - this.maxReorgDistance;
-    return blockNumber < firstUnsafeBlockNumber;
+    // Determine the distance that the block is from HEAD.
+    const headDistance = currentBlockNumber - blockNumber;
+
+    // If the distance from head is large enough, use infinite TTL.
+    if (headDistance > this.noTtlBlockDistance) {
+      return CacheType.NO_TTL;
+    }
+
+    // If the distance is <= infiniteTtlBlockDistance, but > maxReorgDistance, use standard TTL.
+    if (headDistance > this.maxReorgDistance) {
+      return CacheType.WITH_TTL;
+    }
+
+    // Too close to HEAD, no cache.
+    return CacheType.NONE;
   }
 }
 
@@ -243,13 +276,14 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     readonly delay: number,
     readonly maxConcurrency: number,
     providerCacheNamespace: string,
-    redisClient?: RedisClient
+    redisClient?: RedisClient,
+    noTtlBlockDistance?: number
   ) {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
     super(undefined, chainId);
     this.providers = params.map(
-      (inputs) => new CacheProvider(providerCacheNamespace, redisClient, maxConcurrency, ...inputs)
+      (inputs) => new CacheProvider(providerCacheNamespace, redisClient, noTtlBlockDistance, maxConcurrency, ...inputs)
     );
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold)) {
       throw new Error(
@@ -528,6 +562,12 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "25");
 
+  const disableNoTtl = process.env["DISABLE_NO_TTL"] === "true";
+
+  const noTtlBlockDistance = process.env[`NO_TTL_BLOCK_DISTANCE_${chainId}`]
+    ? Number(process.env[`NO_TTL_BLOCK_DISTANCE_${chainId}`])
+    : DEFAULT_NO_TTL_DISTANCE[chainId];
+
   // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
   // NODE_DISABLE_PROVIDER_CACHING=true.
   const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING === "true";
@@ -588,7 +628,8 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     retryDelay,
     nodeMaxConcurrency,
     providerCacheNamespace,
-    disableProviderCache ? undefined : redisClient
+    disableProviderCache ? undefined : redisClient,
+    disableNoTtl ? undefined : noTtlBlockDistance
   );
 
   if (useCache) {
