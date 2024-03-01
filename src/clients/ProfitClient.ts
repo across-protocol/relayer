@@ -116,6 +116,8 @@ const QUERY_HANDLERS: {
   421614: relayFeeCalculator.ArbitrumSepoliaQueries,
   11155111: relayFeeCalculator.EthereumSepoliaQueries,
   11155420: relayFeeCalculator.OptimismSepoliaQueries,
+  10001: relayFeeCalculator.Espresso1SepoliaQueries,
+  10002: relayFeeCalculator.Espresso2SepoliaQueries,
 };
 
 const { PriceClient } = priceClient;

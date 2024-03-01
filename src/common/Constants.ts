@@ -55,6 +55,8 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   8453: 60,
   42161: 0,
   // Testnets:
+  10001: 0,
+  10002: 0,
   5: 0,
   280: 0,
   420: 0,
@@ -82,6 +84,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     80001: 0,
     84531: 0,
     421613: 0,
+    10001: 0,
+    10002: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
@@ -98,6 +102,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     80001: 0,
     84531: 0,
     421613: 0,
+    10001: 0,
+    10002: 0,
   },
 };
 
@@ -120,8 +126,8 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   5: 10000,
   280: 10000,
   420: 10000,
-  10001: 10000,
-  10002: 10000,
+  10001: 0,
+  10002: 0,
   80001: 10000,
   84531: 10000,
   84532: 10000,
