@@ -134,7 +134,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           config.sendingExecutionsEnabled,
           fromBlocks
         );
-
         await dataworker.executeRelayerRefundLeaves(
           spokePoolClients,
           balanceAllocator,
