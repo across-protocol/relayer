@@ -80,8 +80,9 @@ export type FillProfit = V2FillProfit | V3FillProfit;
 type UnprofitableFill = {
   deposit: DepositWithBlock;
   fillAmount: BigNumber;
+  lpFeePct: BigNumber;
+  relayerFeePct: BigNumber;
   gasCost: BigNumber;
-  nativeGasCost: BigNumber;
 };
 
 // @dev This address is known on each chain and has previously been used to simulate Deposit gas costs.
@@ -110,7 +111,11 @@ const QUERY_HANDLERS: {
   420: relayFeeCalculator.OptimismGoerliQueries,
   80001: relayFeeCalculator.PolygonMumbaiQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
+  84532: relayFeeCalculator.BaseSepoliaQueries,
   421613: relayFeeCalculator.ArbitrumGoerliQueries,
+  421614: relayFeeCalculator.ArbitrumSepoliaQueries,
+  11155111: relayFeeCalculator.EthereumSepoliaQueries,
+  11155420: relayFeeCalculator.OptimismSepoliaQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -553,12 +558,13 @@ export class ProfitClient {
     fillAmount: BigNumber,
     lpFeePct: BigNumber,
     l1Token: L1Token
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "grossRelayerFeePct">> {
+  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "grossRelayerFeePct">> {
     let profitable = false;
     let grossRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
+    let tokenGasCost = uint256Max;
     try {
-      ({ profitable, grossRelayerFeePct, nativeGasCost } = await this.getFillProfitability(
+      ({ profitable, grossRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
         deposit,
         fillAmount,
         lpFeePct,
@@ -577,13 +583,32 @@ export class ProfitClient {
     return {
       profitable: profitable || this.isTestnet,
       nativeGasCost,
+      tokenGasCost,
       grossRelayerFeePct,
     };
   }
 
-  captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber, gasCost: BigNumber): void {
-    this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount, gasCost });
-    assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount, gasCost }]);
+  captureUnprofitableFill(
+    deposit: DepositWithBlock,
+    fillAmount: BigNumber,
+    lpFeePct: BigNumber,
+    relayerFeePct: BigNumber,
+    gasCost: BigNumber
+  ): void {
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Handling unprofitable fill",
+      deposit,
+      fillAmount,
+      lpFeePct,
+      relayerFeePct,
+      gasCost,
+    });
+    assign(
+      this.unprofitableFills,
+      [deposit.originChainId],
+      [{ deposit, fillAmount, lpFeePct, relayerFeePct, gasCost }]
+    );
   }
 
   anyCapturedUnprofitableFills(): boolean {
@@ -597,13 +622,31 @@ export class ProfitClient {
   protected async updateTokenPrices(): Promise<void> {
     // Generate list of tokens to retrieve. Map by symbol because tokens like
     // ETH/WETH refer to the same mainnet contract address.
-    const tokens: { [symbol: string]: string } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map(({ symbol }) => {
-        const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-        const address = addresses[1];
-        return [symbol, address];
-      })
+    const tokens: { [_symbol: string]: string } = Object.fromEntries(
+      this.hubPoolClient
+        .getL1Tokens()
+        .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
+        .map(({ symbol }) => {
+          const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
+          const address = addresses[1];
+          return [symbol, address];
+        })
     );
+
+    // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
+    // Note: we should batch these up and log them all at once to avoid spamming the logs.
+    const unknownTokens = this.hubPoolClient
+      .getL1Tokens()
+      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
+    if (unknownTokens.length > 0) {
+      this.logger.warn({
+        at: "ProfitClient#updateTokenPrices",
+        message: "Filtered out unknown token(s) that don't have a corresponding entry in TOKEN_SYMBOLS_MAP.",
+        unknownTokens,
+        resolvedTokens: Object.keys(tokens),
+        availableTokens: Object.keys(TOKEN_SYMBOLS_MAP),
+      });
+    }
 
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
