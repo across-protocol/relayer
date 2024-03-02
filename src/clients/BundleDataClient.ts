@@ -141,7 +141,7 @@ function updateBundleSlowFills(
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
   private loadDataCache: DataCache = {};
-  private bundleTimestampCache: { [chainId: number]: number[] } = {};
+  private bundleTimestampCache: { [blockRangeKey: string]: { [chainId: number]: number[] } } = {};
 
   // eslint-disable-next-line no-useless-constructor
   constructor(
@@ -164,8 +164,10 @@ export class BundleDataClient {
     return _.cloneDeep(this.loadDataCache[key]);
   }
 
-  bundleTimestampsFromCache(): { [chainId: number]: number[] } {
-    return _.cloneDeep(this.bundleTimestampCache);
+  bundleTimestampsFromCache(key: string): undefined | { [chainId: number]: number[] } {
+    if (this.bundleTimestampsFromCache[key]) {
+      return _.cloneDeep(this.bundleTimestampsFromCache[key]);
+    }
   }
 
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<CombinedRefunds[]> {
@@ -430,16 +432,15 @@ export class BundleDataClient {
     // determine whether fillDeadlines have expired.
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
-    const _cachedBundleTimestamps = this.bundleTimestampsFromCache();
+    const _cachedBundleTimestamps = this.bundleTimestampsFromCache(key);
     let bundleBlockTimestamps: { [chainId: string]: number[] } = {};
-    _cachedBundleTimestamps;
-    if (Object.keys(_cachedBundleTimestamps).length === 0) {
+    if (_cachedBundleTimestamps) {
       bundleBlockTimestamps = await this.getBundleBlockTimestamps(
         this.chainIdListForBundleEvaluationBlockNumbers,
         blockRangesForChains,
         spokePoolClients
       );
-      this.bundleTimestampCache = bundleBlockTimestamps;
+      this.bundleTimestampCache[key] = bundleBlockTimestamps;
       if (logData) {
         this.logger.debug({
           at: "BundleDataClient#loadData",
@@ -631,7 +632,7 @@ export class BundleDataClient {
             // If deposit is in bundle and it has expired, additionally save it as an expired deposit.
             // If deposit is not in the bundle block range, then save it as an older deposit that
             // may have expired.
-            if (deposit.blockNumber <= originChainBlockRange[1] && deposit.blockNumber >= originChainBlockRange[0]) {
+            if (deposit.blockNumber >= originChainBlockRange[0]) {
               // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
               updateBundleDepositsV3(bundleDepositsV3, deposit);
               // We don't check that fillDeadline >= bundleBlockTimestamps[destinationChainId][0] because
@@ -641,7 +642,7 @@ export class BundleDataClient {
               if (deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1]) {
                 expiredBundleDepositHashes.add(relayDataHash);
               }
-            } else if (deposit.blockNumber < originChainBlockRange[0]) {
+            } else {
               olderDepositHashes.add(relayDataHash);
             }
           });
@@ -683,10 +684,7 @@ export class BundleDataClient {
                 // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                 // so this fill is validated.
                 v3RelayHashes[relayDataHash].fill = fill;
-                if (
-                  fill.blockNumber <= destinationChainBlockRange[1] &&
-                  fill.blockNumber >= destinationChainBlockRange[0]
-                ) {
+                if (fill.blockNumber >= destinationChainBlockRange[0]) {
                   validatedBundleV3Fills.push({
                     ...fill,
                     quoteTimestamp: v3RelayHashes[relayDataHash].deposit.quoteTimestamp,
@@ -716,10 +714,7 @@ export class BundleDataClient {
 
             // Since there was no deposit matching the relay hash, we need to do a historical query for an
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
-            if (
-              fill.blockNumber <= destinationChainBlockRange[1] &&
-              fill.blockNumber >= destinationChainBlockRange[0]
-            ) {
+            if (fill.blockNumber >= destinationChainBlockRange[0]) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
               if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
                 bundleInvalidFillsV3.push(fill);
@@ -780,7 +775,6 @@ export class BundleDataClient {
                 // that we should produce a slow fill leaf for. Check if the slow fill request is in the
                 // destination chain block range and that the underlying deposit has not expired yet.
                 if (
-                  slowFillRequest.blockNumber <= destinationChainBlockRange[1] &&
                   slowFillRequest.blockNumber >= destinationChainBlockRange[0] &&
                   // Deposit must not have expired in this bundle.
                   slowFillRequest.fillDeadline >= bundleBlockTimestamps[destinationChainId][1]
@@ -806,10 +800,7 @@ export class BundleDataClient {
 
             // Since there was no deposit matching the relay hash, we need to do a historical query for an
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
-            if (
-              slowFillRequest.blockNumber <= destinationChainBlockRange[1] &&
-              slowFillRequest.blockNumber >= destinationChainBlockRange[0]
-            ) {
+            if (slowFillRequest.blockNumber >= destinationChainBlockRange[0]) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
               if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
                 // TODO: Invalid slow fill request. Maybe worth logging.
@@ -898,6 +889,11 @@ export class BundleDataClient {
       const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
       assert(deposit, "Deposit should exist in relay hash dictionary.");
       const { destinationChainId } = deposit;
+      const destinationBlockRange = getBlockRangeForChain(
+        blockRangesForChains,
+        destinationChainId,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
 
       // Only look for deposits that were mined before this bundle and that are newly expired.
       // If the fill deadline is lower than the bundle start block on the destination chain, then
@@ -912,7 +908,7 @@ export class BundleDataClient {
         // by checkings its on-chain fill status.
         const fillStatus: BigNumber = await spokePoolClients[deposit.destinationChainId].spokePool.fillStatuses(
           relayDataHash,
-          { blockTag: destinationChainId[1] }
+          { blockTag: destinationBlockRange[1] }
         );
         // If there is no matching fill and the deposit expired in this bundle and the fill status on-chain is not
         // Filled, then we can to refund it as an expired deposit.
@@ -928,11 +924,7 @@ export class BundleDataClient {
         // Now, check if there was a slow fill created for this deposit in a previous bundle which would now be
         // unexecutable. Mark this deposit as having created an unexecutable slow fill if there is no matching
         // slow fill request or the matching slow fill request took place in a previous bundle.
-        const destinationBlockRange = getBlockRangeForChain(
-          blockRangesForChains,
-          destinationChainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
+
         // If there is a slow fill request in this bundle, then the expired deposit refund will supercede
         // the slow fill request. If there is no slow fill request seen or its older than this bundle, then we can
         // assume a slow fill leaf was created for it because its tokens are equivalent. The slow fill request was
