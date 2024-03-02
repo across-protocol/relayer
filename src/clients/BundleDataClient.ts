@@ -165,8 +165,8 @@ export class BundleDataClient {
   }
 
   bundleTimestampsFromCache(key: string): undefined | { [chainId: number]: number[] } {
-    if (this.bundleTimestampsFromCache[key]) {
-      return _.cloneDeep(this.bundleTimestampsFromCache[key]);
+    if (this.bundleTimestampCache[key]) {
+      return _.cloneDeep(this.bundleTimestampCache[key]);
     }
   }
 
