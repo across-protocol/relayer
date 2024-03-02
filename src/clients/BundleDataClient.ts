@@ -434,7 +434,7 @@ export class BundleDataClient {
     // calls in parallel.
     const _cachedBundleTimestamps = this.bundleTimestampsFromCache(key);
     let bundleBlockTimestamps: { [chainId: string]: number[] } = {};
-    if (_cachedBundleTimestamps) {
+    if (!_cachedBundleTimestamps) {
       bundleBlockTimestamps = await this.getBundleBlockTimestamps(
         this.chainIdListForBundleEvaluationBlockNumbers,
         blockRangesForChains,
