@@ -36,11 +36,7 @@ type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
-const {
-  EMPTY_MESSAGE,
-  DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
-  DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
-} = sdkConsts;
+const { EMPTY_MESSAGE } = sdkConsts;
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
 const bn10 = toBN(10);
