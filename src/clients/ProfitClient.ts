@@ -682,7 +682,7 @@ export class ProfitClient {
 
   private async updateGasCosts(): Promise<void> {
     const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
-    const relayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? PROD_RELAYER : TEST_RELAYER;
+    const relayer = this.relayerAddress;
     const depositId = random(uint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
     const fillAmount = bnOne;
     const quoteTimestamp = getCurrentTime();
