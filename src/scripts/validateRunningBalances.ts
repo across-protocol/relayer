@@ -378,11 +378,9 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             // We shouldn't get here for any bundle since we start with the i-1'th most recent bundle.
             // If so, then a relayed root message might have gotten stuck in a canonical bridge and we will
             // want to know about it.
+            const formattedAmount = fromWei(netSendAmount.toString(), decimals);
             throw new Error(
-              `No relayed refund root for chain ID ${leaf.chainId} and token ${l2Token} with netSendAmount ${fromWei(
-                netSendAmount.toString(),
-                decimals
-              )}`
+              `No relayed refund root for chain ID ${leaf.chainId} and token ${l2Token} with netSendAmount ${formattedAmount}`
             );
           }
         } else {
