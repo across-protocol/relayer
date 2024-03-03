@@ -372,7 +372,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           // if the net send amount was used to pay out slow fill leaves. Therefore, we should
           // only throw an error here if the slow fill root was empty and net send amount was non-zero. In this
           // case there MIGHT be a relayer refund root. Its hard to figure out otherwise if there was a refund root
-          // so there might a false negative here where we don't subtract the refund leaf amount because we
+          // so there might be a false negative here where we don't subtract the refund leaf amount because we
           // can't find it and it legitimately wasn't relayed over yet.
           if (!netSendAmount.eq(0) && mostRecentValidatedBundle.slowRelayRoot === EMPTY_MERKLE_ROOT) {
             // We shouldn't get here for any bundle since we start with the i-1'th most recent bundle.
