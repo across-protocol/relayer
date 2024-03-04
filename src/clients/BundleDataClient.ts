@@ -913,7 +913,7 @@ export class BundleDataClient {
         // by checkings its on-chain fill status.
         const fillStatus = await utils.relayFillStatus(
           spokePoolClients[destinationChainId].spokePool,
-          fill,
+          deposit,
           // We can assume that in production
           // the block ranges passed into this function would never contain blocks where the spoke pool client
           // hasn't queried. This is because this function will usually be called
