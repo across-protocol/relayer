@@ -925,13 +925,13 @@ export class BundleDataClient {
 
         // If there is no matching fill and the deposit expired in this bundle and the fill status on-chain is not
         // Filled, then we can to refund it as an expired deposit.
-        if (!fillStatus.eq(FillStatus.Filled)) {
+        if (fillStatus !== FillStatus.Filled) {
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         }
         // If fill status is RequestedSlowFill, then we might need to mark down an unexecutable
         // slow fill that we're going to replace with an expired deposit refund.
         // If deposit cannot be slow filled, then exit early.
-        if (!fillStatus.eq(FillStatus.RequestedSlowFill)) {
+        if (fillStatus !== FillStatus.RequestedSlowFill) {
           return;
         }
         // Now, check if there was a slow fill created for this deposit in a previous bundle which would now be
