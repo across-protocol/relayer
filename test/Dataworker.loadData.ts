@@ -1736,6 +1736,24 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.unexecutableSlowFills).to.deep.equal({});
       expect(data1.bundleSlowFillsV3).to.deep.equal({});
     });
+    it("getBundleTimestampsFromCache and setBundleTimestampsInCache", async function () {
+      // Unit test
+      await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+      await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(6), spokePoolClients);
+
+      const key1 = JSON.stringify(getDefaultBlockRange(5));
+      const key2 = JSON.stringify(getDefaultBlockRange(6));
+      const cache1 = dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key1);
+      const cache2 = dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key2);
+      expect(cache1).to.not.be.undefined;
+      expect(cache2).to.not.be.undefined;
+
+      const key3 = "random";
+      expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.be.undefined;
+      const cache3 = { ...cache1, [destinationChainId]: [0, 0] };
+      dataworkerInstance.clients.bundleDataClient.setBundleTimestampsInCache(key3, cache3);
+      expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.deep.equal(cache3);
+    });
   });
 
   it("Can fetch historical deposits not found in spoke pool client's memory", async function () {
