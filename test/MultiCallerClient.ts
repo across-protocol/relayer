@@ -450,6 +450,32 @@ describe("MultiCallerClient", async function () {
     }
   });
 
+  it("Handles group ID assignment when building multicall bundles", async function () {
+    const testMethod = "test";
+    const chainId = chainIds[0];
+    const groupIds = ["test1", "test2"];
+    const multicallTxns: AugmentedTransaction[] = [];
+    for (const groupId of groupIds) {
+      const sampleTxn: AugmentedTransaction = {
+        chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: testMethod,
+        args: [],
+        message: "",
+        mrkdwn: "",
+        groupId,
+      };
+      multicallTxns.push(sampleTxn);
+    }
+
+    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns);
+    expect(txnQueue.length).to.equal(groupIds.length);
+  });
+
   it("Correctly handles 0-length input to multicall bundle generation", async function () {
     const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles([], 10);
     expect(txnQueue.length).to.equal(0);
