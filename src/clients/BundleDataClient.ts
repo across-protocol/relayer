@@ -911,15 +911,18 @@ export class BundleDataClient {
       ) {
         // If we haven't seen a fill matching this deposit, then we need to rule out that it was filled a long time ago
         // by checkings its on-chain fill status.
-        const fillStatus: BigNumber = await spokePoolClients[deposit.destinationChainId].spokePool.fillStatuses(
-          relayDataHash,
+        const fillStatus = await utils.relayFillStatus(
+          spokePoolClients[destinationChainId].spokePool,
+          fill,
           // We can assume that in production
           // the block ranges passed into this function would never contain blocks where the spoke pool client
           // hasn't queried. This is because this function will usually be called
           // in production with block ranges that were validated by
           // DataworkerUtils.blockRangesAreInvalidForSpokeClients
-          { blockTag: Math.min(destinationBlockRange[1], spokePoolClients[destinationChainId].latestBlockSearched) }
+          Math.min(destinationBlockRange[1], spokePoolClients[destinationChainId].latestBlockSearched),
+          destinationChainId
         );
+
         // If there is no matching fill and the deposit expired in this bundle and the fill status on-chain is not
         // Filled, then we can to refund it as an expired deposit.
         if (!fillStatus.eq(FillStatus.Filled)) {
