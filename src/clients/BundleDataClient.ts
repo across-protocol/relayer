@@ -141,7 +141,7 @@ function updateBundleSlowFills(
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
   private loadDataCache: DataCache = {};
-  private bundleTimestampCache: { [blockRangeKey: string]: { [chainId: number]: number[] } } = {};
+  private bundleTimestampCache: Record<string, { [chainId: number]: number[] }> = {};
 
   // eslint-disable-next-line no-useless-constructor
   constructor(
@@ -164,10 +164,15 @@ export class BundleDataClient {
     return _.cloneDeep(this.loadDataCache[key]);
   }
 
-  bundleTimestampsFromCache(key: string): undefined | { [chainId: number]: number[] } {
+  getBundleTimestampsFromCache(key: string): undefined | { [chainId: number]: number[] } {
     if (this.bundleTimestampCache[key]) {
       return _.cloneDeep(this.bundleTimestampCache[key]);
     }
+    return undefined;
+  }
+
+  setBundleTimestampsInCache(key: string, timestamps: { [chainId: number]: number[] }): void {
+    this.bundleTimestampCache[key] = timestamps;
   }
 
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<CombinedRefunds[]> {
@@ -432,7 +437,7 @@ export class BundleDataClient {
     // determine whether fillDeadlines have expired.
     // @dev Going to leave this in so we can see impact on run-time in prod. This makes (allChainIds.length * 2) RPC
     // calls in parallel.
-    const _cachedBundleTimestamps = this.bundleTimestampsFromCache(key);
+    const _cachedBundleTimestamps = this.getBundleTimestampsFromCache(key);
     let bundleBlockTimestamps: { [chainId: string]: number[] } = {};
     if (!_cachedBundleTimestamps) {
       bundleBlockTimestamps = await this.getBundleBlockTimestamps(
@@ -440,7 +445,7 @@ export class BundleDataClient {
         blockRangesForChains,
         spokePoolClients
       );
-      this.bundleTimestampCache[key] = bundleBlockTimestamps;
+      this.setBundleTimestampsInCache(key, bundleBlockTimestamps);
       if (logData) {
         this.logger.debug({
           at: "BundleDataClient#loadData",
@@ -908,6 +913,11 @@ export class BundleDataClient {
         // by checkings its on-chain fill status.
         const fillStatus: BigNumber = await spokePoolClients[deposit.destinationChainId].spokePool.fillStatuses(
           relayDataHash,
+          // We can assume that in production
+          // the block ranges passed into this function would never contain blocks where the spoke pool client
+          // hasn't queried. This is because this function will usually be called
+          // in production with block ranges that were validated by
+          // DataworkerUtils.blockRangesAreInvalidForSpokeClients
           { blockTag: Math.min(destinationBlockRange[1], spokePoolClients[destinationChainId].latestBlockSearched) }
         );
         // If there is no matching fill and the deposit expired in this bundle and the fill status on-chain is not
