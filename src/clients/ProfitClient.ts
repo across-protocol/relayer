@@ -581,7 +581,7 @@ export class ProfitClient {
     }
 
     return {
-      profitable: profitable || this.isTestnet,
+      profitable: profitable || (this.isTestnet && nativeGasCost.lt(uint256Max)),
       nativeGasCost,
       tokenGasCost,
       grossRelayerFeePct,

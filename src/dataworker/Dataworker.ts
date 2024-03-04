@@ -1323,6 +1323,9 @@ export class Dataworker {
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: chainId === hubChainId,
+          // If polygon, keep separate from relayer refund leaves since we can't execute refunds atomically
+          // with fills.
+          groupId: chainId === 137 ? "slowRelay" : undefined,
         });
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });

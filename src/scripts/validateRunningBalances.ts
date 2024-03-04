@@ -63,7 +63,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 10; // Roughly 2 days worth of bundles.
+  const bundlesToValidate = 5; // Roughly 12 hours worth of bundles.
 
   // Create spoke pool clients that only query events related to root bundle proposals and roots
   // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
@@ -367,11 +367,21 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
         if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
-          if (!netSendAmount.eq(0)) {
+          // There is a possibility that the relayer refund root does not contain a refund leaf for this chain Id x
+          // token combination but it did have a non-zero netSendAmount in the pool rebalance leaf. This is possible
+          // if the net send amount was used to pay out slow fill leaves. Therefore, we should
+          // only throw an error here if the slow fill root was empty and net send amount was non-zero. In this
+          // case there MIGHT be a relayer refund root. Its hard to figure out otherwise if there was a refund root
+          // so there might be a false negative here where we don't subtract the refund leaf amount because we
+          // can't find it and it legitimately wasn't relayed over yet.
+          if (!netSendAmount.eq(0) && mostRecentValidatedBundle.slowRelayRoot === EMPTY_MERKLE_ROOT) {
             // We shouldn't get here for any bundle since we start with the i-1'th most recent bundle.
             // If so, then a relayed root message might have gotten stuck in a canonical bridge and we will
             // want to know about it.
-            throw new Error(`No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
+            const formattedAmount = fromWei(netSendAmount.toString(), decimals);
+            throw new Error(
+              `No relayed refund root for chain ID ${leaf.chainId} and token ${l2Token} with netSendAmount ${formattedAmount}`
+            );
           }
         } else {
           const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), bnZero);
