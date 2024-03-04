@@ -564,9 +564,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   const disableNoTtl = process.env["DISABLE_NO_TTL"] === "true";
 
-  const noTtlBlockDistance = process.env[`NO_TTL_BLOCK_DISTANCE_${chainId}`]
-    ? Number(process.env[`NO_TTL_BLOCK_DISTANCE_${chainId}`])
-    : DEFAULT_NO_TTL_DISTANCE[chainId];
+  const noTtlBlockDistance = Number(process.env[`NO_TTL_BLOCK_DISTANCE_${chainId}`] ?? DEFAULT_NO_TTL_DISTANCE[chainId]);
 
   // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
   // NODE_DISABLE_PROVIDER_CACHING=true.
