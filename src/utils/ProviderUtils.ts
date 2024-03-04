@@ -124,7 +124,7 @@ class CacheProvider extends RateLimitedProvider {
     providerCacheNamespace: string,
     readonly redisClient?: RedisClient,
     // Note: if not provided, this is set to POSITIVE_INFINITY, meaning the TTL is infinite (i.e. no TTL).
-    readonly noTtlBlockDistance: number = Number.POSITIVE_INFINITY,
+    readonly noTtlBlockDistance = Number.POSITIVE_INFINITY,
     ...jsonRpcConstructorParams: ConstructorParameters<typeof RateLimitedProvider>
   ) {
     super(...jsonRpcConstructorParams);
