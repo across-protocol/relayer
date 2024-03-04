@@ -2,12 +2,13 @@ import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import {
-  DepositWithBlock,
   Fill,
   FillsToRefund,
   FillWithBlock,
   SpokePoolClientsByChain,
+  V2DepositWithBlock,
   V2FillWithBlock,
+  V3DepositWithBlock,
   V3FillWithBlock,
 } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache, queryHistoricalDepositForFill } from "../utils";
@@ -256,7 +257,7 @@ export function getFillsInRange(
 //      due to the additional members and the use of DepositWithBlock instead of Deposit.
 // @todo Better alignment with the upstream UnfilledDeposit type.
 export type RelayerUnfilledDeposit = {
-  deposit: DepositWithBlock;
+  deposit: V3DepositWithBlock;
   version: number;
   unfilledAmount: BigNumber;
   fillCount: number;
@@ -290,30 +291,32 @@ export async function getUnfilledDeposits(
   }
 
   // Iterate over each chainId and check for unfilled deposits.
-  for (const originClient of Object.values(spokePoolClients)) {
-    const { chainId: originChainId } = originClient;
-    const chainIdx = chainIds.indexOf(originChainId);
-    assert(chainIdx !== -1, `Invalid chain index for chainId ${originChainId} (${chainIdx})`);
-    const earliestBlockNumber = earliestBlockNumbers[chainIdx];
+  chainIds.forEach((originChainId, idx) => {
+    const originClient = spokePoolClients[originChainId];
+    const earliestBlockNumber = earliestBlockNumbers[idx];
 
     for (const destinationChain of chainIds.filter((chainId) => chainId !== originChainId)) {
       // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
       const destinationClient = spokePoolClients[destinationChain];
-      const depositsForDestinationChain: DepositWithBlock[] =
-        originClient.getDepositsForDestinationChain(destinationChain);
+      const deposits = originClient
+        .getDepositsForDestinationChain(destinationChain)
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>);
 
-      const unfilledDepositsForDestinationChain = depositsForDestinationChain
+      const unfilledDepositsForDestinationChain = deposits
         .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
         .map((deposit) => {
           const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
         });
+
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
-      unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
+      unfilledDeposits.push(
+        ...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(bnZero))
+      );
     }
-  }
+  });
 
   return unfilledDeposits;
 }
