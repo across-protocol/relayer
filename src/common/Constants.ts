@@ -194,6 +194,20 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   11155420: 0,
 };
 
+// This is the block distance at which the bot, by default, stores in redis with no TTL.
+// These are all intended to be roughly 2 days of blocks for each chain.
+// blocks = 172800 / avg_block_time
+export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
+  1: 14400,
+  10: 86400,
+  137: 86400,
+  288: 86400,
+  324: 172800,
+  8453: 86400,
+  42161: 691200,
+  534352: 57600,
+};
+
 // Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
 export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
