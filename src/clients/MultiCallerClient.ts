@@ -389,17 +389,33 @@ export class MultiCallerClient {
       });
     }
 
+    // Create groups of transactions to send atomically.
+    // Sort transactions by contract address so we can reduce chance that we need to split them again
+    // to make Multicall work.
+    const getTxnChunks = (_txns: AugmentedTransaction[]): AugmentedTransaction[][] => {
+      const groupIdTxns = _txns.filter(({ groupId }) => isDefined(groupId));
+      const groupIdChunks = Object.values(lodash.groupBy(groupIdTxns, "groupId"))
+        .map((txns) => {
+          return lodash.chunk(
+            txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+            chunkSize
+          );
+        })
+        .flat();
+      const nonGroupedChunks = lodash.chunk(
+        _txns
+          .filter(({ groupId }) => !isDefined(groupId))
+          .sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+        chunkSize
+      );
+      return [...groupIdChunks, ...nonGroupedChunks];
+    };
+
     // If we can't construct multisender contract, then multicall everything. If any of the transactions
     // is for a contract that can't be multicalled, then this function will throw. This client should only be
     // used on contracts that extend Multicaller.
     if ((await this._getMultisender(chainId)) === undefined) {
-      // Sort transactions by contract address so we can reduce chance that we need to split them again
-      // to make Multicall work.
-      const txnChunks = lodash.chunk(
-        multicallerTxns.concat(multisenderTxns).sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
-        chunkSize
-      );
-      return txnChunks
+      return getTxnChunks(multicallerTxns.concat(multisenderTxns))
         .map((txnChunk) => {
           // Don't wrap single transactions in a multicall.
           return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
@@ -408,11 +424,7 @@ export class MultiCallerClient {
     } else {
       // We can support sending multiple transactions to different contracts via an external multisender
       // contract.
-      const multicallerTxnChunks = lodash.chunk(
-        multicallerTxns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
-        chunkSize
-      );
-      const multicallerTxnBundle = multicallerTxnChunks
+      const multicallerTxnBundle = getTxnChunks(multicallerTxns)
         .map((txnChunk) => (txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0]))
         .flat();
       const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
