@@ -295,7 +295,8 @@ export async function finalize(
         amount && symbol ? `to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜` : "";
       logger.info({
         at: "Finalizer",
-        message: `Submitted ${miscReason} on ${destinationNetwork} ` + infoLogMessage,
+        message: `Submitted ${miscReason} on ${destinationNetwork}`,
+        infoLogMessage,
         transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
           blockExplorerLink(txnHash, destinationChainId)
         ),
