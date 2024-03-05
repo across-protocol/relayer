@@ -41,7 +41,10 @@ export class RedisClient {
   async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
     // Apply namespace to key.
     key = this.getNamespacedKey(key);
-    if (expirySeconds > 0) {
+    if (expirySeconds === Number.POSITIVE_INFINITY) {
+      // No TTL
+      await this.client.set(key, val);
+    } else if (expirySeconds > 0) {
       // EX: Expire key after expirySeconds.
       await this.client.set(key, val, { EX: expirySeconds });
     } else {
