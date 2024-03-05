@@ -19,6 +19,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   324: 4 * 24 * 60 * 60,
   8453: 172800, // Same as Optimism.
   42161: 1382400,
+  59144: 86400, // 1 block every 4 seconds
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -54,10 +55,12 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   324: 0,
   8453: 60,
   42161: 0,
+  59144: 64,
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -75,10 +78,12 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
+    59144: 0,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    59140: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -91,10 +96,12 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
+    59144: 0,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    59140: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -116,10 +123,12 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   324: 10000,
   8453: 1500,
   42161: 10000,
+  59144: 10000,
   // Testnets:
   5: 10000,
   280: 10000,
   420: 10000,
+  59140: 10000,
   80001: 10000,
   84531: 10000,
   84532: 10000,
@@ -141,10 +150,12 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   8453: 60, // 2s/block. Same finality profile as Optimism
   42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
+  59144: 375, // At 4s/block, 25 mins = 375 blocks.
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -184,11 +195,13 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   324: 512,
   8453: 120,
   42161: 32,
+  59144: 0,
   534352: 0,
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -209,6 +222,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   288: 86400,
   324: 172800,
   8453: 86400,
+  59144: 43200,
   42161: 691200,
   534352: 57600,
 };
@@ -238,11 +252,13 @@ export const multicall3Addresses = {
   324: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   8453: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  59144: "0xcA11bde05977b3631167028862bE2a173976CA11",
   534352: "0xcA11bde05977b3631167028862bE2a173976CA11",
   // testnet
   5: "0xcA11bde05977b3631167028862bE2a173976CA11",
   280: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   420: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  59140: "0xcA11bde05977b3631167028862bE2a173976CA11",
   80001: "0xcA11bde05977b3631167028862bE2a173976CA11",
   84531: "0xcA11bde05977b3631167028862bE2a173976CA11",
   84532: "0xcA11bde05977b3631167028862bE2a173976CA11",
