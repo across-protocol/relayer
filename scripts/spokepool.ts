@@ -88,7 +88,7 @@ async function getLpFeePct(params: relayerFeeQuery, timeout = 5000): Promise<Big
   if (!isDefined(quoteData["lpFeePct"])) {
     throw new Error("lpFeePct missing from suggested-fees response");
   }
-  return toBN(quoteData["lpFeePct"]);
+  return toBN(quoteData["lpFee"["pct"]);
 }
 
 async function getSuggestedFees(params: relayerFeeQuery, timeout: number) {
@@ -274,7 +274,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     recipient, // recipient
     destinationToken, // destinationToken
     amount, // amount
-    MaxUint256.toString(), // maxTokensToSend
+    amount, // maxTokensToSend
     destinationChainId, // repaymentChainId
     originChainId, // originChainId
     realizedLpFeePct, // realizedLpFeePct
