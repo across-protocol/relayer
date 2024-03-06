@@ -71,7 +71,7 @@ describe("ProfitClient: Consider relay profit", () => {
   const randomiseGasCost = (chainId: number): TransactionCostEstimate & { gasTokenPriceUsd: BigNumber } => {
     // Randomise the gas token price (usd)
     const gasToken = profitClient.resolveGasToken(chainId);
-    const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
+    const gasTokenPriceUsd = toBNWei(Math.random().toFixed(18));
 
     // Randomise the fillRelay cost in units of gas.
     const nativeGasCost = toBN(random(80_000, 100_000));
@@ -428,7 +428,12 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(deposit, deposit.outputAmount, effectiveLpFeePct, token);
+            const { profitable } = await profitClient.isFillProfitable(
+              deposit,
+              deposit.outputAmount,
+              effectiveLpFeePct,
+              token
+            );
             expect(profitable).to.equal(expected.profitable);
           }
         }
