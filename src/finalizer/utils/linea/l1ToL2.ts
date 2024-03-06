@@ -5,7 +5,7 @@ import { Wallet, utils, providers } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
 import { Signer, winston, convertFromWei, TransactionReceipt, paginatedEventQuery } from "../../../utils";
 import { FinalizerPromise, CrossChainTransfer } from "../../types";
 import { initLineaSdk, makeGetMessagesWithStatusByTxHash, MessageWithStatus, lineaAdapterIface } from "./common";
@@ -31,13 +31,12 @@ export async function lineaL1ToL2Finalizer(
 
   // Get Linea's `MessageSent` events originating from HubPool
   const messageSentEvents = await paginatedEventQuery(
-    // l1Contract.contract.connect(hubPoolClient.hubPool.provider),
     l1Contract.contract,
-    l1Contract.contract.filters.MessageSent(hubPoolAddress, null, null, null, null, null, null),
+    l1Contract.contract.filters.MessageSent(hubPoolAddress),
     {
       fromBlock: latestBlockToFinalize,
       toBlock: hubPoolClient.latestBlockSearched,
-      maxBlockLookBack: 10_000,
+      maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
     }
   );
 

@@ -33,9 +33,7 @@ export function makeGetMessagesWithStatusByTxHash(
    * @param txHash Transaction hash to retrieve MessageSent events for.
    * @returns Array of MessageSent events with their status.
    */
-  return async function getMessagesWithStatusByTxHash(
-    txHashOrReceipt: string | TransactionReceipt
-  ): Promise<MessageWithStatus[]> {
+  return async (txHashOrReceipt: string | TransactionReceipt): Promise<MessageWithStatus[]> => {
     const txReceipt =
       typeof txHashOrReceipt === "string"
         ? await srcMessageService.provider.getTransactionReceipt(txHashOrReceipt)
