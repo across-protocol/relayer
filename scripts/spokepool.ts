@@ -85,10 +85,10 @@ async function getRelayerFeePct(params: relayerFeeQuery, timeout = 5000): Promis
 
 async function getLpFeePct(params: relayerFeeQuery, timeout = 5000): Promise<BigNumber> {
   const quoteData = await getSuggestedFees(params, timeout);
-  if (!isDefined(quoteData["lpFeePct"])) {
+  if (!isDefined(quoteData?.["lpFee"]?.["pct"])) {
     throw new Error("lpFeePct missing from suggested-fees response");
   }
-  return toBN(quoteData["lpFee"["pct"]);
+  return toBN(quoteData["lpFee"]["pct"]);
 }
 
 async function getSuggestedFees(params: relayerFeeQuery, timeout: number) {
