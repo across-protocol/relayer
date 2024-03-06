@@ -355,7 +355,8 @@ export class ProfitClient {
       deposit.outputAmount
     );
 
-    // Determine profitability.
+    // Determine profitability. netRelayerFeePct effectively represents the capital cost to the relayer;
+    // i.e. how much it pays out to the recipient vs. the net fee that it receives for doing so.
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
     const netRelayerFeePct = outputAmountUsd.gt(bnZero)
       ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
