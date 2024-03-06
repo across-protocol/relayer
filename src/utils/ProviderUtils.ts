@@ -14,6 +14,7 @@ import {
 } from "../common";
 import { delay, getOriginFromURL, Logger } from "./";
 import { compareArrayResultsWithIgnoredKeys, compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
+import { MAINNET_CHAIN_IDs } from "@across-protocol/constants-v2";
 
 const logger = Logger;
 
@@ -552,7 +553,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     NODE_DISABLE_PROVIDER_CACHING,
     NODE_PROVIDER_CACHE_NAMESPACE,
     NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS,
-    NODE_DISABLE_NO_TTL_PROVIDER_CACHING,
+    NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING,
   } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
@@ -568,7 +569,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "25");
 
-  const disableNoTtlCaching = NODE_DISABLE_NO_TTL_PROVIDER_CACHING === "true";
+  const disableNoTtlCaching = NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING === "true";
 
   // Note: if there is no env var override _and_ no default, this will remain undefined and
   // effectively disable indefinite caching of old blocks/keys.
@@ -577,9 +578,14 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     ? Number(process.env[noTtlBlockDistanceKey])
     : DEFAULT_NO_TTL_DISTANCE[chainId];
 
-  // Note: if not defined for this chain, it will fall back to the default value in the CacheProvider,
-  // which is POSITIVE_INFINITY, meaning no cache entries will use the standard TTL.
-  const standardTtlBlockDistance: number | undefined = CHAIN_CACHE_FOLLOW_DISTANCE[chainId];
+  // If on a production chain, a chain follow distance must be defined.
+  if (Object.values(MAINNET_CHAIN_IDs).includes(chainId) && CHAIN_CACHE_FOLLOW_DISTANCE[chainId] === undefined) {
+    throw new Error(`CHAIN_CACHE_FOLLOW_DISTANCE[${chainId}] not defined.`);
+  }
+
+  // If not operating on a production chain and this chain has no follow distance defined, default to 0 (cache
+  // everything).
+  const standardTtlBlockDistance: number | undefined = CHAIN_CACHE_FOLLOW_DISTANCE[chainId] || 0;
 
   // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
   // NODE_DISABLE_PROVIDER_CACHING=true.
