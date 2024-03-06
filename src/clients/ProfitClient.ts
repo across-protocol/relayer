@@ -435,9 +435,12 @@ export class ProfitClient {
       deposit.outputAmount
     );
 
-    // Determine profitability.
+    // Determine profitability. netRelayerFeePct effectively represents the capital cost to the relayer;
+    // i.e. how much it pays out to the recipient vs. the net fee that it receives for doing so.
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct = inputAmountUsd.gt(bnZero) ? netRelayerFeeUsd.mul(fixedPoint).div(inputAmountUsd) : bnZero;
+    const netRelayerFeePct = outputAmountUsd.gt(bnZero)
+      ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
+      : bnZero;
 
     // If either token prices are unknown, assume the relay is unprofitable. Force non-equivalent tokens
     // to be unprofitable for now. The relayer may be updated in future to support in-protocol swaps.
