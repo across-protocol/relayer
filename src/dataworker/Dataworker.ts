@@ -15,7 +15,6 @@ import {
   toBNWei,
   getFillsInRange,
   ZERO_ADDRESS,
-  CHAIN_IDs,
 } from "../utils";
 import {
   FillsToRefund,
@@ -1877,7 +1876,7 @@ export class Dataworker {
     // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf. This is currently
     // unique to the L2 -> L1 relay direction for Linea. We will make this variable generic defaulting to undefined
     // for other chains.
-    const valueToPassViaPayable = [CHAIN_IDs.LINEA, CHAIN_IDs.LINEA_GOERLI].includes(chainId)
+    const valueToPassViaPayable = sdkUtils.chainIsLinea(chainId)
       ? await this._getRequiredEthForLineaRelayLeafExecution(client)
       : undefined;
 
@@ -2104,7 +2103,7 @@ export class Dataworker {
    */
   _getRequiredEthForLineaRelayLeafExecution(client: SpokePoolClient): Promise<BigNumber> {
     // You should *only* call this method on Linea chains.
-    if (![CHAIN_IDs.LINEA, CHAIN_IDs.LINEA_GOERLI].includes(client.chainId)) {
+    if (!sdkUtils.chainIsLinea(client.chainId)) {
       this.logger.error({
         at: "Dataworker#_getRequiredEthForLineaRelayLeafExecution",
         message: "Tried to get required ETH for Linea relay leaf execution on a non-Linea chain!",
