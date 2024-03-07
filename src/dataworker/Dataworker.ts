@@ -2101,16 +2101,17 @@ export class Dataworker {
    * relay fee from the L2Linea Messenger contract.
    * @param leaf The relay leaf to execute. Used in this function to prevent non-Linea chains from calling this method.
    * @returns The amount of ETH required to execute the relay leaf.
+   * @throws If the method is called using a non-linea spoke pool client.
    */
-  _getRequiredEthForLineaRelayLeafExecution(client: SpokePoolClient): Promise<BigNumber | undefined> {
+  _getRequiredEthForLineaRelayLeafExecution(client: SpokePoolClient): Promise<BigNumber> {
+    // You should *only* call this method on Linea chains.
     if (![CHAIN_IDs.LINEA, CHAIN_IDs.LINEA_GOERLI].includes(client.chainId)) {
-      this.logger.warn({
+      this.logger.error({
         at: "Dataworker#_getRequiredEthForLineaRelayLeafExecution",
         message: "Tried to get required ETH for Linea relay leaf execution on a non-Linea chain!",
         chainId: client.chainId,
       });
-      // There is no fee for non-Linea chains w/r/t Linea so we can return undefined.
-      return undefined;
+      throw new Error("Tried to get required ETH for Linea relay leaf execution on a non-Linea chain!");
     }
     // Resolve the contract entry for the L2Linea Messenger contract.
     const { abi: l2MessageABI, address: l2MessageAddress } = CONTRACT_ADDRESSES[client.chainId].l2MessageService;
