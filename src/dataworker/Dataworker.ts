@@ -1877,10 +1877,9 @@ export class Dataworker {
     // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf. This is currently
     // unique to the L2 -> L1 relay direction for Linea. We will make this variable generic defaulting to undefined
     // for other chains.
-    const valueToPassViaPayable =
-      chainId === CHAIN_IDs.LINEA || CHAIN_IDs.LINEA_GOERLI
-        ? await this._getRequiredEthForLineaRelayLeafExecution(client)
-        : undefined;
+    const valueToPassViaPayable = [CHAIN_IDs.LINEA, CHAIN_IDs.LINEA_GOERLI].includes(chainId)
+      ? await this._getRequiredEthForLineaRelayLeafExecution(client)
+      : undefined;
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
