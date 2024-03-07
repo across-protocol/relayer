@@ -13,6 +13,7 @@ import {
   TransactionResponse,
   ethers,
   getContractInfoFromAddress,
+  getProvider,
   Signer,
   toBNWei,
   winston,
@@ -55,6 +56,15 @@ export async function runTransaction(
   retriesRemaining = 2
 ): Promise<TransactionResponse> {
   const chainId = (await contract.provider.getNetwork()).chainId;
+
+  // If RPC private providers are defined for this chain, fetch them and create a new contract instance to use them.
+  const namespace = "PRIVATE";
+  if (isDefined(process.env[`RPC_PROVIDERS_${namespace}_${chainId}`])) {
+    const useCache = false;
+    const privacyProvider = await getProvider(chainId, logger, useCache, namespace);
+    const signer = contract.signer.connect(privacyProvider);
+    contract = contract.connect(signer);
+  }
 
   try {
     const priorityFeeScaler =

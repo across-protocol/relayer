@@ -511,10 +511,10 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 }
 
 // Global provider cache to avoid creating multiple providers for the same chain.
-const providerCache: { [chainId: number]: RetryProvider } = {};
+const providerCache: Record<string, RetryProvider> = {};
 
-function getProviderCacheKey(chainId: number, redisEnabled) {
-  return `${chainId}_${redisEnabled ? "cache" : "nocache"}`;
+function getProviderCacheKey(chainId: number, redisEnabled: boolean, namespace: string) {
+  return `${chainId}_${redisEnabled ? "cache" : "nocache"}_${namespace}`;
 }
 
 /**
@@ -524,11 +524,14 @@ function getProviderCacheKey(chainId: number, redisEnabled) {
  * @param redisEnabled
  * @returns ethers.provider
  */
-export function getCachedProvider(chainId: number, redisEnabled = true): RetryProvider {
-  if (!providerCache[getProviderCacheKey(chainId, redisEnabled)]) {
-    throw new Error(`No cached provider for chainId ${chainId} and redisEnabled ${redisEnabled}`);
+export function getCachedProvider(chainId: number, redisEnabled = true, namespace = ""): RetryProvider {
+  const providerKey = getProviderCacheKey(chainId, redisEnabled, namespace);
+  if (!providerCache[providerKey]) {
+    throw new Error(
+      `No cached provider for chainId ${chainId}, redisEnabled ${redisEnabled}, namespace "${namespace}"`
+    );
   }
-  return providerCache[getProviderCacheKey(chainId, redisEnabled)];
+  return providerCache[providerKey];
 }
 
 /**
@@ -536,14 +539,21 @@ export function getCachedProvider(chainId: number, redisEnabled = true): RetryPr
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
  * "provider cache" if this function was called once before with the same chain ID.
  */
-export async function getProvider(chainId: number, logger?: winston.Logger, useCache = true): Promise<RetryProvider> {
+export async function getProvider(
+  chainId: number,
+  logger?: winston.Logger,
+  useCache = true,
+  namespace = ""
+): Promise<RetryProvider> {
   const redisClient = await getRedis(logger);
+  const providerKey = getProviderCacheKey(chainId, redisClient !== undefined, namespace);
   if (useCache) {
-    const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
+    const cachedProvider = providerCache[providerKey];
     if (cachedProvider) {
       return cachedProvider;
     }
   }
+
   const {
     NODE_RETRIES,
     NODE_RETRY_DELAY,
@@ -629,7 +639,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   // See ethers ConnectionInfo for field descriptions.
   // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
-  const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold).map(
+  const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold, namespace).map(
     (nodeUrl): [ethers.utils.ConnectionInfo, number] => [
       {
         url: nodeUrl,
@@ -656,14 +666,18 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   );
 
   if (useCache) {
-    providerCache[getProviderCacheKey(chainId, redisClient !== undefined)] = provider;
+    providerCache[providerKey] = provider;
   }
   return provider;
 }
 
-export function getNodeUrlList(chainId: number, quorum = 1): string[] {
+export function getNodeUrlList(chainId: number, quorum = 1, namespace = ""): string[] {
+  const hasNamespace = namespace !== "";
+
   const resolveUrls = (): string[] => {
-    const providers = process.env[`RPC_PROVIDERS_${chainId}`] ?? process.env["RPC_PROVIDERS"];
+    const providers = hasNamespace
+      ? process.env[`RPC_PROVIDERS_${namespace}_${chainId}`] ?? process.env[`RPC_PROVIDERS_${namespace}`]
+      : process.env[`RPC_PROVIDERS_${chainId}`] ?? process.env["RPC_PROVIDERS"];
     if (providers === undefined) {
       throw new Error(`No RPC providers defined for chainId ${chainId}`);
     }
