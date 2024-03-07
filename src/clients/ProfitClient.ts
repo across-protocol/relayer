@@ -1,4 +1,3 @@
-import { random } from "lodash";
 import { Provider } from "@ethersproject/abstract-provider";
 import { utils as ethersUtils } from "ethers";
 import {
@@ -11,8 +10,8 @@ import {
 import * as constants from "../common/Constants";
 import {
   assert,
+  bnOne,
   bnZero,
-  bnUint32Max as uint32Max,
   bnUint256Max as uint256Max,
   fixedPointAdjustment as fixedPoint,
   BigNumber,
@@ -27,6 +26,7 @@ import {
   assign,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  ZERO_ADDRESS,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain, V2Deposit, V3Deposit } from "../interfaces";
 import { HubPoolClient } from ".";
@@ -682,45 +682,48 @@ export class ProfitClient {
 
   private async updateGasCosts(): Promise<void> {
     const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
-    const depositId = random(uint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
-    const fillAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
-    const feePct = toBNWei("0.0001"); // 1bps
-    const quoteTimestamp = getCurrentTime();
+    const outputAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
+    const currentTime = getCurrentTime();
 
     // Prefer USDC on mainnet because it's consistent in terms of gas estimation (no unwrap conditional).
     // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
     const [testSymbol, relayer] =
       this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["WETH", PROD_RELAYER] : ["WETH", TEST_RELAYER];
 
+    // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
+    // use the main RL address because it has all supported tokens and approvals in place on all chains.
+    const sampleDeposit: V3Deposit = {
+      depositId: 0,
+      depositor: TEST_RECIPIENT,
+      recipient: TEST_RECIPIENT,
+      inputToken: "", // Not verified by the SpokePool, overwritten later.
+      inputAmount: outputAmount.add(bnOne),
+      outputToken: "", // SpokePool-specific, overwritten later.
+      outputAmount,
+      originChainId: 0, // Not verified by the SpokePool.
+      destinationChainId: 0, // SpokePool-specific, overwritten later.
+      quoteTimestamp: currentTime - 60,
+      fillDeadline: currentTime + 60,
+      exclusivityDeadline: 0,
+      exclusiveRelayer: ZERO_ADDRESS,
+      message: EMPTY_MESSAGE,
+    };
+
     // Pre-fetch total gas costs for relays on enabled chains.
     const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
-      const destinationToken =
+      const outputToken =
         destinationChainId === hubPoolClient.chainId
           ? hubToken
           : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
-      assert(isDefined(destinationToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
-
-      const deposit: V2Deposit = {
-        depositId,
-        depositor: TEST_RECIPIENT,
-        recipient: TEST_RECIPIENT,
-        originToken: destinationToken, // Not verified by the SpokePool.
-        amount: fillAmount,
-        originChainId: destinationChainId, // Not verified by the SpokePool.
-        destinationChainId,
-        relayerFeePct: feePct,
-        realizedLpFeePct: feePct,
-        destinationToken,
-        quoteTimestamp,
-        message: EMPTY_MESSAGE,
-      };
+      assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
       // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
       // use the main RL address because it has all supported tokens and approvals in place on all chains.
+      const deposit = { ...sampleDeposit, destinationChainId, outputToken };
       this.totalGasCosts[destinationChainId] = await relayerFeeQueries[destinationChainId].getGasCosts(
         deposit,
-        fillAmount,
+        outputAmount,
         relayer
       );
     });
