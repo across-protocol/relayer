@@ -278,7 +278,7 @@ export class ProfitClient {
     // @todo Consider phasing this out and relying solely on the minimum profitability config.
     if (isMessageEmpty(resolveDepositMessage(deposit))) {
       tokenGasCost = tokenGasCost.mul(this.gasMultiplier).div(fixedPoint);
-    } else if (isDefined(process.env.RELAYER_GAS_MULTIPLIER_MESSAGES)) {
+    } else if (isDefined(process.env.RELAYER_MESSAGE_GAS_MULTIPLIER)) {
       // @todo: Parse this in RelayerConfig and pass it in via the constructor.
       tokenGasCost = tokenGasCost.mul(process.env.RELAYER_MESSAGE_GAS_MULTIPLIER).div(fixedPoint);
     }
