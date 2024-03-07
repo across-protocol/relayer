@@ -14,6 +14,7 @@ import {
 } from "../common";
 import { delay, getOriginFromURL, Logger } from "./";
 import { compareArrayResultsWithIgnoredKeys, compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
+import { MAINNET_CHAIN_IDs } from "@across-protocol/constants-v2";
 
 const logger = Logger;
 
@@ -117,24 +118,20 @@ class CacheProvider extends RateLimitedProvider {
   public readonly getBlockByNumberPrefix: string;
   public readonly getLogsCachePrefix: string;
   public readonly callCachePrefix: string;
-  public readonly maxReorgDistance: number;
   public readonly baseTTL: number;
 
   constructor(
     providerCacheNamespace: string,
     readonly redisClient?: RedisClient,
-    // Note: if not provided, this is set to POSITIVE_INFINITY, meaning the TTL is infinite (i.e. no TTL).
+    // Note: if not provided, this is set to POSITIVE_INFINITY, meaning no cache entries are set with the standard TTL.
+    readonly standardTtlBlockDistance = Number.POSITIVE_INFINITY,
+    // Note: if not provided, this is set to POSITIVE_INFINITY, meaning no cache entries are set with no TTL.
     readonly noTtlBlockDistance = Number.POSITIVE_INFINITY,
     ...jsonRpcConstructorParams: ConstructorParameters<typeof RateLimitedProvider>
   ) {
     super(...jsonRpcConstructorParams);
 
     const { chainId } = this.network;
-    if (CHAIN_CACHE_FOLLOW_DISTANCE[chainId] === undefined) {
-      throw new Error(`CacheProvider:constructor no CHAIN_CACHE_FOLLOW_DISTANCE for chain ${chainId}`);
-    }
-
-    this.maxReorgDistance = CHAIN_CACHE_FOLLOW_DISTANCE[chainId];
 
     // Pre-compute as much of the redis key as possible.
     const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${chainId}`;
@@ -251,13 +248,13 @@ class CacheProvider extends RateLimitedProvider {
     // Determine the distance that the block is from HEAD.
     const headDistance = currentBlockNumber - blockNumber;
 
-    // If the distance from head is large enough, use infinite TTL.
+    // If the distance from head is large enough, set with no TTL.
     if (headDistance > this.noTtlBlockDistance) {
       return CacheType.NO_TTL;
     }
 
-    // If the distance is <= infiniteTtlBlockDistance, but > maxReorgDistance, use standard TTL.
-    if (headDistance > this.maxReorgDistance) {
+    // If the distance is <= noTtlBlockDistance, but > standardTtlBlockDistance, use standard TTL.
+    if (headDistance > this.standardTtlBlockDistance) {
       return CacheType.WITH_TTL;
     }
 
@@ -277,13 +274,22 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     readonly maxConcurrency: number,
     providerCacheNamespace: string,
     redisClient?: RedisClient,
+    standardTtlBlockDistance?: number,
     noTtlBlockDistance?: number
   ) {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
     super(undefined, chainId);
     this.providers = params.map(
-      (inputs) => new CacheProvider(providerCacheNamespace, redisClient, noTtlBlockDistance, maxConcurrency, ...inputs)
+      (inputs) =>
+        new CacheProvider(
+          providerCacheNamespace,
+          redisClient,
+          standardTtlBlockDistance,
+          noTtlBlockDistance,
+          maxConcurrency,
+          ...inputs
+        )
     );
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold)) {
       throw new Error(
@@ -547,6 +553,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     NODE_DISABLE_PROVIDER_CACHING,
     NODE_PROVIDER_CACHE_NAMESPACE,
     NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS,
+    NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING,
   } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
@@ -562,7 +569,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "25");
 
-  const disableNoTtl = process.env["DISABLE_NO_TTL"] === "true";
+  const disableNoTtlCaching = NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING === "true";
 
   // Note: if there is no env var override _and_ no default, this will remain undefined and
   // effectively disable indefinite caching of old blocks/keys.
@@ -571,8 +578,20 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     ? Number(process.env[noTtlBlockDistanceKey])
     : DEFAULT_NO_TTL_DISTANCE[chainId];
 
+  // If on a production chain, a chain follow distance must be defined.
+  if (Object.values(MAINNET_CHAIN_IDs).includes(chainId) && CHAIN_CACHE_FOLLOW_DISTANCE[chainId] === undefined) {
+    throw new Error(`CHAIN_CACHE_FOLLOW_DISTANCE[${chainId}] not defined.`);
+  }
+
+  // If not operating on a production chain and this chain has no follow distance defined, default to 0 (cache
+  // everything).
+  const standardTtlBlockDistance: number | undefined = CHAIN_CACHE_FOLLOW_DISTANCE[chainId] || 0;
+
   // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
   // NODE_DISABLE_PROVIDER_CACHING=true.
+  // This only disables standard TTL caching for blocks close to HEAD.
+  // To disable all caching, this option should be combined with NODE_DISABLE_NO_TTL_PROVIDER_CACHING or
+  // the user should refrain from providing a valid redis instance.
   const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING === "true";
 
   // This environment variable allows the operator to namespace the cache. This is useful if multiple bots are using
@@ -631,8 +650,9 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     retryDelay,
     nodeMaxConcurrency,
     providerCacheNamespace,
-    disableProviderCache ? undefined : redisClient,
-    disableNoTtl ? undefined : noTtlBlockDistance
+    redisClient,
+    disableProviderCache ? undefined : standardTtlBlockDistance,
+    disableNoTtlCaching ? undefined : noTtlBlockDistance
   );
 
   if (useCache) {
