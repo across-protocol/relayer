@@ -12,7 +12,6 @@ import * as constants from "../common/Constants";
 import {
   assert,
   bnZero,
-  bnOne,
   bnUint32Max as uint32Max,
   bnUint256Max as uint256Max,
   fixedPointAdjustment as fixedPoint,
@@ -690,9 +689,8 @@ export class ProfitClient {
 
     // Prefer USDC on mainnet because it's consistent in terms of gas estimation (no unwrap conditional).
     // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
-    const [testSymbol, relayer] = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET
-      ? ["USDC", PROD_RELAYER]
-      : ["WETH", TEST_RELAYER];
+    const [testSymbol, relayer] =
+      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["WETH", PROD_RELAYER] : ["WETH", TEST_RELAYER];
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
