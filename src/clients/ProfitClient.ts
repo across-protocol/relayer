@@ -51,8 +51,7 @@ export type FillProfitCommon = {
   nativeGasCost: BigNumber; // Cost of completing the fill in the units of gas.
   tokenGasCost: BigNumber; // Cost of completing the fill in the relevant gas token.
   gasPadding: BigNumber; // Positive padding applied to nativeGasCost and tokenGasCost before profitability.
-  gasMultiplier: BigNumber; // Multiplier applied to token-only fill cost estimates before profitability.
-  gasMessageMultiplier: BigNumber; // Multiplier applied to message fill cost estimates before profitability.
+  gasMultiplier: BigNumber; // Gas multiplier applied to fill cost estimates before profitability.
   gasTokenPriceUsd: BigNumber; // Price paid per unit of gas the gas token in USD.
   gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
@@ -379,6 +378,11 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
     const profitable = netRelayerFeePct.gte(minRelayerFeePct);
 
+    // Sub in the gas multiplier used based on whether the deposit had a message or not.
+    const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
+      ? this.gasMultiplier
+      : this.gasMessageMultiplier;
+
     return {
       grossRelayerFeePct,
       tokenPriceUsd,
@@ -387,8 +391,7 @@ export class ProfitClient {
       nativeGasCost,
       tokenGasCost,
       gasPadding: this.gasPadding,
-      gasMultiplier: this.gasMultiplier,
-      gasMessageMultiplier: this.gasMessageMultiplier,
+      gasMultiplier,
       gasTokenPriceUsd,
       gasCostUsd,
       refundFeeUsd,
@@ -459,6 +462,11 @@ export class ProfitClient {
       outputTokenPriceUsd.gt(bnZero) &&
       netRelayerFeePct.gte(minRelayerFeePct);
 
+    // Sub in the gas multiplier used based on whether the deposit had a message or not.
+    const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
+      ? this.gasMultiplier
+      : this.gasMessageMultiplier;
+
     return {
       totalFeePct,
       inputTokenPriceUsd,
@@ -470,8 +478,7 @@ export class ProfitClient {
       nativeGasCost,
       tokenGasCost,
       gasPadding: this.gasPadding,
-      gasMultiplier: this.gasMultiplier,
-      gasMessageMultiplier: this.gasMessageMultiplier,
+      gasMultiplier,
       gasTokenPriceUsd,
       gasCostUsd,
       netRelayerFeePct,
@@ -536,6 +543,11 @@ export class ProfitClient {
           profitable: fill.profitable,
         });
       } else {
+        // Sub in the gas multiplier used based on whether the deposit had a message or not.
+        const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
+          ? this.gasMultiplier
+          : this.gasMessageMultiplier;
+
         this.logger.debug({
           at: "ProfitClient#getFillProfitability",
           message: `${l1Token.symbol} v3 deposit ${depositId} on chain ${originChainId} is ${profitable}`,
@@ -550,8 +562,7 @@ export class ProfitClient {
           nativeGasCost: fill.nativeGasCost,
           tokenGasCost: formatEther(fill.tokenGasCost),
           gasPadding: this.gasPadding,
-          gasMultiplier: this.gasMultiplier,
-          gasMessageMultiplier: this.gasMessageMultiplier,
+          gasMultiplier: formatEther(gasMultiplier),
           gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
           grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
           gasCostUsd: formatEther(fill.gasCostUsd),
