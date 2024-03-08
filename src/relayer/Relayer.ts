@@ -46,7 +46,8 @@ export class Relayer {
    */
   private async _getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
     const { configStoreClient, hubPoolClient, spokePoolClients, acrossApiClient } = this.clients;
-    const { relayerTokens, ignoredAddresses, acceptInvalidFills } = this.config;
+    const { relayerTokens, ignoredAddresses, acceptInvalidFills, exclusiveDepositors, exclusiveRecipients } =
+      this.config;
 
     const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
 
@@ -90,6 +91,14 @@ export class Relayer {
           depositor,
           recipient,
         });
+        return false;
+      }
+
+      if (exclusiveDepositors.length > 0 && !exclusiveDepositors.includes(getAddress(depositor))) {
+        return false;
+      }
+
+      if (exclusiveRecipients.length > 0 && !exclusiveRecipients.includes(getAddress(recipient))) {
         return false;
       }
 

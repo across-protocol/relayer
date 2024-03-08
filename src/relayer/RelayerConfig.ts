@@ -3,6 +3,8 @@ import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
+const { getAddress } = ethers.utils;
+
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
@@ -23,6 +25,8 @@ export class RelayerConfig extends CommonConfig {
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
+  readonly exclusiveDepositors: string[];
+  readonly exclusiveRecipients: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
@@ -37,6 +41,8 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_DESTINATION_CHAINS,
       SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
+      RELAYER_EXCLUSIVE_DEPOSITORS,
+      RELAYER_EXCLUSIVE_RECIPIENTS,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_GAS_PADDING,
       RELAYER_INVENTORY_CONFIG,
@@ -59,11 +65,11 @@ export class RelayerConfig extends CommonConfig {
     this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
 
     // Empty means all tokens.
-    this.relayerTokens = RELAYER_TOKENS
-      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
-      : [];
+    this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS).map((token: string) => getAddress(token)) : [];
+    this.exclusiveDepositors = JSON.parse(RELAYER_EXCLUSIVE_DEPOSITORS ?? "[]").map((addr: string) => getAddress(addr));
+    this.exclusiveRecipients = JSON.parse(RELAYER_EXCLUSIVE_RECIPIENTS ?? "[]").map((addr: string) => getAddress(addr));
     this.slowDepositors = SLOW_DEPOSITORS
-      ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
+      ? JSON.parse(SLOW_DEPOSITORS).map((depositor: string) => getAddress(depositor))
       : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
