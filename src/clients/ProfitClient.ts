@@ -145,6 +145,7 @@ export class ProfitClient {
     readonly defaultMinRelayerFeePct = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability = false,
     protected gasMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MULTIPLIER),
+    protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING)
   ) {
     // Require 0% <= gasPadding <= 200%
@@ -159,6 +160,11 @@ export class ProfitClient {
       this.gasMultiplier.gte(bnZero) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
+    assert(
+      this.gasMessageMultiplier.gte(bnZero) && this.gasMessageMultiplier.lte(toBNWei(4)),
+      `Gas message multiplier out of range (${this.gasMessageMultiplier})`
+    );
+
     this.priceClient = new PriceClient(logger, [
       new acrossApi.PriceFeed(),
       new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
@@ -276,12 +282,10 @@ export class ProfitClient {
     // Gas estimates for token-only fills are stable and reliable. Allow these to be scaled up or down via the
     // configured gasMultiplier. Do not scale the nativeGasCost, since it might be used to set the transaction gasLimit.
     // @todo Consider phasing this out and relying solely on the minimum profitability config.
-    if (isMessageEmpty(resolveDepositMessage(deposit))) {
-      tokenGasCost = tokenGasCost.mul(this.gasMultiplier).div(fixedPoint);
-    } else if (isDefined(process.env.RELAYER_MESSAGE_GAS_MULTIPLIER)) {
-      // @todo: Parse this in RelayerConfig and pass it in via the constructor.
-      tokenGasCost = tokenGasCost.mul(process.env.RELAYER_MESSAGE_GAS_MULTIPLIER).div(fixedPoint);
-    }
+    const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
+      ? this.gasMultiplier
+      : this.gasMessageMultiplier;
+    tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
     const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
 
