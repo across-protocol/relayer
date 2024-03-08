@@ -21,6 +21,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerDestinationChains: number[] = [];
   readonly relayerGasPadding: BigNumber;
   readonly relayerGasMultiplier: BigNumber;
+  readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
@@ -44,6 +45,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_EXCLUSIVE_DEPOSITORS,
       RELAYER_EXCLUSIVE_RECIPIENTS,
       RELAYER_GAS_MULTIPLIER,
+      RELAYER_GAS_MESSAGE_MULTIPLIER,
       RELAYER_GAS_PADDING,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
@@ -138,6 +140,9 @@ export class RelayerConfig extends CommonConfig {
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
+    this.relayerMessageGasMultiplier = toBNWei(
+      RELAYER_GAS_MESSAGE_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER
+    );
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
     this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
