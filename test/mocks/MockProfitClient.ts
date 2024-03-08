@@ -20,7 +20,6 @@ export class MockProfitClient extends ProfitClient {
     defaultMinRelayerFeePct?: BigNumber,
     debugProfitability?: boolean,
     gasMultiplier = toBNWei("1"),
-    gasMessageMultiplier = toBNWei("1"),
     gasPadding = toBNWei("0")
   ) {
     super(
@@ -32,7 +31,6 @@ export class MockProfitClient extends ProfitClient {
       defaultMinRelayerFeePct,
       debugProfitability,
       gasMultiplier,
-      gasMessageMultiplier,
       gasPadding
     );
 

@@ -79,7 +79,6 @@ export async function constructRelayerClients(
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
-    config.relayerMessageGasMultiplier,
     config.relayerGasPadding
   );
   await profitClient.update();
