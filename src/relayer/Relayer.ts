@@ -308,7 +308,7 @@ export class Relayer {
           const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
           this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
         } else {
-          profitClient.captureUnprofitableFill(deposit, outputAmount, realizedLpFeePct, relayerFeePct, gasCost);
+          profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
         }
       } else if (selfRelay) {
         const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
@@ -522,7 +522,7 @@ export class Relayer {
       nativeGasCost: gasLimit,
       tokenGasCost: gasCost,
       grossRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
-    } = await profitClient.isFillProfitable(deposit, outputAmount, realizedLpFeePct, hubPoolToken);
+    } = await profitClient.isFillProfitable(deposit, realizedLpFeePct, hubPoolToken);
     // If preferred chain is different from the destination chain and the preferred chain
     // is not profitable, then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
@@ -543,7 +543,6 @@ export class Relayer {
 
       const fallbackProfitability = await profitClient.isFillProfitable(
         deposit,
-        outputAmount,
         destinationChainLpFeePct,
         hubPoolToken
       );

@@ -71,7 +71,7 @@ describe("ProfitClient: Consider relay profit", () => {
   const randomiseGasCost = (chainId: number): TransactionCostEstimate & { gasTokenPriceUsd: BigNumber } => {
     // Randomise the gas token price (usd)
     const gasToken = profitClient.resolveGasToken(chainId);
-    const gasTokenPriceUsd = toBNWei(Math.random().toFixed(18));
+    const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
 
     // Randomise the fillRelay cost in units of gas.
     const nativeGasCost = toBN(random(80_000, 100_000));
@@ -271,12 +271,12 @@ describe("ProfitClient: Consider relay profit", () => {
       const deposit = { ...v3DepositTemplate, outputAmount, destinationChainId };
 
       // Verify that it works before we break it.
-      expect(() => profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct)).to.not.throw();
+      expect(() => profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct)).to.not.throw();
 
       spyLogger.debug({ message: `Verify exception on chain ${destinationChainId} gas cost estimation failure.` });
       const destinationGasCost = await profitClient.getTotalGasCost(deposit);
       profitClient.setGasCost(destinationChainId, undefined);
-      await assertPromiseError(profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct));
+      await assertPromiseError(profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct));
       profitClient.setGasCost(destinationChainId, destinationGasCost);
 
       spyLogger.debug({ message: `Verifying exception on chain ${destinationChainId} token price lookup failure.` });
@@ -284,11 +284,11 @@ describe("ProfitClient: Consider relay profit", () => {
       profitClient.setTokenPrice(l1Token.address, undefined);
 
       // Setting price to 0 causes a downstream error in calculateFillProfitability.
-      await assertPromiseError(profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct));
+      await assertPromiseError(profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct));
       profitClient.setTokenPrice(l1Token.address, l1TokenPrice);
 
       // Verify we left everything as we found it.
-      expect(() => profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct)).to.not.throw();
+      expect(() => profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct)).to.not.throw();
     }
   });
 
@@ -358,7 +358,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(deposit, deposit.outputAmount, lpFeePct, token);
+            const { profitable } = await profitClient.isFillProfitable(deposit, lpFeePct, token);
             expect(profitable).to.equal(expected.profitable);
           }
         }
@@ -428,12 +428,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(
-              deposit,
-              deposit.outputAmount,
-              effectiveLpFeePct,
-              token
-            );
+            const { profitable } = await profitClient.isFillProfitable(deposit, effectiveLpFeePct, token);
             expect(profitable).to.equal(expected.profitable);
           }
         }
@@ -487,12 +482,12 @@ describe("ProfitClient: Consider relay profit", () => {
 
     const outputTokenPriceUsd = profitClient.getPriceOfToken(l1Token.symbol);
     let expectedOutputAmountUsd = deposit.outputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
-    let fill = await profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    let fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
     expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
 
     deposit.updatedOutputAmount = deposit.outputAmount.div(10);
     expectedOutputAmountUsd = deposit.updatedOutputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
-    fill = await profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
     expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
   });
 
@@ -505,12 +500,12 @@ describe("ProfitClient: Consider relay profit", () => {
     const outputTokenPriceUsd = profitClient.getPriceOfToken(tokens.WETH.symbol);
 
     let expectedOutputAmountUsd = deposit.outputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
-    let fill = await profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    let fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
     expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
 
     deposit.updatedOutputAmount = deposit.outputAmount.sub(bnOne);
     expectedOutputAmountUsd = deposit.updatedOutputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
-    fill = await profitClient.calculateV3FillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
     expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
   });
 
@@ -527,9 +522,9 @@ describe("ProfitClient: Consider relay profit", () => {
     const lpFeePct = toBNWei("0.002");
     const gasCost = toGWei("0.003");
 
-    profitClient.captureUnprofitableFill(deposit, deposit.outputAmount, lpFeePct, relayerFeePct, gasCost);
+    profitClient.captureUnprofitableFill(deposit, lpFeePct, relayerFeePct, gasCost);
     expect(profitClient.getUnprofitableFills()).to.deep.equal({
-      [deposit.originChainId]: [{ deposit, fillAmount: deposit.outputAmount, lpFeePct, relayerFeePct, gasCost }],
+      [deposit.originChainId]: [{ deposit, lpFeePct, relayerFeePct, gasCost }],
     });
   });
 });
