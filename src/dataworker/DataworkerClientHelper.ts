@@ -26,10 +26,13 @@ export async function constructDataworkerClients(
 ): Promise<DataworkerClients> {
   const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
+  const { hubPoolClient, configStoreClient } = commonClients;
+
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, signerAddr, {}, commonClients.hubPoolClient);
+  const tokenClient = new TokenClient(logger, signerAddr, {}, hubPoolClient);
   await tokenClient.update();
   // Run approval on hub pool.
   if (config.sendingTransactionsEnabled) {
@@ -42,7 +45,7 @@ export async function constructDataworkerClients(
     logger,
     commonClients,
     {},
-    commonClients.configStoreClient.getChainIdIndicesForBlock(),
+    configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 
