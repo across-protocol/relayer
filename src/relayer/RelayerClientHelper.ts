@@ -84,6 +84,7 @@ export async function constructRelayerClients(
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
+    config.relayerMessageGasMultiplier,
     config.relayerGasPadding
   );
   await profitClient.update();
@@ -138,8 +139,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "RequestedV3SlowFill",
     "FilledV3Relay",
     "EnabledDepositRoute",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
   ]);
 
   // Update the token client first so that inventory client has latest balances.
