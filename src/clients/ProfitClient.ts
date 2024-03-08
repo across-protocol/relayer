@@ -688,7 +688,7 @@ export class ProfitClient {
     // Prefer USDC on mainnet because it's consistent in terms of gas estimation (no unwrap conditional).
     // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
     const [testSymbol, relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["WETH", PROD_RELAYER] : ["WETH", TEST_RELAYER];
+      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
 
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.
