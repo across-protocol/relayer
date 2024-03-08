@@ -181,6 +181,10 @@ export class ProfitClient {
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
   }
 
+  resolveGasMultiplier(deposit: Deposit): BigNumber {
+    return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
+  }
+
   resolveGasToken(chainId: number): L1Token {
     const symbol = getNativeTokenSymbol(chainId);
     const token = TOKEN_SYMBOLS_MAP[symbol];
@@ -282,9 +286,7 @@ export class ProfitClient {
     // Gas estimates for token-only fills are stable and reliable. Allow these to be scaled up or down via the
     // configured gasMultiplier. Do not scale the nativeGasCost, since it might be used to set the transaction gasLimit.
     // @todo Consider phasing this out and relying solely on the minimum profitability config.
-    const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
-      ? this.gasMultiplier
-      : this.gasMessageMultiplier;
+    const gasMultiplier = this.resolveGasMultiplier(deposit);
     tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
     const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
@@ -378,11 +380,6 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
     const profitable = netRelayerFeePct.gte(minRelayerFeePct);
 
-    // Sub in the gas multiplier used based on whether the deposit had a message or not.
-    const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
-      ? this.gasMultiplier
-      : this.gasMessageMultiplier;
-
     return {
       grossRelayerFeePct,
       tokenPriceUsd,
@@ -391,7 +388,7 @@ export class ProfitClient {
       nativeGasCost,
       tokenGasCost,
       gasPadding: this.gasPadding,
-      gasMultiplier,
+      gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
       gasCostUsd,
       refundFeeUsd,
@@ -462,11 +459,6 @@ export class ProfitClient {
       outputTokenPriceUsd.gt(bnZero) &&
       netRelayerFeePct.gte(minRelayerFeePct);
 
-    // Sub in the gas multiplier used based on whether the deposit had a message or not.
-    const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
-      ? this.gasMultiplier
-      : this.gasMessageMultiplier;
-
     return {
       totalFeePct,
       inputTokenPriceUsd,
@@ -478,7 +470,7 @@ export class ProfitClient {
       nativeGasCost,
       tokenGasCost,
       gasPadding: this.gasPadding,
-      gasMultiplier,
+      gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
       gasCostUsd,
       netRelayerFeePct,
@@ -531,7 +523,7 @@ export class ProfitClient {
           nativeGasCost: fill.nativeGasCost,
           tokenGasCost: formatEther(fill.tokenGasCost),
           gasPadding: this.gasPadding,
-          gasMultiplier: this.gasMultiplier,
+          gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
           gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
           refundFeeUsd: formatEther(fill.refundFeeUsd),
           relayerCapitalUsd: formatEther(fill.relayerCapitalUsd),
@@ -543,11 +535,6 @@ export class ProfitClient {
           profitable: fill.profitable,
         });
       } else {
-        // Sub in the gas multiplier used based on whether the deposit had a message or not.
-        const gasMultiplier = isMessageEmpty(resolveDepositMessage(deposit))
-          ? this.gasMultiplier
-          : this.gasMessageMultiplier;
-
         this.logger.debug({
           at: "ProfitClient#getFillProfitability",
           message: `${l1Token.symbol} v3 deposit ${depositId} on chain ${originChainId} is ${profitable}`,
@@ -562,7 +549,7 @@ export class ProfitClient {
           nativeGasCost: fill.nativeGasCost,
           tokenGasCost: formatEther(fill.tokenGasCost),
           gasPadding: this.gasPadding,
-          gasMultiplier: formatEther(gasMultiplier),
+          gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
           gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
           grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
           gasCostUsd: formatEther(fill.gasCostUsd),
