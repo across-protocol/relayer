@@ -52,6 +52,7 @@ export type FillProfitCommon = {
   tokenGasCost: BigNumber; // Cost of completing the fill in the relevant gas token.
   gasPadding: BigNumber; // Positive padding applied to nativeGasCost and tokenGasCost before profitability.
   gasMultiplier: BigNumber; // Multiplier applied to token-only fill cost estimates before profitability.
+  gasMessageMultiplier: BigNumber; // Multiplier applied to message fill cost estimates before profitability.
   gasTokenPriceUsd: BigNumber; // Price paid per unit of gas the gas token in USD.
   gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
@@ -387,6 +388,7 @@ export class ProfitClient {
       tokenGasCost,
       gasPadding: this.gasPadding,
       gasMultiplier: this.gasMultiplier,
+      gasMessageMultiplier: this.gasMessageMultiplier,
       gasTokenPriceUsd,
       gasCostUsd,
       refundFeeUsd,
@@ -469,6 +471,7 @@ export class ProfitClient {
       tokenGasCost,
       gasPadding: this.gasPadding,
       gasMultiplier: this.gasMultiplier,
+      gasMessageMultiplier: this.gasMessageMultiplier,
       gasTokenPriceUsd,
       gasCostUsd,
       netRelayerFeePct,
@@ -548,6 +551,7 @@ export class ProfitClient {
           tokenGasCost: formatEther(fill.tokenGasCost),
           gasPadding: this.gasPadding,
           gasMultiplier: this.gasMultiplier,
+          gasMessageMultiplier: this.gasMessageMultiplier,
           gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
           grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
           gasCostUsd: formatEther(fill.gasCostUsd),
