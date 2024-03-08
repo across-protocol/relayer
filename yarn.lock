@@ -472,20 +472,15 @@
     minimatch "^3.0.4"
     strip-json-comments "^3.1.1"
 
-"@eth-optimism/contracts-bedrock@0.16.0":
-  version "0.16.0"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.16.0.tgz#531cb81529ad3f895be538c1d8762eace6241a95"
-  integrity sha512-MfHJdeQ/BzHgkoHnA+NGb1hU8CH0OFsp4ylmFi0uwYh3xPJxcHt9qhy1g4MGGMUGAPIUmlBPaqhwbBlQkaeFrA==
-  dependencies:
-    "@openzeppelin/contracts" "4.7.3"
-    "@openzeppelin/contracts-upgradeable" "4.7.3"
-    "@rari-capital/solmate" "github:transmissions11/solmate#8f9b23f8838670afda0fd8983f2c41e8037ae6bc"
-    clones-with-immutable-args "github:Saw-mon-and-Natalie/clones-with-immutable-args#105efee1b9127ed7f6fedf139e1fc796ce8791f2"
-
 "@eth-optimism/contracts-bedrock@0.16.2":
   version "0.16.2"
   resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.16.2.tgz#065ad561c3c8b942e4e0dd3d0ea6ed7e00a0f8f0"
   integrity sha512-a2+f7soDbrd6jV74U02EpyMwQt2iZeDZ4c2ZwgkObcxXUZLZQ2ELt/VRFBf8TIL3wYcBOGpUa1aXAE2oHQ7oRA==
+
+"@eth-optimism/contracts-bedrock@0.17.1":
+  version "0.17.1"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.17.1.tgz#729b1dc53ec23d02ea9e68181f994955129f7415"
+  integrity sha512-Hc5peN5PM8kzl9dzqSD5jv6ED3QliO1DF0dXLRJxfrXR7/rmEeyuAYESUwUM0gdJZjkwRYiS5m230BI6bQmnlw==
 
 "@eth-optimism/contracts@0.6.0":
   version "0.6.0"
@@ -527,26 +522,6 @@
     bufio "^1.0.7"
     chai "^4.3.4"
 
-"@eth-optimism/core-utils@0.12.2":
-  version "0.12.2"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.12.2.tgz#cacf8c488e8c9bf75b193a08763043294a4882fa"
-  integrity sha512-rJjsRF//hegpfeWzcWRVO+SJ7XK+uwpidUGECQ5/aGfO+o0/J0kaiRhvGtUvJHsY5D2+gThqQkkx+ZwlGuBeuQ==
-  dependencies:
-    "@ethersproject/abi" "^5.7.0"
-    "@ethersproject/abstract-provider" "^5.7.0"
-    "@ethersproject/address" "^5.7.0"
-    "@ethersproject/bignumber" "^5.7.0"
-    "@ethersproject/bytes" "^5.7.0"
-    "@ethersproject/constants" "^5.7.0"
-    "@ethersproject/contracts" "^5.7.0"
-    "@ethersproject/keccak256" "^5.7.0"
-    "@ethersproject/properties" "^5.7.0"
-    "@ethersproject/rlp" "^5.7.0"
-    "@ethersproject/web" "^5.7.0"
-    chai "^4.3.4"
-    ethers "^5.7.0"
-    node-fetch "^2.6.7"
-
 "@eth-optimism/core-utils@0.13.1":
   version "0.13.1"
   resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.13.1.tgz#f15ec207a629c9bbf1a10425c1b4a4c0be544755"
@@ -580,18 +555,6 @@
     ethers "^5.5.4"
     lodash "^4.17.21"
 
-"@eth-optimism/sdk@^3.1.0":
-  version "3.1.0"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.1.0.tgz#c0c48d1111375c0bc2b80457cbde455e69079c0a"
-  integrity sha512-E1/Tk145Aln1qGxFcbEugtjzTJTnZgmTt8AUe4g9ghC7+6r1YOVav+KZuoMoyR+nF6/FbKdmVq0wqYilZOLq3w==
-  dependencies:
-    "@eth-optimism/contracts" "0.6.0"
-    "@eth-optimism/contracts-bedrock" "0.16.0"
-    "@eth-optimism/core-utils" "0.12.2"
-    lodash "^4.17.21"
-    merkletreejs "^0.2.27"
-    rlp "^2.2.7"
-
 "@eth-optimism/sdk@^3.1.8":
   version "3.1.8"
   resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.1.8.tgz#af68d1d58e0d71539363a273a50815233b54c83a"
@@ -603,6 +566,19 @@
     lodash "^4.17.21"
     merkletreejs "^0.3.11"
     rlp "^2.2.7"
+
+"@eth-optimism/sdk@^3.2.1":
+  version "3.2.1"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.2.1.tgz#70e10c84580fd9c02d82a6482cd233f8b317632b"
+  integrity sha512-COmnT2zRzFn2XhMW/OD1ML3gCrT6SO95YF3hV/Mx3G1G4Q6zOv09rwU1avH/OcqdDMBmZ/DTrZm+9OVmc+YPlQ==
+  dependencies:
+    "@eth-optimism/contracts" "0.6.0"
+    "@eth-optimism/contracts-bedrock" "0.17.1"
+    "@eth-optimism/core-utils" "0.13.1"
+    lodash "^4.17.21"
+    merkletreejs "^0.3.11"
+    rlp "^2.2.7"
+    semver "^7.6.0"
 
 "@ethereum-waffle/chai@4.0.10":
   version "4.0.10"
@@ -2071,11 +2047,6 @@
     hex2dec "^1.0.1"
     uuid "^8.0.0"
 
-"@openzeppelin/contracts-upgradeable@4.7.3":
-  version "4.7.3"
-  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.7.3.tgz#f1d606e2827d409053f3e908ba4eb8adb1dd6995"
-  integrity sha512-+wuegAMaLcZnLCJIvrVUDzA9z/Wp93f0Dla/4jJvIhijRrPabjQbZe6fWiECLaJyfn5ci9fqf9vTw3xpQOad2A==
-
 "@openzeppelin/contracts-upgradeable@4.9.3", "@openzeppelin/contracts-upgradeable@^4.8.1":
   version "4.9.3"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.9.3.tgz#ff17a80fb945f5102571f8efecb5ce5915cc4811"
@@ -2095,11 +2066,6 @@
   version "4.4.2"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.4.2.tgz#4e889c9c66e736f7de189a53f8ba5b8d789425c2"
   integrity sha512-NyJV7sJgoGYqbtNUWgzzOGW4T6rR19FmX1IJgXGdapGPWsuMelGJn9h03nos0iqfforCbCB0iYIR0MtIuIFLLw==
-
-"@openzeppelin/contracts@4.7.3":
-  version "4.7.3"
-  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.7.3.tgz#939534757a81f8d69cc854c7692805684ff3111e"
-  integrity sha512-dGRS0agJzu8ybo44pCIf3xBaPQN/65AIXNgK8+4gzKd5kbvlqyxryUYVLJv7fK98Seyd2hDZzVEHSWAh0Bt1Yw==
 
 "@openzeppelin/contracts@4.9.3", "@openzeppelin/contracts@^4.2.0", "@openzeppelin/contracts@^4.7.3", "@openzeppelin/contracts@^4.8.1":
   version "4.9.3"
@@ -2224,10 +2190,6 @@
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/@protobufjs/utf8/-/utf8-1.1.0.tgz#a777360b5b39a1a2e5106f8e858f2fd2d060c570"
   integrity sha1-p3c2C1s5oaLlEG+OhY8v0tBgxXA=
-
-"@rari-capital/solmate@github:transmissions11/solmate#8f9b23f8838670afda0fd8983f2c41e8037ae6bc":
-  version "7.0.0-alpha.3"
-  resolved "https://codeload.github.com/transmissions11/solmate/tar.gz/8f9b23f8838670afda0fd8983f2c41e8037ae6bc"
 
 "@redis/bloom@1.0.2":
   version "1.0.2"
@@ -4945,10 +4907,6 @@ clone@^2.0.0, clone@^2.1.1:
   resolved "https://registry.yarnpkg.com/clone/-/clone-2.1.2.tgz#1b7f4b9f591f1e8f83670401600345a02887435f"
   integrity sha1-G39Ln1kfHo+DZwQBYANFoCiHQ18=
 
-"clones-with-immutable-args@github:Saw-mon-and-Natalie/clones-with-immutable-args#105efee1b9127ed7f6fedf139e1fc796ce8791f2":
-  version "2.0.0"
-  resolved "https://codeload.github.com/Saw-mon-and-Natalie/clones-with-immutable-args/tar.gz/105efee1b9127ed7f6fedf139e1fc796ce8791f2"
-
 cluster-key-slot@1.1.0:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/cluster-key-slot/-/cluster-key-slot-1.1.0.tgz#30474b2a981fb12172695833052bc0d01336d10d"
@@ -5338,11 +5296,6 @@ crypto-browserify@3.12.0:
     public-encrypt "^4.0.0"
     randombytes "^2.0.0"
     randomfill "^1.0.3"
-
-crypto-js@^3.1.9-1:
-  version "3.3.0"
-  resolved "https://registry.yarnpkg.com/crypto-js/-/crypto-js-3.3.0.tgz#846dd1cce2f68aacfa156c8578f926a609b7976b"
-  integrity sha512-DIT51nX0dCfKltpRiXV+/TVZq+Qq2NgF4644+K7Ttnla7zEzqc+kjJyiB96BHNyUTBxyjzRcZYpUdZa+QAqi6Q==
 
 crypto-js@^4.2.0:
   version "4.2.0"
@@ -6648,7 +6601,7 @@ ethereumjs-wallet@^1.0.1:
     utf8 "^3.0.0"
     uuid "^8.3.2"
 
-ethers@5.7.2, ethers@^5.0.13, ethers@^5.1.0, ethers@^5.4.2, ethers@^5.5.1, ethers@^5.5.3, ethers@^5.5.4, ethers@^5.7.0, ethers@^5.7.1, ethers@^5.7.2:
+ethers@5.7.2, ethers@^5.0.13, ethers@^5.1.0, ethers@^5.4.2, ethers@^5.5.1, ethers@^5.5.3, ethers@^5.5.4, ethers@^5.7.1, ethers@^5.7.2:
   version "5.7.2"
   resolved "https://registry.yarnpkg.com/ethers/-/ethers-5.7.2.tgz#3a7deeabbb8c030d4126b24f84e525466145872e"
   integrity sha512-wswUsmWo1aOK8rR7DIKiWSw9DbLWe6x98Jrn8wcTflTVvaXhAMaB5zGAXy0GYQEQp9iO1iSHWVyARQm11zUtyg==
@@ -10034,17 +9987,6 @@ merkle-patricia-tree@^4.2.2, merkle-patricia-tree@^4.2.4:
     readable-stream "^3.6.0"
     semaphore-async-await "^1.5.1"
 
-merkletreejs@^0.2.27:
-  version "0.2.31"
-  resolved "https://registry.yarnpkg.com/merkletreejs/-/merkletreejs-0.2.31.tgz#c8ae7bebf1678c0f92d6d8266aeddd3d97cc0c37"
-  integrity sha512-dnK2sE43OebmMe5Qnq1wXvvMIjZjm1u6CcB2KeW6cghlN4p21OpCUr2p56KTVf20KJItNChVsGnimcscp9f+yw==
-  dependencies:
-    bignumber.js "^9.0.1"
-    buffer-reverse "^1.0.1"
-    crypto-js "^3.1.9-1"
-    treeify "^1.1.0"
-    web3-utils "^1.3.4"
-
 merkletreejs@^0.3.11:
   version "0.3.11"
   resolved "https://registry.yarnpkg.com/merkletreejs/-/merkletreejs-0.3.11.tgz#e0de05c3ca1fd368de05a12cb8efb954ef6fc04f"
@@ -12695,6 +12637,13 @@ semver@^7.0.0, semver@^7.1.1, semver@^7.1.2, semver@^7.1.3, semver@^7.2.1, semve
   version "7.5.0"
   resolved "https://registry.yarnpkg.com/semver/-/semver-7.5.0.tgz#ed8c5dc8efb6c629c88b23d41dc9bf40c1d96cd0"
   integrity sha512-+XC0AD/R7Q2mPSRuy2Id0+CGTZ98+8f+KvwirxOKIEyid+XSx6HbC63p+O4IndTHuX5Z+JxQ0TghCkO5Cg/2HA==
+  dependencies:
+    lru-cache "^6.0.0"
+
+semver@^7.6.0:
+  version "7.6.0"
+  resolved "https://registry.yarnpkg.com/semver/-/semver-7.6.0.tgz#1a46a4db4bffcccd97b743b5005c8325f23d4e2d"
+  integrity sha512-EnwXhrlwXMk9gKu5/flx5sv/an57AkRplG3hTK68W7FRDN+k+OWBj65M7719OkA82XLBxrcX0KSHj+X5COhOVg==
   dependencies:
     lru-cache "^6.0.0"
 
