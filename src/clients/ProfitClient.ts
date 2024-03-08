@@ -689,7 +689,9 @@ export class ProfitClient {
     const quoteTimestamp = getCurrentTime();
 
     // Pre-fetch total gas costs for relays on enabled chains.
-    const testSymbol = "WETH";
+    // Prefer USDC on mainnet because it's consistent in terms of gas estimation (no unwrap conditional).
+    // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
+    const testSymbol = hubPoolClient.chainId === CHAIN_IDs.MAINNET ? "USDC" : "WETH";
     const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
       const destinationToken =
@@ -702,7 +704,7 @@ export class ProfitClient {
         depositId,
         depositor: TEST_RECIPIENT,
         recipient: TEST_RECIPIENT,
-        originToken: "", // Not verified by the SpokePool.
+        originToken: destinationToken, // Not verified by the SpokePool.
         amount: fillAmount,
         originChainId: destinationChainId, // Not verified by the SpokePool.
         destinationChainId,
