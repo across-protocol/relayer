@@ -18,7 +18,6 @@ import {
   formatFeePct,
   getCurrentTime,
   isDefined,
-  max,
   min,
   winston,
   toBNWei,
@@ -28,7 +27,15 @@ import {
   TOKEN_SYMBOLS_MAP,
   ZERO_ADDRESS,
 } from "../utils";
-import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain, V2Deposit, V3Deposit } from "../interfaces";
+import {
+  Deposit,
+  DepositWithBlock,
+  L1Token,
+  SpokePoolClientsByChain,
+  V2Deposit,
+  V3Deposit,
+  V3DepositWithBlock,
+} from "../interfaces";
 import { HubPoolClient } from ".";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
@@ -45,40 +52,27 @@ const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils
 const bn10 = toBN(10);
 
 // @note All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
-export type FillProfitCommon = {
+export type FillProfit = {
+  inputTokenPriceUsd: BigNumber;
+  inputAmountUsd: BigNumber;
+  outputTokenPriceUsd: BigNumber;
+  outputAmountUsd: BigNumber;
   grossRelayerFeePct: BigNumber; // Max of relayerFeePct and newRelayerFeePct from Deposit.
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
   nativeGasCost: BigNumber; // Cost of completing the fill in the units of gas.
   tokenGasCost: BigNumber; // Cost of completing the fill in the relevant gas token.
   gasPadding: BigNumber; // Positive padding applied to nativeGasCost and tokenGasCost before profitability.
-  gasMultiplier: BigNumber; // Multiplier applied to token-only fill cost estimates before profitability.
+  gasMultiplier: BigNumber; // Gas multiplier applied to fill cost estimates before profitability.
   gasTokenPriceUsd: BigNumber; // Price paid per unit of gas the gas token in USD.
   gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
   netRelayerFeeUsd: BigNumber; // Relayer fee in USD after paying for gas costs.
+  totalFeePct: BigNumber; // Total fee as a portion of the fill amount.
   profitable: boolean; // Fill profitability indicator.
 };
 
-export type V2FillProfit = FillProfitCommon & {
-  tokenPriceUsd: BigNumber; // Resolved USD price of the bridged token.
-  fillAmountUsd: BigNumber; // Amount of the bridged token being filled.
-  relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
-  refundFeeUsd: BigNumber; // Estimated relayer refund fee on the refund chain.
-};
-
-export type V3FillProfit = FillProfitCommon & {
-  totalFeePct: BigNumber; // Total fee as a portion of the fill amount.
-  inputTokenPriceUsd: BigNumber;
-  inputAmountUsd: BigNumber;
-  outputTokenPriceUsd: BigNumber;
-  outputAmountUsd: BigNumber;
-};
-
-export type FillProfit = V2FillProfit | V3FillProfit;
-
 type UnprofitableFill = {
   deposit: DepositWithBlock;
-  fillAmount: BigNumber;
   lpFeePct: BigNumber;
   relayerFeePct: BigNumber;
   gasCost: BigNumber;
@@ -145,6 +139,7 @@ export class ProfitClient {
     readonly defaultMinRelayerFeePct = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability = false,
     protected gasMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MULTIPLIER),
+    protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING)
   ) {
     // Require 0% <= gasPadding <= 200%
@@ -159,6 +154,11 @@ export class ProfitClient {
       this.gasMultiplier.gte(bnZero) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
+    assert(
+      this.gasMessageMultiplier.gte(bnZero) && this.gasMessageMultiplier.lte(toBNWei(4)),
+      `Gas message multiplier out of range (${this.gasMessageMultiplier})`
+    );
+
     this.priceClient = new PriceClient(logger, [
       new acrossApi.PriceFeed(),
       new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
@@ -173,6 +173,10 @@ export class ProfitClient {
     }
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
+  }
+
+  resolveGasMultiplier(deposit: Deposit): BigNumber {
+    return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
   resolveGasToken(chainId: number): L1Token {
@@ -276,9 +280,8 @@ export class ProfitClient {
     // Gas estimates for token-only fills are stable and reliable. Allow these to be scaled up or down via the
     // configured gasMultiplier. Do not scale the nativeGasCost, since it might be used to set the transaction gasLimit.
     // @todo Consider phasing this out and relying solely on the minimum profitability config.
-    if (isMessageEmpty(resolveDepositMessage(deposit))) {
-      tokenGasCost = tokenGasCost.mul(this.gasMultiplier).div(fixedPoint);
-    }
+    const gasMultiplier = this.resolveGasMultiplier(deposit);
+    tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
     const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
 
@@ -316,91 +319,17 @@ export class ProfitClient {
     return minRelayerFeePct as BigNumber;
   }
 
-  async calculateFillProfitability(
-    deposit: Deposit,
-    fillAmount: BigNumber,
-    lpFeePct: BigNumber,
-    l1Token: L1Token,
-    minRelayerFeePct: BigNumber
-  ): Promise<FillProfit> {
-    const refundFee = bnZero;
-    return sdkUtils.isV2Deposit(deposit)
-      ? this.calculateV2FillProfitability(deposit, fillAmount, refundFee, l1Token, minRelayerFeePct)
-      : this.calculateV3FillProfitability(deposit, lpFeePct, minRelayerFeePct);
-  }
-
-  async calculateV2FillProfitability(
-    deposit: V2Deposit,
-    fillAmount: BigNumber,
-    refundFee: BigNumber,
-    l1Token: L1Token,
-    minRelayerFeePct: BigNumber
-  ): Promise<V2FillProfit> {
-    assert(fillAmount.gt(bnZero), `Unexpected fillAmount: ${fillAmount}`);
-
-    const tokenPriceUsd = this.getPriceOfToken(l1Token.symbol);
-    if (tokenPriceUsd.lte(bnZero)) {
-      throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
-    }
-
-    // Normalise to 18 decimals.
-    const scaledFillAmount = l1Token.decimals === 18 ? fillAmount : fillAmount.mul(toBNWei(1, 18 - l1Token.decimals));
-    const scaledRefundFeeAmount =
-      l1Token.decimals === 18 ? refundFee : refundFee.mul(toBNWei(1, 18 - l1Token.decimals));
-
-    const grossRelayerFeePct = max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? bnZero);
-
-    // Calculate relayer fee and capital outlay in relay token terms.
-    const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(fixedPoint);
-    const relayerCapital = scaledFillAmount.sub(grossRelayerFee);
-
-    // Normalise to USD terms.
-    const fillAmountUsd = scaledFillAmount.mul(tokenPriceUsd).div(fixedPoint);
-    const refundFeeUsd = scaledRefundFeeAmount.mul(tokenPriceUsd).div(fixedPoint);
-    const grossRelayerFeeUsd = grossRelayerFee.mul(tokenPriceUsd).div(fixedPoint);
-    const relayerCapitalUsd = relayerCapital.mul(tokenPriceUsd).div(fixedPoint);
-
-    // Estimate the gas cost of filling this relay.
-    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd } = await this.estimateFillCost(
-      deposit,
-      fillAmount
-    );
-
-    // Determine profitability.
-    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd).sub(refundFeeUsd);
-    const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
-    const profitable = netRelayerFeePct.gte(minRelayerFeePct);
-
-    return {
-      grossRelayerFeePct,
-      tokenPriceUsd,
-      fillAmountUsd,
-      grossRelayerFeeUsd,
-      nativeGasCost,
-      tokenGasCost,
-      gasPadding: this.gasPadding,
-      gasMultiplier: this.gasMultiplier,
-      gasTokenPriceUsd,
-      gasCostUsd,
-      refundFeeUsd,
-      relayerCapitalUsd,
-      netRelayerFeePct,
-      netRelayerFeeUsd,
-      profitable,
-    };
-  }
-
   /**
    * @param deposit V3Deposit object.
    * @param lpFeePct Predetermined LP fee as a multiplier of the deposit inputAmount.
    * @param minRelayerFeePct Relayer minimum fee requirements.
    * @returns FillProfit object detailing the profitability breakdown.
    */
-  async calculateV3FillProfitability(
+  async calculateFillProfitability(
     deposit: V3Deposit,
     lpFeePct: BigNumber,
     minRelayerFeePct: BigNumber
-  ): Promise<V3FillProfit> {
+  ): Promise<FillProfit> {
     const { hubPoolClient } = this;
 
     const inputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.inputToken, deposit.originChainId);
@@ -461,7 +390,7 @@ export class ProfitClient {
       nativeGasCost,
       tokenGasCost,
       gasPadding: this.gasPadding,
-      gasMultiplier: this.gasMultiplier,
+      gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
       gasCostUsd,
       netRelayerFeePct,
@@ -483,81 +412,44 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
   }
 
-  async getFillProfitability(
-    deposit: Deposit,
-    fillAmount: BigNumber,
-    lpFeePct: BigNumber,
-    l1Token: L1Token
-  ): Promise<FillProfit> {
+  async getFillProfitability(deposit: V3Deposit, lpFeePct: BigNumber, l1Token: L1Token): Promise<FillProfit> {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
 
-    const fill = await this.calculateFillProfitability(deposit, fillAmount, lpFeePct, l1Token, minRelayerFeePct);
+    const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
       const { depositId, originChainId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
 
-      const isV2FillProfit = (fillProfit: FillProfit, deposit: Deposit): fillProfit is V2FillProfit => {
-        fillProfit; // tsc
-        return sdkUtils.isV2Deposit(deposit);
-      };
-
-      if (isV2FillProfit(fill, deposit)) {
-        this.logger.debug({
-          at: "ProfitClient#getFillProfitability",
-          message: `${l1Token.symbol} deposit ${depositId} on chain ${originChainId} is ${profitable}`,
-          deposit,
-          l1Token,
-          fillAmount: formatEther(fillAmount),
-          fillAmountUsd: formatEther(fill.fillAmountUsd),
-          lpFeePct: `${formatFeePct(lpFeePct)}%`,
-          grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
-          nativeGasCost: fill.nativeGasCost,
-          tokenGasCost: formatEther(fill.tokenGasCost),
-          gasPadding: this.gasPadding,
-          gasMultiplier: this.gasMultiplier,
-          gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
-          refundFeeUsd: formatEther(fill.refundFeeUsd),
-          relayerCapitalUsd: formatEther(fill.relayerCapitalUsd),
-          grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
-          gasCostUsd: formatEther(fill.gasCostUsd),
-          netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
-          netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
-          minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
-          profitable: fill.profitable,
-        });
-      } else {
-        this.logger.debug({
-          at: "ProfitClient#getFillProfitability",
-          message: `${l1Token.symbol} v3 deposit ${depositId} on chain ${originChainId} is ${profitable}`,
-          deposit,
-          inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
-          inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
-          outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
-          outputTokenAmountUsd: formatEther(fill.outputAmountUsd),
-          totalFeePct: `${formatFeePct(fill.totalFeePct)}%`,
-          lpFeePct: `${formatFeePct(lpFeePct)}%`,
-          grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
-          nativeGasCost: fill.nativeGasCost,
-          tokenGasCost: formatEther(fill.tokenGasCost),
-          gasPadding: this.gasPadding,
-          gasMultiplier: this.gasMultiplier,
-          gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
-          grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
-          gasCostUsd: formatEther(fill.gasCostUsd),
-          netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
-          netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
-          minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
-          profitable: fill.profitable,
-        });
-      }
+      this.logger.debug({
+        at: "ProfitClient#getFillProfitability",
+        message: `${l1Token.symbol} v3 deposit ${depositId} on chain ${originChainId} is ${profitable}`,
+        deposit,
+        inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
+        inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
+        outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
+        outputTokenAmountUsd: formatEther(fill.outputAmountUsd),
+        totalFeePct: `${formatFeePct(fill.totalFeePct)}%`,
+        lpFeePct: `${formatFeePct(lpFeePct)}%`,
+        grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
+        nativeGasCost: fill.nativeGasCost,
+        tokenGasCost: formatEther(fill.tokenGasCost),
+        gasPadding: this.gasPadding,
+        gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
+        gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
+        grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
+        gasCostUsd: formatEther(fill.gasCostUsd),
+        netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
+        netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
+        minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
+        profitable: fill.profitable,
+      });
     }
 
     return fill;
   }
 
   async isFillProfitable(
-    deposit: Deposit,
-    fillAmount: BigNumber,
+    deposit: V3Deposit,
     lpFeePct: BigNumber,
     l1Token: L1Token
   ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "grossRelayerFeePct">> {
@@ -568,7 +460,6 @@ export class ProfitClient {
     try {
       ({ profitable, grossRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
         deposit,
-        fillAmount,
         lpFeePct,
         l1Token
       ));
@@ -577,7 +468,6 @@ export class ProfitClient {
         at: "ProfitClient#isFillProfitable",
         message: `Unable to determine fill profitability (${err}).`,
         deposit,
-        fillAmount,
         lpFeePct,
       });
     }
@@ -591,8 +481,7 @@ export class ProfitClient {
   }
 
   captureUnprofitableFill(
-    deposit: DepositWithBlock,
-    fillAmount: BigNumber,
+    deposit: V3DepositWithBlock,
     lpFeePct: BigNumber,
     relayerFeePct: BigNumber,
     gasCost: BigNumber
@@ -601,16 +490,11 @@ export class ProfitClient {
       at: "ProfitClient",
       message: "Handling unprofitable fill",
       deposit,
-      fillAmount,
       lpFeePct,
       relayerFeePct,
       gasCost,
     });
-    assign(
-      this.unprofitableFills,
-      [deposit.originChainId],
-      [{ deposit, fillAmount, lpFeePct, relayerFeePct, gasCost }]
-    );
+    assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, lpFeePct, relayerFeePct, gasCost }]);
   }
 
   anyCapturedUnprofitableFills(): boolean {
