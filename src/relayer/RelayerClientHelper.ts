@@ -31,11 +31,7 @@ export async function constructRelayerClients(
   const commonClients = await constructClients(logger, config, baseSigner);
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
-  await hubPoolClient.update([
-    "CrossChainContractsSet",
-    "L1TokenEnabledForLiquidityProvision",
-    "SetPoolRebalanceRoute",
-  ]);
+  await hubPoolClient.update();
 
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
   // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
