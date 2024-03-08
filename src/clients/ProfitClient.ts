@@ -12,7 +12,6 @@ import * as constants from "../common/Constants";
 import {
   assert,
   bnZero,
-  bnOne,
   bnUint32Max as uint32Max,
   bnUint256Max as uint256Max,
   fixedPointAdjustment as fixedPoint,
@@ -683,13 +682,17 @@ export class ProfitClient {
 
   private async updateGasCosts(): Promise<void> {
     const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
-    const relayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? PROD_RELAYER : TEST_RELAYER;
     const depositId = random(uint32Max.toNumber()); // random depositId + "" originToken => ~impossible to collide.
-    const fillAmount = bnOne;
+    const fillAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
+    const feePct = toBNWei("0.0001"); // 1bps
     const quoteTimestamp = getCurrentTime();
 
+    // Prefer USDC on mainnet because it's consistent in terms of gas estimation (no unwrap conditional).
+    // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
+    const [testSymbol, relayer] =
+      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
+
     // Pre-fetch total gas costs for relays on enabled chains.
-    const testSymbol = "WETH";
     const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
       const destinationToken =
@@ -702,12 +705,12 @@ export class ProfitClient {
         depositId,
         depositor: TEST_RECIPIENT,
         recipient: TEST_RECIPIENT,
-        originToken: "", // Not verified by the SpokePool.
+        originToken: destinationToken, // Not verified by the SpokePool.
         amount: fillAmount,
         originChainId: destinationChainId, // Not verified by the SpokePool.
         destinationChainId,
-        relayerFeePct: bnOne,
-        realizedLpFeePct: bnOne,
+        relayerFeePct: feePct,
+        realizedLpFeePct: feePct,
         destinationToken,
         quoteTimestamp,
         message: EMPTY_MESSAGE,
