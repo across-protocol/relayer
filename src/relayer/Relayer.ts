@@ -94,11 +94,11 @@ export class Relayer {
         return false;
       }
 
-      if (exclusiveDepositors.length > 0 && !exclusiveDepositors.includes(getAddress(depositor))) {
+      if (exclusiveDepositors?.length > 0 && !exclusiveDepositors.includes(getAddress(depositor))) {
         return false;
       }
 
-      if (exclusiveRecipients.length > 0 && !exclusiveRecipients.includes(getAddress(recipient))) {
+      if (exclusiveRecipients?.length > 0 && !exclusiveRecipients.includes(getAddress(recipient))) {
         return false;
       }
 
