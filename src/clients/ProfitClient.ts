@@ -32,7 +32,6 @@ import {
   DepositWithBlock,
   L1Token,
   SpokePoolClientsByChain,
-  V2Deposit,
   V3Deposit,
   V3DepositWithBlock,
 } from "../interfaces";
