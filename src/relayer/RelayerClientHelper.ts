@@ -28,6 +28,8 @@ export async function constructRelayerClients(
   baseSigner: Signer
 ): Promise<RelayerClients> {
   const signerAddr = await baseSigner.getAddress();
+  // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
+  // bundle and the pending bundle. 12 hours should cover these bundles in almost all cases.
   const hubPoolLookBack = 3600 * 12;
   const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
   const { configStoreClient, hubPoolClient } = commonClients;
