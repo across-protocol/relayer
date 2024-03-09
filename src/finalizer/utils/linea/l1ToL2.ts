@@ -7,7 +7,7 @@ import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
 import { Signer, winston, convertFromWei, TransactionReceipt, paginatedEventQuery } from "../../../utils";
-import { FinalizerPromise, CrossChainTransfer } from "../../types";
+import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { initLineaSdk, makeGetMessagesWithStatusByTxHash, MessageWithStatus, lineaAdapterIface } from "./common";
 
 type ParsedAdapterEvent = {
@@ -92,14 +92,14 @@ export async function lineaL1ToL2Finalizer(
   }));
 
   // Populate cross chain calls for claimable messages
-  const transfers = claimable.flatMap(({ adapterEvent }) => {
+  const messages = claimable.flatMap(({ adapterEvent }) => {
     const { name, args } = adapterEvent.parsedLog;
 
     if (!["TokensRelayed", "MessageRelayed"].includes(name)) {
       return [];
     }
 
-    let crossChainCall: CrossChainTransfer;
+    let crossChainCall: CrossChainMessage;
 
     if (name === "MessageRelayed") {
       crossChainCall = {
@@ -134,7 +134,7 @@ export async function lineaL1ToL2Finalizer(
     },
   });
 
-  return { callData: multicall3Call, crossChainTransfers: transfers };
+  return { callData: multicall3Call, crossChainMessages: messages };
 }
 
 function filterLineaTxReceipts(receipts: TransactionReceipt[], l1MessageService: L1MessageServiceContract) {

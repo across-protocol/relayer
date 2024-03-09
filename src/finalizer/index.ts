@@ -28,7 +28,7 @@ import {
   startupLogLevel,
   winston,
 } from "../utils";
-import { ChainFinalizer, CrossChainTransfer } from "./types";
+import { ChainFinalizer, CrossChainMessage } from "./types";
 import {
   arbitrumOneFinalizer,
   cctpL1toL2Finalizer,
@@ -108,7 +108,7 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const finalizationsToBatch: { txn: Multicall2Call; crossChainTransfer?: CrossChainTransfer }[] = [];
+  const finalizationsToBatch: { txn: Multicall2Call; crossChainMessage?: CrossChainMessage }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   for (const chainId of configuredChainIds) {
@@ -150,7 +150,7 @@ export async function finalize(
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
     for (const finalizer of chainSpecificFinalizers) {
-      const { callData, crossChainTransfers } = await finalizer(
+      const { callData, crossChainMessages } = await finalizer(
         logger,
         hubSigner,
         hubPoolClient,
@@ -159,12 +159,12 @@ export async function finalize(
       );
 
       callData.forEach((txn, idx) => {
-        finalizationsToBatch.push({ txn, crossChainTransfer: crossChainTransfers[idx] });
+        finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
       });
 
-      totalWithdrawalsForChain += crossChainTransfers.filter(({ type }) => type === "withdrawal").length;
-      totalDepositsForChain += crossChainTransfers.filter(({ type }) => type === "deposit").length;
-      totalMiscTxnsForChain += crossChainTransfers.filter(({ type }) => type === "misc").length;
+      totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
+      totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
+      totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
     }
     logger.debug({
       at: "finalize",
@@ -200,10 +200,10 @@ export async function finalize(
   // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
 
   // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, crossChainTransfer }) => {
+  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, crossChainMessage }) => {
     const txnToSubmit: AugmentedTransaction = {
-      contract: multicall2Lookup[crossChainTransfer.destinationChainId],
-      chainId: crossChainTransfer.destinationChainId,
+      contract: multicall2Lookup[crossChainMessage.destinationChainId],
+      chainId: crossChainMessage.destinationChainId,
       method: "aggregate",
       // aggregate() takes an array of tuples: [calldata: bytes, target: address].
       args: [[_txn]],
@@ -224,8 +224,8 @@ export async function finalize(
 
     // Simulation failed, log the reason and continue.
     let message: string;
-    if (isDefined(crossChainTransfer)) {
-      const { originationChainId, destinationChainId, type, l1TokenSymbol, amount } = crossChainTransfer;
+    if (isDefined(crossChainMessage)) {
+      const { originationChainId, destinationChainId, type, l1TokenSymbol, amount } = crossChainMessage;
       const originationNetwork = getNetworkName(originationChainId);
       const destinationNetwork = getNetworkName(destinationChainId);
       message = `Failed to estimate gas for ${originationNetwork} -> ${destinationNetwork} ${amount} ${l1TokenSymbol} ${type}.`;
@@ -245,7 +245,7 @@ export async function finalize(
     try {
       const finalizationsByChain = groupBy(
         finalizations,
-        ({ crossChainTransfer }) => crossChainTransfer.destinationChainId
+        ({ crossChainMessage }) => crossChainMessage.destinationChainId
       );
       for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
         const finalizerTxns = finalizations.map(({ txn }) => txn);
@@ -276,19 +276,19 @@ export async function finalize(
     }
 
     const { transfers = [], misc = [] } = groupBy(
-      finalizations.filter(({ crossChainTransfer }) => isDefined(crossChainTransfer)),
-      ({ crossChainTransfer: { type } }) => {
+      finalizations.filter(({ crossChainMessage }) => isDefined(crossChainMessage)),
+      ({ crossChainMessage: { type } }) => {
         return type === "misc" ? "misc" : "transfers";
       }
     );
 
-    misc.forEach(({ crossChainTransfer }) => {
-      const { originationChainId, destinationChainId, amount, l1TokenSymbol: symbol, type } = crossChainTransfer;
+    misc.forEach(({ crossChainMessage }) => {
+      const { originationChainId, destinationChainId, amount, l1TokenSymbol: symbol, type } = crossChainMessage;
       // Required for tsc to be happy.
       if (type !== "misc") {
         return;
       }
-      const { miscReason } = crossChainTransfer;
+      const { miscReason } = crossChainMessage;
       const originationNetwork = getNetworkName(originationChainId);
       const destinationNetwork = getNetworkName(destinationChainId);
       const infoLogMessage =
@@ -303,7 +303,7 @@ export async function finalize(
       });
     });
     transfers.forEach(
-      ({ crossChainTransfer: { originationChainId, destinationChainId, type, amount, l1TokenSymbol: symbol } }) => {
+      ({ crossChainMessage: { originationChainId, destinationChainId, type, amount, l1TokenSymbol: symbol } }) => {
         const originationNetwork = getNetworkName(originationChainId);
         const destinationNetwork = getNetworkName(destinationChainId);
         logger.info({

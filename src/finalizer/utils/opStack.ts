@@ -15,7 +15,7 @@ import {
   winston,
 } from "../../utils";
 import { Multicall2Call } from "../../common";
-import { FinalizerPromise, CrossChainTransfer } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 interface CrossChainMessageWithEvent {
   event: TokensBridged;
@@ -85,7 +85,7 @@ export async function opStackFinalizer(
   const callData = [...proofs.callData, ...finalizations.callData];
   const crossChainTransfers = [...proofs.withdrawals, ...finalizations.withdrawals];
 
-  return { callData, crossChainTransfers };
+  return { callData, crossChainMessages: crossChainTransfers };
 }
 
 function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
@@ -248,7 +248,7 @@ async function multicallOptimismFinalizations(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainTransfer[] }> {
+): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
   const finalizableMessages = (
     await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
   ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]);
@@ -260,7 +260,7 @@ async function multicallOptimismFinalizations(
   const withdrawals = finalizableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
-    const withdrawal: CrossChainTransfer = {
+    const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
@@ -282,7 +282,7 @@ async function multicallOptimismL1Proofs(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainTransfer[] }> {
+): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
   const provableMessages = (
     await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
   ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_TO_PROVE]);
@@ -292,7 +292,7 @@ async function multicallOptimismL1Proofs(
   const withdrawals = provableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
-    const proof: CrossChainTransfer = {
+    const proof: CrossChainMessage = {
       originationChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,

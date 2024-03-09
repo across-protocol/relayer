@@ -5,7 +5,7 @@ import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { Contract, Signer, winston } from "../../utils";
-import { FinalizerPromise, CrossChainTransfer } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 type ScrollClaimInfo = {
   from: string;
@@ -41,12 +41,12 @@ export async function scrollFinalizer(
     message: `Detected ${outstandingClaims.length} claims for ${targetAddress}`,
   });
 
-  const [callData, crossChainTransfers] = await Promise.all([
+  const [callData, crossChainMessages] = await Promise.all([
     sdkUtils.mapAsync(outstandingClaims, (claim) => populateClaimTransaction(claim, relayContract)),
     outstandingClaims.map((claim) => populateClaimWithdrawal(claim, l2ChainId, hubPoolClient)),
   ]);
   return {
-    crossChainTransfers,
+    crossChainMessages,
     callData,
   };
 }
@@ -134,7 +134,7 @@ function populateClaimWithdrawal(
   claim: ScrollClaimInfoWithL1Token,
   l2ChainId: number,
   hubPoolClient: HubPoolClient
-): CrossChainTransfer {
+): CrossChainMessage {
   const l1Token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, claim.l1Token);
   return {
     originationChainId: l2ChainId,

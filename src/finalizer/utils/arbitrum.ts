@@ -12,7 +12,7 @@ import {
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { FinalizerPromise, CrossChainTransfer } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 const CHAIN_ID = 42161;
 
@@ -43,7 +43,7 @@ async function multicallArbitrumFinalizations(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; crossChainTransfers: CrossChainTransfer[] }> {
+): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
@@ -54,7 +54,7 @@ async function multicallArbitrumFinalizations(
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
-    const withdrawal: CrossChainTransfer = {
+    const withdrawal: CrossChainMessage = {
       originationChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
@@ -66,7 +66,7 @@ async function multicallArbitrumFinalizations(
   });
   return {
     callData,
-    crossChainTransfers,
+    crossChainMessages: crossChainTransfers,
   };
 }
 

@@ -14,7 +14,7 @@ import {
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Multicall2Call } from "../../common";
-import { FinalizerPromise, CrossChainTransfer } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -169,7 +169,7 @@ async function multicallPolygonFinalizations(
 
   return {
     callData: [...finalizedBridges.callData, ...finalizedRetrievals.callData],
-    crossChainTransfers: [...finalizedBridges.crossChainTransfers, ...finalizedRetrievals.crossChainTransfers],
+    crossChainMessages: [...finalizedBridges.crossChainMessages, ...finalizedRetrievals.crossChainMessages],
   };
 }
 
@@ -179,12 +179,12 @@ async function resolvePolygonBridgeFinalizations(
   hubPoolClient: HubPoolClient
 ): Promise<FinalizerPromise> {
   const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
-  const crossChainTransfers = finalizableMessages.map((finalizableMessage) =>
+  const crossChainMessages = finalizableMessages.map((finalizableMessage) =>
     resolveCrossChainTransferStructure(finalizableMessage, "withdrawal", hubPoolClient)
   );
   return {
     callData,
-    crossChainTransfers,
+    crossChainMessages,
   };
 }
 
@@ -205,12 +205,12 @@ async function resolvePolygonRetrievalFinalizations(
       retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
     )
   );
-  const crossChainTransfers = finalizableMessages.map((finalizableMessage) =>
+  const crossChainMessages = finalizableMessages.map((finalizableMessage) =>
     resolveCrossChainTransferStructure(finalizableMessage, "misc", hubPoolClient)
   );
   return {
     callData,
-    crossChainTransfers,
+    crossChainMessages,
   };
 }
 
@@ -218,7 +218,7 @@ function resolveCrossChainTransferStructure(
   finalizableMessage: PolygonTokensBridged,
   type: "misc" | "withdrawal",
   hubPoolClient: HubPoolClient
-): CrossChainTransfer {
+): CrossChainMessage {
   const { l2TokenAddress, amountToReturn } = finalizableMessage;
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     l2TokenAddress,
@@ -234,7 +234,7 @@ function resolveCrossChainTransferStructure(
     amount: amountFromWei,
   };
 
-  const crossChainTransfers: CrossChainTransfer =
+  const crossChainTransfers: CrossChainMessage =
     type === "misc" ? { ...transferBase, type, miscReason: "retrieval" } : { ...transferBase, type };
   return crossChainTransfers;
 }

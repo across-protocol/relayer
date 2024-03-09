@@ -5,7 +5,7 @@ import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { Signer, winston, convertFromWei } from "../../../utils";
-import { FinalizerPromise, CrossChainTransfer } from "../../types";
+import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
 import { initLineaSdk, makeGetMessagesWithStatusByTxHash, MessageWithStatus } from "./common";
 
@@ -97,7 +97,7 @@ export async function lineaL2ToL1Finalizer(
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
-    const transfer: CrossChainTransfer = {
+    const transfer: CrossChainMessage = {
       originationChainId: l2ChainId,
       destinationChainId: l1ChainId,
       l1TokenSymbol,
@@ -118,7 +118,7 @@ export async function lineaL2ToL1Finalizer(
     },
   });
 
-  return { callData: multicall3Call, crossChainTransfers: transfers };
+  return { callData: multicall3Call, crossChainMessages: transfers };
 }
 
 function mergeMessagesWithTokensBridged(messages: MessageWithStatus[], allTokensBridgedEvents: TokensBridged[]) {

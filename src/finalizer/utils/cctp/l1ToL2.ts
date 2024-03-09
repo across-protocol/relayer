@@ -5,7 +5,7 @@ import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
 import { Contract, Signer, winston } from "../../../utils";
 import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
-import { FinalizerPromise, CrossChainTransfer } from "../../types";
+import { FinalizerPromise, CrossChainMessage } from "../../types";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -22,7 +22,7 @@ export async function cctpL1toL2Finalizer(
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
-    crossChainTransfers: await generateDepositData(decodedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
+    crossChainMessages: await generateDepositData(decodedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
     callData: await generateMultiCallData(contract, decodedMessages),
   };
 }
@@ -77,7 +77,7 @@ async function generateDepositData(
   messages: DecodedCCTPMessage[],
   originationChainId: number,
   destinationChainId: number
-): Promise<CrossChainTransfer[]> {
+): Promise<CrossChainMessage[]> {
   return messages.map((message) => ({
     l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
     amount: message.amount,
