@@ -287,8 +287,8 @@ export async function constructClients(
   const hubPoolDeploymentBlock = Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId));
   const { average: avgMainnetBlockTime } = await sdkUtils.averageBlockTime(hubPoolProvider);
   const fromBlock = isDefined(hubPoolLookback)
-    ? Math.max(latestMainnetBlock - (hubPoolLookback / avgMainnetBlockTime), hubPoolDeploymentBlock)
-    : hubPoolDeploymentBlock
+    ? Math.max(latestMainnetBlock - hubPoolLookback / avgMainnetBlockTime, hubPoolDeploymentBlock)
+    : hubPoolDeploymentBlock;
   const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, fromBlock };
 
   // Create contract instances for each chain for each required contract.
