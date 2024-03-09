@@ -311,7 +311,6 @@ export async function constructClients(
 export async function updateClients(clients: Clients, config: CommonConfig): Promise<void> {
   await clients.configStoreClient.update();
   config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
-  await clients.hubPoolClient.update();
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {

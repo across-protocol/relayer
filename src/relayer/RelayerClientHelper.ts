@@ -31,6 +31,7 @@ export async function constructRelayerClients(
   const commonClients = await constructClients(logger, config, baseSigner);
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
   // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
@@ -79,6 +80,7 @@ export async function constructRelayerClients(
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
+    config.relayerMessageGasMultiplier,
     config.relayerGasPadding
   );
   await profitClient.update();
@@ -133,8 +135,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "RequestedV3SlowFill",
     "FilledV3Relay",
     "EnabledDepositRoute",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
   ]);
 
   // Update the token client first so that inventory client has latest balances.
