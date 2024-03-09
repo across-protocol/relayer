@@ -16,7 +16,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -263,7 +263,8 @@ export async function updateSpokePoolClients(
 export async function constructClients(
   logger: winston.Logger,
   config: CommonConfig,
-  baseSigner: Signer
+  baseSigner: Signer,
+  hubPoolLookback?: number
 ): Promise<Clients> {
   const hubPoolProvider = await getProvider(config.hubPoolChainId, logger);
   const hubSigner = baseSigner.connect(hubPoolProvider);
@@ -283,10 +284,12 @@ export async function constructClients(
     config.maxConfigVersion
   );
 
-  const hubPoolClientSearchSettings = {
-    ...rateModelClientSearchSettings,
-    fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-  };
+  const hubPoolDeploymentBlock = Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId));
+  const { average: avgMainnetBlockTime } = await sdkUtils.averageBlockTime(hubPoolProvider);
+  const fromBlock = isDefined(hubPoolLookback)
+    ? Math.max(latestMainnetBlock - (hubPoolLookback / avgMainnetBlockTime), hubPoolDeploymentBlock)
+    : hubPoolDeploymentBlock
+  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, fromBlock };
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
@@ -294,7 +297,7 @@ export async function constructClients(
     logger,
     hubPool,
     configStoreClient,
-    Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
+    hubPoolDeploymentBlock,
     config.hubPoolChainId,
     hubPoolClientSearchSettings,
     await getRedisCache(logger),
