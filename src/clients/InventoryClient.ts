@@ -42,6 +42,7 @@ export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
+  private bundleRefundLookback = 1;
 
   constructor(
     readonly relayer: string,
@@ -53,7 +54,6 @@ export class InventoryClient {
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
-    readonly bundleRefundLookback = 2,
     readonly simMode = false
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
@@ -157,9 +157,9 @@ export class InventoryClient {
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
-    // Increase virtual balance by pending relayer refunds from the latest valid bundles.
-    // Allow caller to set how many bundles to look back for refunds. The default is set to 2 which means
-    // we'll look back only at the two latest valid bundle unless the caller overrides.
+    // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
+    // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
+    // been executed.
     const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
       this.bundleRefundLookback
     );
@@ -232,9 +232,9 @@ export class InventoryClient {
       totalRefundsPerChain = await this.getBundleRefunds(l1Token);
     } catch (e) {
       this.log("Failed to get bundle refunds, defaulting refund chain to hub chain");
-      // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
-      // Inventory management can always rebalance from Mainnet to other chains easily if needed.
-      return hubChainId;
+      // Fallback to ignoring bundle refunds if calculating bundle refunds goes wrong.
+      // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
+      // the relayer's repayment chain of choice.
     }
 
     // Add upcoming refunds going to this destination chain.

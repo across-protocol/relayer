@@ -117,7 +117,6 @@ export async function constructRelayerClients(
     bundleDataClient,
     adapterManager,
     crossChainTransferClient,
-    config.bundleRefundLookback,
     !config.sendingRebalancesEnabled
   );
 
