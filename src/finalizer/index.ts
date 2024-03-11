@@ -316,12 +316,7 @@ export async function constructFinalizerClients(
   commonClients: Clients;
   spokePoolClients: SpokePoolClientsByChain;
 }> {
-  // The finalizer only uses the HubPoolClient to look up the *latest* l1 tokens matching an l2 token that was
-  // withdrawn to L1, so assuming these L1 tokens do not change in the future, then we can reduce the hub pool
-  // client lookback. Note, this should not be impacted by L2 tokens changing, for example when changing
-  // USDC.e --> USDC because the l1 token matching both L2 version stays the same.
-  const hubPoolLookBack = 3600 * 8;
-  const commonClients = await constructClients(_logger, config, baseSigner, hubPoolLookBack);
+  const commonClients = await constructClients(_logger, config, baseSigner);
   await updateFinalizerClients(commonClients);
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
