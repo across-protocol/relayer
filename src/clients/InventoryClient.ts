@@ -42,7 +42,7 @@ export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
-  private bundleRefundLookback = 1;
+  private readonly bundleRefundLookback = 1;
 
   constructor(
     readonly relayer: string,
