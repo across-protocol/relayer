@@ -154,7 +154,7 @@ export class OpStackAdapter extends BaseAdapter {
     } else {
       this.logger.debug({
         at: this.getName(),
-        message: "ETH balance below threhsold",
+        message: "ETH balance below threshold",
         threshold,
         ethBalance,
       });
