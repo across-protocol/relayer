@@ -160,9 +160,7 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
-      this.bundleRefundLookback
-    );
+    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles();
 
     // Consider refunds from next bundle to be proposed:
     const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
