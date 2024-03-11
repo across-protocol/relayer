@@ -28,9 +28,13 @@ export async function constructRelayerClients(
   baseSigner: Signer
 ): Promise<RelayerClients> {
   const signerAddr = await baseSigner.getAddress();
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
+  // bundle and the pending bundle. 12 hours should cover these bundles in almost all cases.
+  const hubPoolLookBack = 3600 * 12;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
   // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
@@ -134,8 +138,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "RequestedV3SlowFill",
     "FilledV3Relay",
     "EnabledDepositRoute",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
   ]);
 
   // Update the token client first so that inventory client has latest balances.

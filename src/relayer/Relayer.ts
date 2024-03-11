@@ -49,7 +49,10 @@ export class Relayer {
     const { relayerTokens, ignoredAddresses, acceptInvalidFills, exclusiveDepositors, exclusiveRecipients } =
       this.config;
 
-    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
+    // Flatten unfilledDeposits for now. @todo: Process deposits in parallel by destination chain.
+    const unfilledDeposits = Object.values(
+      await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack)
+    ).flat();
 
     const maxVersion = configStoreClient.configStoreVersion;
     return sdkUtils.filterAsync(unfilledDeposits, async ({ deposit, version, invalidFills }) => {
