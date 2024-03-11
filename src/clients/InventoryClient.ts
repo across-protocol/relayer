@@ -233,8 +233,13 @@ export class InventoryClient {
       // Fallback to ignoring bundle refunds if calculating bundle refunds goes wrong.
       // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
       // the relayer's repayment chain of choice.
+      totalRefundsPerChain = Object.fromEntries(
+        this.getEnabledChains().map((chainId) => {
+          return [chainId, toBN(0)];
+        })
+      );
     }
-    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`);
+    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`, totalRefundsPerChain);
 
     // Add upcoming refunds going to this destination chain.
     chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
