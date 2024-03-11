@@ -226,6 +226,7 @@ export class InventoryClient {
     const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
     let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
+    const startTime = Date.now();
     let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
     try {
       // Consider any refunds from executed and to-be executed bundles.
@@ -236,6 +237,7 @@ export class InventoryClient {
       // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
       // the relayer's repayment chain of choice.
     }
+    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime)/1000}s`);
 
     // Add upcoming refunds going to this destination chain.
     chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
