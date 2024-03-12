@@ -129,17 +129,18 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   11155420: 10000,
 };
 
-// These should be safely above the finalization period for the chain.
+// These should be safely above the finalization period for the chain and
+// also give enough buffer time so that any reasonable fill on the chain
+// can be matched with a deposit on the origin chain, so something like
+// ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 4, // Mainnet reorgs are very rare and the shorter we can decrease this, the faster bundles can be proposed
-  // because of the self-imposed constraint that the previous bundle's pool rebalance leaves are executed following
-  // the mainnet bundle end block for the next bundle.
-  10: 60, // Optimism finality is inherited from Ethereum's
-  137: 128, // Polygon reorgs often so this number is set larger than the largest observed reorg.
+  1: 10, // 12s/block
+  10: 60, // 2s/block
+  137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  324: 60, // ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
-  8453: 60, // Same finality profile as Optimism
-  42161: 0, // Arbitrum is a centralized sequencer
+  324: 120, // 2s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  8453: 60, // 2s/block. Same finality profile as Optimism
+  42161: 60, // 1s/block. Arbitrum is a centralized sequencer
   // Testnets:
   5: 0,
   280: 0,
