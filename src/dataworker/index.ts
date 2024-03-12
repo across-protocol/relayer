@@ -154,18 +154,36 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
 
-      // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
-      // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
-      if (config.persistingBundleData && isDefined(bundleDataToPersist)) {
-        await persistDataToArweave(
-          clients.arweaveClient,
-          bundleDataToPersist,
-          logger,
-          `bundles-${bundleDataToPersist.bundleBlockRanges}`
-        );
-      }
+      // Define a helper function to persist the bundle data to the DALayer.
+      const persistBundle = async () => {
+        // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
+        // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
+        if (config.persistingBundleData && isDefined(bundleDataToPersist)) {
+          await persistDataToArweave(
+            clients.arweaveClient,
+            bundleDataToPersist,
+            logger,
+            `bundles-${bundleDataToPersist.bundleBlockRanges}`
+          );
+        }
+      };
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
+      // in parallel. We want to have both of these operations complete, even if one of them fails.
+      const [persistResult, multiCallResult] = await Promise.allSettled([
+        persistBundle(),
+        clients.multiCallerClient.executeTransactionQueue(),
+      ]);
+
+      // If either of the operations failed, log the error.
+      if (persistResult.status === "rejected" || multiCallResult.status === "rejected") {
+        logger.error({
+          at: "Dataworker#index",
+          message: "Failed to persist bundle data to the DALayer or execute the multiCall transaction queue",
+          persistResult: persistResult.status === "rejected" ? persistResult.reason : undefined,
+          multiCallResult: multiCallResult.status === "rejected" ? multiCallResult.reason : undefined,
+        });
+      }
 
       logger.debug({
         at: "Dataworker#index",
