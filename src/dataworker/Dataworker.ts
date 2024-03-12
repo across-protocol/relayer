@@ -2112,8 +2112,8 @@ export class Dataworker {
       throw new Error("Tried to get required ETH for Linea relay leaf execution on a non-Linea chain!");
     }
     // Resolve and sanitize the L2MessageService contract ABI and address.
-    const l2MessageABI = CONTRACT_ADDRESSES[client.chainId].l2MessageService?.abi;
-    const l2MessageAddress = CONTRACT_ADDRESSES[client.chainId].l2MessageService?.address;
+    const l2MessageABI = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.abi;
+    const l2MessageAddress = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.address;
     if (!isDefined(l2MessageABI) || !isDefined(l2MessageAddress)) {
       this.logger.error({
         at: "Dataworker#_getRequiredEthForLineaRelayLeafExecution",
