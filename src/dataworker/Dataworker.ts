@@ -1908,14 +1908,14 @@ export class Dataworker {
               amount: totalSent,
             },
           ];
-          // If we have to pass ETH via the payable function, then we need to add a balance request for the SpokePool
+          // If we have to pass ETH via the payable function, then we need to add a balance request for the signer
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens
           if (isDefined(valueToPassViaPayable)) {
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
               tokens: [ZERO_ADDRESS], // ZERO_ADDRESS is used to represent ETH.
-              holder: client.spokePool.address,
+              holder: await client.spokePool.signer.getAddress(), // The signer's address is what will be sending the ETH.
               amount: valueToPassViaPayable,
             });
           }
