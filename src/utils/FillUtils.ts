@@ -1,6 +1,6 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { HubPoolClient } from "../clients";
+import { HubPoolClient, SpokePoolClient } from "../clients";
 import {
   Fill,
   FillsToRefund,
@@ -259,8 +259,6 @@ export function getFillsInRange(
 export type RelayerUnfilledDeposit = {
   deposit: V3DepositWithBlock;
   version: number;
-  unfilledAmount: BigNumber;
-  fillCount: number;
   invalidFills: Fill[];
 };
 
@@ -273,49 +271,54 @@ export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
   depositLookBack?: number
-): Promise<RelayerUnfilledDeposit[]> {
-  const unfilledDeposits: RelayerUnfilledDeposit[] = [];
+): Promise<{ [chainId: number]: RelayerUnfilledDeposit[] }> {
+  const unfilledDeposits: { [chainId: number]: RelayerUnfilledDeposit[] } = {};
   const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-  let earliestBlockNumbers = Object.values(spokePoolClients).map(({ deploymentBlock }) => deploymentBlock);
+  const originFromBlocks: { [chainId: number]: number } = Object.fromEntries(
+    Object.values(spokePoolClients).map(({ chainId, deploymentBlock }) => [chainId, deploymentBlock])
+  );
 
   if (isDefined(depositLookBack)) {
     const blockFinder = undefined;
     const redis = await getRedisCache();
-    earliestBlockNumbers = await Promise.all(
-      Object.values(spokePoolClients).map((spokePoolClient) => {
-        const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
-        const hints = { lowBlock: spokePoolClient.deploymentBlock };
-        return getBlockForTimestamp(spokePoolClient.chainId, timestamp, blockFinder, redis, hints);
-      })
-    );
+    await sdkUtils.forEachAsync(Object.values(spokePoolClients), async (spokePoolClient: SpokePoolClient) => {
+      const { chainId: originChainId, deploymentBlock } = spokePoolClient;
+      const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
+      const hints = { lowBlock: deploymentBlock };
+      const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
+      originFromBlocks[originChainId] = Math.max(deploymentBlock, startBlock);
+    });
   }
 
   // Iterate over each chainId and check for unfilled deposits.
-  chainIds.forEach((originChainId, idx) => {
-    const originClient = spokePoolClients[originChainId];
-    const earliestBlockNumber = earliestBlockNumbers[idx];
+  chainIds.forEach((destinationChainId) => {
+    const destinationClient = spokePoolClients[destinationChainId];
 
-    for (const destinationChain of chainIds.filter((chainId) => chainId !== originChainId)) {
-      // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
-      // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
-      // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
-      const destinationClient = spokePoolClients[destinationChain];
-      const deposits = originClient
-        .getDepositsForDestinationChain(destinationChain)
-        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>);
+    unfilledDeposits[destinationChainId] = chainIds
+      .filter((chainId) => chainId !== destinationChainId)
+      .map((originChainId) => {
+        const originClient = spokePoolClients[originChainId];
+        const earliestBlockNumber = originFromBlocks[originChainId];
 
-      const unfilledDepositsForDestinationChain = deposits
-        .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
-        .map((deposit) => {
-          const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
-          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
-        });
+        // Basic sanity check...
+        assert(
+          earliestBlockNumber >= originClient.deploymentBlock && earliestBlockNumber <= originClient.latestBlockSearched
+        );
 
-      // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
-      unfilledDeposits.push(
-        ...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(bnZero))
-      );
-    }
+        // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
+        // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
+        // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
+        return originClient
+          .getDepositsForDestinationChain(destinationChainId)
+          .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
+          .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>) // @todo: Remove after v2 deprecated.
+          .map((deposit) => {
+            const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+            return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
+          })
+          .filter(({ unfilledAmount }) => unfilledAmount.gt(bnZero));
+      })
+      .flat();
   });
 
   return unfilledDeposits;
