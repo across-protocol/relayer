@@ -79,16 +79,16 @@ export async function finalize(
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
   submitFinalizationTransactions: boolean,
-  optimisticRollupFinalizationWindow = 5 * oneDaySeconds,
-  polygonFinalizationWindow = 5 * oneDaySeconds
+  optimisticRollupFinalizationWindow = 7 * oneDaySeconds,
+  polygonFinalizationWindow = oneDaySeconds
 ): Promise<void> {
   const finalizationWindows: { [chainId: number]: number } = {
     // Mainnets
-    10: optimisticRollupFinalizationWindow, // Optimism Mainnet
-    137: polygonFinalizationWindow, // Polygon Mainnet
-    324: oneDaySeconds * 4, // zkSync Mainnet
-    8453: optimisticRollupFinalizationWindow, // Base Mainnet
-    42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet
+    10: optimisticRollupFinalizationWindow, // Optimism Mainnet.
+    137: polygonFinalizationWindow, // Polygon Mainnet. Withdrawals take up to 3 hours to finalize.
+    324: oneDaySeconds, // zkSync Mainnet. Withdrawals take 1 day to finalize.
+    8453: optimisticRollupFinalizationWindow, // Base Mainnet.
+    42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet.
     534352: oneHourSeconds * 4, // Scroll Mainnet
 
     // Testnets
