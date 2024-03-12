@@ -109,8 +109,10 @@ export abstract class BaseAdapter {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
-  getAllowanceCacheKey(l1Token: string, targetContract: string): string {
-    return `l1CanonicalTokenBridgeAllowance_${l1Token}_targetContract:${targetContract}`;
+  async getAllowanceCacheKey(l1Token: string, targetContract: string): Promise<string> {
+    return `l1CanonicalTokenBridgeAllowance_${l1Token}_${await this.getSigner(
+      this.hubChainId
+    ).getAddress()}_targetContract:${targetContract}`;
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
@@ -130,7 +132,7 @@ export abstract class BaseAdapter {
           // send an allowance approval transaction.
           if (redis) {
             const result = await redis.get<string>(
-              this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index])
+              await this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index])
             );
             if (result !== null) {
               const savedAllowance = toBN(result);
@@ -153,7 +155,7 @@ export abstract class BaseAdapter {
         // Save allowance in cache with no TTL as these should never decrement.
         if (redis) {
           await redis.set(
-            this.getAllowanceCacheKey(l1TokenContracts[index].address, associatedL1Bridges[index]),
+            await this.getAllowanceCacheKey(l1TokenContracts[index].address, associatedL1Bridges[index]),
             MAX_SAFE_ALLOWANCE
           );
         }
