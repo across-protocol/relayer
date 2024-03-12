@@ -748,6 +748,7 @@ export async function persistDataToArweave(
       at: "Dataworker#index",
       message: `Persisted data to Arweave with transaction hash: ${hashTxn}`,
       hash: hashTxn,
+      explorerUrl: `https://arweave.net/${hashTxn}`,
       address,
       balance,
     });
