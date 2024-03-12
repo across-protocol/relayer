@@ -138,7 +138,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   10: 60, // 2s/block
   137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  324: 120, // 2s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   8453: 60, // 2s/block. Same finality profile as Optimism
   42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   // Testnets:
