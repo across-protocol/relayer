@@ -47,7 +47,7 @@ export async function opStackFinalizer(
   const crossChainMessenger = getOptimismClient(chainId, signer);
 
   // Sort tokensBridged events by their age. Submit proofs for recent events, and withdrawals for older events.
-  // - Don't submit proofs for finlizations older than 1 day
+  // - Don't submit proofs for finalizations older than 1 day
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
