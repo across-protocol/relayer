@@ -239,7 +239,10 @@ export class InventoryClient {
         })
       );
     }
-    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`, totalRefundsPerChain);
+    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`, {
+      l1Token: l1Token,
+      totalRefundsPerChain,
+    });
 
     // Add upcoming refunds going to this destination chain.
     chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
@@ -263,6 +266,7 @@ export class InventoryClient {
     const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? hubChainId : destinationChainId;
 
     this.log("Evaluated refund Chain", {
+      l1Token: l1Token,
       chainShortfall,
       chainVirtualBalance,
       chainVirtualBalanceWithShortfall,
