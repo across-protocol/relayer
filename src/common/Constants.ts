@@ -19,7 +19,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   324: 4 * 24 * 60 * 60,
   8453: 172800, // Same as Optimism.
   42161: 1382400,
-  59144: 86400, // 1 block every 4 seconds
+  59144: 86400, // 1 block every 4 seconds - 4 days
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -55,7 +55,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   324: 0,
   8453: 60,
   42161: 0,
-  59144: 64,
+  59144: 4, // Soft-Finality of 1 block. 4 for padding since this is a new chain integration
   // Testnets:
   5: 0,
   280: 0,
@@ -78,7 +78,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
-    59144: 0,
+    59144: 4, // Soft-Finality of 1 block. 4 for padding since this is a new chain integration
     // Testnets:
     5: 0,
     280: 0,
@@ -96,7 +96,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
-    59144: 0,
+    59144: 4, // Soft-Finality of 1 block. 4 for padding since this is a new chain integration
     // Testnets:
     5: 0,
     280: 0,
@@ -138,15 +138,19 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   11155420: 10000,
 };
 
+// These should be safely above the finalization period for the chain and
+// also give enough buffer time so that any reasonable fill on the chain
+// can be matched with a deposit on the origin chain, so something like
+// ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 25, // At 12s/block, 25 blocks = 5 mins
-  10: 150, // 2s/block, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
-  137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
+  1: 10, // 12s/block
+  10: 60, // 2s/block
+  137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  324: 1500, // At 1s/block, 25 mins = 1500 blocks.
-  8453: 750, // At 2s/block, 25 mins = 750 blocks.
-  59144: 375, // At 4s/block, 25 mins = 375 blocks.
-  42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  8453: 60, // 2s/block. Same finality profile as Optimism
+  59144: 30, // At 4s/block, roughly 2 minutes. Linea has a soft-finalization of 1 block - this is additional padding.
+  42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   // Testnets:
   5: 0,
   280: 0,
@@ -163,6 +167,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = "1.0"; // Multiplier on pre-profitability token-only gas estimates.
+export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pre-profitability message fill gas estimates.
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
@@ -190,7 +195,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   324: 512,
   8453: 120,
   42161: 32,
-  59144: 0,
+  59144: 8, // Linea has a soft-finality of 1 block. This value is padded - but at 4s/block the padding is light (32 seconds)
   534352: 0,
   // Testnets:
   5: 0,

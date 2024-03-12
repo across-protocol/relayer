@@ -175,7 +175,7 @@ export class BundleDataClient {
     this.bundleTimestampCache[key] = timestamps;
   }
 
-  async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<CombinedRefunds[]> {
+  async getPendingRefundsFromValidBundles(bundleLookback = 1): Promise<CombinedRefunds[]> {
     const refunds = [];
     if (!this.clients.hubPoolClient.isUpdated) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");

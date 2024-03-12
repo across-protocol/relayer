@@ -79,16 +79,16 @@ export async function finalize(
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
   submitFinalizationTransactions: boolean,
-  optimisticRollupFinalizationWindow = 5 * oneDaySeconds,
-  polygonFinalizationWindow = 5 * oneDaySeconds
+  optimisticRollupFinalizationWindow = 7 * oneDaySeconds,
+  polygonFinalizationWindow = oneDaySeconds
 ): Promise<void> {
   const finalizationWindows: { [chainId: number]: number } = {
     // Mainnets
-    10: optimisticRollupFinalizationWindow, // Optimism Mainnet
-    137: polygonFinalizationWindow, // Polygon Mainnet
-    324: oneDaySeconds * 4, // zkSync Mainnet
-    8453: optimisticRollupFinalizationWindow, // Base Mainnet
-    42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet
+    10: optimisticRollupFinalizationWindow, // Optimism Mainnet.
+    137: polygonFinalizationWindow, // Polygon Mainnet. Withdrawals take up to 3 hours to finalize.
+    324: oneDaySeconds, // zkSync Mainnet. Withdrawals take 1 day to finalize.
+    8453: optimisticRollupFinalizationWindow, // Base Mainnet.
+    42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet.
     534352: oneHourSeconds * 4, // Scroll Mainnet
 
     // Testnets
@@ -316,7 +316,12 @@ export async function constructFinalizerClients(
   commonClients: Clients;
   spokePoolClients: SpokePoolClientsByChain;
 }> {
-  const commonClients = await constructClients(_logger, config, baseSigner);
+  // The finalizer only uses the HubPoolClient to look up the *latest* l1 tokens matching an l2 token that was
+  // withdrawn to L1, so assuming these L1 tokens do not change in the future, then we can reduce the hub pool
+  // client lookback. Note, this should not be impacted by L2 tokens changing, for example when changing
+  // USDC.e --> USDC because the l1 token matching both L2 version stays the same.
+  const hubPoolLookBack = 3600 * 8;
+  const commonClients = await constructClients(_logger, config, baseSigner, hubPoolLookBack);
   await updateFinalizerClients(commonClients);
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override

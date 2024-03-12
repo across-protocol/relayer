@@ -1,4 +1,3 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BalanceAllocator } from "../clients";
 import { spokePoolClientsToProviders } from "../common";
 import {
@@ -186,15 +185,15 @@ export class Monitor {
 
     // Group unfilled amounts by chain id and token id.
     const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};
-    for (const deposit of unfilledDeposits) {
-      const chainId = deposit.deposit.destinationChainId;
-      const outputToken = sdkUtils.getDepositOutputToken(deposit.deposit);
+    Object.entries(unfilledDeposits).forEach(([_destinationChainId, deposits]) => {
+      const chainId = Number(_destinationChainId);
       unfilledAmountByChainAndToken[chainId] ??= {};
-      unfilledAmountByChainAndToken[chainId][outputToken] ??= bnZero;
-      unfilledAmountByChainAndToken[chainId][outputToken] = unfilledAmountByChainAndToken[chainId][outputToken].add(
-        deposit.unfilledAmount
-      );
-    }
+
+      deposits.forEach(({ deposit: { outputToken, outputAmount } }) => {
+        const unfilledAmount = unfilledAmountByChainAndToken[chainId][outputToken] ?? bnZero;
+        unfilledAmountByChainAndToken[chainId][outputToken] = unfilledAmount.add(outputAmount);
+      });
+    });
 
     let mrkdwn = "";
     for (const [chainIdStr, amountByToken] of Object.entries(unfilledAmountByChainAndToken)) {
@@ -559,8 +558,10 @@ export class Monitor {
   }
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
+    // We realistically only need to check for refunds for the latest validated bundle so leave the bundle
+    // count value as its default value of 1.
     const validatedBundleRefunds: CombinedRefunds[] =
-      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(this.monitorConfig.bundleRefundLookback);
+      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles();
     const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
