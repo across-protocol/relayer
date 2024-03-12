@@ -1442,7 +1442,7 @@ export class Dataworker {
         this.logger.error({
           at: "Dataworker#executePoolRebalanceLeaves",
           message: "Found invalid proposal after challenge period!",
-          mrkdwn: reason,
+          reason,
         });
       }
       return;
