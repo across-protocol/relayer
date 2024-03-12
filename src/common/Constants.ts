@@ -140,7 +140,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   324: 120, // 2s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   8453: 60, // 2s/block. Same finality profile as Optimism
-  42161: 120, // 1s/block. Arbitrum is a centralized sequencer
+  42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   // Testnets:
   5: 0,
   280: 0,
