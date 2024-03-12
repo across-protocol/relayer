@@ -1424,13 +1424,27 @@ export class Dataworker {
     );
 
     if (!valid) {
-      this.logger.error({
-        at: "Dataworker#executePoolRebalanceLeaves",
-        message: "Found invalid proposal after challenge period!",
-        reason,
-        e: reason,
-        notificationPath: "across-error",
-      });
+      // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
+      // can get dataworker running ASAP.
+      if (ERROR_DISPUTE_REASONS.has(reason)) {
+        this.logger.error({
+          at: "Dataworker#executePoolRebalanceLeaves",
+          message: "Dataworker configuration error needs to be fixed",
+          reason,
+        });
+      } else if (IGNORE_DISPUTE_REASONS.has(reason)) {
+        this.logger.debug({
+          at: "Dataworker#executePoolRebalanceLeaves",
+          message: "Dataworker configuration error, should resolve itself eventually 😪",
+          reason,
+        });
+      } else {
+        this.logger.error({
+          at: "Dataworker#executePoolRebalanceLeaves",
+          message: "Found invalid proposal after challenge period!",
+          mrkdwn: reason,
+        });
+      }
       return;
     }
 
