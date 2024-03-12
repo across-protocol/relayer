@@ -7,8 +7,11 @@ import {
   BigNumber,
   chainIsOPStack,
   convertFromWei,
+  getBlockForTimestamp,
   getCachedProvider,
+  getCurrentTime,
   getNetworkName,
+  getRedisCache,
   getUniqueLogIndex,
   groupObjectCountsByProp,
   Signer,
@@ -44,10 +47,20 @@ export async function opStackFinalizer(
   const crossChainMessenger = getOptimismClient(chainId, signer);
 
   // Sort tokensBridged events by their age. Submit proofs for recent events, and withdrawals for older events.
-  const earliestBlockToProve = latestBlockToFinalize + 1;
+  // - Don't submit proofs for finlizations older than 1 day
+  // - Don't try to withdraw tokens that are not past the 7 day challenge period
+  const blockFinder = undefined;
+  const redis = await getRedisCache(logger);
+  const earliestBlockToProve = await getBlockForTimestamp(chainId, getCurrentTime() - 60 * 60 * 24, blockFinder, redis);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged(),
-    (e) => (e.blockNumber >= earliestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
+    (e) => {
+      if (e.blockNumber >= earliestBlockToProve) {
+        return "recentTokensBridgedEvents";
+      } else if (e.blockNumber < latestBlockToFinalize) {
+        return "olderTokensBridgedEvents";
+      }
+    }
   );
 
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
