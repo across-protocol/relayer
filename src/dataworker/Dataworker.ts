@@ -71,6 +71,15 @@ type RootBundle = {
   tree: MerkleTree<SlowFillLeaf>;
 };
 
+export type BundleDataToPersistToDALayerType = {
+  bundleBlockRanges: number[][];
+  bundleDepositsV3: BundleDepositsV3;
+  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
+  bundleFillsV3: BundleFillsV3;
+  unexecutableSlowFills: BundleExcessSlowFills;
+  bundleSlowFillsV3: BundleSlowFills;
+};
+
 type ProposeRootBundleReturnType = {
   poolRebalanceLeaves: PoolRebalanceLeaf[];
   poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
@@ -78,6 +87,7 @@ type ProposeRootBundleReturnType = {
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
   slowFillLeaves: SlowFillLeaf[];
   slowFillTree: MerkleTree<SlowFillLeaf>;
+  dataToPersistToDALayer: BundleDataToPersistToDALayerType;
 };
 
 export type PoolRebalanceRoot = {
@@ -377,7 +387,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<void> {
+  ): Promise<BundleDataToPersistToDALayerType> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -489,6 +499,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
+    return rootBundleData.dataToPersistToDALayer;
   }
 
   async _proposeRootBundle(
@@ -510,6 +521,18 @@ export class Dataworker {
       unexecutableSlowFills,
       expiredDepositsToRefundV3,
     } = await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
+    // Prepare information about what we need to store to
+    // Arweave for the bundle. We will be doing this at a
+    // later point so that we can confirm that this data is
+    // worth storing.
+    const dataToPersistToDALayer = {
+      bundleBlockRanges: blockRangesForProposal,
+      bundleDepositsV3,
+      expiredDepositsToRefundV3,
+      bundleFillsV3,
+      unexecutableSlowFills,
+      bundleSlowFillsV3,
+    };
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
@@ -583,6 +606,7 @@ export class Dataworker {
       relayerRefundTree: relayerRefundRoot.tree,
       slowFillLeaves: slowRelayRoot.leaves,
       slowFillTree: slowRelayRoot.tree,
+      dataToPersistToDALayer,
     };
   }
 
