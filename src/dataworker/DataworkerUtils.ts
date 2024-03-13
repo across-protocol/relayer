@@ -743,8 +743,11 @@ export async function persistDataToArweave(
       hash: matchingTxns.map((txn) => txn.hash),
     });
   } else {
-    const hashTxn = await client.set(data, tag);
-    const [address, balance] = await Promise.all([client.getAddress(), client.getBalance()]);
+    const [hashTxn, address, balance] = await Promise.all([
+      client.set(data, tag),
+      client.getAddress(),
+      client.getBalance(),
+    ]);
     logger.info({
       at: "Dataworker#index",
       message: `Persisted data to Arweave with transaction hash: ${hashTxn}`,
