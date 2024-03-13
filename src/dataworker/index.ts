@@ -1,6 +1,14 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Signer,
+  disconnectRedisClients,
+  isDefined,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
-import { Dataworker } from "./Dataworker";
+import { BundleDataToPersistToDALayerType, Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
@@ -9,6 +17,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
+import { persistDataToArweave } from "./DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -53,6 +62,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   loopStart = Date.now();
 
+  let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
@@ -107,7 +117,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       if (config.proposerEnabled) {
-        await dataworker.proposeRootBundle(
+        bundleDataToPersist = await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
@@ -144,7 +154,36 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      // Define a helper function to persist the bundle data to the DALayer.
+      const persistBundle = async () => {
+        // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
+        // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
+        if (config.persistingBundleData && isDefined(bundleDataToPersist)) {
+          await persistDataToArweave(
+            clients.arweaveClient,
+            bundleDataToPersist,
+            logger,
+            `bundles-${bundleDataToPersist.bundleBlockRanges}`
+          );
+        }
+      };
+
+      // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
+      // in parallel. We want to have both of these operations complete, even if one of them fails.
+      const [persistResult, multiCallResult] = await Promise.allSettled([
+        persistBundle(),
+        clients.multiCallerClient.executeTransactionQueue(),
+      ]);
+
+      // If either of the operations failed, log the error.
+      if (persistResult.status === "rejected" || multiCallResult.status === "rejected") {
+        logger.error({
+          at: "Dataworker#index",
+          message: "Failed to persist bundle data to the DALayer or execute the multiCall transaction queue",
+          persistResult: persistResult.status === "rejected" ? persistResult.reason : undefined,
+          multiCallResult: multiCallResult.status === "rejected" ? multiCallResult.reason : undefined,
+        });
+      }
 
       logger.debug({
         at: "Dataworker#index",
