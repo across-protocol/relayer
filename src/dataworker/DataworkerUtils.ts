@@ -732,22 +732,19 @@ export async function persistDataToArweave(
   logger: winston.Logger,
   tag?: string
 ): Promise<void> {
-  const startTime = utils.getCurrentTime();
+  const startTime = Date.now();
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const matchingTxns = await client.getByTopic(tag, any());
   if (matchingTxns.length > 0) {
-    const endTime = utils.getCurrentTime();
     logger.info({
       at: "Dataworker#index",
       message: `Data already exists on Arweave with tag: ${tag}`,
       hash: matchingTxns.map((txn) => txn.hash),
-      elapsedSecondsToComplete: endTime - startTime,
     });
   } else {
     const hashTxn = await client.set(data, tag);
     const [address, balance] = await Promise.all([client.getAddress(), client.getBalance()]);
-    const endTime = utils.getCurrentTime();
     logger.info({
       at: "Dataworker#index",
       message: `Persisted data to Arweave with transaction hash: ${hashTxn}`,
@@ -755,7 +752,11 @@ export async function persistDataToArweave(
       explorerUrl: `https://arweave.net/${hashTxn}`,
       address,
       balance,
-      elapsedSecondsToComplete: endTime - startTime,
     });
   }
+  const endTime = Date.now();
+  logger.debug({
+    at: "Dataworker#index",
+    message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
+  });
 }
