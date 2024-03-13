@@ -28,7 +28,10 @@ export async function constructRelayerClients(
   baseSigner: Signer
 ): Promise<RelayerClients> {
   const signerAddr = await baseSigner.getAddress();
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
+  // bundle and the pending bundle. 8 hours should cover the latest two bundles in almost all cases.
+  const hubPoolLookBack = 3600 * 8;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
   await hubPoolClient.update();
@@ -114,7 +117,6 @@ export async function constructRelayerClients(
     bundleDataClient,
     adapterManager,
     crossChainTransferClient,
-    config.bundleRefundLookback,
     !config.sendingRebalancesEnabled
   );
 

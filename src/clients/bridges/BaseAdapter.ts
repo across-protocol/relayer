@@ -27,7 +27,9 @@ import {
   createFormatFunction,
   BigNumberish,
   TOKEN_SYMBOLS_MAP,
+  getRedisCache,
 } from "../../utils";
+import { utils } from "@across-protocol/sdk-v2";
 
 import { CONTRACT_ADDRESSES } from "../../common";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
@@ -107,18 +109,38 @@ export abstract class BaseAdapter {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
+  async getAllowanceCacheKey(l1Token: string, targetContract: string): Promise<string> {
+    return `l1CanonicalTokenBridgeAllowance_${l1Token}_${await this.getSigner(
+      this.hubChainId
+    ).getAddress()}_targetContract:${targetContract}`;
+  }
+
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map(
       (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
     );
+    const redis = await getRedisCache(this.logger);
     const allowances = await Promise.all(
-      l1TokenContracts.map((l1TokenContract, index) => {
+      l1TokenContracts.map(async (l1TokenContract, index) => {
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
         // an approval transaction. For example not every chain has a bridge contract for every token. In this case
         // we clearly dont want to send any approval transactions.
         if (l1TokenContract && associatedL1Bridges[index]) {
+          // Check if we've cached already that this allowance is high enough. Returning null means we won't
+          // send an allowance approval transaction.
+          if (redis) {
+            const result = await redis.get<string>(
+              await this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index])
+            );
+            if (result !== null) {
+              const savedAllowance = toBN(result);
+              if (savedAllowance.gte(toBN(MAX_SAFE_ALLOWANCE))) {
+                return null;
+              }
+            }
+          }
           return l1TokenContract.allowance(address, associatedL1Bridges[index]);
         } else {
           return null;
@@ -126,12 +148,19 @@ export abstract class BaseAdapter {
       })
     );
 
-    allowances.forEach((allowance, index) => {
+    await utils.forEachAsync(allowances, async (allowance, index) => {
       if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
         tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
+      } else {
+        // Save allowance in cache with no TTL as these should never decrement.
+        if (redis) {
+          await redis.set(
+            await this.getAllowanceCacheKey(l1TokenContracts[index].address, associatedL1Bridges[index]),
+            MAX_SAFE_ALLOWANCE
+          );
+        }
       }
     });
-
     if (tokensToApprove.length == 0) {
       this.log("No token bridge approvals needed", { l1Tokens });
       return;

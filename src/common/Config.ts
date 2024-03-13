@@ -14,7 +14,6 @@ export class CommonConfig {
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
   readonly sendingTransactionsEnabled: boolean;
-  readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: number;
   readonly version: string;
   readonly maxConfigVersion: number;
@@ -35,7 +34,6 @@ export class CommonConfig {
       MAX_BLOCK_LOOK_BACK,
       MAX_TX_WAIT_DURATION,
       SEND_TRANSACTIONS,
-      BUNDLE_REFUND_LOOKBACK,
       SPOKE_POOL_CHAINS_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
@@ -72,7 +70,6 @@ export class CommonConfig {
     }
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
-    this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
   }
 
   /**

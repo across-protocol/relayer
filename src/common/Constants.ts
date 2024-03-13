@@ -131,14 +131,18 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   11155420: 10000,
 };
 
+// These should be safely above the finalization period for the chain and
+// also give enough buffer time so that any reasonable fill on the chain
+// can be matched with a deposit on the origin chain, so something like
+// ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 25, // At 12s/block, 25 blocks = 5 mins
-  10: 150, // 2s/block, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
-  137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
+  1: 10, // 12s/block
+  10: 60, // 2s/block
+  137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  324: 1500, // At 1s/block, 25 mins = 1500 blocks.
-  8453: 750, // At 2s/block, 25 mins = 750 blocks.
-  42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  8453: 60, // 2s/block. Same finality profile as Optimism
+  42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   // Testnets:
   5: 0,
   280: 0,
