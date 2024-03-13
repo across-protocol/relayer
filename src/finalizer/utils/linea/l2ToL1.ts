@@ -3,7 +3,6 @@ import { Wallet } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
 import { Signer, winston, convertFromWei } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -18,8 +17,8 @@ export async function lineaL2ToL1Finalizer(
 ): Promise<FinalizerPromise> {
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
-  const l2Contract = lineaSdk.getL2Contract(CONTRACT_ADDRESSES[l2ChainId]?.lineaMessageService.address);
-  const l1Contract = lineaSdk.getL1Contract(CONTRACT_ADDRESSES[l1ChainId]?.lineaMessageService.address);
+  const l2Contract = lineaSdk.getL2Contract();
+  const l1Contract = lineaSdk.getL1Contract();
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l2Contract, l1ClaimingService);
 

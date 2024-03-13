@@ -1,7 +1,7 @@
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { L1MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
 import { TokensRelayedEvent } from "@across-protocol/contracts-v2/dist/typechain/contracts/chain-adapters/Linea_Adapter";
-import { Wallet, utils, providers } from "ethers";
+import { utils, providers } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
@@ -65,11 +65,14 @@ export async function lineaL1ToL2Finalizer(
     claimable = [],
     unknown = [],
   } = groupBy(mergedMessages, ({ message }) => {
-    return message.status === OnChainMessageStatus.CLAIMED
-      ? "claimed"
-      : message.status === OnChainMessageStatus.CLAIMABLE
-      ? "claimable"
-      : "unknown";
+    switch (message.status) {
+      case OnChainMessageStatus.CLAIMED:
+        return "claimed";
+      case OnChainMessageStatus.CLAIMABLE:
+        return "claimable";
+      default:
+        return "unknown";
+    }
   });
 
   // Populate txns for claimable messages
@@ -80,7 +83,7 @@ export async function lineaL1ToL2Finalizer(
         message.destination,
         message.fee,
         message.value,
-        (signer as Wallet).address,
+        await signer.getAddress(),
         message.calldata,
         message.messageNonce
       );
