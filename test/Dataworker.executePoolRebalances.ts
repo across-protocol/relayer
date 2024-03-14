@@ -7,16 +7,7 @@ import {
   ZERO_ADDRESS,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import {
-  Contract,
-  FakeContract,
-  SignerWithAddress,
-  depositV3,
-  ethers,
-  expect,
-  fillV3,
-  smock,
-} from "./utils";
+import { Contract, FakeContract, SignerWithAddress, depositV3, ethers, expect, fillV3, smock } from "./utils";
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
