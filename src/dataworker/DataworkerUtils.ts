@@ -750,9 +750,9 @@ export async function persistDataToArweave(
     ]);
     logger.info({
       at: "Dataworker#index",
-      message: `Persisted data to Arweave with transaction hash: ${hashTxn}`,
-      hash: hashTxn,
-      explorerUrl: `https://arweave.net/${hashTxn}`,
+      message: "Persisted data to Arweave! 💾",
+      receipt: `https://arweave.app/tx/${hashTxn}`,
+      rawData: `https://arweave.net/${hashTxn}`,
       address,
       balance,
     });
