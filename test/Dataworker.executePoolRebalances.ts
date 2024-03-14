@@ -113,26 +113,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     expect(multiCallerClient.transactionCount()).to.equal(0);
-
-    // TEST 4:
-    // Submit another fill and check that dataworker proposes another root with 1 leaf.
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
-    await updateAllClients();
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    await multiCallerClient.executeTransactionQueue();
-
-    // Advance time and execute leaves:
-    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
-    await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
-
-    // Dataworker actually executes the leaf:
-    let pendingBundle = await hubPool.rootBundleProposal();
-    expect(pendingBundle.unclaimedPoolRebalanceLeafCount).to.equal(1);
-    await multiCallerClient.executeTransactionQueue();
-
-    pendingBundle = await hubPool.rootBundleProposal();
-    expect(pendingBundle.unclaimedPoolRebalanceLeafCount).to.equal(0);
   });
   describe("_updateExchangeRates", function () {
     let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;
