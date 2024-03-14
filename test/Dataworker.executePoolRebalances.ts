@@ -11,10 +11,11 @@ import {
   Contract,
   FakeContract,
   SignerWithAddress,
-  buildDeposit,
   buildFillForRepaymentChain,
+  depositV3,
   ethers,
   expect,
+  fillV3,
   smock,
 } from "./utils";
 
@@ -27,7 +28,7 @@ import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
 // Set to arbitrum to test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message transfers.
 const destinationChainId = 42161;
 
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
+let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
 
@@ -43,6 +44,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       hubPool,
       spokePool_1,
       erc20_1,
+      erc20_2,
       spokePool_2,
       hubPoolClient,
       l1Token_1,
@@ -63,17 +65,17 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
-    const deposit = await buildDeposit(
-      hubPoolClient,
+    const deposit = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
     await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
 
     const providers = {

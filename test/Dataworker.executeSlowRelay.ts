@@ -10,17 +10,7 @@ import {
   originChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import {
-  Contract,
-  SignerWithAddress,
-  buildDeposit,
-  buildFillForRepaymentChain,
-  depositV3,
-  ethers,
-  expect,
-  fillV3,
-  requestSlowFill,
-} from "./utils";
+import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3, requestSlowFill } from "./utils";
 import { interfaces } from "@across-protocol/sdk-v2";
 
 // Tested
@@ -58,17 +48,17 @@ describe("Dataworker: Execute slow relays", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
-    const deposit = await buildDeposit(
-      hubPoolClient,
+    const deposit = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
     await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
 
     const providers = {
