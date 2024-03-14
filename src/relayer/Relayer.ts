@@ -15,6 +15,7 @@ import {
   toBNWei,
   winston,
   fixedPointAdjustment,
+  getAlchemySdk,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -57,6 +58,7 @@ export class Relayer {
     return sdkUtils.filterAsync(unfilledDeposits, async ({ deposit, version, invalidFills }) => {
       const { depositId, depositor, recipient, originChainId, destinationChainId, inputToken, outputToken } = deposit;
       const destinationChain = getNetworkName(destinationChainId);
+      const destinationSpokePoolClient = this.clients.spokePoolClients[destinationChainId];
 
       // If we don't have the latest code to support this deposit, skip it.
       if (version > maxVersion) {
@@ -110,7 +112,7 @@ export class Relayer {
       }
 
       // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-      const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
+      const currentTime = destinationSpokePoolClient.getCurrentTime();
       if (deposit.fillDeadline <= currentTime) {
         return false;
       }
@@ -128,7 +130,7 @@ export class Relayer {
         return false;
       }
 
-      const destSpokePool = this.clients.spokePoolClients[destinationChainId].spokePool;
+      const destSpokePool = destinationSpokePoolClient.spokePool;
       const fillStatus = await sdkUtils.relayFillStatus(destSpokePool, deposit, "latest", destinationChainId);
       if (fillStatus === FillStatus.Filled) {
         this.logger.debug({
@@ -487,7 +489,32 @@ export class Relayer {
     const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct);
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
-    multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+
+    // If the deposit has a message, add an additional layer of security by requesting a second simulation via the
+    // Alchemy SDK. We've noticed that some of these deposits with messages where the recipient is a Proxy contract that
+    // the ethers and Alchemy gas estimations can disagree. This is a temporary solution until we can figure out why
+    // this discrepancy exists for these types of deposits.
+    let alchemySimulate = !isMessageEmpty(resolveDepositMessage(deposit));
+    if (alchemySimulate) {
+      const alchemySdkExists = getAlchemySdk(chainId);
+      if (!alchemySdkExists) {
+        this.logger.warn({
+          at: "Relayer#fillRelay",
+          message: `Alchemy SDK cannot be constructed for chain ${chainId}`,
+        });
+        alchemySimulate = false;
+      }
+    }
+    multiCallerClient.enqueueTransaction({
+      contract,
+      chainId,
+      method,
+      args,
+      gasLimit,
+      message,
+      mrkdwn,
+      alchemySimulate,
+    });
 
     // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
     this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, outputAmount);

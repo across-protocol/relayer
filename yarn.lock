@@ -1016,7 +1016,7 @@
     "@ethersproject/rlp" "^5.7.0"
     "@ethersproject/signing-key" "^5.7.0"
 
-"@ethersproject/units@5.7.0":
+"@ethersproject/units@5.7.0", "@ethersproject/units@^5.7.0":
   version "5.7.0"
   resolved "https://registry.yarnpkg.com/@ethersproject/units/-/units-5.7.0.tgz#637b563d7e14f42deeee39245275d477aae1d8b1"
   integrity sha512-pD3xLMy3SJu9kG5xDGI7+xhTEmGXlEqXU4OfNapmfnxLVY4EMSSRp7j1k7eezutBPH7RBN/7QPnwR7hzNlEFeg==
@@ -3526,6 +3526,26 @@ ajv@^8.0.1:
     require-from-string "^2.0.2"
     uri-js "^4.2.2"
 
+alchemy-sdk@^3.2.0:
+  version "3.2.0"
+  resolved "https://registry.yarnpkg.com/alchemy-sdk/-/alchemy-sdk-3.2.0.tgz#0e0d143bc2df8963a2bd97d67cc2e1bac92d0981"
+  integrity sha512-evhxyEnRGQo2Il88vTA4ENvebUbmuk9KzjE2GkF/pwzDnhMv1QIEV6BxU9GCerV8wlHwjohZ0pLS7AkS7QdvBw==
+  dependencies:
+    "@ethersproject/abi" "^5.7.0"
+    "@ethersproject/abstract-provider" "^5.7.0"
+    "@ethersproject/bignumber" "^5.7.0"
+    "@ethersproject/bytes" "^5.7.0"
+    "@ethersproject/contracts" "^5.7.0"
+    "@ethersproject/hash" "^5.7.0"
+    "@ethersproject/networks" "^5.7.0"
+    "@ethersproject/providers" "^5.7.0"
+    "@ethersproject/units" "^5.7.0"
+    "@ethersproject/wallet" "^5.7.0"
+    "@ethersproject/web" "^5.7.0"
+    axios "^1.6.5"
+    sturdy-websocket "^0.2.1"
+    websocket "^1.0.34"
+
 amazon-cognito-identity-js@^6.0.1:
   version "6.3.0"
   resolved "https://registry.yarnpkg.com/amazon-cognito-identity-js/-/amazon-cognito-identity-js-6.3.0.tgz#a6c9559de11748bc9c57f6270f294227be851a0b"
@@ -3915,7 +3935,7 @@ axios@^1.6.0:
     form-data "^4.0.0"
     proxy-from-env "^1.1.0"
 
-axios@^1.6.2:
+axios@^1.6.2, axios@^1.6.5:
   version "1.6.7"
   resolved "https://registry.yarnpkg.com/axios/-/axios-1.6.7.tgz#7b48c2e27c96f9c68a2f8f31e2ab19f59b06b0a7"
   integrity sha512-/hDJGff6/c7u0hDkvkGxR/oy6CbCs8ziCsC7SqmhjfozqiJGc8Z11wrv9z9lYfY4K8l+H9TpjcMDX0xOZmx+RA==
@@ -13311,6 +13331,11 @@ stubs@^3.0.0:
   resolved "https://registry.yarnpkg.com/stubs/-/stubs-3.0.0.tgz#e8d2ba1fa9c90570303c030b6900f7d5f89abe5b"
   integrity sha1-6NK6H6nJBXAwPAMLaQD31fiavls=
 
+sturdy-websocket@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/sturdy-websocket/-/sturdy-websocket-0.2.1.tgz#20a58fd53372ef96eaa08f3c61c91a10b07c7c05"
+  integrity sha512-NnzSOEKyv4I83qbuKw9ROtJrrT6Z/Xt7I0HiP/e6H6GnpeTDvzwGIGeJ8slai+VwODSHQDooW2CAilJwT9SpRg==
+
 superstruct@^0.15.4:
   version "0.15.4"
   resolved "https://registry.yarnpkg.com/superstruct/-/superstruct-0.15.4.tgz#e3381dd84ca07e704e19f69eda74eee1a5efb1f9"
@@ -14611,7 +14636,7 @@ webidl-conversions@^3.0.0:
   resolved "https://registry.yarnpkg.com/webidl-conversions/-/webidl-conversions-3.0.1.tgz#24534275e2a7bc6be7bc86611cc16ae0a5654871"
   integrity sha1-JFNCdeKnvGvnvIZhHMFq4KVlSHE=
 
-websocket@^1.0.32:
+websocket@^1.0.32, websocket@^1.0.34:
   version "1.0.34"
   resolved "https://registry.yarnpkg.com/websocket/-/websocket-1.0.34.tgz#2bdc2602c08bf2c82253b730655c0ef7dcab3111"
   integrity sha512-PRDso2sGwF6kM75QykIesBijKSVceR6jL2G8NGYyq2XrItNC2P5/qL5XeR056GhA+Ly7JMFvJb9I312mJfmqnQ==

@@ -28,6 +28,9 @@ export interface AugmentedTransaction {
   canFailInSimulation?: boolean;
   // Optional batch ID to use to group transactions
   groupId?: string;
+  // Additional sanity check that caller can set to true in order to instruct multicaller to run
+  // a second simulation for extra confidence.
+  alchemySimulate?: boolean;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;

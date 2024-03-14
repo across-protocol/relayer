@@ -17,6 +17,7 @@ import {
   toBNWei,
   winston,
 } from "../utils";
+import { Alchemy, Network } from "alchemy-sdk";
 dotenv.config();
 
 export type TransactionSimulationResult = {
@@ -163,12 +164,29 @@ export async function getGasPrice(
   };
 }
 
+export function getAlchemySdk(chainId: number): Alchemy | undefined {
+  const ALCHEMY_SDK_NETWORKS = {
+    1: Network.ETH_MAINNET,
+    10: Network.OPT_MAINNET,
+    137: Network.MATIC_MAINNET,
+    42161: Network.ARB_MAINNET,
+    8453: Network.BASE_MAINNET,
+    1101: Network.POLYGONZKEVM_MAINNET,
+  };
+  const apiKey = process.env[`ALCHEMY_SDK_API_KEY_${chainId}`];
+  if (apiKey !== undefined && ALCHEMY_SDK_NETWORKS[chainId] !== undefined) {
+    return new Alchemy({
+      apiKey,
+      network: ALCHEMY_SDK_NETWORKS[chainId],
+    });
+  }
+  return undefined;
+}
+
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
-  // If the transaction already has a gasLimit, it should have been simulated in advance.
-  if (transaction.canFailInSimulation || isDefined(transaction.gasLimit)) {
+  if (transaction.canFailInSimulation) {
     return { transaction, succeed: true };
   }
-
   const { contract, method } = transaction;
   const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
 
@@ -176,16 +194,41 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // This is useful for surfacing custom error revert reasons like RelayFilled in the V3 SpokePool but
   // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
-  try {
-    await contract.callStatic[method](...args);
-  } catch (err: any) {
-    if (err.errorName) {
-      return {
-        transaction,
-        succeed: false,
-        reason: err.errorName,
-      };
+  if (!isDefined(transaction.gasLimit)) {
+    try {
+      await contract.callStatic[method](...args);
+    } catch (err: any) {
+      if (err.errorName) {
+        return {
+          transaction,
+          succeed: false,
+          reason: err.errorName,
+        };
+      }
     }
+  }
+
+  // We don't check whether a gas limit has already been defined here since this flag is only set if the caller
+  // wants extra scrutiny on this transaction.
+  if (transaction.alchemySimulate) {
+    const alchemySdk = getAlchemySdk(transaction.chainId);
+    if (alchemySdk) {
+      try {
+        const callData = transaction.contract.interface.encodeFunctionData(method, args);
+        await alchemySdk.core.estimateGas({
+          data: callData,
+          to: transaction.contract.address,
+        });
+      } catch (_error) {
+        const error = _error as EthersError;
+        return { transaction, succeed: false, reason: error.reason };
+      }
+    }
+  }
+
+  // If the transaction already has a gasLimit, it should have been simulated in advance. We can early exit here now.
+  if (isDefined(transaction.gasLimit)) {
+    return { transaction, succeed: true };
   }
 
   try {
