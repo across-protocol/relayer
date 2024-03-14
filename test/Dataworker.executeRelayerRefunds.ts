@@ -1,4 +1,4 @@
-import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import { MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { MAX_UINT_VAL } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -7,7 +7,7 @@ import {
   destinationChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, buildFillForRepaymentChain, depositV3, ethers, expect, fillV3 } from "./utils";
+import { Contract, SignerWithAddress, depositV3, ethers, fillV3 } from "./utils";
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
@@ -18,7 +18,6 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -32,7 +31,6 @@ describe("Dataworker: Execute relayer refunds", async function () {
       erc20_1,
       spokePool_2,
       erc20_2,
-      hubPoolClient,
       l1Token_1,
       depositor,
       dataworkerInstance,
