@@ -4,7 +4,13 @@ import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1
 import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/L2MessageService";
 import { Linea_Adapter__factory } from "@across-protocol/contracts-v2";
 
-import { TransactionReceipt, getNodeUrlList } from "../../../utils";
+import {
+  TransactionReceipt,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getNodeUrlList,
+  getRedisCache,
+} from "../../../utils";
 
 export type MessageWithStatus = Message & {
   logIndex: number;
@@ -76,4 +82,28 @@ export function makeGetMessagesWithStatusByTxHash(
       status: messageStatus[index],
     }));
   };
+}
+
+export async function getBlockRangeByHoursOffsets(
+  chainId: number,
+  fromBlockHoursOffsetToNow: number,
+  toBlockHoursOffsetToNow: number
+): Promise<{ fromBlock: number; toBlock: number }> {
+  if (fromBlockHoursOffsetToNow < toBlockHoursOffsetToNow) {
+    throw new Error("fromBlockHoursOffsetToNow must be greater than toBlockHoursOffsetToNow");
+  }
+
+  const oneHourSeconds = 60 * 60;
+  const redisCache = await getRedisCache();
+  const currentTime = getCurrentTime();
+
+  const fromBlockTimestamp = currentTime - fromBlockHoursOffsetToNow * oneHourSeconds;
+  const toBlockTimestamp = currentTime - toBlockHoursOffsetToNow * oneHourSeconds;
+
+  const [fromBlock, toBlock] = await Promise.all([
+    getBlockForTimestamp(chainId, fromBlockTimestamp, undefined, redisCache),
+    getBlockForTimestamp(chainId, toBlockTimestamp, undefined, redisCache),
+  ]);
+
+  return { fromBlock, toBlock };
 }

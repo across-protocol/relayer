@@ -4,11 +4,17 @@ import { TokensRelayedEvent } from "@across-protocol/contracts-v2/dist/typechain
 import { utils, providers } from "ethers";
 import { groupBy } from "lodash";
 
-import { HubPoolClient, SpokePoolClient } from "../../../clients";
+import { HubPoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
 import { Signer, winston, convertFromWei, TransactionReceipt, paginatedEventQuery } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import { initLineaSdk, makeGetMessagesWithStatusByTxHash, MessageWithStatus, lineaAdapterIface } from "./common";
+import {
+  initLineaSdk,
+  makeGetMessagesWithStatusByTxHash,
+  MessageWithStatus,
+  lineaAdapterIface,
+  getBlockRangeByHoursOffsets,
+} from "./common";
 
 type ParsedAdapterEvent = {
   parsedLog: utils.LogDescription;
@@ -18,9 +24,7 @@ type ParsedAdapterEvent = {
 export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
-  hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  hubPoolClient: HubPoolClient
 ): Promise<FinalizerPromise> {
   const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
@@ -29,13 +33,18 @@ export async function lineaL1ToL2Finalizer(
   const l1Contract = lineaSdk.getL1Contract(CONTRACT_ADDRESSES[l1ChainId]?.lineaMessageService.address);
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l1Contract, l2Contract);
 
+  // Optimize block range for querying Linea's MessageSent events on L1.
+  // We want to query for events that are at most 1 hour old, but at least 8 hours old
+  // because Linea L1->L2 messages are claimable after ~20 mins.
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 8, 1);
+
   // Get Linea's `MessageSent` events originating from HubPool
   const messageSentEvents = await paginatedEventQuery(
     l1Contract.contract,
     l1Contract.contract.filters.MessageSent(hubPoolAddress),
     {
-      fromBlock: latestBlockToFinalize,
-      toBlock: hubPoolClient.latestBlockSearched,
+      fromBlock,
+      toBlock,
       maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
     }
   );

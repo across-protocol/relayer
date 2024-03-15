@@ -6,14 +6,18 @@ import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { Signer, winston, convertFromWei } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
-import { initLineaSdk, makeGetMessagesWithStatusByTxHash, MessageWithStatus } from "./common";
+import {
+  initLineaSdk,
+  makeGetMessagesWithStatusByTxHash,
+  MessageWithStatus,
+  getBlockRangeByHoursOffsets,
+} from "./common";
 
 export async function lineaL2ToL1Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
@@ -22,10 +26,15 @@ export async function lineaL2ToL1Finalizer(
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l2Contract, l1ClaimingService);
 
+  // Optimize block range for querying relevant source events on L2.
+  // We want to query for events that are at most 6 hours old, but at least 32 hours old
+  // because Linea L2->L1 messages are claimable after 6 - 32 hours
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 32, 6);
+
   // Get src events
   const l2SrcEvents = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber > latestBlockToFinalize);
+    .filter(({ blockNumber }) => blockNumber >= fromBlock && blockNumber <= toBlock);
 
   // Get Linea's MessageSent events for each src event
   const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map((event) => event.transactionHash)));
