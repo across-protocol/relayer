@@ -1589,15 +1589,16 @@ export class Dataworker {
             this.clients.hubPoolClient.hubPool.address
           );
           if (virtualHubPoolBalance.gte(leaf.netSendAmounts[idx])) {
+            const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
             this.logger.debug({
               at: "Dataworker#executePoolRebalanceLeaves",
-              message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${l1Token}`,
+              message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${tokenSymbol}`,
               currHubPoolBalance,
               virtualHubPoolBalance,
               netSendAmount: leaf.netSendAmounts[idx],
+              leaf,
             });
             if (submitExecution) {
-              const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
               this.clients.multiCallerClient.enqueueTransaction({
                 contract: this.clients.hubPoolClient.hubPool,
                 chainId: hubPoolChainId,
