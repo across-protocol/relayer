@@ -1564,48 +1564,49 @@ export class Dataworker {
       await sdkUtils.forEachAsync(leaf.l1Tokens, async (l1Token, idx) => {
         // If leaf's netSendAmount is negative, then we don't need to updateExchangeRates since the Hub will not
         // have a liquidity constraint because it won't be sending any tokens.
-        if (leaf.netSendAmounts[idx].gt(0)) {
-          // The virtual hubPoolBalance kept in the BalanceAllocator should have adjusted for the netSendAmounts and relayer refund leaf
-          // executions above. Therefore, check if the current hubPoolBalance is less than the pool rebalance leaf's netSendAmount
-          // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
-          // the HubPool becomes "aware" of its inflow following the relayre refund leaf execution.
-          const currHubPoolBalance = await balanceAllocator.getBalance(
+        if (leaf.netSendAmounts[idx].lte(0)) {
+          return;
+        }
+        // The virtual hubPoolBalance kept in the BalanceAllocator should have adjusted for the netSendAmounts and relayer refund leaf
+        // executions above. Therefore, check if the current hubPoolBalance is less than the pool rebalance leaf's netSendAmount
+        // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
+        // the HubPool becomes "aware" of its inflow following the relayre refund leaf execution.
+        const currHubPoolBalance = await balanceAllocator.getBalance(
+          hubPoolChainId,
+          l1Token,
+          this.clients.hubPoolClient.hubPool.address
+        );
+        // We only need to update the exchange rate in the case where tokens are returned to the HubPool increasing
+        // its balance enough that it can execute a pool rebalance leaf it otherwise would not be able to.
+        // This would only happen if the starting hub pool balance is below the net send amount. If it started
+        // above, then the dataworker would not purposefully send tokens out of it to fulfill the Ethereum
+        // PoolRebalanceLeaf and then return tokens to it to execute another chain's PoolRebalanceLeaf.
+        if (currHubPoolBalance.lt(leaf.netSendAmounts[idx])) {
+          // @dev: Virtual balance = current balance + any used balance.
+          const virtualHubPoolBalance = await balanceAllocator.getVirtualBalance(
             hubPoolChainId,
             l1Token,
             this.clients.hubPoolClient.hubPool.address
           );
-          // We only need to update the exchange rate in the case where tokens are returned to the HubPool increasing
-          // its balance enough that it can execute a pool rebalance leaf it otherwise would not be able to.
-          // This would only happen if the starting hub pool balance is below the net send amount. If it started
-          // above, then the dataworker would not purposefully send tokens out of it to fulfill the Ethereum
-          // PoolRebalanceLeaf and then return tokens to it to execute another chain's PoolRebalanceLeaf.
-          if (currHubPoolBalance.lt(leaf.netSendAmounts[idx])) {
-            // @dev: Virtual balance = current balance + any used balance.
-            const virtualHubPoolBalance = await balanceAllocator.getVirtualBalance(
-              hubPoolChainId,
-              l1Token,
-              this.clients.hubPoolClient.hubPool.address
-            );
-            if (virtualHubPoolBalance.gte(leaf.netSendAmounts[idx])) {
-              this.logger.debug({
-                at: "Dataworker#executePoolRebalanceLeaves",
-                message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${l1Token}`,
-                currHubPoolBalance,
-                virtualHubPoolBalance,
-                netSendAmount: leaf.netSendAmounts[idx],
+          if (virtualHubPoolBalance.gte(leaf.netSendAmounts[idx])) {
+            this.logger.debug({
+              at: "Dataworker#executePoolRebalanceLeaves",
+              message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${l1Token}`,
+              currHubPoolBalance,
+              virtualHubPoolBalance,
+              netSendAmount: leaf.netSendAmounts[idx],
+            });
+            if (submitExecution) {
+              const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
+              this.clients.multiCallerClient.enqueueTransaction({
+                contract: this.clients.hubPoolClient.hubPool,
+                chainId: hubPoolChainId,
+                method: "exchangeRateCurrent",
+                args: [l1Token],
+                message: "Updated exchange rate ♻️!",
+                mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
+                unpermissioned: true,
               });
-              if (submitExecution) {
-                const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
-                this.clients.multiCallerClient.enqueueTransaction({
-                  contract: this.clients.hubPoolClient.hubPool,
-                  chainId: hubPoolChainId,
-                  method: "exchangeRateCurrent",
-                  args: [l1Token],
-                  message: "Updated exchange rate ♻️!",
-                  mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
-                  unpermissioned: true,
-                });
-              }
             }
           }
         }
