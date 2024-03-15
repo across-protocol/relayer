@@ -47,7 +47,7 @@ export async function zkSyncFinalizer(
   const redis = await getRedisCache(logger);
   const [latestBlockToFinalize, earliestBlockToFinalize] = await Promise.all([
     getBlockForTimestamp(l2ChainId, getCurrentTime() - 2 * 60 * 60 * 24, undefined, redis),
-    getBlockForTimestamp(l2ChainId, getCurrentTime() - 1 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(l2ChainId, getCurrentTime() - 1 * 60 * 60 * 24, undefined, redis),
   ]);
 
   // Any block younger than latestBlockToFinalize is ignored.
