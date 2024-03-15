@@ -7,16 +7,7 @@ import {
   ZERO_ADDRESS,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import {
-  Contract,
-  FakeContract,
-  SignerWithAddress,
-  buildDeposit,
-  buildFillForRepaymentChain,
-  ethers,
-  expect,
-  smock,
-} from "./utils";
+import { Contract, FakeContract, SignerWithAddress, depositV3, ethers, expect, fillV3, smock } from "./utils";
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
@@ -27,7 +18,7 @@ import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
 // Set to arbitrum to test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message transfers.
 const destinationChainId = 42161;
 
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
+let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
 
@@ -43,6 +34,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       hubPool,
       spokePool_1,
       erc20_1,
+      erc20_2,
       spokePool_2,
       hubPoolClient,
       l1Token_1,
@@ -63,17 +55,17 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
-    const deposit = await buildDeposit(
-      hubPoolClient,
+    const deposit = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
     await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
 
     const providers = {
@@ -111,26 +103,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     expect(multiCallerClient.transactionCount()).to.equal(0);
-
-    // TEST 4:
-    // Submit another fill and check that dataworker proposes another root with 1 leaf.
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
-    await updateAllClients();
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    await multiCallerClient.executeTransactionQueue();
-
-    // Advance time and execute leaves:
-    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
-    await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
-
-    // Dataworker actually executes the leaf:
-    let pendingBundle = await hubPool.rootBundleProposal();
-    expect(pendingBundle.unclaimedPoolRebalanceLeafCount).to.equal(1);
-    await multiCallerClient.executeTransactionQueue();
-
-    pendingBundle = await hubPool.rootBundleProposal();
-    expect(pendingBundle.unclaimedPoolRebalanceLeafCount).to.equal(0);
   });
   describe("_updateExchangeRates", function () {
     let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;
