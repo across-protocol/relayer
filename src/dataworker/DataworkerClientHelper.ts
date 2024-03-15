@@ -12,10 +12,12 @@ import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
+import { caching } from "@across-protocol/sdk-v2";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
   bundleDataClient: BundleDataClient;
+  arweaveClient: caching.ArweaveClient;
   priceClient?: PriceClient;
 }
 
@@ -56,11 +58,21 @@ export async function constructDataworkerClients(
     new defiLlama.PriceFeed(),
   ]);
 
+  // Define the Arweave client.
+  const arweaveClient = new caching.ArweaveClient(
+    config.arweaveWalletJWK,
+    logger,
+    config.arweaveGateway?.url,
+    config.arweaveGateway?.protocol,
+    config.arweaveGateway?.port
+  );
+
   return {
     ...commonClients,
     bundleDataClient,
     tokenClient,
     priceClient,
+    arweaveClient,
   };
 }
 

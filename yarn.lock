@@ -50,15 +50,15 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.22.11":
-  version "0.22.11"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.22.11.tgz#a6a83e6e0f232d22e37acfaa7a7d59a2c6639b2f"
-  integrity sha512-e+L52wL81PYnjsK5UvAPzi8SSuI1BJpNL3rYSQ7TWgbr3ds0Iqefy8A6q+ZkjqeqEd6VFdmPU0IUdGtkycUz7A==
+"@across-protocol/sdk-v2@0.22.14":
+  version "0.22.14"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.22.14.tgz#f0b86d94e59c0478ec062539822407506550f2ac"
+  integrity sha512-U6baVww6xeK9X1iMobnJYclCCbU22RwKJ0ZrcliMvfYzUAXCLYeRrD7x2Stg0XFHwctiVjlr/QeKyIc8KeVWbQ==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants-v2" "^1.0.12"
     "@across-protocol/contracts-v2" "2.5.0-beta.7"
-    "@eth-optimism/sdk" "^3.1.8"
+    "@eth-optimism/sdk" "^3.2.2"
     "@pinata/sdk" "^2.1.0"
     "@types/mocha" "^10.0.1"
     "@uma/sdk" "^0.34.1"
@@ -507,11 +507,6 @@
     minimatch "^3.0.4"
     strip-json-comments "^3.1.1"
 
-"@eth-optimism/contracts-bedrock@0.16.2":
-  version "0.16.2"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.16.2.tgz#065ad561c3c8b942e4e0dd3d0ea6ed7e00a0f8f0"
-  integrity sha512-a2+f7soDbrd6jV74U02EpyMwQt2iZeDZ4c2ZwgkObcxXUZLZQ2ELt/VRFBf8TIL3wYcBOGpUa1aXAE2oHQ7oRA==
-
 "@eth-optimism/contracts-bedrock@0.17.1":
   version "0.17.1"
   resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.17.1.tgz#729b1dc53ec23d02ea9e68181f994955129f7415"
@@ -590,22 +585,10 @@
     ethers "^5.5.4"
     lodash "^4.17.21"
 
-"@eth-optimism/sdk@^3.1.8":
-  version "3.1.8"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.1.8.tgz#af68d1d58e0d71539363a273a50815233b54c83a"
-  integrity sha512-hvv7f3xE5JWIRN1lSiBUeRXdr2Ue+Ircgl612Gi/WvW1M3KGWQzCO0GYl858yheM8ROZOboOjSyKRy+ObubJkw==
-  dependencies:
-    "@eth-optimism/contracts" "0.6.0"
-    "@eth-optimism/contracts-bedrock" "0.16.2"
-    "@eth-optimism/core-utils" "0.13.1"
-    lodash "^4.17.21"
-    merkletreejs "^0.3.11"
-    rlp "^2.2.7"
-
-"@eth-optimism/sdk@^3.2.1":
-  version "3.2.1"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.2.1.tgz#70e10c84580fd9c02d82a6482cd233f8b317632b"
-  integrity sha512-COmnT2zRzFn2XhMW/OD1ML3gCrT6SO95YF3hV/Mx3G1G4Q6zOv09rwU1avH/OcqdDMBmZ/DTrZm+9OVmc+YPlQ==
+"@eth-optimism/sdk@^3.2.2":
+  version "3.2.2"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.2.2.tgz#732c2d6fde96a25303b3c5b39b3b3ed1f913d9aa"
+  integrity sha512-P8YXAlh2lun0KZlwrw4FqmK4kNIoOOzI816XXhfkW3nMVADGRAru3TKSM74MgmEuyGiHrA9EoPRq1WLqUX4B0w==
   dependencies:
     "@eth-optimism/contracts" "0.6.0"
     "@eth-optimism/contracts-bedrock" "0.17.1"

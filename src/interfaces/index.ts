@@ -5,6 +5,7 @@ export * from "./SpokePool";
 export * from "./Token";
 export * from "./Error";
 export * from "./Report";
+export * from "./Arweave";
 
 // Bridge interfaces
 export type OutstandingTransfers = interfaces.OutstandingTransfers;

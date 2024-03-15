@@ -440,6 +440,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
       logger.warn({
         at: "ProviderUtils",
         message: "Some providers mismatched with the quorum result or failed 🚸",
+        notificationPath: "across-warn",
         method,
         params,
         quorumProviders,

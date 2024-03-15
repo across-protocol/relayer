@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils, typechain, interfaces } from "@across-protocol/sdk-v2";
+import { utils, typechain, interfaces, caching } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -61,6 +61,7 @@ import {
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
+import { any } from "superstruct";
 
 export function getEndBlockBuffers(
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -715,4 +716,50 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
   // If we get to here, ETH and WETH addresses should be defined, or we'll throw an error.
   const ethAndWeth = getWethAndEth(l2ChainId);
   return ethAndWeth.includes(l2TokenAddress) ? ethAndWeth : [l2TokenAddress];
+}
+
+/**
+ * Persists data to Arweave with a given tag, given that the data doesn't
+ * already exist on Arweave with the tag.
+ * @param client The Arweave client to use for persistence.
+ * @param data The data to persist to Arweave.
+ * @param logger A winston logger
+ * @param tag The tag to use for the data.
+ */
+export async function persistDataToArweave(
+  client: caching.ArweaveClient,
+  data: Record<string, unknown>,
+  logger: winston.Logger,
+  tag?: string
+): Promise<void> {
+  const startTime = Date.now();
+  // Check if data already exists on Arweave with the given tag.
+  // If so, we don't need to persist it again.
+  const matchingTxns = await client.getByTopic(tag, any());
+  if (matchingTxns.length > 0) {
+    logger.info({
+      at: "Dataworker#index",
+      message: `Data already exists on Arweave with tag: ${tag}`,
+      hash: matchingTxns.map((txn) => txn.hash),
+    });
+  } else {
+    const [hashTxn, address, balance] = await Promise.all([
+      client.set(data, tag),
+      client.getAddress(),
+      client.getBalance(),
+    ]);
+    logger.info({
+      at: "Dataworker#index",
+      message: "Persisted data to Arweave! 💾",
+      receipt: `https://arweave.app/tx/${hashTxn}`,
+      rawData: `https://arweave.net/${hashTxn}`,
+      address,
+      balance,
+    });
+  }
+  const endTime = Date.now();
+  logger.debug({
+    at: "Dataworker#index",
+    message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
+  });
 }
