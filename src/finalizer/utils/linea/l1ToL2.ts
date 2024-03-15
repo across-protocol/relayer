@@ -34,9 +34,9 @@ export async function lineaL1ToL2Finalizer(
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l1Contract, l2Contract);
 
   // Optimize block range for querying Linea's MessageSent events on L1.
-  // We want to query for events that are at most 1 hour old, but at least 8 hours old
+  // We want to query for events that are between 0 and 4 hours old
   // because Linea L1->L2 messages are claimable after ~20 mins.
-  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 8, 1);
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 4, 0);
 
   // Get Linea's `MessageSent` events originating from HubPool
   const messageSentEvents = await paginatedEventQuery(

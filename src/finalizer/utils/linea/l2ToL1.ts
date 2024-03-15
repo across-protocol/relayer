@@ -27,9 +27,9 @@ export async function lineaL2ToL1Finalizer(
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l2Contract, l1ClaimingService);
 
   // Optimize block range for querying relevant source events on L2.
-  // We want to query for events that are at most 6 hours old, but at least 32 hours old
+  // We want to query for events that are 6 and 48 hours old
   // because Linea L2->L1 messages are claimable after 6 - 32 hours
-  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 32, 6);
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 48, 6);
 
   // Get src events
   const l2SrcEvents = spokePoolClient
