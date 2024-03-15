@@ -2137,25 +2137,12 @@ export class Dataworker {
    */
   _getRequiredEthForLineaRelayLeafExecution(client: SpokePoolClient): Promise<BigNumber> {
     // You should *only* call this method on Linea chains.
-    if (!sdkUtils.chainIsLinea(client.chainId)) {
-      this.logger.error({
-        at: "Dataworker#_getRequiredEthForLineaRelayLeafExecution",
-        message: "Tried to get required ETH for Linea relay leaf execution on a non-Linea chain!",
-        chainId: client.chainId,
-      });
-      throw new Error("Tried to get required ETH for Linea relay leaf execution on a non-Linea chain!");
-    }
+    assert(sdkUtils.chainIsLinea(client.chainId), "This method should only be called on Linea chains!");
     // Resolve and sanitize the L2MessageService contract ABI and address.
     const l2MessageABI = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.abi;
     const l2MessageAddress = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.address;
-    if (!isDefined(l2MessageABI) || !isDefined(l2MessageAddress)) {
-      this.logger.error({
-        at: "Dataworker#_getRequiredEthForLineaRelayLeafExecution",
-        message: "L2MessageService contract ABI or address is not defined for Linea chain!",
-        chainId: client.chainId,
-      });
-      throw new Error("L2MessageService contract ABI or address is not defined for Linea chain!");
-    }
+    assert(isDefined(l2MessageABI), "L2MessageService contract ABI is not defined for Linea chain!");
+    assert(isDefined(l2MessageAddress), "L2MessageService contract address is not defined for Linea chain!");
     // For Linea, the bot needs enough ETH to pay for each L2 -> L1 message.
     const l2MessagerContract = new Contract(l2MessageAddress, l2MessageABI, client.spokePool.provider);
     // Get the latest relay fee from the L2Linea Messenger contract.
