@@ -57,7 +57,6 @@ import {
   getDefaultBlockRange,
   lastSpyLogIncludes,
   requestSlowFill,
-  modifyRelayHelper,
   setupTokensForWallet,
   sinon,
   toBN,
