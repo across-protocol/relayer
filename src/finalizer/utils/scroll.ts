@@ -41,8 +41,13 @@ export async function scrollFinalizer(
   // up to 12 hours for withdrawals.
   const lookback = getCurrentTime() - 12 * 60 * 60 * 24;
   const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(l2ChainId, lookback, undefined, redis);
-  const outstandingClaims = await findOutstandingClaims(targetAddress, latestBlockToFinalize);
+  const fromBlock = await getBlockForTimestamp(l2ChainId, lookback, undefined, redis);
+  logger.debug({
+    at: "Finalizer#ScrollFinalizer",
+    message: "TokensBridged event filter",
+    fromBlock,
+  });
+  const outstandingClaims = await findOutstandingClaims(targetAddress, fromBlock);
 
   logger.debug({
     at: "Finalizer#ScrollFinalizer",

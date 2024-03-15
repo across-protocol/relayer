@@ -2,7 +2,6 @@ import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "
 import {
   winston,
   convertFromWei,
-  getNetworkName,
   groupObjectCountsByProp,
   Contract,
   getCachedProvider,
@@ -29,19 +28,20 @@ export async function arbitrumOneFinalizer(
 
   // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
-  const [earliestBlockToFinalize, latestBlockToFinalize] = await Promise.all([
-    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
+  const [fromBlock, toBlock] = await Promise.all([
     getBlockForTimestamp(chainId, getCurrentTime() - 9 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
   ]);
   logger.debug({
-    at: "Finalizer#arbitrumOneFinalizer",
-    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    earliestBlockToFinalize,
+    at: "Finalizer#ArbitrumFinalizer",
+    message: "TokensBridged event filter",
+    fromBlock,
+    toBlock,
   });
   // Skip events that are likely not past the seven day challenge period.
   const olderTokensBridgedEvents = spokePoolClient
     .getTokensBridged()
-    .filter((e) => e.blockNumber <= earliestBlockToFinalize && e.blockNumber >= latestBlockToFinalize);
+    .filter((e) => e.blockNumber <= toBlock && e.blockNumber >= fromBlock);
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }

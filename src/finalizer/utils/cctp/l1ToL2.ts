@@ -3,7 +3,15 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "hardhat";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
-import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../../utils";
+import {
+  Contract,
+  Signer,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getNetworkName,
+  getRedisCache,
+  winston,
+} from "../../../utils";
 import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
@@ -17,12 +25,13 @@ export async function cctpL1toL2Finalizer(
   // happen very quickly.
   const lookback = getCurrentTime() - 60 * 60 * 24;
   const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(spokePoolClient.chainId, lookback, undefined, redis);
-  const decodedMessages = await resolveRelatedTxnReceipts(
-    hubPoolClient,
-    spokePoolClient.chainId,
-    latestBlockToFinalize
-  );
+  const fromBlock = await getBlockForTimestamp(spokePoolClient.chainId, lookback, undefined, redis);
+  logger.debug({
+    at: "Finalizer#CCTPL1ToL2Finalizer",
+    message: `MessageSent event filter for L1 to ${getNetworkName(spokePoolClient.chainId)}`,
+    fromBlock,
+  });
+  const decodedMessages = await resolveRelatedTxnReceipts(hubPoolClient, spokePoolClient.chainId, fromBlock);
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {

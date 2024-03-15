@@ -30,7 +30,12 @@ export async function lineaL2ToL1Finalizer(
   // We want to query for events that are 6 and 48 hours old
   // because Linea L2->L1 messages are claimable after 6 - 32 hours
   const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 48, 6);
-
+  logger.debug({
+    at: "Finalizer#LineaL2ToL1Finalizer",
+    message: "TokensBridged event filter",
+    fromBlock,
+    toBlock,
+  });
   // Get src events
   const l2SrcEvents = spokePoolClient
     .getTokensBridged()

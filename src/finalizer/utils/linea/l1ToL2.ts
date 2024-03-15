@@ -37,6 +37,12 @@ export async function lineaL1ToL2Finalizer(
   // We want to query for events that are between 0 and 4 hours old
   // because Linea L1->L2 messages are claimable after ~20 mins.
   const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 4, 0);
+  logger.debug({
+    at: "Finalizer#LineaL1ToL2Finalizer",
+    message: "MessageSent event filter",
+    fromBlock,
+    toBlock,
+  });
 
   // Get Linea's `MessageSent` events originating from HubPool
   const messageSentEvents = await paginatedEventQuery(
