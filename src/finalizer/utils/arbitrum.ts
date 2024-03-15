@@ -8,6 +8,9 @@ import {
   getCachedProvider,
   getUniqueLogIndex,
   Signer,
+  getCurrentTime,
+  getRedisCache,
+  getBlockForTimestamp,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -20,20 +23,23 @@ export async function arbitrumOneFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
 
+  // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
+  const lookback = getCurrentTime() - 7 * 60 * 60 * 24;
+  const redis = await getRedisCache(logger);
+  const earliestBlockToFinalize = await getBlockForTimestamp(chainId, lookback, undefined, redis);
   logger.debug({
     at: "Finalizer#arbitrumOneFinalizer",
-    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
+    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+    earliestBlockToFinalize,
   });
   // Skip events that are likely not past the seven day challenge period.
   const olderTokensBridgedEvents = spokePoolClient
     .getTokensBridged()
-    .filter((e) => e.blockNumber < latestBlockToFinalize);
+    .filter((e) => e.blockNumber <= earliestBlockToFinalize);
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }

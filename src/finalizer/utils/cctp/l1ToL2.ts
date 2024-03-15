@@ -3,7 +3,7 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "hardhat";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
-import { Contract, Signer, winston } from "../../../utils";
+import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../../utils";
 import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
@@ -11,9 +11,13 @@ export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  // Let's just assume for now CCTP transfers don't take longer than 1 day and can
+  // happen very quickly.
+  const lookback = getCurrentTime() - 60 * 60 * 24;
+  const redis = await getRedisCache(logger);
+  const latestBlockToFinalize = await getBlockForTimestamp(spokePoolClient.chainId, lookback, undefined, redis);
   const decodedMessages = await resolveRelatedTxnReceipts(
     hubPoolClient,
     spokePoolClient.chainId,
@@ -36,7 +40,7 @@ async function resolveRelatedTxnReceipts(
   const txnReceipts = await Promise.all(
     client
       .getExecutedRootBundles()
-      .filter((bundle) => bundle.blockNumber > latestBlockToFinalize)
+      .filter((bundle) => bundle.blockNumber >= latestBlockToFinalize)
       .map((bundle) => client.hubPool.provider.getTransactionReceipt(bundle.transactionHash))
   );
   return resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);

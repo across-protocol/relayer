@@ -19,11 +19,8 @@ import {
   blockExplorerLink,
   config,
   disconnectRedisClients,
-  getBlockForTimestamp,
-  getCurrentTime,
   getMultisender,
   getNetworkName,
-  getRedisCache,
   processEndPollingLoop,
   startupLogLevel,
   winston,
@@ -44,10 +41,6 @@ const { isDefined } = sdkUtils;
 
 config();
 let logger: winston.Logger;
-
-// Filter for optimistic rollups
-const oneDaySeconds = 24 * 60 * 60;
-const oneHourSeconds = 60 * 60;
 
 const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   10: opStackFinalizer,
@@ -84,29 +77,8 @@ export async function finalize(
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
-  submitFinalizationTransactions: boolean,
-  optimisticRollupFinalizationWindow = 7 * oneDaySeconds,
-  polygonFinalizationWindow = oneDaySeconds
+  submitFinalizationTransactions: boolean
 ): Promise<void> {
-  const finalizationWindows: { [chainId: number]: number } = {
-    // Mainnets
-    1: oneHourSeconds, // Ethereum Mainnet. Linea L1 -> L2 finalizations take ~ 20 mins to finalize.
-    10: optimisticRollupFinalizationWindow, // Optimism Mainnet.
-    137: polygonFinalizationWindow, // Polygon Mainnet. Withdrawals take up to 3 hours to finalize.
-    324: oneDaySeconds, // zkSync Mainnet. Withdrawals take 1 day to finalize.
-    8453: optimisticRollupFinalizationWindow, // Base Mainnet.
-    42161: optimisticRollupFinalizationWindow, // Arbitrum One Mainnet.
-    59144: oneHourSeconds * 36, // Linea Mainnet: 8-32 hours
-    534352: oneHourSeconds * 4, // Scroll Mainnet
-
-    // Testnets
-    534351: oneHourSeconds * 4, // Scroll Sepolia
-    84532: optimisticRollupFinalizationWindow, // Base Testnet (Sepolia)
-    59140: oneHourSeconds * 36, // Linea Goerli: 8-32 hours
-    280: oneDaySeconds * 8, // zkSync Goerli
-    5: oneHourSeconds * 8,
-  };
-
   const hubChainId = hubPoolClient.chainId;
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
@@ -133,16 +105,7 @@ export async function finalize(
     const chainSpecificFinalizers = (chainFinalizerOverrides[chainId] ?? [chainFinalizers[chainId]]).filter(isDefined);
     assert(chainSpecificFinalizers?.length > 0, `No finalizer available for chain ${chainId}`);
 
-    const finalizationWindow = finalizationWindows[chainId];
-    assert(finalizationWindow !== undefined, `No finalization window defined for chain ${chainId}`);
-
-    const lookback = getCurrentTime() - finalizationWindow;
-    const blockFinder = undefined;
-    const redis = await getRedisCache(logger);
-    const latestBlockToFinalize = await getBlockForTimestamp(chainId, lookback, blockFinder, redis);
-
     const network = getNetworkName(chainId);
-    logger.debug({ at: "finalize", message: `Spawning ${network} finalizer.`, latestBlockToFinalize });
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
     // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the
@@ -153,13 +116,7 @@ export async function finalize(
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
     for (const finalizer of chainSpecificFinalizers) {
-      const { callData, crossChainMessages } = await finalizer(
-        logger,
-        hubSigner,
-        hubPoolClient,
-        client,
-        latestBlockToFinalize
-      );
+      const { callData, crossChainMessages } = await finalizer(logger, hubSigner, hubPoolClient, client);
 
       callData.forEach((txn, idx) => {
         finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
