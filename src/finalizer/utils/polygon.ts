@@ -3,13 +3,15 @@ import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
   convertFromWei,
   getDeployedContract,
-  getNetworkName,
   groupObjectCountsByProp,
   Signer,
   winston,
   Contract,
   getCachedProvider,
   getUniqueLogIndex,
+  getCurrentTime,
+  getRedisCache,
+  getBlockForTimestamp,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -38,23 +40,24 @@ export async function polygonFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
 
   const posClient = await getPosClient(signer);
+  const lookback = getCurrentTime() - 60 * 60 * 24;
+  const redis = await getRedisCache(logger);
+  const fromBlock = await getBlockForTimestamp(chainId, lookback, undefined, redis);
+
   logger.debug({
-    at: "Finalizer#polygonFinalizer",
-    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
+    at: "Finalizer#PolygonFinalizer",
+    message: "TokensBridged event filter",
+    fromBlock,
   });
 
   // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
   // that are older than 1 day old:
-  const recentTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter((e) => e.blockNumber >= latestBlockToFinalize);
+  const recentTokensBridgedEvents = spokePoolClient.getTokensBridged().filter((e) => e.blockNumber >= fromBlock);
 
   return multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
 }

@@ -3,7 +3,15 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "hardhat";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
-import { Contract, Signer, winston } from "../../../utils";
+import {
+  Contract,
+  Signer,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getNetworkName,
+  getRedisCache,
+  winston,
+} from "../../../utils";
 import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
@@ -11,14 +19,19 @@ export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
-  const decodedMessages = await resolveRelatedTxnReceipts(
-    spokePoolClient,
-    hubPoolClient.chainId,
-    latestBlockToFinalize
-  );
+  // Let's just assume for now CCTP transfers don't take longer than 1 day and can
+  // happen very quickly.
+  const lookback = getCurrentTime() - 60 * 60 * 24;
+  const redis = await getRedisCache(logger);
+  const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
+  logger.debug({
+    at: "Finalizer#CCTPL2ToL1Finalizer",
+    message: `MessageSent event filter for ${getNetworkName(spokePoolClient.chainId)} to L1`,
+    fromBlock,
+  });
+  const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId, fromBlock);
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
@@ -36,7 +49,7 @@ async function resolveRelatedTxnReceipts(
   const txnReceipts = await Promise.all(
     client
       .getTokensBridged()
-      .filter((bridgeEvent) => bridgeEvent.blockNumber > latestBlockToFinalize)
+      .filter((bridgeEvent) => bridgeEvent.blockNumber >= latestBlockToFinalize)
       .map((bridgeEvent) => client.spokePool.provider.getTransactionReceipt(bridgeEvent.transactionHash))
   );
   return resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);

@@ -36,7 +36,6 @@ export interface ChainFinalizer {
     logger: winston.Logger,
     signer: Signer,
     hubPoolClient: HubPoolClient,
-    spokePoolClient: SpokePoolClient,
-    firstBlockToFinalize: number
+    spokePoolClient: SpokePoolClient
   ): Promise<FinalizerPromise>;
 }

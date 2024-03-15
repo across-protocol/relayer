@@ -37,8 +37,7 @@ export async function opStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
   assert(isOVMChainId(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
@@ -46,18 +45,22 @@ export async function opStackFinalizer(
 
   const crossChainMessenger = getOptimismClient(chainId, signer);
 
+  // Optimism withdrawals take 7 days to finalize, while proofs are ready as soon as an L1 txn containing the L2
+  // withdrawal is posted to Mainnet, so ~30 mins.
   // Sort tokensBridged events by their age. Submit proofs for recent events, and withdrawals for older events.
   // - Don't submit proofs for finalizations older than 1 day
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
-  const blockFinder = undefined;
   const redis = await getRedisCache(logger);
-  const earliestBlockToProve = await getBlockForTimestamp(chainId, getCurrentTime() - 60 * 60 * 24, blockFinder, redis);
+  const [earliestBlockToFinalize, latestBlockToProve] = await Promise.all([
+    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(chainId, getCurrentTime() - 60 * 60 * 24, undefined, redis),
+  ]);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged(),
     (e) => {
-      if (e.blockNumber >= earliestBlockToProve) {
+      if (e.blockNumber >= latestBlockToProve) {
         return "recentTokensBridgedEvents";
-      } else if (e.blockNumber < latestBlockToFinalize) {
+      } else if (e.blockNumber <= earliestBlockToFinalize) {
         return "olderTokensBridgedEvents";
       }
     }
@@ -67,8 +70,8 @@ export async function opStackFinalizer(
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
     at: `Finalizer#${networkName}Finalizer`,
-    message: `Earliest TokensBridged block to attempt to submit proofs for ${networkName}`,
-    earliestBlockToProve,
+    message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
+    latestBlockToProve,
   });
 
   const proofs = await multicallOptimismL1Proofs(
@@ -83,8 +86,8 @@ export async function opStackFinalizer(
   // Skip events that are likely not past the seven day challenge period.
   logger.debug({
     at: "Finalizer",
-    message: `Oldest TokensBridged block to attempt to finalize for ${networkName}`,
-    latestBlockToFinalize,
+    message: `Earliest TokensBridged block to attempt to finalize for ${networkName}`,
+    earliestBlockToFinalize,
   });
 
   const finalizations = await multicallOptimismFinalizations(
