@@ -78,7 +78,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
-    59144: 0,
+    59144: 8,
     // Testnets:
     5: 0,
     280: 0,
@@ -96,7 +96,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
-    59144: 0,
+    59144: 4,
     // Testnets:
     5: 0,
     280: 0,
@@ -195,7 +195,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   324: 512,
   8453: 120,
   42161: 32,
-  59144: 8, // Linea has a soft-finality of 1 block. This value is padded - but at 4s/block the padding is light (32 seconds)
+  59144: 75, // Linea has a soft-finality of 1 block. This value is padded - but at 4s/block the padding is 5 minutes
   534352: 0,
   // Testnets:
   5: 0,
