@@ -49,6 +49,9 @@ export const CONTRACT_ADDRESSES: {
   };
 } = {
   1: {
+    lineaMessageService: {
+      address: "0xd19d4B5d358258f05D7B411E21A1460D11B0876F",
+    },
     zkSyncMailbox: {
       address: "0x32400084C286CF3E17e7B677ea9583e60a000324",
       abi: [
@@ -848,6 +851,11 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
+  59144: {
+    lineaMessageService: {
+      address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
+    },
+  },
 
   // Testnets
   11155111: {
@@ -860,6 +868,16 @@ export const CONTRACT_ADDRESSES: {
     cctpMessageTransmitter: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+  5: {
+    lineaMessageService: {
+      address: "0x70BaD09280FD342D02fe64119779BC1f0791BAC2",
+    },
+  },
+  59140: {
+    lineaMessageService: {
+      address: "0xC499a572640B64eA1C8c194c43Bc3E19940719dC",
     },
   },
 };
