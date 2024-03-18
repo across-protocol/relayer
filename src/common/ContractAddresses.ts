@@ -65,6 +65,9 @@ export const CONTRACT_ADDRESSES: {
   };
 } = {
   1: {
+    lineaMessageService: {
+      address: "0xd19d4B5d358258f05D7B411E21A1460D11B0876F",
+    },
     zkSyncMailbox: {
       address: "0x32400084C286CF3E17e7B677ea9583e60a000324",
       abi: [
