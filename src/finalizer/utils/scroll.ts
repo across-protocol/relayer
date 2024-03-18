@@ -4,8 +4,8 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { Contract, Signer, winston } from "../../utils";
-import { FinalizerPromise, CrossChainTransfer } from "../types";
+import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../utils";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 type ScrollClaimInfo = {
   from: string;
@@ -25,8 +25,7 @@ export async function scrollFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const [l1ChainId, l2ChainId, targetAddress] = [
     hubPoolClient.chainId,
@@ -34,19 +33,33 @@ export async function scrollFinalizer(
     spokePoolClient.spokePool.address,
   ];
   const relayContract = getScrollRelayContract(l1ChainId, signer);
-  const outstandingClaims = await findOutstandingClaims(targetAddress, latestBlockToFinalize);
+
+  // TODO: Why are we not using the SpokePoolClient.getTokensBridged() method here to get a list
+  // of all possible withdrawals and then narrowing the Scroll API search afterwards?
+  // Why are we breaking with the existing pattern--is it faster?
+  // Scroll takes up to 4 hours with finalize a withdrawal so lets search
+  // up to 12 hours for withdrawals.
+  const lookback = getCurrentTime() - 12 * 60 * 60 * 24;
+  const redis = await getRedisCache(logger);
+  const fromBlock = await getBlockForTimestamp(l2ChainId, lookback, undefined, redis);
+  logger.debug({
+    at: "Finalizer#ScrollFinalizer",
+    message: "TokensBridged event filter",
+    fromBlock,
+  });
+  const outstandingClaims = await findOutstandingClaims(targetAddress, fromBlock);
 
   logger.debug({
     at: "Finalizer#ScrollFinalizer",
     message: `Detected ${outstandingClaims.length} claims for ${targetAddress}`,
   });
 
-  const [callData, crossChainTransfers] = await Promise.all([
+  const [callData, crossChainMessages] = await Promise.all([
     sdkUtils.mapAsync(outstandingClaims, (claim) => populateClaimTransaction(claim, relayContract)),
     outstandingClaims.map((claim) => populateClaimWithdrawal(claim, l2ChainId, hubPoolClient)),
   ]);
   return {
-    crossChainTransfers,
+    crossChainMessages,
     callData,
   };
 }
@@ -134,7 +147,7 @@ function populateClaimWithdrawal(
   claim: ScrollClaimInfoWithL1Token,
   l2ChainId: number,
   hubPoolClient: HubPoolClient
-): CrossChainTransfer {
+): CrossChainMessage {
   const l1Token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, claim.l1Token);
   return {
     originationChainId: l2ChainId,
