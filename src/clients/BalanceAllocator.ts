@@ -114,6 +114,10 @@ export class BalanceAllocator {
     return this.balances[chainId][token][holder];
   }
 
+  async getVirtualBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
+    return (await this.getBalance(chainId, token, holder)).sub(this.getUsed(chainId, token, holder));
+  }
+
   getUsed(chainId: number, token: string, holder: string): BigNumber {
     if (!this.used?.[chainId]?.[token]?.[holder]) {
       // Note: cannot use assign because it breaks the BigNumber object.
