@@ -211,8 +211,7 @@ export class Relayer {
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { config } = this;
-    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, inventoryClient, multiCallerClient } =
-      this.clients;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
@@ -324,73 +323,6 @@ export class Relayer {
         // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
         // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
         tokenClient.captureTokenShortfallForFill(deposit, outputAmount);
-
-        // Before deciding whether to zero fill, first determine if the inventory manager will subsequently send
-        // funds to the destination chain to cover the shortfall. If it will, then check if the new balance
-        // will be enough for the relayer to submit a fast fill. If so, then don't zero fill so that the
-        // relayer can send this full fill and elect where to take repayment. This is assuming the contract
-        // enforces that partial fills must take  repayment on the destination which can lead to over-allocations
-        // on the destination chain if we always sent zero/partial fills here.
-        let willFastFillAfterRebalance = false;
-
-        // @dev: `getBalanceOnChainForL1Token` accounts for outstanding cross chain transfers via the
-        // CrossChainTransferClient.
-        const currentDestinationChainBalance = inventoryClient.getBalanceOnChainForL1Token(
-          destinationChainId,
-          l1Token.address
-        );
-        const crossChainTxns = inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-          this.relayerAddress,
-          destinationChainId,
-          l1Token.address
-        );
-        let newChainBalance = currentDestinationChainBalance;
-        if (newChainBalance.gte(outputAmount)) {
-          this.logger.debug({
-            at: "Relayer",
-            message:
-              "Skipping zero fills for this token because there are outstanding cross chain transfers that can be used to fast fill this deposit",
-            currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
-            crossChainTxns,
-          });
-          continue;
-        }
-
-        // Check for upcoming rebalances.
-        const rebalances = inventoryClient.getPossibleRebalances();
-        const rebalanceForFilledToken = rebalances.find(
-          ({ l1Token: l1TokenForFill, chainId, amount, balance }) =>
-            l1TokenForFill === l1Token.address && chainId === destinationChainId && amount.lte(balance) // It's important we count only rebalances that are executable based on current L1 balance.
-        );
-        if (rebalanceForFilledToken !== undefined) {
-          newChainBalance = newChainBalance.add(rebalanceForFilledToken.amount);
-          willFastFillAfterRebalance = newChainBalance.gte(outputAmount);
-          this.logger.debug({
-            at: "Relayer",
-            message:
-              "Inventory manager will rebalance to this chain after capturing token shortfall. Will skip zero fill if this deposit will be fillable after rebalance.",
-            currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
-            crossChainTxns,
-            newChainBalance,
-            rebalanceForFilledToken,
-            rebalances,
-            willFastFillAfterRebalance,
-          });
-          if (willFastFillAfterRebalance) {
-            continue;
-          }
-        } else {
-          this.logger.debug({
-            at: "Relayer",
-            message: "No rebalances for filled token, proceeding to evaluate slow fill request",
-            depositL1Token: l1Token.address,
-            currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
-            crossChainTxns,
-            rebalances,
-          });
-        }
-
-        // If we don't have enough balance to fill the deposit, consider requesting a slow fill.
         if (sendSlowRelays) {
           this.requestSlowFill(deposit);
         }
