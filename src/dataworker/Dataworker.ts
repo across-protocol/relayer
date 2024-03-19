@@ -533,18 +533,22 @@ export class Dataworker {
       unexecutableSlowFills,
       bundleSlowFillsV3,
     };
-    const allValidFillsInRange = getFillsInRange(
-      allValidFills,
-      blockRangesForProposal,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
-
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
-    const mainnetBundleEndBlock = getBlockRangeForChain(
+    const [
+      mainnetBundleStartBlock,
+      mainnetBundleEndBlock,
+    ] = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[1];
+    );
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock)
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesForProposal,
+      chainIds
+    );
+
     const poolRebalanceRoot = await this._getPoolRebalanceRoot(
       spokePoolClients,
       blockRangesForProposal,

@@ -302,9 +302,11 @@ export class BundleDataClient {
       throw new Error("HubPoolClient not updated");
     }
 
-    if (blockRangesForChains.length > this.chainIdListForBundleEvaluationBlockNumbers.length) {
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(blockRangesForChains[0][0]);
+
+    if (blockRangesForChains.length > chainIds.length) {
       throw new Error(
-        `Unexpected block range list length of ${blockRangesForChains.length}, should be <= ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
+        `Unexpected block range list length of ${blockRangesForChains.length}, should be <= ${chainIds.length}`
       );
     }
 
@@ -371,7 +373,7 @@ export class BundleDataClient {
         fill,
         this.clients.hubPoolClient,
         blockRangesForChains,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
 
       // Fills to refund includes both slow and non-slow fills and they both should increase the
@@ -417,14 +419,14 @@ export class BundleDataClient {
       const blockRangeForChain = getBlockRangeForChain(
         blockRangesForChains,
         chainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
       return isChainDisabled(blockRangeForChain);
     };
 
     // Infer chain ID's to load from number of block ranges passed in.
     const allChainIds = blockRangesForChains
-      .map((_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index])
+      .map((_blockRange, index) => chainIds[index])
       .filter((chainId) => !_isChainDisabled(chainId));
     allChainIds.forEach((chainId) => {
       const spokePoolClient = spokePoolClients[chainId];
@@ -441,7 +443,7 @@ export class BundleDataClient {
     let bundleBlockTimestamps: { [chainId: string]: number[] } = {};
     if (!_cachedBundleTimestamps) {
       bundleBlockTimestamps = await this.getBundleBlockTimestamps(
-        this.chainIdListForBundleEvaluationBlockNumbers,
+        chainIds,
         blockRangesForChains,
         spokePoolClients
       );
@@ -491,7 +493,7 @@ export class BundleDataClient {
             blockRangesForChains,
             Number(originChainId),
             Number(destinationChainId),
-            this.chainIdListForBundleEvaluationBlockNumbers,
+            chainIds,
             originClient,
             deposits
           )
@@ -504,7 +506,7 @@ export class BundleDataClient {
             blockRangesForChains,
             Number(originChainId),
             Number(destinationChainId),
-            this.chainIdListForBundleEvaluationBlockNumbers,
+            chainIds,
             originClient,
             earlyDeposits
           )
@@ -513,7 +515,7 @@ export class BundleDataClient {
         const blockRangeForChain = getBlockRangeForChain(
           blockRangesForChains,
           Number(destinationChainId),
-          this.chainIdListForBundleEvaluationBlockNumbers
+          chainIds
         );
 
         // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
@@ -606,7 +608,7 @@ export class BundleDataClient {
       const originChainBlockRange = getBlockRangeForChain(
         blockRangesForChains,
         originChainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
 
       for (const destinationChainId of allChainIds) {
@@ -669,7 +671,7 @@ export class BundleDataClient {
         const destinationChainBlockRange = getBlockRangeForChain(
           blockRangesForChains,
           destinationChainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
+          chainIds
         );
 
         // Keep track of fast fills that replaced slow fills, which we'll use to create "unexecutable" slow fills
@@ -854,7 +856,7 @@ export class BundleDataClient {
           const destinationBlockRange = getBlockRangeForChain(
             blockRangesForChains,
             destinationChainId,
-            this.chainIdListForBundleEvaluationBlockNumbers
+            chainIds
           );
           if (
             // If the slow fill request that was replaced by this fill was in an older bundle, then we don't
@@ -897,7 +899,7 @@ export class BundleDataClient {
       const destinationBlockRange = getBlockRangeForChain(
         blockRangesForChains,
         destinationChainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
 
       // Only look for deposits that were mined before this bundle and that are newly expired.
@@ -969,7 +971,7 @@ export class BundleDataClient {
                 fill,
                 this.clients.hubPoolClient,
                 blockRangesForChains,
-                this.chainIdListForBundleEvaluationBlockNumbers
+                chainIds
               );
               return {
                 ...fill,
@@ -1008,7 +1010,7 @@ export class BundleDataClient {
         fill,
         this.clients.hubPoolClient,
         blockRangesForChains,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
       updateBundleFillsV3(bundleFillsV3, fill, realizedLpFeePct, chainToSendRefundTo, repaymentToken);
     });
@@ -1030,7 +1032,7 @@ export class BundleDataClient {
 
     const spokeEventsReadable = prettyPrintSpokePoolEvents(
       blockRangesForChains,
-      this.chainIdListForBundleEvaluationBlockNumbers,
+      chainIds,
       deposits,
       allValidFills,
       allRelayerRefunds,
@@ -1049,7 +1051,7 @@ export class BundleDataClient {
       const mainnetRange = getBlockRangeForChain(
         blockRangesForChains,
         this.clients.hubPoolClient.chainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
       this.logger.debug({
         at: "BundleDataClient#loadData",
@@ -1109,7 +1111,7 @@ export class BundleDataClient {
       (
         await utils.mapAsync(chainIds, async (chainId, index) => {
           const blockRangeForChain = blockRangesForChains[index];
-          if (isChainDisabled(blockRangeForChain) || !blockRangeForChain) {
+          if (!isDefined(blockRangeForChain) || isChainDisabled(blockRangeForChain)) {
             return;
           }
           const [_startBlockForChain, _endBlockForChain] = blockRangeForChain;
