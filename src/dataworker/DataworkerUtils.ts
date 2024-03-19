@@ -139,7 +139,13 @@ export async function blockRangesAreInvalidForSpokeClients(
         bundleRangeFromBlock,
         end
       );
-      if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
+      // Skip this check if the spokePoolClient.fromBlock is less than or equal to the spokePool deployment block. 
+      // In this case, we have all the information for this SpokePool possible so there are no older deposits 
+      // that might have expired that we might miss.
+      if (
+        spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
+        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange
+      ) {
         return true;
       }
     }
