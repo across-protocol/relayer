@@ -416,11 +416,7 @@ export class BundleDataClient {
     };
 
     const _isChainDisabled = (chainId: number): boolean => {
-      const blockRangeForChain = getBlockRangeForChain(
-        blockRangesForChains,
-        chainId,
-        chainIds
-      );
+      const blockRangeForChain = getBlockRangeForChain(blockRangesForChains, chainId, chainIds);
       return isChainDisabled(blockRangeForChain);
     };
 
@@ -442,11 +438,7 @@ export class BundleDataClient {
     const _cachedBundleTimestamps = this.getBundleTimestampsFromCache(key);
     let bundleBlockTimestamps: { [chainId: string]: number[] } = {};
     if (!_cachedBundleTimestamps) {
-      bundleBlockTimestamps = await this.getBundleBlockTimestamps(
-        chainIds,
-        blockRangesForChains,
-        spokePoolClients
-      );
+      bundleBlockTimestamps = await this.getBundleBlockTimestamps(chainIds, blockRangesForChains, spokePoolClients);
       this.setBundleTimestampsInCache(key, bundleBlockTimestamps);
       if (logData) {
         this.logger.debug({
@@ -512,11 +504,7 @@ export class BundleDataClient {
           )
         );
 
-        const blockRangeForChain = getBlockRangeForChain(
-          blockRangesForChains,
-          Number(destinationChainId),
-          chainIds
-        );
+        const blockRangeForChain = getBlockRangeForChain(blockRangesForChains, Number(destinationChainId), chainIds);
 
         // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
         // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
@@ -605,11 +593,7 @@ export class BundleDataClient {
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
-      const originChainBlockRange = getBlockRangeForChain(
-        blockRangesForChains,
-        originChainId,
-        chainIds
-      );
+      const originChainBlockRange = getBlockRangeForChain(blockRangesForChains, originChainId, chainIds);
 
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) {
@@ -668,11 +652,7 @@ export class BundleDataClient {
         }
 
         const destinationClient = spokePoolClients[destinationChainId];
-        const destinationChainBlockRange = getBlockRangeForChain(
-          blockRangesForChains,
-          destinationChainId,
-          chainIds
-        );
+        const destinationChainBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
 
         // Keep track of fast fills that replaced slow fills, which we'll use to create "unexecutable" slow fills
         // if the slow fill request was sent in a prior bundle.
@@ -853,11 +833,7 @@ export class BundleDataClient {
             fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill,
             "Fill type should be ReplacedSlowFill."
           );
-          const destinationBlockRange = getBlockRangeForChain(
-            blockRangesForChains,
-            destinationChainId,
-            chainIds
-          );
+          const destinationBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
           if (
             // If the slow fill request that was replaced by this fill was in an older bundle, then we don't
             // need to check if the slow fill request was valid since we can assume all bundles in the past
@@ -896,11 +872,7 @@ export class BundleDataClient {
       const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
       assert(deposit, "Deposit should exist in relay hash dictionary.");
       const { destinationChainId } = deposit;
-      const destinationBlockRange = getBlockRangeForChain(
-        blockRangesForChains,
-        destinationChainId,
-        chainIds
-      );
+      const destinationBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
 
       // Only look for deposits that were mined before this bundle and that are newly expired.
       // If the fill deadline is lower than the bundle start block on the destination chain, then
@@ -1048,11 +1020,7 @@ export class BundleDataClient {
       unexecutableSlowFills
     );
     if (logData) {
-      const mainnetRange = getBlockRangeForChain(
-        blockRangesForChains,
-        this.clients.hubPoolClient.chainId,
-        chainIds
-      );
+      const mainnetRange = getBlockRangeForChain(blockRangesForChains, this.clients.hubPoolClient.chainId, chainIds);
       this.logger.debug({
         at: "BundleDataClient#loadData",
         message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
