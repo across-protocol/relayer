@@ -345,6 +345,7 @@ export class Dataworker {
       hubPoolClient.latestBlockSearched,
       hubPoolClient.chainId
     );
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
     const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock
@@ -352,7 +353,7 @@ export class Dataworker {
     const mainnetBlockRange = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolClient.chainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
+      chainIds
     );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
@@ -362,7 +363,7 @@ export class Dataworker {
       (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
-        this.chainIdListForBundleEvaluationBlockNumbers,
+        chainIds,
         earliestBlocksInSpokePoolClients,
         this.isV3(mainnetBlockRange[0])
       ))
