@@ -1109,7 +1109,7 @@ export class BundleDataClient {
       (
         await utils.mapAsync(chainIds, async (chainId, index) => {
           const blockRangeForChain = blockRangesForChains[index];
-          if (isChainDisabled(blockRangeForChain)) {
+          if (!isDefined(blockRangeForChain) || isChainDisabled(blockRangeForChain)) {
             return;
           }
           const [_startBlockForChain, _endBlockForChain] = blockRangeForChain;
