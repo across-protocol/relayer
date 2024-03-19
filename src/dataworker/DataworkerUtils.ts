@@ -122,17 +122,23 @@ export async function blockRangesAreInvalidForSpokeClients(
 
     const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
 
+    const latestInvalidBundleStartBlockForChain =
+      latestInvalidBundleStartBlock[chainId] ?? spokePoolClient.deploymentBlock;
+
     // If range start block is less than the earliest spoke pool client we can validate or the range end block
     // is greater than the latest client end block, then ranges are invalid.
-    // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
+    // Note: Math.max the from block with the registration block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
     const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
-    if (bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried) {
+    if (bundleRangeFromBlock <= latestInvalidBundleStartBlockForChain || end > clientLastBlockQueried) {
       return true;
     }
 
     if (endBlockTimestamps !== undefined) {
-      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
+      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(
+        bundleRangeFromBlock,
+        end
+      );
       if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
         return true;
       }
