@@ -162,17 +162,16 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Slow relays should be sorted by origin chain ID and deposit ID.
     const expectedSlowRelayLeaves = [
-      ...buildV3SlowRelayLeaves([deposit1],  lpFees[0].realizedLpFeePct),
-      ...buildV3SlowRelayLeaves([deposit3],  lpFees[2].realizedLpFeePct),
-      ...buildV3SlowRelayLeaves([deposit2],  lpFees[1].realizedLpFeePct),
-      ...buildV3SlowRelayLeaves([deposit4],  lpFees[3].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit1], lpFees[0].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit3], lpFees[2].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit2], lpFees[1].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit4], lpFees[3].realizedLpFeePct),
     ];
 
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     await updateAllClients();
     const expectedMerkleRoot1 = await buildV3SlowRelayTree(expectedSlowRelayLeaves);
-    const root = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(0), spokePoolClients);
     const merkleRoot1 = (await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(0), spokePoolClients)).tree;
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
@@ -183,9 +182,9 @@ describe("Dataworker: Build merkle roots", async function () {
         ...deposit1,
         updatedMessage: deposit1.message,
         updatedOutputAmount: deposit1.outputAmount.sub(1),
-        updatedRecipient: deposit1.recipient
+        updatedRecipient: deposit1.recipient,
       },
-      depositor,
+      depositor
     );
 
     await updateAllClients();
@@ -219,9 +218,10 @@ describe("Dataworker: Build merkle roots", async function () {
     await requestSlowFill(spokePool_1, relayer, deposit5);
     await updateAllClients();
     const merkleRoot2 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(3), spokePoolClients);
-    const { realizedLpFeePct: lpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
-      { ...deposit5, paymentChainId: deposit5.destinationChainId }
-    );
+    const { realizedLpFeePct: lpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+      ...deposit5,
+      paymentChainId: deposit5.destinationChainId,
+    });
     const expectedMerkleRoot2 = await buildV3SlowRelayTree(buildV3SlowRelayLeaves([deposit5], lpFeePct));
     expect(merkleRoot2.tree.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
   });
