@@ -350,11 +350,7 @@ export class Dataworker {
       spokePoolClients,
       nextBundleMainnetStartBlock
     );
-    const mainnetBlockRange = getBlockRangeForChain(
-      blockRangesForProposal,
-      hubPoolClient.chainId,
-      chainIds
-    );
+    const mainnetBlockRange = getBlockRangeForChain(blockRangesForProposal, hubPoolClient.chainId, chainIds);
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
