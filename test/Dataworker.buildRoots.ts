@@ -54,15 +54,16 @@ import {
   ethers,
   expect,
   fillV3,
+  fillV3Relay,
   getDefaultBlockRange,
   lastSpyLogIncludes,
   requestSlowFill,
-  modifyRelayHelper,
   setupTokensForWallet,
   sinon,
   toBN,
   toBNWei,
   buildV3SlowRelayTree,
+  updateDeposit,
 } from "./utils";
 import { utils as sdkUtils, interfaces } from "@across-protocol/sdk-v2";
 
@@ -107,86 +108,93 @@ describe("Dataworker: Build merkle roots", async function () {
   it("Build slow relay root", async function () {
     await updateAllClients();
 
-    // Submit deposits for multiple destination chain IDs.
-    const deposit1 = await buildDeposit(
-      hubPoolClient,
+    const deposit1 = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
-      amountToDeposit
-    );
-    const deposit2 = await buildDeposit(
-      hubPoolClient,
-      spokePool_2,
-      erc20_2,
-      l1Token_1,
       depositor,
-      originChainId,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
-    const deposit3 = await buildDeposit(
-      hubPoolClient,
+
+    const deposit2 = await depositV3(
+      spokePool_2,
+      originChainId,
+      depositor,
+      erc20_2.address,
+      amountToDeposit,
+      erc20_1.address,
+      amountToDeposit
+    );
+
+    const deposit3 = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
-    const deposit4 = await buildDeposit(
-      hubPoolClient,
+
+    const deposit4 = await depositV3(
       spokePool_2,
-      erc20_2,
-      l1Token_1,
-      depositor,
       originChainId,
+      depositor,
+      erc20_2.address,
+      amountToDeposit,
+      erc20_1.address,
       amountToDeposit
+    );
+    await hubPoolClient.update();
+
+    // Reuest slow fills for each deposit so dataworker includes deposits as slow relays.
+    await requestSlowFill(spokePool_2, relayer, deposit1);
+    await requestSlowFill(spokePool_1, relayer, deposit2);
+    await requestSlowFill(spokePool_2, relayer, deposit3);
+    await requestSlowFill(spokePool_1, relayer, deposit4);
+
+    const deposits = [deposit1, deposit2, deposit3, deposit4];
+    const lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: deposit.destinationChainId }))
     );
 
     // Slow relays should be sorted by origin chain ID and deposit ID.
-    const expectedSlowRelayLeaves = buildSlowRelayLeaves([deposit1, deposit2, deposit3, deposit4]);
-
-    // Add fills for each deposit so dataworker includes deposits as slow relays:
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.1);
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 0.1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 0.1);
+    const expectedSlowRelayLeaves = [
+      ...buildV3SlowRelayLeaves([deposit1], lpFees[0].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit3], lpFees[2].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit2], lpFees[1].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit4], lpFees[3].realizedLpFeePct),
+    ];
 
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     await updateAllClients();
-    const expectedMerkleRoot1 = await buildSlowRelayTree(expectedSlowRelayLeaves);
+    const expectedMerkleRoot1 = await buildV3SlowRelayTree(expectedSlowRelayLeaves);
     const merkleRoot1 = (await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(0), spokePoolClients)).tree;
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
     // Speeding up a deposit should have no effect on the slow root:
-    const newRelayerFeePct = toBNWei(0.1337);
-    const speedUpSignature = await modifyRelayHelper(
-      newRelayerFeePct,
-      deposit1.depositId.toString(),
-      deposit1.originChainId.toString(),
-      depositor,
-      deposit1.recipient,
-      "0x"
+    await updateDeposit(
+      spokePool_1,
+      {
+        ...deposit1,
+        updatedMessage: deposit1.message,
+        updatedOutputAmount: deposit1.outputAmount.sub(1),
+        updatedRecipient: deposit1.recipient,
+      },
+      depositor
     );
-    await spokePool_1.speedUpDeposit(
-      depositor.address,
-      newRelayerFeePct,
-      deposit1.depositId,
-      deposit1.recipient,
-      "0x",
-      speedUpSignature.signature
-    );
+
     await updateAllClients();
-    expect(merkleRoot1.getHexRoot()).to.equal((await buildSlowRelayTree(expectedSlowRelayLeaves)).getHexRoot());
+    expect(merkleRoot1.getHexRoot()).to.equal((await buildV3SlowRelayTree(expectedSlowRelayLeaves)).getHexRoot());
 
     // Fill deposits such that there are no unfilled deposits remaining.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
+    await fillV3Relay(spokePool_2, deposit1, relayer);
+    await fillV3Relay(spokePool_1, deposit2, relayer);
+    await fillV3Relay(spokePool_2, deposit3, relayer);
+    await fillV3Relay(spokePool_1, deposit4, relayer);
     await updateAllClients();
     expect(
       (await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(1), spokePoolClients)).leaves
@@ -196,23 +204,28 @@ describe("Dataworker: Build merkle roots", async function () {
     ).to.equal(EMPTY_MERKLE_ROOT);
 
     // Includes slow fills triggered by "zero" (i.e. 1 wei) fills
-    const deposit5 = await buildDeposit(
-      hubPoolClient,
+    const deposit5 = await depositV3(
       spokePool_2,
-      erc20_2,
-      l1Token_1,
-      depositor,
       originChainId,
+      depositor,
+      erc20_2.address,
+      amountToDeposit,
+      erc20_1.address,
       amountToDeposit
     );
 
     // Trigger slow fill with a partial fill:
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.01);
+    await requestSlowFill(spokePool_1, relayer, deposit5);
     await updateAllClients();
     const merkleRoot2 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(3), spokePoolClients);
-    const expectedMerkleRoot2 = await buildSlowRelayTree(buildSlowRelayLeaves([deposit5]));
+    const { realizedLpFeePct: lpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+      ...deposit5,
+      paymentChainId: deposit5.destinationChainId,
+    });
+    const expectedMerkleRoot2 = await buildV3SlowRelayTree(buildV3SlowRelayLeaves([deposit5], lpFeePct));
     expect(merkleRoot2.tree.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
   });
+
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
       // Set spoke target balance thresholds above deposit amounts so that amountToReturn is always 0.

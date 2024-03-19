@@ -49,11 +49,11 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // anything under 7 days.
 export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-  10: 60,
+  10: 120,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
-  324: 0,
-  8453: 60,
+  324: 120,
+  8453: 120,
   42161: 0,
   59144: 30,
   // Testnets:
