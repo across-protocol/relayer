@@ -851,12 +851,13 @@ export class Dataworker {
     );
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRange[0]);
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
       (await blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
-        this.chainIdListForBundleEvaluationBlockNumbers,
+        chainIds,
         earliestBlocksInSpokePoolClients,
         this.isV3(mainnetBlockRange[0])
       ))
@@ -881,7 +882,7 @@ export class Dataworker {
       at: "Dataworker#validate",
       message: "Implied bundle ranges are valid",
       blockRangesImpliedByBundleEndBlocks,
-      chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers,
+      chainIdListForBundleEvaluationBlockNumbers: chainIds,
     });
 
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
@@ -1089,12 +1090,13 @@ export class Dataworker {
             this.clients.hubPoolClient.chainId,
             this.chainIdListForBundleEvaluationBlockNumbers
           );
+          const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRange[0]);
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
             (await blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
-              this.chainIdListForBundleEvaluationBlockNumbers,
+              chainIds,
               earliestBlocksInSpokePoolClients,
               this.isV3(mainnetBlockRange[0])
             ))
@@ -1884,12 +1886,13 @@ export class Dataworker {
           hubPoolClient.chainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         );
+        const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRanges[0]);
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
           (await blockRangesAreInvalidForSpokeClients(
             spokePoolClients,
             blockNumberRanges,
-            this.chainIdListForBundleEvaluationBlockNumbers,
+            chainIds,
             earliestBlocksInSpokePoolClients,
             this.isV3(mainnetBlockRanges[0])
           ))
