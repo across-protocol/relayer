@@ -340,11 +340,7 @@ export class Dataworker {
     // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      hubPoolClient.latestBlockSearched,
-      hubPoolClient.chainId
-    );
+    const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
     const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
@@ -379,6 +375,15 @@ export class Dataworker {
     return blockRangesForProposal;
   }
 
+  getNextHubChainBundleStartBlock(chainIdList = this.chainIdListForBundleEvaluationBlockNumbers): number {
+    const hubPoolClient = this.clients.hubPoolClient;
+    return hubPoolClient.getNextBundleStartBlockNumber(
+      chainIdList,
+      hubPoolClient.latestBlockSearched,
+      hubPoolClient.chainId
+    );
+  }
+
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
@@ -400,11 +405,7 @@ export class Dataworker {
     }
 
     const { chainId: hubPoolChainId, latestBlockSearched } = this.clients.hubPoolClient;
-    const mainnetBundleEndBlock = getBlockRangeForChain(
-      blockRangesForProposal,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[1];
+    const mainnetBundleEndBlock = blockRangesForProposal[0][1];
 
     this.logger.debug({
       at: "Dataworker#propose",
@@ -530,12 +531,7 @@ export class Dataworker {
       unexecutableSlowFills,
       bundleSlowFillsV3,
     };
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
-    const [mainnetBundleStartBlock, mainnetBundleEndBlock] = getBlockRangeForChain(
-      blockRangesForProposal,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
+    const [mainnetBundleStartBlock, mainnetBundleEndBlock] = blockRangesForProposal[0];
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
     const allValidFillsInRange = getFillsInRange(allValidFills, blockRangesForProposal, chainIds);
 
@@ -640,11 +636,7 @@ export class Dataworker {
       return;
     }
 
-    const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.latestBlockSearched,
-      this.clients.hubPoolClient.chainId
-    );
+    const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
@@ -762,11 +754,7 @@ export class Dataworker {
       blockRange[0],
       rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
-    const mainnetBlockRange = getBlockRangeForChain(
-      blockRangesImpliedByBundleEndBlocks,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
+    const mainnetBlockRange = blockRangesImpliedByBundleEndBlocks[0];
     const mainnetBundleStartBlock = mainnetBlockRange[0];
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
     const endBlockBuffers = getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer);
@@ -1076,11 +1064,7 @@ export class Dataworker {
             this.clients.configStoreClient,
             matchingRootBundle
           );
-          const mainnetBlockRange = getBlockRangeForChain(
-            blockNumberRanges,
-            this.clients.hubPoolClient.chainId,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          );
+          const mainnetBlockRange = blockNumberRanges[0];
           const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRange[0]);
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
@@ -1423,11 +1407,7 @@ export class Dataworker {
       pendingRootBundle,
     });
 
-    const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.latestBlockSearched,
-      this.clients.hubPoolClient.chainId
-    );
+    const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock
@@ -1872,11 +1852,7 @@ export class Dataworker {
         }
 
         const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
-        const mainnetBlockRanges = getBlockRangeForChain(
-          blockNumberRanges,
-          hubPoolClient.chainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
+        const mainnetBlockRanges = blockNumberRanges[0];
         const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRanges[0]);
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
