@@ -101,7 +101,7 @@ export async function blockRangesAreInvalidForSpokeClients(
       chainIdListForBundleEvaluationBlockNumbers
     );
     // There should be a spoke pool client instantiated for every bundle timestamp.
-    assert(Object.keys(endBlockTimestamps).every((chainId) => spokePoolClients[chainId] !== undefined));
+    assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
   }
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
