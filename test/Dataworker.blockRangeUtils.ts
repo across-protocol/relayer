@@ -268,7 +268,9 @@ describe("Dataworker block range-related utility methods", async function () {
       originSpokePoolClient.logger,
       fakeSpokePool,
       originSpokePoolClient.chainId,
-      originSpokePoolClient.deploymentBlock
+      originSpokePoolClient.eventSearchConfig.fromBlock-1 // Set deployment block less than eventSearchConfig.fromBlock
+      // to force blockRangesAreInvalidForSpokeClients to compare the client's oldestTime() with its 
+      // fill deadline buffer.
     );
     const blockRanges = [[mainnetDeploymentBlock + 1, mockSpokePoolClient.latestBlockSearched]];
     const endBlockTimestamps = await getTimestampsForBundleEndBlocks(
