@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils as ethersUtils } from "ethers";
+import { Contract, utils as ethersUtils } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
@@ -48,7 +48,7 @@ import {
   _buildSlowRelayRoot,
 } from "./DataworkerUtils";
 import _ from "lodash";
-import { spokePoolClientsToProviders } from "../common";
+import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
 import {
   BundleDepositsV3,
@@ -1964,6 +1964,14 @@ export class Dataworker {
       return;
     }
     const chainId = client.chainId;
+
+    // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf. This is currently
+    // unique to the L2 -> L1 relay direction for Linea. We will make this variable generic defaulting to undefined
+    // for other chains.
+    const valueToPassViaPayable = sdkUtils.chainIsLinea(chainId)
+      ? await this._getRequiredEthForLineaRelayLeafExecution(client)
+      : undefined;
+
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
@@ -1974,13 +1982,28 @@ export class Dataworker {
           const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
-          const success = await balanceAllocator.requestBalanceAllocation(
-            leaf.chainId,
-            l2TokensToCountTowardsSpokePoolLeafExecutionCapital(leaf.l2TokenAddress, leaf.chainId),
-            client.spokePool.address,
-            totalSent
-          );
-
+          const balanceRequestsToQuery = [
+            {
+              chainId: leaf.chainId,
+              tokens: l2TokensToCountTowardsSpokePoolLeafExecutionCapital(leaf.l2TokenAddress, leaf.chainId),
+              holder: client.spokePool.address,
+              amount: totalSent,
+            },
+          ];
+          // If we have to pass ETH via the payable function, then we need to add a balance request for the signer
+          // to ensure that it has enough ETH to send.
+          // NOTE: this is ETH required separately from the amount required to send the tokens
+          if (isDefined(valueToPassViaPayable)) {
+            balanceRequestsToQuery.push({
+              chainId: leaf.chainId,
+              tokens: [ZERO_ADDRESS], // ZERO_ADDRESS is used to represent ETH.
+              holder: await client.spokePool.signer.getAddress(), // The signer's address is what will be sending the ETH.
+              amount: valueToPassViaPayable,
+            });
+          }
+          // We use the requestBalanceAllocations instead of two separate calls to requestBalanceAllocation because
+          // we want the balance to be set in an atomic transaction.
+          const success = await balanceAllocator.requestBalanceAllocations(balanceRequestsToQuery);
           if (!success) {
             this.logger.warn({
               at: "Dataworker#executeRelayerRefundLeaves",
@@ -1996,7 +2019,7 @@ export class Dataworker {
           } else {
             // If mainnet leaf, then allocate balance to the HubPool since it will be atomically transferred.
             if (leaf.chainId === this.clients.hubPoolClient.chainId && leaf.amountToReturn.gt(0)) {
-              await balanceAllocator.addUsed(
+              balanceAllocator.addUsed(
                 leaf.chainId,
                 leaf.l2TokenAddress,
                 this.clients.hubPoolClient.hubPool.address,
@@ -2018,6 +2041,7 @@ export class Dataworker {
       }\nchainId: ${chainId}\ntoken: ${l1TokenInfo?.symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
+          value: valueToPassViaPayable,
           contract: client.spokePool,
           chainId: Number(chainId),
           method: "executeRelayerRefundLeaf",
@@ -2160,6 +2184,27 @@ export class Dataworker {
       requiredAmount = requiredAmount.add(toBNWei("0.02"));
     }
     return requiredAmount;
+  }
+
+  /**
+   * Retrieves the amount of ETH required to execute a Linea relay leaf by querying the latest
+   * relay fee from the L2Linea Messenger contract.
+   * @param leaf The relay leaf to execute. Used in this function to prevent non-Linea chains from calling this method.
+   * @returns The amount of ETH required to execute the relay leaf.
+   * @throws If the method is called using a non-linea spoke pool client.
+   */
+  _getRequiredEthForLineaRelayLeafExecution(client: SpokePoolClient): Promise<BigNumber> {
+    // You should *only* call this method on Linea chains.
+    assert(sdkUtils.chainIsLinea(client.chainId), "This method should only be called on Linea chains!");
+    // Resolve and sanitize the L2MessageService contract ABI and address.
+    const l2MessageABI = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.abi;
+    const l2MessageAddress = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.address;
+    assert(isDefined(l2MessageABI), "L2MessageService contract ABI is not defined for Linea chain!");
+    assert(isDefined(l2MessageAddress), "L2MessageService contract address is not defined for Linea chain!");
+    // For Linea, the bot needs enough ETH to pay for each L2 -> L1 message.
+    const l2MessagerContract = new Contract(l2MessageAddress, l2MessageABI, client.spokePool.provider);
+    // Get the latest relay fee from the L2Linea Messenger contract.
+    return l2MessagerContract.minimumFeeInWei();
   }
 
   /**

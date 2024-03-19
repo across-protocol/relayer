@@ -19,6 +19,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   324: 4 * 24 * 60 * 60,
   8453: 172800, // Same as Optimism.
   42161: 1382400,
+  59144: 86400, // 1 block every 4 seconds
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -48,16 +49,18 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // anything under 7 days.
 export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-  10: 60,
+  10: 120,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
-  324: 0,
-  8453: 60,
+  324: 120,
+  8453: 120,
   42161: 0,
+  59144: 30,
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -75,10 +78,12 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
+    59144: 1,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    59140: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -91,10 +96,12 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
+    59144: 1,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    59140: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -143,10 +150,12 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   8453: 60, // 2s/block. Same finality profile as Optimism
   42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
+  59144: 30, // At 4s/block, 2 mins = 30 blocks.
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -186,7 +195,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   324: 512,
   8453: 120,
   42161: 32,
-  59144: 0,
+  59144: 75, // Linea has a soft-finality of 1 block. This value is padded - but at 4s/block the padding is 5 minutes
   534352: 0,
   // Testnets:
   5: 0,
@@ -213,6 +222,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   288: 86400,
   324: 172800,
   8453: 86400,
+  59144: 43200,
   42161: 691200,
   534352: 57600,
 };

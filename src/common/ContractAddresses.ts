@@ -39,6 +39,22 @@ const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
   },
 ];
 
+export const LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI = [
+  {
+    inputs: [],
+    name: "minimumFeeInWei",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -852,11 +868,11 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   59144: {
-    lineaMessageService: {
+    l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
+      abi: LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI,
     },
   },
-
   // Testnets
   11155111: {
     cctpMessageTransmitter: {
@@ -870,14 +886,10 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
-  5: {
-    lineaMessageService: {
-      address: "0x70BaD09280FD342D02fe64119779BC1f0791BAC2",
-    },
-  },
   59140: {
-    lineaMessageService: {
+    l2MessageService: {
       address: "0xC499a572640B64eA1C8c194c43Bc3E19940719dC",
+      abi: LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI,
     },
   },
 };
