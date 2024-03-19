@@ -221,10 +221,17 @@ export class BundleDataClient {
   // - Bundles that are pending liveness
   // - Not yet proposed bundles
   async getNextBundleRefunds(): Promise<CombinedRefunds> {
-    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
+    const hubPoolClient = this.clients.hubPoolClient;
+    const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      hubPoolClient.latestBlockSearched,
+      hubPoolClient.chainId
+    );
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
+    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
+      chainIds,
       this.spokePoolClients,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockSearched,
       this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)

@@ -758,10 +758,18 @@ export class Dataworker {
       };
     }
 
-    const endBlockBuffers = getEndBlockBuffers(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.blockRangeEndBlockBuffer
+    const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
+      blockRange[0],
+      rootBundle.bundleEvaluationBlockNumbers[index],
+    ]);
+    const mainnetBlockRange = getBlockRangeForChain(
+      blockRangesImpliedByBundleEndBlocks,
+      hubPoolChainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
     );
+    const mainnetBundleStartBlock = mainnetBlockRange[0];
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
+    const endBlockBuffers = getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer);
 
     // Make sure that all end blocks are >= expected start blocks. Allow for situation where chain was halted
     // and bundle end blocks hadn't advanced at time of proposal, meaning that the end blocks were equal to the
@@ -781,7 +789,7 @@ export class Dataworker {
       return {
         valid: false,
         reason: PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
-          this.chainIdListForBundleEvaluationBlockNumbers,
+          chainIds,
           rootBundle,
           widestPossibleExpectedBlockRange,
           endBlockBuffers
@@ -810,7 +818,7 @@ export class Dataworker {
         return {
           valid: false,
           reason: PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
-            this.chainIdListForBundleEvaluationBlockNumbers,
+            chainIds,
             rootBundle,
             widestPossibleExpectedBlockRange,
             endBlockBuffers
@@ -834,18 +842,9 @@ export class Dataworker {
     // The block range that we'll use to construct roots will be the end block specified in the pending root bundle,
     // and the block right after the last valid root bundle proposal's end block. If the proposer didn't use the same
     // start block, then they might have missed events and the roots will be different.
-    const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
-      blockRange[0],
-      rootBundle.bundleEvaluationBlockNumbers[index],
-    ]);
-    const mainnetBlockRange = getBlockRangeForChain(
-      blockRangesImpliedByBundleEndBlocks,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
+
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
-    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRange[0]);
     if (
       Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
       (await blockRangesAreInvalidForSpokeClients(
@@ -893,8 +892,6 @@ export class Dataworker {
         reason: "out-of-date-config-store-version",
       };
     }
-
-    const mainnetBundleStartBlock = mainnetBlockRange[0];
 
     // Check if we have the right code to validate a bundle for the given block ranges.
     const versionAtProposalBlock =
@@ -990,7 +987,7 @@ export class Dataworker {
         "\n" +
         PoolRebalanceUtils.generateMarkdownForRootBundle(
           this.clients.hubPoolClient,
-          this.chainIdListForBundleEvaluationBlockNumbers,
+          chainIds,
           hubPoolChainId,
           blockRangesImpliedByBundleEndBlocks,
           [...expectedPoolRebalanceRoot.leaves],
@@ -2070,6 +2067,7 @@ export class Dataworker {
   ): void {
     try {
       const bundleEndBlocks = bundleBlockRange.map((block) => block[1]);
+      const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(bundleBlockRange[0][0]);
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool, // target contract
         chainId: hubPoolChainId,
@@ -2078,7 +2076,7 @@ export class Dataworker {
         message: "Proposed new root bundle 🌱", // message sent to logger.
         mrkdwn: PoolRebalanceUtils.generateMarkdownForRootBundle(
           this.clients.hubPoolClient,
-          this.chainIdListForBundleEvaluationBlockNumbers,
+          chainIds,
           hubPoolChainId,
           bundleBlockRange,
           [...poolRebalanceLeaves],
@@ -2237,11 +2235,12 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     mainnetBundleStartBlock: number
   ): number[][] {
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
     return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
-      this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock),
+      chainIds,
       spokePoolClients,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
