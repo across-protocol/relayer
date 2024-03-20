@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import winston from "winston";
 import { AcrossApiClient, BundleDataClient, InventoryClient, ProfitClient, TokenClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -108,9 +108,16 @@ export async function constructRelayerClients(
     config.blockRangeEndBlockBuffer
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
+
+  // If an external inventory configuration was defined, read it in now before instantiating the InventoryClient.
   if (isDefined(config.externalInventoryConfig)) {
     const _inventoryConfig = await readFile(config.externalInventoryConfig);
-    config.inventoryConfig = JSON.parse(_inventoryConfig);
+    try {
+      config.inventoryConfig = JSON.parse(_inventoryConfig);
+    } catch (err) {
+      const msg = typeguards.isError(err) ? err.message : (err as Record<string, unknown>)?.code;
+      throw new Error(`Inventory config error in ${config.externalInventoryConfig} (${msg ?? "unknown error"})`);
+    }
     logger.debug({
       at: "Relayer#constructRelayerClients",
       message: "Updated Inventory config.",
