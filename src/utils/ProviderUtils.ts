@@ -71,7 +71,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
         provider: getOriginFromURL(this.connection.url),
         method,
         params,
-    };
+      };
 
       // In this path we log an rpc response sample.
       // Note: use performance.now() to ensure a purely monotonic clock.
