@@ -50,6 +50,7 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   324: zkSyncFinalizer,
   8453: opStackFinalizer,
   42161: arbitrumOneFinalizer,
+  59144: lineaL2ToL1Finalizer,
   534352: scrollFinalizer,
 };
 
@@ -65,7 +66,6 @@ const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   137: [polygonFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   8453: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  59144: [lineaL2ToL1Finalizer],
   // Testnets
   84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   5: [lineaL1ToL2Finalizer],
