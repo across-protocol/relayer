@@ -39,7 +39,8 @@ export async function constructMonitorClients(
     configStoreClient,
     config,
     baseSigner,
-    config.maxRelayerLookBack
+    config.maxRelayerLookBack,
+    config.enabledChains
   );
   const bundleDataClient = new BundleDataClient(
     logger,

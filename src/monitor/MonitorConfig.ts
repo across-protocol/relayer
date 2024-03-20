@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, getEthAddressForChain } from "../utils";
+import { isDefined, ethers, getEthAddressForChain } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -14,6 +14,7 @@ export interface BotModes {
 export class MonitorConfig extends CommonConfig {
   public spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
 
+  readonly enabledChains: number[] | undefined;
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
@@ -45,6 +46,7 @@ export class MonitorConfig extends CommonConfig {
     const {
       STARTING_BLOCK_NUMBER,
       ENDING_BLOCK_NUMBER,
+      MONITOR_CHAINS,
       MONITORED_RELAYERS,
       MONITOR_REPORT_ENABLED,
       UTILIZATION_ENABLED,
@@ -68,6 +70,8 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
     };
+
+    isDefined(MONITOR_CHAINS) && (this.enabledChains = JSON.parse(MONITOR_CHAINS));
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
