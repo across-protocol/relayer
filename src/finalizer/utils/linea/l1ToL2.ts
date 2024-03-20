@@ -5,8 +5,15 @@ import { utils, providers } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { Signer, winston, convertFromWei, TransactionReceipt, paginatedEventQuery } from "../../../utils";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
+import {
+  Signer,
+  winston,
+  convertFromWei,
+  TransactionReceipt,
+  paginatedEventQuery,
+  getDeployedAddress,
+} from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import {
   initLineaSdk,
@@ -29,8 +36,8 @@ export async function lineaL1ToL2Finalizer(
   const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
-  const l2Contract = lineaSdk.getL2Contract(CONTRACT_ADDRESSES[l2ChainId]?.lineaMessageService.address);
-  const l1Contract = lineaSdk.getL1Contract(CONTRACT_ADDRESSES[l1ChainId]?.lineaMessageService.address);
+  const l2Contract = lineaSdk.getL2Contract();
+  const l1Contract = lineaSdk.getL1Contract();
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l1Contract, l2Contract);
 
   // Optimize block range for querying Linea's MessageSent events on L1.
@@ -39,7 +46,7 @@ export async function lineaL1ToL2Finalizer(
   const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24, 0);
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: "MessageSent event filter",
+    message: "Linea MessageSent event filter",
     fromBlock,
     toBlock,
   });
@@ -64,7 +71,7 @@ export async function lineaL1ToL2Finalizer(
   const relevantTxReceipts = filterLineaTxReceipts(txnReceipts, l1Contract);
 
   // Get relevant Linea_Adapter events, i.e. TokensRelayed, RelayedMessage
-  const l1SrcEvents = parseAdapterEventsFromTxReceipts(relevantTxReceipts);
+  const l1SrcEvents = parseAdapterEventsFromTxReceipts(relevantTxReceipts, l2ChainId);
 
   // Get Linea's MessageSent events with status
   const relevantMessages = (
@@ -144,7 +151,7 @@ export async function lineaL1ToL2Finalizer(
 
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: `Detected ${mergedMessages.length} relevant messages`,
+    message: "Linea L1->L2 message statuses",
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
@@ -164,12 +171,15 @@ function filterLineaTxReceipts(receipts: TransactionReceipt[], l1MessageService:
   return uniqueTxHashes.map((txHash) => receipts.find((receipt) => receipt.transactionHash === txHash));
 }
 
-function parseAdapterEventsFromTxReceipts(receipts: TransactionReceipt[]) {
+function parseAdapterEventsFromTxReceipts(receipts: TransactionReceipt[], l2ChainId: number) {
   const allLogs = receipts.flatMap((receipt) => receipt.logs);
   return allLogs.flatMap((log) => {
     try {
       const parsedLog = lineaAdapterIface.parseLog(log);
       if (!parsedLog || !["TokensRelayed", "MessageRelayed"].includes(parsedLog.name)) {
+        return [];
+      }
+      if (parsedLog.name === "MessageRelayed" && parsedLog.args.target !== getDeployedAddress("SpokePool", l2ChainId)) {
         return [];
       }
       return { parsedLog, log };

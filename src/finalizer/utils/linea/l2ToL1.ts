@@ -32,7 +32,7 @@ export async function lineaL2ToL1Finalizer(
   const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 72, 8);
   logger.debug({
     at: "Finalizer#LineaL2ToL1Finalizer",
-    message: "TokensBridged event filter",
+    message: "Linea TokensBridged event filter",
     fromBlock,
     toBlock,
   });
@@ -123,7 +123,7 @@ export async function lineaL2ToL1Finalizer(
 
   logger.debug({
     at: "Finalizer#LineaL2ToL1Finalizer",
-    message: `Detected ${mergedMessages.length} relevant messages`,
+    message: "Linea L2->L1 message statuses",
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
