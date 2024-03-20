@@ -34,7 +34,7 @@ export async function arbitrumOneFinalizer(
   ]);
   logger.debug({
     at: "Finalizer#ArbitrumFinalizer",
-    message: "TokensBridged event filter",
+    message: "Arbitrum TokensBridged event filter",
     fromBlock,
     toBlock,
   });
