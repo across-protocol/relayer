@@ -263,26 +263,19 @@ export class Relayer {
       Object.values(unfilledDeposits.map(({ deposit }) => deposit))
     );
 
-    // Filter out deposits whose block time does not meet the minimum number of confirmations for the origin chain.
-    const confirmedUnfilledDeposits = unfilledDeposits
-      .filter(
-        ({ deposit: { originChainId, blockNumber } }) =>
-          blockNumber <= spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]
-      )
-      .map(({ deposit }) => deposit);
-    this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
-      message: `${confirmedUnfilledDeposits.length} unfilled deposits found`,
-    });
-
-    // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
-    // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
-    // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
-    // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
-    // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
+    // Iterate over all unfilled deposits. For each unfilled deposit, check that:
+    // a) it exceeds the minimum number of required block confirmations,
+    // b) the token balance client has enough tokens to fill it,
+    // c) the fill is profitable.
+    // If all hold true then complete the fill. Otherwise, if slow fills are enabled, request a slow fill.
     const { slowDepositors } = config;
-    for (const deposit of confirmedUnfilledDeposits) {
+    for (const deposit of unfilledDeposits.map(({ deposit }) => deposit)) {
       const { depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+
+      // If the deposit does not meet the minimum number of block confirmations, skip it.
+      if (deposit.blockNumber > spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]) {
+        continue;
+      }
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (slowDepositors?.includes(depositor)) {
