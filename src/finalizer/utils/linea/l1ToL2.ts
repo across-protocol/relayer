@@ -46,7 +46,7 @@ export async function lineaL1ToL2Finalizer(
   const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24, 0);
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: "MessageSent event filter",
+    message: "Linea MessageSent event filter",
     fromBlock,
     toBlock,
   });
@@ -151,7 +151,7 @@ export async function lineaL1ToL2Finalizer(
 
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: `Detected ${mergedMessages.length} relevant messages`,
+    message: "Linea L1->L2 message statuses",
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
