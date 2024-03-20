@@ -1,26 +1,26 @@
+import { TokensRelayedEvent } from "@across-protocol/contracts-v2/dist/typechain/contracts/chain-adapters/Linea_Adapter";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { L1MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
-import { TokensRelayedEvent } from "@across-protocol/contracts-v2/dist/typechain/contracts/chain-adapters/Linea_Adapter";
-import { utils, providers } from "ethers";
+import { Contract, providers, utils } from "ethers";
+import { getAddress } from "ethers/lib/utils";
 import { groupBy } from "lodash";
-
-import { HubPoolClient } from "../../../clients";
+import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
 import {
   Signer,
-  winston,
-  convertFromWei,
   TransactionReceipt,
-  paginatedEventQuery,
+  convertFromWei,
   getDeployedAddress,
+  paginatedEventQuery,
+  winston,
 } from "../../../utils";
-import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
-  initLineaSdk,
-  makeGetMessagesWithStatusByTxHash,
   MessageWithStatus,
-  lineaAdapterIface,
   getBlockRangeByHoursOffsets,
+  initLineaSdk,
+  lineaAdapterIface,
+  makeGetMessagesWithStatusByTxHash,
 } from "./common";
 
 type ParsedAdapterEvent = {
@@ -31,7 +31,10 @@ type ParsedAdapterEvent = {
 export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _spokePoolClient: SpokePoolClient,
+  l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
@@ -39,6 +42,12 @@ export async function lineaL1ToL2Finalizer(
   const l2Contract = lineaSdk.getL2Contract();
   const l1Contract = lineaSdk.getL1Contract();
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l1Contract, l2Contract);
+
+  // We always want to make sure that the l1ToL2AddressesToFinalize array contains
+  // the HubPool address, so we can finalize any pending messages sent from the HubPool.
+  if (!l1ToL2AddressesToFinalize.includes(getAddress(hubPoolAddress))) {
+    l1ToL2AddressesToFinalize.push(hubPoolAddress);
+  }
 
   // Optimize block range for querying Linea's MessageSent events on L1.
   // We want to conservatively query for events that are between 0 and 24 hours old
@@ -51,10 +60,12 @@ export async function lineaL1ToL2Finalizer(
     toBlock,
   });
 
-  // Get Linea's `MessageSent` events originating from HubPool
+  // Get Linea's `MessageSent` events originating from the L1->L2 addresses to finalize
+  // Note: An array passed to `filters.MessageSent` will be OR'd together
+  const l1ContractAsEthersContract = l1Contract.contract as Contract;
   const messageSentEvents = await paginatedEventQuery(
-    l1Contract.contract,
-    l1Contract.contract.filters.MessageSent(hubPoolAddress),
+    l1ContractAsEthersContract,
+    l1ContractAsEthersContract.filters.MessageSent(l1ToL2AddressesToFinalize),
     {
       fromBlock,
       toBlock,
