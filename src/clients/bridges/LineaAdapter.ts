@@ -101,7 +101,11 @@ export class LineaAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: string): Contract {
-    return this.isUsdc(l1Token) ? this.getL1UsdcBridge() : this.getL1TokenBridge();
+    return this.isWeth(l1Token)
+      ? this.getAtomicDepositor()
+      : this.isUsdc(l1Token)
+      ? this.getL1UsdcBridge()
+      : this.getL1TokenBridge();
   }
 
   getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
@@ -115,37 +119,21 @@ export class LineaAdapter extends BaseAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse> {
-    if (this.isWeth(l1Token)) {
-      return this._sendTokenToTargetChain(
-        l1Token,
-        l2Token,
-        amount,
-        this.getAtomicDepositor(),
-        "bridgeWethToLinea",
-        [
-          address, // L2 receiver
-          amount, // Amount
-        ],
-        2,
-        bnZero,
-        simMode
-      );
-    } else {
-      const isUsdc = this.isUsdc(l1Token);
-      const l1Bridge = this.getL1Bridge(l1Token);
-      const l1BridgeMethod = isUsdc ? "depositTo" : "bridgeToken";
-      const l1BridgeArgs = isUsdc ? [amount, address] : [l1Token, amount, address];
-      return this._sendTokenToTargetChain(
-        l1Token,
-        l2Token,
-        amount,
-        l1Bridge,
-        l1BridgeMethod,
-        l1BridgeArgs,
-        2,
-        BigNumber.from(0),
-        simMode
-      );
-    }
+    const isWeth = this.isWeth(l1Token);
+    const isUsdc = this.isUsdc(l1Token);
+    const l1Bridge = this.getL1Bridge(l1Token);
+    const l1BridgeMethod = isWeth ? "bridgeWethToLinea" : isUsdc ? "depositTo" : "bridgeToken";
+    const l1BridgeArgs = isUsdc || isWeth ? [amount, address] : [l1Token, amount, address];
+    return this._sendTokenToTargetChain(
+      l1Token,
+      l2Token,
+      amount,
+      l1Bridge,
+      l1BridgeMethod,
+      l1BridgeArgs,
+      2,
+      bnZero,
+      simMode
+    );
   }
 }
