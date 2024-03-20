@@ -68,6 +68,37 @@ export const CONTRACT_ADDRESSES: {
     lineaMessageService: {
       address: "0xd19d4B5d358258f05D7B411E21A1460D11B0876F",
     },
+    lineaL1TokenBridge: {
+      address: "0x051F1D88f0aF5763fB888eC4378b4D8B29ea3319",
+      abi: [
+        {
+          inputs: [
+            { internalType: "address", name: "_token", type: "address" },
+            { internalType: "uint256", name: "_amount", type: "uint256" },
+            { internalType: "address", name: "_recipient", type: "address" },
+          ],
+          name: "bridgeToken",
+          outputs: [],
+          stateMutability: "payable",
+          type: "function",
+        },
+      ],
+    },
+    lineaL1UsdcBridge: {
+      address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
+      abi: [
+        {
+          inputs: [
+            { internalType: "uint256", name: "amount", type: "uint256" },
+            { internalType: "address", name: "to", type: "address" },
+          ],
+          name: "depositTo",
+          outputs: [],
+          stateMutability: "payable",
+          type: "function",
+        },
+      ],
+    },
     zkSyncMailbox: {
       address: "0x32400084C286CF3E17e7B677ea9583e60a000324",
       abi: [
@@ -231,7 +262,7 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
-    // OVM, ZkSync and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+    // OVM, ZkSync, Linea, and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
       address: "0x6e41f79772c3CF7D6d15d17d899e129d5aAAA740",
@@ -891,6 +922,53 @@ export const CONTRACT_ADDRESSES: {
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
       abi: LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI,
+    },
+    weth: {
+      address: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
+      abi: [
+        {
+          constant: false,
+          inputs: [],
+          name: "deposit",
+          outputs: [],
+          payable: true,
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          constant: false,
+          inputs: [
+            {
+              name: "wad",
+              type: "uint256",
+            },
+          ],
+          name: "withdraw",
+          outputs: [],
+          payable: false,
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          constant: true,
+          inputs: [
+            {
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "balanceOf",
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+            },
+          ],
+          payable: false,
+          stateMutability: "view",
+          type: "function",
+        },
+      ],
     },
   },
   // Testnets

@@ -6,7 +6,14 @@ import { groupBy } from "lodash";
 
 import { HubPoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
-import { Signer, winston, convertFromWei, TransactionReceipt, paginatedEventQuery } from "../../../utils";
+import {
+  Signer,
+  winston,
+  convertFromWei,
+  TransactionReceipt,
+  paginatedEventQuery,
+  getDeployedAddress,
+} from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import {
   initLineaSdk,
@@ -39,7 +46,7 @@ export async function lineaL1ToL2Finalizer(
   const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24, 0);
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: "MessageSent event filter",
+    message: "Linea MessageSent event filter",
     fromBlock,
     toBlock,
   });
@@ -64,7 +71,7 @@ export async function lineaL1ToL2Finalizer(
   const relevantTxReceipts = filterLineaTxReceipts(txnReceipts, l1Contract);
 
   // Get relevant Linea_Adapter events, i.e. TokensRelayed, RelayedMessage
-  const l1SrcEvents = parseAdapterEventsFromTxReceipts(relevantTxReceipts);
+  const l1SrcEvents = parseAdapterEventsFromTxReceipts(relevantTxReceipts, l2ChainId);
 
   // Get Linea's MessageSent events with status
   const relevantMessages = (
@@ -144,7 +151,7 @@ export async function lineaL1ToL2Finalizer(
 
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: `Detected ${mergedMessages.length} relevant messages`,
+    message: "Linea L1->L2 message statuses",
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
@@ -164,12 +171,15 @@ function filterLineaTxReceipts(receipts: TransactionReceipt[], l1MessageService:
   return uniqueTxHashes.map((txHash) => receipts.find((receipt) => receipt.transactionHash === txHash));
 }
 
-function parseAdapterEventsFromTxReceipts(receipts: TransactionReceipt[]) {
+function parseAdapterEventsFromTxReceipts(receipts: TransactionReceipt[], l2ChainId: number) {
   const allLogs = receipts.flatMap((receipt) => receipt.logs);
   return allLogs.flatMap((log) => {
     try {
       const parsedLog = lineaAdapterIface.parseLog(log);
       if (!parsedLog || !["TokensRelayed", "MessageRelayed"].includes(parsedLog.name)) {
+        return [];
+      }
+      if (parsedLog.name === "MessageRelayed" && parsedLog.args.target !== getDeployedAddress("SpokePool", l2ChainId)) {
         return [];
       }
       return { parsedLog, log };
