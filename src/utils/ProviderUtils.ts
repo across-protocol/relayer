@@ -76,7 +76,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
           params,
           result,
           success: true,
-          timeElapsed: elapsedTimeS
+          timeElapsed: elapsedTimeS,
         });
       } catch (error) {
         // Log errors as well.
@@ -89,7 +89,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
           method,
           params,
           success: false,
-          timeElapsed: elapsedTimeS
+          timeElapsed: elapsedTimeS,
         });
         throw error;
       }
@@ -701,7 +701,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     pctRpcCallsLogged,
     redisClient,
     disableProviderCache ? undefined : standardTtlBlockDistance,
-    disableNoTtlCaching ? undefined : noTtlBlockDistance,
+    disableNoTtlCaching ? undefined : noTtlBlockDistance
   );
 
   if (useCache) {
