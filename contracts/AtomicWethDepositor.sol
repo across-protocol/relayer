@@ -39,7 +39,7 @@ interface LineaL1MessageService {
 
 /**
  * @notice Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain
- * bridges for Optimism, Base, Boba, ZkSync, Linea, and Polygon. Needed as these chains only support bridging of ETH, 
+ * bridges for Optimism, Base, Boba, ZkSync, Linea, and Polygon. Needed as these chains only support bridging of ETH,
  * not WETH.
  */
 
