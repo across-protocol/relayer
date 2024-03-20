@@ -15,11 +15,16 @@ import {
   runTransaction,
   toBN,
   winston,
+  getRedisCache,
 } from "../utils";
 
 type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {
   [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
+};
+type FetchTokenDataReturnType = {
+  tokenData: Record<string, { balance: BigNumber; allowance: BigNumber }>;
+  chainId: number;
 };
 
 export class TokenClient {
@@ -180,11 +185,31 @@ export class TokenClient {
 
   async update(): Promise<void> {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
-
-    const [balanceInfo, bondToken] = await Promise.all([
-      Promise.all(Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))),
-      this.hubPoolClient.hubPool.bondToken(),
-    ]);
+    const redis = await getRedisCache(this.logger);
+    let bondToken: string;
+    let balanceInfo: FetchTokenDataReturnType[];
+    if (redis) {
+      const cachedBondToken = await redis.get<string>(this.getBondTokenCacheKey());
+      if (cachedBondToken !== null) {
+        bondToken = cachedBondToken;
+      }
+    }
+    if (!bondToken) {
+      [balanceInfo, bondToken] = await Promise.all([
+        Promise.all(
+          Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))
+        ),
+        this.hubPoolClient.hubPool.bondToken(),
+      ]);
+      if (redis) {
+        // Save allowance in cache with no TTL as this should never change.
+        await redis.set(this.getBondTokenCacheKey(), bondToken);
+      }
+    } else {
+      balanceInfo = await Promise.all(
+        Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))
+      );
+    }
 
     this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
 
@@ -210,10 +235,20 @@ export class TokenClient {
     this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData });
   }
 
-  async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<{
-    tokenData: Record<string, { balance: BigNumber; allowance: BigNumber }>;
-    chainId: number;
-  }> {
+  async getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): Promise<string> {
+    return `l2TokenAllowance_${
+      spokePoolClient.chainId
+    }_${originToken}_${await spokePoolClient.spokePool.signer.getAddress()}_targetContract:${
+      spokePoolClient.spokePool.address
+    }`;
+  }
+
+  getBondTokenCacheKey(): string {
+    return `bondToken_${this.hubPoolClient.hubPool.address}`;
+  }
+
+  async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<FetchTokenDataReturnType> {
+    const redis = await getRedisCache(this.logger);
     const tokens = spokePoolClient
       .getAllOriginTokens()
       .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
@@ -223,9 +258,22 @@ export class TokenClient {
       await Promise.all(
         tokens.map(async (token) => {
           const balance: BigNumber = await token.balanceOf(this.relayerAddress, { blockTag });
-          const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
-            blockTag,
-          });
+          let allowance: BigNumber;
+          if (redis) {
+            const result = await redis.get<string>(await this.getAllowanceCacheKey(spokePoolClient, token.address));
+            if (result !== null) {
+              allowance = toBN(result);
+            }
+          }
+          if (!allowance) {
+            allowance = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
+              blockTag,
+            });
+            if (redis) {
+              // Save allowance in cache with no TTL as these should never decrement.
+              await redis.set(await this.getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
+            }
+          }
 
           return [token.address, { balance, allowance }];
         })
