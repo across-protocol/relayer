@@ -259,6 +259,13 @@ export class Relayer {
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
     const allUnfilledDeposits = Object.values(unfilledDeposits.map(({ deposit }) => deposit));
+    this.logger.debug({
+      at: "Relayer#checkForUnfilledDepositsAndFill",
+      message: `${allUnfilledDeposits.length} unfilled deposits found.`,
+    });
+    if (allUnfilledDeposits.length === 0) {
+      return;
+    }
 
     const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
 
