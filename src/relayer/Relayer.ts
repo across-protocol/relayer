@@ -276,10 +276,17 @@ export class Relayer {
     // If all hold true then complete the fill. Otherwise, if slow fills are enabled, request a slow fill.
     const { slowDepositors } = config;
     for (const deposit of allUnfilledDeposits) {
-      const { depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+      const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
 
       // If the deposit does not meet the minimum number of block confirmations, skip it.
       if (deposit.blockNumber > spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]) {
+        const chain = getNetworkName(originChainId);
+        this.logger.debug({
+          at: "Relayer",
+          message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
+          depositId,
+          transactionHash: deposit.transactionHash,
+        });
         continue;
       }
 
