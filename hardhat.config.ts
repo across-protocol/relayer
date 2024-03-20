@@ -25,7 +25,7 @@ const mnemonic = getMnemonic();
 
 const config: HardhatUserConfig = {
   solidity: {
-    compilers: [{ version: solcVersion, settings: { optimizer: { enabled: true, runs: 1000000 }, viaIR: true } }],
+    compilers: [{ version: solcVersion, settings: { optimizer: { enabled: true, runs: 1 }, viaIR: true } }],
   },
   networks: {
     hardhat: { accounts: { accountsBalance: "1000000000000000000000000" } },
