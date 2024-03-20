@@ -51,7 +51,7 @@ export async function polygonFinalizer(
 
   logger.debug({
     at: "Finalizer#PolygonFinalizer",
-    message: "TokensBridged event filter",
+    message: "Polygon TokensBridged event filter",
     fromBlock,
   });
 
