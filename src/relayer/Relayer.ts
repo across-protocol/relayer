@@ -258,10 +258,9 @@ export class Relayer {
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
+    const allUnfilledDeposits = Object.values(unfilledDeposits.map(({ deposit }) => deposit));
 
-    const mdcPerChain = this.computeRequiredDepositConfirmations(
-      Object.values(unfilledDeposits.map(({ deposit }) => deposit))
-    );
+    const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
 
     // Iterate over all unfilled deposits. For each unfilled deposit, check that:
     // a) it exceeds the minimum number of required block confirmations,
@@ -269,7 +268,7 @@ export class Relayer {
     // c) the fill is profitable.
     // If all hold true then complete the fill. Otherwise, if slow fills are enabled, request a slow fill.
     const { slowDepositors } = config;
-    for (const deposit of unfilledDeposits.map(({ deposit }) => deposit)) {
+    for (const deposit of allUnfilledDeposits) {
       const { depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
 
       // If the deposit does not meet the minimum number of block confirmations, skip it.
