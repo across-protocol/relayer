@@ -78,7 +78,7 @@ contract AtomicWethDepositor {
     function bridgeWethToLinea(address to, uint256 amount) public payable {
         weth.transferFrom(msg.sender, address(this), amount);
         weth.withdraw(amount);
-        lineaL1MessageService.sendMessage{ value: amount }(to, 0, "");
+        lineaL1MessageService.sendMessage{ value: amount + msg.value }(to, msg.value, "");
     }
 
     function bridgeWethToZkSync(
