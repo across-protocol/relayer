@@ -59,5 +59,5 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   }
 
   const runtime = getCurrentTime() - startTime;
-  logger.debug({ at: "Relayer#index", message: `Completed relayer run ${relayerRun}.`, runtime });
+  logger.debug({ at: "Relayer#index", message: `Completed relayer run ${relayerRun} in ${runtime} seconds.` });
 }
