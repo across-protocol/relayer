@@ -61,7 +61,18 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 
   async wrapSendWithLog(method: string, params: Array<any>) {
-    if (this.pctRpcCallsLogged > 0 && Math.random() <= this.pctRpcCallsLogged / 100) {
+    if (this.pctRpcCallsLogged <= 0 || Math.random() > this.pctRpcCallsLogged / 100) {
+      // Non sample path: no logging or timing, just issue the request.
+      return super.send(method, params);
+    } else {
+      const loggerArgs = {
+        at: "ProviderUtils",
+        message: "Provider response sample",
+        provider: getOriginFromURL(this.connection.url),
+        method,
+        params,
+    };
+
       // In this path we log an rpc response sample.
       // Note: use performance.now() to ensure a purely monotonic clock.
       const startTime = performance.now();
@@ -69,33 +80,22 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
         const result = await super.send(method, params);
         const elapsedTimeS = (performance.now() - startTime) / 1000;
         logger.debug({
-          at: "ProviderUtils",
-          message: "Provider response sample",
-          provider: getOriginFromURL(this.connection.url),
-          method,
-          params,
-          result,
+          ...loggerArgs,
           success: true,
           timeElapsed: elapsedTimeS,
         });
+        return result;
       } catch (error) {
         // Log errors as well.
         // For now, to keep logs light, don't log the error itself, just propogate and let it be handled higher up.
         const elapsedTimeS = (performance.now() - startTime) / 1000;
         logger.debug({
-          at: "ProviderUtils",
-          message: "Provider response sample",
-          provider: getOriginFromURL(this.connection.url),
-          method,
-          params,
+          ...loggerArgs,
           success: false,
           timeElapsed: elapsedTimeS,
         });
         throw error;
       }
-    } else {
-      // Non sample path: no logging or timing, just issue the request.
-      return super.send(method, params);
     }
   }
 
