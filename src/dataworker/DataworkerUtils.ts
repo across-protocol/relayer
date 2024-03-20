@@ -89,7 +89,7 @@ export async function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  latestInvalidBundleStartBlock: { [chainId: number]: number },
+  earliestValidBundleStartBlock: { [chainId: number]: number },
   isV3 = false
 ): Promise<boolean> {
   assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
@@ -100,7 +100,8 @@ export async function blockRangesAreInvalidForSpokeClients(
       blockRanges,
       chainIdListForBundleEvaluationBlockNumbers
     );
-    assert(Object.keys(endBlockTimestamps).length === Object.values(spokePoolClients).filter(isDefined).length);
+    // There should be a spoke pool client instantiated for every bundle timestamp.
+    assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
   }
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
@@ -121,18 +122,30 @@ export async function blockRangesAreInvalidForSpokeClients(
 
     const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
 
+    const earliestValidBundleStartBlockForChain =
+      earliestValidBundleStartBlock[chainId] ?? spokePoolClient.deploymentBlock;
+
     // If range start block is less than the earliest spoke pool client we can validate or the range end block
     // is greater than the latest client end block, then ranges are invalid.
-    // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
+    // Note: Math.max the from block with the registration block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
     const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
-    if (bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried) {
+    if (bundleRangeFromBlock < earliestValidBundleStartBlockForChain || end > clientLastBlockQueried) {
       return true;
     }
 
     if (endBlockTimestamps !== undefined) {
-      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
-      if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
+      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(
+        bundleRangeFromBlock,
+        end
+      );
+      // Skip this check if the spokePoolClient.fromBlock is less than or equal to the spokePool deployment block.
+      // In this case, we have all the information for this SpokePool possible so there are no older deposits
+      // that might have expired that we might miss.
+      if (
+        spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
+        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange
+      ) {
         return true;
       }
     }

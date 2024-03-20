@@ -33,9 +33,14 @@ interface ZkSyncL1Bridge {
     ) external pure returns (uint256);
 }
 
+interface LineaL1MessageService {
+    function sendMessage(address _to, uint256 _fee, bytes calldata _calldata) external payable;
+}
+
 /**
  * @notice Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain
- * bridges for Optimism, Base, Boba, ZkSync, and Polygon. Needed as these chains only support bridging of ETH, not WETH.
+ * bridges for Optimism, Base, Boba, ZkSync, Linea, and Polygon. Needed as these chains only support bridging of ETH,
+ * not WETH.
  */
 
 contract AtomicWethDepositor {
@@ -45,8 +50,11 @@ contract AtomicWethDepositor {
     OvmL1Bridge public immutable baseL1Bridge = OvmL1Bridge(0x3154Cf16ccdb4C6d922629664174b904d80F2C35);
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
     ZkSyncL1Bridge public immutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
+    LineaL1MessageService public immutable lineaL1MessageService =
+        LineaL1MessageService(0xd19d4B5d358258f05D7B411E21A1460D11B0876F);
 
     event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
+    event LineaEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
 
     function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {
         weth.transferFrom(msg.sender, address(this), amount);
@@ -67,6 +75,14 @@ contract AtomicWethDepositor {
         weth.transferFrom(msg.sender, address(this), amount);
         weth.withdraw(amount);
         polygonL1Bridge.depositEtherFor{ value: amount }(to);
+    }
+
+    function bridgeWethToLinea(address to, uint256 amount) public payable {
+        weth.transferFrom(msg.sender, address(this), amount);
+        weth.withdraw(amount);
+        lineaL1MessageService.sendMessage{ value: amount + msg.value }(to, msg.value, "");
+        // Emit an event that we can easily track in the Linea-related adapters/finalizers
+        emit LineaEthDepositInitiated(msg.sender, to, amount);
     }
 
     function bridgeWethToZkSync(
