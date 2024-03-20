@@ -11,7 +11,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { Signer } from "../utils";
+import { isDefined, readFile, Signer } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
@@ -108,6 +108,16 @@ export async function constructRelayerClients(
     config.blockRangeEndBlockBuffer
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
+  if (isDefined(config.externalInventoryConfig)) {
+    const _inventoryConfig = await readFile(config.externalInventoryConfig);
+    config.inventoryConfig = JSON.parse(_inventoryConfig);
+    logger.debug({
+      at: "Relayer#constructRelayerClients",
+      message: "Updated Inventory config.",
+      source: config.externalInventoryConfig,
+      inventoryConfig: config.inventoryConfig,
+    });
+  }
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,
