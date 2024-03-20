@@ -5,7 +5,7 @@ import { utils, providers } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
 import { Signer, winston, convertFromWei, TransactionReceipt, paginatedEventQuery } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import {
@@ -29,8 +29,8 @@ export async function lineaL1ToL2Finalizer(
   const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
-  const l2Contract = lineaSdk.getL2Contract(CONTRACT_ADDRESSES[l2ChainId]?.lineaMessageService.address);
-  const l1Contract = lineaSdk.getL1Contract(CONTRACT_ADDRESSES[l1ChainId]?.lineaMessageService.address);
+  const l2Contract = lineaSdk.getL2Contract();
+  const l1Contract = lineaSdk.getL1Contract();
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l1Contract, l2Contract);
 
   // Optimize block range for querying Linea's MessageSent events on L1.
