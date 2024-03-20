@@ -108,8 +108,10 @@ export class LineaAdapter extends BaseAdapter {
       : this.getL1TokenBridge();
   }
 
+  // FIXME: NO-OP
   getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
-    throw new Error("Method not implemented.");
+    l1Tokens;
+    return Promise.resolve({});
   }
 
   sendTokenToTargetChain(
