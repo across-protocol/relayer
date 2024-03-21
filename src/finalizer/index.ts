@@ -5,6 +5,7 @@ import { getAddress } from "ethers/lib/utils";
 import { groupBy, uniq } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
 import {
+  CONTRACT_ADDRESSES,
   Clients,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
@@ -16,6 +17,7 @@ import {
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
+  CHAIN_IDs,
   Signer,
   blockExplorerLink,
   config,
@@ -72,6 +74,17 @@ const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   59140: [lineaL2ToL1Finalizer],
 };
 
+function enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize: string[], addressesToEnsure: string[]): string[] {
+  const resultingAddresses = l1ToL2AddressesToFinalize.slice().map(getAddress);
+  for (const address of addressesToEnsure) {
+    const checksummedAddress = getAddress(address);
+    if (!resultingAddresses.includes(checksummedAddress)) {
+      resultingAddresses.push(checksummedAddress);
+    }
+  }
+  return resultingAddresses;
+}
+
 export async function finalize(
   logger: winston.Logger,
   hubSigner: Signer,
@@ -108,6 +121,17 @@ export async function finalize(
     assert(chainSpecificFinalizers?.length > 0, `No finalizer available for chain ${chainId}`);
 
     const network = getNetworkName(chainId);
+
+    // For certain chains we always want to track certain addresses for finalization:
+    // LineaL1ToL2: Always track HubPool, AtomicDepositor, LineaSpokePool. HubPool sends messages and tokens to the
+    // SpokePool, while the relayer rebalances ETH via the AtomicDepositor
+    if (chainId === hubChainId) {
+      l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
+        hubPoolClient.hubPool.address,
+        spokePoolClients[CHAIN_IDs.LINEA].spokePool.address,
+        CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address,
+      ]);
+    }
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
     // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the

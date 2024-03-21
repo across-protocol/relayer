@@ -1,7 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
-import { getAddress } from "ethers/lib/utils";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
@@ -20,10 +19,11 @@ export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _spokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
+  const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
@@ -38,23 +38,6 @@ export async function lineaL1ToL2Finalizer(
     CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.abi,
     hubPoolClient.hubPool.provider
   );
-
-  // We always want to make sure that the l1ToL2AddressesToFinalize array contains
-  // the HubPool address, so we can finalize any pending messages sent from the HubPool.
-  if (!l1ToL2AddressesToFinalize.includes(getAddress(hubPoolAddress))) {
-    l1ToL2AddressesToFinalize.push(hubPoolAddress);
-  }
-  // We always want to make sure this array contains the SpokePool address so that it finalizes HubPool messages
-  // with the SpokePool address as the target.
-  if (!l1ToL2AddressesToFinalize.includes(getAddress(spokePoolClient.spokePool.address))) {
-    l1ToL2AddressesToFinalize.push(spokePoolClient.spokePool.address);
-  }
-  // Always check for messages originated from atomic depositor so that this finalizer can handle l1 to l2 rebalances.
-  if (
-    !l1ToL2AddressesToFinalize.includes(getAddress(CONTRACT_ADDRESSES[hubPoolClient.chainid].atomicDepositor.address))
-  ) {
-    l1ToL2AddressesToFinalize.push(CONTRACT_ADDRESSES[hubPoolClient.chainid].atomicDepositor.address);
-  }
 
   // Optimize block range for querying Linea's MessageSent events on L1.
   // We want to conservatively query for events that are between 0 and 24 hours old
