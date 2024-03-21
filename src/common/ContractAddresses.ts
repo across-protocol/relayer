@@ -177,6 +177,38 @@ export const LINEA_TOKEN_BRIDGE_CONTRACT_ABI = [
     name: "BridgingFinalized",
     type: "event",
   },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "_nativeToken",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "_amount",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "_recipient",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "_chainId",
+        type: "uint256",
+      },
+      {
+        internalType: "bytes",
+        name: "_tokenMetadata",
+        type: "bytes",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+    name: "completeBridging",
+  },
 ];
 
 export const LINEA_USDC_BRIDGE_CONTRACT_ABI = [
@@ -233,6 +265,16 @@ export const LINEA_USDC_BRIDGE_CONTRACT_ABI = [
     ],
     name: "ReceivedFromOtherLayer",
     type: "event",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "recipient", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "receiveFromOtherLayer",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
   },
 ];
 

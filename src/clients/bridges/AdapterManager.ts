@@ -6,6 +6,7 @@ import { utils } from "@across-protocol/sdk-v2";
 import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import { BaseChainAdapter } from "./op-stack/base/BaseChainAdapter";
 import { spokesThatHoldEthAndWeth } from "../../common/Constants";
+import { LineaAdapter } from "./LineaAdapter";
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
 
@@ -38,6 +39,9 @@ export class AdapterManager {
     }
     if (this.spokePoolClients[8453] !== undefined) {
       this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, monitoredAddresses);
+    }
+    if (this.spokePoolClients[59144] !== undefined) {
+      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, monitoredAddresses);
     }
 
     logger.debug({

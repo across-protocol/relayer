@@ -153,8 +153,9 @@ export class LineaAdapter extends BaseAdapter {
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
     const outstandingTransfers: OutstandingTransfers = {};
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
-      await sdk.utils.mapAsync(l1Tokens, async (l1Token) => {
+      await sdk.utils.mapAsync(supportedL1Tokens, async (l1Token) => {
         if (this.isWeth(l1Token)) {
           const atomicDepositor = this.getAtomicDepositor();
           const l1MessageService = this.getL1MessageService();
@@ -250,7 +251,13 @@ export class LineaAdapter extends BaseAdapter {
     const isUsdc = this.isUsdc(l1Token);
     const l1Bridge = this.getL1Bridge(l1Token);
     const l1BridgeMethod = isWeth ? "bridgeWethToLinea" : isUsdc ? "depositTo" : "bridgeToken";
-    const l1BridgeArgs = isUsdc || isWeth ? [amount, address] : [l1Token, amount, address];
+    // prettier-ignore
+    const l1BridgeArgs = isUsdc
+      ? [amount, address]
+      : isWeth
+        ? [address, amount]
+        : [l1Token, amount, address];
+
     return this._sendTokenToTargetChain(
       l1Token,
       l2Token,
