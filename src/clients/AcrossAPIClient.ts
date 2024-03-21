@@ -117,6 +117,10 @@ export class AcrossApiClient {
     return this.limits[l1Token];
   }
 
+  getLimitsCacheKey(l1Token: string, destinationChainId: number): string {
+    return `limits_api_${l1Token}_${destinationChainId}`;
+  }
+
   private async callLimits(
     l1Token: string,
     destinationChainIds: number[],
@@ -129,19 +133,36 @@ export class AcrossApiClient {
     for (const destinationChainId of destinationChainIds) {
       const params = { token: l1Token, destinationChainId, originChainId: 1 };
       if (redis) {
-        const cachedLimits = await redis.get<string>(`limits_api_${l1Token}_${destinationChainId}`);
-        if (cachedLimits !== null && BigNumber.isBigNumber(cachedLimits)) {
-          return { maxDeposit: BigNumber.from(cachedLimits) };
+        try {
+          const cachedLimits = await redis.get<string>(this.getLimitsCacheKey(l1Token, destinationChainId));
+          if (cachedLimits !== null) {
+            return { maxDeposit: BigNumber.from(cachedLimits) };
+          }
+        } catch (e) {
+          this.logger.debug({
+            at: "AcrossAPIClient",
+            message: "Failed to get cached limits data",
+            l1Token,
+            destinationChainId,
+            error: e,
+          });
         }
       }
       try {
         const result = await axios(url, { timeout, params });
         if (!result?.data?.maxDeposit) {
-          throw new Error("Invalid response from /limits, expected maxDeposit field.");
+          this.logger.error({
+            at: "AcrossAPIClient",
+            message: "Invalid response from /limits, expected maxDeposit field.",
+            url,
+            params,
+            result,
+          })
+          continue;
         }
         if (redis) {
           // Cache limit for 5 minutes.
-          await redis.set(`limits_api_${l1Token}_${destinationChainId}`, result.data.maxDeposit.toString(), 300);
+          await redis.set(this.getLimitsCacheKey(l1Token, destinationChainId), result.data.maxDeposit.toString(), 300);
         }
         return result.data;
       } catch (err) {
