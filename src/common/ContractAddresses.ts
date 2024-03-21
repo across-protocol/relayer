@@ -266,6 +266,16 @@ export const LINEA_USDC_BRIDGE_CONTRACT_ABI = [
     name: "ReceivedFromOtherLayer",
     type: "event",
   },
+  {
+    inputs: [
+      { internalType: "address", name: "recipient", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "receiveFromOtherLayer",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ];
 
 // Constants file exporting hardcoded contract addresses per chain.

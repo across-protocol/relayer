@@ -132,7 +132,7 @@ export function determineMessageType(
   const { _calldata, _value } = event.args;
   // First check a WETH deposit. A WETH deposit is a message with a positive
   // value and an empty calldata.
-  if (_calldata === "0x") {
+  if (_calldata === "0x" && _value.gt(0)) {
     return {
       type: "bridge",
       l1TokenSymbol: "WETH",
