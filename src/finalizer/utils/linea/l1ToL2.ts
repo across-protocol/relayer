@@ -20,8 +20,7 @@ export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _spokePoolClient: SpokePoolClient,
+  spokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
@@ -44,6 +43,17 @@ export async function lineaL1ToL2Finalizer(
   // the HubPool address, so we can finalize any pending messages sent from the HubPool.
   if (!l1ToL2AddressesToFinalize.includes(getAddress(hubPoolAddress))) {
     l1ToL2AddressesToFinalize.push(hubPoolAddress);
+  }
+  // We always want to make sure this array contains the SpokePool address so that it finalizes HubPool messages
+  // with the SpokePool address as the target.
+  if (!l1ToL2AddressesToFinalize.includes(getAddress(spokePoolClient.spokePool.address))) {
+    l1ToL2AddressesToFinalize.push(spokePoolClient.spokePool.address);
+  }
+  // Always check for messages originated from atomic depositor so that this finalizer can handle l1 to l2 rebalances.
+  if (
+    !l1ToL2AddressesToFinalize.includes(getAddress(CONTRACT_ADDRESSES[hubPoolClient.chainid].atomicDepositor.address))
+  ) {
+    l1ToL2AddressesToFinalize.push(CONTRACT_ADDRESSES[hubPoolClient.chainid].atomicDepositor.address);
   }
 
   // Optimize block range for querying Linea's MessageSent events on L1.
