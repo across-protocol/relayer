@@ -226,7 +226,7 @@ export class LineaAdapter extends BaseAdapter {
                   compareAddressesSimple(finalEvent.args.nativeToken, initialEvent.args.token)
             );
             if (!isDefined(finalizedEvent)) {
-              outstandingTransfers[address] = outstandingTransfers[address] || {
+              outstandingTransfers[address] ??= {
                 [l1Token]: { totalAmount: bnZero, depositTxHashes: [] },
               };
               outstandingTransfers[address][l1Token] = {
