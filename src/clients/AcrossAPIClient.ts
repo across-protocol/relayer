@@ -1,7 +1,16 @@
 import _ from "lodash";
 import axios, { AxiosError } from "axios";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { bnZero, isDefined, winston, BigNumber, getL2TokenAddresses, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../utils";
+import {
+  bnZero,
+  isDefined,
+  winston,
+  BigNumber,
+  getL2TokenAddresses,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
+  getRedisCache,
+} from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {
@@ -116,10 +125,24 @@ export class AcrossApiClient {
     const path = "limits";
     const url = `${this.endpoint}/${path}`;
 
+    const redis = await getRedisCache();
     for (const destinationChainId of destinationChainIds) {
       const params = { token: l1Token, destinationChainId, originChainId: 1 };
+      if (redis) {
+        const cachedLimits = await redis.get<string>(`limits_api_${l1Token}_${destinationChainId}`);
+        if (cachedLimits !== null && BigNumber.isBigNumber(cachedLimits)) {
+          return { maxDeposit: BigNumber.from(cachedLimits) };
+        }
+      }
       try {
         const result = await axios(url, { timeout, params });
+        if (!result?.data?.maxDeposit) {
+          throw new Error("Invalid response from /limits, expected maxDeposit field.");
+        }
+        if (redis) {
+          // Cache limit for 5 minutes.
+          await redis.set(`limits_api_${l1Token}_${destinationChainId}`, result.data.maxDeposit.toString(), 300);
+        }
         return result.data;
       } catch (err) {
         const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
