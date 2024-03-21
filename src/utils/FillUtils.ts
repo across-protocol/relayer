@@ -4,6 +4,7 @@ import { HubPoolClient, SpokePoolClient } from "../clients";
 import {
   Fill,
   FillsToRefund,
+  FillStatus,
   FillWithBlock,
   SpokePoolClientsByChain,
   V2DepositWithBlock,
@@ -258,11 +259,12 @@ export function getFillsInRange(
 // @todo Better alignment with the upstream UnfilledDeposit type.
 export type RelayerUnfilledDeposit = {
   deposit: V3DepositWithBlock;
+  fillStatus: number;
   version: number;
   invalidFills: Fill[];
 };
 
-// @description Returns an array of unfilled deposits over all spokePoolClients.
+// @description Returns all unfilled deposits, indexed by destination chain.
 // @param spokePoolClients  Mapping of chainIds to SpokePoolClient objects.
 // @param configStoreClient ConfigStoreClient instance.
 // @param depositLookBack   Deposit lookback (in seconds) since SpokePoolClient time as at last update.
@@ -291,34 +293,41 @@ export async function getUnfilledDeposits(
   }
 
   // Iterate over each chainId and check for unfilled deposits.
-  chainIds.forEach((destinationChainId) => {
-    const destinationClient = spokePoolClients[destinationChainId];
+  await sdkUtils.mapAsync(
+    chainIds,
+    async (destinationChainId) => {
+      const destinationClient = spokePoolClients[destinationChainId];
 
-    unfilledDeposits[destinationChainId] = chainIds
-      .filter((chainId) => chainId !== destinationChainId)
-      .map((originChainId) => {
-        const originClient = spokePoolClients[originChainId];
-        const earliestBlockNumber = originFromBlocks[originChainId];
+      // For each destination chain, query each _other_ SpokePool for deposits within the lookback.
+      const deposits = chainIds
+        .filter((chainId) => chainId !== destinationChainId)
+        .map((originChainId) => {
+          const originClient = spokePoolClients[originChainId];
+          const earliestBlockNumber = originFromBlocks[originChainId];
+          const { deploymentBlock, latestBlockSearched } = originClient;
 
-        // Basic sanity check...
-        assert(
-          earliestBlockNumber >= originClient.deploymentBlock && earliestBlockNumber <= originClient.latestBlockSearched
-        );
+          // Basic sanity check...
+          assert(earliestBlockNumber >= deploymentBlock && earliestBlockNumber <= latestBlockSearched);
 
-        // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
-        // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
-        // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
-        return originClient
-          .getDepositsForDestinationChain(destinationChainId)
-          .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
-          .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>) // @todo: Remove after v2 deprecated.
-          .map((deposit) => {
-            const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
-            return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
-          })
-          .filter(({ unfilledAmount }) => unfilledAmount.gt(bnZero));
-      })
-      .flat();
+          // Find all unfilled deposits for the current loops originChain -> destinationChain.
+          return originClient
+            .getDepositsForDestinationChain(destinationChainId)
+            .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
+            .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>); // @todo: Remove after v2 deprecated.
+        })
+        .flat();
+
+      // Resolve the latest fill status for each deposit and filter out any that are now filled.
+      const { spokePool } = destinationClient;
+      const fillStatus = await sdkUtils.fillStatusArray(spokePool, deposits);
+      unfilledDeposits[destinationChainId] = deposits
+        .map((deposit, idx) => ({ deposit, fillStatus: fillStatus[idx] }))
+        .filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)
+        .map(({ deposit, fillStatus }) => {
+          const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+          const { invalidFills } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
+          return { deposit, version, fillStatus, invalidFills };
+        });
   });
 
   return unfilledDeposits;
