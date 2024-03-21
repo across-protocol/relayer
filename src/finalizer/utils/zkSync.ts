@@ -51,7 +51,7 @@ export async function zkSyncFinalizer(
   ]);
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
-    message: "TokensBridged event filter",
+    message: "ZkSync TokensBridged event filter",
     fromBlock,
     toBlock,
   });
@@ -88,8 +88,8 @@ export async function zkSyncFinalizer(
   // - processing/committed: Pending finalization
   // - finalized: ready to be withdrawn or already withdrawn
   logger.debug({
-    at: "zkSyncFinalizer",
-    message: "zkSync withdrawal status.",
+    at: "ZkSyncFinalizer",
+    message: "ZkSync withdrawal status.",
     statusesGrouped: {
       withdrawalNotFound: statuses["not-found"]?.length,
       withdrawalProcessing: statuses["processing"]?.length,

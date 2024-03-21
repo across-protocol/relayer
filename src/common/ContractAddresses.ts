@@ -424,7 +424,7 @@ export const CONTRACT_ADDRESSES: {
     // OVM, ZkSync, Linea, and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xaA282C4E86beFda4a1E7C9c06165869026D27852",
+      address: "0x6e41f79772c3CF7D6d15d17d899e129d5aAAA740",
       abi: [
         { stateMutability: "payable", type: "fallback" },
         {
@@ -453,6 +453,16 @@ export const CONTRACT_ADDRESSES: {
           inputs: [
             { internalType: "address", name: "to", type: "address" },
             { internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "bridgeWethToLinea",
+          outputs: [],
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "address", name: "to", type: "address" },
+            { internalType: "uint256", name: "amount", type: "uint256" },
             { internalType: "uint256", name: "l2GasLimit", type: "uint256" },
             { internalType: "uint256", name: "l2GasPerPubdataByteLimit", type: "uint256" },
             { internalType: "address", name: "refundRecipient", type: "address" },
@@ -470,6 +480,16 @@ export const CONTRACT_ADDRESSES: {
             { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
           ],
           name: "ZkSyncEthDepositInitiated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "LineaEthDepositInitiated",
           type: "event",
         },
         { stateMutability: "payable", type: "receive" },
