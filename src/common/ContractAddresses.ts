@@ -1179,6 +1179,9 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    eth: {
+      address: "0x0000000000000000000000000000000000000000",
+    },
   },
   // Testnets
   11155111: {
