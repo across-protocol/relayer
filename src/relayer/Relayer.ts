@@ -265,6 +265,8 @@ export class Relayer {
         at: "Relayer",
         message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
         depositId,
+        blockNumber: deposit.blockNumber,
+        maxBlockNumber,
         transactionHash: deposit.transactionHash,
       });
       return;
