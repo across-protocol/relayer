@@ -241,7 +241,8 @@ export class Relayer {
   // a) it exceeds the minimum number of required block confirmations,
   // b) the token balance client has enough tokens to fill it,
   // c) the fill is profitable.
-  // If all hold true then complete the fill. Otherwise, if slow fills are enabled, request a slow fill.
+  // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
+  // enabled then request a slow fill instead.
   async evaluateFill(deposit: V3DepositWithBlock, maxBlockNumber: number, sendSlowRelays: boolean): Promise<void> {
     const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
     const { hubPoolClient, profitClient, tokenClient } = this.clients;
@@ -322,7 +323,7 @@ export class Relayer {
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
-    const allUnfilledDeposits = Object.values(unfilledDeposits.map(({ deposit }) => deposit));
+    const allUnfilledDeposits = unfilledDeposits.map(({ deposit }) => deposit);
     this.logger.debug({
       at: "Relayer#checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
