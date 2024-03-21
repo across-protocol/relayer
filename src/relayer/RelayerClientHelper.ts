@@ -124,6 +124,7 @@ export async function constructRelayerClients(
       const msg = typeguards.isError(err) ? err.message : (err as Record<string, unknown>)?.code;
       throw new Error(`Inventory config error in ${config.externalInventoryConfig} (${msg ?? "unknown error"})`);
     }
+    config.parseInventoryConfig();
     logger.debug({
       at: "Relayer#constructRelayerClients",
       message: "Updated Inventory config.",

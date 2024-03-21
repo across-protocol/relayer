@@ -77,9 +77,42 @@ export class RelayerConfig extends CommonConfig {
     );
     this.externalInventoryConfig = RELAYER_EXTERNAL_INVENTORY_CONFIG;
     this.inventoryConfig = JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+    this.parseInventoryConfig();
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
+    this.debugProfitability = DEBUG_PROFITABILITY === "true";
+    this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
+    this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
+    this.relayerMessageGasMultiplier = toBNWei(
+      RELAYER_GAS_MESSAGE_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER
+    );
+    this.sendingRelaysEnabled = SEND_RELAYS === "true";
+    this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
+    this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
+    this.skipRelays = SKIP_RELAYS === "true";
+    this.skipRebalancing = SKIP_REBALANCING === "true";
+    this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
+    this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
+    (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
+      ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
+      : Constants.MIN_DEPOSIT_CONFIRMATIONS),
+      Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+        Object.keys(this.minDepositConfirmations[threshold]).forEach((chainId) => {
+          const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
+          assert(
+            !isNaN(nBlocks) && nBlocks >= 0,
+            `Chain ${chainId} minimum deposit confirmations for "${threshold}" threshold missing or invalid (${nBlocks}).`
+          );
+        });
+      });
+    // Force default thresholds in MDC config.
+    this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
+    this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
+  }
+
+  // Post-process the imported JSON to scale the configured values to 18 decimals.
+  parseInventoryConfig(): void {
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
       this.inventoryConfig.wrapEtherThreshold = this.inventoryConfig.wrapEtherThreshold
@@ -141,33 +174,5 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
-    this.debugProfitability = DEBUG_PROFITABILITY === "true";
-    this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
-    this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
-    this.relayerMessageGasMultiplier = toBNWei(
-      RELAYER_GAS_MESSAGE_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER
-    );
-    this.sendingRelaysEnabled = SEND_RELAYS === "true";
-    this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
-    this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
-    this.skipRelays = SKIP_RELAYS === "true";
-    this.skipRebalancing = SKIP_REBALANCING === "true";
-    this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
-    this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
-    (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
-      ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
-      : Constants.MIN_DEPOSIT_CONFIRMATIONS),
-      Object.keys(this.minDepositConfirmations).forEach((threshold) => {
-        Object.keys(this.minDepositConfirmations[threshold]).forEach((chainId) => {
-          const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
-          assert(
-            !isNaN(nBlocks) && nBlocks >= 0,
-            `Chain ${chainId} minimum deposit confirmations for "${threshold}" threshold missing or invalid (${nBlocks}).`
-          );
-        });
-      });
-    // Force default thresholds in MDC config.
-    this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
-    this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
   }
 }
