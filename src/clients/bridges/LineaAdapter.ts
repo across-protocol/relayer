@@ -10,7 +10,6 @@ import {
   assert,
   bnZero,
   compareAddressesSimple,
-  getTokenAddress,
   isDefined,
   paginatedEventQuery,
   winston,
