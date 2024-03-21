@@ -1,7 +1,8 @@
-import { Signer } from "ethers";
+import { BigNumber, Signer } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { Multicall2Call } from "../common";
 import { winston } from "../utils";
+import { OnChainMessageStatus } from "@consensys/linea-sdk";
 
 /**
  * A cross-chain message is a message sent from one chain to another. This can be a token withdrawal from L2 to L1,
@@ -39,4 +40,17 @@ export interface ChainFinalizer {
     spokePoolClient: SpokePoolClient,
     l1ToL2AddressesToFinalize: string[]
   ): Promise<FinalizerPromise>;
+}
+
+export interface EnrichedLineaSentMessageEvent {
+  messageSender: string;
+  destination: string;
+  fee: BigNumber;
+  value: BigNumber;
+  messageNonce: BigNumber;
+  calldata: string;
+  messageHash: string;
+  txHash: string;
+  logIndex: number;
+  status: OnChainMessageStatus;
 }

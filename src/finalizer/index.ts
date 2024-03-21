@@ -134,9 +134,10 @@ export async function finalize(
       totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
       totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
     }
+    const totalTransfers = totalWithdrawalsForChain + totalDepositsForChain + totalMiscTxnsForChain;
     logger.debug({
       at: "finalize",
-      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
+      message: `Found ${totalTransfers} ${network} messages (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
     });
   }
   const multicall2Lookup = Object.fromEntries(

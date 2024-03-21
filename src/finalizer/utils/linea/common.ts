@@ -3,14 +3,21 @@ import { L1MessageServiceContract, L2MessageServiceContract } from "@consensys/l
 import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
 import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/L2MessageService";
 import { Linea_Adapter__factory } from "@across-protocol/contracts-v2";
-
 import {
+  BigNumber,
+  Contract,
+  EventSearchConfig,
+  TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
+  ethers,
   getBlockForTimestamp,
   getCurrentTime,
   getNodeUrlList,
   getRedisCache,
+  paginatedEventQuery,
 } from "../../../utils";
+import { HubPoolClient } from "../../../clients";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
 
 export type MessageWithStatus = Message & {
   logIndex: number;
@@ -106,4 +113,82 @@ export async function getBlockRangeByHoursOffsets(
   ]);
 
   return { fromBlock, toBlock };
+}
+
+export function determineMessageType(
+  { args: { _calldata, _value } }: MessageSentEvent,
+  hubPoolClient: HubPoolClient
+):
+  | {
+      type: "bridge";
+      l1TokenSymbol: string;
+      l1TokenAddress: string;
+      amount: BigNumber;
+    }
+  | {
+      type: "misc";
+    } {
+  // First check a WETH deposit. A WETH deposit is a message with a positive
+  // value and an empty calldata.
+  if (_calldata === "0x") {
+    return {
+      type: "bridge",
+      l1TokenSymbol: "WETH",
+      l1TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId],
+      amount: _value,
+    };
+  }
+  // Next check if the calldata is a valid Linea bridge. This can either be in the form of a
+  // UsdcTokenBridge or a TokenBridge. Both have a different calldata format.
+
+  // Start with the TokenBridge calldata format.
+  try {
+    const functionSignature = "completeBridging(address,uint256,address,uint256,bytes)";
+    const functionFragment = ethers.utils.FunctionFragment.from(functionSignature);
+    const contractInterface = new ethers.utils.Interface([functionFragment]);
+    const decoded = contractInterface.decodeFunctionData(functionFragment.name, _calldata);
+    // If we've made it this far, then the calldata is a valid TokenBridge calldata.
+    const token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, decoded._nativeToken);
+    return {
+      type: "bridge",
+      l1TokenSymbol: token.symbol,
+      l1TokenAddress: decoded._nativeToken,
+      amount: decoded._amount,
+    };
+  } catch (_e) {
+    // We don't care about this because we have more to check
+  }
+  // Next check the UsdcTokenBridge calldata format.
+  try {
+    const functionSignature = "receiveFromOtherLayer(address,uint256)";
+    const functionFragment = ethers.utils.FunctionFragment.from(functionSignature);
+    const contractInterface = new ethers.utils.Interface([functionFragment]);
+    const decoded = contractInterface.decodeFunctionData(functionFragment.name, _calldata);
+    // If we've made it this far, then the calldata is a valid UsdcTokenBridge calldata.
+    return {
+      type: "bridge",
+      l1TokenSymbol: "USDC",
+      l1TokenAddress: TOKEN_SYMBOLS_MAP.USDC.addresses[hubPoolClient.chainId],
+      amount: decoded.amount,
+    };
+  } catch (_e) {
+    // We don't care about this because we have more to check
+  }
+  // If we've made it to this point, we've neither found a valid bridge calldata nor a WETH deposit.
+  // I.e. This is a relayed message of some kind.
+  return {
+    type: "misc",
+  };
+}
+
+export async function findMessageSentEvents(
+  contract: L1MessageServiceContract | L2MessageServiceContract,
+  l1ToL2AddressesToFinalize: string[],
+  searchConfig: EventSearchConfig
+): Promise<MessageSentEvent[]> {
+  return paginatedEventQuery(
+    contract.contract,
+    (contract.contract as Contract).filters.MessageSent(l1ToL2AddressesToFinalize),
+    searchConfig
+  ) as Promise<MessageSentEvent[]>;
 }
