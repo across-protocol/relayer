@@ -158,7 +158,6 @@ export class LineaAdapter extends BaseAdapter {
       await sdk.utils.mapAsync(supportedL1Tokens, async (l1Token) => {
         if (this.isWeth(l1Token)) {
           const atomicDepositor = this.getAtomicDepositor();
-          const l1MessageService = this.getL1MessageService();
           const l2MessageService = this.getL2MessageService();
 
           // We need to do the following sequential steps.
@@ -168,8 +167,8 @@ export class LineaAdapter extends BaseAdapter {
           // 3. For each MessageSent, match the _messageHash to the _messageHash in the MessageClaimed event
           //    any unmatched MessageSent events are considered outstanding transfers.
           const initiatedQueryResult = await paginatedEventQuery(
-            l1MessageService,
-            l1MessageService.filters.MessageSent(atomicDepositor.address, address),
+            atomicDepositor,
+            atomicDepositor.filters.LineaEthDepositInitiated(address, address),
             l1SearchConfig
           );
           const internalMessageHashes = initiatedQueryResult.map(({ args }) => args._messageHash);
