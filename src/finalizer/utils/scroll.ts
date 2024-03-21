@@ -44,7 +44,7 @@ export async function scrollFinalizer(
   const fromBlock = await getBlockForTimestamp(l2ChainId, lookback, undefined, redis);
   logger.debug({
     at: "Finalizer#ScrollFinalizer",
-    message: "TokensBridged event filter",
+    message: "Scroll TokensBridged event filter",
     fromBlock,
   });
   const outstandingClaims = await findOutstandingClaims(targetAddress, fromBlock);
