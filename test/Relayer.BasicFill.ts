@@ -372,7 +372,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
+      expect(lastSpyLogIncludes(spy, "due to insufficient deposit confirmations")).to.be.true;
     });
 
     it("Ignores deposits with quote times in future", async function () {
