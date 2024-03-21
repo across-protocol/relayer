@@ -1,7 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
-import { getAddress } from "ethers/lib/utils";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
@@ -15,16 +14,27 @@ import {
   getBlockRangeByHoursOffsets,
   initLineaSdk,
 } from "./common";
+import { getAddress } from "ethers/lib/utils";
+
+function enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize: string[], addressesToEnsure: string[]): string[] {
+  const resultingAddresses = l1ToL2AddressesToFinalize.slice().map(getAddress);
+  for (const address of addressesToEnsure) {
+    const checksummedAddress = getAddress(address);
+    if (!resultingAddresses.includes(checksummedAddress)) {
+      resultingAddresses.push(checksummedAddress);
+    }
+  }
+  return resultingAddresses;
+}
 
 export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _spokePoolClient: SpokePoolClient,
+  spokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
+  const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
@@ -40,11 +50,14 @@ export async function lineaL1ToL2Finalizer(
     hubPoolClient.hubPool.provider
   );
 
-  // We always want to make sure that the l1ToL2AddressesToFinalize array contains
-  // the HubPool address, so we can finalize any pending messages sent from the HubPool.
-  if (!l1ToL2AddressesToFinalize.includes(getAddress(hubPoolAddress))) {
-    l1ToL2AddressesToFinalize.push(hubPoolAddress);
-  }
+  // We always want to make sure that the following addresses are included in the
+  // l1ToL2AddressesToFinalize array, so we can finalize any pending messages sent from them.
+  // Addresses: HubPool Address, Linea Spoke Pool, AtomicWethDepositor
+  l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
+    hubPoolClient.hubPool.address,
+    spokePoolClient.spokePool.address,
+    CONTRACT_ADDRESSES[l1ChainId].atomicDepositor.address,
+  ]);
 
   // Optimize block range for querying Linea's MessageSent events on L1.
   // We want to conservatively query for events that are between 0 and 24 hours old
