@@ -135,7 +135,7 @@ export async function finalize(
       l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
         hubPoolClient.hubPool.address,
         spokePoolClients[hubChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI].spokePool.address,
-        hubChainId === CHAIN_IDs.MAINNET ? CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address : undefined,
+        CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
       ]);
     }
 
