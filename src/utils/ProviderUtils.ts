@@ -648,7 +648,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   const logEveryNRateLimitErrors = Number(NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS || "100");
 
   const pctRpcCallsLogged = Number(
-    process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || NODE_PCT_RPC_CALLS_LOGGED || "0.1"
+    process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || NODE_PCT_RPC_CALLS_LOGGED || "0"
   );
 
   // Custom delay + logging for RPC rate-limiting.
