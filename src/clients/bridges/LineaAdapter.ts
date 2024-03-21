@@ -199,14 +199,13 @@ export class LineaAdapter extends BaseAdapter {
             });
         } else {
           const isUsdc = this.isUsdc(l1Token);
-          const l2Token = getTokenAddress(l1Token, this.hubChainId, this.chainId);
           const l1Bridge = this.getL1Bridge(l1Token);
           const l2Bridge = this.getL2Bridge(l1Token);
 
           // Define the initialized and finalized event filters for the L1 and L2 bridges
           const [filterL1, filterL2] = isUsdc
             ? [l1Bridge.filters.Deposited(address, null, address), l2Bridge.filters.ReceivedFromOtherLayer(address)]
-            : [l1Bridge.filters.BridgingInitiated(address, null, l2Token), l2Bridge.filters.BridgingFinalized(l1Token)];
+            : [l1Bridge.filters.BridgingInitiated(address, null, l1Token), l2Bridge.filters.BridgingFinalized(l1Token)];
 
           const [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             paginatedEventQuery(l1Bridge, filterL1, l1SearchConfig),
