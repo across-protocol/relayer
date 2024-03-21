@@ -107,7 +107,7 @@ export async function constructRelayerClients(
     configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
-  
+
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
     logger,
