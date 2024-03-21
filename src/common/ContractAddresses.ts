@@ -1082,11 +1082,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
       abi: LINEA_MESSAGE_SERVICE_CONTRACT_ABI,
     },
-    l2LineaUsdcBridge: {
+    lineaL2UsdcBridge: {
       address: "0xA2Ee6Fce4ACB62D95448729cDb781e3BEb62504A",
       abi: LINEA_USDC_BRIDGE_CONTRACT_ABI,
     },
-    l2LineaTokenBridge: {
+    lineaL2TokenBridge: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
       abi: LINEA_TOKEN_BRIDGE_CONTRACT_ABI,
     },

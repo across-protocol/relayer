@@ -205,7 +205,7 @@ export class LineaAdapter extends BaseAdapter {
           // Initiated event filter
           const filterL1 = isUsdc
             ? l1Bridge.filters.Deposited(address, null, address)
-            : l1Bridge.filters.DepositInitiated(address, null, l2Token);
+            : l1Bridge.filters.BridgingInitiated(address, null, l2Token);
           // Finalized event filter
           const filterL2 = isUsdc
             ? l2Bridge.filters.ReceivedFromOtherLayer(address)
