@@ -212,18 +212,23 @@ export class LineaAdapter extends BaseAdapter {
             paginatedEventQuery(l1Bridge, filterL1, l1SearchConfig),
             paginatedEventQuery(l2Bridge, filterL2, l2SearchConfig),
           ]);
-          initiatedQueryResult.forEach((initialEvent) => {
-            const txHash = initialEvent.transactionHash;
-            const amount = initialEvent.args.amount;
-            const finalizedEvent = finalizedQueryResult.find((finalEvent) =>
-              isUsdc
-                ? finalEvent.args.amount.eq(initialEvent.args.amount) &&
-                  compareAddressesSimple(initialEvent.args.to, finalEvent.args.recipient)
-                : finalEvent.args.amount.eq(initialEvent.args.amount) &&
-                  compareAddressesSimple(initialEvent.args.recipient, finalEvent.args.recipient) &&
-                  compareAddressesSimple(finalEvent.args.nativeToken, initialEvent.args.token)
-            );
-            if (!isDefined(finalizedEvent)) {
+          initiatedQueryResult
+            .filter(
+              (initialEvent) =>
+                !isDefined(
+                  finalizedQueryResult.find((finalEvent) =>
+                    isUsdc
+                      ? finalEvent.args.amount.eq(initialEvent.args.amount) &&
+                        compareAddressesSimple(initialEvent.args.to, finalEvent.args.recipient)
+                      : finalEvent.args.amount.eq(initialEvent.args.amount) &&
+                        compareAddressesSimple(initialEvent.args.recipient, finalEvent.args.recipient) &&
+                        compareAddressesSimple(finalEvent.args.nativeToken, initialEvent.args.token)
+                  )
+                )
+            )
+            .forEach((initialEvent) => {
+              const txHash = initialEvent.transactionHash;
+              const amount = initialEvent.args.amount;
               outstandingTransfers[address] ??= {
                 [l1Token]: { totalAmount: bnZero, depositTxHashes: [] },
               };
@@ -231,8 +236,7 @@ export class LineaAdapter extends BaseAdapter {
                 totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
                 depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
               };
-            }
-          });
+            });
         }
       });
     });
