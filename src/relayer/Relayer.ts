@@ -258,9 +258,7 @@ export class Relayer {
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
-    const allUnfilledDeposits = Object.values(unfilledDeposits)
-      .flat()
-      .map(({ deposit }) => deposit);
+    const allUnfilledDeposits = unfilledDeposits.map(({ deposit }) => deposit);
     this.logger.debug({
       at: "Relayer#checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
