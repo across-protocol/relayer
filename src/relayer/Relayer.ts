@@ -208,6 +208,45 @@ export class Relayer {
     return true;
   }
 
+  computeRequiredDepositConfirmations(deposits: V3Deposit[]): { [chainId: number]: number } {
+    const { profitClient } = this.clients;
+    const { minDepositConfirmations } = this.config;
+
+    // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits.reduce((agg, deposit) => {
+      const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+      agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+      return agg;
+    }, {});
+
+    // Sort thresholds in ascending order.
+    const minimumDepositConfirmationThresholds = Object.keys(minDepositConfirmations)
+      .filter((x) => x !== "default")
+      .sort((x, y) => Number(x) - Number(y));
+
+    // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
+    // If we can't find a threshold greater than the USD amount, then use the default.
+    const mdcPerChain = Object.fromEntries(
+      Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
+        const usdThreshold = minimumDepositConfirmationThresholds.find(
+          (usdThreshold) =>
+            toBNWei(usdThreshold).gte(unfilledAmount) && isDefined(minDepositConfirmations[usdThreshold][chainId])
+        );
+
+        // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
+        return [chainId, minDepositConfirmations[usdThreshold ?? "default"][chainId]];
+      })
+    );
+    this.logger.debug({
+      at: "Relayer::checkForUnfilledDepositsAndFill",
+      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
+      unfilledDepositAmountsPerChain,
+      mdcPerChain,
+      minDepositConfirmations,
+    });
+    return mdcPerChain;
+  }
+
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { config } = this;
@@ -220,42 +259,9 @@ export class Relayer {
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
 
-    // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce(
-      (agg, { deposit }) => {
-        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
-        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
-        return agg;
-      },
-      {}
+    const mdcPerChain = this.computeRequiredDepositConfirmations(
+      Object.values(unfilledDeposits.map(({ deposit }) => deposit))
     );
-
-    // Sort thresholds in ascending order.
-    const minimumDepositConfirmationThresholds = Object.keys(config.minDepositConfirmations)
-      .filter((x) => x !== "default")
-      .sort((x, y) => Number(x) - Number(y));
-
-    // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
-    // If we can't find a threshold greater than the USD amount, then use the default.
-    const mdcPerChain = Object.fromEntries(
-      Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
-        const usdThreshold = minimumDepositConfirmationThresholds.find((_usdThreshold) => {
-          return (
-            toBNWei(_usdThreshold).gte(unfilledAmount) &&
-            isDefined(config.minDepositConfirmations[_usdThreshold][chainId])
-          );
-        });
-        // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
-        return [chainId, config.minDepositConfirmations[usdThreshold ?? "default"][chainId]];
-      })
-    );
-    this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
-      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
-      unfilledDepositAmountsPerChain,
-      mdcPerChain,
-      minDepositConfirmations: config.minDepositConfirmations,
-    });
 
     // Filter out deposits whose block time does not meet the minimum number of confirmations for the origin chain.
     const confirmedUnfilledDeposits = unfilledDeposits
