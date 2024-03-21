@@ -1,6 +1,7 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import assert from "assert";
 import { BigNumber, Contract, constants } from "ethers";
+import { getAddress } from "ethers/lib/utils";
 import { groupBy, uniq } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
 import {
@@ -30,12 +31,12 @@ import {
   arbitrumOneFinalizer,
   cctpL1toL2Finalizer,
   cctpL2toL1Finalizer,
+  lineaL1ToL2Finalizer,
+  lineaL2ToL1Finalizer,
   opStackFinalizer,
   polygonFinalizer,
   scrollFinalizer,
   zkSyncFinalizer,
-  lineaL2ToL1Finalizer,
-  lineaL1ToL2Finalizer,
 } from "./utils";
 const { isDefined } = sdkUtils;
 
@@ -49,6 +50,7 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
   324: zkSyncFinalizer,
   8453: opStackFinalizer,
   42161: arbitrumOneFinalizer,
+  59144: lineaL2ToL1Finalizer,
   534352: scrollFinalizer,
 };
 
@@ -64,7 +66,6 @@ const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   137: [polygonFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   8453: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  59144: [lineaL2ToL1Finalizer],
   // Testnets
   84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   5: [lineaL1ToL2Finalizer],
@@ -77,6 +78,7 @@ export async function finalize(
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
+  l1ToL2AddressesToFinalize: string[],
   submitFinalizationTransactions: boolean
 ): Promise<void> {
   const hubChainId = hubPoolClient.chainId;
@@ -116,7 +118,13 @@ export async function finalize(
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
     for (const finalizer of chainSpecificFinalizers) {
-      const { callData, crossChainMessages } = await finalizer(logger, hubSigner, hubPoolClient, client);
+      const { callData, crossChainMessages } = await finalizer(
+        logger,
+        hubSigner,
+        hubPoolClient,
+        client,
+        l1ToL2AddressesToFinalize
+      );
 
       callData.forEach((txn, idx) => {
         finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
@@ -126,9 +134,10 @@ export async function finalize(
       totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
       totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
     }
+    const totalTransfers = totalWithdrawalsForChain + totalDepositsForChain + totalMiscTxnsForChain;
     logger.debug({
       at: "finalize",
-      message: `Found ${totalWithdrawalsForChain} ${network} transfers (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
+      message: `Found ${totalTransfers} ${network} messages (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
     });
   }
   const multicall2Lookup = Object.fromEntries(
@@ -320,10 +329,15 @@ async function updateFinalizerClients(clients: Clients) {
 
 export class FinalizerConfig extends DataworkerConfig {
   readonly maxFinalizerLookback: number;
+  readonly chainsToFinalize: number[];
+  readonly addressesToMonitorForL1L2Finalizer: string[];
 
   constructor(env: ProcessEnv) {
-    const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK } = env;
+    const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS, L1_L2_FINALIZER_MONITOR_ADDRESS } = env;
     super(env);
+
+    this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS ?? "[]");
+    this.addressesToMonitorForL1L2Finalizer = JSON.parse(L1_L2_FINALIZER_MONITOR_ADDRESS ?? "[]").map(getAddress);
 
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
@@ -348,14 +362,17 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
 
       if (config.finalizerEnabled) {
+        const availableChains = commonClients.configStoreClient
+          .getChainIdIndicesForBlock()
+          .filter((chainId) => isDefined(spokePoolClients[chainId]));
+
         await finalize(
           logger,
           commonClients.hubSigner,
           commonClients.hubPoolClient,
           spokePoolClients,
-          process.env.FINALIZER_CHAINS
-            ? JSON.parse(process.env.FINALIZER_CHAINS)
-            : commonClients.configStoreClient.getChainIdIndicesForBlock(),
+          config.chainsToFinalize.length === 0 ? availableChains : config.chainsToFinalize,
+          config.addressesToMonitorForL1L2Finalizer,
           config.sendingFinalizationsEnabled
         );
       } else {
