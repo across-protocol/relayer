@@ -258,37 +258,47 @@ export class Relayer {
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
-
-    const mdcPerChain = this.computeRequiredDepositConfirmations(
-      Object.values(unfilledDeposits.map(({ deposit }) => deposit))
-    );
-
-    // Filter out deposits whose block time does not meet the minimum number of confirmations for the origin chain.
-    const confirmedUnfilledDeposits = unfilledDeposits
-      .filter(
-        ({ deposit: { originChainId, blockNumber } }) =>
-          blockNumber <= spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]
-      )
-      .map(({ deposit }) => deposit);
+    const allUnfilledDeposits = Object.values(unfilledDeposits.map(({ deposit }) => deposit));
     this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
-      message: `${confirmedUnfilledDeposits.length} unfilled deposits found`,
+      at: "Relayer#checkForUnfilledDepositsAndFill",
+      message: `${allUnfilledDeposits.length} unfilled deposits found.`,
     });
+    if (allUnfilledDeposits.length === 0) {
+      return;
+    }
 
-    // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
-    // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
-    // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
-    // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
-    // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
+    const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
+
+    // Iterate over all unfilled deposits. For each unfilled deposit, check that:
+    // a) it exceeds the minimum number of required block confirmations,
+    // b) the token balance client has enough tokens to fill it,
+    // c) the fill is profitable.
+    // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
+    // enabled then request a slow fill instead.
     const { slowDepositors } = config;
-    for (const deposit of confirmedUnfilledDeposits) {
-      const { depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+    for (const deposit of allUnfilledDeposits) {
+      const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+
+      // If the deposit does not meet the minimum number of block confirmations, skip it.
+      const maxBlockNumber = spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId];
+      if (deposit.blockNumber > maxBlockNumber) {
+        const chain = getNetworkName(originChainId);
+        this.logger.debug({
+          at: "Relayer#checkForUnfilledDepositsAndFill",
+          message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
+          depositId,
+          blockNumber: deposit.blockNumber,
+          maxBlockNumber,
+          transactionHash: deposit.transactionHash,
+        });
+        continue;
+      }
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (slowDepositors?.includes(depositor)) {
         if (sendSlowRelays) {
           this.logger.debug({
-            at: "Relayer",
+            at: "Relayer#checkForUnfilledDepositsAndFill",
             message: "Initiating slow fill for grey listed depositor",
             depositor,
           });
