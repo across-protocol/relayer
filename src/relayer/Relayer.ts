@@ -283,7 +283,7 @@ export class Relayer {
       if (deposit.blockNumber > spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]) {
         const chain = getNetworkName(originChainId);
         this.logger.debug({
-          at: "Relayer",
+          at: "Relayer#checkForUnfilledDepositsAndFill",
           message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
           depositId,
           transactionHash: deposit.transactionHash,
@@ -295,7 +295,7 @@ export class Relayer {
       if (slowDepositors?.includes(depositor)) {
         if (sendSlowRelays) {
           this.logger.debug({
-            at: "Relayer",
+            at: "Relayer#checkForUnfilledDepositsAndFill",
             message: "Initiating slow fill for grey listed depositor",
             depositor,
           });
