@@ -39,7 +39,7 @@ const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
   },
 ];
 
-export const LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI = [
+export const LINEA_MESSAGE_SERVICE_CONTRACT_ABI = [
   {
     inputs: [],
     name: "minimumFeeInWei",
@@ -52,6 +52,54 @@ export const LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI = [
     ],
     stateMutability: "view",
     type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [{ indexed: true, internalType: "bytes32", name: "_messageHash", type: "bytes32" }],
+    name: "MessageClaimed",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        name: "_from",
+        type: "address",
+      },
+      {
+        indexed: true,
+        name: "_to",
+        type: "address",
+      },
+      {
+        indexed: false,
+        name: "_fee",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        name: "_value",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        name: "_nonce",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        name: "_calldata",
+        type: "bytes",
+      },
+      {
+        indexed: true,
+        name: "_messageHash",
+        type: "bytes32",
+      },
+    ],
+    name: "MessageSent",
+    type: "event",
   },
 ];
 
@@ -200,6 +248,7 @@ export const CONTRACT_ADDRESSES: {
   1: {
     lineaMessageService: {
       address: "0xd19d4B5d358258f05D7B411E21A1460D11B0876F",
+      abi: LINEA_MESSAGE_SERVICE_CONTRACT_ABI,
     },
     lineaL1TokenBridge: {
       address: "0x051F1D88f0aF5763fB888eC4378b4D8B29ea3319",
@@ -1011,7 +1060,7 @@ export const CONTRACT_ADDRESSES: {
   59144: {
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
-      abi: LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI,
+      abi: LINEA_MESSAGE_SERVICE_CONTRACT_ABI,
     },
     l2LineaUsdcBridge: {
       address: "0xA2Ee6Fce4ACB62D95448729cDb781e3BEb62504A",
@@ -1085,7 +1134,7 @@ export const CONTRACT_ADDRESSES: {
   59140: {
     l2MessageService: {
       address: "0xC499a572640B64eA1C8c194c43Bc3E19940719dC",
-      abi: LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI,
+      abi: LINEA_MESSAGE_SERVICE_CONTRACT_ABI,
     },
   },
 };

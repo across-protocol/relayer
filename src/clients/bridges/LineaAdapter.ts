@@ -68,6 +68,24 @@ export class LineaAdapter extends BaseAdapter {
     return null;
   }
 
+  getL2MessageService(): Contract {
+    const chainId = this.chainId;
+    return new Contract(
+      CONTRACT_ADDRESSES[chainId].l2MessageService.address,
+      CONTRACT_ADDRESSES[chainId].l2MessageService.abi,
+      this.getSigner(chainId)
+    );
+  }
+
+  getL1MessageService(): Contract {
+    const { hubChainId } = this;
+    return new Contract(
+      CONTRACT_ADDRESSES[hubChainId].lineaMessageService.address,
+      CONTRACT_ADDRESSES[hubChainId].lineaMessageService.abi,
+      this.getSigner(hubChainId)
+    );
+  }
+
   getL1TokenBridge(): Contract {
     const { hubChainId } = this;
     return new Contract(
@@ -139,7 +157,46 @@ export class LineaAdapter extends BaseAdapter {
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
       await sdk.utils.mapAsync(l1Tokens, async (l1Token) => {
         if (this.isWeth(l1Token)) {
-          // TODO: Implement this
+          const atomicDepositor = this.getAtomicDepositor();
+          const l1MessageService = this.getL1MessageService();
+          const l2MessageService = this.getL2MessageService();
+
+          // We need to do the following sequential steps.
+          // 1. Get all initiated MessageSent events from the L1MessageService where the 'from' address is
+          //    the AtomicDepositor and the 'to' address is the user's address.
+          // 2. Pipe the resulting _messageHash argument from step 1 into the MessageClaimed event filter
+          // 3. For each MessageSent, match the _messageHash to the _messageHash in the MessageClaimed event
+          //    any unmatched MessageSent events are considered outstanding transfers.
+          const initiatedQueryResult = await paginatedEventQuery(
+            l1MessageService,
+            l1MessageService.filters.MessageSent(atomicDepositor.address, address),
+            l1SearchConfig
+          );
+          const internalMessageHashes = initiatedQueryResult.map(({ args }) => args._messageHash);
+          const finalizedQueryResult = await paginatedEventQuery(
+            l2MessageService,
+            // Passing in an array of message hashes results in an OR filter
+            l2MessageService.filters.MessageClaimed(internalMessageHashes),
+            l2SearchConfig
+          );
+          initiatedQueryResult
+            .filter(
+              ({ args }) =>
+                !finalizedQueryResult.some(
+                  (finalizedEvent) => args._messageHash.toLowerCase() === finalizedEvent.args._messageHash.toLowerCase()
+                )
+            )
+            .forEach((event) => {
+              const txHash = event.transactionHash;
+              const amount = event.args._value;
+              outstandingTransfers[address] = outstandingTransfers[address] || {
+                [l1Token]: { totalAmount: bnZero, depositTxHashes: [] },
+              };
+              outstandingTransfers[address][l1Token] = {
+                totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
+                depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
+              };
+            });
         } else {
           const isUsdc = this.isUsdc(l1Token);
           const l2Token = getTokenAddress(l1Token, this.hubChainId, this.chainId);
