@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import winston from "winston";
 import { AcrossApiClient, BundleDataClient, InventoryClient, ProfitClient, TokenClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -11,7 +11,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { Signer } from "../utils";
+import { isDefined, readFile, Signer } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
@@ -107,12 +107,31 @@ export async function constructRelayerClients(
     configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
+
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
     logger,
     enabledChainIds.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
     adapterManager
   );
+
+  // If an external inventory configuration was defined, read it in now before instantiating the InventoryClient.
+  if (isDefined(config.externalInventoryConfig)) {
+    const _inventoryConfig = await readFile(config.externalInventoryConfig);
+    try {
+      config.inventoryConfig = JSON.parse(_inventoryConfig);
+    } catch (err) {
+      const msg = typeguards.isError(err) ? err.message : (err as Record<string, unknown>)?.code;
+      throw new Error(`Inventory config error in ${config.externalInventoryConfig} (${msg ?? "unknown error"})`);
+    }
+    logger.debug({
+      at: "Relayer#constructRelayerClients",
+      message: "Updated Inventory config.",
+      source: config.externalInventoryConfig,
+      inventoryConfig: config.inventoryConfig,
+    });
+  }
+
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,

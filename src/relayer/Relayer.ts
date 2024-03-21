@@ -244,6 +244,7 @@ export class Relayer {
       mdcPerChain,
       minDepositConfirmations,
     });
+
     return mdcPerChain;
   }
 
