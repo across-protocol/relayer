@@ -254,6 +254,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "Filling v3 deposit")).to.be.true;
       expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
+      // Verify that the deposit is still unfilled (relayer didn't execute it).
+      unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
+      expect(Object.values(unfilledDeposits).flat().length).to.equal(1);
+
+      // Fill the deposit and immediately check for unfilled deposits (without SpokePoolClient update).
       await fillV3Relay(spokePool_2, deposit, relayer);
       unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
       expect(Object.values(unfilledDeposits).flat().length).to.equal(0);
