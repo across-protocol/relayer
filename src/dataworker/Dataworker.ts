@@ -1880,7 +1880,7 @@ export class Dataworker {
         this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
       if (
         this.clients.hubPoolClient.currentTime === undefined ||
-        this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 7200 // 2 hours
+        this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 2 * 24 * 60 * 60 // 2 day
       ) {
         this.logger.debug({
           at: "Dataworker#_updateOldExchangeRates",

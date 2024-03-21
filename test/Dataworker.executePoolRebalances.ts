@@ -364,8 +364,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
       it("exits early if liquid reserves wouldn't increase for token post-update", async function () {
-        // Last update was at time 0, current time is at 10_000, so definitely past the update threshold
-        mockHubPoolClient.currentTime = 10_000;
+        // Last update was at time 0, current time is at 1_000_000, so definitely past the update threshold
+        mockHubPoolClient.currentTime = 1_000_000;
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0);
 
         // Hardcode multicall output such that it looks like liquid reserves stayed the same
@@ -417,8 +417,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
       it("submits update if liquid reserves would increase for token post-update and last update was old enough", async function () {
-        // Last update was at time 0, current time is at 10_000, so definitely past the update threshold
-        mockHubPoolClient.currentTime = 10_000;
+        // Last update was at time 0, current time is at 1_000_000, so definitely past the update threshold
+        mockHubPoolClient.currentTime = 1_000_000;
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0);
 
         // Hardcode multicall output such that it looks like liquid reserves increased
