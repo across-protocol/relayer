@@ -185,31 +185,17 @@ export class TokenClient {
 
   async update(): Promise<void> {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
-    const redis = await getRedisCache(this.logger);
-    let bondToken: string;
-    let balanceInfo: FetchTokenDataReturnType[];
-    if (redis) {
-      const cachedBondToken = await redis.get<string>(this.getBondTokenCacheKey());
-      if (cachedBondToken !== null) {
-        bondToken = cachedBondToken;
-      }
-    }
-    if (!bondToken) {
-      [balanceInfo, bondToken] = await Promise.all([
-        Promise.all(
-          Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))
+    const [balanceInfo, bondToken] = await Promise.all([
+      Promise.all(Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))),
+      // Make eth_call using nearest 100_000th block to take advantage of eth_call caching when blockTag is
+      // specified. This is unexpected to change so we are ok to rarely increase this block tag.
+      this.hubPoolClient.hubPool.bondToken({
+        blockTag: Math.min(
+          this.hubPoolClient.deploymentBlock,
+          Math.round(this.hubPoolClient.latestBlockSearched / 100_000) * 100_000
         ),
-        this.hubPoolClient.hubPool.bondToken(),
-      ]);
-      if (redis) {
-        // Save allowance in cache with no TTL as this should never change.
-        await redis.set(this.getBondTokenCacheKey(), bondToken);
-      }
-    } else {
-      balanceInfo = await Promise.all(
-        Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))
-      );
-    }
+      }),
+    ]);
 
     this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
 
