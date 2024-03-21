@@ -1,37 +1,43 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
-import { L1MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
-import { TokensRelayedEvent } from "@across-protocol/contracts-v2/dist/typechain/contracts/chain-adapters/Linea_Adapter";
-import { utils, providers } from "ethers";
+import { Contract } from "ethers";
 import { groupBy } from "lodash";
-
-import { HubPoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
-import { Signer, winston, convertFromWei, TransactionReceipt, paginatedEventQuery } from "../../../utils";
-import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { HubPoolClient, SpokePoolClient } from "../../../clients";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { EventSearchConfig, Signer, convertFromWei, winston } from "../../../utils";
+import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
-  initLineaSdk,
-  makeGetMessagesWithStatusByTxHash,
-  MessageWithStatus,
-  lineaAdapterIface,
+  determineMessageType,
+  findMessageFromTokenBridge,
+  findMessageFromUsdcBridge,
+  findMessageSentEvents,
   getBlockRangeByHoursOffsets,
+  initLineaSdk,
 } from "./common";
-
-type ParsedAdapterEvent = {
-  parsedLog: utils.LogDescription;
-  log: providers.Log;
-};
 
 export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _spokePoolClient: SpokePoolClient,
+  l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
+  const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
-  const l2Contract = lineaSdk.getL2Contract();
-  const l1Contract = lineaSdk.getL1Contract();
-  const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l1Contract, l2Contract);
+  const l2MessageServiceContract = lineaSdk.getL2Contract();
+  const l1MessageServiceContract = lineaSdk.getL1Contract();
+  const l1TokenBridge = new Contract(
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.address,
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.abi,
+    hubPoolClient.hubPool.provider
+  );
+  const l1UsdcBridge = new Contract(
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.address,
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.abi,
+    hubPoolClient.hubPool.provider
+  );
 
   // Optimize block range for querying Linea's MessageSent events on L1.
   // We want to conservatively query for events that are between 0 and 24 hours old
@@ -39,47 +45,53 @@ export async function lineaL1ToL2Finalizer(
   const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24, 0);
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: "MessageSent event filter",
+    message: "Linea MessageSent event filter",
     fromBlock,
     toBlock,
   });
 
-  // Get Linea's `MessageSent` events originating from HubPool
-  const messageSentEvents = await paginatedEventQuery(
-    l1Contract.contract,
-    l1Contract.contract.filters.MessageSent(hubPoolAddress),
-    {
-      fromBlock,
-      toBlock,
-      maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
-    }
-  );
+  const searchConfig: EventSearchConfig = {
+    fromBlock,
+    toBlock,
+    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
+  };
 
-  // Get relevant tx receipts
-  const txnReceipts = await Promise.all(
-    messageSentEvents.map(({ transactionHash }) =>
-      hubPoolClient.hubPool.provider.getTransactionReceipt(transactionHash)
-    )
-  );
-  const relevantTxReceipts = filterLineaTxReceipts(txnReceipts, l1Contract);
+  const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
+    findMessageSentEvents(l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageFromUsdcBridge(l1UsdcBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+  ]);
 
-  // Get relevant Linea_Adapter events, i.e. TokensRelayed, RelayedMessage
-  const l1SrcEvents = parseAdapterEventsFromTxReceipts(relevantTxReceipts);
-
-  // Get Linea's MessageSent events with status
-  const relevantMessages = (
-    await Promise.all(relevantTxReceipts.map(({ transactionHash }) => getMessagesWithStatusByTxHash(transactionHash)))
-  ).flat();
-
-  // Merge messages with TokensRelayed/RelayedMessage events
-  const mergedMessages = mergeMessagesWithAdapterEvents(relevantMessages, l1SrcEvents);
-
+  const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents, ...usdcBridgeEvents];
+  const enrichedMessageSentEvents = await sdkUtils.mapAsync(messageSentEvents, async (event) => {
+    const {
+      transactionHash: txHash,
+      logIndex,
+      args: { _from, _to, _fee, _value, _nonce, _calldata, _messageHash },
+    } = event;
+    // It's unlikely that our multicall will have multiple transactions to bridge to Linea
+    // so we can grab the statuses individually.
+    const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
+    return {
+      messageSender: _from,
+      destination: _to,
+      fee: _fee,
+      value: _value,
+      messageNonce: _nonce,
+      calldata: _calldata,
+      messageHash: _messageHash,
+      txHash,
+      logIndex,
+      status: messageStatus,
+      messageType: determineMessageType(event, hubPoolClient),
+    };
+  });
   // Group messages by status
   const {
     claimed = [],
     claimable = [],
     unknown = [],
-  } = groupBy(mergedMessages, ({ message }) => {
+  } = groupBy(enrichedMessageSentEvents, (message) => {
     switch (message.status) {
       case OnChainMessageStatus.CLAIMED:
         return "claimed";
@@ -92,8 +104,8 @@ export async function lineaL1ToL2Finalizer(
 
   // Populate txns for claimable messages
   const populatedTxns = await Promise.all(
-    claimable.map(async ({ message }) => {
-      return l2Contract.contract.populateTransaction.claimMessage(
+    claimable.map(async (message) => {
+      return l2MessageServiceContract.contract.populateTransaction.claimMessage(
         message.messageSender,
         message.destination,
         message.fee,
@@ -105,21 +117,14 @@ export async function lineaL1ToL2Finalizer(
     })
   );
   const multicall3Call = populatedTxns.map((txn) => ({
-    target: l2Contract.contractAddress,
+    target: l2MessageServiceContract.contractAddress,
     callData: txn.data,
   }));
 
   // Populate cross chain calls for claimable messages
-  const messages = claimable.flatMap(({ adapterEvent }) => {
-    const { name, args } = adapterEvent.parsedLog;
-
-    if (!["TokensRelayed", "MessageRelayed"].includes(name)) {
-      return [];
-    }
-
+  const messages = claimable.flatMap(({ messageType }) => {
     let crossChainCall: CrossChainMessage;
-
-    if (name === "MessageRelayed") {
+    if (messageType.type === "misc") {
       crossChainCall = {
         originationChainId: l1ChainId,
         destinationChainId: l2ChainId,
@@ -127,9 +132,8 @@ export async function lineaL1ToL2Finalizer(
         miscReason: "lineaClaim:relayMessage",
       };
     } else {
-      const [l1Token, , amount] = args as TokensRelayedEvent["args"];
-      const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1Token);
-      const amountFromWei = convertFromWei(amount.toString(), decimals);
+      const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, messageType.l1TokenAddress);
+      const amountFromWei = convertFromWei(messageType.amount.toString(), decimals);
       crossChainCall = {
         originationChainId: l1ChainId,
         destinationChainId: l2ChainId,
@@ -138,13 +142,12 @@ export async function lineaL1ToL2Finalizer(
         type: "deposit",
       };
     }
-
     return crossChainCall;
   });
 
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
-    message: `Detected ${mergedMessages.length} relevant messages`,
+    message: "Linea L1->L2 message statuses",
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
@@ -153,58 +156,4 @@ export async function lineaL1ToL2Finalizer(
   });
 
   return { callData: multicall3Call, crossChainMessages: messages };
-}
-
-function filterLineaTxReceipts(receipts: TransactionReceipt[], l1MessageService: L1MessageServiceContract) {
-  const lineaMessageSentEventTopic = l1MessageService.contract.interface.getEventTopic("MessageSent");
-  const lineaTxHashes = receipts
-    .filter((receipt) => receipt.logs.some((log) => log.topics[0] === lineaMessageSentEventTopic))
-    .map((receipt) => receipt.transactionHash);
-  const uniqueTxHashes = Array.from(new Set(lineaTxHashes));
-  return uniqueTxHashes.map((txHash) => receipts.find((receipt) => receipt.transactionHash === txHash));
-}
-
-function parseAdapterEventsFromTxReceipts(receipts: TransactionReceipt[]) {
-  const allLogs = receipts.flatMap((receipt) => receipt.logs);
-  return allLogs.flatMap((log) => {
-    try {
-      const parsedLog = lineaAdapterIface.parseLog(log);
-      if (!parsedLog || !["TokensRelayed", "MessageRelayed"].includes(parsedLog.name)) {
-        return [];
-      }
-      return { parsedLog, log };
-    } catch (e) {
-      return [];
-    }
-  }) as ParsedAdapterEvent[];
-}
-
-function mergeMessagesWithAdapterEvents(messages: MessageWithStatus[], adapterEvents: ParsedAdapterEvent[]) {
-  const messagesByTxHash = groupBy(messages, ({ txHash }) => txHash);
-  const adapterEventsByTxHash = groupBy(adapterEvents, ({ log }) => log.transactionHash);
-
-  const merged: {
-    message: MessageWithStatus;
-    adapterEvent: ParsedAdapterEvent;
-  }[] = [];
-  for (const txHash of Object.keys(messagesByTxHash)) {
-    const messages = messagesByTxHash[txHash].sort((a, b) => a.logIndex - b.logIndex);
-    const adapterEvents = adapterEventsByTxHash[txHash].sort((a, b) => a.log.logIndex - b.log.logIndex);
-
-    if (messages.length !== adapterEvents.length) {
-      throw new Error(
-        `Mismatched number of MessageSent and TokensRelayed/MessageRelayed events for transaction hash ${txHash}. ` +
-          `Found ${messages.length} MessageSent events and ${adapterEvents.length} TokensRelayed/MessageRelayed events.`
-      );
-    }
-
-    for (const [i, message] of messages.entries()) {
-      merged.push({
-        message,
-        adapterEvent: adapterEvents[i],
-      });
-    }
-  }
-
-  return merged;
 }
