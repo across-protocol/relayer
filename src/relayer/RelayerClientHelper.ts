@@ -156,13 +156,16 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
   // having a "first run" update and then a "normal" update that considers this. see previous implementation here
   // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
-  await updateSpokePoolClients(spokePoolClients, [
+  const spokePoolEvents = [
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
     "RequestedV3SlowFill",
-    "FilledV3Relay",
     "EnabledDepositRoute",
-  ]);
+  ];
+  if (!config.acceptInvalidFills) {
+    spokePoolEvents.push("FilledV3Relay");
+  }
+  await updateSpokePoolClients(spokePoolClients, spokePoolEvents);
 
   // Update the token client first so that inventory client has latest balances.
   await clients.tokenClient.update();
