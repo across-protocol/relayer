@@ -1,3 +1,6 @@
+import * as sdk from "@across-protocol/sdk-v2";
+import { CONTRACT_ADDRESSES } from "../../common";
+import { OutstandingTransfers } from "../../interfaces";
 import {
   BigNumber,
   CHAIN_IDs,
@@ -7,13 +10,13 @@ import {
   assert,
   bnZero,
   compareAddressesSimple,
+  getTokenAddress,
   isDefined,
+  paginatedEventQuery,
   winston,
 } from "../../utils";
 import { SpokePoolClient } from "../SpokePoolClient";
 import { BaseAdapter } from "./BaseAdapter";
-import { CONTRACT_ADDRESSES } from "../../common";
-import * as sdk from "@across-protocol/sdk-v2";
 
 export class LineaAdapter extends BaseAdapter {
   readonly l1TokenBridge = CONTRACT_ADDRESSES[this.hubChainId].lineaL1TokenBridge.address;
@@ -83,6 +86,28 @@ export class LineaAdapter extends BaseAdapter {
     );
   }
 
+  getL2TokenBridge(): Contract {
+    const chainId = this.chainId;
+    return new Contract(
+      CONTRACT_ADDRESSES[chainId].lineaL2TokenBridge.address,
+      CONTRACT_ADDRESSES[chainId].lineaL2TokenBridge.abi,
+      this.getSigner(chainId)
+    );
+  }
+
+  getL2UsdcBridge(): Contract {
+    const chainId = this.chainId;
+    return new Contract(
+      CONTRACT_ADDRESSES[chainId].lineaL2UsdcBridge.address,
+      CONTRACT_ADDRESSES[chainId].lineaL2UsdcBridge.abi,
+      this.getSigner(chainId)
+    );
+  }
+
+  getL2Bridge(l1Token: string): Contract {
+    return this.isUsdc(l1Token) ? this.getL2UsdcBridge() : this.getL2TokenBridge();
+  }
+
   /**
    * Get L1 Atomic WETH depositor contract
    * @returns L1 Atomic WETH depositor contract
@@ -108,10 +133,55 @@ export class LineaAdapter extends BaseAdapter {
       : this.getL1TokenBridge();
   }
 
-  // FIXME: NO-OP
-  getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
-    l1Tokens;
-    return Promise.resolve({});
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
+    const outstandingTransfers: OutstandingTransfers = {};
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
+      await sdk.utils.mapAsync(l1Tokens, async (l1Token) => {
+        if (this.isWeth(l1Token)) {
+          // TODO: Implement this
+        } else {
+          const isUsdc = this.isUsdc(l1Token);
+          const l2Token = getTokenAddress(l1Token, this.hubChainId, this.chainId);
+          const l1Bridge = this.getL1Bridge(l1Token);
+          const l2Bridge = this.getL2Bridge(l1Token);
+          // Initiated event filter
+          const filterL1 = isUsdc
+            ? l1Bridge.filters.Deposited(address, null, address)
+            : l1Bridge.filters.DepositInitiated(address, null, l2Token);
+          // Finalized event filter
+          const filterL2 = isUsdc
+            ? l2Bridge.filters.ReceivedFromOtherLayer(address)
+            : l2Bridge.filters.BridgingFinalized(l1Token);
+          const [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+            paginatedEventQuery(l1Bridge, filterL1, l1SearchConfig),
+            paginatedEventQuery(l2Bridge, filterL2, l2SearchConfig),
+          ]);
+          initiatedQueryResult.forEach((initialEvent) => {
+            const txHash = initialEvent.transactionHash;
+            const amount = initialEvent.args.amount;
+            const finalizedEvent = finalizedQueryResult.find((finalEvent) =>
+              isUsdc
+                ? finalEvent.args.amount.eq(initialEvent.args.amount) &&
+                  compareAddressesSimple(initialEvent.args.to, finalEvent.args.recipient)
+                : finalEvent.args.amount.eq(initialEvent.args.amount) &&
+                  compareAddressesSimple(initialEvent.args.recipient, finalEvent.args.recipient) &&
+                  compareAddressesSimple(finalEvent.args.nativeToken, initialEvent.args.token)
+            );
+            if (!isDefined(finalizedEvent)) {
+              outstandingTransfers[address] = outstandingTransfers[address] || {
+                [l1Token]: { totalAmount: bnZero, depositTxHashes: [] },
+              };
+              outstandingTransfers[address][l1Token] = {
+                totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
+                depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
+              };
+            }
+          });
+        }
+      });
+    });
+    return outstandingTransfers;
   }
 
   sendTokenToTargetChain(

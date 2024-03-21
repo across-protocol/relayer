@@ -55,6 +55,139 @@ export const LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI = [
   },
 ];
 
+export const LINEA_TOKEN_BRIDGE_CONTRACT_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "_token", type: "address" },
+      { internalType: "uint256", name: "_amount", type: "uint256" },
+      { internalType: "address", name: "_recipient", type: "address" },
+    ],
+    name: "bridgeToken",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "sender",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "address",
+        name: "recipient",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "BridgingInitiated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "nativeToken",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "bridgedToken",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        internalType: "address",
+        name: "recipient",
+        type: "address",
+      },
+    ],
+    name: "BridgingFinalized",
+    type: "event",
+  },
+];
+
+export const LINEA_USDC_BRIDGE_CONTRACT_ABI = [
+  {
+    inputs: [
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "address", name: "to", type: "address" },
+    ],
+    name: "depositTo",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "depositor",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+    ],
+    name: "Deposited",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "recipient",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "ReceivedFromOtherLayer",
+    type: "event",
+  },
+];
+
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -70,34 +203,11 @@ export const CONTRACT_ADDRESSES: {
     },
     lineaL1TokenBridge: {
       address: "0x051F1D88f0aF5763fB888eC4378b4D8B29ea3319",
-      abi: [
-        {
-          inputs: [
-            { internalType: "address", name: "_token", type: "address" },
-            { internalType: "uint256", name: "_amount", type: "uint256" },
-            { internalType: "address", name: "_recipient", type: "address" },
-          ],
-          name: "bridgeToken",
-          outputs: [],
-          stateMutability: "payable",
-          type: "function",
-        },
-      ],
+      abi: LINEA_TOKEN_BRIDGE_CONTRACT_ABI,
     },
     lineaL1UsdcBridge: {
       address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
-      abi: [
-        {
-          inputs: [
-            { internalType: "uint256", name: "amount", type: "uint256" },
-            { internalType: "address", name: "to", type: "address" },
-          ],
-          name: "depositTo",
-          outputs: [],
-          stateMutability: "payable",
-          type: "function",
-        },
-      ],
+      abi: LINEA_USDC_BRIDGE_CONTRACT_ABI,
     },
     zkSyncMailbox: {
       address: "0x32400084C286CF3E17e7B677ea9583e60a000324",
@@ -902,6 +1012,14 @@ export const CONTRACT_ADDRESSES: {
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
       abi: LINEA_L2_MESSAGE_SERVICE_CONTRACT_ABI,
+    },
+    l2LineaUsdcBridge: {
+      address: "0xA2Ee6Fce4ACB62D95448729cDb781e3BEb62504A",
+      abi: LINEA_USDC_BRIDGE_CONTRACT_ABI,
+    },
+    l2LineaTokenBridge: {
+      address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
+      abi: LINEA_TOKEN_BRIDGE_CONTRACT_ABI,
     },
     weth: {
       address: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
