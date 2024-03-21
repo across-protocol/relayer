@@ -157,7 +157,7 @@ export class AcrossApiClient {
             url,
             params,
             result,
-          })
+          });
           continue;
         }
         if (redis) {
