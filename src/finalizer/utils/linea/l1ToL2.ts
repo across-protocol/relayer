@@ -182,6 +182,9 @@ function parseAdapterEventsFromTxReceipts(receipts: TransactionReceipt[], l2Chai
       if (parsedLog.name === "MessageRelayed" && parsedLog.args.target !== getDeployedAddress("SpokePool", l2ChainId)) {
         return [];
       }
+      if (parsedLog.name === "TokensRelayed" && parsedLog.args.to !== getDeployedAddress("SpokePool", l2ChainId)) {
+        return [];
+      }
       return { parsedLog, log };
     } catch (e) {
       return [];
