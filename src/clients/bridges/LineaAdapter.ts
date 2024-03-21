@@ -190,9 +190,8 @@ export class LineaAdapter extends BaseAdapter {
             .forEach((event) => {
               const txHash = event.transactionHash;
               const amount = event.args._value;
-              outstandingTransfers[address] ??= {
-                [l1Token]: { totalAmount: bnZero, depositTxHashes: [] },
-              };
+              outstandingTransfers[address] ??= {};
+              outstandingTransfers[address][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
               outstandingTransfers[address][l1Token] = {
                 totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
                 depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
@@ -230,9 +229,8 @@ export class LineaAdapter extends BaseAdapter {
             .forEach((initialEvent) => {
               const txHash = initialEvent.transactionHash;
               const amount = initialEvent.args.amount;
-              outstandingTransfers[address] ??= {
-                [l1Token]: { totalAmount: bnZero, depositTxHashes: [] },
-              };
+              outstandingTransfers[address] ??= {};
+              outstandingTransfers[address][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
               outstandingTransfers[address][l1Token] = {
                 totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
                 depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
