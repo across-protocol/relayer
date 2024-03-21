@@ -276,12 +276,6 @@ export abstract class BaseAdapter {
    */
   isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
     const relevantSymbols = matchTokenSymbol(l1Token, this.hubChainId);
-
-    // If we don't have a symbol for this token, return that the token is not supported
-    if (relevantSymbols.length === 0) {
-      return false;
-    }
-
     // if the symbol is not in the supported tokens list, it's not supported
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
