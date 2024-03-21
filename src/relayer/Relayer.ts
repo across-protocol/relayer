@@ -280,12 +280,15 @@ export class Relayer {
       const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
 
       // If the deposit does not meet the minimum number of block confirmations, skip it.
-      if (deposit.blockNumber > spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]) {
+      const maxBlockNumber = spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId];
+      if (deposit.blockNumber > maxBlockNumber) {
         const chain = getNetworkName(originChainId);
         this.logger.debug({
           at: "Relayer#checkForUnfilledDepositsAndFill",
           message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
           depositId,
+          blockNumber: deposit.blockNumber,
+          maxBlockNumber,
           transactionHash: deposit.transactionHash,
         });
         continue;
