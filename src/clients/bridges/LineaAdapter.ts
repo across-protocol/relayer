@@ -202,14 +202,12 @@ export class LineaAdapter extends BaseAdapter {
           const l2Token = getTokenAddress(l1Token, this.hubChainId, this.chainId);
           const l1Bridge = this.getL1Bridge(l1Token);
           const l2Bridge = this.getL2Bridge(l1Token);
-          // Initiated event filter
-          const filterL1 = isUsdc
-            ? l1Bridge.filters.Deposited(address, null, address)
-            : l1Bridge.filters.BridgingInitiated(address, null, l2Token);
-          // Finalized event filter
-          const filterL2 = isUsdc
-            ? l2Bridge.filters.ReceivedFromOtherLayer(address)
-            : l2Bridge.filters.BridgingFinalized(l1Token);
+
+          // Define the initialized and finalized event filters for the L1 and L2 bridges
+          const [filterL1, filterL2] = isUsdc
+            ? [l1Bridge.filters.Deposited(address, null, address), l2Bridge.filters.ReceivedFromOtherLayer(address)]
+            : [l1Bridge.filters.BridgingInitiated(address, null, l2Token), l2Bridge.filters.BridgingFinalized(l1Token)];
+
           const [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             paginatedEventQuery(l1Bridge, filterL1, l1SearchConfig),
             paginatedEventQuery(l2Bridge, filterL2, l2SearchConfig),
