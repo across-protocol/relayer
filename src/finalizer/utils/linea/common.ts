@@ -9,6 +9,7 @@ import {
   EventSearchConfig,
   TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
+  compareAddressesSimple,
   ethers,
   getBlockForTimestamp,
   getCurrentTime,
@@ -17,7 +18,7 @@ import {
   paginatedEventQuery,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
+import { CONTRACT_ADDRESSES } from "../../../common";
 
 export type MessageWithStatus = Message & {
   logIndex: number;
@@ -116,7 +117,7 @@ export async function getBlockRangeByHoursOffsets(
 }
 
 export function determineMessageType(
-  { args: { _calldata, _value } }: MessageSentEvent,
+  event: MessageSentEvent,
   hubPoolClient: HubPoolClient
 ):
   | {
@@ -128,6 +129,7 @@ export function determineMessageType(
   | {
       type: "misc";
     } {
+  const { _calldata, _value } = event.args;
   // First check a WETH deposit. A WETH deposit is a message with a positive
   // value and an empty calldata.
   if (_calldata === "0x") {
@@ -143,10 +145,10 @@ export function determineMessageType(
 
   // Start with the TokenBridge calldata format.
   try {
-    const functionSignature = "completeBridging(address,uint256,address,uint256,bytes)";
-    const functionFragment = ethers.utils.FunctionFragment.from(functionSignature);
-    const contractInterface = new ethers.utils.Interface([functionFragment]);
-    const decoded = contractInterface.decodeFunctionData(functionFragment.name, _calldata);
+    const contractInterface = new ethers.utils.Interface(
+      CONTRACT_ADDRESSES[hubPoolClient.chainId].lineaL1TokenBridge.abi
+    );
+    const decoded = contractInterface.decodeFunctionData("completeBridging", _calldata);
     // If we've made it this far, then the calldata is a valid TokenBridge calldata.
     const token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, decoded._nativeToken);
     return {
@@ -160,10 +162,10 @@ export function determineMessageType(
   }
   // Next check the UsdcTokenBridge calldata format.
   try {
-    const functionSignature = "receiveFromOtherLayer(address,uint256)";
-    const functionFragment = ethers.utils.FunctionFragment.from(functionSignature);
-    const contractInterface = new ethers.utils.Interface([functionFragment]);
-    const decoded = contractInterface.decodeFunctionData(functionFragment.name, _calldata);
+    const contractInterface = new ethers.utils.Interface(
+      CONTRACT_ADDRESSES[hubPoolClient.chainId].lineaL1UsdcBridge.abi
+    );
+    const decoded = contractInterface.decodeFunctionData("receiveFromOtherLayer", _calldata);
     // If we've made it this far, then the calldata is a valid UsdcTokenBridge calldata.
     return {
       type: "bridge",
@@ -191,4 +193,76 @@ export async function findMessageSentEvents(
     (contract.contract as Contract).filters.MessageSent(l1ToL2AddressesToFinalize),
     searchConfig
   ) as Promise<MessageSentEvent[]>;
+}
+
+export async function findMessageFromTokenBridge(
+  bridgeContract: Contract,
+  messageServiceContract: L1MessageServiceContract | L2MessageServiceContract,
+  l1ToL2AddressesToFinalize: string[],
+  searchConfig: EventSearchConfig
+): Promise<MessageSentEvent[]> {
+  const bridgeEvents = await paginatedEventQuery(
+    bridgeContract,
+    bridgeContract.filters.BridgingInitiated(l1ToL2AddressesToFinalize),
+    searchConfig
+  );
+  const associatedMessages = await Promise.all(
+    bridgeEvents.map(async (event) => {
+      const { logs } = await bridgeContract.provider.getTransactionReceipt(event.transactionHash);
+      return logs
+        .filter((log) => log.topics[0] === messageServiceContract.contract.interface.getEventTopic("MessageSent"))
+        .map((log) => ({
+          ...log,
+          args: messageServiceContract.contract.interface.decodeEventLog("MessageSent", log.data, log.topics),
+        }))
+        .filter((log) => {
+          // Start with the TokenBridge calldata format.
+          try {
+            const decoded = bridgeContract.interface.decodeFunctionData("completeBridging", log.args._calldata);
+            return (
+              compareAddressesSimple(decoded._recipient, event.args.recipient) && decoded._amount.eq(event.args.amount)
+            );
+          } catch (_e) {
+            // We don't care about this because we have more to check
+            return false;
+          }
+        });
+    })
+  );
+  return associatedMessages.flat() as unknown as MessageSentEvent[];
+}
+
+export async function findMessageFromUsdcBridge(
+  bridgeContract: Contract,
+  messageServiceContract: L1MessageServiceContract | L2MessageServiceContract,
+  l1ToL2AddressesToFinalize: string[],
+  searchConfig: EventSearchConfig
+): Promise<MessageSentEvent[]> {
+  const bridgeEvents = await paginatedEventQuery(
+    bridgeContract,
+    bridgeContract.filters.Deposited(l1ToL2AddressesToFinalize),
+    searchConfig
+  );
+  const associatedMessages = await Promise.all(
+    bridgeEvents.map(async (event) => {
+      const { logs } = await bridgeContract.provider.getTransactionReceipt(event.transactionHash);
+      return logs
+        .filter((log) => log.topics[0] === messageServiceContract.contract.interface.getEventTopic("MessageSent"))
+        .map((log) => ({
+          ...log,
+          args: messageServiceContract.contract.interface.decodeEventLog("MessageSent", log.data, log.topics),
+        }))
+        .filter((log) => {
+          // Next check the UsdcTokenBridge calldata format.
+          try {
+            const decoded = bridgeContract.interface.decodeFunctionData("receiveFromOtherLayer", log.args._calldata);
+            return compareAddressesSimple(decoded.recipient, event.args.to) && decoded.amount.eq(event.args.amount);
+          } catch (_e) {
+            // We don't care about this because we have more to check
+            return false;
+          }
+        });
+    })
+  );
+  return associatedMessages.flat() as unknown as MessageSentEvent[];
 }

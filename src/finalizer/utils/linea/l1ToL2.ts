@@ -1,14 +1,20 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
-import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/LineaRollup";
 import { Contract } from "ethers";
 import { getAddress } from "ethers/lib/utils";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
-import { Signer, convertFromWei, paginatedEventQuery, winston } from "../../../utils";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { EventSearchConfig, Signer, convertFromWei, winston } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
-import { determineMessageType, getBlockRangeByHoursOffsets, initLineaSdk } from "./common";
+import {
+  determineMessageType,
+  findMessageFromTokenBridge,
+  findMessageFromUsdcBridge,
+  findMessageSentEvents,
+  getBlockRangeByHoursOffsets,
+  initLineaSdk,
+} from "./common";
 
 export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
@@ -21,8 +27,18 @@ export async function lineaL1ToL2Finalizer(
   const [l1ChainId, hubPoolAddress] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
-  const l2Contract = lineaSdk.getL2Contract();
-  const l1Contract = lineaSdk.getL1Contract();
+  const l2MessageServiceContract = lineaSdk.getL2Contract();
+  const l1MessageServiceContract = lineaSdk.getL1Contract();
+  const l1TokenBridge = new Contract(
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.address,
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.abi,
+    hubPoolClient.hubPool.provider
+  );
+  const l1UsdcBridge = new Contract(
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.address,
+    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.abi,
+    hubPoolClient.hubPool.provider
+  );
 
   // We always want to make sure that the l1ToL2AddressesToFinalize array contains
   // the HubPool address, so we can finalize any pending messages sent from the HubPool.
@@ -41,17 +57,19 @@ export async function lineaL1ToL2Finalizer(
     toBlock,
   });
 
-  // Get Linea's `MessageSent` events originating from the L1->L2 addresses to finalize
-  // Note: An array passed to `filters.MessageSent` will be OR'd together
-  const messageSentEvents = (await paginatedEventQuery(
-    l1Contract.contract,
-    (l1Contract.contract as Contract).filters.MessageSent(l1ToL2AddressesToFinalize),
-    {
-      fromBlock,
-      toBlock,
-      maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
-    }
-  )) as MessageSentEvent[];
+  const searchConfig: EventSearchConfig = {
+    fromBlock,
+    toBlock,
+    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
+  };
+
+  const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
+    findMessageSentEvents(l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageFromUsdcBridge(l1UsdcBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+  ]);
+
+  const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents, ...usdcBridgeEvents];
   const enrichedMessageSentEvents = await sdkUtils.mapAsync(messageSentEvents, async (event) => {
     const {
       transactionHash: txHash,
@@ -60,7 +78,7 @@ export async function lineaL1ToL2Finalizer(
     } = event;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
-    const messageStatus = await l2Contract.getMessageStatus(_messageHash);
+    const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
     return {
       messageSender: _from,
       destination: _to,
@@ -94,7 +112,7 @@ export async function lineaL1ToL2Finalizer(
   // Populate txns for claimable messages
   const populatedTxns = await Promise.all(
     claimable.map(async (message) => {
-      return l2Contract.contract.populateTransaction.claimMessage(
+      return l2MessageServiceContract.contract.populateTransaction.claimMessage(
         message.messageSender,
         message.destination,
         message.fee,
@@ -106,7 +124,7 @@ export async function lineaL1ToL2Finalizer(
     })
   );
   const multicall3Call = populatedTxns.map((txn) => ({
-    target: l2Contract.contractAddress,
+    target: l2MessageServiceContract.contractAddress,
     callData: txn.data,
   }));
 
