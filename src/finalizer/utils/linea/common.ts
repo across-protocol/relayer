@@ -190,7 +190,7 @@ export async function findMessageSentEvents(
 ): Promise<MessageSentEvent[]> {
   return paginatedEventQuery(
     contract.contract,
-    (contract.contract as Contract).filters.MessageSent(l1ToL2AddressesToFinalize),
+    (contract.contract as Contract).filters.MessageSent(l1ToL2AddressesToFinalize, l1ToL2AddressesToFinalize),
     searchConfig
   ) as Promise<MessageSentEvent[]>;
 }
