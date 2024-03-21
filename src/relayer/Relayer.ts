@@ -273,7 +273,8 @@ export class Relayer {
     // a) it exceeds the minimum number of required block confirmations,
     // b) the token balance client has enough tokens to fill it,
     // c) the fill is profitable.
-    // If all hold true then complete the fill. Otherwise, if slow fills are enabled, request a slow fill.
+    // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
+    // enabled then request a slow fill instead.
     const { slowDepositors } = config;
     for (const deposit of allUnfilledDeposits) {
       const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
