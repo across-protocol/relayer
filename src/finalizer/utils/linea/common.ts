@@ -206,11 +206,12 @@ export async function findMessageFromTokenBridge(
     bridgeContract.filters.BridgingInitiated(l1ToL2AddressesToFinalize),
     searchConfig
   );
+  const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
   const associatedMessages = await Promise.all(
     bridgeEvents.map(async (event) => {
       const { logs } = await bridgeContract.provider.getTransactionReceipt(event.transactionHash);
       return logs
-        .filter((log) => log.topics[0] === messageServiceContract.contract.interface.getEventTopic("MessageSent"))
+        .filter((log) => log.topics[0] === messageSent)
         .map((log) => ({
           ...log,
           args: messageServiceContract.contract.interface.decodeEventLog("MessageSent", log.data, log.topics),
@@ -243,11 +244,12 @@ export async function findMessageFromUsdcBridge(
     bridgeContract.filters.Deposited(l1ToL2AddressesToFinalize),
     searchConfig
   );
+  const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
   const associatedMessages = await Promise.all(
     bridgeEvents.map(async (event) => {
       const { logs } = await bridgeContract.provider.getTransactionReceipt(event.transactionHash);
       return logs
-        .filter((log) => log.topics[0] === messageServiceContract.contract.interface.getEventTopic("MessageSent"))
+        .filter((log) => log.topics[0] === messageSent)
         .map((log) => ({
           ...log,
           args: messageServiceContract.contract.interface.decodeEventLog("MessageSent", log.data, log.topics),
