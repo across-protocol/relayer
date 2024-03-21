@@ -320,7 +320,7 @@ export async function getUnfilledDeposits(
     const fillStatus = await sdkUtils.fillStatusArray(spokePool, deposits);
     unfilledDeposits[destinationChainId] = deposits
       .map((deposit, idx) => ({ deposit, fillStatus: fillStatus[idx] }))
-      .filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)
+      .filter(({ fillStatus }) => fillStatus !== FillStatus.Filled)
       .map(({ deposit, fillStatus }) => {
         const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
         const { invalidFills } = destinationClient.getValidUnfilledAmountForDeposit(deposit);

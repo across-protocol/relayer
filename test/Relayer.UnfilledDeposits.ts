@@ -1,6 +1,7 @@
 import * as contracts from "@across-protocol/contracts-v2/dist/test-utils";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { FillStatus } from "../src/interfaces";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -183,9 +184,8 @@ describe("Relayer: Unfilled Deposits", async function () {
         [...deposits]
           .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
           .map((deposit) => ({
-            unfilledAmount: deposit.outputAmount,
             deposit,
-            fillCount: 0,
+            fillStatus: FillStatus.Unfilled,
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
           }))
@@ -216,9 +216,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
       .to.deep.equal([
         {
-          unfilledAmount: deposit.outputAmount,
-          deposit: deposit,
-          fillCount: 0,
+          deposit,
+          fillStatus: FillStatus.Unfilled,
           invalidFills: [invalidFill],
           version: configStoreClient.configStoreVersion,
         },
@@ -372,9 +371,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
       .to.deep.equal([
         {
-          unfilledAmount: deposit.outputAmount,
-          deposit: deposit,
-          fillCount: 0,
+          deposit,
+          fillStatus: FillStatus.Unfilled,
           invalidFills: [invalidFill],
           version: configStoreClient.configStoreVersion,
         },
