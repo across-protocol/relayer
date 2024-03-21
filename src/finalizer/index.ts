@@ -126,10 +126,16 @@ export async function finalize(
     // LineaL1ToL2: Always track HubPool, AtomicDepositor, LineaSpokePool. HubPool sends messages and tokens to the
     // SpokePool, while the relayer rebalances ETH via the AtomicDepositor
     if (chainId === hubChainId) {
+      if (chainId !== CHAIN_IDs.MAINNET) {
+        logger.warn({
+          at: "Finalizer",
+          message: "Testnet Finalizer: skipping finalizations where from or to address is set to AtomicDepositor",
+        });
+      }
       l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
         hubPoolClient.hubPool.address,
-        spokePoolClients[CHAIN_IDs.LINEA].spokePool.address,
-        CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address,
+        spokePoolClients[hubChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI].spokePool.address,
+        hubChainId === CHAIN_IDs.MAINNET ? CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address : undefined,
       ]);
     }
 
