@@ -1554,7 +1554,7 @@ export class Dataworker {
     const l1TokensWithPotentiallyOlderUpdate = expectedTrees.poolRebalanceTree.leaves.reduce((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token) => {
-        if (!l1TokenSet[l1Token] && !updatedL1Tokens.has(l1Token)) {
+        if (!l1TokenSet.includes[l1Token] && !updatedL1Tokens.has(l1Token)) {
           l1TokenSet.push(l1Token);
         }
       });
@@ -1727,7 +1727,7 @@ export class Dataworker {
       if (currentLiquidReserves.gte(netSendAmounts[idx])) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
-          message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount`,
+          message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for hubChain`,
           currentLiquidReserves,
           netSendAmount: netSendAmounts[idx],
           l1Token,
@@ -1751,7 +1751,7 @@ export class Dataworker {
 
       this.logger.debug({
         at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
-        message: `Updating exchange rate update for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the poolRebalanceLeaf.`,
+        message: `Updating exchange rate update for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the hubChain poolRebalanceLeaf.`,
         poolRebalanceLeaf,
         netSendAmount: netSendAmounts[idx],
         currentPooledTokens,
@@ -1776,7 +1776,7 @@ export class Dataworker {
   async _updateExchangeRatesBeforeExecutingNonHubChainLeaves(
     latestLiquidReserves: Record<string, BigNumber>,
     balanceAllocator: BalanceAllocator,
-    poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">[],
+    poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens" | "chainId">[],
     submitExecution: boolean
   ): Promise<Set<string>> {
     const updatedL1Tokens = new Set<string>();
@@ -1813,7 +1813,8 @@ export class Dataworker {
         if (currHubPoolLiquidReserves.gte(leaf.netSendAmounts[idx])) {
           this.logger.debug({
             at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
-            message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount`,
+            message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for chain ${leaf.chainId}`,
+            l2ChainId: leaf.chainId,
             currHubPoolLiquidReserves,
             netSendAmount: leaf.netSendAmounts[idx],
             l1Token,
@@ -1876,16 +1877,15 @@ export class Dataworker {
       const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
 
       // Exit early if we recently synced this token.
-      const lastestFeesCompoundedTime =
+      const latestFeesCompoundedTime =
         this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
-      if (
-        this.clients.hubPoolClient.currentTime === undefined ||
-        this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 2 * 24 * 60 * 60 // 2 day
-      ) {
+      // Force update every 2 days:
+      const timeToNextUpdate = 2 * 24 * 60 * 60 - (this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime);
+      if (this.clients.hubPoolClient.currentTime === undefined || timeToNextUpdate < 0) {
         this.logger.debug({
           at: "Dataworker#_updateOldExchangeRates",
-          message: `Skipping exchange rate update for ${tokenSymbol} because it was recently updated`,
-          lastUpdateTime: lastestFeesCompoundedTime,
+          message: `Skipping exchange rate update for ${tokenSymbol} because it was recently updated. Seconds to next update: ${timeToNextUpdate}s`,
+          lastUpdateTime: latestFeesCompoundedTime,
         });
         return;
       }
@@ -1913,7 +1913,10 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#_updateOldExchangeRates",
         message: `Updating exchange rate for ${tokenSymbol}`,
-        lastUpdateTime: lastestFeesCompoundedTime,
+        lastUpdateTime: latestFeesCompoundedTime,
+        timeToNextUpdate,
+        currentLiquidReserves,
+        updatedLiquidReserves,
         l1Token,
       });
       if (submitExecution) {
