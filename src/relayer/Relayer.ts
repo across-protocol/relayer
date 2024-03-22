@@ -244,13 +244,89 @@ export class Relayer {
       mdcPerChain,
       minDepositConfirmations,
     });
+
     return mdcPerChain;
+  }
+
+  // Iterate over all unfilled deposits. For each unfilled deposit, check that:
+  // a) it exceeds the minimum number of required block confirmations,
+  // b) the token balance client has enough tokens to fill it,
+  // c) the fill is profitable.
+  // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
+  // enabled then request a slow fill instead.
+  async evaluateFill(deposit: V3DepositWithBlock, maxBlockNumber: number, sendSlowRelays: boolean): Promise<void> {
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+    const { hubPoolClient, profitClient, tokenClient } = this.clients;
+    const { slowDepositors } = this.config;
+
+    // If the deposit does not meet the minimum number of block confirmations, skip it.
+    if (deposit.blockNumber > maxBlockNumber) {
+      const chain = getNetworkName(originChainId);
+      this.logger.debug({
+        at: "Relayer",
+        message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
+        depositId,
+        blockNumber: deposit.blockNumber,
+        maxBlockNumber,
+        transactionHash: deposit.transactionHash,
+      });
+      return;
+    }
+
+    // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
+    if (slowDepositors?.includes(depositor)) {
+      if (sendSlowRelays) {
+        this.logger.debug({
+          at: "Relayer",
+          message: "Initiating slow fill for grey listed depositor",
+          depositor,
+        });
+        this.requestSlowFill(deposit);
+      }
+      // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
+      // so we don't fast fill an already slow filled deposit from the slow fill-only list.
+      return;
+    }
+
+    const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+    const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
+    if (tokenClient.hasBalanceForFill(deposit, outputAmount) && !selfRelay) {
+      const {
+        repaymentChainId,
+        realizedLpFeePct,
+        relayerFeePct,
+        gasLimit: _gasLimit,
+        gasCost,
+      } = await this.resolveRepaymentChain(deposit, l1Token);
+      if (isDefined(repaymentChainId)) {
+        const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
+        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+      } else {
+        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+      }
+    } else if (selfRelay) {
+      const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+        ...deposit,
+        paymentChainId: destinationChainId,
+      });
+
+      // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
+      // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
+      // expensive fills on (for example) mainnet.
+      this.fillRelay(deposit, destinationChainId, realizedLpFeePct);
+    } else {
+      // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
+      // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
+      tokenClient.captureTokenShortfallForFill(deposit, outputAmount);
+      if (sendSlowRelays) {
+        this.requestSlowFill(deposit);
+      }
+    }
   }
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
-    const { config } = this;
-    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+    const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
@@ -258,7 +334,7 @@ export class Relayer {
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
-    const allUnfilledDeposits = Object.values(unfilledDeposits.map(({ deposit }) => deposit));
+    const allUnfilledDeposits = unfilledDeposits.map(({ deposit }) => deposit);
     this.logger.debug({
       at: "Relayer#checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
@@ -268,82 +344,12 @@ export class Relayer {
     }
 
     const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
-
-    // Iterate over all unfilled deposits. For each unfilled deposit, check that:
-    // a) it exceeds the minimum number of required block confirmations,
-    // b) the token balance client has enough tokens to fill it,
-    // c) the fill is profitable.
-    // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
-    // enabled then request a slow fill instead.
-    const { slowDepositors } = config;
     for (const deposit of allUnfilledDeposits) {
-      const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
-
-      // If the deposit does not meet the minimum number of block confirmations, skip it.
+      const { originChainId } = deposit;
       const maxBlockNumber = spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId];
-      if (deposit.blockNumber > maxBlockNumber) {
-        const chain = getNetworkName(originChainId);
-        this.logger.debug({
-          at: "Relayer#checkForUnfilledDepositsAndFill",
-          message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
-          depositId,
-          blockNumber: deposit.blockNumber,
-          maxBlockNumber,
-          transactionHash: deposit.transactionHash,
-        });
-        continue;
-      }
-
-      // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-      if (slowDepositors?.includes(depositor)) {
-        if (sendSlowRelays) {
-          this.logger.debug({
-            at: "Relayer#checkForUnfilledDepositsAndFill",
-            message: "Initiating slow fill for grey listed depositor",
-            depositor,
-          });
-          this.requestSlowFill(deposit);
-        }
-        // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
-        // so we don't fast fill an already slow filled deposit from the slow fill-only list.
-        continue;
-      }
-
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
-      const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
-      if (tokenClient.hasBalanceForFill(deposit, outputAmount) && !selfRelay) {
-        const {
-          repaymentChainId,
-          realizedLpFeePct,
-          relayerFeePct,
-          gasLimit: _gasLimit,
-          gasCost,
-        } = await this.resolveRepaymentChain(deposit, l1Token);
-        if (isDefined(repaymentChainId)) {
-          const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-          this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
-        } else {
-          profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-        }
-      } else if (selfRelay) {
-        const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
-          ...deposit,
-          paymentChainId: destinationChainId,
-        });
-
-        // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
-        // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
-        // expensive fills on (for example) mainnet.
-        this.fillRelay(deposit, destinationChainId, realizedLpFeePct);
-      } else {
-        // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
-        // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
-        tokenClient.captureTokenShortfallForFill(deposit, outputAmount);
-        if (sendSlowRelays) {
-          this.requestSlowFill(deposit);
-        }
-      }
+      await this.evaluateFill(deposit, maxBlockNumber, sendSlowRelays);
     }
+
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
     if (tokenClient.anyCapturedShortFallFills()) {
       this.handleTokenShortfall();
