@@ -185,31 +185,11 @@ export class TokenClient {
 
   async update(): Promise<void> {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
-    const redis = await getRedisCache(this.logger);
-    let bondToken: string;
-    let balanceInfo: FetchTokenDataReturnType[];
-    if (redis) {
-      const cachedBondToken = await redis.get<string>(this.getBondTokenCacheKey());
-      if (cachedBondToken !== null) {
-        bondToken = cachedBondToken;
-      }
-    }
-    if (!bondToken) {
-      [balanceInfo, bondToken] = await Promise.all([
-        Promise.all(
-          Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))
-        ),
-        this.hubPoolClient.hubPool.bondToken(),
-      ]);
-      if (redis) {
-        // Save allowance in cache with no TTL as this should never change.
-        await redis.set(this.getBondTokenCacheKey(), bondToken);
-      }
-    } else {
-      balanceInfo = await Promise.all(
-        Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))
-      );
-    }
+
+    const [balanceInfo, bondToken] = await Promise.all([
+      Promise.all(Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))),
+      this._getBondToken(),
+    ]);
 
     this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
 
@@ -235,20 +215,7 @@ export class TokenClient {
     this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData });
   }
 
-  async getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): Promise<string> {
-    return `l2TokenAllowance_${
-      spokePoolClient.chainId
-    }_${originToken}_${await spokePoolClient.spokePool.signer.getAddress()}_targetContract:${
-      spokePoolClient.spokePool.address
-    }`;
-  }
-
-  getBondTokenCacheKey(): string {
-    return `bondToken_${this.hubPoolClient.hubPool.address}`;
-  }
-
   async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<FetchTokenDataReturnType> {
-    const redis = await getRedisCache(this.logger);
     const tokens = spokePoolClient
       .getAllOriginTokens()
       .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
@@ -258,29 +225,61 @@ export class TokenClient {
       await Promise.all(
         tokens.map(async (token) => {
           const balance: BigNumber = await token.balanceOf(this.relayerAddress, { blockTag });
-          let allowance: BigNumber;
-          if (redis) {
-            const result = await redis.get<string>(await this.getAllowanceCacheKey(spokePoolClient, token.address));
-            if (result !== null) {
-              allowance = toBN(result);
-            }
-          }
-          if (!allowance) {
-            allowance = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
-              blockTag,
-            });
-            if (redis) {
-              // Save allowance in cache with no TTL as these should never decrement.
-              await redis.set(await this.getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
-            }
-          }
-
+          const allowance = await this._getAllowance(spokePoolClient, token, blockTag);
           return [token.address, { balance, allowance }];
         })
       )
     );
 
     return { tokenData, chainId: spokePoolClient.chainId };
+  }
+
+  private async _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): Promise<string> {
+    return `l2TokenAllowance_${
+      spokePoolClient.chainId
+    }_${originToken}_${await spokePoolClient.spokePool.signer.getAddress()}_targetContract:${
+      spokePoolClient.spokePool.address
+    }`;
+  }
+
+  private async _getAllowance(
+    spokePoolClient: SpokePoolClient,
+    token: Contract,
+    blockTag: number | "latest"
+  ): Promise<BigNumber> {
+    const redis = await getRedisCache(this.logger);
+    let allowance: BigNumber;
+    if (redis) {
+      const result = await redis.get<string>(await this._getAllowanceCacheKey(spokePoolClient, token.address));
+      if (result !== null) {
+        allowance = toBN(result);
+      }
+    }
+    if (!allowance) {
+      allowance = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
+        blockTag,
+      });
+      if (redis) {
+        // Save allowance in cache with no TTL as these should never decrement.
+        await redis.set(await this._getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
+      }
+    }
+    return allowance;
+  }
+
+  _getBondTokenCacheKey(): string {
+    return `bondToken_${this.hubPoolClient.hubPool.address}`;
+  }
+
+  private async _getBondToken(): Promise<string> {
+    const redis = await getRedisCache(this.logger);
+    if (redis) {
+      const cachedBondToken = await redis.get<string>(this._getBondTokenCacheKey());
+      if (cachedBondToken !== null) {
+        return cachedBondToken;
+      }
+    }
+    return await this.hubPoolClient.hubPool.bondToken();
   }
 
   private _hasTokenPairData(chainId: number, token: string) {
