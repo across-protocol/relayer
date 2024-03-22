@@ -1880,8 +1880,11 @@ export class Dataworker {
       const latestFeesCompoundedTime =
         this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
       // Force update every 2 days:
-      const timeToNextUpdate = 2 * 24 * 60 * 60 - (this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime);
-      if (this.clients.hubPoolClient.currentTime === undefined || timeToNextUpdate < 0) {
+      if (
+        this.clients.hubPoolClient.currentTime === undefined ||
+        this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime <= 2 * 24 * 60 * 60
+      ) {
+        const timeToNextUpdate = 2 * 24 * 60 * 60 - (this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime);
         this.logger.debug({
           at: "Dataworker#_updateOldExchangeRates",
           message: `Skipping exchange rate update for ${tokenSymbol} because it was recently updated. Seconds to next update: ${timeToNextUpdate}s`,
@@ -1914,7 +1917,6 @@ export class Dataworker {
         at: "Dataworker#_updateOldExchangeRates",
         message: `Updating exchange rate for ${tokenSymbol}`,
         lastUpdateTime: latestFeesCompoundedTime,
-        timeToNextUpdate,
         currentLiquidReserves,
         updatedLiquidReserves,
         l1Token,
