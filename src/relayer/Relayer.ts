@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
+import { L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -123,17 +123,6 @@ export class Relayer {
         this.logger.warn({
           at: "Relayer::getUnfilledDeposits",
           message: "Skipping deposit including in-protocol token swap.",
-          deposit,
-        });
-        return false;
-      }
-
-      const destSpokePool = this.clients.spokePoolClients[destinationChainId].spokePool;
-      const fillStatus = await sdkUtils.relayFillStatus(destSpokePool, deposit, "latest", destinationChainId);
-      if (fillStatus === FillStatus.Filled) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit that was already filled.",
           deposit,
         });
         return false;
