@@ -3,18 +3,20 @@ import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
   convertFromWei,
   getDeployedContract,
-  getNetworkName,
   groupObjectCountsByProp,
   Signer,
   winston,
   Contract,
   getCachedProvider,
   getUniqueLogIndex,
+  getCurrentTime,
+  getRedisCache,
+  getBlockForTimestamp,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Multicall2Call } from "../../common";
-import { FinalizerPromise, CrossChainTransfer } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -38,23 +40,24 @@ export async function polygonFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
 
   const posClient = await getPosClient(signer);
+  const lookback = getCurrentTime() - 60 * 60 * 24;
+  const redis = await getRedisCache(logger);
+  const fromBlock = await getBlockForTimestamp(chainId, lookback, undefined, redis);
+
   logger.debug({
-    at: "Finalizer#polygonFinalizer",
-    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
+    at: "Finalizer#PolygonFinalizer",
+    message: "Polygon TokensBridged event filter",
+    fromBlock,
   });
 
   // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
   // that are older than 1 day old:
-  const recentTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter((e) => e.blockNumber >= latestBlockToFinalize);
+  const recentTokensBridgedEvents = spokePoolClient.getTokensBridged().filter((e) => e.blockNumber >= fromBlock);
 
   return multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
 }
@@ -169,7 +172,7 @@ async function multicallPolygonFinalizations(
 
   return {
     callData: [...finalizedBridges.callData, ...finalizedRetrievals.callData],
-    crossChainTransfers: [...finalizedBridges.crossChainTransfers, ...finalizedRetrievals.crossChainTransfers],
+    crossChainMessages: [...finalizedBridges.crossChainMessages, ...finalizedRetrievals.crossChainMessages],
   };
 }
 
@@ -179,12 +182,12 @@ async function resolvePolygonBridgeFinalizations(
   hubPoolClient: HubPoolClient
 ): Promise<FinalizerPromise> {
   const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
-  const crossChainTransfers = finalizableMessages.map((finalizableMessage) =>
+  const crossChainMessages = finalizableMessages.map((finalizableMessage) =>
     resolveCrossChainTransferStructure(finalizableMessage, "withdrawal", hubPoolClient)
   );
   return {
     callData,
-    crossChainTransfers,
+    crossChainMessages,
   };
 }
 
@@ -205,12 +208,12 @@ async function resolvePolygonRetrievalFinalizations(
       retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
     )
   );
-  const crossChainTransfers = finalizableMessages.map((finalizableMessage) =>
+  const crossChainMessages = finalizableMessages.map((finalizableMessage) =>
     resolveCrossChainTransferStructure(finalizableMessage, "misc", hubPoolClient)
   );
   return {
     callData,
-    crossChainTransfers,
+    crossChainMessages,
   };
 }
 
@@ -218,7 +221,7 @@ function resolveCrossChainTransferStructure(
   finalizableMessage: PolygonTokensBridged,
   type: "misc" | "withdrawal",
   hubPoolClient: HubPoolClient
-): CrossChainTransfer {
+): CrossChainMessage {
   const { l2TokenAddress, amountToReturn } = finalizableMessage;
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
     l2TokenAddress,
@@ -234,7 +237,7 @@ function resolveCrossChainTransferStructure(
     amount: amountFromWei,
   };
 
-  const crossChainTransfers: CrossChainTransfer =
+  const crossChainTransfers: CrossChainMessage =
     type === "misc" ? { ...transferBase, type, miscReason: "retrieval" } : { ...transferBase, type };
   return crossChainTransfers;
 }

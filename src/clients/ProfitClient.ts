@@ -95,12 +95,14 @@ const QUERY_HANDLERS: {
   137: relayFeeCalculator.PolygonQueries,
   288: relayFeeCalculator.BobaQueries,
   324: relayFeeCalculator.ZkSyncQueries,
-  42161: relayFeeCalculator.ArbitrumQueries,
   8453: relayFeeCalculator.BaseQueries,
+  42161: relayFeeCalculator.ArbitrumQueries,
+  59144: relayFeeCalculator.LineaQueries,
   // Testnets:
   5: relayFeeCalculator.EthereumGoerliQueries,
   280: relayFeeCalculator.zkSyncGoerliQueries,
   420: relayFeeCalculator.OptimismGoerliQueries,
+  59140: relayFeeCalculator.LineaGoerliQueries,
   80001: relayFeeCalculator.PolygonMumbaiQueries,
   84531: relayFeeCalculator.BaseGoerliQueries,
   84532: relayFeeCalculator.BaseSepoliaQueries,
@@ -223,7 +225,7 @@ export class ProfitClient {
     return price;
   }
 
-  async getTotalGasCost(deposit: Deposit, fillAmount?: BigNumber): Promise<TransactionCostEstimate> {
+  async getTotalGasCost(deposit: V3Deposit, fillAmount?: BigNumber): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
     fillAmount ??= sdkUtils.getDepositOutputAmount(deposit);
 
@@ -235,7 +237,7 @@ export class ProfitClient {
 
     const { relayerAddress, relayerFeeQueries } = this;
     try {
-      return await relayerFeeQueries[chainId].getGasCosts(deposit, fillAmount, relayerAddress);
+      return await relayerFeeQueries[chainId].getGasCosts(deposit, relayerAddress);
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       this.logger.warn({
@@ -251,7 +253,7 @@ export class ProfitClient {
 
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
-    deposit: Deposit,
+    deposit: V3Deposit,
     fillAmount?: BigNumber
   ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
@@ -606,7 +608,6 @@ export class ProfitClient {
       const deposit = { ...sampleDeposit, destinationChainId, outputToken };
       this.totalGasCosts[destinationChainId] = await relayerFeeQueries[destinationChainId].getGasCosts(
         deposit,
-        outputAmount,
         relayer
       );
     });

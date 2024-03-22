@@ -44,6 +44,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
   // of the list.
   constructor(
     maxConcurrency: number,
+    readonly pctRpcCallsLogged: number,
     ...cacheConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
   ) {
     super(...cacheConstructorParams);
@@ -57,6 +58,45 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
         .then(resolve)
         .catch(reject);
     }, maxConcurrency);
+  }
+
+  async wrapSendWithLog(method: string, params: Array<any>) {
+    if (this.pctRpcCallsLogged <= 0 || Math.random() > this.pctRpcCallsLogged / 100) {
+      // Non sample path: no logging or timing, just issue the request.
+      return super.send(method, params);
+    } else {
+      const loggerArgs = {
+        at: "ProviderUtils",
+        message: "Provider response sample",
+        provider: getOriginFromURL(this.connection.url),
+        method,
+        params,
+      };
+
+      // In this path we log an rpc response sample.
+      // Note: use performance.now() to ensure a purely monotonic clock.
+      const startTime = performance.now();
+      try {
+        const result = await super.send(method, params);
+        const elapsedTimeS = (performance.now() - startTime) / 1000;
+        logger.debug({
+          ...loggerArgs,
+          success: true,
+          timeElapsed: elapsedTimeS,
+        });
+        return result;
+      } catch (error) {
+        // Log errors as well.
+        // For now, to keep logs light, don't log the error itself, just propogate and let it be handled higher up.
+        const elapsedTimeS = (performance.now() - startTime) / 1000;
+        logger.debug({
+          ...loggerArgs,
+          success: false,
+          timeElapsed: elapsedTimeS,
+        });
+        throw error;
+      }
+    }
   }
 
   override async send(method: string, params: Array<any>): Promise<any> {
@@ -273,6 +313,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     readonly delay: number,
     readonly maxConcurrency: number,
     providerCacheNamespace: string,
+    pctRpcCallsLogged: number,
     redisClient?: RedisClient,
     standardTtlBlockDistance?: number,
     noTtlBlockDistance?: number
@@ -288,6 +329,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
           standardTtlBlockDistance,
           noTtlBlockDistance,
           maxConcurrency,
+          pctRpcCallsLogged,
           ...inputs
         )
     );
@@ -440,6 +482,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
       logger.warn({
         at: "ProviderUtils",
         message: "Some providers mismatched with the quorum result or failed 🚸",
+        notificationPath: "across-warn",
         method,
         params,
         quorumProviders,
@@ -554,6 +597,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     NODE_PROVIDER_CACHE_NAMESPACE,
     NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS,
     NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING,
+    NODE_PCT_RPC_CALLS_LOGGED,
   } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
@@ -603,6 +647,10 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   const logEveryNRateLimitErrors = Number(NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS || "100");
 
+  const pctRpcCallsLogged = Number(
+    process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || NODE_PCT_RPC_CALLS_LOGGED || "0"
+  );
+
   // Custom delay + logging for RPC rate-limiting.
   let rateLimitLogCounter = 0;
   const rpcRateLimited =
@@ -650,6 +698,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     retryDelay,
     nodeMaxConcurrency,
     providerCacheNamespace,
+    pctRpcCallsLogged,
     redisClient,
     disableProviderCache ? undefined : standardTtlBlockDistance,
     disableNoTtlCaching ? undefined : noTtlBlockDistance

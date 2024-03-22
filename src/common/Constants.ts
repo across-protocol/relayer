@@ -19,6 +19,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   324: 4 * 24 * 60 * 60,
   8453: 172800, // Same as Optimism.
   42161: 1382400,
+  59144: 86400, // 1 block every 4 seconds
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -48,16 +49,18 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // anything under 7 days.
 export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-  10: 60,
+  10: 120,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
-  324: 0,
-  8453: 60,
+  324: 120,
+  8453: 120,
   42161: 0,
+  59144: 30,
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -75,10 +78,12 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
+    59144: 1,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    59140: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -91,10 +96,12 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     324: 0,
     8453: 60,
     42161: 0,
+    59144: 1,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    59140: 0,
     80001: 0,
     84531: 0,
     421613: 0,
@@ -116,10 +123,12 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   324: 10000,
   8453: 1500,
   42161: 10000,
+  59144: 10000,
   // Testnets:
   5: 10000,
   280: 10000,
   420: 10000,
+  59140: 10000,
   80001: 10000,
   84531: 10000,
   84532: 10000,
@@ -129,18 +138,24 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   11155420: 10000,
 };
 
+// These should be safely above the finalization period for the chain and
+// also give enough buffer time so that any reasonable fill on the chain
+// can be matched with a deposit on the origin chain, so something like
+// ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 25, // At 12s/block, 25 blocks = 5 mins
-  10: 150, // 2s/block, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
-  137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
+  1: 10, // 12s/block
+  10: 60, // 2s/block
+  137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  324: 1500, // At 1s/block, 25 mins = 1500 blocks.
-  8453: 750, // At 2s/block, 25 mins = 750 blocks.
-  42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  8453: 60, // 2s/block. Same finality profile as Optimism
+  42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
+  59144: 30, // At 4s/block, 2 mins = 30 blocks.
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -180,11 +195,13 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   324: 512,
   8453: 120,
   42161: 32,
+  59144: 75, // Linea has a soft-finality of 1 block. This value is padded - but at 4s/block the padding is 5 minutes
   534352: 0,
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  59140: 0,
   80001: 0,
   84531: 0,
   84532: 0,
@@ -205,6 +222,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   288: 86400,
   324: 172800,
   8453: 86400,
+  59144: 43200,
   42161: 691200,
   534352: 57600,
 };
@@ -234,11 +252,13 @@ export const multicall3Addresses = {
   324: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   8453: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  59144: "0xcA11bde05977b3631167028862bE2a173976CA11",
   534352: "0xcA11bde05977b3631167028862bE2a173976CA11",
   // testnet
   5: "0xcA11bde05977b3631167028862bE2a173976CA11",
   280: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   420: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  59140: "0xcA11bde05977b3631167028862bE2a173976CA11",
   80001: "0xcA11bde05977b3631167028862bE2a173976CA11",
   84531: "0xcA11bde05977b3631167028862bE2a173976CA11",
   84532: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -253,7 +273,7 @@ export type Multicall2Call = {
 
 // These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
 // a bundle execution is possible with the funds in the pool.
-export const spokesThatHoldEthAndWeth = [10, 324, 8453];
+export const spokesThatHoldEthAndWeth = [10, 324, 8453, 59144];
 
 /**
  * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers

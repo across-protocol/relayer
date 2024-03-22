@@ -208,31 +208,19 @@ export class Relayer {
     return true;
   }
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
-    // Fetch all unfilled deposits, order by total earnable fee.
-    const { config } = this;
-    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, inventoryClient, multiCallerClient } =
-      this.clients;
-
-    // Flush any pre-existing enqueued transactions that might not have been executed.
-    multiCallerClient.clearTransactionQueue();
-
-    // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
-    // per chain, which is based on the deposit volume we could fill.
-    const unfilledDeposits = await this._getUnfilledDeposits();
+  computeRequiredDepositConfirmations(deposits: V3Deposit[]): { [chainId: number]: number } {
+    const { profitClient } = this.clients;
+    const { minDepositConfirmations } = this.config;
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce(
-      (agg, { deposit }) => {
-        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
-        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
-        return agg;
-      },
-      {}
-    );
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits.reduce((agg, deposit) => {
+      const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+      agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+      return agg;
+    }, {});
 
     // Sort thresholds in ascending order.
-    const minimumDepositConfirmationThresholds = Object.keys(config.minDepositConfirmations)
+    const minimumDepositConfirmationThresholds = Object.keys(minDepositConfirmations)
       .filter((x) => x !== "default")
       .sort((x, y) => Number(x) - Number(y));
 
@@ -240,14 +228,13 @@ export class Relayer {
     // If we can't find a threshold greater than the USD amount, then use the default.
     const mdcPerChain = Object.fromEntries(
       Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
-        const usdThreshold = minimumDepositConfirmationThresholds.find((_usdThreshold) => {
-          return (
-            toBNWei(_usdThreshold).gte(unfilledAmount) &&
-            isDefined(config.minDepositConfirmations[_usdThreshold][chainId])
-          );
-        });
+        const usdThreshold = minimumDepositConfirmationThresholds.find(
+          (usdThreshold) =>
+            toBNWei(usdThreshold).gte(unfilledAmount) && isDefined(minDepositConfirmations[usdThreshold][chainId])
+        );
+
         // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
-        return [chainId, config.minDepositConfirmations[usdThreshold ?? "default"][chainId]];
+        return [chainId, minDepositConfirmations[usdThreshold ?? "default"][chainId]];
       })
     );
     this.logger.debug({
@@ -255,35 +242,63 @@ export class Relayer {
       message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
-      minDepositConfirmations: config.minDepositConfirmations,
+      minDepositConfirmations,
     });
+    return mdcPerChain;
+  }
 
-    // Filter out deposits whose block time does not meet the minimum number of confirmations for the origin chain.
-    const confirmedUnfilledDeposits = unfilledDeposits
-      .filter(
-        ({ deposit: { originChainId, blockNumber } }) =>
-          blockNumber <= spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId]
-      )
-      .map(({ deposit }) => deposit);
+  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
+    // Fetch all unfilled deposits, order by total earnable fee.
+    const { config } = this;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+
+    // Flush any pre-existing enqueued transactions that might not have been executed.
+    multiCallerClient.clearTransactionQueue();
+
+    // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
+    // per chain, which is based on the deposit volume we could fill.
+    const unfilledDeposits = await this._getUnfilledDeposits();
+    const allUnfilledDeposits = Object.values(unfilledDeposits.map(({ deposit }) => deposit));
     this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
-      message: `${confirmedUnfilledDeposits.length} unfilled deposits found`,
+      at: "Relayer#checkForUnfilledDepositsAndFill",
+      message: `${allUnfilledDeposits.length} unfilled deposits found.`,
     });
+    if (allUnfilledDeposits.length === 0) {
+      return;
+    }
 
-    // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
-    // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
-    // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
-    // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
-    // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
+    const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
+
+    // Iterate over all unfilled deposits. For each unfilled deposit, check that:
+    // a) it exceeds the minimum number of required block confirmations,
+    // b) the token balance client has enough tokens to fill it,
+    // c) the fill is profitable.
+    // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
+    // enabled then request a slow fill instead.
     const { slowDepositors } = config;
-    for (const deposit of confirmedUnfilledDeposits) {
-      const { depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+    for (const deposit of allUnfilledDeposits) {
+      const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+
+      // If the deposit does not meet the minimum number of block confirmations, skip it.
+      const maxBlockNumber = spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId];
+      if (deposit.blockNumber > maxBlockNumber) {
+        const chain = getNetworkName(originChainId);
+        this.logger.debug({
+          at: "Relayer#checkForUnfilledDepositsAndFill",
+          message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
+          depositId,
+          blockNumber: deposit.blockNumber,
+          maxBlockNumber,
+          transactionHash: deposit.transactionHash,
+        });
+        continue;
+      }
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (slowDepositors?.includes(depositor)) {
         if (sendSlowRelays) {
           this.logger.debug({
-            at: "Relayer",
+            at: "Relayer#checkForUnfilledDepositsAndFill",
             message: "Initiating slow fill for grey listed depositor",
             depositor,
           });
@@ -324,73 +339,6 @@ export class Relayer {
         // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
         // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
         tokenClient.captureTokenShortfallForFill(deposit, outputAmount);
-
-        // Before deciding whether to zero fill, first determine if the inventory manager will subsequently send
-        // funds to the destination chain to cover the shortfall. If it will, then check if the new balance
-        // will be enough for the relayer to submit a fast fill. If so, then don't zero fill so that the
-        // relayer can send this full fill and elect where to take repayment. This is assuming the contract
-        // enforces that partial fills must take  repayment on the destination which can lead to over-allocations
-        // on the destination chain if we always sent zero/partial fills here.
-        let willFastFillAfterRebalance = false;
-
-        // @dev: `getBalanceOnChainForL1Token` accounts for outstanding cross chain transfers via the
-        // CrossChainTransferClient.
-        const currentDestinationChainBalance = inventoryClient.getBalanceOnChainForL1Token(
-          destinationChainId,
-          l1Token.address
-        );
-        const crossChainTxns = inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-          this.relayerAddress,
-          destinationChainId,
-          l1Token.address
-        );
-        let newChainBalance = currentDestinationChainBalance;
-        if (newChainBalance.gte(outputAmount)) {
-          this.logger.debug({
-            at: "Relayer",
-            message:
-              "Skipping zero fills for this token because there are outstanding cross chain transfers that can be used to fast fill this deposit",
-            currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
-            crossChainTxns,
-          });
-          continue;
-        }
-
-        // Check for upcoming rebalances.
-        const rebalances = inventoryClient.getPossibleRebalances();
-        const rebalanceForFilledToken = rebalances.find(
-          ({ l1Token: l1TokenForFill, chainId, amount, balance }) =>
-            l1TokenForFill === l1Token.address && chainId === destinationChainId && amount.lte(balance) // It's important we count only rebalances that are executable based on current L1 balance.
-        );
-        if (rebalanceForFilledToken !== undefined) {
-          newChainBalance = newChainBalance.add(rebalanceForFilledToken.amount);
-          willFastFillAfterRebalance = newChainBalance.gte(outputAmount);
-          this.logger.debug({
-            at: "Relayer",
-            message:
-              "Inventory manager will rebalance to this chain after capturing token shortfall. Will skip zero fill if this deposit will be fillable after rebalance.",
-            currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
-            crossChainTxns,
-            newChainBalance,
-            rebalanceForFilledToken,
-            rebalances,
-            willFastFillAfterRebalance,
-          });
-          if (willFastFillAfterRebalance) {
-            continue;
-          }
-        } else {
-          this.logger.debug({
-            at: "Relayer",
-            message: "No rebalances for filled token, proceeding to evaluate slow fill request",
-            depositL1Token: l1Token.address,
-            currentDestinationChainBalanceIncludingOutstandingTransfers: currentDestinationChainBalance,
-            crossChainTxns,
-            rebalances,
-          });
-        }
-
-        // If we don't have enough balance to fill the deposit, consider requesting a slow fill.
         if (sendSlowRelays) {
           this.requestSlowFill(deposit);
         }

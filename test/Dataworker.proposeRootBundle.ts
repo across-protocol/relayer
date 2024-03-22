@@ -1,16 +1,17 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
-import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId } from "./constants";
+import { MAX_UINT_VAL } from "../src/utils";
+import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
   SignerWithAddress,
-  buildDeposit,
-  buildFillForRepaymentChain,
+  depositV3,
   ethers,
   expect,
+  fillV3,
   lastSpyLogIncludes,
   lastSpyLogLevel,
+  requestSlowFill,
   sinon,
   toBNWei,
   utf8ToHex,
@@ -18,7 +19,6 @@ import {
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { FillWithBlock } from "../src/interfaces";
 import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
@@ -73,17 +73,17 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
-    const deposit = await buildDeposit(
-      hubPoolClient,
+    const deposit = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
     await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await requestSlowFill(spokePool_2, depositor, deposit);
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
     const blockRange2 = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock2]);
@@ -100,14 +100,6 @@ describe("Dataworker: Propose root bundle", async function () {
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
-    expect(loadDataResults2.unfilledDepositsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
-    expect(loadDataResults2.depositsInRangeByOriginChain).to.deep.equal({
-      [originChainId]: { [getDepositPath(deposit)]: 1 },
-    });
-    expect(loadDataResults2.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: 1 },
-    });
-
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot2.tree.getHexRoot());
@@ -159,7 +151,7 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
     const latestBlock4 = await hubPool.provider.getBlockNumber();
     const blockRange4 = [
@@ -175,6 +167,7 @@ describe("Dataworker: Propose root bundle", async function () {
       expectedPoolRebalanceRoot4.leaves,
       expectedPoolRebalanceRoot4.runningBalances
     );
+    const expectedSlowRelayRefundRoot4 = await dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
 
     // TEST 5:
     // Won't submit anything if the USD threshold to propose a root is set and set too high:
@@ -185,31 +178,11 @@ describe("Dataworker: Propose root bundle", async function () {
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
-    expect(loadDataResults4.unfilledDepositsByDestinationChain).to.deep.equal({});
-    expect(loadDataResults4.depositsInRangeByOriginChain).to.deep.equal({});
-    expect(loadDataResults4.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: 1 },
-    });
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.relayerRefundRoot).to.equal(expectedRelayerRefundRoot4.tree.getHexRoot());
-    expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(EMPTY_MERKLE_ROOT);
-
-    // Should be able to look up 2 historical valid fills, even though there is 1 refund in the range.
-    // This test is really important because `allValidFills` should not constrain by block range otherwise the pool
-    // rebalance root can fail to be built in cases where a fill in the block range matches a deposit with a fill
-    // in a previous root bundle. This would be a case where there is excess slow fill payment sent to the spoke
-    // pool and we need to send some back to the hub pool, because of this fill in the current block range that
-    // came after the slow fill was sent.
-    const { allValidFills } = await dataworkerInstance.clients.bundleDataClient.loadData(
-      loadDataResults4.blockRangesForChains,
-      spokePoolClients
-    );
-    const allValidFillsByDestinationChain = allValidFills.filter(
-      (fill: FillWithBlock) => fill.destinationChainId === destinationChainId
-    );
-    expect(allValidFillsByDestinationChain.length).to.equal(2);
+    expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(expectedSlowRelayRefundRoot4.tree.getHexRoot());
 
     // Execute queue and check that root bundle is pending:
     await multiCallerClient.executeTransactionQueue();
@@ -232,17 +205,18 @@ describe("Dataworker: Propose root bundle", async function () {
     await spokePool_1.setCurrentTime(updateTime + 1);
     await updateAllClients();
 
-    const deposit = await buildDeposit(
-      hubPoolClient,
+    const deposit = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
+
     await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(multiCallerClient.transactionCount()).to.equal(0);

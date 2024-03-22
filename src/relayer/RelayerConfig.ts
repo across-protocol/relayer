@@ -1,10 +1,12 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
+import { BigNumber, toBNWei, assert, isDefined, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
-  readonly inventoryConfig: InventoryConfig;
+  readonly externalInventoryConfig?: string;
+  inventoryConfig: InventoryConfig;
+
   readonly debugProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
   // If this is false, the relayer will throw an error when fetching prices fails.
@@ -41,6 +43,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_GAS_MESSAGE_MULTIPLIER,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_GAS_PADDING,
+      RELAYER_EXTERNAL_INVENTORY_CONFIG,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
@@ -67,7 +70,14 @@ export class RelayerConfig extends CommonConfig {
     this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
-    this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
+
+    assert(
+      !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
+      "Concurrent inventory management configurations detected."
+    );
+    this.externalInventoryConfig = RELAYER_EXTERNAL_INVENTORY_CONFIG;
+    this.inventoryConfig = JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     if (Object.keys(this.inventoryConfig).length > 0) {

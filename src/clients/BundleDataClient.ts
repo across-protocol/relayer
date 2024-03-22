@@ -221,10 +221,17 @@ export class BundleDataClient {
   // - Bundles that are pending liveness
   // - Not yet proposed bundles
   async getNextBundleRefunds(): Promise<CombinedRefunds> {
-    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
+    const hubPoolClient = this.clients.hubPoolClient;
+    const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      hubPoolClient.latestBlockSearched,
+      hubPoolClient.chainId
+    );
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
+    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
+      chainIds,
       this.spokePoolClients,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockSearched,
       this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)
@@ -302,9 +309,11 @@ export class BundleDataClient {
       throw new Error("HubPoolClient not updated");
     }
 
-    if (blockRangesForChains.length > this.chainIdListForBundleEvaluationBlockNumbers.length) {
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(blockRangesForChains[0][0]);
+
+    if (blockRangesForChains.length > chainIds.length) {
       throw new Error(
-        `Unexpected block range list length of ${blockRangesForChains.length}, should be <= ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
+        `Unexpected block range list length of ${blockRangesForChains.length}, should be <= ${chainIds.length}`
       );
     }
 
@@ -371,7 +380,7 @@ export class BundleDataClient {
         fill,
         this.clients.hubPoolClient,
         blockRangesForChains,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
 
       // Fills to refund includes both slow and non-slow fills and they both should increase the
@@ -414,17 +423,13 @@ export class BundleDataClient {
     };
 
     const _isChainDisabled = (chainId: number): boolean => {
-      const blockRangeForChain = getBlockRangeForChain(
-        blockRangesForChains,
-        chainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
+      const blockRangeForChain = getBlockRangeForChain(blockRangesForChains, chainId, chainIds);
       return isChainDisabled(blockRangeForChain);
     };
 
     // Infer chain ID's to load from number of block ranges passed in.
     const allChainIds = blockRangesForChains
-      .map((_blockRange, index) => this.chainIdListForBundleEvaluationBlockNumbers[index])
+      .map((_blockRange, index) => chainIds[index])
       .filter((chainId) => !_isChainDisabled(chainId));
     allChainIds.forEach((chainId) => {
       const spokePoolClient = spokePoolClients[chainId];
@@ -440,11 +445,7 @@ export class BundleDataClient {
     const _cachedBundleTimestamps = this.getBundleTimestampsFromCache(key);
     let bundleBlockTimestamps: { [chainId: string]: number[] } = {};
     if (!_cachedBundleTimestamps) {
-      bundleBlockTimestamps = await this.getBundleBlockTimestamps(
-        this.chainIdListForBundleEvaluationBlockNumbers,
-        blockRangesForChains,
-        spokePoolClients
-      );
+      bundleBlockTimestamps = await this.getBundleBlockTimestamps(chainIds, blockRangesForChains, spokePoolClients);
       this.setBundleTimestampsInCache(key, bundleBlockTimestamps);
       if (logData) {
         this.logger.debug({
@@ -491,7 +492,7 @@ export class BundleDataClient {
             blockRangesForChains,
             Number(originChainId),
             Number(destinationChainId),
-            this.chainIdListForBundleEvaluationBlockNumbers,
+            chainIds,
             originClient,
             deposits
           )
@@ -504,17 +505,13 @@ export class BundleDataClient {
             blockRangesForChains,
             Number(originChainId),
             Number(destinationChainId),
-            this.chainIdListForBundleEvaluationBlockNumbers,
+            chainIds,
             originClient,
             earlyDeposits
           )
         );
 
-        const blockRangeForChain = getBlockRangeForChain(
-          blockRangesForChains,
-          Number(destinationChainId),
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
+        const blockRangeForChain = getBlockRangeForChain(blockRangesForChains, Number(destinationChainId), chainIds);
 
         // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
         // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
@@ -603,11 +600,7 @@ export class BundleDataClient {
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
-      const originChainBlockRange = getBlockRangeForChain(
-        blockRangesForChains,
-        originChainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
+      const originChainBlockRange = getBlockRangeForChain(blockRangesForChains, originChainId, chainIds);
 
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) {
@@ -666,11 +659,7 @@ export class BundleDataClient {
         }
 
         const destinationClient = spokePoolClients[destinationChainId];
-        const destinationChainBlockRange = getBlockRangeForChain(
-          blockRangesForChains,
-          destinationChainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
+        const destinationChainBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
 
         // Keep track of fast fills that replaced slow fills, which we'll use to create "unexecutable" slow fills
         // if the slow fill request was sent in a prior bundle.
@@ -851,11 +840,7 @@ export class BundleDataClient {
             fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill,
             "Fill type should be ReplacedSlowFill."
           );
-          const destinationBlockRange = getBlockRangeForChain(
-            blockRangesForChains,
-            destinationChainId,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          );
+          const destinationBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
           if (
             // If the slow fill request that was replaced by this fill was in an older bundle, then we don't
             // need to check if the slow fill request was valid since we can assume all bundles in the past
@@ -894,11 +879,7 @@ export class BundleDataClient {
       const { deposit, slowFillRequest, fill } = v3RelayHashes[relayDataHash];
       assert(deposit, "Deposit should exist in relay hash dictionary.");
       const { destinationChainId } = deposit;
-      const destinationBlockRange = getBlockRangeForChain(
-        blockRangesForChains,
-        destinationChainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
+      const destinationBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
 
       // Only look for deposits that were mined before this bundle and that are newly expired.
       // If the fill deadline is lower than the bundle start block on the destination chain, then
@@ -969,7 +950,7 @@ export class BundleDataClient {
                 fill,
                 this.clients.hubPoolClient,
                 blockRangesForChains,
-                this.chainIdListForBundleEvaluationBlockNumbers
+                chainIds
               );
               return {
                 ...fill,
@@ -1008,7 +989,7 @@ export class BundleDataClient {
         fill,
         this.clients.hubPoolClient,
         blockRangesForChains,
-        this.chainIdListForBundleEvaluationBlockNumbers
+        chainIds
       );
       updateBundleFillsV3(bundleFillsV3, fill, realizedLpFeePct, chainToSendRefundTo, repaymentToken);
     });
@@ -1030,7 +1011,7 @@ export class BundleDataClient {
 
     const spokeEventsReadable = prettyPrintSpokePoolEvents(
       blockRangesForChains,
-      this.chainIdListForBundleEvaluationBlockNumbers,
+      chainIds,
       deposits,
       allValidFills,
       allRelayerRefunds,
@@ -1046,11 +1027,7 @@ export class BundleDataClient {
       unexecutableSlowFills
     );
     if (logData) {
-      const mainnetRange = getBlockRangeForChain(
-        blockRangesForChains,
-        this.clients.hubPoolClient.chainId,
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
+      const mainnetRange = getBlockRangeForChain(blockRangesForChains, this.clients.hubPoolClient.chainId, chainIds);
       this.logger.debug({
         at: "BundleDataClient#loadData",
         message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
@@ -1109,7 +1086,7 @@ export class BundleDataClient {
       (
         await utils.mapAsync(chainIds, async (chainId, index) => {
           const blockRangeForChain = blockRangesForChains[index];
-          if (isChainDisabled(blockRangeForChain)) {
+          if (!isDefined(blockRangeForChain) || isChainDisabled(blockRangeForChain)) {
             return;
           }
           const [_startBlockForChain, _endBlockForChain] = blockRangeForChain;
