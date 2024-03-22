@@ -137,8 +137,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           fromBlocks
         );
 
-        // Warm cache before executing slow and refund leaves.
-        await dataworker.warmBundleDataCache(spokePoolClients, fromBlocks);
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
         await dataworker.executeSlowRelayLeaves(
           spokePoolClients,
