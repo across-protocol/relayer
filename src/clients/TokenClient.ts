@@ -22,10 +22,6 @@ type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumbe
 type TokenShortfallType = {
   [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
 };
-type FetchTokenDataReturnType = {
-  tokenData: Record<string, { balance: BigNumber; allowance: BigNumber }>;
-  chainId: number;
-};
 
 export class TokenClient {
   tokenData: TokenDataType = {};
@@ -215,7 +211,10 @@ export class TokenClient {
     this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData });
   }
 
-  async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<FetchTokenDataReturnType> {
+  async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<{
+    tokenData: Record<string, { balance: BigNumber; allowance: BigNumber }>;
+    chainId: number;
+  }> {
     const tokens = spokePoolClient
       .getAllOriginTokens()
       .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
@@ -248,21 +247,18 @@ export class TokenClient {
     blockTag: number | "latest"
   ): Promise<BigNumber> {
     const redis = await getRedisCache(this.logger);
-    let allowance: BigNumber;
     if (redis) {
       const result = await redis.get<string>(await this._getAllowanceCacheKey(spokePoolClient, token.address));
       if (result !== null) {
-        allowance = toBN(result);
+        return toBN(result);
       }
     }
-    if (!allowance) {
-      allowance = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
-        blockTag,
-      });
-      if (redis) {
-        // Save allowance in cache with no TTL as these should never decrement.
-        await redis.set(await this._getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
-      }
+    const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
+      blockTag,
+    });
+    if (redis) {
+      // Save allowance in cache with no TTL as these should never decrement.
+      await redis.set(await this._getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
     }
     return allowance;
   }
@@ -279,7 +275,12 @@ export class TokenClient {
         return cachedBondToken;
       }
     }
-    return await this.hubPoolClient.hubPool.bondToken();
+    const bondToken: string = await this.hubPoolClient.hubPool.bondToken();
+    if (redis) {
+      // Save allowance in cache with no TTL as this should never change.
+      await redis.set(this._getBondTokenCacheKey(), bondToken);
+    }
+    return bondToken;
   }
 
   private _hasTokenPairData(chainId: number, token: string) {
