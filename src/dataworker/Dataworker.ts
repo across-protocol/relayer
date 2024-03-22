@@ -1554,7 +1554,7 @@ export class Dataworker {
     const l1TokensWithPotentiallyOlderUpdate = expectedTrees.poolRebalanceTree.leaves.reduce((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token) => {
-        if (!l1TokenSet.includes[l1Token] && !updatedL1Tokens.has(l1Token)) {
+        if (!l1TokenSet.includes(l1Token) && !updatedL1Tokens.has(l1Token)) {
           l1TokenSet.push(l1Token);
         }
       });
