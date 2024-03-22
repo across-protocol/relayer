@@ -73,7 +73,6 @@ export class RelayerConfig extends CommonConfig {
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
       "Concurrent inventory management configurations detected."
     );
-    this.externalInventoryConfig = RELAYER_EXTERNAL_INVENTORY_CONFIG;
     this.inventoryConfig = isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG)
       ? readFileSync(RELAYER_EXTERNAL_INVENTORY_CONFIG)
       : JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
