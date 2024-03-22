@@ -1,12 +1,10 @@
-import { BigNumber, toBNWei, assert, isDefined, toBN, replaceAddressCase, ethers } from "../utils";
+import { BigNumber, toBNWei, assert, isDefined, readFileSync, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
-  readonly externalInventoryConfig?: string;
-  inventoryConfig: InventoryConfig;
-
+  readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
   // If this is false, the relayer will throw an error when fetching prices fails.
@@ -76,7 +74,9 @@ export class RelayerConfig extends CommonConfig {
       "Concurrent inventory management configurations detected."
     );
     this.externalInventoryConfig = RELAYER_EXTERNAL_INVENTORY_CONFIG;
-    this.inventoryConfig = JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+    this.inventoryConfig = isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG)
+      ? readFileSync(RELAYER_EXTERNAL_INVENTORY_CONFIG)
+      : JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
     this.parseInventoryConfig();
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
@@ -112,7 +112,7 @@ export class RelayerConfig extends CommonConfig {
   }
 
   // Post-process the imported JSON to scale the configured values to 18 decimals.
-  parseInventoryConfig(): void {
+  private parseInventoryConfig(): void {
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
       this.inventoryConfig.wrapEtherThreshold = this.inventoryConfig.wrapEtherThreshold
