@@ -185,7 +185,6 @@ export class TokenClient {
 
   async update(): Promise<void> {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
-
     const [balanceInfo, bondToken] = await Promise.all([
       Promise.all(Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))),
       // Make eth_call using nearest 100_000th block to take advantage of eth_call caching when blockTag is
@@ -228,6 +227,10 @@ export class TokenClient {
     }_${originToken}_${await spokePoolClient.spokePool.signer.getAddress()}_targetContract:${
       spokePoolClient.spokePool.address
     }`;
+  }
+
+  getBondTokenCacheKey(): string {
+    return `bondToken_${this.hubPoolClient.hubPool.address}`;
   }
 
   async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<FetchTokenDataReturnType> {
