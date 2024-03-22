@@ -13,13 +13,14 @@ import {
   toWei,
   paginatedEventQuery,
   Event,
+  assert,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
-import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
-const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
@@ -79,7 +80,6 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     // Skip the token if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
@@ -182,6 +182,9 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.l2GasPrice, // gasPriceBid
       this.transactionSubmissionData, // data
     ];
+    // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
+    // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
+    const gasMultiplier = 1.2;
     return await this._sendTokenToTargetChain(
       l1Token,
       l2Token,
@@ -189,14 +192,40 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.getL1GatewayRouter(),
       "outboundTransfer",
       args,
-      1,
+      gasMultiplier,
       this.l1SubmitValue,
       simMode
     );
   }
 
-  async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
-    throw new Error("Unnecessary to wrap ETH on Arbitrum");
+  // The arbitrum relayer expects to receive ETH steadily per HubPool bundle processed, since it is the L2 refund
+  // address hardcoded in the Arbitrum Adapter.
+  async wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse | null> {
+    const { chainId } = this;
+    assert(42161 === chainId, `chainId ${chainId} is not supported`);
+
+    const weth = CONTRACT_ADDRESSES[this.chainId].weth;
+    const ethBalance = await this.getSigner(chainId).getBalance();
+
+    if (ethBalance.gt(threshold)) {
+      const l2Signer = this.getSigner(chainId);
+      const contract = new Contract(weth.address, weth.abi, l2Signer);
+      const value = ethBalance.sub(target);
+      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
+      return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
+    } else {
+      this.logger.debug({
+        at: this.getName(),
+        message: "ETH balance below threshold",
+        threshold,
+        ethBalance,
+      });
+    }
+    return null;
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {

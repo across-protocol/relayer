@@ -10,12 +10,12 @@ import {
   Event,
   ZERO_ADDRESS,
   getTokenAddress,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
-import { SpokePoolClient } from "../SpokePoolClient";
+import { SpokePoolClient } from "../.";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
@@ -30,12 +30,11 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC"]);
+    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
@@ -229,7 +228,11 @@ export class ZKSyncAdapter extends BaseAdapter {
    * @param threshold
    * @returns
    */
-  async wrapEthIfAboveThreshold(threshold: BigNumber, simMode = false): Promise<TransactionResponse | null> {
+  async wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode = false
+  ): Promise<TransactionResponse | null> {
     const { chainId } = this;
     assert(chainId === 324, `chainId ${chainId} is not supported`);
 
@@ -239,9 +242,16 @@ export class ZKSyncAdapter extends BaseAdapter {
       const l2Signer = this.getSigner(chainId);
       // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.
       const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[this.hubChainId].weth.abi, l2Signer);
-      const value = ethBalance.sub(threshold);
-      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
+      const value = ethBalance.sub(target);
+      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
       return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
+    } else {
+      this.logger.debug({
+        at: this.getName(),
+        message: "ETH balance below threshold",
+        threshold,
+        ethBalance,
+      });
     }
     return null;
   }

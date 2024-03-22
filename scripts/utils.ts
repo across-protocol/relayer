@@ -2,21 +2,25 @@ import assert from "assert";
 import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
 import * as contracts from "@across-protocol/contracts-v2";
-import { getDeployedContract, getNodeUrlList } from "../src/utils";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
 
-type ERC20 = {
+// https://nodejs.org/api/process.html#exit-codes
+export const NODE_SUCCESS = 0;
+export const NODE_INPUT_ERR = 9;
+export const NODE_APP_ERR = 127; // user-defined
+
+export type ERC20 = {
   address: string;
   decimals: number;
   symbol: string;
 };
 
-export const testChains = [5, 280];
-export const chains = [1, 10, 137, 324, 8453, 42161];
-
 // Public RPC endpoints to be used if preferred providers are not defined in the environment.
 const fallbackProviders: { [chainId: number]: string } = {
-  1: "https://eth.llamarpc.com",
-  5: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
+  [CHAIN_IDs.MAINNET]: "https://eth.llamarpc.com",
+  [CHAIN_IDs.GOERLI]: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
+  [CHAIN_IDs.SEPOLIA]: "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
 };
 
 async function askQuestion(query: string) {
@@ -72,14 +76,10 @@ export function resolveToken(token: string, chainId: number): ERC20 {
  * @returns True if all chainIds are known.
  */
 export function validateChainIds(chainIds: number[]): boolean {
-  const knownChainIds = [...chains, ...testChains];
-  return chainIds.every((chainId) => {
-    const ok = knownChainIds.includes(chainId);
-    if (!ok) {
-      console.log(`Invalid chain ID: ${chainId}`);
-    }
-    return ok;
-  });
+  return (
+    chainIds.every((chainId) => sdkUtils.chainIsProd(chainId)) ||
+    chainIds.every((chainId) => sdkUtils.chainIsTestnet(chainId))
+  );
 }
 
 /**
@@ -101,12 +101,12 @@ export function getProviderUrl(chainId: number): string {
  * @returns Chain ID for the corresponding HubPool.
  */
 export function resolveHubChainId(spokeChainId: number): number {
-  if (chains.includes(spokeChainId)) {
-    return 1;
+  if (sdkUtils.chainIsProd(spokeChainId)) {
+    return CHAIN_IDs.MAINNET;
   }
 
-  assert(testChains.includes(spokeChainId), `Unsupported SpokePool chain ID: ${spokeChainId}`);
-  return 5;
+  assert(sdkUtils.chainIsTestnet(spokeChainId), `Unsupported testnet SpokePool chain ID: ${spokeChainId}`);
+  return CHAIN_IDs.SEPOLIA;
 }
 
 /**

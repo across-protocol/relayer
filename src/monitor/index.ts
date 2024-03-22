@@ -1,11 +1,11 @@
-import { winston, processEndPollingLoop, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
+import { winston, processEndPollingLoop, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";
 config();
 let logger: winston.Logger;
 
-export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const config = new MonitorConfig(process.env);
   let clients;
@@ -31,12 +31,6 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): P
         await acrossMonitor.checkUnknownRootBundleCallers();
       } else {
         logger.debug({ at: "Monitor#index", message: "UnknownRootBundleCallers monitor disabled" });
-      }
-
-      if (config.botModes.unknownRelayerCallersEnabled) {
-        await acrossMonitor.checkUnknownRelayers();
-      } else {
-        logger.debug({ at: "Monitor#index", message: "UnknownRelayerCallers monitor disabled" });
       }
 
       if (config.botModes.stuckRebalancesEnabled) {
@@ -72,8 +66,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet): P
         break;
       }
     }
-  } catch (error) {
-    await disconnectRedisClient(logger);
-    throw error;
+  } finally {
+    await disconnectRedisClients(logger);
   }
 }

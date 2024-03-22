@@ -1,17 +1,14 @@
-# TODO: Re-Enable after @uma/* projects are updated to use the newer version of their vulnerable dependencies
-#     : This disabled file was signed-off by @nicholaspai during a huddle between @james-a-morris, @nicholaspai, and @pxrl
+name: "Dependency Review"
+on: [pull_request]
 
-# name: "Dependency Review"
-# on: [pull_request]
+permissions:
+  contents: read
 
-# permissions:
-#   contents: read
-
-# jobs:
-#   dependency-review:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: "Checkout Repository"
-#         uses: actions/checkout@v3
-#       - name: "Dependency Review"
-#         uses: actions/dependency-review-action@v3.0.4
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v3
+      - name: "Dependency Review"
+        uses: actions/dependency-review-action@v3.1.0

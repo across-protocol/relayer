@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/ban-types */
-import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import {
   AnyObject,
   BigNumber,
+  bnZero,
   Contract,
   DefaultLogLevels,
   ERC20,
@@ -26,7 +26,10 @@ import {
   winston,
   createFormatFunction,
   BigNumberish,
+  TOKEN_SYMBOLS_MAP,
+  getRedisCache,
 } from "../../utils";
+import { utils } from "@across-protocol/sdk-v2";
 
 import { CONTRACT_ADDRESSES } from "../../common";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
@@ -40,8 +43,6 @@ interface Events {
     [l1Token: string]: DepositEvent[];
   };
 }
-
-const { TOKEN_SYMBOLS_MAP } = sdkConstants;
 
 // TODO: make these generic arguments to BaseAdapter.
 type SupportedL1Token = string;
@@ -86,9 +87,8 @@ export abstract class BaseAdapter {
 
   // Note: this must be called after the SpokePoolClients are updated.
   getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
-    // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
-    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockNumber;
-    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
+    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
+    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockSearched;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
     }
@@ -96,17 +96,11 @@ export abstract class BaseAdapter {
     return {
       l1SearchConfig: {
         ...this.baseL1SearchConfig,
-        fromBlock: this.baseL1SearchConfig.toBlock
-          ? this.baseL1SearchConfig.toBlock + 1
-          : this.baseL1SearchConfig.fromBlock,
-        toBlock: l1LatestBlock,
+        toBlock: this.baseL1SearchConfig?.toBlock ?? l1LatestBlock,
       },
       l2SearchConfig: {
         ...this.baseL2SearchConfig,
-        fromBlock: this.baseL2SearchConfig.toBlock
-          ? this.baseL2SearchConfig.toBlock + 1
-          : this.baseL2SearchConfig.fromBlock,
-        toBlock: l2LatestBlock,
+        toBlock: this.baseL2SearchConfig?.toBlock ?? l2LatestBlock,
       },
     };
   }
@@ -115,18 +109,38 @@ export abstract class BaseAdapter {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
+  async getAllowanceCacheKey(l1Token: string, targetContract: string): Promise<string> {
+    return `l1CanonicalTokenBridgeAllowance_${l1Token}_${await this.getSigner(
+      this.hubChainId
+    ).getAddress()}_targetContract:${targetContract}`;
+  }
+
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map(
       (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
     );
+    const redis = await getRedisCache(this.logger);
     const allowances = await Promise.all(
-      l1TokenContracts.map((l1TokenContract, index) => {
+      l1TokenContracts.map(async (l1TokenContract, index) => {
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
         // an approval transaction. For example not every chain has a bridge contract for every token. In this case
         // we clearly dont want to send any approval transactions.
         if (l1TokenContract && associatedL1Bridges[index]) {
+          // Check if we've cached already that this allowance is high enough. Returning null means we won't
+          // send an allowance approval transaction.
+          if (redis) {
+            const result = await redis.get<string>(
+              await this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index])
+            );
+            if (result !== null) {
+              const savedAllowance = toBN(result);
+              if (savedAllowance.gte(toBN(MAX_SAFE_ALLOWANCE))) {
+                return null;
+              }
+            }
+          }
           return l1TokenContract.allowance(address, associatedL1Bridges[index]);
         } else {
           return null;
@@ -134,12 +148,19 @@ export abstract class BaseAdapter {
       })
     );
 
-    allowances.forEach((allowance, index) => {
+    await utils.forEachAsync(allowances, async (allowance, index) => {
       if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
         tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
+      } else {
+        // Save allowance in cache with no TTL as these should never decrement.
+        if (redis) {
+          await redis.set(
+            await this.getAllowanceCacheKey(l1TokenContracts[index].address, associatedL1Bridges[index]),
+            MAX_SAFE_ALLOWANCE
+          );
+        }
       }
     });
-
     if (tokensToApprove.length == 0) {
       this.log("No token bridge approvals needed", { l1Tokens });
       return;
@@ -206,7 +227,7 @@ export abstract class BaseAdapter {
           continue;
         }
 
-        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
+        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), bnZero);
         const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
         outstandingTransfers[monitoredAddress][l1Token] = {
           totalAmount,
@@ -255,12 +276,6 @@ export abstract class BaseAdapter {
    */
   isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
     const relevantSymbols = matchTokenSymbol(l1Token, this.hubChainId);
-
-    // If we don't have a symbol for this token, return that the token is not supported
-    if (relevantSymbols.length === 0) {
-      return false;
-    }
-
     // if the symbol is not in the supported tokens list, it's not supported
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
@@ -324,10 +339,13 @@ export abstract class BaseAdapter {
   ): Promise<TransactionResponse> {
     const { chainId, txnClient } = this;
     const method = "deposit";
+    const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =
-      `Ether on chain ${this.chainId} was wrapped due to being over the threshold of ` +
-      `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.`;
-    const message = `Eth wrapped on target chain ${this.chainId}🎁`;
+      `${formatFunc(
+        toBN(value).toString()
+      )} Ether on chain ${chainId} was wrapped due to being over the threshold of ` +
+      `${formatFunc(toBN(wrapThreshold).toString())} ETH.`;
+    const message = `${formatFunc(toBN(value).toString())} Eth wrapped on target chain ${chainId}🎁`;
     if (simMode) {
       const { succeed, reason } = (
         await txnClient.simulate([{ contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message }])
@@ -362,5 +380,9 @@ export abstract class BaseAdapter {
 
   abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
 
-  abstract wrapEthIfAboveThreshold(threshold: BigNumber, simMode: boolean): Promise<TransactionResponse | null>;
+  abstract wrapEthIfAboveThreshold(
+    threshold: BigNumber,
+    target: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse | null>;
 }

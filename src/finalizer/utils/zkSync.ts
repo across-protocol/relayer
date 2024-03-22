@@ -1,13 +1,21 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { Contract, ethers, Wallet } from "ethers";
+import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
-import { Provider as zksProvider, types as zkTypes, utils as zkUtils, Wallet as zkWallet } from "zksync-web3";
+import { Provider as zksProvider, Wallet as zkWallet } from "zksync-web3";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { convertFromWei, getEthAddressForChain, winston, zkSync as zkSyncUtils } from "../../utils";
-import { FinalizerPromise, Withdrawal } from "../types";
+import {
+  convertFromWei,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getEthAddressForChain,
+  getRedisCache,
+  getUniqueLogIndex,
+  winston,
+  zkSync as zkSyncUtils,
+} from "../../utils";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
-type Provider = ethers.providers.Provider;
 type TokensBridged = interfaces.TokensBridged;
 
 type zkSyncWithdrawalData = {
@@ -18,65 +26,81 @@ type zkSyncWithdrawalData = {
   sender: string;
   proof: string[];
 };
-
-const TransactionStatus = zkTypes.TransactionStatus;
-
 /**
  * @returns Withdrawal finalizaton calldata and metadata.
  */
 export async function zkSyncFinalizer(
   logger: winston.Logger,
-  signer: Wallet,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  oldestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId: l1ChainId } = hubPoolClient;
   const { chainId: l2ChainId } = spokePoolClient;
 
   const l1Provider = hubPoolClient.hubPool.provider;
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
-  const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
+  const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
 
-  // Any block younger than latestBlockToFinalize is ignored.
+  // Zksync takes 1 day to finalize so ignore any events
+  // older than 2 days and earlier than 1 day.
+  const redis = await getRedisCache(logger);
+  const [fromBlock, toBlock] = await Promise.all([
+    getBlockForTimestamp(l2ChainId, getCurrentTime() - 2 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(l2ChainId, getCurrentTime() - 1 * 60 * 60 * 24, undefined, redis),
+  ]);
+  logger.debug({
+    at: "Finalizer#ZkSyncFinalizer",
+    message: "ZkSync TokensBridged event filter",
+    fromBlock,
+    toBlock,
+  });
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber > oldestBlockToFinalize);
-  const { committed: l2Committed, finalized: l2Finalized } = await sortWithdrawals(l2Provider, withdrawalsToQuery);
-  const candidates = await filterMessageLogs(wallet, l2Provider, l2Finalized);
+    .filter(({ blockNumber }) => blockNumber >= fromBlock && blockNumber <= toBlock);
+  const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
+  const l2Finalized = statuses["finalized"] ?? [];
+  const candidates = await filterMessageLogs(wallet, l2Finalized);
   const withdrawalParams = await getWithdrawalParams(wallet, candidates);
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
 
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      l2ChainId,
+    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
       l2TokenAddress,
-      hubPoolClient.latestBlockNumber
+      l2ChainId,
+      hubPoolClient.latestBlockSearched
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
-    const withdrawal: Withdrawal = {
-      l2ChainId,
+    const withdrawal: CrossChainMessage = {
+      originationChainId: l2ChainId,
       l1TokenSymbol,
       amount: amountFromWei,
       type: "withdrawal",
+      destinationChainId: hubPoolClient.chainId,
     };
 
     return withdrawal;
   });
 
+  // The statuses are:
+  // - not-found: The transaction is not found.
+  // - processing/committed: Pending finalization
+  // - finalized: ready to be withdrawn or already withdrawn
   logger.debug({
-    at: "zkSyncFinalizer",
-    message: "zkSync withdrawal status.",
+    at: "ZkSyncFinalizer",
+    message: "ZkSync withdrawal status.",
     statusesGrouped: {
+      withdrawalNotFound: statuses["not-found"]?.length,
+      withdrawalProcessing: statuses["processing"]?.length,
+      // Pending essentially includes txns with the "committed" statuses
       withdrawalPending: withdrawalsToQuery.length - l2Finalized.length,
-      withdrawalReady: candidates.length,
-      withdrawalFinalized: l2Finalized.length - candidates.length,
+      withdrawalFinalizedNotExecuted: candidates.length,
+      withdrawalExecuted: l2Finalized.length - candidates.length,
     },
-    committed: l2Committed,
   });
 
-  return { callData: txns, withdrawals };
+  return { callData: txns, crossChainMessages: withdrawals };
 }
 
 /**
@@ -88,17 +112,15 @@ export async function zkSyncFinalizer(
 async function sortWithdrawals(
   provider: zksProvider,
   tokensBridged: TokensBridged[]
-): Promise<{ committed: TokensBridged[]; finalized: TokensBridged[] }> {
+): Promise<Record<string, TokensBridged[]>> {
   const txnStatus = await Promise.all(
     tokensBridged.map(({ transactionHash }) => provider.getTransactionStatus(transactionHash))
   );
 
   let idx = 0; // @dev Possible to infer the loop index in groupBy ??
-  const { committed = [], finalized = [] } = groupBy(tokensBridged, () =>
-    txnStatus[idx++] === TransactionStatus.Finalized ? "finalized" : "committed"
-  );
+  const statuses = groupBy(tokensBridged, () => txnStatus[idx++]);
 
-  return { committed, finalized };
+  return statuses;
 }
 
 /**
@@ -109,31 +131,13 @@ async function sortWithdrawals(
  */
 async function filterMessageLogs(
   wallet: zkWallet,
-  l2Provider: Provider,
   tokensBridged: TokensBridged[]
 ): Promise<(TokensBridged & { withdrawalIdx: number })[]> {
-  const l1MessageSent = zkUtils.L1_MESSENGER.getEventTopic("L1MessageSent");
-
-  // Filter transaction hashes for duplicates, then request receipts for each hash.
-  const txnHashes = [...new Set(tokensBridged.map(({ transactionHash }) => transactionHash))];
-  const txnReceipts = Object.fromEntries(
-    await sdkUtils.mapAsync(txnHashes, async (txnHash) => [txnHash, await l2Provider.getTransactionReceipt(txnHash)])
-  );
-
-  // Extract the relevant L1MessageSent events from the transaction.
-  const withdrawals = tokensBridged.map((tokenBridged) => {
-    const { transactionHash, logIndex } = tokenBridged;
-    const txnReceipt = txnReceipts[transactionHash];
-
-    // Search backwards from the TokensBridged log index for the corresponding L1MessageSent event.
-    // @dev Array.findLast() would be an improvement but tsc doesn't currently allow it.
-    const txnLogs = txnReceipt.logs.slice(0, logIndex).reverse();
-    const withdrawal = txnLogs.find((log) => log.topics[0] === l1MessageSent);
-
-    // @dev withdrawalIdx is the "withdrawal number" within the transaction, _not_ the index of the log.
-    const l1MessagesSent = txnReceipt.logs.filter((log) => log.topics[0] === l1MessageSent);
-    const withdrawalIdx = l1MessagesSent.indexOf(withdrawal);
-    return { ...tokenBridged, withdrawalIdx };
+  // For each token bridge event, store a unique log index for the event within the zksync transaction hash.
+  // This is important for bridge transactions containing multiple events.
+  const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
+  const withdrawals = tokensBridged.map((tokenBridged, i) => {
+    return { ...tokenBridged, withdrawalIdx: logIndexesForMessage[i] };
   });
 
   const ready = await sdkUtils.filterAsync(

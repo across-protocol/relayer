@@ -1,7 +1,11 @@
-import { BlockFinder } from "@uma/financial-templates-lib";
-import { Block, getProvider, getRedis, isDefined, setRedisKey, shouldCache } from "./";
+import { interfaces, utils } from "@across-protocol/sdk-v2";
+import { isDefined } from "./";
+import { BlockFinder, BlockFinderHints } from "./SDKUtils";
+import { getProvider } from "./ProviderUtils";
+import { getRedisCache } from "./RedisUtils";
+import { SpokePoolClientsByChain } from "../interfaces/SpokePool";
 
-const blockFinders: { [chainId: number]: BlockFinder<Block> } = {};
+const blockFinders: { [chainId: number]: BlockFinder } = {};
 
 /**
  * @notice Return block finder for chain. Loads from in memory blockFinder cache if this function was called before
@@ -9,10 +13,10 @@ const blockFinders: { [chainId: number]: BlockFinder<Block> } = {};
  * @param chainId
  * @returns
  */
-export async function getBlockFinder(chainId: number): Promise<BlockFinder<Block>> {
+export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
   if (!isDefined(blockFinders[chainId])) {
     const providerForChain = await getProvider(chainId);
-    blockFinders[chainId] = new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId);
+    blockFinders[chainId] = new BlockFinder(providerForChain);
   }
   return blockFinders[chainId];
 }
@@ -22,38 +26,37 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder<Block
  * If redis cache is not available, then requests block from blockFinder.
  * @param chainId Chain to load block finder for.
  * @param timestamp Approximate timestamp of the to requested block number.
- * @param blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
+ * @param _blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
  * or loading from cache. This is useful for testing primarily.
  * @returns Block number for the requested timestamp.
  */
 export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
-  blockFinder?: BlockFinder<Block>
+  blockFinder?: BlockFinder,
+  redisCache?: interfaces.CachingMechanismInterface,
+  hints: BlockFinderHints = {}
 ): Promise<number> {
   blockFinder ??= await getBlockFinder(chainId);
-  const redisClient = await getRedis();
+  redisCache ??= await getRedisCache();
+  return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache, hints);
+}
 
-  // If no redis client, then request block from blockFinder. Otherwise try to load from redis cache.
-  if (redisClient === undefined) {
-    return (await blockFinder.getBlockForTimestamp(timestamp)).number;
-  }
-
-  const key = `${chainId}_block_number_${timestamp}`;
-  const result = await redisClient.get(key);
-  if (result === null) {
-    const provider = await getProvider(chainId);
-    const [currentBlock, { number: blockNumber }] = await Promise.all([
-      provider.getBlock("latest"),
-      blockFinder.getBlockForTimestamp(timestamp),
-    ]);
-
-    // Expire key after 90 days.
-    if (shouldCache(timestamp, currentBlock.timestamp)) {
-      await setRedisKey(key, blockNumber.toString(), redisClient, 60 * 60 * 24 * 90);
-    }
-    return blockNumber;
-  } else {
-    return parseInt(result);
-  }
+export async function getTimestampsForBundleEndBlocks(
+  spokePoolClients: SpokePoolClientsByChain,
+  blockRanges: number[][],
+  chainIdListForBundleEvaluationBlockNumbers: number[]
+): Promise<{ [chainId: number]: number }> {
+  return Object.fromEntries(
+    (
+      await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
+        const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
+        const spokePoolClient = spokePoolClients[chainId];
+        if (spokePoolClient === undefined) {
+          return;
+        }
+        return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+      })
+    ).filter(isDefined)
+  );
 }

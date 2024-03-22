@@ -1,7 +1,6 @@
 import { clients, constants, utils } from "@across-protocol/sdk-v2";
 import { Contract, EventSearchConfig, MakeOptional, isDefined, sortEventsDescending, winston } from "../utils";
 import { CONFIG_STORE_VERSION } from "../common";
-export const { UBA_MIN_CONFIG_STORE_VERSION } = utils;
 export const GLOBAL_CONFIG_STORE_KEYS = clients.GLOBAL_CONFIG_STORE_KEYS;
 
 export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
@@ -67,10 +66,10 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     if (isDefined(this.injectedChain)) {
       const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = this.injectedChain;
       // Sanity check to ensure that this event doesn't happen in the future
-      if (injectedBlockNumber > this.latestBlockNumber) {
+      if (injectedBlockNumber > this.latestBlockSearched) {
         this.logger.debug({
           at: "ConfigStore[Relayer]#update",
-          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestBlockNumber}`,
+          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestBlockSearched}`,
         });
         return;
       }

@@ -1,20 +1,25 @@
+import assert from "assert";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { Fill } from "../interfaces";
-import { BigNumber, toBN, toBNWei } from ".";
+import { bnZero, fixedPointAdjustment as fixedPoint } from "./SDKUtils";
+import { BigNumber } from ".";
 
 export function _getRefundForFill(fill: Fill): BigNumber {
-  return fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
+  assert(sdkUtils.isV2Fill(fill));
+  return fill.fillAmount.mul(fixedPoint.sub(fill.realizedLpFeePct)).div(fixedPoint);
 }
 
 export function _getFeeAmount(fillAmount: BigNumber, feePct: BigNumber): BigNumber {
-  return fillAmount.mul(feePct).div(toBNWei(1));
+  return fillAmount.mul(feePct).div(fixedPoint);
 }
 
 export function _getRealizedLpFeeForFill(fill: Fill): BigNumber {
-  return fill.fillAmount.mul(fill.realizedLpFeePct).div(toBNWei(1));
+  assert(sdkUtils.isV2Fill(fill));
+  return fill.fillAmount.mul(fill.realizedLpFeePct).div(fixedPoint);
 }
 
 export function getRefund(fillAmount: BigNumber, realizedLpFeePct: BigNumber): BigNumber {
-  return fillAmount.mul(toBNWei(1).sub(realizedLpFeePct)).div(toBNWei(1));
+  return fillAmount.mul(fixedPoint.sub(realizedLpFeePct)).div(fixedPoint);
 }
 
 export function getFillAmountMinusFees(
@@ -22,17 +27,13 @@ export function getFillAmountMinusFees(
   realizedLpFeePct: BigNumber,
   relayerFeePct: BigNumber
 ): BigNumber {
-  return fillAmount.mul(toBNWei(1).sub(realizedLpFeePct).sub(relayerFeePct)).div(toBNWei(1));
+  return fillAmount.mul(fixedPoint.sub(realizedLpFeePct).sub(relayerFeePct)).div(fixedPoint);
 }
 
 export function getRefundForFills(fills: Fill[]): BigNumber {
-  let accumulator = toBN(0);
-  fills.forEach((fill) => (accumulator = accumulator.add(_getRefundForFill(fill))));
-  return accumulator;
+  return fills.reduce((acc, fill) => acc.add(_getRefundForFill(fill)), bnZero);
 }
 
 export function getRealizedLpFeeForFills(fills: Fill[]): BigNumber {
-  let accumulator = toBN(0);
-  fills.forEach((fill) => (accumulator = accumulator.add(_getRealizedLpFeeForFill(fill))));
-  return accumulator;
+  return fills.reduce((acc, fill) => acc.add(_getRealizedLpFeeForFill(fill)), bnZero);
 }

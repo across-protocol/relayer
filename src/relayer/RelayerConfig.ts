@@ -1,22 +1,27 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
+import { BigNumber, toBNWei, assert, isDefined, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
-  readonly inventoryConfig: InventoryConfig;
-  // Whether relay profitability is considered. If false, relayers will attempt to relay all deposits.
-  readonly ignoreProfitability: boolean;
+  readonly externalInventoryConfig?: string;
+  inventoryConfig: InventoryConfig;
+
   readonly debugProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
   // If this is false, the relayer will throw an error when fetching prices fails.
+  readonly skipRelays: boolean;
+  readonly skipRebalancing: boolean;
   readonly sendingRelaysEnabled: boolean;
+  readonly sendingRebalancesEnabled: boolean;
+  readonly sendingMessageRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
-  readonly sendingRefundRequestsEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
+  readonly relayerGasPadding: BigNumber;
   readonly relayerGasMultiplier: BigNumber;
+  readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
@@ -25,11 +30,6 @@ export class RelayerConfig extends CommonConfig {
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
   };
-  // Quote timestamp buffer to protect relayer from edge case where a quote time is > HEAD's latest block.
-  // This exposes relayer to risk that HubPool utilization changes between now and the eventual block mined at that
-  // timestamp, since the ConfigStoreClient.computeRealizedLpFee returns the current lpFee % for quote times >
-  // HEAD
-  readonly quoteTimeBuffer: number;
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
@@ -40,16 +40,21 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_DESTINATION_CHAINS,
       SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
+      RELAYER_GAS_MESSAGE_MULTIPLIER,
       RELAYER_GAS_MULTIPLIER,
+      RELAYER_GAS_PADDING,
+      RELAYER_EXTERNAL_INVENTORY_CONFIG,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
+      SEND_REBALANCES,
+      SEND_MESSAGE_RELAYS,
+      SKIP_RELAYS,
+      SKIP_REBALANCING,
       SEND_SLOW_RELAYS,
-      SEND_REFUND_REQUESTS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
-      QUOTE_TIME_BUFFER,
       RELAYER_IGNORE_LIMITS,
     } = env;
     super(env);
@@ -65,7 +70,14 @@ export class RelayerConfig extends CommonConfig {
     this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
-    this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
+
+    assert(
+      !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
+      "Concurrent inventory management configurations detected."
+    );
+    this.externalInventoryConfig = RELAYER_EXTERNAL_INVENTORY_CONFIG;
+    this.inventoryConfig = JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     if (Object.keys(this.inventoryConfig).length > 0) {
@@ -73,8 +85,40 @@ export class RelayerConfig extends CommonConfig {
       this.inventoryConfig.wrapEtherThreshold = this.inventoryConfig.wrapEtherThreshold
         ? toBNWei(this.inventoryConfig.wrapEtherThreshold)
         : toBNWei(1); // default to keeping 2 Eth on the target chains and wrapping the rest to WETH.
+      this.inventoryConfig.wrapEtherThresholdPerChain ??= {};
+      this.inventoryConfig.wrapEtherTarget = this.inventoryConfig.wrapEtherTarget
+        ? toBNWei(this.inventoryConfig.wrapEtherTarget)
+        : this.inventoryConfig.wrapEtherThreshold; // default to wrapping ETH to threshold, same as target.
+      this.inventoryConfig.wrapEtherTargetPerChain ??= {};
+      assert(
+        this.inventoryConfig.wrapEtherThreshold.gte(this.inventoryConfig.wrapEtherTarget),
+        `default wrapEtherThreshold ${this.inventoryConfig.wrapEtherThreshold} must be >= default wrapEtherTarget ${this.inventoryConfig.wrapEtherTarget}}`
+      );
 
-      Object.keys(this.inventoryConfig.tokenConfig).forEach((l1Token) => {
+      // Validate the per chain target and thresholds for wrapping ETH:
+      Object.keys(this.inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
+        if (this.inventoryConfig.wrapEtherThresholdPerChain[chainId] !== undefined) {
+          this.inventoryConfig.wrapEtherThresholdPerChain[chainId] = toBNWei(
+            this.inventoryConfig.wrapEtherThresholdPerChain[chainId]
+          );
+        }
+      });
+      Object.keys(this.inventoryConfig.wrapEtherTargetPerChain).forEach((chainId) => {
+        if (this.inventoryConfig.wrapEtherTargetPerChain[chainId] !== undefined) {
+          this.inventoryConfig.wrapEtherTargetPerChain[chainId] = toBNWei(
+            this.inventoryConfig.wrapEtherTargetPerChain[chainId]
+          );
+          // Check newly set target against threshold
+          const threshold =
+            this.inventoryConfig.wrapEtherThresholdPerChain[chainId] ?? this.inventoryConfig.wrapEtherThreshold;
+          const target = this.inventoryConfig.wrapEtherTargetPerChain[chainId];
+          assert(
+            threshold.gte(target),
+            `wrapEtherThresholdPerChain ${threshold.toString()} must be >= wrapEtherTargetPerChain ${target}`
+          );
+        }
+      });
+      Object.keys(this.inventoryConfig?.tokenConfig ?? {}).forEach((l1Token) => {
         Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
           const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget } =
             this.inventoryConfig.tokenConfig[l1Token][chainId];
@@ -98,9 +142,16 @@ export class RelayerConfig extends CommonConfig {
       });
     }
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
+    this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
+    this.relayerMessageGasMultiplier = toBNWei(
+      RELAYER_GAS_MESSAGE_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER
+    );
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
-    this.sendingRefundRequestsEnabled = SEND_REFUND_REQUESTS !== "false";
+    this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
+    this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
+    this.skipRelays = SKIP_RELAYS === "true";
+    this.skipRebalancing = SKIP_REBALANCING === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
     (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
@@ -117,7 +168,6 @@ export class RelayerConfig extends CommonConfig {
       });
     // Force default thresholds in MDC config.
     this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
-    this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
   }
 }

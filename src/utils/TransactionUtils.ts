@@ -1,18 +1,19 @@
-import { gasPriceOracle, typeguards } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { FeeData } from "@ethersproject/abstract-provider";
-import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
 import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
 import { EthersError } from "../interfaces";
 import {
   BigNumber,
+  bnZero,
   Contract,
+  fixedPointAdjustment as fixedPoint,
+  isDefined,
   TransactionResponse,
-  Wallet,
   ethers,
   getContractInfoFromAddress,
-  toBN,
+  Signer,
   toBNWei,
   winston,
 } from "../utils";
@@ -34,11 +35,11 @@ const txnRetryable = (error?: unknown): boolean => {
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
-export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
+export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
   if (!multicall3Addresses[chainId] || !baseSigner) {
     return undefined;
   }
-  return new Contract(multicall3Addresses[chainId], getAbi("Multicall3"), baseSigner);
+  return new Contract(multicall3Addresses[chainId], await sdkUtils.getABI("Multicall3"), baseSigner);
 }
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
@@ -48,7 +49,7 @@ export async function runTransaction(
   contract: Contract,
   method: string,
   args: unknown,
-  value: BigNumber = toBN(0),
+  value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retriesRemaining = 2
@@ -163,12 +164,31 @@ export async function getGasPrice(
 }
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
-  if (transaction.canFailInSimulation) {
+  // If the transaction already has a gasLimit, it should have been simulated in advance.
+  if (transaction.canFailInSimulation || isDefined(transaction.gasLimit)) {
     return { transaction, succeed: true };
   }
+
+  const { contract, method } = transaction;
+  const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+
+  // First callStatic, which will surface a custom error if the transaction would fail.
+  // This is useful for surfacing custom error revert reasons like RelayFilled in the V3 SpokePool but
+  // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
+  // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   try {
-    const { contract, method } = transaction;
-    const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+    await contract.callStatic[method](...args);
+  } catch (err: any) {
+    if (err.errorName) {
+      return {
+        transaction,
+        succeed: false,
+        reason: err.errorName,
+      };
+    }
+  }
+
+  try {
     const gasLimit = await contract.estimateGas[method](...args);
     return { transaction: { ...transaction, gasLimit }, succeed: true };
   } catch (_error) {
@@ -194,5 +214,5 @@ export function getTarget(targetAddress: string):
 }
 
 function scaleByNumber(amount: ethers.BigNumber, scaling: number) {
-  return amount.mul(toBNWei(scaling)).div(toBNWei("1"));
+  return amount.mul(toBNWei(scaling)).div(fixedPoint);
 }

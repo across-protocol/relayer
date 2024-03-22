@@ -1,12 +1,67 @@
-import { assert, toBN, BigNumberish } from "./";
+import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
-import { Deposit, Fill } from "../interfaces";
+import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
+import { RedisCache } from "../caching/RedisCache";
+import { constants } from "@across-protocol/sdk-v2";
 dotenv.config();
 
-export type RedisClient = ReturnType<typeof createClient>;
+const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
+  ? String(process.env.GLOBAL_CACHE_NAMESPACE)
+  : undefined;
+
+export type _RedisClient = ReturnType<typeof createClient>;
+
+export class RedisClient {
+  constructor(
+    private readonly client: _RedisClient,
+    private readonly namespace?: string,
+    private readonly logger?: winston.Logger
+  ) {
+    this.logger?.debug({
+      at: "RedisClient#constructor",
+      message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
+    });
+  }
+
+  private getNamespacedKey(key: string): string {
+    return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
+  }
+
+  get url(): string {
+    return this.client.options.url;
+  }
+
+  async get(key: string): Promise<string | undefined> {
+    return this.client.get(this.getNamespacedKey(key));
+  }
+
+  async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
+    // Apply namespace to key.
+    key = this.getNamespacedKey(key);
+    if (expirySeconds === Number.POSITIVE_INFINITY) {
+      // No TTL
+      await this.client.set(key, val);
+    } else if (expirySeconds > 0) {
+      // EX: Expire key after expirySeconds.
+      await this.client.set(key, val, { EX: expirySeconds });
+    } else {
+      if (expirySeconds <= 0) {
+        this.logger?.warn({
+          at: "RedisClient#setRedisKey",
+          message: `Tried to set key ${key} with expirySeconds = ${expirySeconds}. This shouldn't be allowed.`,
+        });
+      }
+      await this.client.set(key, val);
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    await disconnectRedisClient(this.client, this.logger);
+  }
+}
 
 // Avoid caching calls that are recent enough to be affected by things like reorgs.
 // Current time must be >= 15 minutes past the event timestamp for it to be stable enough to cache.
@@ -19,42 +74,47 @@ const redisClients: { [url: string]: RedisClient } = {};
 
 export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient | undefined> {
   if (!redisClients[url]) {
+    let redisClient: _RedisClient | undefined = undefined;
     try {
-      const redisClient = createClient({ url });
+      redisClient = createClient({ url });
       await redisClient.connect();
-      if (logger) {
-        logger.debug({
-          at: "RedisUtils#getRedis",
-          message: `Connected to redis server at ${url} successfully!`,
-          dbSize: await redisClient.dbSize(),
-        });
-      }
-      redisClients[url] = redisClient;
+      logger?.debug({
+        at: "RedisUtils#getRedis",
+        message: `Connected to redis server at ${url} successfully!`,
+        dbSize: await redisClient.dbSize(),
+      });
+      redisClients[url] = new RedisClient(redisClient, globalNamespace);
     } catch (err) {
-      if (logger) {
-        logger.debug({
-          at: "RedisUtils#getRedis",
-          message: `Failed to connect to redis server at ${url}.`,
-        });
-      }
+      delete redisClients[url];
+      await disconnectRedisClient(redisClient, logger);
+      logger?.debug({
+        at: "RedisUtils#getRedis",
+        message: `Failed to connect to redis server at ${url}.`,
+        error: String(err),
+      });
     }
   }
 
   return redisClients[url];
 }
 
+export async function getRedisCache(
+  logger?: winston.Logger,
+  url?: string
+): Promise<CachingMechanismInterface | undefined> {
+  const client = await getRedis(logger, url);
+  if (client) {
+    return new RedisCache(client);
+  }
+}
+
 export async function setRedisKey(
   key: string,
   val: string,
   redisClient: RedisClient,
-  expirySeconds = 0
+  expirySeconds = constants.DEFAULT_CACHING_TTL
 ): Promise<void> {
-  if (expirySeconds > 0) {
-    // EX: Expire key after expirySeconds.
-    await redisClient.set(key, val, { EX: expirySeconds });
-  } else {
-    await redisClient.set(key, val);
-  }
+  await redisClient.set(key, val, expirySeconds);
 }
 
 export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
@@ -79,12 +139,28 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   }
 }
 
-export async function disconnectRedisClient(logger?: winston.Logger): Promise<void> {
-  const redisClient = await getRedis(logger);
-  if (redisClient !== undefined) {
-    // todo understand why redisClient isn't GCed automagically.
-    logger.debug("Disconnecting from redis server.");
-    await redisClient.disconnect();
+export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
+  // todo understand why redisClients arent't GCed automagically.
+  const clients = Object.entries(redisClients);
+  for (const [url, client] of clients) {
+    const logParams = {
+      at: "RedisUtils#disconnectRedisClient",
+      message: "Disconnecting from redis server.",
+      url,
+    };
+    // We should delete the client from our cache object before
+    // we disconnect from redis.
+    delete redisClients[url];
+    // We don't want to throw an error if we can't disconnect from redis.
+    // We can log the error and continue.
+    try {
+      await client.disconnect();
+      logParams["success"] = true;
+    } catch (e) {
+      logParams["success"] = false;
+      logParams["error"] = e;
+    }
+    logger?.debug(logParams);
   }
 }
 
@@ -102,4 +178,24 @@ export function objectWithBigNumberReviver(_: string, value: { type: string; hex
     return value;
   }
   return toBN(value.hex);
+}
+
+/**
+ * An internal function to disconnect from a redis client. This function is designed to NOT throw an error if the
+ * disconnect fails.
+ * @param client The redis client to disconnect from.
+ * @param logger An optional logger to use to log the disconnect.
+ */
+async function disconnectRedisClient(client: _RedisClient, logger?: winston.Logger): Promise<void> {
+  let disconnectSuccessful = true;
+  try {
+    await client.disconnect();
+  } catch (_e) {
+    disconnectSuccessful = false;
+  }
+  const url = client.options.url ?? "unknown";
+  logger?.debug({
+    at: "RedisClient#disconnect",
+    message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,
+  });
 }

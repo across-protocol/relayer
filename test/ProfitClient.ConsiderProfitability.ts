@@ -1,459 +1,530 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { assert } from "chai";
+import { random } from "lodash";
+import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
+import { V3Deposit } from "../src/interfaces";
 import {
-  ConfigStoreClient,
-  FillProfit,
-  GAS_TOKEN_BY_CHAIN_ID,
-  MATIC,
-  SpokePoolClient,
-  USDC,
-  WBTC,
-  WETH,
-} from "../src/clients";
-import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
-import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
+  bnZero,
+  bnOne,
+  CHAIN_IDs,
+  BigNumber,
+  fixedPointAdjustment as fixedPoint,
+  formatFeePct,
+  getCurrentTime,
+  toBN,
+  toBNWei,
+  toGWei,
+  TOKEN_SYMBOLS_MAP,
+} from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
+  assertPromiseError,
   createSpyLogger,
   deployConfigStore,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
   hubPoolFixture,
-  originChainId,
+  randomAddress,
   winston,
 } from "./utils";
 
-const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 const { formatEther } = ethers.utils;
 
-const chainIds: number[] = [1, 10, 137, 288, 42161];
-const zeroRefundFee = toBN(0);
+describe("ProfitClient: Consider relay profit", () => {
+  const now = getCurrentTime();
+  const bn10 = toBN(10);
+  const outputAmount = toBNWei(1);
+  const lpFeePct = toBNWei(1).div(1e4);
+  const relayerFeePct = toBNWei(1).div(1e4);
+  const gasFeePct = toBNWei(1).div(1e4);
+  const v3DepositTemplate: V3Deposit = {
+    originChainId,
+    depositId: 1,
+    destinationChainId,
+    depositor: randomAddress(),
+    recipient: randomAddress(),
+    inputToken: randomAddress(),
+    inputAmount: outputAmount.mul(fixedPoint).div(fixedPoint.sub(lpFeePct.add(relayerFeePct).add(gasFeePct))),
+    outputToken: randomAddress(),
+    outputAmount,
+    quoteTimestamp: now,
+    message: sdkConstants.EMPTY_MESSAGE,
+    fillDeadline: now,
+    exclusivityDeadline: 0,
+    exclusiveRelayer: ZERO_ADDRESS,
+  };
 
-const tokens: { [symbol: string]: L1Token } = {
-  MATIC: { address: MATIC, decimals: 18, symbol: "MATIC" },
-  USDC: { address: USDC, decimals: 6, symbol: "USDC" },
-  WBTC: { address: WBTC, decimals: 8, symbol: "WBTC" },
-  WETH: { address: WETH, decimals: 18, symbol: "WETH" },
-};
+  const chainIds = [originChainId, destinationChainId];
+  const zeroLPFee = bnZero;
 
-const tokenPrices: { [symbol: string]: BigNumber } = {
-  MATIC: toBNWei("0.4"),
-  USDC: toBNWei(1),
-  WBTC: toBNWei(21000),
-  WETH: toBNWei(3000),
-};
+  const minRelayerFeeBps = 1;
+  const minRelayerFeePct = toBNWei(minRelayerFeeBps).div(1e4);
 
-// Quirk: Use the chainId as the gas price in Gwei. This gives a range of
-// gas prices to test with, since there's a spread in the chainId numbers.
-const gasCost: { [chainId: number]: BigNumber } = Object.fromEntries(
-  chainIds.map((chainId: number) => {
-    const nativeGasPrice = toBN(chainId).mul(1e9); // Gwei
-    const gasConsumed = toBN(100_000); // Assume 100k gas for a single fill
-    return [chainId, gasConsumed.mul(nativeGasPrice)];
-  })
-);
+  // Define LOG_IN_TEST for logging to console.
+  const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+  let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
+  const message = sdkConstants.EMPTY_MESSAGE; // Empty message by default.
 
-function setDefaultTokenPrices(profitClient: MockProfitClient): void {
-  // Load ERC20 token prices in USD.
-  profitClient.setTokenPrices(
-    Object.fromEntries(Object.entries(tokenPrices).map(([symbol, price]) => [tokens[symbol].address, price]))
+  const randomiseGasCost = (chainId: number): TransactionCostEstimate & { gasTokenPriceUsd: BigNumber } => {
+    // Randomise the gas token price (usd)
+    const gasToken = profitClient.resolveGasToken(chainId);
+    const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
+
+    // Randomise the fillRelay cost in units of gas.
+    const nativeGasCost = toBN(random(80_000, 100_000));
+    const tokenGasCost = nativeGasCost.mul(toGWei(random(1, 100))).div(toBN(10).pow(9));
+
+    profitClient.setTokenPrice(gasToken.address, gasTokenPriceUsd);
+    profitClient.setGasCost(chainId, { nativeGasCost, tokenGasCost });
+
+    return { nativeGasCost, tokenGasCost, gasTokenPriceUsd };
+  };
+
+  const tokens = Object.fromEntries(
+    ["MATIC", "USDC", "WBTC", "WETH"].map((symbol) => {
+      const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
+      return [symbol, { symbol, decimals, address: addresses[CHAIN_IDs.MAINNET] }];
+    })
   );
-}
 
-const minRelayerFeeBps = 3;
-const minRelayerFeePct = toBNWei(minRelayerFeeBps).div(1e4);
+  const tokenPrices = Object.fromEntries(
+    Object.keys(tokens).map((symbol) => {
+      const { decimals } = TOKEN_SYMBOLS_MAP[symbol];
+      return "USDC" === symbol ? [symbol, toBNWei(1)] : [symbol, toBNWei(random(0.1, 21000, true).toFixed(decimals))];
+    })
+  );
 
-// relayerFeePct clamped at 50 bps by each SpokePool.
-const maxRelayerFeeBps = 50;
-const maxRelayerFeePct = toBNWei(maxRelayerFeeBps).div(1e4);
+  // Quirk: Use the chainId as the gas price in Gwei. This gives a range of
+  // gas prices to test with, since there's a spread in the chainId numbers.
+  const gasCost: { [chainId: number]: TransactionCostEstimate } = Object.fromEntries(
+    chainIds.map((chainId) => {
+      const nativeGasCost = toBN(100_000); // Assume 100k gas for a single fill
+      const gasTokenPrice = toBN(chainId);
+      const tokenGasCost = nativeGasCost.mul(gasTokenPrice);
+      return [chainId, { nativeGasCost, tokenGasCost }];
+    })
+  );
 
-// Define LOG_IN_TEST for logging to console.
-const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
-let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
+  const testProfitability = (
+    inputAmountUsd: BigNumber,
+    outputAmountUsd: BigNumber,
+    gasCostUsd: BigNumber,
+    lpFeeUsd: BigNumber
+  ): Pick<FillProfit, "grossRelayerFeeUsd" | "netRelayerFeePct" | "netRelayerFeeUsd" | "profitable"> => {
+    const grossRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd).sub(lpFeeUsd);
+    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
+    const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd);
 
-function testProfitability(
-  deposit: Deposit,
-  fillAmountUsd: BigNumber,
-  gasCostUsd: BigNumber,
-  refundFeeUsd: BigNumber
-): FillProfit {
-  const { relayerFeePct } = deposit;
+    const minRelayerFeeUsd = outputAmountUsd.mul(minRelayerFeePct).div(fixedPoint);
+    const profitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
 
-  const grossRelayerFeeUsd = fillAmountUsd.mul(relayerFeePct).div(fixedPoint);
-  const relayerCapitalUsd = fillAmountUsd.sub(grossRelayerFeeUsd);
+    return {
+      grossRelayerFeeUsd,
+      netRelayerFeePct,
+      netRelayerFeeUsd,
+      profitable,
+    };
+  };
 
-  const minRelayerFeeUsd = relayerCapitalUsd.mul(minRelayerFeePct).div(fixedPoint);
-  const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd.add(refundFeeUsd));
-  const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
-
-  const profitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
-
-  return {
-    grossRelayerFeeUsd,
-    netRelayerFeePct,
-    relayerCapitalUsd,
-    netRelayerFeeUsd,
-    profitable,
-  } as FillProfit;
-}
-
-describe("ProfitClient: Consider relay profit", async function () {
-  beforeEach(async function () {
+  beforeEach(async () => {
     const [owner] = await ethers.getSigners();
     const logger = createSpyLogger().spyLogger;
 
     const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(logger, configStore);
-
     await configStoreClient.update();
 
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
-
     await hubPoolClient.update();
 
-    const { spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
-      originChainId,
-      destinationChainId
-    );
-    const { spokePool: spokePool_2, deploymentBlock: spokePool2DeploymentBlock } = await deploySpokePoolWithToken(
-      destinationChainId,
-      originChainId
-    );
+    const chainIds = [originChainId, destinationChainId];
+    assert(chainIds.length === 2, "SpokePool deployment requires only 2 chainIds");
+    const spokePoolClients = Object.fromEntries(
+      await sdkUtils.mapAsync(chainIds, async (spokeChainId, idx) => {
+        const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(
+          spokeChainId,
+          chainIds[(idx + 1) % 2] // @dev Only works for 2 chainIds.
+        );
+        const spokePoolClient = new SpokePoolClient(
+          spyLogger,
+          spokePool.connect(owner),
+          null,
+          spokeChainId,
+          deploymentBlock
+        );
 
-    const spokePoolClient_1 = new SpokePoolClient(
-      spyLogger,
-      spokePool_1.connect(owner),
-      null,
-      originChainId,
-      spokePool1DeploymentBlock
+        return [spokeChainId, spokePoolClient];
+      })
     );
-    const spokePoolClient_2 = new SpokePoolClient(
-      spyLogger,
-      spokePool_2.connect(owner),
-      null,
-      destinationChainId,
-      spokePool2DeploymentBlock
-    );
-    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const debugProfitability = true;
-
     profitClient = new MockProfitClient(
       spyLogger,
       hubPoolClient,
       spokePoolClients,
       [],
+      randomAddress(),
       minRelayerFeePct,
       debugProfitability
     );
 
     // Load per-chain gas cost (gas consumed * gas price in Wei), in native gas token.
     profitClient.setGasCosts(gasCost);
-
-    setDefaultTokenPrices(profitClient);
+    profitClient.setTokenPrices(tokenPrices);
   });
 
   // Verify gas cost calculation first, so we can leverage it in all subsequent tests.
-  it("Verify gas cost estimation", function () {
-    chainIds.forEach((chainId: number) => {
-      spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${chainId}.` });
+  it("Verify gas cost estimation", async () => {
+    for (const destinationChainId of chainIds) {
+      spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${destinationChainId}.` });
+      const deposit = {
+        ...v3DepositTemplate,
+        destinationChainId,
+        message,
+      };
+      const gasToken = profitClient.resolveGasToken(destinationChainId);
+      const expected = randomiseGasCost(destinationChainId);
 
-      const nativeGasCost = profitClient.getTotalGasCost(chainId);
-      expect(nativeGasCost.eq(0)).to.be.false;
-      expect(nativeGasCost.eq(gasCost[chainId])).to.be.true;
+      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.outputAmount);
+      expect(tokenGasCost.eq(0)).to.be.false;
 
-      const gasTokenAddr: string = GAS_TOKEN_BY_CHAIN_ID[chainId];
-      const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);
-      expect(gasToken).to.not.be.undefined;
+      const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.address);
 
-      const gasPriceUsd = tokenPrices[gasToken.symbol];
-      expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
+      const estimate = await profitClient.estimateFillCost(deposit, deposit.outputAmount);
+      ["nativeGasCost", "tokenGasCost"].forEach((field) => expect(estimate[field].eq(expected[field])).to.be.true);
 
-      const estimate: { [key: string]: BigNumber } = profitClient.estimateFillCost(chainId);
-      expect(estimate.nativeGasCost.eq(gasCost[chainId])).to.be.true;
-      expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
-      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBN(10).pow(gasToken.decimals)))).to.be.true;
-    });
+      expect(estimate.gasCostUsd.eq(tokenGasCost.mul(gasTokenPriceUsd).div(toBN(10).pow(gasToken.decimals)))).to.be
+        .true;
+    }
   });
 
-  it("Verify gas multiplier", function () {
-    chainIds.forEach((chainId: number) => {
-      spyLogger.debug({ message: `Verifying gas multiplier for chainId ${chainId}.` });
+  it("Verify gas padding", async () => {
+    const gasPadding = ["0", "0.10", "0.20", "0.50", "1"].map((padding) => toBNWei("1").add(toBNWei(padding)));
 
-      const nativeGasCost = profitClient.getTotalGasCost(chainId);
-      expect(nativeGasCost.gt(0)).to.be.true;
+    profitClient.setGasMultiplier(toBNWei("1")); // Neutralise any gas multiplier.
 
-      const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-      gasMultipliers.forEach((gasMultiplier) => {
-        profitClient.setGasMultiplier(toBNWei(gasMultiplier));
+    for (const destinationChainId of chainIds) {
+      spyLogger.debug({ message: `Verifying gas padding for chainId ${destinationChainId}.` });
+      const deposit = { ...v3DepositTemplate, destinationChainId };
 
-        const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[chainId];
-        const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);
+      const { nativeGasCost: defaultNativeGasCost, tokenGasCost: defaultTokenGasCost } =
+        await profitClient.getTotalGasCost(deposit, deposit.outputAmount);
 
-        const expectedFillCostUsd = nativeGasCost
-          .mul(tokenPrices[gasToken.symbol])
-          .mul(toBNWei(gasMultiplier))
+      for (const padding of gasPadding) {
+        profitClient.setGasPadding(padding);
+
+        const expectedNativeGasCost = defaultNativeGasCost.mul(padding).div(fixedPoint);
+        const expectedTokenGasCost = defaultTokenGasCost.mul(padding).div(fixedPoint);
+
+        const { nativeGasCost, tokenGasCost } = await profitClient.estimateFillCost(deposit);
+        expect(expectedNativeGasCost.eq(nativeGasCost)).to.be.true;
+        expect(expectedTokenGasCost.eq(tokenGasCost)).to.be.true;
+      }
+    }
+  });
+
+  it("Verify gas multiplier", async () => {
+    const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((multiplier) => toBNWei(multiplier));
+
+    for (const destinationChainId of chainIds) {
+      spyLogger.debug({ message: `Verifying gas multiplier for chainId ${destinationChainId}.` });
+      const deposit = { ...v3DepositTemplate, destinationChainId };
+
+      const { gasTokenPriceUsd } = randomiseGasCost(destinationChainId);
+      const gasToken = profitClient.resolveGasToken(destinationChainId);
+      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.outputAmount);
+      expect(tokenGasCost.gt(bnZero)).to.be.true;
+
+      for (const gasMultiplier of gasMultipliers) {
+        profitClient.setGasMultiplier(gasMultiplier);
+
+        const expectedFillCostUsd = tokenGasCost
+          .mul(gasMultiplier)
           .div(fixedPoint)
-          .div(fixedPoint);
-        const { gasCostUsd } = profitClient.estimateFillCost(chainId);
+          .mul(gasTokenPriceUsd)
+          .div(toBN(10).pow(gasToken.decimals));
+        const { gasCostUsd } = await profitClient.estimateFillCost(deposit);
         expect(expectedFillCostUsd.eq(gasCostUsd)).to.be.true;
-      });
-    });
+      }
+    }
   });
 
-  it("Return 0 when gas cost fails to be fetched", async function () {
-    profitClient.setGasCosts({ 137: undefined });
-    expect(profitClient.getTotalGasCost(137)).to.equal(toBN(0));
+  it("Return 0 when gas cost fails to be fetched", async () => {
+    const destinationChainId = 137;
+    profitClient.setGasCost(destinationChainId, undefined);
+    const deposit = { ...v3DepositTemplate, destinationChainId };
+    const { nativeGasCost, tokenGasCost } = await profitClient.getTotalGasCost(deposit);
+    expect(nativeGasCost.eq(bnZero)).to.be.true;
+    expect(tokenGasCost.eq(bnZero)).to.be.true;
   });
 
-  it("Verify token price and gas cost lookup failures", function () {
-    const l1Token: L1Token = tokens["WETH"];
-    const fillAmount = toBNWei(1);
-
+  it("Verify token price and gas cost lookup failures", async () => {
+    const outputAmount = toBNWei(1);
+    const l1Token = tokens.WETH;
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
-    chainIds.forEach((_chainId: number) => {
-      const chainId = Number(_chainId);
-      const deposit = {
-        relayerFeePct: toBNWei("0.0003"),
-        destinationChainId: chainId,
-      } as Deposit;
+    for (const destinationChainId of chainIds) {
+      const deposit = { ...v3DepositTemplate, outputAmount, destinationChainId };
 
       // Verify that it works before we break it.
-      expect(() =>
-        profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct)
-      ).to.not.throw();
+      expect(() => profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct)).to.not.throw();
 
-      spyLogger.debug({ message: `Verifying exception on gas cost estimation lookup failure on chain ${chainId}.` });
-      profitClient.setGasCosts({});
-      expect(() =>
-        profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct)
-      ).to.throw();
-      profitClient.setGasCosts(gasCost);
+      spyLogger.debug({ message: `Verify exception on chain ${destinationChainId} gas cost estimation failure.` });
+      const destinationGasCost = await profitClient.getTotalGasCost(deposit);
+      profitClient.setGasCost(destinationChainId, undefined);
+      await assertPromiseError(profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct));
+      profitClient.setGasCost(destinationChainId, destinationGasCost);
 
-      spyLogger.debug({ message: `Verifying exception on token price lookup failure on chain ${chainId}.` });
-      profitClient.setTokenPrices({ [l1Token.address]: toBN(0) });
+      spyLogger.debug({ message: `Verifying exception on chain ${destinationChainId} token price lookup failure.` });
+      const l1TokenPrice = profitClient.getPriceOfToken(l1Token.address);
+      profitClient.setTokenPrice(l1Token.address, undefined);
+
       // Setting price to 0 causes a downstream error in calculateFillProfitability.
-      expect(() =>
-        profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct)
-      ).to.throw();
-      setDefaultTokenPrices(profitClient);
+      await assertPromiseError(profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct));
+      profitClient.setTokenPrice(l1Token.address, l1TokenPrice);
 
       // Verify we left everything as we found it.
-      expect(() =>
-        profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct)
-      ).to.not.throw();
-    });
+      expect(() => profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct)).to.not.throw();
+    }
   });
 
-  /**
-   * Note: This test is a bit of a monster. It iterates over all combinations of:
-   * - Configured destination chains.
-   * - Configured L1 tokens.
-   * - A range of fill amounts.
-   * - A range of relayerFeePct values (sane and insane).
-   *
-   * The utility of this test is also _somewhat_ debatable, since it implements
-   * quite similar logic to the ProfitClient itself. A logic error in both
-   * implementations is certainly possible. However, relay pricing is quite
-   * dynamic, and the development of this test _did_ catch a few unexpected
-   * corner cases. This approach does however require fairly careful analysis of
-   * the test results to make sure that they are sane. Sampling is recommended.
-   */
-  it("Considers gas cost when computing profitability", async function () {
-    const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
+  it("Considers gas cost when computing profitability", async () => {
+    const gasPrice = toGWei(10);
+    const gasCostMultipliers = ["0.1", "0.5", "1", "2", "5", "10"].map((n) => toBNWei(n));
 
-    chainIds.forEach((destinationChainId: number) => {
-      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
+    for (const originChainId of chainIds) {
+      for (const destinationChainId of chainIds.filter((chainId) => chainId !== originChainId)) {
+        const { nativeGasCost: baseNativeGasCost } = gasCost[destinationChainId];
 
-      Object.values(tokens).forEach((l1Token: L1Token) => {
-        const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
-        hubPoolClient.setTokenInfoToReturn(l1Token);
+        for (const token of Object.values(tokens)) {
+          const inputToken = randomAddress();
+          const outputToken = randomAddress();
 
-        fillAmounts.forEach((_fillAmount: number | string) => {
-          const fillAmount = toBNWei(_fillAmount);
-          const nativeFillAmount = toBNWei(_fillAmount, l1Token.decimals);
-          spyLogger.debug({ message: `Testing fillAmount ${formatEther(fillAmount)}.` });
+          const outputAmount = toBN(1).mul(bn10.pow(token.decimals));
+          const inputAmount = outputAmount
+            .mul(fixedPoint)
+            .div(fixedPoint.sub(lpFeePct.add(relayerFeePct).add(gasFeePct)));
+          const deposit = {
+            ...v3DepositTemplate,
+            originChainId,
+            destinationChainId,
+            inputToken,
+            inputAmount,
+            outputToken,
+            outputAmount,
+          };
+          hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
+          hubPoolClient.setTokenMapping(token.address, deposit.destinationChainId, deposit.outputToken);
+          const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
-          const fillAmountUsd = fillAmount.mul(tokenPriceUsd).div(fixedPoint);
-          const gasCostPct = gasCostUsd.mul(fixedPoint).div(fillAmountUsd);
+          // Normalise any tokens with <18 decimals to 18 decimals.
+          const scaledInputAmount = deposit.inputAmount.mul(bn10.pow(18 - token.decimals));
+          const scaledOutputAmount = deposit.outputAmount.mul(bn10.pow(18 - token.decimals));
 
-          const relayerFeePcts: BigNumber[] = [
-            toBNWei(-1),
-            toBNWei(0),
-            minRelayerFeePct.div(4),
-            minRelayerFeePct.div(2),
-            minRelayerFeePct,
-            minRelayerFeePct.add(gasCostPct),
-            minRelayerFeePct.add(gasCostPct).add(1),
-            minRelayerFeePct.add(gasCostPct).add(toBNWei(1)),
-          ];
+          const inputAmountUsd = scaledInputAmount.mul(tokenPriceUsd).div(fixedPoint);
+          const outputAmountUsd = scaledOutputAmount.mul(tokenPriceUsd).div(fixedPoint);
 
-          relayerFeePcts.forEach((_relayerFeePct: BigNumber) => {
-            const relayerFeePct = _relayerFeePct.gt(maxRelayerFeePct) ? maxRelayerFeePct : _relayerFeePct;
-            const deposit = { relayerFeePct, destinationChainId } as Deposit;
+          const lpFeeUsd = inputAmountUsd.mul(lpFeePct).div(fixedPoint);
+          const gasToken = profitClient.resolveGasToken(destinationChainId);
+          const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
 
-            const expected = testProfitability(deposit, fillAmountUsd, gasCostUsd, zeroRefundFee);
+          for (const gasCostMultiplier of gasCostMultipliers) {
+            const nativeGasCost = baseNativeGasCost.mul(gasCostMultiplier).div(fixedPoint);
+            const tokenGasCost = nativeGasCost.mul(gasPrice);
+            const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(fixedPoint);
+            profitClient.setGasCost(destinationChainId, { nativeGasCost, tokenGasCost });
+
+            const gasCostPct = gasCostUsd.mul(fixedPoint).div(outputAmountUsd);
+
+            const expected = testProfitability(inputAmountUsd, outputAmountUsd, gasCostUsd, lpFeeUsd);
             spyLogger.debug({
-              message: `Expect ${l1Token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
-              fillAmount,
-              fillAmountUsd,
-              gasCostUsd,
-              grossRelayerFeePct: `${formatFeePct(relayerFeePct)} %`,
-              gasCostPct: `${formatFeePct(gasCostPct)} %`,
-              relayerCapitalUsd: expected.relayerCapitalUsd,
-              minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
-              minRelayerFeeUsd: minRelayerFeePct.mul(fillAmountUsd).div(fixedPoint),
-              netRelayerFeePct: `${formatFeePct(expected.netRelayerFeePct)} %`,
-              netRelayerFeeUsd: expected.netRelayerFeeUsd,
-            });
-
-            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
-            expect(profitable).to.equal(expected.profitable);
-          });
-        });
-      });
-    });
-  });
-
-  it("Considers refund fees when computing profitability", async function () {
-    const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
-    const refundFeeMultipliers = ["-0.1", "-0.01", "-0.001", "-0.0001", 0.0001, 0.001, 0.01, 0.1, 1];
-
-    chainIds.forEach((destinationChainId: number) => {
-      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
-
-      Object.values(tokens).forEach((l1Token: L1Token) => {
-        const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
-        hubPoolClient.setTokenInfoToReturn(l1Token);
-
-        fillAmounts.forEach((_fillAmount) => {
-          const fillAmount = toBNWei(_fillAmount);
-          const nativeFillAmount = toBNWei(_fillAmount, l1Token.decimals);
-          spyLogger.debug({ message: `Testing fillAmount ${formatEther(fillAmount)}.` });
-
-          const fillAmountUsd = fillAmount.mul(tokenPriceUsd).div(fixedPoint);
-          const gasCostPct = gasCostUsd.mul(fixedPoint).div(fillAmountUsd);
-
-          const relayerFeePct = toBN(0.0001);
-          const deposit = { relayerFeePct, destinationChainId } as Deposit;
-
-          refundFeeMultipliers.forEach((_multiplier) => {
-            const feeMultiplier = toBNWei(_multiplier);
-            const refundFee = fillAmount.mul(feeMultiplier).div(fixedPoint);
-            const nativeRefundFee = nativeFillAmount.mul(feeMultiplier).div(fixedPoint);
-            const refundFeeUsd = refundFee.mul(tokenPriceUsd).div(fixedPoint);
-            const expected = testProfitability(deposit, fillAmountUsd, gasCostUsd, refundFeeUsd);
-            spyLogger.debug({
-              message: `Expect ${l1Token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
-              tokenPrice: formatEther(tokenPriceUsd),
-              fillAmount: formatEther(fillAmount),
-              fillAmountUsd: formatEther(fillAmountUsd),
+              message: `Expect ${token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
+              inputAmount: formatEther(scaledInputAmount),
+              inputAmountUsd: formatEther(inputAmountUsd),
+              outputAmount: formatEther(scaledOutputAmount),
+              outputAmountUsd: formatEther(outputAmountUsd),
+              lpFeePct: `${formatFeePct(lpFeePct)}`,
+              lpFeeUsd: formatEther(lpFeeUsd),
+              gasMultiplier: formatEther(gasCostMultiplier),
               gasCostUsd: formatEther(gasCostUsd),
-              refundFee: formatEther(refundFee),
-              feeMultiplier: formatEther(feeMultiplier),
-              refundFeeUsd: formatEther(refundFeeUsd),
-              grossRelayerFeePct: `${formatFeePct(relayerFeePct)} %`,
               gasCostPct: `${formatFeePct(gasCostPct)} %`,
-              relayerCapitalUsd: formatEther(expected.relayerCapitalUsd),
               minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
-              minRelayerFeeUsd: formatEther(minRelayerFeePct.mul(fillAmountUsd).div(fixedPoint)),
+              minRelayerFeeUsd: formatEther(minRelayerFeePct.mul(outputAmountUsd).div(fixedPoint)),
               netRelayerFeePct: `${formatFeePct(expected.netRelayerFeePct)} %`,
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
+            const { profitable } = await profitClient.isFillProfitable(deposit, lpFeePct, token);
             expect(profitable).to.equal(expected.profitable);
-          });
-        });
-      });
-    });
+          }
+        }
+      }
+    }
   });
 
-  it("Allows per-route and per-token fee configuration", async function () {
+  it("Considers LP fees when computing profitability", async () => {
+    const lpFeeMultipliers = ["0.01", "0.1", "0.5", "1", "2", "5", "10"].map((n) => toBNWei(n));
+
+    for (const originChainId of chainIds) {
+      for (const destinationChainId of chainIds.filter((chainId) => chainId !== originChainId)) {
+        const { tokenGasCost } = gasCost[destinationChainId];
+        const gasToken = profitClient.resolveGasToken(destinationChainId);
+        const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
+        const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
+
+        for (const token of Object.values(tokens)) {
+          const inputToken = randomAddress();
+          const outputToken = randomAddress();
+
+          const outputAmount = toBN(1).mul(bn10.pow(token.decimals));
+          const inputAmount = outputAmount
+            .mul(fixedPoint)
+            .div(fixedPoint.sub(lpFeePct.add(relayerFeePct).add(gasFeePct)));
+          const deposit = {
+            ...v3DepositTemplate,
+            originChainId,
+            destinationChainId,
+            inputToken,
+            inputAmount,
+            outputToken,
+            outputAmount,
+          };
+          hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
+          hubPoolClient.setTokenMapping(token.address, deposit.destinationChainId, deposit.outputToken);
+          const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
+
+          // Normalise any tokens with <18 decimals to 18 decimals.
+          const scaledInputAmount = deposit.inputAmount.mul(bn10.pow(18 - token.decimals));
+          const scaledOutputAmount = deposit.outputAmount.mul(bn10.pow(18 - token.decimals));
+
+          const inputAmountUsd = scaledInputAmount.mul(tokenPriceUsd).div(fixedPoint);
+          const outputAmountUsd = scaledOutputAmount.mul(tokenPriceUsd).div(fixedPoint);
+          const gasCostPct = gasCostUsd.mul(fixedPoint).div(outputAmountUsd);
+
+          for (const lpFeeMultiplier of lpFeeMultipliers) {
+            const effectiveLpFeePct = lpFeePct.mul(lpFeeMultiplier).div(fixedPoint);
+            const lpFeeUsd = inputAmountUsd.mul(effectiveLpFeePct).div(fixedPoint);
+
+            const expected = testProfitability(inputAmountUsd, outputAmountUsd, gasCostUsd, lpFeeUsd);
+            spyLogger.debug({
+              message: `Expect ${token.symbol} deposit is ${expected.profitable ? "" : "un"}profitable:`,
+              inputAmount: formatEther(scaledInputAmount),
+              inputAmountUsd: formatEther(inputAmountUsd),
+              outputAmount: formatEther(scaledOutputAmount),
+              outputAmountUsd: formatEther(outputAmountUsd),
+              lpFeeMultiplier: `${formatEther(lpFeeMultiplier)}`,
+              lpFeePct: `${formatFeePct(effectiveLpFeePct)}`,
+              lpFeeUsd: formatEther(lpFeeUsd),
+              gasCostUsd: formatEther(gasCostUsd),
+              gasCostPct: `${formatFeePct(gasCostPct)} %`,
+              grossRelayerFeeUsd: formatEther(expected.grossRelayerFeeUsd),
+              minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
+              minRelayerFeeUsd: formatEther(minRelayerFeePct.mul(outputAmountUsd).div(fixedPoint)),
+              netRelayerFeePct: `${formatFeePct(expected.netRelayerFeePct)} %`,
+              netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
+            });
+
+            const { profitable } = await profitClient.isFillProfitable(deposit, effectiveLpFeePct, token);
+            expect(profitable).to.equal(expected.profitable);
+          }
+        }
+      }
+    }
+  });
+
+  it("Allows per-route and per-token fee configuration", () => {
     // Setup custom USDC pricing to Optimism.
     chainIds.forEach((srcChainId) => {
-      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toPrecision(10).toString();
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toFixed(10).toString();
       process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_42161`] = "0.00005";
     });
 
     const envPrefix = "MIN_RELAYER_FEE_PCT";
     ["USDC", "DAI", "WETH", "WBTC"].forEach((symbol) => {
       chainIds.forEach((srcChainId) => {
-        chainIds.forEach((dstChainId) => {
-          if (srcChainId === dstChainId) {
-            return;
-          }
+        chainIds
+          .filter((chainId) => chainId !== srcChainId)
+          .forEach((dstChainId) => {
+            const envVar = `${envPrefix}_${symbol}_${srcChainId}_${dstChainId}`;
+            const routeFee = process.env[envVar];
+            const routeMinRelayerFeePct = routeFee ? toBNWei(routeFee) : minRelayerFeePct;
+            const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
+            spyLogger.debug({
+              message: `Expect relayerFeePct === ${routeMinRelayerFeePct}`,
+              routeFee,
+              symbol,
+              srcChainId,
+              dstChainId,
+              computedMinRelayerFeePct,
+            });
 
-          const envVar = `${envPrefix}_${symbol}_${srcChainId}_${dstChainId}`;
-          const routeFee = process.env[envVar];
-          const routeMinRelayerFeePct = routeFee ? toBNWei(routeFee) : minRelayerFeePct;
-          const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
-          spyLogger.debug({
-            message: `Expect relayerFeePct === ${routeMinRelayerFeePct}`,
-            routeFee,
-            symbol,
-            srcChainId,
-            dstChainId,
-            computedMinRelayerFeePct,
+            // Cleanup env as we go.
+            if (routeFee) {
+              process.env[envVar] = undefined;
+            }
+
+            expect(computedMinRelayerFeePct.eq(routeMinRelayerFeePct)).to.be.true;
           });
-
-          // Cleanup env as we go.
-          if (routeFee) {
-            process.env[envVar] = undefined;
-          }
-
-          expect(computedMinRelayerFeePct.eq(routeMinRelayerFeePct)).to.be.true;
-        });
       });
     });
   });
 
-  it("Considers deposits with newRelayerFeePct", async function () {
-    const l1Token: L1Token = tokens["WETH"];
-    hubPoolClient.setTokenInfoToReturn(l1Token);
+  it("Considers updated deposits", async () => {
+    const deposit = { ...v3DepositTemplate };
+    const l1Token = tokens.WETH;
+    hubPoolClient.setTokenMapping(l1Token.address, originChainId, deposit.inputToken);
+    hubPoolClient.setTokenMapping(l1Token.address, destinationChainId, deposit.outputToken);
+    randomiseGasCost(destinationChainId);
 
-    const fillAmount = toBNWei(1);
-    const deposit = {
-      relayerFeePct: toBNWei("0.001"),
-      destinationChainId: 1,
-    } as Deposit;
+    const outputTokenPriceUsd = profitClient.getPriceOfToken(l1Token.symbol);
+    let expectedOutputAmountUsd = deposit.outputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
+    let fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
 
-    let fill: FillProfit;
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
-    expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
-
-    deposit["newRelayerFeePct"] = toBNWei("0.1");
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
-    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
+    deposit.updatedOutputAmount = deposit.outputAmount.div(10);
+    expectedOutputAmountUsd = deposit.updatedOutputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
+    fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
   });
 
-  it("Ignores newRelayerFeePct if it's lower than original relayerFeePct", async function () {
-    const l1Token: L1Token = tokens["WETH"];
-    hubPoolClient.setTokenInfoToReturn(l1Token);
+  it("Ignores updatedOutputAmount if it's higher than original outputAmount", async () => {
+    const updatedOutputAmount = v3DepositTemplate.outputAmount.add(bnOne);
+    const deposit = { ...v3DepositTemplate, updatedOutputAmount };
 
-    const deposit = {
-      relayerFeePct: toBNWei("0.1"),
-      newRelayerFeePct: toBNWei("0.01"),
-      destinationChainId: 1,
-    } as Deposit;
-    const fillAmount = toBNWei(1);
+    hubPoolClient.setTokenMapping(tokens.WETH.address, originChainId, deposit.inputToken);
+    hubPoolClient.setTokenMapping(tokens.WETH.address, destinationChainId, deposit.outputToken);
+    const outputTokenPriceUsd = profitClient.getPriceOfToken(tokens.WETH.symbol);
 
-    let fill: FillProfit;
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
-    expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
+    let expectedOutputAmountUsd = deposit.outputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
+    let fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
 
-    deposit.relayerFeePct = toBNWei(".001");
-    expect(deposit.relayerFeePct.lt(deposit.newRelayerFeePct)).to.be.true; // Sanity check
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, zeroRefundFee, l1Token, minRelayerFeePct);
-    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
+    deposit.updatedOutputAmount = deposit.outputAmount.sub(bnOne);
+    expectedOutputAmountUsd = deposit.updatedOutputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
+    fill = await profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct);
+    expect(fill.outputAmountUsd.eq(expectedOutputAmountUsd)).to.be.true;
   });
 
-  it("Captures unprofitable fills", async function () {
-    const deposit = { relayerFeePct: toBNWei("0.003"), originChainId: 1, depositId: 42 } as DepositWithBlock;
-    profitClient.captureUnprofitableFill(deposit, toBNWei(1));
-    expect(profitClient.getUnprofitableFills()).to.deep.equal({ 1: [{ deposit, fillAmount: toBNWei(1) }] });
+  it("Captures unprofitable fills", () => {
+    const deposit = {
+      ...v3DepositTemplate,
+      quoteBlockNumber: 0,
+      blockNumber: 0,
+      transactionHash: "",
+      transactionIndex: 0,
+      logIndex: 0,
+    };
+    const relayerFeePct = toBNWei("0.001");
+    const lpFeePct = toBNWei("0.002");
+    const gasCost = toGWei("0.003");
+
+    profitClient.captureUnprofitableFill(deposit, lpFeePct, relayerFeePct, gasCost);
+    expect(profitClient.getUnprofitableFills()).to.deep.equal({
+      [deposit.originChainId]: [{ deposit, lpFeePct, relayerFeePct, gasCost }],
+    });
   });
 });

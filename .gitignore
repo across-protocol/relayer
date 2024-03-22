@@ -1,13 +1,17 @@
+# dotfiles are ignored by default and must be added explicitly. Use
+# `git add -f <dotfile>` add a dotfile. Only do this for public files.
+.*
+
 node_modules
-.env
 coverage
 coverage.json
 typechain*
-.DS_Store
 dump.rdb*
-.idea
 
 # Hardhat files
 cache
 artifacts
 dist
+
+# Debugging files
+*.log

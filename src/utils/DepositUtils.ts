@@ -1,13 +1,21 @@
-import { assert, getDeposit, setDeposit, getRedisDepositKey, getCurrentTime, getRedis, isDefined } from "../utils";
-import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
-import { SpokePoolClient } from "../clients";
-import { assign, toBN, isFirstFillForDeposit } from "./";
-import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { utils, typechain } from "@across-protocol/sdk-v2";
-const { validateFillForDeposit } = utils;
+import {
+  Deposit,
+  Fill,
+  SlowFillRequest,
+  UnfilledDeposit,
+  UnfilledDepositsForOriginChain,
+  V2DepositWithBlock,
+  V3DepositWithBlock,
+} from "../interfaces";
+import { SpokePoolClient } from "../clients";
+import { assign, isFirstFillForDeposit, getRedisCache } from "./";
+import { bnZero } from "./SDKUtils";
+import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getDepositPath(deposit: Deposit): string {
-  return `${deposit.originToken}-->${deposit.destinationChainId}`;
+  const inputToken = utils.getDepositInputToken(deposit);
+  return `${inputToken}-->${deposit.destinationChainId}`;
 }
 
 export function updateUnfilledDepositsWithMatchedDeposit(
@@ -15,14 +23,17 @@ export function updateUnfilledDepositsWithMatchedDeposit(
   matchedDeposit: Deposit,
   unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain
 ): void {
-  const depositUnfilledAmount = matchedFill.amount.sub(matchedFill.totalFilledAmount);
+  const outputAmount = utils.getFillOutputAmount(matchedFill);
+  const totalFilledAmount = utils.getTotalFilledAmount(matchedFill);
+  const unfilledAmount = outputAmount.sub(totalFilledAmount);
+
   const depositKey = `${matchedDeposit.originChainId}+${matchedFill.depositId}`;
   assign(
     unfilledDepositsForOriginChain,
     [depositKey],
     [
       {
-        unfilledAmount: depositUnfilledAmount,
+        unfilledAmount,
         deposit: matchedDeposit,
         // A first partial fill for a deposit is characterized by one whose total filled amount post-fill
         // is equal to the amount sent in the fill, and where the fill amount is greater than zero.
@@ -40,7 +51,7 @@ export function flattenAndFilterUnfilledDepositsByOriginChain(
       .map((_unfilledDeposits: UnfilledDeposit[]): UnfilledDeposit => {
         // Remove deposits with no matched fills.
         if (_unfilledDeposits.length === 0) {
-          return { unfilledAmount: toBN(0), deposit: undefined };
+          return { unfilledAmount: bnZero, deposit: undefined };
         }
         // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
         // that we'll only be slow relaying deposits where the first fill (i.e. the one with
@@ -49,7 +60,7 @@ export function flattenAndFilterUnfilledDepositsByOriginChain(
         if (
           !_unfilledDeposits.some((_unfilledDeposit: UnfilledDeposit) => _unfilledDeposit.hasFirstPartialFill === true)
         ) {
-          return { unfilledAmount: toBN(0), deposit: undefined };
+          return { unfilledAmount: bnZero, deposit: undefined };
         }
         // For each deposit, identify the smallest unfilled amount remaining after a fill since each fill can
         // only decrease the unfilled amount.
@@ -73,8 +84,8 @@ export function getUniqueDepositsInRange(
   destinationChain: number,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   originClient: SpokePoolClient,
-  existingUniqueDeposits: DepositWithBlock[]
-): DepositWithBlock[] {
+  existingUniqueDeposits: V2DepositWithBlock[]
+): V2DepositWithBlock[] {
   const originChainBlockRange = getBlockRangeForChain(
     blockRangesForChains,
     originChain,
@@ -83,14 +94,15 @@ export function getUniqueDepositsInRange(
   return originClient
     .getDepositsForDestinationChain(destinationChain)
     .filter(
-      (deposit: DepositWithBlock) =>
+      (deposit) =>
         deposit.blockNumber <= originChainBlockRange[1] &&
         deposit.blockNumber >= originChainBlockRange[0] &&
         !existingUniqueDeposits.some(
           (existingDeposit) =>
             existingDeposit.originChainId === deposit.originChainId && existingDeposit.depositId === deposit.depositId
         )
-    ) as DepositWithBlock[];
+    )
+    .filter(utils.isV2Deposit<V2DepositWithBlock, V3DepositWithBlock>);
 }
 
 export function getUniqueEarlyDepositsInRange(
@@ -119,58 +131,12 @@ export function getUniqueEarlyDepositsInRange(
   );
 }
 
-export function isDepositSpedUp(deposit: Deposit): boolean {
-  return deposit.speedUpSignature !== undefined && deposit.newRelayerFeePct !== undefined;
-}
-
 // Load a deposit for a fill if the fill's deposit ID is outside this client's search range.
 // This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
 // of a deposit older or younger than its fixed lookback.
 export async function queryHistoricalDepositForFill(
   spokePoolClient: SpokePoolClient,
-  fill: Fill
-): Promise<DepositWithBlock | undefined> {
-  if (fill.originChainId !== spokePoolClient.chainId) {
-    throw new Error(`OriginChainId mismatch (${fill.originChainId} != ${spokePoolClient.chainId})`);
-  }
-
-  // We need to update client so we know the first and last deposit ID's queried for this spoke pool client, as well
-  // as the global first and last deposit ID's for this spoke pool.
-  if (!spokePoolClient.isUpdated) {
-    throw new Error("SpokePoolClient must be updated before querying historical deposits");
-  }
-
-  if (
-    fill.depositId < spokePoolClient.firstDepositIdForSpokePool ||
-    fill.depositId > spokePoolClient.lastDepositIdForSpokePool
-  ) {
-    return undefined;
-  }
-
-  if (
-    fill.depositId >= spokePoolClient.earliestDepositIdQueried &&
-    fill.depositId <= spokePoolClient.latestDepositIdQueried
-  ) {
-    return spokePoolClient.getDepositForFill(fill);
-  }
-
-  let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
-  const redisClient = await getRedis(spokePoolClient.logger);
-  if (redisClient) {
-    cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
-  }
-
-  if (isDefined(cachedDeposit)) {
-    deposit = cachedDeposit as DepositWithBlock;
-    // Assert that cache hasn't been corrupted.
-    assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
-  } else {
-    deposit = await spokePoolClient.findDeposit(fill.depositId, fill.destinationChainId, fill.depositor);
-
-    if (redisClient) {
-      await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
-    }
-  }
-
-  return validateFillForDeposit(fill, deposit) ? deposit : undefined;
+  fill: Fill | SlowFillRequest
+): Promise<utils.DepositSearchResult> {
+  return utils.queryHistoricalDepositForFill(spokePoolClient, fill, await getRedisCache(spokePoolClient.logger));
 }

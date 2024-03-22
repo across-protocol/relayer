@@ -1,8 +1,20 @@
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { Deposit, DepositWithBlock, Fill, RunningBalances } from "../src/interfaces";
+import {
+  Deposit,
+  Fill,
+  RelayerRefundLeaf,
+  RunningBalances,
+  V2DepositWithBlock,
+  V2FillWithBlock,
+  V3DepositWithBlock,
+  V3FillWithBlock,
+} from "../src/interfaces";
 import {
   EMPTY_MERKLE_ROOT,
+  assert,
+  bnZero,
   compareAddresses,
+  fixedPointAdjustment,
   getRealizedLpFeeForFills,
   getRefund,
   getRefundForFills,
@@ -12,13 +24,12 @@ import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
-  buildPoolRebalanceLeaves,
   destinationChainId,
   mockTreeRoot,
-  modifyRelayHelper,
   originChainId,
   refundProposalLiveness,
   repaymentChainId,
+  sampleRateModel,
 } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -29,37 +40,42 @@ import {
   buildFill,
   buildFillForRepaymentChain,
   buildPoolRebalanceLeafTree,
-  buildRefundRequest,
+  buildPoolRebalanceLeaves,
   buildRelayerRefundTreeWithUnassignedLeafIds,
   buildSlowFill,
   buildSlowRelayLeaves,
   buildSlowRelayTree,
+  buildV3SlowRelayLeaves,
   constructPoolRebalanceTree,
   createSpyLogger,
-  deepEqualsWithBigNumber,
   deployNewTokenMapping,
+  depositV3,
   enableRoutesOnHubPool,
   ethers,
   expect,
+  fillV3,
+  fillV3Relay,
   getDefaultBlockRange,
   lastSpyLogIncludes,
-  sampleRateModel,
+  requestSlowFill,
   setupTokensForWallet,
   sinon,
   toBN,
   toBNWei,
+  buildV3SlowRelayTree,
+  updateDeposit,
 } from "./utils";
+import { utils as sdkUtils, interfaces } from "@across-protocol/sdk-v2";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { MockUBAClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient, spokePoolClient_1: SpokePoolClient;
-let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
+let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
+let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let spy: sinon.SinonSpy;
@@ -86,94 +102,99 @@ describe("Dataworker: Build merkle roots", async function () {
       timer,
       spokePoolClients,
       spy,
-      spokePoolClient_1,
-      spokePoolClient_2,
       updateAllClients,
     } = fastDataworkerResult);
   });
   it("Build slow relay root", async function () {
     await updateAllClients();
 
-    // Submit deposits for multiple destination chain IDs.
-    const deposit1 = await buildDeposit(
-      hubPoolClient,
+    const deposit1 = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
-      amountToDeposit
-    );
-    const deposit2 = await buildDeposit(
-      hubPoolClient,
-      spokePool_2,
-      erc20_2,
-      l1Token_1,
       depositor,
-      originChainId,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
-    const deposit3 = await buildDeposit(
-      hubPoolClient,
+
+    const deposit2 = await depositV3(
+      spokePool_2,
+      originChainId,
+      depositor,
+      erc20_2.address,
+      amountToDeposit,
+      erc20_1.address,
+      amountToDeposit
+    );
+
+    const deposit3 = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
-    const deposit4 = await buildDeposit(
-      hubPoolClient,
+
+    const deposit4 = await depositV3(
       spokePool_2,
-      erc20_2,
-      l1Token_1,
-      depositor,
       originChainId,
+      depositor,
+      erc20_2.address,
+      amountToDeposit,
+      erc20_1.address,
       amountToDeposit
+    );
+    await hubPoolClient.update();
+
+    // Reuest slow fills for each deposit so dataworker includes deposits as slow relays.
+    await requestSlowFill(spokePool_2, relayer, deposit1);
+    await requestSlowFill(spokePool_1, relayer, deposit2);
+    await requestSlowFill(spokePool_2, relayer, deposit3);
+    await requestSlowFill(spokePool_1, relayer, deposit4);
+
+    const deposits = [deposit1, deposit2, deposit3, deposit4];
+    const lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: deposit.destinationChainId }))
     );
 
     // Slow relays should be sorted by origin chain ID and deposit ID.
-    const expectedSlowRelayLeaves = buildSlowRelayLeaves([deposit1, deposit2, deposit3, deposit4]);
-
-    // Add fills for each deposit so dataworker includes deposits as slow relays:
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.1);
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 0.1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 0.1);
+    const expectedSlowRelayLeaves = [
+      ...buildV3SlowRelayLeaves([deposit1], lpFees[0].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit3], lpFees[2].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit2], lpFees[1].realizedLpFeePct),
+      ...buildV3SlowRelayLeaves([deposit4], lpFees[3].realizedLpFeePct),
+    ];
 
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     await updateAllClients();
-    const expectedMerkleRoot1 = await buildSlowRelayTree(expectedSlowRelayLeaves);
+    const expectedMerkleRoot1 = await buildV3SlowRelayTree(expectedSlowRelayLeaves);
     const merkleRoot1 = (await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(0), spokePoolClients)).tree;
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
     // Speeding up a deposit should have no effect on the slow root:
-    const newRelayerFeePct = toBNWei(0.1337);
-    const speedUpSignature = await modifyRelayHelper(
-      newRelayerFeePct,
-      deposit1.depositId.toString(),
-      deposit1.originChainId.toString(),
-      depositor,
-      deposit1.recipient,
-      "0x"
+    await updateDeposit(
+      spokePool_1,
+      {
+        ...deposit1,
+        updatedMessage: deposit1.message,
+        updatedOutputAmount: deposit1.outputAmount.sub(1),
+        updatedRecipient: deposit1.recipient,
+      },
+      depositor
     );
-    await spokePool_1.speedUpDeposit(
-      depositor.address,
-      newRelayerFeePct,
-      deposit1.depositId,
-      deposit1.recipient,
-      "0x",
-      speedUpSignature.signature
-    );
+
     await updateAllClients();
-    expect(merkleRoot1.getHexRoot()).to.equal((await buildSlowRelayTree(expectedSlowRelayLeaves)).getHexRoot());
+    expect(merkleRoot1.getHexRoot()).to.equal((await buildV3SlowRelayTree(expectedSlowRelayLeaves)).getHexRoot());
 
     // Fill deposits such that there are no unfilled deposits remaining.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
+    await fillV3Relay(spokePool_2, deposit1, relayer);
+    await fillV3Relay(spokePool_1, deposit2, relayer);
+    await fillV3Relay(spokePool_2, deposit3, relayer);
+    await fillV3Relay(spokePool_1, deposit4, relayer);
     await updateAllClients();
     expect(
       (await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(1), spokePoolClients)).leaves
@@ -183,25 +204,49 @@ describe("Dataworker: Build merkle roots", async function () {
     ).to.equal(EMPTY_MERKLE_ROOT);
 
     // Includes slow fills triggered by "zero" (i.e. 1 wei) fills
-    const deposit5 = await buildDeposit(
-      hubPoolClient,
+    const deposit5 = await depositV3(
       spokePool_2,
-      erc20_2,
-      l1Token_1,
-      depositor,
       originChainId,
+      depositor,
+      erc20_2.address,
+      amountToDeposit,
+      erc20_1.address,
       amountToDeposit
     );
 
     // Trigger slow fill with a partial fill:
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.01);
+    await requestSlowFill(spokePool_1, relayer, deposit5);
     await updateAllClients();
     const merkleRoot2 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(3), spokePoolClients);
-    const expectedMerkleRoot2 = await buildSlowRelayTree(buildSlowRelayLeaves([deposit5]));
+    const { realizedLpFeePct: lpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+      ...deposit5,
+      paymentChainId: deposit5.destinationChainId,
+    });
+    const expectedMerkleRoot2 = await buildV3SlowRelayTree(buildV3SlowRelayLeaves([deposit5], lpFeePct));
     expect(merkleRoot2.tree.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
   });
+
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
+      // Set spoke target balance thresholds above deposit amounts so that amountToReturn is always 0.
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          spokeTargetBalances: {
+            [originChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.mul(10).toString(),
+              target: amountToDeposit.div(2).toString(),
+            },
+            [destinationChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.mul(10).toString(),
+              target: amountToDeposit.div(2).toString(),
+            },
+          },
+        })
+      );
       await updateAllClients();
       const poolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(
         getDefaultBlockRange(0),
@@ -391,6 +436,8 @@ describe("Dataworker: Build merkle roots", async function () {
       };
       const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1, leaf3]);
       expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
+
+      // TODO: Add V3 fill to refund and expired deposit to see if they get added to relayer refund root.
     });
     it("amountToReturn is non 0", async function () {
       await updateAllClients();
@@ -409,17 +456,6 @@ describe("Dataworker: Build merkle roots", async function () {
       await enableRoutesOnHubPool(hubPool, [
         { destinationChainId: 100, destinationToken: erc20_2, l1Token: l1Token_1 },
       ]);
-      await updateAllClients();
-
-      // Since amountToReturn is dependent on netSendAmount in pool rebalance leaf for same chain and token,
-      // let's fetch it. We'll move the token transfer threshold lower to make sure netSendAmount is negative.
-      await configStore.updateTokenConfig(
-        l1Token_1.address,
-        JSON.stringify({
-          rateModel: sampleRateModel,
-          transferThreshold: toBNWei("0.0001").toString(),
-        })
-      );
       await updateAllClients();
 
       // Since there was 1 unfilled deposit, there should be 1 relayer refund root for the deposit origin chain
@@ -746,7 +782,7 @@ describe("Dataworker: Build merkle roots", async function () {
       });
 
       // Should have queried for historical fills that it can no longer see.
-      expect(lastSpyLogIncludes(spy, "Queried for fill that triggered a slow fill")).to.be.true;
+      expect(lastSpyLogIncludes(spy, "Queried for partial fill that triggered an unused slow fill")).to.be.true;
 
       // The excess amount in the contract is now equal to the partial fill amount sent before the slow fill.
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
@@ -866,8 +902,14 @@ describe("Dataworker: Build merkle roots", async function () {
         destinationChainId,
         amountToDeposit
       );
-      const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
-      const fill2 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
+      const lastFillBeforeSlowFill = await buildFillForRepaymentChain(
+        spokePool_2,
+        relayer,
+        deposit1,
+        0.25,
+        destinationChainId
+      );
       const fill2Block = await spokePool_2.provider.getBlockNumber();
 
       // Produce bundle and execute pool leaves. Should produce a slow fill. Don't execute it.
@@ -912,7 +954,7 @@ describe("Dataworker: Build merkle roots", async function () {
       );
 
       // Send a third partial fill, this will produce an excess since a slow fill is already in flight for the deposit.
-      const fill3 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
       await updateAllClients();
       await destinationChainSpokePoolClient.update();
       expect(destinationChainSpokePoolClient.getFills().length).to.equal(1);
@@ -920,23 +962,18 @@ describe("Dataworker: Build merkle roots", async function () {
         fill2Block + 1,
         await spokePool_2.provider.getBlockNumber(),
       ]);
-      const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, {
+      await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, {
         ...spokePoolClients,
         [destinationChainId]: destinationChainSpokePoolClient,
       });
-      const l1TokenForFill = merkleRoot2.leaves[0].l1Tokens[0];
-
-      // New running balance should be fill1 + fill2 + fill3 + slowFillAmount - excess
-      // excess should be the amount remaining after fill2. Since the slow fill was never
-      // executed, the excess should be equal to the slow fill amount so they should cancel out.
-      const expectedExcess = getRefund(fill2.amount.sub(fill2.totalFilledAmount), fill2.realizedLpFeePct);
-      expect(merkleRoot2.runningBalances[destinationChainId][l1TokenForFill]).to.equal(
-        getRefundForFills([fill1, fill2, fill3])
-      );
-
       expect(lastSpyLogIncludes(spy, "Fills triggering excess returns from L2")).to.be.true;
+      const expectedExcess = getRefund(
+        lastFillBeforeSlowFill.amount.sub(lastFillBeforeSlowFill.totalFilledAmount),
+        lastFillBeforeSlowFill.realizedLpFeePct
+      );
       expect(
-        spy.getCall(-1).lastArg.fillsTriggeringExcesses[destinationChainId][fill2.destinationToken][0].excess
+        spy.getCall(-1).lastArg.fillsTriggeringExcesses[destinationChainId][lastFillBeforeSlowFill.destinationToken][0]
+          .excess
       ).to.equal(expectedExcess.toString());
     });
     it("Many L1 tokens, testing leaf order and root construction", async function () {
@@ -953,15 +990,6 @@ describe("Dataworker: Build merkle roots", async function () {
           configStore,
           hubPool,
           amountToDeposit.mul(toBN(100))
-        );
-
-        // Set a very high transfer threshold so leaves are not split
-        await configStore.updateTokenConfig(
-          l1Token.address,
-          JSON.stringify({
-            rateModel: sampleRateModel,
-            transferThreshold: toBNWei("1000000").toString(),
-          })
         );
 
         await updateAllClients(); // Update client to be aware of new token mapping so we can build deposit correctly.
@@ -1002,9 +1030,8 @@ describe("Dataworker: Build merkle roots", async function () {
           return [
             sortedL1Tokens.slice(0, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF),
             [sortedL1Tokens[sortedL1Tokens.length - 1]],
-          ].map((l1TokensToIncludeInLeaf: string[], i) => {
+          ].map((l1TokensToIncludeInLeaf: string[]) => {
             return {
-              groupIndex: i,
               chainId,
               // Realized LP fees are 0 for origin chain since no fill was submitted to it, only deposits.
               bundleLpFees:
@@ -1012,13 +1039,13 @@ describe("Dataworker: Build merkle roots", async function () {
                   ? Array(l1TokensToIncludeInLeaf.length).fill(toBN(0))
                   : l1TokensToIncludeInLeaf.map((l1Token) => getRealizedLpFeeForFills([fillsForL1Token[l1Token]])),
               // Running balances are straightforward to compute because deposits are sent to origin chain and fills
-              // are sent to destination chain only.
-              runningBalances:
+              // are sent to destination chain only. The spoke pool threshold is 0 by default so running balances
+              // should be 0.
+              netSendAmounts:
                 chainId === originChainId
                   ? l1TokensToIncludeInLeaf.map((l1Token) => depositsForL1Token[l1Token].amount.mul(toBN(-1)))
                   : l1TokensToIncludeInLeaf.map((l1Token) => getRefundForFills([fillsForL1Token[l1Token]])),
-              netSendAmounts: l1TokensToIncludeInLeaf.map(() => toBN(0)), // Should be 0 since running balances are
-              // under threshold
+              runningBalances: l1TokensToIncludeInLeaf.map(() => toBN(0)),
               l1Tokens: l1TokensToIncludeInLeaf,
             };
           });
@@ -1027,9 +1054,10 @@ describe("Dataworker: Build merkle roots", async function () {
         .map((leaf, i) => {
           return { ...leaf, leafId: i };
         });
-      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves);
+
+      expect(merkleRoot1.leaves).excludingEvery(["groupIndex"]).to.deep.equal(expectedLeaves);
       const expectedMerkleRoot = await buildPoolRebalanceLeafTree(
-        expectedLeaves.map((leaf) => {
+        merkleRoot1.leaves.map((leaf) => {
           return { ...leaf, chainId: toBN(leaf.chainId), groupIndex: toBN(leaf.groupIndex), leafId: toBN(leaf.leafId) };
         })
       );
@@ -1086,14 +1114,12 @@ describe("Dataworker: Build merkle roots", async function () {
         compareAddresses(addressA, addressB)
       );
       const expectedLeaf = {
-        groupIndex: 0,
         chainId: originChainId,
         bundleLpFees: [
           orderedL1Tokens[0] === l1Token_1.address ? toBN(0) : getRealizedLpFeeForFills([fillA]),
           orderedL1Tokens[0] === l1TokenNew.address ? toBN(0) : getRealizedLpFeeForFills([fillA]),
         ],
-        netSendAmounts: [toBN(0), toBN(0)],
-        runningBalances: [
+        netSendAmounts: [
           orderedL1Tokens[0] === l1Token_1.address
             ? depositB.amount.mul(toBN(-1))
             : depositA.amount.sub(getRefundForFills([fillA])).mul(toBN(-1)),
@@ -1101,66 +1127,10 @@ describe("Dataworker: Build merkle roots", async function () {
             ? depositB.amount.mul(toBN(-1))
             : depositA.amount.sub(getRefundForFills([fillA])).mul(toBN(-1)),
         ],
+        runningBalances: [toBN(0), toBN(0)],
         l1Tokens: orderedL1Tokens,
-        leafId: 0,
       };
-      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, [expectedLeaf])).to.be.true;
-    });
-    it("Token transfer exceeds threshold", async function () {
-      await updateAllClients();
-      const deposit = await buildDeposit(
-        hubPoolClient,
-        spokePool_1,
-        erc20_1,
-        l1Token_1,
-        depositor,
-        destinationChainId,
-        amountToDeposit
-      );
-      await updateAllClients();
-      const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
-      await updateAllClients();
-      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients);
-
-      const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
-      const expectedLeaves1 = orderedChainIds
-        .map((chainId) => {
-          return {
-            groupIndex: 0,
-            chainId,
-            bundleLpFees: chainId === originChainId ? [toBN(0)] : [getRealizedLpFeeForFills([fill])],
-            // Running balance is <<< token threshold, so running balance should be non-zero and net send amount
-            // should be 0.
-            runningBalances: chainId === originChainId ? [deposit.amount.mul(toBN(-1))] : [getRefundForFills([fill])],
-            netSendAmounts: [toBN(0)],
-            l1Tokens: [l1Token_1.address],
-          };
-        })
-        .map((leaf, i) => {
-          return { ...leaf, leafId: i };
-        });
-      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
-
-      // Now set the threshold much lower than the running balance and check that running balances for all
-      // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
-      // dataworker is comparing the absolute value of the running balance with the threshold, not the signed value.
-      await configStore.updateTokenConfig(
-        l1Token_1.address,
-        JSON.stringify({
-          rateModel: sampleRateModel,
-          transferThreshold: toBNWei(1).toString(),
-        })
-      );
-      await configStoreClient.update();
-      const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
-      const expectedLeaves2 = expectedLeaves1.map((leaf) => {
-        return {
-          ...leaf,
-          runningBalances: [toBN(0)],
-          netSendAmounts: leaf.runningBalances,
-        };
-      });
-      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
+      expect(merkleRoot1.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal([expectedLeaf]);
     });
     it("Adds latest running balances to next", async function () {
       await updateAllClients();
@@ -1210,14 +1180,12 @@ describe("Dataworker: Build merkle roots", async function () {
         {
           chainId: originChainId,
           bundleLpFees: [toBN(0)],
-          netSendAmounts: [toBN(0)],
-          runningBalances: [startingRunningBalances.sub(amountToDeposit)],
-          groupIndex: 0,
-          leafId: 0,
+          netSendAmounts: [startingRunningBalances.sub(amountToDeposit)],
+          runningBalances: [toBN(0)],
           l1Tokens: [l1Token_1.address],
         },
       ];
-      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
+      expect(merkleRoot1.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal(expectedLeaves1);
 
       // Submit a partial fill on destination chain. This tests that the previous running balance is added to
       // running balances modified by repayments, slow fills, and deposits.
@@ -1228,24 +1196,20 @@ describe("Dataworker: Build merkle roots", async function () {
         {
           chainId: originChainId,
           bundleLpFees: [toBN(0)],
-          netSendAmounts: [toBN(0)],
-          runningBalances: [startingRunningBalances.sub(amountToDeposit)],
-          groupIndex: 0,
-          leafId: 0,
+          netSendAmounts: [startingRunningBalances.sub(amountToDeposit)],
+          runningBalances: [toBN(0)],
           l1Tokens: [l1Token_1.address],
         },
         {
           chainId: destinationChainId,
           bundleLpFees: [getRealizedLpFeeForFills([fill])],
-          netSendAmounts: [toBN(0)],
-          runningBalances: [startingRunningBalances.add(getRefundForFills([fill])).add(slowFillPayment)],
-          groupIndex: 0,
-          leafId: 1,
+          netSendAmounts: [startingRunningBalances.add(getRefundForFills([fill])).add(slowFillPayment)],
+          runningBalances: [toBN(0)],
           l1Tokens: [l1Token_1.address],
         },
       ];
       const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
-      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
+      expect(merkleRoot2.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal(expectedLeaves2);
     });
     it("Spoke pool balance threshold, above and below", async function () {
       await updateAllClients();
@@ -1265,7 +1229,6 @@ describe("Dataworker: Build merkle roots", async function () {
         l1Token_1.address,
         JSON.stringify({
           rateModel: sampleRateModel,
-          transferThreshold: "0",
           spokeTargetBalances: {
             [originChainId]: {
               // Threshold above the deposit amount.
@@ -1284,24 +1247,19 @@ describe("Dataworker: Build merkle roots", async function () {
       const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients);
 
       const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
-      const expectedLeaves1 = orderedChainIds
-        .map((chainId) => {
-          return {
-            groupIndex: 0,
-            chainId,
-            bundleLpFees: chainId === originChainId ? [toBN(0)] : [getRealizedLpFeeForFills([fill])],
-            // Running balance is <<< spoke pool balance threshold, so running balance should be non-zero and net send
-            // amount should be 0 for the origin chain. This should _not affect_ the destination chain, since spoke
-            // pool balance thresholds only apply to funds being sent from spoke to hub.
-            runningBalances: chainId === originChainId ? [deposit.amount.mul(toBN(-1))] : [toBN(0)],
-            netSendAmounts: chainId === originChainId ? [toBN(0)] : [getRefundForFills([fill])],
-            l1Tokens: [l1Token_1.address],
-          };
-        })
-        .map((leaf, i) => {
-          return { ...leaf, leafId: i };
-        });
-      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
+      const expectedLeaves1 = orderedChainIds.map((chainId) => {
+        return {
+          chainId,
+          bundleLpFees: chainId === originChainId ? [toBN(0)] : [getRealizedLpFeeForFills([fill])],
+          // Running balance is <<< spoke pool balance threshold, so running balance should be non-zero and net send
+          // amount should be 0 for the origin chain. This should _not affect_ the destination chain, since spoke
+          // pool balance thresholds only apply to funds being sent from spoke to hub.
+          runningBalances: chainId === originChainId ? [deposit.amount.mul(toBN(-1))] : [toBN(0)],
+          netSendAmounts: chainId === originChainId ? [toBN(0)] : [getRefundForFills([fill])],
+          l1Tokens: [l1Token_1.address],
+        };
+      });
+      expect(merkleRoot1.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal(expectedLeaves1);
 
       // Now set the threshold much lower than the running balance and check that running balances for all
       // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
@@ -1310,7 +1268,6 @@ describe("Dataworker: Build merkle roots", async function () {
         l1Token_1.address,
         JSON.stringify({
           rateModel: sampleRateModel,
-          transferThreshold: "0",
           spokeTargetBalances: {
             [originChainId]: {
               // Threshold is equal to the deposit amount.
@@ -1338,11 +1295,435 @@ describe("Dataworker: Build merkle roots", async function () {
           netSendAmounts: leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : leaf.netSendAmounts,
         };
       });
-      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
+      expect(merkleRoot2.leaves).excludingEvery(["groupIndex", "leafId"]).to.deep.equal(expectedLeaves2);
     });
-    it("Spoke pool balance threshold, below transfer threshold", async function () {
+  });
+  describe("Handles V3 BundleData", function () {
+    beforeEach(async function () {
       await updateAllClients();
-      const deposit = await buildDeposit(
+      await updateAllClients();
+      const poolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(
+        getDefaultBlockRange(1),
+        spokePoolClients
+      );
+      expect(poolRebalanceRoot.runningBalances).to.deep.equal({});
+      expect(poolRebalanceRoot.realizedLpFees).to.deep.equal({});
+      const relayerRefundRoot = await dataworkerInstance.buildRelayerRefundRoot(
+        getDefaultBlockRange(1),
+        spokePoolClients,
+        poolRebalanceRoot.leaves,
+        poolRebalanceRoot.runningBalances
+      );
+      expect(relayerRefundRoot.leaves).to.deep.equal([]);
+    });
+    it("Subtracts bundle deposits from origin chain running balances", async function () {
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
+
+      // Deposits should not add to bundle LP fees.
+      const expectedRunningBalances: RunningBalances = {
+        [originChainId]: {
+          [l1Token_1.address]: deposit.inputAmount.mul(-1),
+        },
+      };
+      expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+      expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
+    });
+    it("Adds bundle fills to repayment chain running balances", async function () {
+      // Send two deposits so we can fill with two different origin chains to test that the BundleDataClient
+      // batch computes lp fees correctly for different origin chains.
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await depositV3(
+        spokePool_2,
+        originChainId,
+        depositor,
+        erc20_2.address,
+        amountToDeposit,
+        erc20_1.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const deposit1 = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      const deposit2 = spokePoolClients[destinationChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      await fillV3(spokePool_2, relayer, deposit1, repaymentChainId);
+      await fillV3(spokePool_1, relayer, deposit2, repaymentChainId);
+      await updateAllClients();
+      const fill1 = spokePoolClients[destinationChainId]
+        .getFills()
+        .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
+      const fill2 = spokePoolClients[originChainId]
+        .getFills()
+        .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
+
+      // Deposits should not add to bundle LP fees, but fills should. LP fees are taken out of running balances
+      // and added to realized LP fees, for fills.
+      const lpFeePct1 = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit1, paymentChainId: fill1.destinationChainId })
+      ).realizedLpFeePct;
+      const lpFeePct2 = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit2, paymentChainId: fill2.destinationChainId })
+      ).realizedLpFeePct;
+      assert(lpFeePct1.gt(0) && lpFeePct2.gt(0), "LP fee pct should be greater than 0");
+      const lpFee1 = lpFeePct1.mul(fill1.inputAmount).div(fixedPointAdjustment);
+      const lpFee2 = lpFeePct2.mul(fill2.inputAmount).div(fixedPointAdjustment);
+      const expectedRunningBalances: RunningBalances = {
+        [originChainId]: {
+          [l1Token_1.address]: deposit1.inputAmount.mul(-1),
+        },
+        [destinationChainId]: {
+          [l1Token_1.address]: deposit2.inputAmount.mul(-1),
+        },
+        [repaymentChainId]: {
+          [l1Token_1.address]: lpFee1.mul(-1).add(fill1.inputAmount).add(lpFee2.mul(-1).add(fill2.inputAmount)),
+        },
+      };
+      const expectedRealizedLpFees: RunningBalances = {
+        [repaymentChainId]: {
+          [l1Token_1.address]: lpFee1.add(lpFee2),
+        },
+      };
+      expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+      expect(expectedRealizedLpFees).to.deep.equal(merkleRoot1.realizedLpFees);
+    });
+    it("Adds bundle slow fills to destination chain running balances", async function () {
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      await requestSlowFill(spokePool_2, relayer, deposit);
+      await updateAllClients();
+      const slowFillRequest = spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
+
+      // Slow fills should not add to bundle LP fees.
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
+      const lpFee = lpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
+      const expectedRunningBalances: RunningBalances = {
+        [originChainId]: {
+          [l1Token_1.address]: deposit.inputAmount.mul(-1),
+        },
+        [destinationChainId]: {
+          [l1Token_1.address]: slowFillRequest.inputAmount.sub(lpFee),
+        },
+      };
+      expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+      expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
+    });
+    it("Subtracts unexecutable slow fill amounts from destination chain running balances", async function () {
+      // Send slow fill in first bundle block range:
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      await requestSlowFill(spokePool_2, relayer, deposit);
+      await updateAllClients();
+
+      // Propose first bundle with a destination chain block range that includes up to the slow fiil block.
+      const slowFillRequest = spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
+      const destinationChainBlockRange = [0, slowFillRequest.blockNumber];
+      const blockRange1 = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map(
+        () => destinationChainBlockRange
+      );
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange1, spokePoolClients);
+
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
+      const lpFee = lpFeePct.mul(slowFillRequest.inputAmount).div(fixedPointAdjustment);
+      const expectedRunningBalances: RunningBalances = {
+        [originChainId]: {
+          [l1Token_1.address]: deposit.inputAmount.mul(-1),
+        },
+        [destinationChainId]: {
+          [l1Token_1.address]: slowFillRequest.inputAmount.sub(lpFee),
+        },
+      };
+      expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+      expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
+
+      // Send a fast fill in a second bundle block range.
+      await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
+      await updateAllClients();
+      const fill = spokePoolClients[destinationChainId]
+        .getFills()
+        .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
+      expect(fill.relayExecutionInfo.fillType).to.equal(interfaces.FillType.ReplacedSlowFill);
+      const blockRange2 = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map((_chain, index) => [
+        blockRange1[index][1] + 1,
+        getDefaultBlockRange(2)[index][1],
+      ]);
+      const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
+
+      // Add fill to repayment chain running balance and remove slow fill amount from destination chain.
+      const slowFillAmount = lpFee.mul(-1).add(fill.inputAmount);
+      const expectedRunningBalances2: RunningBalances = {
+        // Note: There should be no origin chain entry here since there were no deposits.
+        [destinationChainId]: {
+          [l1Token_1.address]: slowFillAmount.mul(-1),
+        },
+        [repaymentChainId]: {
+          [l1Token_1.address]: slowFillAmount,
+        },
+      };
+      const expectedRealizedLpFees2: RunningBalances = {
+        [repaymentChainId]: {
+          [l1Token_1.address]: lpFee,
+        },
+      };
+      expect(expectedRunningBalances2).to.deep.equal(merkleRoot2.runningBalances);
+      expect(expectedRealizedLpFees2).to.deep.equal(merkleRoot2.realizedLpFees);
+    });
+    it("Adds expired deposits to origin chain running balances", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(2),
+        spokePoolClients
+      );
+      const elapsedFillDeadline = bundleBlockTimestamps[destinationChainId][1] - 1;
+
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit,
+        {
+          fillDeadline: elapsedFillDeadline,
+        }
+      );
+      await updateAllClients();
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
+
+      // Origin chain running balance is incremented by refunded deposit which cancels out the subtraction for
+      // bundle deposit.
+      const expectedRunningBalances: RunningBalances = {
+        // Note: There should be no origin chain entry here since there were no deposits.
+        [originChainId]: {
+          [l1Token_1.address]: BigNumber.from(0),
+        },
+      };
+      expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
+      expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
+    });
+    it("Adds fills to relayer refund root", async function () {
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
+      await updateAllClients();
+      const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients
+      );
+      const merkleRoot1 = await dataworkerInstance.buildRelayerRefundRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients,
+        leaves,
+        runningBalances
+      );
+
+      // Origin chain should have negative running balance and therefore positive amount to return.
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
+      const lpFee = lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
+      const refundAmount = deposit.inputAmount.sub(lpFee);
+      const expectedLeaves: RelayerRefundLeaf[] = [
+        {
+          chainId: originChainId,
+          amountToReturn: runningBalances[originChainId][l1Token_1.address].mul(-1),
+          l2TokenAddress: erc20_1.address,
+          leafId: 0,
+          refundAddresses: [],
+          refundAmounts: [],
+        },
+        {
+          chainId: repaymentChainId,
+          amountToReturn: bnZero,
+          l2TokenAddress: l1Token_1.address,
+          leafId: 1,
+          refundAddresses: [relayer.address],
+          refundAmounts: [refundAmount],
+        },
+      ];
+      expect(expectedLeaves).to.deep.equal(merkleRoot1.leaves);
+    });
+    it("All fills are slow fill executions", async function () {
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
+      const slowFills = buildV3SlowRelayLeaves([deposit], lpFeePct);
+
+      // Relay slow root to destination chain
+      const slowFillTree = await buildV3SlowRelayTree(slowFills);
+      await spokePool_2.relayRootBundle(mockTreeRoot, slowFillTree.getHexRoot());
+      await erc20_2.mint(spokePool_2.address, deposit.inputAmount);
+      await spokePool_2.executeV3SlowRelayLeaf(slowFills[0], 0, slowFillTree.getHexProof(slowFills[0]));
+      await updateAllClients();
+      const poolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients
+      );
+
+      // Slow fill executions should add to bundle LP fees, but not refunds. So, there should be
+      // change to running balances on the destination chain, but there should be an entry for it
+      // so that bundle lp fees get accumulated.
+      const lpFee = lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
+      const expectedRunningBalances: RunningBalances = {
+        [originChainId]: {
+          [l1Token_1.address]: deposit.inputAmount.mul(-1),
+        },
+        [destinationChainId]: {
+          [l1Token_1.address]: toBN(0),
+        },
+      };
+      const expectedRealizedLpFees: RunningBalances = {
+        [destinationChainId]: {
+          [l1Token_1.address]: lpFee,
+        },
+      };
+      expect(expectedRunningBalances).to.deep.equal(poolRebalanceRoot.runningBalances);
+      expect(expectedRealizedLpFees).to.deep.equal(poolRebalanceRoot.realizedLpFees);
+
+      const refundRoot = await dataworkerInstance.buildRelayerRefundRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients,
+        poolRebalanceRoot.leaves,
+        poolRebalanceRoot.runningBalances
+      );
+      const expectedLeaves: RelayerRefundLeaf[] = [
+        {
+          chainId: originChainId,
+          amountToReturn: poolRebalanceRoot.runningBalances[originChainId][l1Token_1.address].mul(-1),
+          l2TokenAddress: erc20_1.address,
+          leafId: 0,
+          refundAddresses: [],
+          refundAmounts: [],
+        },
+        // No leaf for destination chain.
+      ];
+      expect(expectedLeaves).to.deep.equal(refundRoot.leaves);
+    });
+    it("Adds expired deposit refunds to relayer refund root", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(2),
+        spokePoolClients
+      );
+      const elapsedFillDeadline = bundleBlockTimestamps[destinationChainId][1] - 1;
+
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit,
+        {
+          fillDeadline: elapsedFillDeadline,
+        }
+      );
+      await updateAllClients();
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients
+      );
+      const merkleRoot1 = await dataworkerInstance.buildRelayerRefundRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients,
+        leaves,
+        runningBalances
+      );
+
+      // Origin chain running balance starts negative because of the deposit
+      // but is cancelled out by the refund such that the running balance is 0
+      // and there is no amount to return.
+      const expectedLeaves: RelayerRefundLeaf[] = [
+        {
+          chainId: originChainId,
+          amountToReturn: bnZero,
+          l2TokenAddress: erc20_1.address,
+          leafId: 0,
+          refundAddresses: [deposit.depositor],
+          refundAmounts: [deposit.inputAmount],
+        },
+      ];
+      expect(expectedLeaves).to.deep.equal(merkleRoot1.leaves);
+    });
+    it("Combines V3 and V2 fills to refund in same refund root", async function () {
+      // Note: take repayments on destination chain for this test.
+      const depositV2 = await buildDeposit(
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -1351,712 +1732,141 @@ describe("Dataworker: Build merkle roots", async function () {
         destinationChainId,
         amountToDeposit
       );
-      await updateAllClients();
-      const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
-      await updateAllClients();
-      await configStore.updateTokenConfig(
-        l1Token_1.address,
-        JSON.stringify({
-          rateModel: sampleRateModel,
-          transferThreshold: amountToDeposit.add(1).toString(),
-          spokeTargetBalances: {
-            [originChainId]: {
-              // Threshold above the deposit amount.
-              threshold: amountToDeposit.toString(),
-              target: amountToDeposit.div(2).toString(),
-            },
-            [destinationChainId]: {
-              // Threshold above the deposit amount.
-              threshold: amountToDeposit.mul(2).toString(),
-              target: amountToDeposit.div(2).toString(),
-            },
-          },
-        })
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
       );
-      await configStoreClient.update();
-      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients);
-
-      const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
-      const expectedLeaves1 = orderedChainIds
-        .map((chainId) => {
-          return {
-            groupIndex: 0,
-            chainId,
-            bundleLpFees: chainId === originChainId ? [toBN(0)] : [getRealizedLpFeeForFills([fill])],
-            // Running balance is below the transfer threshold, so the spoke balance threshold should have no impact.
-            runningBalances: chainId === originChainId ? [deposit.amount.mul(toBN(-1))] : [getRefundForFills([fill])],
-            netSendAmounts: [toBN(0)],
-            l1Tokens: [l1Token_1.address],
-          };
-        })
-        .map((leaf, i) => {
-          return { ...leaf, leafId: i };
-        });
-      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
-      // Now set the threshold much lower than the running balance and check that running balances for all
-      // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
-      // dataworker is comparing the absolute value of the running balance with the threshold, not the signed value.
-      await configStore.updateTokenConfig(
-        l1Token_1.address,
-        JSON.stringify({
-          rateModel: sampleRateModel,
-          transferThreshold: "0",
-          spokeTargetBalances: {
-            [originChainId]: {
-              // Threshold is equal to the deposit amount.
-              threshold: amountToDeposit.toString(),
-              target: amountToDeposit.div(2).toString(),
-            },
-            [destinationChainId]: {
-              // Threshold above the deposit amount.
-              threshold: amountToDeposit.mul(2).toString(),
-              target: amountToDeposit.div(2).toString(),
-            },
-          },
-        })
-      );
-      await configStoreClient.update();
-      const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
-      // We expect to have the target remaining on the spoke.
-      // We expect to transfer the total deposit amount minus the remaining spoke balance.
-      const expectedSpokeBalance = amountToDeposit.div(2);
-      const expectedTransferAmount = amountToDeposit.sub(expectedSpokeBalance);
-      const expectedLeaves2 = expectedLeaves1.map((leaf) => {
-        return {
-          ...leaf,
-          runningBalances: leaf.chainId === originChainId ? [expectedSpokeBalance.mul(-1)] : [toBN(0)],
-          netSendAmounts:
-            leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : [getRefundForFills([fill])],
-        };
-      });
-      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
-    });
-  });
-  describe("UBA Root Bundles", function () {
-    let ubaClient: MockUBAClient;
-    const l1TokenSymbol = "L1Token1";
-    beforeEach(async function () {
       await updateAllClients();
-      ubaClient = new MockUBAClient([l1TokenSymbol], hubPoolClient, spokePoolClients);
-    });
-    describe("Build pool rebalance root", function () {
-      it("> 0 flows", async function () {
-        // Test that the running balance, incentive balance, and the net running balance adjustment of only
-        // the latest flow are used, since these values are accumulated by the UBA client. So, add two
-        // flows.
-        ubaClient.setFlows(originChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...spokePoolClient_1.getFills()[0],
-              matchedDeposit: {} as unknown as DepositWithBlock,
-            },
-            runningBalance: toBNWei("2"),
-            incentiveBalance: toBNWei("2"),
-            netRunningBalanceAdjustment: toBNWei("1"),
-            lpFee: toBNWei("1"),
-            balancingFee: toBNWei("0.2"),
-          },
-          {
-            flow: {
-              ...spokePoolClient_1.getFills()[0],
-              matchedDeposit: {} as unknown as DepositWithBlock,
-            },
-            runningBalance: toBNWei("1"),
-            incentiveBalance: toBNWei("1"),
-            netRunningBalanceAdjustment: toBNWei("2"),
-            lpFee: toBNWei("1"),
-            balancingFee: toBNWei("0.2"),
-          },
-        ]);
+      await buildFillForRepaymentChain(spokePool_2, relayer, depositV2, 1, destinationChainId);
+      const _depositV3 = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      await fillV3(spokePool_2, relayer, _depositV3, destinationChainId);
+      await updateAllClients();
+      const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients
+      );
+      const merkleRoot1 = await dataworkerInstance.buildRelayerRefundRoot(
+        getDefaultBlockRange(2),
+        spokePoolClients,
+        leaves,
+        runningBalances
+      );
 
-        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-        if (!blockRanges) {
-          throw new Error("Can't propose new bundle");
-        }
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          blockRanges,
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        // The running balance, incentive balance, and net running balance adjustment are not accumulated from
-        // all flows, only the latest values are used.
-        expect(
-          deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
-            chainId: originChainId,
-            // Sum of LP fees in flows
-            bundleLpFees: [toBNWei("2")],
-            // Last flow's net running balance amount
-            netSendAmounts: [toBNWei("2")],
-            // Last flow's running balance concatenated with last flow's incentive balance
-            runningBalances: [toBNWei("1"), toBNWei("1")],
-            groupIndex: 0,
-            leafId: 0,
-            l1Tokens: [l1Token_1.address],
-          })
-        ).to.be.true;
-      });
-      it("0 flows", async function () {
-        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-        if (!blockRanges) {
-          throw new Error("Can't propose new bundle");
-        }
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          blockRanges,
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        expect(poolRebalanceLeaves.length).to.be.equal(0);
-      });
-    });
-    describe("Build relayer refund root", function () {
-      it("amountToReturn is 0", async function () {
-        await updateAllClients();
-        // No UBA flows in this test so all amounts to return will be 0
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          getDefaultBlockRange(0),
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(0),
-          spokePoolClients,
-          true
-        );
-        expect(
-          dataworkerInstance._UBA_buildRelayerRefundLeaves(
-            data1.fillsToRefund,
-            poolRebalanceLeaves,
-            getDefaultBlockRange(0),
-            [originChainId, destinationChainId],
-            ubaClient
-          ).leaves
-        ).to.deep.equal([]);
-
-        // Submit deposits for multiple L2 tokens.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-        const deposit2 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-
-        // Submit fills for two relayers on one repayment chain and one destination token. Note: we know that
-        // depositor address is alphabetically lower than relayer address, so submit fill from depositor first and test
-        // that data worker sorts on refund address.
-        await updateAllClients();
-        await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 0.25, destinationChainId);
-        await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 1, destinationChainId);
-        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
-        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, destinationChainId);
-
-        const depositorBeforeRelayer = toBN(depositor.address).lt(toBN(relayer.address));
-        const leaf1 = {
-          chainId: destinationChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_2.address,
-          refundAddresses: [
-            depositorBeforeRelayer ? depositor.address : relayer.address,
-            depositorBeforeRelayer ? relayer.address : depositor.address,
-          ], // Sorted ascending alphabetically
-          refundAmounts: [
-            getRefund(deposit1.amount, deposit1.realizedLpFeePct),
-            getRefund(deposit2.amount, deposit2.realizedLpFeePct),
-          ], // Refund amounts should aggregate across all fills.
-        };
-
-        await updateAllClients();
-        const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(1),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves1 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data2.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(1),
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        expect(relayerRefundLeaves1.leaves.length).to.equal(1);
-        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
-
-        // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.
-        const deposit4 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-        // @dev: slice(10) so we don't have duplicates between allSigners and depositor/relayer/etc.
-        const allSigners: SignerWithAddress[] = (await ethers.getSigners()).slice(10);
-        expect(
-          allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
-          "ethers.getSigners doesn't have enough signers"
-        ).to.be.true;
-        for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
-          await setupTokensForWallet(spokePool_2, allSigners[i], [erc20_2]);
-          await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit4, 0.01 + i * 0.01, destinationChainId);
-        }
-        // Note: Higher refund amounts for same chain and L2 token should come first, so we test that by increasing
-        // the fill amount in the above loop for each fill. Ultimately, the latest fills send the most tokens and
-        // should come in the first leaf.
-        await updateAllClients();
-        const data4 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(3),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves3 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data4.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(3),
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        expect(relayerRefundLeaves3.leaves.length).to.equal(2);
-
-        // The order should be:
-        // - Sort by repayment chain ID in ascending order, so leaf2 goes first since its the only one with an overridden
-        // repayment chain ID.
-        // - Sort by refund amount. So, the refund addresses in leaf1 go first, then the latest refunds. Each leaf can
-        // have a maximum number of refunds so add the latest refund (recall the latest fills from the last loop
-        // were the largest).
-        leaf1.refundAddresses.push(allSigners[3].address);
-        leaf1.refundAmounts.push(
-          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.04")).div(toBNWei("1"))
-        );
-        const leaf3 = {
-          chainId: destinationChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_2.address,
-          refundAddresses: [allSigners[2].address, allSigners[1].address, allSigners[0].address],
-          refundAmounts: [
-            getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.03")).div(toBNWei("1")),
-            getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.02")).div(toBNWei("1")),
-            getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1")),
-          ],
-        };
-        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[0], { ...leaf1, leafId: 0 });
-        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[1], { ...leaf3, leafId: 1 });
-      });
-      it("amountToReturn is non 0", async function () {
-        await updateAllClients();
-
-        ubaClient.setFlows(originChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...spokePoolClient_1.getFills()[0],
-              matchedDeposit: spokePoolClient_2.getDeposits()[0],
-            },
-            lpFee: toBNWei("0.5"),
-            balancingFee: toBNWei("0.2"),
-            runningBalance: toBNWei("1"),
-            incentiveBalance: toBNWei("2"),
-            netRunningBalanceAdjustment: toBNWei("-1"),
-          },
-        ]);
-
-        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-        if (!blockRanges) {
-          throw new Error("Can't propose new bundle");
-        }
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          blockRanges,
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-
-        // For the UBA, the token transfer threshold shouldn't  matter so set it absurdly high.
-        await configStore.updateTokenConfig(
-          l1Token_1.address,
-          JSON.stringify({
-            rateModel: sampleRateModel,
-            transferThreshold: toBNWei("1000000").toString(),
-          })
-        );
-        await updateAllClients();
-
-        // This leaf's amountToReturn should be non zero since the UBA client was injected with a flow
-        // with a negative netRunningBalanceAdjustment
-        const leaf1 = {
+      const fillV2 = spokePoolClients[destinationChainId]
+        .getFills()
+        .filter(sdkUtils.isV2Fill<V2FillWithBlock, V3FillWithBlock>)[0];
+      const lpFeeV2 = fillV2.realizedLpFeePct.mul(fillV2.amount).div(fixedPointAdjustment);
+      const fillV2RefundAmount = fillV2.amount.sub(lpFeeV2);
+      const lpFeePctV3 = (
+        await hubPoolClient.computeRealizedLpFeePct({ ..._depositV3, paymentChainId: _depositV3.destinationChainId })
+      ).realizedLpFeePct;
+      const lpFeeV3 = lpFeePctV3.mul(_depositV3.inputAmount).div(fixedPointAdjustment);
+      const fillV3RefundAmount = lpFeeV3.mul(-1).add(_depositV3.inputAmount);
+      const expectedLeaves: RelayerRefundLeaf[] = [
+        {
           chainId: originChainId,
-          amountToReturn: poolRebalanceLeaves[0].netSendAmounts[0].mul(toBN(-1)),
+          amountToReturn: runningBalances[originChainId][l1Token_1.address].mul(-1),
           l2TokenAddress: erc20_1.address,
+          leafId: 0,
           refundAddresses: [],
           refundAmounts: [],
-        };
-        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          {},
-          poolRebalanceLeaves,
-          blockRanges,
-          [originChainId],
-          ubaClient
-        );
-        expect(relayerRefundLeaves1.leaves.length).to.equal(1);
-        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
-
-        // Now, submit fills on the origin chain such that the refunds for the origin chain need to be split amongst
-        // more than one leaves.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_2,
-          erc20_2,
-          l1Token_1,
-          depositor,
-          originChainId,
-          amountToDeposit
-        );
-        const allSigners: SignerWithAddress[] = await ethers.getSigners();
-        expect(
-          allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
-          "ethers.getSigners doesn't have enough signers"
-        ).to.be.true;
-        const sortedAllSigners = [...allSigners].sort((x, y) => compareAddresses(x.address, y.address));
-        const fills = [];
-        for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
-          await setupTokensForWallet(spokePool_1, sortedAllSigners[i], [erc20_1]);
-          fills.push(await buildFillForRepaymentChain(spokePool_1, sortedAllSigners[i], deposit1, 0.1, originChainId));
-        }
-        const refundAmountPerFill = getRefund(deposit1.amount, deposit1.realizedLpFeePct)
-          .mul(toBNWei("0.1"))
-          .div(toBNWei("1"));
-        const newLeaf1 = {
-          chainId: originChainId,
-          // amountToReturn should be deposit amount minus ALL fills for origin chain minus unfilled amount for slow fill.
-          amountToReturn: poolRebalanceLeaves[0].netSendAmounts[0].mul(toBN(-1)),
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: sortedAllSigners.slice(0, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF).map((x) => x.address),
-          refundAmounts: Array(MAX_REFUNDS_PER_RELAYER_REFUND_LEAF).fill(refundAmountPerFill),
-        };
-        const leaf2 = {
-          chainId: originChainId,
+        },
+        {
+          chainId: destinationChainId,
           amountToReturn: toBN(0),
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: [sortedAllSigners[MAX_REFUNDS_PER_RELAYER_REFUND_LEAF].address],
-          refundAmounts: [refundAmountPerFill],
-        };
-
-        await updateAllClients();
-        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(1),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves2 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data1.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(1),
-          [originChainId],
-          ubaClient
-        );
-        expect(relayerRefundLeaves2.leaves.length).to.equal(2);
-        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...newLeaf1, leafId: 0 });
-        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[1], { ...leaf2, leafId: 1 });
-      });
-      it("Refunds are included in UBA mode", async function () {
-        await updateAllClients();
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          getDefaultBlockRange(0),
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-
-        // Fill deposit and request refund on origin chain which is NOT the destination chain.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-
-        await updateAllClients();
-
-        // In UBA Mode, realized Lp fee is not set during update(), so we need to manually overwrite it.
-        const ubaRealizedLpFeePct = toBNWei("0.1");
-        spokePoolClient_1.updateDepositRealizedLpFeePct(deposit1, ubaRealizedLpFeePct);
-        await buildFillForRepaymentChain(
-          spokePool_2,
-          relayer,
-          { ...deposit1, realizedLpFeePct: ubaRealizedLpFeePct },
-          1,
-          originChainId
-        );
-
-        await updateAllClients();
-        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(1),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves1 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data1.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(1),
-          [originChainId],
-          ubaClient
-        );
-        expect(relayerRefundLeaves1.leaves.length).to.equal(0);
-
-        // Now, send a refund:
-        await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
-        await updateAllClients();
-        const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(2),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves2 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data2.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(2),
-          [originChainId],
-          ubaClient
-        );
-        const leaf1 = {
-          chainId: originChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_1.address,
+          l2TokenAddress: erc20_2.address,
+          leafId: 1,
           refundAddresses: [relayer.address],
-          refundAmounts: [getRefund(deposit1.amount, ubaRealizedLpFeePct)],
-        };
-        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf1, leafId: 0 });
-      });
-      it("Relayer balancing fees are added to refunded amounts to relayers", async function () {
-        // Submit 1 deposit and 1 fill on same chain:
-        await updateAllClients();
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_2,
-          erc20_2,
-          l1Token_1,
-          depositor,
-          originChainId,
-          amountToDeposit
-        );
-        await updateAllClients();
-        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, originChainId);
-        await updateAllClients();
-        const deposit = spokePoolClient_2.getDeposits()[0];
-        const refund = spokePoolClient_2.getFills()[0];
-
-        ubaClient.setFlows(originChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...deposit,
-            },
-            lpFee: toBNWei("0.5"),
-            balancingFee: toBNWei("0.2"),
-            runningBalance: toBNWei("0"),
-            incentiveBalance: toBNWei("0"),
-            netRunningBalanceAdjustment: toBNWei("0"),
-          },
-          {
-            flow: {
-              ...refund,
-              matchedDeposit: deposit,
-            },
-            runningBalance: toBNWei("0"),
-            balancingFee: toBNWei("0.2"),
-            lpFee: toBNWei("0.5"),
-            incentiveBalance: toBNWei("0"),
-            netRunningBalanceAdjustment: toBNWei("0"),
-          },
-        ]);
-
-        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-        if (!blockRanges) {
-          throw new Error("Can't propose new bundle");
-        }
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          blockRanges,
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-
-        // For the UBA, the token transfer threshold shouldn't  matter so set it absurdly high.
-        await configStore.updateTokenConfig(
-          l1Token_1.address,
-          JSON.stringify({
-            rateModel: sampleRateModel,
-            transferThreshold: toBNWei("1000000").toString(),
-          })
-        );
-        await updateAllClients();
-
-        // Can pass in a fills to refund object that is empty for the refund chain and token, or
-        // has an existing value. The relayer balancing fee is tacked on to that.
-        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          {},
-          poolRebalanceLeaves,
-          blockRanges,
-          [originChainId],
-          ubaClient
-        );
-        // Balancing fee for refund above
-        let expectedRefundAmount = toBNWei("0.2");
-        expect(relayerRefundLeaves1.leaves.length).to.equal(1);
-        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], {
-          amountToReturn: ethers.constants.Zero,
-          chainId: originChainId,
-          leafId: 0,
-          refundAmounts: [expectedRefundAmount],
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: [relayer.address],
-        });
-
-        // Try again while passing in an already populated fills to refund object.
-        const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          {
-            [originChainId.toString()]: {
-              [erc20_1.address]: {
-                totalRefundAmount: ethers.constants.Zero,
-                fills: [],
-                realizedLpFees: ethers.constants.Zero,
-                refunds: {
-                  [relayer.address]: toBNWei("1"),
-                },
-              },
-            },
-          },
-          poolRebalanceLeaves,
-          blockRanges,
-          [originChainId],
-          ubaClient
-        );
-        // Expected refund amount is now 1 + new balancing fee.
-        expectedRefundAmount = expectedRefundAmount.add(toBNWei("1"));
-        expect(relayerRefundLeaves2.leaves.length).to.equal(1);
-        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], {
-          amountToReturn: ethers.constants.Zero,
-          chainId: originChainId,
-          leafId: 0,
-          refundAmounts: [expectedRefundAmount],
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: [relayer.address],
-        });
-
-        // Add a refund, not a fill, to the flows object. Check that refund
-        // is sent to repayment chain.
-        await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
-        await updateAllClients();
-        const refundRequest = spokePoolClient_1.getRefundRequests()[0];
-        ubaClient.setFlows(originChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...refundRequest,
-              matchedDeposit: deposit,
-            },
-            lpFee: toBNWei("0.5"),
-            balancingFee: toBNWei("0.1"),
-            runningBalance: toBNWei("0"),
-            incentiveBalance: toBNWei("0"),
-            netRunningBalanceAdjustment: toBNWei("0"),
-          },
-        ]);
-
-        const relayerRefundLeaves3 = dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          {},
-          poolRebalanceLeaves,
-          blockRanges,
-          [refundRequest.repaymentChainId],
-          ubaClient
-        );
-        // Expected refund amount is now 1 + new balancing fee.
-        expectedRefundAmount = toBNWei("0.1");
-        expect(relayerRefundLeaves3.leaves.length).to.equal(1);
-        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[0], {
-          amountToReturn: ethers.constants.Zero,
-          chainId: refundRequest.repaymentChainId,
-          leafId: 0,
-          refundAmounts: [expectedRefundAmount],
-          l2TokenAddress: refundRequest.refundToken,
-          refundAddresses: [refundRequest.relayer],
-        });
-      });
+          refundAmounts: [fillV3RefundAmount.add(fillV2RefundAmount)],
+        },
+      ];
+      expect(expectedLeaves).to.deep.equal(merkleRoot1.leaves);
     });
-    describe("Build slow relay root", function () {
-      it("Maps unfilled deposit to UBA flow", async function () {
-        await updateAllClients();
+    it("Adds bundle slow fills to slow fill root", async function () {
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const deposit = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      await requestSlowFill(spokePool_2, relayer, deposit);
+      await updateAllClients();
+      const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(2), spokePoolClients);
 
-        // Submit deposits for multiple destination chain IDs.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
+      ).realizedLpFeePct;
+      const expectedSlowFillLeaves = buildV3SlowRelayLeaves([deposit], lpFeePct);
+      expect(merkleRoot1.leaves).to.deep.equal(expectedSlowFillLeaves);
+    });
+    it("Combines V3 and V2 slow fills in same slow fill root", async function () {
+      await updateAllClients();
 
-        // Add fills for each deposit so dataworker includes deposits as slow relays:
-        await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.1);
+      // Submit V2 deposit
+      const depositV2 = await buildDeposit(
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      const v2SlowFillLeaves = buildSlowRelayLeaves([depositV2]);
+      // V2 slow fill type is all messed up, for now we cast it to correct types here.
+      v2SlowFillLeaves[0].relayData = {
+        ...v2SlowFillLeaves[0].relayData,
+        originChainId: Number(v2SlowFillLeaves[0].relayData.originChainId),
+        destinationChainId: Number(v2SlowFillLeaves[0].relayData.destinationChainId),
+        depositId: Number(v2SlowFillLeaves[0].relayData.depositId),
+      };
+      v2SlowFillLeaves[0].payoutAdjustmentPct = v2SlowFillLeaves[0].payoutAdjustmentPct.toString();
 
-        // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
-        // (ascending).
-        await updateAllClients();
+      // Submit V3 deposit
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const _depositV3 = spokePoolClients[originChainId]
+        .getDeposits()
+        .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+      const lpFeePct = (
+        await hubPoolClient.computeRealizedLpFeePct({ ..._depositV3, paymentChainId: _depositV3.destinationChainId })
+      ).realizedLpFeePct;
+      const v3SlowFillLeaves = buildV3SlowRelayLeaves([_depositV3], lpFeePct);
 
-        const { unfilledDeposits } = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(0),
-          spokePoolClients
-        );
+      // Partial fill the V2 deposit
+      await buildFill(spokePool_2, erc20_2, depositor, relayer, depositV2, 0.1);
 
-        // If the flow that triggered the slow relay is not in the UBA flows, then expect an error. This should
-        // never happen in production because each flow that could trigger a slow relay will be included in the UBA
-        // flows. If that deposit never gets fully filled, then it will appear as an `unfilledDeposit` returned by
-        // `loadData`. If it does get fully filled, it will remain a UBA flow but not returned by `loadData`.
-        expect(() =>
-          dataworkerInstance._UBA_buildSlowRelayLeaves(ubaClient, getDefaultBlockRange(0), unfilledDeposits)
-        ).to.throw(`No matching outflow with refund balancing fee found for deposit ID ${deposit1.depositId}`);
+      // Request to slow fill the V3 deposit
+      await requestSlowFill(spokePool_2, relayer, _depositV3);
 
-        const expectedRelayerBalancingFee = toBNWei("0.025");
-        ubaClient.setFlows(deposit1.destinationChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...spokePoolClient_2.getFills()[0],
-              matchedDeposit: {} as unknown as DepositWithBlock, // Not used in this test.
-            },
-            lpFee: toBNWei("0.5"),
-            balancingFee: expectedRelayerBalancingFee,
-            runningBalance: toBNWei("1"),
-            incentiveBalance: expectedRelayerBalancingFee,
-            netRunningBalanceAdjustment: toBNWei("1"),
-          },
-        ]);
-        const slowRelayLeaves = dataworkerInstance._UBA_buildSlowRelayLeaves(
-          ubaClient,
-          getDefaultBlockRange(0),
-          unfilledDeposits
-        );
-        expect(slowRelayLeaves.leaves.length).to.equal(1);
-        const expectedSlowRelayLeaves = buildSlowRelayLeaves([deposit1], [expectedRelayerBalancingFee]);
-        const expectedMerkleRoot = await buildSlowRelayTree(expectedSlowRelayLeaves);
-        expect(expectedSlowRelayLeaves[0].payoutAdjustmentPct).to.equal(slowRelayLeaves.leaves[0].payoutAdjustmentPct);
-        expect(expectedMerkleRoot.getHexRoot()).to.equal(slowRelayLeaves.tree.getHexRoot());
-
-        // If loadData doesn't return unfilled deposits, then no slow fill leaves.
-        expect(
-          dataworkerInstance._UBA_buildSlowRelayLeaves(ubaClient, getDefaultBlockRange(0), []).leaves.length
-        ).to.equal(0);
-      });
+      // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
+      // (ascending).
+      const expectedLeaves = [...v2SlowFillLeaves, ...v3SlowFillLeaves];
+      await updateAllClients();
+      const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(2), spokePoolClients);
+      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves);
     });
   });
 });

@@ -1,7 +1,10 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 import {
   BigNumber,
+  bnZero,
+  bnOne,
   Contract,
   ERC20,
   MAX_SAFE_ALLOWANCE,
@@ -37,16 +40,9 @@ export class TokenClient {
 
   getBalance(chainId: number, token: string): BigNumber {
     if (!this._hasTokenPairData(chainId, token)) {
-      return toBN(0);
+      return bnZero;
     }
     return this.tokenData[chainId][token].balance;
-  }
-
-  getAllowanceOnChain(chainId: number, token: string): BigNumber {
-    if (!this._hasTokenPairData(chainId, token)) {
-      return toBN(0);
-    }
-    return this.tokenData[chainId][token].allowance;
   }
 
   decrementLocalBalance(chainId: number, token: string, amount: BigNumber): void {
@@ -54,7 +50,7 @@ export class TokenClient {
   }
 
   getShortfallTotalRequirement(chainId: number, token: string): BigNumber {
-    return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement || toBN(0);
+    return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement ?? bnZero;
   }
 
   getTokensNeededToCoverShortfall(chainId: number, token: string): BigNumber {
@@ -66,11 +62,13 @@ export class TokenClient {
   }
 
   hasBalanceForFill(deposit: Deposit, fillAmount: BigNumber): boolean {
-    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(fillAmount);
+    const outputToken = sdkUtils.getDepositOutputToken(deposit);
+    return this.getBalance(deposit.destinationChainId, outputToken).gte(fillAmount);
   }
 
   hasBalanceForZeroFill(deposit: Deposit): boolean {
-    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(toBN(1));
+    const outputToken = sdkUtils.getDepositOutputToken(deposit);
+    return this.getBalance(deposit.destinationChainId, outputToken).gte(bnOne);
   }
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it it will capture the
@@ -86,19 +84,20 @@ export class TokenClient {
 
   captureTokenShortfallForFill(deposit: Deposit, unfilledAmount: BigNumber): void {
     this.logger.debug({ at: "TokenBalanceClient", message: "Handling token shortfall", deposit, unfilledAmount });
-    this.captureTokenShortfall(deposit.destinationChainId, deposit.destinationToken, deposit.depositId, unfilledAmount);
+    const outputToken = sdkUtils.getDepositOutputToken(deposit);
+    this.captureTokenShortfall(deposit.destinationChainId, outputToken, deposit.depositId, unfilledAmount);
   }
 
   // Returns the total token shortfall the client has seen. Shortfall is defined as the difference between the total
   // requirement to send all seen relays and the total remaining balance of the relayer.
   getTokenShortfall(): {
     [chainId: number]: {
-      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber };
+      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
     };
   } {
     const tokenShortfall: {
       [chainId: number]: {
-        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber };
+        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
       };
     } = {};
     Object.entries(this.tokenShortfall).forEach(([_chainId, tokenMap]) => {
@@ -121,6 +120,10 @@ export class TokenClient {
 
   clearTokenShortfall(): void {
     this.tokenShortfall = {};
+  }
+
+  clearTokenData(): void {
+    this.tokenData = {};
   }
 
   async setOriginTokenApprovals(): Promise<void> {
@@ -191,7 +194,20 @@ export class TokenClient {
       }
     }
 
-    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!" });
+    // Remove allowance from token data when logging.
+    const balanceData = Object.fromEntries(
+      Object.entries(this.tokenData).map(([chainId, tokenData]) => {
+        return [
+          chainId,
+          Object.fromEntries(
+            Object.entries(tokenData).map(([token, { balance }]) => {
+              return [token, balance];
+            })
+          ),
+        ];
+      })
+    );
+    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData });
   }
 
   async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<{
@@ -202,11 +218,14 @@ export class TokenClient {
       .getAllOriginTokens()
       .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
 
+    const blockTag = spokePoolClient.eventSearchConfig.toBlock ?? "latest";
     const tokenData = Object.fromEntries(
       await Promise.all(
         tokens.map(async (token) => {
-          const balance: BigNumber = await token.balanceOf(this.relayerAddress);
-          const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
+          const balance: BigNumber = await token.balanceOf(this.relayerAddress, { blockTag });
+          const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
+            blockTag,
+          });
 
           return [token.address, { balance, allowance }];
         })

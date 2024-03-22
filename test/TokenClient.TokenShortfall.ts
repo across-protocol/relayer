@@ -1,20 +1,17 @@
 import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
 import { MockConfigStoreClient } from "./mocks";
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
   SignerWithAddress,
   createSpyLogger,
-  deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
-  originChainId,
   toBNWei,
   winston,
-  zeroAddress,
 } from "./utils";
 
 let spokePool_1: Contract, spokePool_2: Contract;
@@ -38,7 +35,7 @@ describe("TokenClient: Token shortfall", async function () {
       erc20: erc20_2,
       deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
+    const { hubPool } = await deployAndConfigureHubPool(owner, [], ZERO_ADDRESS, ZERO_ADDRESS);
     const { configStore } = await deployConfigStore(owner, []);
 
     const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
@@ -76,10 +73,11 @@ describe("TokenClient: Token shortfall", async function () {
     let needed = toBNWei(420);
     let shortfall = needed.sub(balance);
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId, toBNWei(420));
-    const expectedData = {
-      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId], balance, needed, shortfall } },
-    };
-    expect(deepEqualsWithBigNumber(tokenClient.getTokenShortfall(), expectedData)).to.be.true;
+    const tokenShortFallData = tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address];
+    expect(tokenShortFallData.balance).to.equal(balance);
+    expect(tokenShortFallData.needed).to.equal(needed);
+    expect(tokenShortFallData.shortfall).to.equal(shortfall);
+    expect(tokenShortFallData.deposits).to.deep.equal([depositId]);
 
     // A subsequent shortfall deposit of 42 should add to the token shortfall and append the deposit id as 351+42 = 393.
     const depositId2 = 2;
@@ -87,14 +85,15 @@ describe("TokenClient: Token shortfall", async function () {
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId2, toBNWei(42));
     needed = needed.add(toBNWei(42));
     shortfall = needed.sub(balance);
-    const expectedData2 = {
-      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId, depositId2], balance, needed, shortfall } },
-    };
-    expect(deepEqualsWithBigNumber(tokenClient.getTokenShortfall(), expectedData2)).to.be.true;
+    const tokenShortFallData2 = tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address];
+    expect(tokenShortFallData2.balance).to.equal(balance);
+    expect(tokenShortFallData2.needed).to.equal(needed);
+    expect(tokenShortFallData2.shortfall).to.equal(shortfall);
+    expect(tokenShortFallData2.deposits).to.deep.equal([depositId, depositId2]);
 
     // Updating the client should not impact anything.
     await updateAllClients();
-    expect(deepEqualsWithBigNumber(tokenClient.getTokenShortfall(), expectedData2)).to.be.true;
+    expect(tokenShortFallData2).to.deep.equal(tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address]);
   });
 });
 

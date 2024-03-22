@@ -1,26 +1,26 @@
 import minimist from "minimist";
 import { WETH9__factory as WETH9 } from "@across-protocol/contracts-v2";
-import { BigNumber, ethers, Wallet } from "ethers";
+import { constants as sdkConsts } from "@across-protocol/sdk-v2";
+import { BigNumber, ethers, Signer } from "ethers";
 import { config } from "dotenv";
 import { getNetworkName, getSigner } from "../src/utils";
 import * as utils from "./utils";
 
+const { PROTOCOL_DEFAULT_CHAIN_ID_INDICES } = sdkConsts;
 const { MaxUint256, One: bnOne } = ethers.constants;
 const { formatEther, formatUnits } = ethers.utils;
 
-// https://nodejs.org/api/process.html#exit-codes
-const NODE_SUCCESS = 0;
-const NODE_INPUT_ERR = 9;
-const NODE_APP_ERR = 127; // user-defined
+const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 
 function bnMax(a: BigNumber, b: BigNumber): BigNumber {
   const result = a.sub(b);
   return result.isZero() || result.gt(0) ? a : b;
 }
 
-async function dispute(args: Record<string, number | string>, signer: Wallet): Promise<boolean> {
+async function dispute(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const ethBuffer = "0.1"; // Spare ether required to pay for gas.
 
+  const signerAddr = await signer.getAddress();
   const chainId = Number(args.chainId);
   const { force, txnHash } = args;
 
@@ -40,10 +40,10 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
   const fromBlock = Math.floor(latestBlock.number - (liveness - avgBlockTime));
   const bondToken = WETH9.connect(bondTokenAddress, hubPool.provider);
   const [bondBalance, decimals, symbol, allowance, proposals] = await Promise.all([
-    bondToken.balanceOf(signer.address),
+    bondToken.balanceOf(signerAddr),
     bondToken.decimals(),
     bondToken.symbol(),
-    bondToken.allowance(signer.address, hubPool.address),
+    bondToken.allowance(signerAddr, hubPool.address),
     hubPool.queryFilter(filter, fromBlock, latestBlock.number),
   ]);
 
@@ -149,7 +149,7 @@ async function dispute(args: Record<string, number | string>, signer: Wallet): P
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function search(args: Record<string, number | string>, _signer: Wallet): Promise<boolean> {
+async function search(args: Record<string, number | string>, _signer: Signer): Promise<boolean> {
   const eventName = args.event as string;
   const fromBlock = Number(args.fromBlock) || undefined;
   const toBlock = Number(args.toBlock) || undefined;
@@ -160,7 +160,7 @@ async function search(args: Record<string, number | string>, _signer: Wallet): P
   }
 
   const [configStore, hubPool] = await Promise.all([
-    utils.getContract(chainId, "ConfigStore"),
+    utils.getContract(chainId, "AcrossConfigStore"),
     utils.getContract(chainId, "HubPool"),
   ]);
 
@@ -178,8 +178,11 @@ async function search(args: Record<string, number | string>, _signer: Wallet): P
       configStore.globalConfig(CHAIN_ID_INDICES, { blockTag: blockNumber }),
     ]);
 
-    const DEFAULT_CHAIN_IDS = chainId === 1 ? utils.chains : utils.testChains;
-    const chainIds = _chainIds.length > 0 ? JSON.parse(_chainIds.replaceAll('"', "")) : DEFAULT_CHAIN_IDS;
+    // If the ConfigStore doesn't have CHAIN_ID_INDICES defined at the relevant block, sub in the implicit initial
+    // value. This is only applicable to production and will be incorrect on Görli. Görli will soon be deprecated,
+    // at which point it won't be relevant anyway.
+    const chainIds =
+      _chainIds.length > 0 ? JSON.parse(_chainIds.replaceAll('"', "")) : PROTOCOL_DEFAULT_CHAIN_ID_INDICES;
 
     const args = hubPool.interface.parseLog({ data, topics }).args;
     const eventArgs = Object.keys(args).filter((key) => isNaN(Number(key)));
@@ -228,7 +231,7 @@ async function run(argv: string[]): Promise<number> {
     default: {
       chainId: 1,
       event: "ProposeRootBundle",
-      wallet: "mnemonic",
+      wallet: "secret",
       force: false,
     },
     alias: {
@@ -240,15 +243,17 @@ async function run(argv: string[]): Promise<number> {
 
   config();
 
-  let signer: Wallet;
+  const cmd = argv[0];
+  let signer: Signer;
   try {
-    signer = await getSigner({ keyType: args.wallet, cleanEnv: true });
+    const keyType = ["dispute"].includes(cmd) ? args.wallet : "void";
+    signer = await getSigner({ keyType, cleanEnv: true });
   } catch (err) {
     return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
   let result: boolean;
-  switch (argv[0]) {
+  switch (cmd) {
     case "dispute":
       result = await dispute(args, signer);
       break;
@@ -256,7 +261,7 @@ async function run(argv: string[]): Promise<number> {
       result = await search(args, signer);
       break;
     default:
-      return usage() ? NODE_SUCCESS : NODE_INPUT_ERR;
+      return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 
   return result ? NODE_SUCCESS : NODE_APP_ERR;
@@ -264,9 +269,7 @@ async function run(argv: string[]): Promise<number> {
 
 if (require.main === module) {
   run(process.argv.slice(2))
-    .then(async (result) => {
-      process.exitCode = result;
-    })
+    .then(async (result) => (process.exitCode = result))
     .catch(async (error) => {
       console.error("Process exited with", error);
       process.exitCode = NODE_APP_ERR;

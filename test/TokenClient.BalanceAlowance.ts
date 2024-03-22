@@ -1,20 +1,16 @@
+import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
   SignerWithAddress,
   createSpyLogger,
-  deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
-  originChainId,
   toBNWei,
   winston,
-  zeroAddress,
 } from "./utils";
-
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
@@ -40,7 +36,7 @@ describe("TokenClient: Balance and Allowance", async function () {
       weth: weth_2,
       deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
+    const { hubPool } = await deployAndConfigureHubPool(owner, [], ZERO_ADDRESS, ZERO_ADDRESS);
 
     spokePoolClient_1 = new SpokePoolClient(
       createSpyLogger().spyLogger,
@@ -63,7 +59,7 @@ describe("TokenClient: Balance and Allowance", async function () {
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
-  it("Fetches all associated balances and allowances", async function () {
+  it("Fetches all associated balances", async function () {
     await updateAllClients();
     const expectedData = {
       [originChainId]: {
@@ -75,12 +71,11 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData)).to.be.true;
+    const tokenData = tokenClient.getAllTokenData();
+    expect(tokenData).to.deep.equal(expectedData);
 
     // Check some balance/allowances directly.
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(0));
-    expect(tokenClient.getAllowanceOnChain(originChainId, weth_1.address)).to.equal(toBNWei(0));
-    expect(tokenClient.getAllowanceOnChain(destinationChainId, erc20_2.address)).to.equal(toBNWei(0));
     expect(tokenClient.getBalance(destinationChainId, weth_2.address)).to.equal(toBNWei(0));
 
     // Mint tokens to the owner. Mint ERC20 on one chain and WETH on the other. See that the client updates accordingly.
@@ -100,10 +95,10 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(1337), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData1)).to.be.true;
+    const tokenData1 = tokenClient.getAllTokenData();
+    expect(tokenData1).to.deep.equal(expectedData1);
+
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42069));
-    expect(tokenClient.getAllowanceOnChain(originChainId, weth_1.address)).to.equal(toBNWei(420420));
-    expect(tokenClient.getAllowanceOnChain(destinationChainId, erc20_2.address)).to.equal(toBNWei(6969));
     expect(tokenClient.getBalance(destinationChainId, weth_2.address)).to.equal(toBNWei(1337));
 
     // granting an allowance to a different target should not impact the client as the client only monitors allowance

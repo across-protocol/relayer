@@ -5,15 +5,20 @@ import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
 import {
   BigNumber,
+  chainIsOPStack,
   convertFromWei,
+  getBlockForTimestamp,
   getCachedProvider,
+  getCurrentTime,
   getNetworkName,
+  getRedisCache,
+  getUniqueLogIndex,
   groupObjectCountsByProp,
-  Wallet,
+  Signer,
   winston,
 } from "../../utils";
 import { Multicall2Call } from "../../common";
-import { FinalizerPromise, Withdrawal } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 interface CrossChainMessageWithEvent {
   event: TokensBridged;
@@ -30,29 +35,43 @@ type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export async function opStackFinalizer(
   logger: winston.Logger,
-  signer: Wallet,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
   assert(isOVMChainId(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
+  const networkName = getNetworkName(chainId);
 
   const crossChainMessenger = getOptimismClient(chainId, signer);
 
+  // Optimism withdrawals take 7 days to finalize, while proofs are ready as soon as an L1 txn containing the L2
+  // withdrawal is posted to Mainnet, so ~30 mins.
   // Sort tokensBridged events by their age. Submit proofs for recent events, and withdrawals for older events.
-  const earliestBlockToProve = latestBlockToFinalize + 1;
+  // - Don't submit proofs for finalizations older than 1 day
+  // - Don't try to withdraw tokens that are not past the 7 day challenge period
+  const redis = await getRedisCache(logger);
+  const [earliestBlockToFinalize, latestBlockToProve] = await Promise.all([
+    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(chainId, getCurrentTime() - 60 * 60 * 24, undefined, redis),
+  ]);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged(),
-    (e) => (e.blockNumber >= earliestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
+    (e) => {
+      if (e.blockNumber >= latestBlockToProve) {
+        return "recentTokensBridgedEvents";
+      } else if (e.blockNumber <= earliestBlockToFinalize) {
+        return "olderTokensBridgedEvents";
+      }
+    }
   );
 
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
-    at: "Finalizer#optimismFinalizer",
-    message: `Earliest TokensBridged block to attempt to submit proofs for ${getNetworkName(chainId)}`,
-    earliestBlockToProve,
+    at: `Finalizer#${networkName}Finalizer`,
+    message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
+    latestBlockToProve,
   });
 
   const proofs = await multicallOptimismL1Proofs(
@@ -67,8 +86,8 @@ export async function opStackFinalizer(
   // Skip events that are likely not past the seven day challenge period.
   logger.debug({
     at: "Finalizer",
-    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
+    message: `Earliest TokensBridged block to attempt to finalize for ${networkName}`,
+    earliestBlockToFinalize,
   });
 
   const finalizations = await multicallOptimismFinalizations(
@@ -80,16 +99,16 @@ export async function opStackFinalizer(
   );
 
   const callData = [...proofs.callData, ...finalizations.callData];
-  const withdrawals = [...proofs.withdrawals, ...finalizations.withdrawals];
+  const crossChainTransfers = [...proofs.withdrawals, ...finalizations.withdrawals];
 
-  return { callData, withdrawals };
+  return { callData, crossChainMessages: crossChainTransfers };
 }
 
 function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
-  return [10, 8453].includes(chainId);
+  return chainIsOPStack(chainId);
 }
 
-function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
+function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
     l1ChainId: 1,
@@ -106,14 +125,7 @@ async function getCrossChainMessages(
 ): Promise<CrossChainMessageWithEvent[]> {
   // For each token bridge event, store a unique log index for the event within the optimism transaction hash.
   // This is important for bridge transactions containing multiple events.
-  const uniqueTokenhashes = {};
-  const logIndexesForMessage = [];
-  for (const event of tokensBridged) {
-    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
-    const logIndex = uniqueTokenhashes[event.transactionHash];
-    logIndexesForMessage.push(logIndex);
-    uniqueTokenhashes[event.transactionHash] += 1;
-  }
+  const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
 
   return (
     await Promise.all(
@@ -194,8 +206,8 @@ async function getOptimismFinalizableMessages(
   ).filter((m) => m !== undefined);
   const messageStatuses = await getMessageStatuses(chainId, bedrockMessages, crossChainMessenger);
   logger.debug({
-    at: "OptimismFinalizer",
-    message: "Optimism message statuses",
+    at: `${getNetworkName(chainId)}Finalizer`,
+    message: `${getNetworkName(chainId)} message statuses`,
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
   return messageStatuses.filter(
@@ -252,7 +264,7 @@ async function multicallOptimismFinalizations(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
   const finalizableMessages = (
     await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
   ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]);
@@ -264,11 +276,12 @@ async function multicallOptimismFinalizations(
   const withdrawals = finalizableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
-    const withdrawal: Withdrawal = {
-      l2ChainId: chainId,
+    const withdrawal: CrossChainMessage = {
+      originationChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
+      destinationChainId: hubPoolClient.chainId,
     };
     return withdrawal;
   });
@@ -285,7 +298,7 @@ async function multicallOptimismL1Proofs(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
   const provableMessages = (
     await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
   ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_TO_PROVE]);
@@ -295,11 +308,13 @@ async function multicallOptimismL1Proofs(
   const withdrawals = provableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
-    const proof: Withdrawal = {
-      l2ChainId: chainId,
+    const proof: CrossChainMessage = {
+      originationChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
-      type: "proof",
+      type: "misc",
+      miscReason: "proof",
+      destinationChainId: hubPoolClient.chainId,
     };
     return proof;
   });

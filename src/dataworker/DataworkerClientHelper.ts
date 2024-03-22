@@ -7,28 +7,34 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { Wallet } from "../utils";
-import { BundleDataClient, HubPoolClient, ProfitClient, TokenClient } from "../clients";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer } from "../utils";
+import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
+import { caching } from "@across-protocol/sdk-v2";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
   bundleDataClient: BundleDataClient;
-  profitClient?: ProfitClient;
+  arweaveClient: caching.ArweaveClient;
+  priceClient?: PriceClient;
 }
 
 export async function constructDataworkerClients(
   logger: winston.Logger,
   config: DataworkerConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<DataworkerClients> {
+  const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
+  const { hubPoolClient, configStoreClient } = commonClients;
+
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
+  const tokenClient = new TokenClient(logger, signerAddr, {}, hubPoolClient);
   await tokenClient.update();
   // Run approval on hub pool.
   if (config.sendingTransactionsEnabled) {
@@ -41,28 +47,32 @@ export async function constructDataworkerClients(
     logger,
     commonClients,
     {},
-    commonClients.configStoreClient.getChainIdIndicesForBlock(),
+    configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 
-  // Disable profitability by default as only the relayer needs it.
-  // The dataworker only needs price updates from ProfitClient to calculate bundle volume.
-  const profitClient = config.proposerEnabled
-    ? new ProfitClient(logger, commonClients.hubPoolClient, {}, [])
-    : undefined;
+  // The proposer needs prices to calculate bundle volumes.
+  const priceClient = new PriceClient(logger, [
+    new acrossApi.PriceFeed(),
+    new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+    new defiLlama.PriceFeed(),
+  ]);
 
-  // Must come after hubPoolClient.
-  // TODO: This should be refactored to check if the hubpool client has had one previous update run such that it has
-  // L1 tokens within it.If it has we dont need to make it sequential like this.
-  if (profitClient) {
-    await profitClient.update();
-  }
+  // Define the Arweave client.
+  const arweaveClient = new caching.ArweaveClient(
+    config.arweaveWalletJWK,
+    logger,
+    config.arweaveGateway?.url,
+    config.arweaveGateway?.protocol,
+    config.arweaveGateway?.port
+  );
 
   return {
     ...commonClients,
     bundleDataClient,
     tokenClient,
-    profitClient,
+    priceClient,
+    arweaveClient,
   };
 }
 
@@ -73,7 +83,7 @@ export async function constructSpokePoolClientsForFastDataworker(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: DataworkerConfig,
-  baseSigner: Wallet,
+  baseSigner: Signer,
   startBlocks: { [chainId: number]: number },
   endBlocks: { [chainId: number]: number }
 ): Promise<SpokePoolClientsByChain> {
@@ -86,12 +96,13 @@ export async function constructSpokePoolClientsForFastDataworker(
     endBlocks
   );
   await updateSpokePoolClients(spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
     "FilledRelay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
+    "V3FundsDeposited",
+    "RequestedV3SlowFill",
+    "FilledV3Relay",
   ]);
   return spokePoolClients;
 }

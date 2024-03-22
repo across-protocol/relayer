@@ -19,13 +19,18 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
+import assert from "assert";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
-  Wallet,
+  BigNumber,
+  bnZero,
   winston,
   config,
   Logger,
   toBN,
+  Event,
   fromWei,
+  isDefined,
   Contract,
   ERC20,
   getProvider,
@@ -34,22 +39,23 @@ import {
   paginatedEventQuery,
   ZERO_ADDRESS,
   getRefund,
-  disconnectRedisClient,
+  disconnectRedisClients,
+  Signer,
+  getSigner,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
-import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
+import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
-import { retrieveSignerFromCLIArgs } from "../utils/CLIUtils";
 
 config();
 let logger: winston.Logger;
 
 const slowRootCache = {};
 
-export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
+export async function runScript(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
 
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
@@ -57,7 +63,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 10; // Roughly 2 days worth of bundles.
+  const bundlesToValidate = 5; // Roughly 12 hours worth of bundles.
 
   // Create spoke pool clients that only query events related to root bundle proposals and roots
   // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
@@ -87,7 +93,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     mrkdwn += `Bundle proposed at ${mostRecentValidatedBundle.transactionHash}`;
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
-      clients.hubPoolClient.latestBlockNumber;
+      clients.hubPoolClient.latestBlockSearched;
     const poolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentValidatedBundle,
       followingBlockNumber
@@ -112,7 +118,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 
         mrkdwn += `\n\tLeaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`;
         const decimals = tokenInfo.decimals;
-        const l2Token = clients.hubPoolClient.getDestinationTokenForL1Token(l1Token, leaf.chainId);
+        const l2Token = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, leaf.chainId, followingBlockNumber);
         const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
@@ -146,26 +152,26 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               previousLeafExecution.blockNumber > bundleEndBlockForChain.toNumber();
             mrkdwn += `\n\t\t- Previous relayer refund leaf executed after bundle end block for chain: ${previousLeafExecutedAfterBundleEndBlockForChain}`;
             if (previousLeafExecutedAfterBundleEndBlockForChain) {
-              const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0));
+              const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero);
               mrkdwn += `\n\t\t- Subtracting previous leaf's amountToReturn (${fromWei(
                 previousLeafExecution.amountToReturn.toString(),
                 decimals
               )}) and refunds (${fromWei(previousLeafRefundAmount.toString(), decimals)}) from token balance`;
               tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock
                 .sub(previousLeafExecution.amountToReturn)
-                .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0)));
+                .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero));
             }
           }
 
           // Make sure that previous root bundle's netSendAmount has been deposited into the spoke pool. We only
-          // perform this check for chains 10, 137, 288, and 42161 because transfers from the hub pool to spoke
+          // perform this check for these L2 chains because transfers from the hub pool to spoke
           // pools on those chains can take a variable amount of time, unlike transfers to the spoke pool on
-          // mainnet. Additionally, deposits to those chains emit transfer events where the from address
-          // is the zero address, making it easy to track.
-          if ([10, 137, 288, 42161].includes(leaf.chainId)) {
+          // mainnet. Additionally, deposits to those chains emit Transfer events where the to address
+          // is the SpokePool address, making it easy to track.
+          if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockNumber;
+              clients.hubPoolClient.latestBlockSearched;
             const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
               previousValidatedBundle,
               _followingBlockNumber
@@ -181,20 +187,52 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               const previousNetSendAmount =
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
               mrkdwn += `\n\t\t- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`;
-              if (previousNetSendAmount.gt(toBN(0))) {
-                // This part might fail if the token is ETH since deposits of ETH do not emit Transfer events, so
-                // in these cases the `tokenBalanceAtBundleEndBlock` might look artificially higher for this bundle.
-                const depositsToSpokePool = (
-                  await paginatedEventQuery(
-                    l2TokenContract,
-                    l2TokenContract.filters.Transfer(ZERO_ADDRESS, spokePoolClients[leaf.chainId].spokePool.address),
-                    {
-                      fromBlock: previousBundleEndBlockForChain.toNumber(),
-                      toBlock: bundleEndBlockForChain.toNumber(),
-                      maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
-                    }
-                  )
-                ).filter((e) => e.args.value.eq(previousNetSendAmount));
+              if (previousNetSendAmount.gt(bnZero)) {
+                console.log(
+                  `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
+                );
+                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
+                let depositsToSpokePool: Event[];
+                // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
+                // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
+                // including the L1 and L2 ETH (native gas token) addresses.
+                if ([10, 8453].includes(leaf.chainId) && tokenInfo.symbol === "WETH") {
+                  const ovmL2BridgeContractInfo = CONTRACT_ADDRESSES[leaf.chainId].ovmStandardBridge;
+                  const ovmL2Bridge = new Contract(
+                    ovmL2BridgeContractInfo.address,
+                    ovmL2BridgeContractInfo.abi,
+                    await getProvider(leaf.chainId)
+                  );
+                  depositsToSpokePool = (
+                    await paginatedEventQuery(
+                      ovmL2Bridge,
+                      ovmL2Bridge.filters.DepositFinalized(
+                        ZERO_ADDRESS, // L1 token
+                        CONTRACT_ADDRESSES[leaf.chainId].eth.address, // L2 token
+                        clients.hubPoolClient.hubPool.address // from
+                      ),
+                      {
+                        fromBlock: previousBundleEndBlockForChain.toNumber(),
+                        toBlock: bundleEndBlockForChain.toNumber(),
+                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                      }
+                    )
+                  ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddress);
+                } else {
+                  // This part could be inaccurate if there is a duplicate Transfer event for the exact same amount
+                  // to the SpokePool address. This is unlikely so we'll ignore it for now.
+                  depositsToSpokePool = (
+                    await paginatedEventQuery(
+                      l2TokenContract,
+                      l2TokenContract.filters.Transfer(undefined, spokePoolAddress),
+                      {
+                        fromBlock: previousBundleEndBlockForChain.toNumber(),
+                        toBlock: bundleEndBlockForChain.toNumber(),
+                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                      }
+                    )
+                  ).filter((e) => e.args.value.eq(previousNetSendAmount));
+                }
                 if (depositsToSpokePool.length === 0) {
                   mrkdwn += `\n\t\t- Adding previous leaf's netSendAmount (${fromWei(
                     previousNetSendAmount.toString(),
@@ -214,28 +252,48 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               validatedBundles[x + 1 + 2],
               mostRecentValidatedBundle
             );
-            // Compute how much the slow fill will execute by checking if any partial fills were sent after
-            // the slow fill amount was sent to the spoke pool.
+            // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
+            // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
+            // For v2, pre-fee amounts are computed and are normalised to post-fee amounts afterwards.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-              (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
+              (f) =>
+                sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
+                sdkUtils.getRelayDataOutputToken(f.relayData) === l2Token
             );
+
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-                const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
+                const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+                const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
                   .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
                   .filter(
                     (f) =>
                       f.blockNumber <= bundleEndBlockForChain.toNumber() &&
                       f.depositId === slowFillForChain.relayData.depositId
                   );
-                const amountSentForSlowFillLeftUnexecuted = slowFillForChain.relayData.amount.sub(
-                  sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
-                );
-                if (amountSentForSlowFillLeftUnexecuted.gt(0)) {
-                  const deductionForSlowFill = getRefund(
-                    amountSentForSlowFillLeftUnexecuted,
-                    slowFillForChain.relayData.realizedLpFeePct
-                  );
+
+                let unexecutedAmount: BigNumber;
+                const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+                if (sdkUtils.isV2SlowFillLeaf(slowFillForChain)) {
+                  assert(isDefined(lastFill));
+
+                  // For v2 there must be at least one partial fill, but there may be multiple. The deposit
+                  // may be filled anywhere up to the outstanding ammount included in the slow fill.
+                  const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                  const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+                  unexecutedAmount = outputAmount.sub(totalFilledAmount);
+                } else {
+                  // For v3 slow fills there _may_ be a fast fill, and if so, the fill is completed.
+                  unexecutedAmount = isDefined(lastFill) ? bnZero : slowFillForChain.updatedOutputAmount;
+                }
+
+                // For v2 fills, the amounts computed so far were pre-fees. Subtract the LP fee to determine how much
+                // remains to be executed. In v3 the post-fee amount is known, so use it directly.
+                if (unexecutedAmount.gt(bnZero)) {
+                  const deductionForSlowFill = sdkUtils.isV3SlowFillLeaf(slowFillForChain)
+                    ? unexecutedAmount
+                    : getRefund(unexecutedAmount, slowFillForChain.relayData.realizedLpFeePct);
+
                   mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
                     deductionForSlowFill.toString(),
                     decimals
@@ -258,21 +316,33 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             mostRecentValidatedBundle
           );
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-            (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
+            (f) =>
+              sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
+              sdkUtils.getRelayDataOutputToken(f.relayData) === l2Token
           );
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-              const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
-                .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
-                .filter((f) => f.depositId === slowFillForChain.relayData.depositId);
-              const amountSentForSlowFill = slowFillForChain.relayData.amount.sub(
-                sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
-              );
+              const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+              let amountSentForSlowFill: BigNumber;
+
+              if (sdkUtils.isV3SlowFillLeaf(slowFillForChain)) {
+                amountSentForSlowFill = slowFillForChain.updatedOutputAmount;
+              } else {
+                const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
+                  .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
+                  .filter((f) => f.depositId === slowFillForChain.relayData.depositId);
+
+                const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+                const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
+                const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
+                amountSentForSlowFill = outputAmount.sub(totalFilledAmount);
+              }
+
               if (amountSentForSlowFill.gt(0)) {
-                const deductionForSlowFill = getRefund(
-                  amountSentForSlowFill,
-                  slowFillForChain.relayData.realizedLpFeePct
-                );
+                const deductionForSlowFill = sdkUtils.isV3SlowFillLeaf(slowFillForChain)
+                  ? amountSentForSlowFill
+                  : getRefund(amountSentForSlowFill, slowFillForChain.relayData.realizedLpFeePct);
+
                 mrkdwn += `\n\t\t- subtracting amount sent for slow fill: ${fromWei(
                   deductionForSlowFill.toString(),
                   decimals
@@ -297,14 +367,24 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
         if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
-          if (!netSendAmount.eq(0)) {
+          // There is a possibility that the relayer refund root does not contain a refund leaf for this chain Id x
+          // token combination but it did have a non-zero netSendAmount in the pool rebalance leaf. This is possible
+          // if the net send amount was used to pay out slow fill leaves. Therefore, we should
+          // only throw an error here if the slow fill root was empty and net send amount was non-zero. In this
+          // case there MIGHT be a relayer refund root. Its hard to figure out otherwise if there was a refund root
+          // so there might be a false negative here where we don't subtract the refund leaf amount because we
+          // can't find it and it legitimately wasn't relayed over yet.
+          if (!netSendAmount.eq(0) && mostRecentValidatedBundle.slowRelayRoot === EMPTY_MERKLE_ROOT) {
             // We shouldn't get here for any bundle since we start with the i-1'th most recent bundle.
             // If so, then a relayed root message might have gotten stuck in a canonical bridge and we will
             // want to know about it.
-            throw new Error(`No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
+            const formattedAmount = fromWei(netSendAmount.toString(), decimals);
+            throw new Error(
+              `No relayed refund root for chain ID ${leaf.chainId} and token ${l2Token} with netSendAmount ${formattedAmount}`
+            );
           }
         } else {
-          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), toBN(0));
+          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), bnZero);
           excess = excess.sub(executedRelayerRefund);
           mrkdwn += `\n\t\t- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`;
         }
@@ -335,9 +415,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   });
   const unexpectedExcess = Object.entries(excesses).some(([, tokenExcesses]) => {
     return Object.entries(tokenExcesses).some(([, excesses]) => {
-      // We only care that the latest excesses are 0, because sometimes excesses can appear in historical bundles
+      // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
-      return Number(excesses[0]).toFixed(6) !== "0.000000";
+      const excess = Number(excesses[0]);
+      return excess > 0.05 || excess < -0.05;
     });
   });
   if (unexpectedExcess) {
@@ -450,9 +531,15 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 }
 
 export async function run(_logger: winston.Logger): Promise<void> {
-  const baseSigner: Wallet = await retrieveSignerFromCLIArgs();
-  await runScript(_logger, baseSigner);
-  await disconnectRedisClient(logger);
+  try {
+    // This script inherits the TokenClient, and it attempts to update token approvals. The disputer already has the
+    // necessary token approvals in place, so use its address. nb. This implies the script can only be used on mainnet.
+    const voidSigner = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
+    const baseSigner = await getSigner({ keyType: "void", cleanEnv: true, roAddress: voidSigner });
+    await runScript(_logger, baseSigner);
+  } finally {
+    await disconnectRedisClients(logger);
+  }
 }
 
 // eslint-disable-next-line no-process-exit
