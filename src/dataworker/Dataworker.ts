@@ -2082,9 +2082,16 @@ export class Dataworker {
     // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf. This is currently
     // unique to the L2 -> L1 relay direction for Linea. We will make this variable generic defaulting to undefined
     // for other chains.
-    const valueToPassViaPayable = sdkUtils.chainIsLinea(chainId)
+    const LINEA_FEE_TO_SEND_MSG_TO_L1 = sdkUtils.chainIsLinea(chainId)
       ? await this._getRequiredEthForLineaRelayLeafExecution(client)
       : undefined;
+    const getMsgValue = (leaf: RelayerRefundLeaf): BigNumber | undefined => {
+      // Only need to include a msg.value if amountToReturn > 0 and we need to send tokens back to HubPool.
+      if (LINEA_FEE_TO_SEND_MSG_TO_L1 && leaf.amountToReturn.gt(0)) {
+        return LINEA_FEE_TO_SEND_MSG_TO_L1;
+      }
+      return undefined;
+    };
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
@@ -2104,6 +2111,8 @@ export class Dataworker {
               amount: totalSent,
             },
           ];
+
+          const valueToPassViaPayable = getMsgValue(leaf);
           // If we have to pass ETH via the payable function, then we need to add a balance request for the signer
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens
@@ -2154,6 +2163,7 @@ export class Dataworker {
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${l1TokenInfo?.symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
+        const valueToPassViaPayable = getMsgValue(leaf);
         this.clients.multiCallerClient.enqueueTransaction({
           value: valueToPassViaPayable,
           contract: client.spokePool,
