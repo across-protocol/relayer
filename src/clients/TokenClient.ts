@@ -191,7 +191,7 @@ export class TokenClient {
       // Make eth_call using nearest 100_000th block to take advantage of eth_call caching when blockTag is
       // specified. This is unexpected to change so we are ok to rarely increase this block tag.
       this.hubPoolClient.hubPool.bondToken({
-        blockTag: Math.max(
+        blockTag: Math.min(
           this.hubPoolClient.deploymentBlock,
           Math.round(this.hubPoolClient.latestBlockSearched / 100_000) * 100_000
         ),
