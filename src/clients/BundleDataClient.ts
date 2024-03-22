@@ -161,7 +161,7 @@ export class BundleDataClient {
   async loadDataFromCache(key: string): Promise<LoadDataReturnValue> {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
-    return _.cloneDeep(await this.loadDataCache[key]);
+    return _.cloneDeep(await this._loadData[key]);
   }
 
   getBundleTimestampsFromCache(key: string): undefined | { [chainId: number]: number[] } {
