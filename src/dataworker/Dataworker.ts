@@ -989,6 +989,69 @@ export class Dataworker {
     };
   }
 
+  // Designed to be called before executing leaves in root bundle to ensure that the BundleDataClient.loadData
+  // output is cached. This is useful because `_proposeRootBundle` can be very slow if called in parallel
+  // for every spoke pool client. Instead, call it sequentially for the max number of bundles to inspect before
+  // trying to execute leaves in parallel.
+  async warmBundleDataCache(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+  ): Promise<void> {
+    this.logger.debug({
+      at: "Dataworker#warmBundleDataCache",
+      message: `Warming bundle data for the latest ${this.spokeRootsLookbackCount} root bundles`,
+    });
+
+    const timerStart = Date.now();
+    let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
+    if (this.spokeRootsLookbackCount !== 0) {
+      latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
+    }
+
+    await Promise.all(
+      latestRootBundles.map(async (rootBundle) => {
+        const blockNumberRanges = getImpliedBundleBlockRanges(
+          this.clients.hubPoolClient,
+          this.clients.configStoreClient,
+          rootBundle
+        );
+        const mainnetBlockRange = blockNumberRanges[0];
+        const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRange[0]);
+        if (
+          Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
+          (await blockRangesAreInvalidForSpokeClients(
+            spokePoolClients,
+            blockNumberRanges,
+            chainIds,
+            earliestBlocksInSpokePoolClients,
+            this.isV3(mainnetBlockRange[0])
+          ))
+        ) {
+          // Log this as a debug level and let the executeX function log it at the warn level.
+          this.logger.debug({
+            at: "Dataworker#warmBundleDataCache",
+            message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+            rootBundleRanges: blockNumberRanges,
+            availableSpokePoolClients: Object.keys(spokePoolClients),
+            earliestBlocksInSpokePoolClients,
+            spokeClientsEventSearchConfigs: Object.fromEntries(
+              Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
+            ),
+          });
+          return;
+        }
+        await this._proposeRootBundle(blockNumberRanges, spokePoolClients, rootBundle.blockNumber);
+      })
+    );
+    this.logger.debug({
+      at: "Dataworker#warmBundleDataCache",
+      message: `Warmed bundle data cache for the latest ${this.spokeRootsLookbackCount} root bundles in ${
+        Date.now() - timerStart
+      }ms`,
+      latestRootBundles,
+    });
+  }
+
   // TODO: this method and executeRelayerRefundLeaves have a lot of similarities, but they have some key differences
   // in both the events they search for and the comparisons they make. We should try to generalize this in the future,
   // but keeping them separate is probably the simplest for the initial implementation.
