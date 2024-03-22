@@ -256,8 +256,8 @@ export class TokenClient {
     const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
       blockTag,
     });
-    if (redis) {
-      // Save allowance in cache with no TTL as these should never decrement.
+    if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
+      // Save allowance in cache with no TTL as these should be exhausted.
       await redis.set(await this._getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
     }
     return allowance;
@@ -277,7 +277,8 @@ export class TokenClient {
     }
     const bondToken: string = await this.hubPoolClient.hubPool.bondToken();
     if (redis) {
-      // Save allowance in cache with no TTL as this should never change.
+      // The bond token should not change, and using the wrong bond token will be immediately obvious, so cache with
+      // infinite TTL.
       await redis.set(this._getBondTokenCacheKey(), bondToken);
     }
     return bondToken;
