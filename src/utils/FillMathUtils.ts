@@ -18,10 +18,6 @@ export function _getRealizedLpFeeForFill(fill: Fill): BigNumber {
   return fill.fillAmount.mul(fill.realizedLpFeePct).div(fixedPoint);
 }
 
-export function getRefund(fillAmount: BigNumber, realizedLpFeePct: BigNumber): BigNumber {
-  return fillAmount.mul(fixedPoint.sub(realizedLpFeePct)).div(fixedPoint);
-}
-
 export function getFillAmountMinusFees(
   fillAmount: BigNumber,
   realizedLpFeePct: BigNumber,
