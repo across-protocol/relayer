@@ -1,4 +1,3 @@
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
@@ -18,7 +17,6 @@ import {
   compareAddresses,
   convertFromWei,
   formatFeePct,
-  getNetworkName,
   shortenHexString,
   shortenHexStrings,
   toBN,
