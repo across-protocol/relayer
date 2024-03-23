@@ -97,7 +97,7 @@ export type PoolRebalanceRoot = {
   tree: MerkleTree<PoolRebalanceLeaf>;
 };
 
-type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
+type PoolRebalanceRootCache = Record<string, Promise<PoolRebalanceRoot>>;
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -2275,7 +2275,7 @@ export class Dataworker {
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
-      this.rootCache[key] = await _buildPoolRebalanceRoot(
+      this.rootCache[key] = _buildPoolRebalanceRoot(
         latestMainnetBlock,
         mainnetBundleEndBlock,
         fillsToRefund,
@@ -2296,7 +2296,7 @@ export class Dataworker {
       );
     }
 
-    return _.cloneDeep(this.rootCache[key]);
+    return _.cloneDeep(await this.rootCache[key]);
   }
 
   _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): BigNumber {
