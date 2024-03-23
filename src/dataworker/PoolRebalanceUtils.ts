@@ -22,6 +22,8 @@ import {
   toBN,
   toBNWei,
   winston,
+  assert,
+  getNetworkName,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 
@@ -328,7 +330,6 @@ export function generateMarkdownForRootBundle(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   relayerRefundLeaves: any[],
   relayerRefundRoot: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   slowRelayLeaves: V3SlowFillLeaf[],
   slowRelayRoot: string
 ): string {
@@ -407,10 +408,18 @@ export function generateMarkdownForRootBundle(
       realizedLpFeePct: `${formatFeePct(lpFeePct)}%`,
     };
 
-    slowFill.destinationToken = convertTokenAddressToSymbol(destinationChainId, outputToken);
-    slowFill.amount = convertFromWei(leaf.relayData.amount.toString(), outputTokenDecimals);
-    slowFill.payoutAdjustmentPct = `${formatFeePct(toBN(leaf.payoutAdjustmentPct))}%`;
+    // Scale amounts to 18 decimals for realizedLpFeePct computation.
+    const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
+    const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
+    const updatedOutputAmount = leaf.updatedOutputAmount.mul(scaleBy);
+    assert(
+      inputAmount.gte(updatedOutputAmount),
+      "Unexpected output amount for slow fill on" +
+        ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
+    );
 
+    slowFill.outputToken = outputToken;
+    slowFill.outputAmount = convertFromWei(updatedOutputAmount.toString(), 18); // tokens were scaled to 18 decimals.
     slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(slowFill)}`;
   });
 
