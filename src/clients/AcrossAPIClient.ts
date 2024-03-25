@@ -11,7 +11,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   getRedisCache,
 } from "../utils";
-import { PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier } from "../common";
 import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {
