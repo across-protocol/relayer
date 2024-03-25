@@ -307,7 +307,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     it("Correctly validates self-relays", async function () {
       outputAmount = inputAmount.add(bnOne);
-      const simulate = false;
       for (const testDepositor of [relayer, depositor]) {
         await depositV3(
           spokePool_1,
@@ -320,10 +319,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         );
 
         await updateAllClients();
-        await relayerInstance.checkForUnfilledDepositsAndFill(false, simulate);
-        const expectedLog = testDepositor.address === relayer.address
-          ? "Filled v3 deposit"
-          : "Not relaying unprofitable deposit";
+        await relayerInstance.checkForUnfilledDepositsAndFill(false);
+        const expectedLog =
+          testDepositor.address === relayer.address ? "Filled v3 deposit" : "Not relaying unprofitable deposit";
         expect(lastSpyLogIncludes(spy, expectedLog)).to.be.true;
       }
     });
