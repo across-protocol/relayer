@@ -53,7 +53,7 @@ import {
   LoadDataReturnValue,
 } from "../interfaces/BundleData";
 
-type DataCache = Record<string, LoadDataReturnValue>;
+type DataCache = Record<string, Promise<LoadDataReturnValue>>;
 
 // V3 dictionary helper functions
 function updateExpiredDepositsV3(dict: ExpiredDepositsToRefundV3, deposit: V3DepositWithBlock): void {
@@ -158,10 +158,10 @@ export class BundleDataClient {
     this.loadDataCache = {};
   }
 
-  loadDataFromCache(key: string): LoadDataReturnValue {
+  async loadDataFromCache(key: string): Promise<LoadDataReturnValue> {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
-    return _.cloneDeep(this.loadDataCache[key]);
+    return _.cloneDeep(await this.loadDataCache[key]);
   }
 
   getBundleTimestampsFromCache(key: string): undefined | { [chainId: number]: number[] } {
@@ -299,9 +299,19 @@ export class BundleDataClient {
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
 
-    if (this.loadDataCache[key]) {
-      return this.loadDataFromCache(key);
+    if (!this.loadDataCache[key]) {
+      this.loadDataCache[key] = this._loadData(blockRangesForChains, spokePoolClients, logData);
     }
+
+    return this.loadDataFromCache(key);
+  }
+
+  async _loadData(
+    blockRangesForChains: number[][],
+    spokePoolClients: SpokePoolClientsByChain,
+    logData = true
+  ): Promise<LoadDataReturnValue> {
+    const key = JSON.stringify(blockRangesForChains);
 
     if (!this.clients.configStoreClient.isUpdated) {
       throw new Error("ConfigStoreClient not updated");
@@ -1061,7 +1071,7 @@ export class BundleDataClient {
       });
     }
 
-    this.loadDataCache[key] = {
+    return {
       fillsToRefund,
       deposits,
       unfilledDeposits,
@@ -1073,8 +1083,6 @@ export class BundleDataClient {
       unexecutableSlowFills,
       bundleSlowFillsV3,
     };
-
-    return this.loadDataFromCache(key);
   }
 
   async getBundleBlockTimestamps(
