@@ -26,10 +26,6 @@ const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 export class Relayer {
   public readonly relayerAddress: string;
 
-  // Track by originChainId since depositId is issued on the origin chain.
-  // Key is in the form of "chainId-depositId".
-  private fullyFilledDeposits: { [key: string]: boolean } = {};
-
   constructor(
     relayerAddress: string,
     readonly logger: winston.Logger,
@@ -393,21 +389,7 @@ export class Relayer {
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
-    const { originChainId, depositId, outputToken, outputAmount } = deposit;
-    // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
-    // of gas as the second fill would fail).
-    // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried.
-    const fillKey = `${originChainId}-${depositId}`;
-    if (this.fullyFilledDeposits[fillKey]) {
-      this.logger.debug({
-        at: "Relayer",
-        message: "Skipping deposit already filled by this relayer.",
-        originChainId: deposit.originChainId,
-        depositId: deposit.depositId,
-      });
-      return;
-    }
-
+    const { outputToken, outputAmount } = deposit;
     const { spokePoolClients, multiCallerClient } = this.clients;
     this.logger.debug({ at: "Relayer", message: "Filling v3 deposit.", deposit, repaymentChainId, realizedLpFeePct });
 
@@ -434,9 +416,6 @@ export class Relayer {
 
     // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
     this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, outputAmount);
-
-    // All fills routed through `fillRelay()` will complete the relay.
-    this.fullyFilledDeposits[fillKey] = true;
   }
 
   protected async resolveRepaymentChain(
