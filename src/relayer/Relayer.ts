@@ -42,13 +42,13 @@ export class Relayer {
    * @param invalidFills An array of any invalid fills detected for this deposit.
    * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
    */
-  filterDeposit({ deposit, version, invalidFills }: RelayerUnfilledDeposit): boolean {
+  filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, outputToken } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient } = this.clients;
     const { ignoredAddresses, relayerTokens, acceptInvalidFills } = this.config;
 
     // If we don't have the latest code to support this deposit, skip it.
-    if (version > configStoreClient.configStoreVersion) {
+    if (depositVersion > configStoreClient.configStoreVersion) {
       this.logger.warn({
         at: "Relayer::getUnfilledDeposits",
         message: "Skipping deposit that is not supported by this relayer version.",
