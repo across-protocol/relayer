@@ -124,7 +124,8 @@ export class MultiCallerClient {
   async executeTxnQueues(simulate = false, chainIds: number[] = []): Promise<Record<number, string[]>> {
     if (chainIds.length === 0) {
       chainIds = sdkUtils.dedupArray(
-        Object.keys(this.valueTxns).map(Number).concat(Object.keys(this.txns).map(Number))
+        ...(Object.keys(this.valueTxns).map(Number)),
+        ...(Object.keys(this.txns).map(Number)),
       );
     };
 
