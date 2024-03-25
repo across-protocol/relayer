@@ -67,7 +67,7 @@ export function addLastRunningBalance(
 export function updateRunningBalanceForDeposit(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
-  deposit: interfaces.DepositWithBlock,
+  deposit: interfaces.V3DepositWithBlock,
   updateAmount: BigNumber
 ): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
