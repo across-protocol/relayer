@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber } from "ethers";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
@@ -120,8 +121,12 @@ export class MultiCallerClient {
   }
 
   // For each chain, collate the enqueued transactions and process them in parallel.
-  async executeTxnQueues(simulate = false): Promise<Record<number, string[]>> {
-    const chainIds = [...new Set(Object.keys(this.valueTxns).concat(Object.keys(this.txns)))];
+  async executeTxnQueues(simulate = false, chainIds: number[] = []): Promise<Record<number, string[]>> {
+    if (chainIds.length === 0) {
+      chainIds = sdkUtils.dedupArray(
+        Object.keys(this.valueTxns).map(Number).concat(Object.keys(this.txns).map(Number))
+      );
+    };
 
     // One promise per chain for parallel execution.
     const resultsByChain = await Promise.allSettled(

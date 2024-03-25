@@ -193,12 +193,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(multiCallerClient.transactionCount()).to.equal(1); // Should be requestV3SlowFill()
-    expect(spyLogIncludes(spy, -2, "Enqueuing slow fill request.")).to.be.true;
+    expect(spyLogIncludes(spy, -2, "Requested slow fill for deposit.")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
-
-    const tx = await multiCallerClient.executeTransactionQueue();
-    expect(tx.length).to.equal(1);
 
     // Verify that the slowFill request was received by the destination SpokePoolClient.
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
@@ -211,7 +207,6 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
   });
 });

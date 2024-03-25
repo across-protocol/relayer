@@ -340,7 +340,7 @@ export class Relayer {
     }
   }
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
+  async checkForUnfilledDepositsAndFill(sendSlowRelays = true, simulate = false): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
@@ -369,15 +369,21 @@ export class Relayer {
       ])
     );
 
-    await sdkUtils.forEachAsync(Object.values(unfilledDeposits), async (unfilledDeposits) => {
+    await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, unfilledDeposits]) => {
       if (unfilledDeposits.length === 0) {
         return;
       }
+
       await this.evaluateFills(
         unfilledDeposits.map(({ deposit }) => deposit),
         maxBlockNumbers,
         sendSlowRelays
       );
+
+      const destinationChainId = Number(chainId);
+      if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
+        await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
+      }
     });
 
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
