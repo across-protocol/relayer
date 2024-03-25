@@ -1,3 +1,4 @@
+import { typeguards } from "@across-protocol/sdk-v2";
 import { BigNumber, toBNWei, assert, isDefined, readFileSync, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
@@ -75,9 +76,14 @@ export class RelayerConfig extends CommonConfig {
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
       "Concurrent inventory management configurations detected."
     );
-    this.inventoryConfig = isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG)
-      ? readFileSync(RELAYER_EXTERNAL_INVENTORY_CONFIG)
-      : JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+    try {
+      this.inventoryConfig = isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG)
+        ? JSON.parse(readFileSync(RELAYER_EXTERNAL_INVENTORY_CONFIG))
+        : JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+    } catch (err) {
+      const msg = typeguards.isError(err) ? err.message : (err as Record<string, unknown>)?.code;
+      throw new Error(`Inventory config error (${msg ?? "unknown error"})`);
+    }
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
