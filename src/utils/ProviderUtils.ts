@@ -70,6 +70,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
         provider: getOriginFromURL(this.connection.url),
         method,
         params,
+        chainId: this.network.chainId,
       };
 
       // In this path we log an rpc response sample.
