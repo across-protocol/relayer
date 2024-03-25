@@ -69,6 +69,8 @@ export class RelayerConfig extends CommonConfig {
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
 
+    this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
+
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
       "Concurrent inventory management configurations detected."
@@ -138,8 +140,6 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
-
-    this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
