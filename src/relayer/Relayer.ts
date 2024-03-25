@@ -1,4 +1,3 @@
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
 import { L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
@@ -374,7 +373,11 @@ export class Relayer {
       if (unfilledDeposits.length === 0) {
         return;
       }
-        await this.evaluateFills(unfilledDeposits.map(({ deposit }) => deposit), maxBlockNumbers, sendSlowRelays);
+      await this.evaluateFills(
+        unfilledDeposits.map(({ deposit }) => deposit),
+        maxBlockNumbers,
+        sendSlowRelays
+      );
     });
 
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
