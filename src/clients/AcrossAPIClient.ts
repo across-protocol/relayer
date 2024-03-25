@@ -11,6 +11,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   getRedisCache,
 } from "../utils";
+import { PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier } from "../common";
 import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {
@@ -162,7 +163,10 @@ export class AcrossApiClient {
         }
         if (redis) {
           // Cache limit for 5 minutes.
-          await redis.set(this.getLimitsCacheKey(l1Token, destinationChainId), result.data.maxDeposit.toString(), 300);
+          const baseTtl = 300;
+          // Apply a random margin to spread expiry over a larger time window.
+          const ttl = baseTtl + Math.ceil(_.random(-ttl_modifier, ttl_modifier, true) * baseTtl);
+          await redis.set(this.getLimitsCacheKey(l1Token, destinationChainId), result.data.maxDeposit.toString(), ttl);
         }
         return result.data;
       } catch (err) {
