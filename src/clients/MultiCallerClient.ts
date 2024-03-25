@@ -123,16 +123,15 @@ export class MultiCallerClient {
   // For each chain, collate the enqueued transactions and process them in parallel.
   async executeTxnQueues(simulate = false, chainIds: number[] = []): Promise<Record<number, string[]>> {
     if (chainIds.length === 0) {
-      chainIds = sdkUtils.dedupArray(
+      chainIds = sdkUtils.dedupArray([
         ...(Object.keys(this.valueTxns).map(Number)),
         ...(Object.keys(this.txns).map(Number)),
-      );
+      ]);
     };
 
     // One promise per chain for parallel execution.
     const resultsByChain = await Promise.allSettled(
-      chainIds.map((_chainId) => {
-        const chainId = Number(_chainId);
+      chainIds.map((chainId) => {
         const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
         const valueTxns: AugmentedTransaction[] | undefined = this.valueTxns[chainId];
 
