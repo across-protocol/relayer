@@ -229,6 +229,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await relayerInstance.checkForUnfilledDepositsAndFill();
       expect(lastSpyLogIncludes(spy, "Filling v3 deposit")).to.be.true;
       expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
+      await multiCallerClient.executeTxnQueues();
 
       // The first fill is still pending but if we rerun the relayer loop, it shouldn't try to fill a second time.
       await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
@@ -343,10 +344,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Ignores exclusive deposits", async function () {
-      for (const exclusiveRelayer of [randomAddress(), relayerInstance.relayerAddress]) {
-        const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
-        const exclusivityDeadline = currentTime + 60;
+      const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
+      const exclusivityDeadline = currentTime + 7200;
 
+      // Make two deposits - one with the relayer as exclusiveRelayer, and one with a random address.
+      // Verify that the relayer can immediately fill the first deposit, and both after the exclusivity window.
+      for (const exclusiveRelayer of [randomAddress(), relayerInstance.relayerAddress]) {
         await depositV3(
           spokePool_1,
           destinationChainId,
@@ -357,24 +360,18 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           outputAmount.div(2),
           { exclusivityDeadline, exclusiveRelayer }
         );
-        const relayerIsExclusive = relayerInstance.relayerAddress === exclusiveRelayer;
-        await updateAllClients();
-
-        await relayerInstance.checkForUnfilledDepositsAndFill();
-        expect(multiCallerClient.transactionCount()).to.equal(relayerIsExclusive ? 1 : 0);
-
-        if (relayerIsExclusive) {
-          continue;
-        }
-
-        await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
-        await updateAllClients();
-
-        // Relayer can unconditionally fill after the exclusivityDeadline.
-        expect(multiCallerClient.transactionCount()).to.equal(0);
-        await relayerInstance.checkForUnfilledDepositsAndFill();
-        expect(multiCallerClient.transactionCount()).to.equal(1);
       }
+
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(1);
+
+      await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
+      await updateAllClients();
+
+      // Relayer can unconditionally fill after the exclusivityDeadline.
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect(multiCallerClient.transactionCount()).to.equal(2);
     });
 
     it("Ignores deposits older than min deposit confirmation threshold", async function () {
