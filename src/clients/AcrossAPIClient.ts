@@ -165,7 +165,7 @@ export class AcrossApiClient {
           // Cache limit for 5 minutes.
           const baseTtl = 300;
           // Apply a random margin to spread expiry over a larger time window.
-          const ttl = baseTtl + Math.ceil(_.random(-ttl_modifier, ttl_modifier, true) * baseTtl);
+          const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
           await redis.set(this.getLimitsCacheKey(l1Token, destinationChainId), result.data.maxDeposit.toString(), ttl);
         }
         return result.data;
