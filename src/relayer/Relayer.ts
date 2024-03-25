@@ -323,6 +323,24 @@ export class Relayer {
     }
   }
 
+  /**
+   * For a given destination chain, evaluate and optionally fill each unfilled deposit. Note that each fill should be
+   * evaluated sequentially in order to ensure atomic balance updates.
+   * @param deposits An array of deposits destined for the same destination chain.
+   * @param maxBlockNumbers A map of the highest block number per origin chain to fill.
+   * @returns void
+   */
+  async evaluateFills(
+    deposits: V3DepositWithBlock[],
+    maxBlockNumbers: { [chainId: number]: number },
+    sendSlowRelays: boolean
+  ): Promise<void> {
+    for (let i = 0; i < deposits.length; ++i) {
+      const deposit = deposits[i];
+      await this.evaluateFill(deposit, maxBlockNumbers[deposit.originChainId], sendSlowRelays);
+    }
+  }
+
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
@@ -356,13 +374,7 @@ export class Relayer {
       if (unfilledDeposits.length === 0) {
         return;
       }
-
-      const _destinationChainId = unfilledDeposits[0].deposit.destinationChainId;
-      for (const { deposit } of unfilledDeposits) {
-        const { originChainId, destinationChainId } = deposit;
-        assert(destinationChainId === _destinationChainId);
-        await this.evaluateFill(deposit, maxBlockNumbers[originChainId], sendSlowRelays);
-      }
+        await this.evaluateFills(unfilledDeposits.map(({ deposit }) => deposit), maxBlockNumbers, sendSlowRelays);
     });
 
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
