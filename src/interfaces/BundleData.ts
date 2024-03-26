@@ -1,4 +1,4 @@
-import { interfaces, typechain } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk-v2";
 import { BigNumber } from "../utils";
 export type ExpiredDepositsToRefundV3 = {
   [originChainId: number]: {
@@ -39,11 +39,6 @@ export type BundleSlowFills = {
 };
 
 export type LoadDataReturnValue = {
-  unfilledDeposits: interfaces.UnfilledDeposit[];
-  fillsToRefund: interfaces.FillsToRefund;
-  allValidFills: interfaces.V2FillWithBlock[];
-  deposits: interfaces.V2DepositWithBlock[];
-  earlyDeposits: typechain.FundsDepositedEvent[];
   bundleDepositsV3: BundleDepositsV3;
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
   bundleFillsV3: BundleFillsV3;

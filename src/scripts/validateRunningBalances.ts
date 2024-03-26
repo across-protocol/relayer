@@ -19,10 +19,8 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
-  BigNumber,
   bnZero,
   winston,
   config,
@@ -38,7 +36,6 @@ import {
   sortEventsDescending,
   paginatedEventQuery,
   ZERO_ADDRESS,
-  getRefund,
   disconnectRedisClients,
   Signer,
   getSigner,
@@ -46,7 +43,7 @@ import {
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
+import { ProposedRootBundle, SpokePoolClientsByChain, V3SlowFillLeaf } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
 
@@ -254,11 +251,8 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             );
             // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
             // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
-            // For v2, pre-fee amounts are computed and are normalised to post-fee amounts afterwards.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-              (f) =>
-                sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
-                sdkUtils.getRelayDataOutputToken(f.relayData) === l2Token
+              (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
             );
 
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
@@ -272,33 +266,16 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                       f.depositId === slowFillForChain.relayData.depositId
                   );
 
-                let unexecutedAmount: BigNumber;
                 const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
-                if (sdkUtils.isV2SlowFillLeaf(slowFillForChain)) {
-                  assert(isDefined(lastFill));
 
-                  // For v2 there must be at least one partial fill, but there may be multiple. The deposit
-                  // may be filled anywhere up to the outstanding ammount included in the slow fill.
-                  const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
-                  const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
-                  unexecutedAmount = outputAmount.sub(totalFilledAmount);
-                } else {
-                  // For v3 slow fills there _may_ be a fast fill, and if so, the fill is completed.
-                  unexecutedAmount = isDefined(lastFill) ? bnZero : slowFillForChain.updatedOutputAmount;
-                }
-
-                // For v2 fills, the amounts computed so far were pre-fees. Subtract the LP fee to determine how much
-                // remains to be executed. In v3 the post-fee amount is known, so use it directly.
+                // For v3 slow fills if there is a matching fast fill, then the fill is completed.
+                const unexecutedAmount = isDefined(lastFill) ? bnZero : slowFillForChain.updatedOutputAmount;
                 if (unexecutedAmount.gt(bnZero)) {
-                  const deductionForSlowFill = sdkUtils.isV3SlowFillLeaf(slowFillForChain)
-                    ? unexecutedAmount
-                    : getRefund(unexecutedAmount, slowFillForChain.relayData.realizedLpFeePct);
-
                   mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
-                    deductionForSlowFill.toString(),
+                    unexecutedAmount.toString(),
                     decimals
                   )}`;
-                  tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(deductionForSlowFill);
+                  tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(unexecutedAmount);
                 }
               }
             }
@@ -310,50 +287,30 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           // The slow fill amount will be captured in the netSendAmount as a positive value, so we need to cancel that out.
 
           // Not many bundles are expected to have slow fills so we can load them as necessary.
-          const { slowFills, bundleSpokePoolClients } = await _constructSlowRootForBundle(
+          const { slowFills } = await _constructSlowRootForBundle(
             mostRecentValidatedBundle,
             validatedBundles[x + 1 + 2],
             mostRecentValidatedBundle
           );
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-            (f) =>
-              sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
-              sdkUtils.getRelayDataOutputToken(f.relayData) === l2Token
+            (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
           );
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-              const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
-              let amountSentForSlowFill: BigNumber;
-
-              if (sdkUtils.isV3SlowFillLeaf(slowFillForChain)) {
-                amountSentForSlowFill = slowFillForChain.updatedOutputAmount;
-              } else {
-                const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
-                  .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
-                  .filter((f) => f.depositId === slowFillForChain.relayData.depositId);
-
-                const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
-                const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFillForChain.relayData);
-                const totalFilledAmount = sdkUtils.getTotalFilledAmount(lastFill);
-                amountSentForSlowFill = outputAmount.sub(totalFilledAmount);
-              }
-
+              const amountSentForSlowFill = slowFillForChain.updatedOutputAmount;
               if (amountSentForSlowFill.gt(0)) {
-                const deductionForSlowFill = sdkUtils.isV3SlowFillLeaf(slowFillForChain)
-                  ? amountSentForSlowFill
-                  : getRefund(amountSentForSlowFill, slowFillForChain.relayData.realizedLpFeePct);
-
                 mrkdwn += `\n\t\t- subtracting amount sent for slow fill: ${fromWei(
-                  deductionForSlowFill.toString(),
+                  amountSentForSlowFill.toString(),
                   decimals
                 )}`;
-                tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(deductionForSlowFill);
+                tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(amountSentForSlowFill);
               }
             }
           }
         }
 
-        const relayedRoot = spokePoolClients[leaf.chainId].getExecutedRefunds(
+        const relayedRoot = dataworker.clients.bundleDataClient.getExecutedRefunds(
+          spokePoolClients[leaf.chainId],
           mostRecentValidatedBundle.relayerRefundRoot
         );
 
@@ -439,7 +396,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
     bundle: ProposedRootBundle,
     olderBundle: ProposedRootBundle,
     futureBundle: ProposedRootBundle
-  ): Promise<{ slowFills: SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
+  ): Promise<{ slowFills: V3SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to build slow roots.
     const spokeClientFromBlocks = Object.fromEntries(
       dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
@@ -488,7 +445,14 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
         spokeClientFromBlocks,
         spokeClientToBlocks
       );
-      await updateSpokePoolClients(spokePoolClientsForBundle);
+      await updateSpokePoolClients(spokePoolClientsForBundle, [
+        "EnabledDepositRoute",
+        "RelayedRootBundle",
+        "ExecutedRelayerRefundRoot",
+        "V3FundsDeposited",
+        "RequestedV3SlowFill",
+        "FilledV3Relay",
+      ]);
 
       // Reconstruct bundle block range for bundle.
       const mainnetBundleEndBlock = getBlockForChain(
