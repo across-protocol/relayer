@@ -71,7 +71,7 @@ export function updateRunningBalanceForDeposit(
   updateAmount: BigNumber
 ): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    sdkUtils.getDepositInputToken(deposit),
+    deposit.inputToken,
     deposit.originChainId,
     deposit.quoteBlockNumber
   );
@@ -395,6 +395,16 @@ export function generateMarkdownForRootBundle(
     const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
+    // Scale amounts to 18 decimals for realizedLpFeePct computation.
+    const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
+    const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
+    const updatedOutputAmount = leaf.updatedOutputAmount.mul(scaleBy);
+    assert(
+      inputAmount.gte(updatedOutputAmount),
+      "Unexpected output amount for slow fill on" +
+        ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
+    );
+
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
     const slowFill: Record<string, string> = {
       // Shorten select keys for ease of reading from Slack.
@@ -406,20 +416,10 @@ export function generateMarkdownForRootBundle(
       message: leaf.relayData.message,
       // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
       realizedLpFeePct: `${formatFeePct(lpFeePct)}%`,
+      outputToken,
+      outputAmount: convertFromWei(updatedOutputAmount.toString(), 18), // tokens were scaled to 18 decimals.
     };
 
-    // Scale amounts to 18 decimals for realizedLpFeePct computation.
-    const scaleBy = toBN(10).pow(18 - outputTokenDecimals);
-    const inputAmount = leaf.relayData.inputAmount.mul(scaleBy);
-    const updatedOutputAmount = leaf.updatedOutputAmount.mul(scaleBy);
-    assert(
-      inputAmount.gte(updatedOutputAmount),
-      "Unexpected output amount for slow fill on" +
-        ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
-    );
-
-    slowFill.outputToken = outputToken;
-    slowFill.outputAmount = convertFromWei(updatedOutputAmount.toString(), 18); // tokens were scaled to 18 decimals.
     slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(slowFill)}`;
   });
 

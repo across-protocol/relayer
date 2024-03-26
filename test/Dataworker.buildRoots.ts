@@ -56,7 +56,6 @@ describe("Dataworker: Build merkle roots", async function () {
       updateAllClients,
     } = fastDataworkerResult);
     await updateAllClients();
-    await updateAllClients();
     const poolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(
       getDefaultBlockRange(1),
       spokePoolClients
