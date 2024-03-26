@@ -97,7 +97,7 @@ export type PoolRebalanceRoot = {
   tree: MerkleTree<PoolRebalanceLeaf>;
 };
 
-type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
+type PoolRebalanceRootCache = Record<string, Promise<PoolRebalanceRoot>>;
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -1554,7 +1554,7 @@ export class Dataworker {
     const l1TokensWithPotentiallyOlderUpdate = expectedTrees.poolRebalanceTree.leaves.reduce((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token) => {
-        if (!l1TokenSet[l1Token] && !updatedL1Tokens.has(l1Token)) {
+        if (!l1TokenSet.includes(l1Token) && !updatedL1Tokens.has(l1Token)) {
           l1TokenSet.push(l1Token);
         }
       });
@@ -1727,7 +1727,7 @@ export class Dataworker {
       if (currentLiquidReserves.gte(netSendAmounts[idx])) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
-          message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount`,
+          message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for hubChain`,
           currentLiquidReserves,
           netSendAmount: netSendAmounts[idx],
           l1Token,
@@ -1751,7 +1751,7 @@ export class Dataworker {
 
       this.logger.debug({
         at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
-        message: `Updating exchange rate update for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the poolRebalanceLeaf.`,
+        message: `Updating exchange rate update for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the hubChain poolRebalanceLeaf.`,
         poolRebalanceLeaf,
         netSendAmount: netSendAmounts[idx],
         currentPooledTokens,
@@ -1776,7 +1776,7 @@ export class Dataworker {
   async _updateExchangeRatesBeforeExecutingNonHubChainLeaves(
     latestLiquidReserves: Record<string, BigNumber>,
     balanceAllocator: BalanceAllocator,
-    poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">[],
+    poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens" | "chainId">[],
     submitExecution: boolean
   ): Promise<Set<string>> {
     const updatedL1Tokens = new Set<string>();
@@ -1813,7 +1813,8 @@ export class Dataworker {
         if (currHubPoolLiquidReserves.gte(leaf.netSendAmounts[idx])) {
           this.logger.debug({
             at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
-            message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount`,
+            message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for chain ${leaf.chainId}`,
+            l2ChainId: leaf.chainId,
             currHubPoolLiquidReserves,
             netSendAmount: leaf.netSendAmounts[idx],
             l1Token,
@@ -1876,16 +1877,18 @@ export class Dataworker {
       const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
 
       // Exit early if we recently synced this token.
-      const lastestFeesCompoundedTime =
+      const latestFeesCompoundedTime =
         this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
+      // Force update every 2 days:
       if (
         this.clients.hubPoolClient.currentTime === undefined ||
-        this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 2 * 24 * 60 * 60 // 2 day
+        this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime <= 2 * 24 * 60 * 60
       ) {
+        const timeToNextUpdate = 2 * 24 * 60 * 60 - (this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime);
         this.logger.debug({
           at: "Dataworker#_updateOldExchangeRates",
-          message: `Skipping exchange rate update for ${tokenSymbol} because it was recently updated`,
-          lastUpdateTime: lastestFeesCompoundedTime,
+          message: `Skipping exchange rate update for ${tokenSymbol} because it was recently updated. Seconds to next update: ${timeToNextUpdate}s`,
+          lastUpdateTime: latestFeesCompoundedTime,
         });
         return;
       }
@@ -1913,7 +1916,9 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#_updateOldExchangeRates",
         message: `Updating exchange rate for ${tokenSymbol}`,
-        lastUpdateTime: lastestFeesCompoundedTime,
+        lastUpdateTime: latestFeesCompoundedTime,
+        currentLiquidReserves,
+        updatedLiquidReserves,
         l1Token,
       });
       if (submitExecution) {
@@ -2082,9 +2087,16 @@ export class Dataworker {
     // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf. This is currently
     // unique to the L2 -> L1 relay direction for Linea. We will make this variable generic defaulting to undefined
     // for other chains.
-    const valueToPassViaPayable = sdkUtils.chainIsLinea(chainId)
+    const LINEA_FEE_TO_SEND_MSG_TO_L1 = sdkUtils.chainIsLinea(chainId)
       ? await this._getRequiredEthForLineaRelayLeafExecution(client)
       : undefined;
+    const getMsgValue = (leaf: RelayerRefundLeaf): BigNumber | undefined => {
+      // Only need to include a msg.value if amountToReturn > 0 and we need to send tokens back to HubPool.
+      if (LINEA_FEE_TO_SEND_MSG_TO_L1 && leaf.amountToReturn.gt(0)) {
+        return LINEA_FEE_TO_SEND_MSG_TO_L1;
+      }
+      return undefined;
+    };
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
@@ -2104,6 +2116,8 @@ export class Dataworker {
               amount: totalSent,
             },
           ];
+
+          const valueToPassViaPayable = getMsgValue(leaf);
           // If we have to pass ETH via the payable function, then we need to add a balance request for the signer
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens
@@ -2154,6 +2168,7 @@ export class Dataworker {
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${l1TokenInfo?.symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
+        const valueToPassViaPayable = getMsgValue(leaf);
         this.clients.multiCallerClient.enqueueTransaction({
           value: valueToPassViaPayable,
           contract: client.spokePool,
@@ -2260,7 +2275,7 @@ export class Dataworker {
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
-      this.rootCache[key] = await _buildPoolRebalanceRoot(
+      this.rootCache[key] = _buildPoolRebalanceRoot(
         latestMainnetBlock,
         mainnetBundleEndBlock,
         fillsToRefund,
@@ -2281,7 +2296,7 @@ export class Dataworker {
       );
     }
 
-    return _.cloneDeep(this.rootCache[key]);
+    return _.cloneDeep(await this.rootCache[key]);
   }
 
   _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): BigNumber {

@@ -244,7 +244,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
-          [{ netSendAmounts: [toBNWei(-1)], l1Tokens: [l1Token_1.address] }],
+          [{ netSendAmounts: [toBNWei(-1)], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
         );
         expect(updated.size).to.equal(0);
@@ -259,7 +259,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
-          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] }],
+          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
         );
         expect(updated.size).to.equal(0);
@@ -274,7 +274,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             [l1Token_1.address]: liquidReserves,
           },
           balanceAllocator,
-          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] }],
+          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
         );
         expect(updated.size).to.equal(0);
@@ -288,7 +288,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
-          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] }],
+          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
         );
         expect(lastSpyLogLevel(spy)).to.equal("error");
@@ -307,7 +307,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
-          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] }],
+          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
         );
         expect(updated.size).to.equal(1);
@@ -326,7 +326,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             [l1Token_1.address]: liquidReserves,
           },
           balanceAllocator,
-          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] }],
+          [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
         );
         expect(updated.size).to.equal(1);
@@ -346,8 +346,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
           },
           balanceAllocator,
           [
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
+            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
+            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
           ],
           true
         );
