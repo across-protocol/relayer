@@ -42,7 +42,6 @@ import {
   ExpiredDepositsToRefundV3,
   LoadDataReturnValue,
 } from "../interfaces/BundleData";
-import { findLast } from "lodash";
 
 type DataCache = Record<string, Promise<LoadDataReturnValue>>;
 
@@ -248,7 +247,7 @@ export class BundleDataClient {
     // @dev Search from right to left since there can be multiple root bundles with the same relayer refund root.
     // The caller should take caution if they're trying to use this function to find matching refunds for older
     // root bundles as opposed to more recent ones.
-    const bundle = findLast(
+    const bundle = _.findLast(
       spokePoolClient.getRootBundleRelays(),
       (bundle) => bundle.relayerRefundRoot === relayerRefundRoot
     );
@@ -602,7 +601,7 @@ export class BundleDataClient {
                 bundleInvalidFillsV3.push(fill);
               } else {
                 assert(utils.isV3Deposit(historicalDeposit.deposit));
-                const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
+                const matchedDeposit = historicalDeposit.deposit;
                 // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
                 // object property values against the deposit's, we
                 // sanity check it here by comparing the full relay hashes. If there's an error here then the

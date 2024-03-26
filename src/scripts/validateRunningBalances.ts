@@ -252,9 +252,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
             // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-              (f) =>
-                sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
-                sdkUtils.getRelayDataOutputToken(f.relayData) === l2Token
+              (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
             );
 
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
@@ -295,9 +293,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             mostRecentValidatedBundle
           );
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-            (f) =>
-              sdkUtils.getSlowFillLeafChainId(f) === leaf.chainId &&
-              sdkUtils.getRelayDataOutputToken(f.relayData) === l2Token
+            (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
           );
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {

@@ -1147,23 +1147,11 @@ export class Dataworker {
           !(
             fill.depositId === relayData.depositId &&
             fill.originChainId === relayData.originChainId &&
-            fill.destinationChainId === sdkUtils.getSlowFillLeafChainId(slowFill) &&
-            fill.depositor === relayData.depositor &&
-            fill.recipient === relayData.recipient &&
-            fill.inputToken === relayData.inputToken &&
-            sdkUtils.getFillOutputToken(fill) === sdkUtils.getRelayDataOutputToken(relayData) &&
-            sdkUtils.getFillOutputAmount(fill).eq(sdkUtils.getRelayDataOutputAmount(relayData)) &&
-            fill.message === relayData.message
+            sdkUtils.getV3RelayHash(fill, chainId) === sdkUtils.getV3RelayHash(relayData, chainId)
           )
         ) {
           return false;
         }
-
-        return (
-          fill.fillDeadline === relayData.fillDeadline &&
-          fill.exclusivityDeadline === relayData.exclusivityDeadline &&
-          fill.exclusiveRelayer === relayData.exclusiveRelayer
-        );
       });
 
       return fill;
@@ -1178,7 +1166,7 @@ export class Dataworker {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
-          const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
+          const { outputAmount } = slowFill.relayData;
           const fill = latestFills[idx];
           const amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
 
@@ -1187,7 +1175,7 @@ export class Dataworker {
             return undefined;
           }
 
-          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
+          const { outputToken } = slowFill.relayData;
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
@@ -1221,7 +1209,7 @@ export class Dataworker {
       assert(sdkUtils.getSlowFillLeafChainId(leaf) === chainId);
 
       const { relayData } = leaf;
-      const outputAmount = sdkUtils.getRelayDataOutputAmount(relayData);
+      const { outputAmount } = relayData;
       const mrkdwn =
         `rootBundleId: ${rootBundleId}\n` +
         `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
