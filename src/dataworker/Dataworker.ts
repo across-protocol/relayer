@@ -1139,7 +1139,7 @@ export class Dataworker {
 
     const sortedFills = client.getFills().filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>);
     const latestFills = leaves.map((slowFill) => {
-      const { relayData } = slowFill;
+      const { relayData, chainId: slowFillChainId } = slowFill;
 
       // Start with the most recent fills and search backwards.
       const fill = _.findLast(sortedFills, (fill) => {
@@ -1147,11 +1147,12 @@ export class Dataworker {
           !(
             fill.depositId === relayData.depositId &&
             fill.originChainId === relayData.originChainId &&
-            sdkUtils.getV3RelayHash(fill, chainId) === sdkUtils.getV3RelayHash(relayData, chainId)
+            sdkUtils.getV3RelayHash(fill, chainId) === sdkUtils.getV3RelayHash(relayData, slowFillChainId)
           )
         ) {
           return false;
         }
+        return true;
       });
 
       return fill;

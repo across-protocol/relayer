@@ -107,7 +107,7 @@ describe("Dataworker: Execute slow relays", async function () {
   it("Ignores V3 slow fills that were replaced by a fast fill", async function () {
     await updateAllClients();
 
-    await depositV3(
+    const deposit = await depositV3(
       spokePool_1,
       destinationChainId,
       depositor,
@@ -117,7 +117,6 @@ describe("Dataworker: Execute slow relays", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId].getDeposits()[0];
     await requestSlowFill(spokePool_2, depositor, deposit);
 
     await updateAllClients();
@@ -159,7 +158,7 @@ describe("Dataworker: Execute slow relays", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1);
 
     // Replace slow fill, and check that it no longer tries to get executed by dataworker.
-    await fillV3(spokePool_2, relayer, deposit, deposit.realizedLpFeePct);
+    await fillV3(spokePool_2, relayer, deposit);
     await updateAllClients();
     multiCallerClient.clearTransactionQueue();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
