@@ -20,7 +20,13 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { V3Deposit, InventoryConfig } from "../src/interfaces";
-import { ZERO_ADDRESS, bnZero, fixedPointAdjustment as fixedPoint, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import {
+  ZERO_ADDRESS,
+  bnZero,
+  fixedPointAdjustment as fixedPoint,
+  getNetworkName,
+  TOKEN_SYMBOLS_MAP,
+} from "../src/utils";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks";
 
 describe("InventoryClient: Refund chain selection", async function () {
@@ -35,7 +41,6 @@ describe("InventoryClient: Refund chain selection", async function () {
   let inventoryClient: InventoryClient; // tested
   let sampleDepositData: V3Deposit;
   let crossChainTransferClient: CrossChainTransferClient;
-
 
   // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
   const l2TokensForWeth = { 1: mainnetWeth };
@@ -86,9 +91,10 @@ describe("InventoryClient: Refund chain selection", async function () {
   };
 
   const computeOutputAmount = async (deposit: V3Deposit) => {
-    const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
-      { ...deposit, paymentChainId: deposit.destinationChainId }
-    );
+    const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
+      ...deposit,
+      paymentChainId: deposit.destinationChainId,
+    });
     return deposit.inputAmount.mul(fixedPoint.sub(relayerFeePct.add(realizedLpFeePct))).div(fixedPoint);
   };
 
