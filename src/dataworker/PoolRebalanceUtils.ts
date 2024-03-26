@@ -406,7 +406,7 @@ export function generateMarkdownForRootBundle(
     );
 
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
-    const slowFill: Record<string, string> = {
+    const slowFill = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
       recipient: shortenHexString(leaf.relayData.recipient),
