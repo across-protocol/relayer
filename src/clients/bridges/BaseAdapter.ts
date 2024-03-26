@@ -292,6 +292,9 @@ export abstract class BaseAdapter {
     simMode: boolean
   ): Promise<TransactionResponse> {
     assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
+    const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
+    const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
     const _txnRequest: AugmentedTransaction = {
       contract,
       chainId: this.hubChainId,
@@ -299,6 +302,8 @@ export abstract class BaseAdapter {
       args,
       gasLimitMultiplier,
       value: msgValue,
+      message,
+      mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${dstChain}.`,
     };
     const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
     const { contract: targetContract, ...txnRequestData } = txnRequest;
@@ -308,8 +313,6 @@ export abstract class BaseAdapter {
       throw new Error(`${message} (${reason})`);
     }
 
-    const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
-    const message = `💌⭐️ Bridging tokens from ${this.hubChainId} to ${this.chainId}`;
     this.logger.debug({
       at: `${this.getName()}#_sendTokenToTargetChain`,
       message,
@@ -318,17 +321,17 @@ export abstract class BaseAdapter {
       amount,
       contract: contract.address,
       txnRequestData,
-      mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${this.chainId}`,
     });
     if (simMode) {
       this.logger.debug({
         at: `${this.getName()}#_sendTokenToTargetChain`,
         message: "Simulation result",
         succeed,
+        ...txnRequest,
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     }
-    return (await this.txnClient.submit(this.hubChainId, [{ ...txnRequest, message }]))[0];
+    return (await this.txnClient.submit(this.hubChainId, [{ ...txnRequest }]))[0];
   }
 
   async _wrapEthIfAboveThreshold(
