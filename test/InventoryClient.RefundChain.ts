@@ -20,7 +20,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { V3Deposit, InventoryConfig } from "../src/interfaces";
-import { ZERO_ADDRESS, bnZero, bnOne, fixedPointAdjustment as fixedPoint, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { ZERO_ADDRESS, bnZero, fixedPointAdjustment as fixedPoint, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks";
 
 describe("InventoryClient: Refund chain selection", async function () {
@@ -85,8 +85,11 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
   };
 
-  const computeOutputAmount = (inputAmount: BigNumber) => {
-    return inputAmount.mul(fixedPoint.sub(relayerFeePct)).div(fixedPoint);
+  const computeOutputAmount = async (deposit: V3Deposit) => {
+    const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
+      { ...deposit, paymentChainId: deposit.destinationChainId }
+    );
+    return deposit.inputAmount.mul(fixedPoint.sub(relayerFeePct.add(realizedLpFeePct))).div(fixedPoint);
   };
 
   beforeEach(async function () {
@@ -100,6 +103,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     await configStoreClient.update();
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient.setDefaultRealizedLpFeePct(bnZero);
     await hubPoolClient.update();
 
     adapterManager = new MockAdapterManager(null, null, null, null);
@@ -121,6 +125,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     seedMocks(initialAllocation);
 
+    const inputAmount = toBNWei(1);
     sampleDepositData = {
       depositId: 0,
       originChainId: 1,
@@ -128,11 +133,11 @@ describe("InventoryClient: Refund chain selection", async function () {
       depositor: owner.address,
       recipient: owner.address,
       inputToken: mainnetWeth,
-      inputAmount: toBNWei(1),
+      inputAmount,
       outputToken: l2TokensForWeth[10],
-      outputAmount: bnZero,
+      outputAmount: inputAmount.mul(fixedPoint.sub(relayerFeePct)).div(fixedPoint),
       message: "0x",
-      quoteTimestamp: 1234,
+      quoteTimestamp: hubPoolClient.currentTime!,
       fillDeadline: 0,
       exclusivityDeadline: 0,
       exclusiveRelayer: ZERO_ADDRESS,
@@ -145,7 +150,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // Construct a small mock deposit of size 1 WETH. Post relay Optimism should have (20-1)/(140-1)=13.6%. This is still
     // above the threshold of 12 and so the bot should choose to be refunded on L1.
     sampleDepositData.inputAmount = toWei(1);
-    sampleDepositData.outputAmount = computeOutputAmount(sampleDepositData.inputAmount);
+    sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014396"')).to.be.true; // (20-1)/(140-1)=0.136
 
@@ -153,7 +158,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // allocation on optimism would be (20-5)/(140-5)=11%. This now below the target plus buffer of 12%. Relayer should
     // choose to refund on the L2.
     sampleDepositData.inputAmount = toWei(5);
-    sampleDepositData.outputAmount = computeOutputAmount(sampleDepositData.inputAmount);
+    sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111111111111111155"')).to.be.true; // (20-5)/(140-5)=0.11
 
@@ -161,7 +166,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // relay allocation would be (20-10)/(140-10)=0.076. This is below the target threshold of 10% and so the bot should
     // set the refund on L2.
     sampleDepositData.inputAmount = toWei(10);
-    sampleDepositData.outputAmount = computeOutputAmount(sampleDepositData.inputAmount);
+    sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"76923076923077018"')).to.be.true; // (20-10)/(140-10)=0.076
   });
@@ -200,7 +205,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     sampleDepositData.destinationChainId = 42161;
     sampleDepositData.outputToken = l2TokensForWeth[42161];
     sampleDepositData.inputAmount = toWei(1.69);
-    sampleDepositData.outputAmount = computeOutputAmount(sampleDepositData.inputAmount);
+    sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
     expect(lastSpyLogIncludes(spy, 'chainShortfall":"15000000000000000000"')).to.be.true;
     expect(lastSpyLogIncludes(spy, 'chainVirtualBalance":"24800000000000000000"')).to.be.true; // (10+14.8)=24.8
@@ -217,7 +222,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // post relay is 9.8 - 5 = 4.8. cumulative virtual balance with shortfall post relay is 125 - 5 = 120. Expected post
     // relay allocation is 4.8/120 = 0.04. This is below the threshold of 0.05 so the bot should refund on the target.
     sampleDepositData.inputAmount = toWei(5);
-    sampleDepositData.outputAmount = computeOutputAmount(sampleDepositData.inputAmount);
+    sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
     // Check only the final step in the computation.
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"40000000000000053"')).to.be.true; // 4.8/120 = 0.04
@@ -239,7 +244,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // the allocation should actually be (15-5+10)/(140-5+5+10)=~13.3%, which is above L2 target.
     // Therefore, the bot should choose refund on L1 instead of L2.
     sampleDepositData.inputAmount = toWei(5);
-    sampleDepositData.outputAmount = computeOutputAmount(sampleDepositData.inputAmount);
+    sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
     bundleDataClient.setReturnedPendingBundleRefunds({
       1: createRefunds(owner.address, toWei(5), mainnetWeth),
       10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
@@ -253,7 +258,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
   it("Correctly throws when Deposit tokens are not equivalent", async function () {
     sampleDepositData.inputAmount = toWei(5);
-    sampleDepositData.outputAmount = computeOutputAmount(sampleDepositData.inputAmount);
+    sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(
       sampleDepositData.destinationChainId
     );
