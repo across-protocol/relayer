@@ -12,7 +12,7 @@ export const {
   sortEventsDescending,
   sortEventsDescendingInPlace,
   spreadEvent,
-  spreadEventWithBlockNumber
+  spreadEventWithBlockNumber,
 } = sdkUtils;
 
 /**
