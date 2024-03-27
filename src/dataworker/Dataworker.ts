@@ -23,8 +23,6 @@ import {
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   V3SlowFillLeaf,
-  V2FillWithBlock,
-  V3FillWithBlock,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -127,9 +125,8 @@ export class Dataworker {
     }
   }
 
-  isV3(blockNumber: number): boolean {
-    const versionAtBlock = this.clients.configStoreClient.getConfigStoreVersionForBlock(blockNumber);
-    return sdk.utils.isV3(versionAtBlock);
+  isV3(_blockNumber: number): boolean {
+    return true;
   }
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
@@ -1058,7 +1055,7 @@ export class Dataworker {
             continue;
           }
 
-          const leavesForChain = leaves.filter((leaf) => sdkUtils.getSlowFillLeafChainId(leaf) === chainId);
+          const leavesForChain = leaves.filter((leaf) => leaf.chainId === chainId);
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) =>
@@ -1137,7 +1134,7 @@ export class Dataworker {
 
     const chainId = client.chainId;
 
-    const sortedFills = client.getFills().filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>);
+    const sortedFills = client.getFills();
     const latestFills = leaves.map((slowFill) => {
       const { relayData, chainId: slowFillChainId } = slowFill;
 
@@ -1147,7 +1144,7 @@ export class Dataworker {
           !(
             fill.depositId === relayData.depositId &&
             fill.originChainId === relayData.originChainId &&
-            sdkUtils.getV3RelayHash(fill, chainId) === sdkUtils.getV3RelayHash(relayData, slowFillChainId)
+            sdkUtils.getRelayDataHash(fill, chainId) === sdkUtils.getRelayDataHash(relayData, slowFillChainId)
           )
         ) {
           return false;
@@ -1162,7 +1159,7 @@ export class Dataworker {
     const fundedLeaves = (
       await Promise.all(
         leaves.map(async (slowFill, idx) => {
-          const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFill);
+          const destinationChainId = slowFill.chainId;
           if (destinationChainId !== chainId) {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
@@ -1207,7 +1204,7 @@ export class Dataworker {
 
     const hubChainId = this.clients.hubPoolClient.chainId;
     fundedLeaves.forEach((leaf) => {
-      assert(sdkUtils.getSlowFillLeafChainId(leaf) === chainId);
+      assert(leaf.chainId === chainId);
 
       const { relayData } = leaf;
       const { outputAmount } = relayData;
@@ -1396,7 +1393,7 @@ export class Dataworker {
       // Now, execute refund and slow fill leaves for Mainnet using new funds. These methods will return early if there
       // are no relevant leaves to execute.
       await this._executeSlowFillLeaf(
-        expectedTrees.slowRelayTree.leaves.filter((leaf) => sdkUtils.getSlowFillLeafChainId(leaf) === hubPoolChainId),
+        expectedTrees.slowRelayTree.leaves.filter((leaf) => leaf.chainId === hubPoolChainId),
         balanceAllocator,
         spokePoolClients[hubPoolChainId],
         expectedTrees.slowRelayTree.tree,

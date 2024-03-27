@@ -227,7 +227,7 @@ export class ProfitClient {
 
   async getTotalGasCost(deposit: V3Deposit, fillAmount?: BigNumber): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
-    fillAmount ??= sdkUtils.getDepositOutputAmount(deposit);
+    fillAmount ??= deposit.outputAmount;
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
     // @todo: Simulate this per-token in future, because some ERC20s consume more gas.
@@ -257,7 +257,7 @@ export class ProfitClient {
     fillAmount?: BigNumber
   ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
-    fillAmount ??= sdkUtils.getDepositOutputAmount(deposit);
+    fillAmount ??= deposit.outputAmount;
 
     const gasToken = this.resolveGasToken(chainId);
     const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
@@ -404,7 +404,7 @@ export class ProfitClient {
   getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
     const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     if (!l1TokenInfo) {
-      const inputToken = sdkUtils.getDepositInputToken(deposit);
+      const { inputToken } = deposit;
       throw new Error(
         `ProfitClient#getFillAmountInUsd missing l1TokenInfo for deposit with origin token: ${inputToken}`
       );

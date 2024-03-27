@@ -1,5 +1,6 @@
 import * as _ from "lodash";
 import {
+  DepositWithBlock,
   ProposedRootBundle,
   SlowFillRequestWithBlock,
   SpokePoolClientsByChain,
@@ -7,8 +8,6 @@ import {
   V3FillWithBlock,
   FillType,
   FillStatus,
-  V2DepositWithBlock,
-  V2FillWithBlock,
 } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import {
@@ -497,9 +496,8 @@ export class BundleDataClient {
         originClient
           .getDepositsForDestinationChain(destinationChainId)
           .filter((deposit) => deposit.blockNumber <= originChainBlockRange[1])
-          .filter(utils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)
           .forEach((deposit) => {
-            const relayDataHash = utils.getV3RelayHashFromEvent(deposit);
+            const relayDataHash = utils.getRelayHashFromEvent(deposit);
             if (v3RelayHashes[relayDataHash]) {
               // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
               // gives us bad data.
@@ -554,10 +552,9 @@ export class BundleDataClient {
         await utils.forEachAsync(
           destinationClient
             .getFillsForOriginChain(originChainId)
-            .filter((fill) => fill.blockNumber <= destinationChainBlockRange[1])
-            .filter(utils.isV3Fill<V3FillWithBlock, V2FillWithBlock>),
+            .filter((fill) => fill.blockNumber <= destinationChainBlockRange[1]),
           async (fill) => {
-            const relayDataHash = utils.getV3RelayHashFromEvent(fill);
+            const relayDataHash = utils.getRelayHashFromEvent(fill);
 
             if (v3RelayHashes[relayDataHash]) {
               if (!v3RelayHashes[relayDataHash].fill) {
@@ -600,13 +597,12 @@ export class BundleDataClient {
               if (!historicalDeposit.found) {
                 bundleInvalidFillsV3.push(fill);
               } else {
-                assert(utils.isV3Deposit(historicalDeposit.deposit));
                 const matchedDeposit = historicalDeposit.deposit;
                 // @dev Since queryHistoricalDepositForFill validates the fill by checking individual
                 // object property values against the deposit's, we
                 // sanity check it here by comparing the full relay hashes. If there's an error here then the
                 // historical deposit query is not working as expected.
-                assert(utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash);
+                assert(utils.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
                 validatedBundleV3Fills.push({
                   ...fill,
                   quoteTimestamp: matchedDeposit.quoteTimestamp,
@@ -625,7 +621,7 @@ export class BundleDataClient {
             .getSlowFillRequestsForOriginChain(originChainId)
             .filter((request) => request.blockNumber <= destinationChainBlockRange[1]),
           async (slowFillRequest: SlowFillRequestWithBlock) => {
-            const relayDataHash = utils.getV3RelayHashFromEvent(slowFillRequest);
+            const relayDataHash = utils.getRelayHashFromEvent(slowFillRequest);
 
             if (v3RelayHashes[relayDataHash]) {
               if (!v3RelayHashes[relayDataHash].slowFillRequest) {
@@ -684,16 +680,16 @@ export class BundleDataClient {
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
             if (slowFillRequest.blockNumber >= destinationChainBlockRange[0]) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
-              if (!historicalDeposit.found || !utils.isV3Deposit(historicalDeposit.deposit)) {
+              if (!historicalDeposit.found) {
                 // TODO: Invalid slow fill request. Maybe worth logging.
                 return;
               }
-              const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
+              const matchedDeposit: DepositWithBlock = historicalDeposit.deposit;
               // @dev Since queryHistoricalDepositForFill validates the slow fill request by checking individual
               // object property values against the deposit's, we
               // sanity check it here by comparing the full relay hashes. If there's an error here then the
               // historical deposit query is not working as expected.
-              assert(utils.getV3RelayHashFromEvent(matchedDeposit) === relayDataHash);
+              assert(utils.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
               v3RelayHashes[relayDataHash].deposit = matchedDeposit;
 
               // Note: we don't need to query for a historical fill at this point because a fill

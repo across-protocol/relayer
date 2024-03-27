@@ -198,7 +198,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   };
 }
 
-function buildV3SlowFillLeaf(deposit: interfaces.V3Deposit): V3SlowFillLeaf {
+function buildV3SlowFillLeaf(deposit: interfaces.Deposit): V3SlowFillLeaf {
   const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
 
   return {
