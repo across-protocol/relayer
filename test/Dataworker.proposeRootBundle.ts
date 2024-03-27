@@ -62,13 +62,16 @@ describe("Dataworker: Propose root bundle", async function () {
         .sort((logA: unknown, logB: unknown) => logB["callId"] - logA["callId"]) // Sort by callId in descending order
         .find((log: unknown) => log["lastArg"]["message"].includes(message)).lastArg;
     };
+    const getMostRecentLoadDataResults = (): { blockRangesForChains: number[] } => {
+      return getMostRecentLog(spy, "Finished loading V3 spoke pool data");
+    };
 
     // TEST 1:
     // Before submitting any spoke pool transactions, check that dataworker behaves as expected with no roots.
     const latestBlock1 = await hubPool.provider.getBlockNumber();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
-    const loadDataResults1 = getMostRecentLog(spy, "Finished loading spoke pool data");
+    const loadDataResults1 = getMostRecentLoadDataResults();
     expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map(() => [0, latestBlock1]));
 
     // TEST 2:
@@ -98,7 +101,7 @@ describe("Dataworker: Propose root bundle", async function () {
     );
     const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
+    const loadDataResults2 = getMostRecentLoadDataResults();
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
@@ -146,7 +149,7 @@ describe("Dataworker: Propose root bundle", async function () {
       [latestBlock2 + 1, latestBlock3],
     ];
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
-    const loadDataResults3 = getMostRecentLog(spy, "Finished loading spoke pool data");
+    const loadDataResults3 = getMostRecentLoadDataResults();
     expect(loadDataResults3.blockRangesForChains).to.deep.equal(blockRange3);
 
     // TEST 4:
@@ -176,7 +179,7 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
+    const loadDataResults4 = getMostRecentLoadDataResults();
     expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
