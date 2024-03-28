@@ -1,6 +1,6 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { HubPoolClient, SpokePoolClient } from "../clients";
+import { HubPoolClient } from "../clients";
 import { Fill, FillStatus, SpokePoolClientsByChain, V2DepositWithBlock, V3DepositWithBlock } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache } from "../utils";
 import { isDefined } from "./";
@@ -67,7 +67,9 @@ export async function getUnfilledDeposits(
   depositLookBack?: number
 ): Promise<{ [chainId: number]: RelayerUnfilledDeposit[] }> {
   const unfilledDeposits: { [chainId: number]: RelayerUnfilledDeposit[] } = {};
-  const chainIds = Object.values(spokePoolClients).filter(({ isUpdated }) => isUpdated).map(({ chainId }) => chainId);
+  const chainIds = Object.values(spokePoolClients)
+    .filter(({ isUpdated }) => isUpdated)
+    .map(({ chainId }) => chainId);
   const originFromBlocks: { [chainId: number]: number } = Object.fromEntries(
     Object.values(spokePoolClients).map(({ chainId, deploymentBlock }) => [chainId, deploymentBlock])
   );
