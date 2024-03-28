@@ -1,6 +1,5 @@
 import * as _ from "lodash";
 import {
-  DepositWithBlock,
   ProposedRootBundle,
   SlowFillRequestWithBlock,
   SpokePoolClientsByChain,
@@ -684,7 +683,7 @@ export class BundleDataClient {
                 // TODO: Invalid slow fill request. Maybe worth logging.
                 return;
               }
-              const matchedDeposit: DepositWithBlock = historicalDeposit.deposit;
+              const matchedDeposit: V3DepositWithBlock = historicalDeposit.deposit;
               // @dev Since queryHistoricalDepositForFill validates the slow fill request by checking individual
               // object property values against the deposit's, we
               // sanity check it here by comparing the full relay hashes. If there's an error here then the
