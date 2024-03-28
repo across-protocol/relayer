@@ -126,6 +126,7 @@ export class Dataworker {
   }
 
   isV3(_blockNumber: number): boolean {
+    _blockNumber; // lint
     return true;
   }
 
