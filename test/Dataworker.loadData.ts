@@ -891,7 +891,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
       const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
       expect(requests.length).to.equal(1);
-      expect(sdkUtils.getV3RelayHashFromEvent(requests[0])).to.equal(sdkUtils.getV3RelayHashFromEvent(depositObject));
+      expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
 
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
         ...spokePoolClients,
@@ -942,7 +942,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
 
       // Let's make fill status for the relay hash always return Filled.
-      const expiredDepositHash = sdkUtils.getV3RelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
+      const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
       mockDestinationSpokePool.fillStatuses.whenCalledWith(expiredDepositHash).returns(interfaces.FillStatus.Filled);
 
       // Now, load a bundle that doesn't include the deposit in its range.
@@ -996,7 +996,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
 
       // Let's make fill status for the relay hash always return RequestedSlowFill.
-      const expiredDepositHash = sdkUtils.getV3RelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
+      const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
       mockDestinationSpokePool.fillStatuses
         .whenCalledWith(expiredDepositHash)
         .returns(interfaces.FillStatus.RequestedSlowFill);
@@ -1025,7 +1025,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
 
       // Let's make fill status for the relay hash always return Unfilled.
-      const expiredDepositHash = sdkUtils.getV3RelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
+      const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
       mockDestinationSpokePool.fillStatuses.whenCalledWith(expiredDepositHash).returns(interfaces.FillStatus.Unfilled);
 
       // Now, load a bundle that doesn't include the deposit in its range.
@@ -1058,7 +1058,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
 
       // Let's make fill status for the relay hash always return RequestedSlowFill.
-      const expiredDepositHash = sdkUtils.getV3RelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
+      const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
       mockDestinationSpokePool.fillStatuses
         .whenCalledWith(expiredDepositHash)
         .returns(interfaces.FillStatus.RequestedSlowFill);

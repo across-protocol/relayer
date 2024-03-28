@@ -390,8 +390,8 @@ export function generateMarkdownForRootBundle(
 
   let slowRelayLeavesPretty = "";
   slowRelayLeaves.forEach((leaf, index) => {
-    const outputToken = sdkUtils.getRelayDataOutputToken(leaf.relayData);
-    const destinationChainId = sdkUtils.getSlowFillLeafChainId(leaf);
+    const { outputToken } = leaf.relayData;
+    const destinationChainId = leaf.chainId;
     const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 

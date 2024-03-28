@@ -2,17 +2,17 @@ import { interfaces } from "@across-protocol/sdk-v2";
 import { BigNumber } from "../utils";
 export type ExpiredDepositsToRefundV3 = {
   [originChainId: number]: {
-    [originToken: string]: interfaces.V3DepositWithBlock[];
+    [originToken: string]: interfaces.DepositWithBlock[];
   };
 };
 
 export type BundleDepositsV3 = {
   [originChainId: number]: {
-    [originToken: string]: interfaces.V3DepositWithBlock[];
+    [originToken: string]: interfaces.DepositWithBlock[];
   };
 };
 
-export interface BundleFillV3 extends interfaces.V3FillWithBlock {
+export interface BundleFillV3 extends interfaces.FillWithBlock {
   lpFeePct: BigNumber;
 }
 
@@ -29,12 +29,12 @@ export type BundleFillsV3 = {
 
 export type BundleExcessSlowFills = {
   [destinationChainId: number]: {
-    [destinationToken: string]: interfaces.V3DepositWithBlock[];
+    [destinationToken: string]: interfaces.DepositWithBlock[];
   };
 };
 export type BundleSlowFills = {
   [destinationChainId: number]: {
-    [destinationToken: string]: interfaces.V3DepositWithBlock[];
+    [destinationToken: string]: interfaces.DepositWithBlock[];
   };
 };
 
