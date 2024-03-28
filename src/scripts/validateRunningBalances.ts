@@ -19,7 +19,6 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
   winston,
@@ -257,7 +256,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-                const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFillForChain);
+                const destinationChainId = slowFillForChain.chainId;
                 const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
                   .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
                   .filter(

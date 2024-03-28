@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
-import { Fill, FillStatus, SpokePoolClientsByChain, V2DepositWithBlock, V3DepositWithBlock } from "../interfaces";
+import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache } from "../utils";
 import { isDefined } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
@@ -25,20 +25,13 @@ export function getRefundInformationFromFill(
     hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
-  let l1TokenCounterpart: string;
-  if (sdkUtils.isV3Fill(fill)) {
-    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      fill.inputToken,
-      fill.originChainId,
-      endBlockForMainnet
-    );
-  } else {
-    l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      sdkUtils.getFillOutputToken(fill),
-      fill.destinationChainId,
-      endBlockForMainnet
-    );
-  }
+
+  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
+    fill.inputToken,
+    fill.originChainId,
+    endBlockForMainnet
+  );
+
   const repaymentToken = hubPoolClient.getL2TokenForL1TokenAtBlock(
     l1TokenCounterpart,
     chainToSendRefundTo,
@@ -104,8 +97,7 @@ export async function getUnfilledDeposits(
         // Find all unfilled deposits for the current loops originChain -> destinationChain.
         return originClient
           .getDepositsForDestinationChain(destinationChainId)
-          .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
-          .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>); // @todo: Remove after v2 deprecated.
+          .filter((deposit) => deposit.blockNumber >= earliestBlockNumber);
       })
       .flat();
 

@@ -1,12 +1,6 @@
+import { interfaces } from "@across-protocol/sdk-v2";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
-import {
-  RelayerRefundLeaf,
-  RunningBalances,
-  V2DepositWithBlock,
-  V2FillWithBlock,
-  V3DepositWithBlock,
-  V3FillWithBlock,
-} from "../src/interfaces";
+import { RelayerRefundLeaf, RunningBalances } from "../src/interfaces";
 import { assert, bnZero, fixedPointAdjustment } from "../src/utils";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
@@ -24,7 +18,6 @@ import {
   toBN,
   buildV3SlowRelayTree,
 } from "./utils";
-import { utils as sdkUtils, interfaces } from "@across-protocol/sdk-v2";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
@@ -114,21 +107,15 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit1 = spokePoolClients[originChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
-    const deposit2 = spokePoolClients[destinationChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+    const [deposit1] = spokePoolClients[originChainId].getDeposits();
+    const [deposit2] = spokePoolClients[destinationChainId].getDeposits();
+
     await fillV3(spokePool_2, relayer, deposit1, repaymentChainId);
     await fillV3(spokePool_1, relayer, deposit2, repaymentChainId);
     await updateAllClients();
-    const fill1 = spokePoolClients[destinationChainId]
-      .getFills()
-      .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
-    const fill2 = spokePoolClients[originChainId]
-      .getFills()
-      .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
+    const [fill1] = spokePoolClients[destinationChainId].getFills();
+    const [fill2] = spokePoolClients[originChainId].getFills();
+
     const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
 
     // Deposits should not add to bundle LP fees, but fills should. LP fees are taken out of running balances
@@ -172,9 +159,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+    const [deposit] = spokePoolClients[originChainId].getDeposits();
     await requestSlowFill(spokePool_2, relayer, deposit);
     await updateAllClients();
     const slowFillRequest = spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
@@ -208,9 +193,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+    const [deposit] = spokePoolClients[originChainId].getDeposits();
     await requestSlowFill(spokePool_2, relayer, deposit);
     await updateAllClients();
 
@@ -240,9 +223,8 @@ describe("Dataworker: Build merkle roots", async function () {
     // Send a fast fill in a second bundle block range.
     await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
     await updateAllClients();
-    const fill = spokePoolClients[destinationChainId]
-      .getFills()
-      .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>)[0];
+    const [fill] = spokePoolClients[destinationChainId].getFills();
+
     expect(fill.relayExecutionInfo.fillType).to.equal(interfaces.FillType.ReplacedSlowFill);
     const blockRange2 = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map((_chain, index) => [
       blockRange1[index][1] + 1,
@@ -314,9 +296,8 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+    const [deposit] = spokePoolClients[originChainId].getDeposits();
+
     await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
     await updateAllClients();
     const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
@@ -367,9 +348,8 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+    const [deposit] = spokePoolClients[originChainId].getDeposits();
+
     const lpFeePct = (
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
     ).realizedLpFeePct;
@@ -446,9 +426,8 @@ describe("Dataworker: Build merkle roots", async function () {
       }
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+    const [deposit] = spokePoolClients[originChainId].getDeposits();
+
     const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
       getDefaultBlockRange(2),
       spokePoolClients
@@ -486,9 +465,8 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId]
-      .getDeposits()
-      .filter(sdkUtils.isV3Deposit<V3DepositWithBlock, V2DepositWithBlock>)[0];
+    const [deposit] = spokePoolClients[originChainId].getDeposits();
+
     await requestSlowFill(spokePool_2, relayer, deposit);
     await updateAllClients();
     const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(2), spokePoolClients);
