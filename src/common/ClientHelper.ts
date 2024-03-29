@@ -12,17 +12,19 @@ import {
   SpokePool,
   isDefined,
   getRedisCache,
+  getArweaveJWKSigner,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: ConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   hubSigner?: Signer;
+  arweaveClient: caching.ArweaveClient;
 }
 
 async function getSpokePoolSigners(
@@ -306,7 +308,18 @@ export async function constructClients(
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
 
-  return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
+  // Define the Arweave client as "readonly" to prevent any accidental writes to the Arweave network.
+  // Only the dataworker should have write access to the Arweave network - we will define that in
+  // the more specialized dataworker client helper.
+  const arweaveClient = new caching.ArweaveClient(
+    getArweaveJWKSigner("readonly"),
+    logger,
+    config.arweaveGateway?.url,
+    config.arweaveGateway?.protocol,
+    config.arweaveGateway?.port
+  );
+
+  return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner, arweaveClient };
 }
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,

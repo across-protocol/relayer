@@ -1,7 +1,8 @@
 import { readFile } from "fs/promises";
 import { constants as ethersConsts, VoidSigner } from "ethers";
 import { typeguards } from "@across-protocol/sdk-v2";
-import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined } from "./";
+import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined, assert } from "./";
+import { ArweaveWalletJWKInterface, ArweaveWalletJWKInterfaceSS } from "../interfaces";
 
 /**
  * Signer options for the getSigner function.
@@ -121,9 +122,46 @@ async function getSecretSigner(): Promise<Signer> {
   }
 }
 
+export function getArweaveJWKSigner(keyType: "readonly" | "read-write"): ArweaveWalletJWKInterface {
+  // If the keytype is readonly, we should generate a read-only key
+  // on the fly and return it.
+  if (keyType === "readonly") {
+    // This is a dummy key. It is meant to fail if used.
+    return {
+      kty: "RSA",
+      e: "AQAB",
+      n: "0",
+      d: "0",
+      p: "0",
+      q: "0",
+      dp: "0",
+      dq: "0",
+      qi: "0",
+    };
+  } else {
+    const { ARWEAVE_WALLET_JWK } = process.env;
+    // If the keytype is read-write, we should load the key from the env.
+    if (!isDefined(ARWEAVE_WALLET_JWK)) {
+      throw new Error("Arweave wallet JWK selected but no ARWEAVE_WALLET_JWK env set!");
+    }
+    const arweaveWalletJWK = JSON.parse(process.env.ARWEAVE_WALLET_JWK);
+    assert(ArweaveWalletJWKInterfaceSS.is(arweaveWalletJWK), "Invalid Arweave wallet JWK");
+    return arweaveWalletJWK;
+  }
+}
+
 /**
  * Clears any instances of MNEMONIC, PRIVATE_KEY or SECRET from the env.
  */
-function cleanKeysFromEnvironment(): void {
-  ["MNEMONIC", "PRIVATE_KEY", "SECRET"].forEach((config) => delete process.env[config]);
+function cleanKeysFromEnvironment(
+  cleanTypes: { arweave: boolean; eth: boolean } = { arweave: false, eth: true }
+): void {
+  const ethKeys = ["MNEMONIC", "PRIVATE_KEY", "SECRET"];
+  const arweaveKeys = ["ARWEAVE_WALLET_JWK"];
+  if (cleanTypes.eth) {
+    ethKeys.forEach((key: string) => delete process.env[key]);
+  }
+  if (cleanTypes.arweave) {
+    arweaveKeys.forEach((key: string) => delete process.env[key]);
+  }
 }

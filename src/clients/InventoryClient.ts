@@ -1,4 +1,4 @@
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { caching, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
   BigNumber,
@@ -53,6 +53,7 @@ export class InventoryClient {
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
+    readonly arweaveClient: caching.ArweaveClient,
     readonly simMode = false
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
@@ -159,10 +160,23 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles();
+    // Implementation-Specific: First attempt to reference the Arweave persistence layer. If that fails,
+    //                          manually fetch the pending refunds from the next bundle.
+    let refundsToConsider: CombinedRefunds[] =
+      await this.bundleDataClient.getPersistedPendingRefundsFromLastValidBundle();
+    if (!isDefined(refundsToConsider)) {
+      refundsToConsider = await this.bundleDataClient.getPendingRefundsFromValidBundles();
+    }
 
     // Consider refunds from next bundle to be proposed:
-    const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
+    // Implementation-Specific: First attempt to reference the Arweave persistence layer. If that fails,
+    //                          manually fetch the pending refunds from the next bundle. Note: this could
+    //                          return undefined in the short time window between the next bundle being
+    //                          proposed and the data being persisted to Arweave.
+    let nextBundleRefunds = await this.bundleDataClient.getPersistedNextBundleRefunds();
+    if (!isDefined(nextBundleRefunds)) {
+      nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
+    }
     refundsToConsider.push(nextBundleRefunds);
 
     return Object.fromEntries(

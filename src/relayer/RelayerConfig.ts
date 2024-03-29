@@ -23,6 +23,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
+  readonly retrieveCacheDataFromArweave: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
@@ -147,6 +148,7 @@ export class RelayerConfig extends CommonConfig {
       });
     }
 
+    this.retrieveCacheDataFromArweave = isDefined(this.arweaveGateway);
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);

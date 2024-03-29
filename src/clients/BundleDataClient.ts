@@ -40,6 +40,7 @@ import {
   ExpiredDepositsToRefundV3,
   LoadDataReturnValue,
 } from "../interfaces/BundleData";
+import { BundleDataToPersistToDALayerTypeSS } from "../utils/SuperstructUtils";
 
 type DataCache = Record<string, Promise<LoadDataReturnValue>>;
 
@@ -161,6 +162,69 @@ export class BundleDataClient {
 
   setBundleTimestampsInCache(key: string, timestamps: { [chainId: number]: number[] }): void {
     this.bundleTimestampCache[key] = timestamps;
+  }
+
+  async loadPersistedData(
+    blockRangesForChains: number[][]
+  ): Promise<{ bundleFillsV3: BundleFillsV3; expiredDepositsToRefundV3: ExpiredDepositsToRefundV3 }> {
+    const data = await this.clients.arweaveClient.getByTopic(
+      `bundles-${blockRangesForChains}`,
+      BundleDataToPersistToDALayerTypeSS
+    );
+    // If there is no data or the data is empty, return undefined because we couldn't
+    // pull info from the Arweave persistence layer.
+    if (!isDefined(data) || data.length < 1) {
+      return undefined;
+    }
+    const { bundleFillsV3: _bundleFillsV3, expiredDepositsToRefundV3: _expiredDepositsToRefundV3 } = data[0].data;
+    const bundleFillsV3 = _bundleFillsV3 as unknown as BundleFillsV3;
+    const expiredDepositsToRefundV3 = _expiredDepositsToRefundV3 as unknown as ExpiredDepositsToRefundV3;
+    return { bundleFillsV3, expiredDepositsToRefundV3 };
+  }
+
+  /**
+   * An analog function to getPendingRefundsFromValidBundles(1) that loads persisted data from the Arweave.
+   * @dev This function does not modify the state of the BundleDataClient
+   * @returns The refunds from the last fully executed bundle that has been persisted to the Arweave. Undefined if no
+   *          persisted data is found.
+   */
+  async getPersistedPendingRefundsFromLastValidBundle(): Promise<CombinedRefunds[] | undefined> {
+    // We have only been referencing the latest fully executed root bundle in our
+    // calculations when calling `this.bundleDataClient.getPendingRefundsFromValidBundles()`
+    const bundleToReference = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+      this.clients.hubPoolClient.latestBlockSearched
+    );
+    const bundleEvaluationBlockRanges = getImpliedBundleBlockRanges(
+      this.clients.hubPoolClient,
+      this.clients.configStoreClient,
+      bundleToReference
+    );
+    const persistedData = await this.loadPersistedData(bundleEvaluationBlockRanges);
+    if (persistedData === undefined) {
+      return undefined;
+    }
+    const { bundleFillsV3, expiredDepositsToRefundV3 } = persistedData;
+    return [getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3)];
+  }
+
+  async getPersistedNextBundleRefunds(): Promise<CombinedRefunds> {
+    if (!this.clients.hubPoolClient.hasPendingProposal()) {
+      return undefined;
+    }
+    // If there is a pending proposal, then the most recent proposed root bundle
+    // should be the pending bundle per the hub pool client
+    const bundleToReference = this.clients.hubPoolClient.getLatestProposedRootBundle();
+    const bundleEvaluationBlockRanges = getImpliedBundleBlockRanges(
+      this.clients.hubPoolClient,
+      this.clients.configStoreClient,
+      bundleToReference
+    );
+    const persistedData = await this.loadPersistedData(bundleEvaluationBlockRanges);
+    if (persistedData === undefined) {
+      return undefined;
+    }
+    const { bundleFillsV3, expiredDepositsToRefundV3 } = persistedData;
+    return getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
   }
 
   async getPendingRefundsFromValidBundles(bundleLookback = 1): Promise<CombinedRefunds[]> {

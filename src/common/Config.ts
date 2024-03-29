@@ -1,5 +1,6 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
-import { assert, ethers } from "../utils";
+import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
+import { assert, ethers, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -19,6 +20,7 @@ export class CommonConfig {
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
+  readonly arweaveGateway: ArweaveGatewayInterface;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number };
@@ -38,6 +40,7 @@ export class CommonConfig {
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
+      ARWEAVE_GATEWAY,
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
@@ -70,6 +73,13 @@ export class CommonConfig {
     }
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
+
+    if (isDefined(ARWEAVE_GATEWAY)) {
+      // Load the Arweave gateway from the environment.
+      const _arweaveGateway = JSON.parse(ARWEAVE_GATEWAY ?? "{}");
+      assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
+      this.arweaveGateway = _arweaveGateway;
+    }
   }
 
   /**
