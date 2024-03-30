@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
 import { L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
@@ -22,6 +23,16 @@ import { RelayerConfig } from "./RelayerConfig";
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
+
+type RepaymentFee = { inputAmount: BigNumber; paymentChainId: number; lpFeePct: BigNumber };
+
+type BatchLPFees = {
+  [destinationChainId: number]: {
+    [inputToken: string]: {
+      [quoteTimestamp: number]: RepaymentFee[];
+    };
+  };
+};
 
 export class Relayer {
   public readonly relayerAddress: string;
@@ -236,7 +247,7 @@ export class Relayer {
       })
     );
     this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
+      at: "Relayer#computeRequiredDepositConfirmations",
       message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
@@ -252,7 +263,12 @@ export class Relayer {
   // c) the fill is profitable.
   // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
   // enabled then request a slow fill instead.
-  async evaluateFill(deposit: V3DepositWithBlock, maxBlockNumber: number, sendSlowRelays: boolean): Promise<void> {
+  async evaluateFill(
+    deposit: V3DepositWithBlock,
+    lpFees: RepaymentFee[],
+    maxBlockNumber: number,
+    sendSlowRelays: boolean
+  ): Promise<void> {
     const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
     const { hubPoolClient, profitClient, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
@@ -295,7 +311,7 @@ export class Relayer {
         relayerFeePct,
         gasLimit: _gasLimit,
         gasCost,
-      } = await this.resolveRepaymentChain(deposit, l1Token);
+      } = await this.resolveRepaymentChain(deposit, l1Token, lpFees);
       if (isDefined(repaymentChainId)) {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
@@ -331,17 +347,44 @@ export class Relayer {
    */
   async evaluateFills(
     deposits: V3DepositWithBlock[],
+    lpFees: BatchLPFees,
     maxBlockNumbers: { [chainId: number]: number },
     sendSlowRelays: boolean
   ): Promise<void> {
     for (let i = 0; i < deposits.length; ++i) {
       const deposit = deposits[i];
-      await this.evaluateFill(deposit, maxBlockNumbers[deposit.originChainId], sendSlowRelays);
+      const relayerLpFees = lpFees[deposit.destinationChainId][deposit.inputToken][deposit.quoteTimestamp];
+      await this.evaluateFill(deposit, relayerLpFees, maxBlockNumbers[deposit.originChainId], sendSlowRelays);
     }
   }
 
+  // Compute realizedLpFeePct over all
+  async batchComputeLpFees(deposits: V3DepositWithBlock[]): Promise<BatchLPFees> {
+    const { hubPoolClient } = this.clients;
+
+    const lpFeeRequests = deposits
+      .map((deposit) => [
+        { ...deposit, paymentChainId: hubPoolClient.chainId },
+        { ...deposit, paymentChainId: deposit.destinationChainId },
+      ])
+      .flat();
+
+    const _lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(lpFeeRequests);
+
+    const lpFees: BatchLPFees = _lpFees.reduce((acc, lpFee, idx) => {
+      const { destinationChainId, inputToken, inputAmount, quoteTimestamp, paymentChainId } = lpFeeRequests[idx];
+      const { realizedLpFeePct: lpFeePct } = lpFee;
+      acc[destinationChainId] ??= {};
+      acc[destinationChainId][inputToken] ??= {};
+      acc[destinationChainId][inputToken][quoteTimestamp] ??= [];
+      acc[destinationChainId][inputToken][quoteTimestamp].push({ inputAmount, paymentChainId, lpFeePct });
+      return acc;
+    }, {});
+
+    return lpFees;
+  }
+
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
-    // Fetch all unfilled deposits, order by total earnable fee.
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
@@ -369,12 +412,14 @@ export class Relayer {
       ])
     );
 
+    const lpFees = await this.batchComputeLpFees(allUnfilledDeposits);
     await sdkUtils.forEachAsync(Object.values(unfilledDeposits), async (unfilledDeposits) => {
       if (unfilledDeposits.length === 0) {
         return;
       }
       await this.evaluateFills(
         unfilledDeposits.map(({ deposit }) => deposit),
+        lpFees,
         maxBlockNumbers,
         sendSlowRelays
       );
@@ -465,7 +510,8 @@ export class Relayer {
 
   protected async resolveRepaymentChain(
     deposit: V3DepositWithBlock,
-    hubPoolToken: L1Token
+    hubPoolToken: L1Token,
+    repaymentFees: RepaymentFee[]
   ): Promise<{
     gasLimit: BigNumber;
     repaymentChainId?: number;
@@ -473,23 +519,21 @@ export class Relayer {
     relayerFeePct: BigNumber;
     gasCost: BigNumber;
   }> {
-    const { hubPoolClient, inventoryClient, profitClient } = this.clients;
+    const { inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
-    const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
-      ...deposit,
-      paymentChainId: preferredChainId,
-    });
+    const { lpFeePct } = repaymentFees.find(({ paymentChainId }) => paymentChainId === preferredChainId);
+    assert(isDefined(lpFeePct));
 
     const {
       profitable,
       nativeGasCost: gasLimit,
       tokenGasCost: gasCost,
       grossRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
-    } = await profitClient.isFillProfitable(deposit, realizedLpFeePct, hubPoolToken);
+    } = await profitClient.isFillProfitable(deposit, lpFeePct, hubPoolToken);
     // If preferred chain is different from the destination chain and the preferred chain
     // is not profitable, then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
@@ -503,10 +547,10 @@ export class Relayer {
         message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId} profitability.`,
         deposit: { originChain, depositId, destinationChain, transactionHash },
       });
-      const { realizedLpFeePct: destinationChainLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
-        ...deposit,
-        paymentChainId: destinationChainId,
-      });
+      const { lpFeePct: destinationChainLpFeePct } = repaymentFees.find(
+        ({ paymentChainId }) => paymentChainId === destinationChainId
+      );
+      assert(isDefined(lpFeePct));
 
       const fallbackProfitability = await profitClient.isFillProfitable(
         deposit,
@@ -530,11 +574,11 @@ export class Relayer {
             txnHash: blockExplorerLink(transactionHash, originChainId),
           },
           preferredChain: getNetworkName(preferredChainId),
-          preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+          preferredChainLpFeePct: `${formatFeePct(lpFeePct)}%`,
           destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
           // The delta will cut into the gross relayer fee. If negative, then taking the repayment on destination chain
           // would have been more profitable to the relayer because the lp fee would have been lower.
-          deltaLpFeePct: `${formatFeePct(destinationChainLpFeePct.sub(realizedLpFeePct))}%`,
+          deltaLpFeePct: `${formatFeePct(destinationChainLpFeePct.sub(lpFeePct))}%`,
           // relayer fee is the gross relayer fee using the destination chain lp fee: inputAmount - outputAmount - lpFee.
           preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
           destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
@@ -546,7 +590,7 @@ export class Relayer {
         // inventory assumptions and also quote the original relayer fee pct.
         return {
           repaymentChainId: preferredChainId,
-          realizedLpFeePct,
+          realizedLpFeePct: lpFeePct,
           relayerFeePct,
           gasCost,
           gasLimit,
@@ -566,7 +610,7 @@ export class Relayer {
             outputAmount,
           },
           preferredChain: getNetworkName(preferredChainId),
-          preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+          preferredChainLpFeePct: `${formatFeePct(lpFeePct)}%`,
           destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
           preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
           destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
@@ -586,13 +630,13 @@ export class Relayer {
         inputAmount,
         outputAmount,
       },
-      preferredChainLpFeePct: `${formatFeePct(realizedLpFeePct)}%`,
+      preferredChainLpFeePct: `${formatFeePct(lpFeePct)}%`,
       preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
     });
 
     return {
       repaymentChainId: profitable ? preferredChainId : undefined,
-      realizedLpFeePct,
+      realizedLpFeePct: lpFeePct,
       relayerFeePct,
       gasCost,
       gasLimit,
