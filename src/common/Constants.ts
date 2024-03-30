@@ -19,7 +19,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   324: 4 * 24 * 60 * 60,
   8453: 172800, // Same as Optimism.
   42161: 1382400,
-  59144: 86400, // 1 block every 4 seconds
+  59144: 115200, // 1 block every 3 seconds
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -123,7 +123,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   324: 10000,
   8453: 1500,
   42161: 10000,
-  59144: 10000,
+  59144: 5000,
   // Testnets:
   5: 10000,
   280: 10000,
@@ -150,7 +150,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   8453: 60, // 2s/block. Same finality profile as Optimism
   42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
-  59144: 30, // At 4s/block, 2 mins = 30 blocks.
+  59144: 40, // At 3s/block, 2 mins = 40 blocks.
   // Testnets:
   5: 0,
   280: 0,
@@ -195,7 +195,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   324: 512,
   8453: 120,
   42161: 32,
-  59144: 75, // Linea has a soft-finality of 1 block. This value is padded - but at 4s/block the padding is 5 minutes
+  59144: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
   534352: 0,
   // Testnets:
   5: 0,
@@ -222,7 +222,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   288: 86400,
   324: 172800,
   8453: 86400,
-  59144: 43200,
+  59144: 57600,
   42161: 691200,
   534352: 57600,
 };
