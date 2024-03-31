@@ -218,7 +218,7 @@ export class ProfitClient {
     const address = this.resolveTokenAddress(token);
     const price = this.tokenPrices[address];
     if (!isDefined(price)) {
-      this.logger.debug({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, address });
+      this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, address });
       return bnZero;
     }
 
@@ -526,7 +526,7 @@ export class ProfitClient {
       .getL1Tokens()
       .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
     if (unknownTokens.length > 0) {
-      this.logger.warn({
+      this.logger.debug({
         at: "ProfitClient#updateTokenPrices",
         message: "Filtered out unknown token(s) that don't have a corresponding entry in TOKEN_SYMBOLS_MAP.",
         unknownTokens,
