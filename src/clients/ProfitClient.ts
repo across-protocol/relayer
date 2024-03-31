@@ -218,7 +218,7 @@ export class ProfitClient {
     const address = this.resolveTokenAddress(token);
     const price = this.tokenPrices[address];
     if (!isDefined(price)) {
-      this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, address });
+      this.logger.debug({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, address });
       return bnZero;
     }
 
