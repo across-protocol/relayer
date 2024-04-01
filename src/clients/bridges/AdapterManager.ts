@@ -6,6 +6,7 @@ import { utils } from "@across-protocol/sdk-v2";
 import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import { BaseChainAdapter } from "./op-stack/base/BaseChainAdapter";
 import { spokesThatHoldEthAndWeth } from "../../common/Constants";
+import { LineaAdapter } from "./LineaAdapter";
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
 
@@ -39,6 +40,9 @@ export class AdapterManager {
     if (this.spokePoolClients[8453] !== undefined) {
       this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, monitoredAddresses);
     }
+    if (this.spokePoolClients[59144] !== undefined) {
+      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, monitoredAddresses);
+    }
 
     logger.debug({
       at: "AdapterManager#constructor",
@@ -59,7 +63,14 @@ export class AdapterManager {
     chainId: number,
     l1Tokens: string[]
   ): Promise<OutstandingTransfers> {
-    this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Tokens });
+    const adapter = this.adapters[chainId];
+    this.logger.debug({
+      at: "AdapterManager",
+      message: "Getting outstandingCrossChainTransfers",
+      chainId,
+      l1Tokens,
+      searchConfigs: adapter.getUpdatedSearchConfigs(),
+    });
     return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }
 
@@ -106,12 +117,12 @@ export class AdapterManager {
     try {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
-      const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
+      const l2TokenForL1Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
       if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) {
-        throw new Error("Mismatch tokens!");
+        throw new Error(`Token address mismatch (${l2TokenForL1Token} != ${getL2TokenAddresses(l1Token)[chainId]})`);
       }
       return l2TokenForL1Token;
     } catch (error) {

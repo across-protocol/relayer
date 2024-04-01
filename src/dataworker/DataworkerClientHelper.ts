@@ -7,28 +7,34 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Wallet } from "../utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
+import { caching } from "@across-protocol/sdk-v2";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
   bundleDataClient: BundleDataClient;
+  arweaveClient: caching.ArweaveClient;
   priceClient?: PriceClient;
 }
 
 export async function constructDataworkerClients(
   logger: winston.Logger,
   config: DataworkerConfig,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<DataworkerClients> {
+  const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
+  const { hubPoolClient, configStoreClient } = commonClients;
+
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
+  const tokenClient = new TokenClient(logger, signerAddr, {}, hubPoolClient);
   await tokenClient.update();
   // Run approval on hub pool.
   if (config.sendingTransactionsEnabled) {
@@ -41,7 +47,7 @@ export async function constructDataworkerClients(
     logger,
     commonClients,
     {},
-    commonClients.configStoreClient.getChainIdIndicesForBlock(),
+    configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 
@@ -52,11 +58,21 @@ export async function constructDataworkerClients(
     new defiLlama.PriceFeed(),
   ]);
 
+  // Define the Arweave client.
+  const arweaveClient = new caching.ArweaveClient(
+    config.arweaveWalletJWK,
+    logger,
+    config.arweaveGateway?.url,
+    config.arweaveGateway?.protocol,
+    config.arweaveGateway?.port
+  );
+
   return {
     ...commonClients,
     bundleDataClient,
     tokenClient,
     priceClient,
+    arweaveClient,
   };
 }
 
@@ -67,7 +83,7 @@ export async function constructSpokePoolClientsForFastDataworker(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: DataworkerConfig,
-  baseSigner: Wallet,
+  baseSigner: Signer,
   startBlocks: { [chainId: number]: number },
   endBlocks: { [chainId: number]: number }
 ): Promise<SpokePoolClientsByChain> {
@@ -80,12 +96,12 @@ export async function constructSpokePoolClientsForFastDataworker(
     endBlocks
   );
   await updateSpokePoolClients(spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
+    "V3FundsDeposited",
+    "RequestedV3SlowFill",
+    "FilledV3Relay",
   ]);
   return spokePoolClients;
 }

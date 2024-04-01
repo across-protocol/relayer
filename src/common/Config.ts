@@ -1,5 +1,5 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
-import { assert } from "../utils";
+import { assert, ethers } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -9,11 +9,11 @@ export interface ProcessEnv {
 export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
+  readonly ignoredAddresses: string[];
   readonly maxBlockLookBack: { [key: number]: number };
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
   readonly sendingTransactionsEnabled: boolean;
-  readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: number;
   readonly version: string;
   readonly maxConfigVersion: number;
@@ -28,12 +28,12 @@ export class CommonConfig {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
+      IGNORED_ADDRESSES,
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
       MAX_TX_WAIT_DURATION,
       SEND_TRANSACTIONS,
-      BUNDLE_REFUND_LOOKBACK,
       SPOKE_POOL_CHAINS_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
@@ -57,6 +57,8 @@ export class CommonConfig {
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : Constants.BUNDLE_END_BLOCK_BUFFERS;
 
+    this.ignoredAddresses = JSON.parse(IGNORED_ADDRESSES ?? "[]").map((address) => ethers.utils.getAddress(address));
+
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
@@ -68,7 +70,6 @@ export class CommonConfig {
     }
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
-    this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
   }
 
   /**
@@ -97,7 +98,7 @@ export class CommonConfig {
       if (Object.keys(this.maxBlockLookBack).length > 0) {
         assert(
           Object.keys(this.maxBlockLookBack).includes(chainId.toString()),
-          "MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}"
+          `MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}`
         );
       }
 

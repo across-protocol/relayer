@@ -14,12 +14,13 @@ import {
   paginatedEventQuery,
   Event,
   assert,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "@across-protocol/constants-v2";
 
 // TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
@@ -79,7 +80,6 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     // Skip the token if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
@@ -182,6 +182,9 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.l2GasPrice, // gasPriceBid
       this.transactionSubmissionData, // data
     ];
+    // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
+    // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
+    const gasMultiplier = 1.2;
     return await this._sendTokenToTargetChain(
       l1Token,
       l2Token,
@@ -189,7 +192,7 @@ export class ArbitrumAdapter extends BaseAdapter {
       this.getL1GatewayRouter(),
       "outboundTransfer",
       args,
-      1,
+      gasMultiplier,
       this.l1SubmitValue,
       simMode
     );
@@ -217,7 +220,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     } else {
       this.logger.debug({
         at: this.getName(),
-        message: "ETH balance below threhsold",
+        message: "ETH balance below threshold",
         threshold,
         ethBalance,
       });

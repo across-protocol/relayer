@@ -31,6 +31,8 @@ export { config } from "dotenv";
 export { replaceAddressCase } from "@uma/common";
 export { Logger } from "@uma/financial-templates-lib";
 
+export { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
+
 // TypeChain exports used in the bot.
 export {
   getContractInfoFromAddress,
@@ -47,6 +49,7 @@ export {
 // Utils specifically for this bot.
 export * from "./SDKUtils";
 export * from "./chains";
+export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./DepositUtils";
@@ -54,14 +57,12 @@ export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
 export * from "./ObjectUtils";
-export * from "./TransactionPropBuilder";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
 export * from "./NetworkUtils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";
-export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 export * from "./TimeUtils";
 export * from "./TypeGuards";

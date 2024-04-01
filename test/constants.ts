@@ -1,6 +1,31 @@
-import { randomAddress, toWei, originChainId, destinationChainId, repaymentChainId } from "./utils";
+import {
+  amountToDeposit,
+  amountToLp,
+  amountToRelay,
+  depositRelayerFeePct,
+  originChainId,
+  destinationChainId,
+  mockTreeRoot,
+  repaymentChainId,
+  refundProposalLiveness,
+  randomAddress,
+} from "@across-protocol/contracts-v2/dist/test-utils";
+import { toWei, ZERO_ADDRESS } from "../src/utils";
 
+export {
+  amountToDeposit,
+  amountToLp,
+  amountToRelay,
+  depositRelayerFeePct,
+  originChainId,
+  destinationChainId,
+  mockTreeRoot,
+  repaymentChainId,
+  refundProposalLiveness,
+  ZERO_ADDRESS,
+};
 export { CONFIG_STORE_VERSION } from "../src/common";
+
 export const randomL1Token = randomAddress();
 export const randomOriginToken = randomAddress();
 export const randomDestinationToken = randomAddress();
@@ -48,5 +73,3 @@ export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 export const defaultMinDepositConfirmations = {
   default: { [originChainId]: 0, [destinationChainId]: 0 },
 };
-
-export * from "@across-protocol/contracts-v2/dist/test-utils"; // Contains all the Across contract constants.

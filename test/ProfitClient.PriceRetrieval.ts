@@ -1,11 +1,8 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, ProfitClient } from "../src/clients"; // Tested
 import { L1Token } from "../src/interfaces";
+import { bnZero, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
-
-const { bnZero } = sdkUtils;
 
 const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "ETH", "MATIC"].map((symbol) => {
   const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];

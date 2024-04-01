@@ -1,5 +1,5 @@
 import { clients } from "@across-protocol/sdk-v2";
-import { Contract, winston } from "../utils";
+import { Contract, winston, BigNumber } from "../utils";
 import { ConfigStoreClient } from "../../src/clients";
 import { MockConfigStoreClient } from "./MockConfigStoreClient";
 
@@ -26,5 +26,8 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
       super.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId) ??
       0
     );
+  }
+  setLpTokenInfo(l1Token: string, lastLpFeeUpdate: number, liquidReserves: BigNumber): void {
+    this.lpTokens[l1Token] = { lastLpFeeUpdate, liquidReserves };
   }
 }

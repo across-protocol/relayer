@@ -1,5 +1,6 @@
 import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
 import { MockConfigStoreClient } from "./mocks";
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
   SignerWithAddress,
@@ -7,13 +8,10 @@ import {
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
-  originChainId,
   toBNWei,
   winston,
-  zeroAddress,
 } from "./utils";
 
 let spokePool_1: Contract, spokePool_2: Contract;
@@ -37,7 +35,7 @@ describe("TokenClient: Token shortfall", async function () {
       erc20: erc20_2,
       deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
+    const { hubPool } = await deployAndConfigureHubPool(owner, [], ZERO_ADDRESS, ZERO_ADDRESS);
     const { configStore } = await deployConfigStore(owner, []);
 
     const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);

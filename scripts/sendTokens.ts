@@ -28,8 +28,9 @@ export async function run(): Promise<void> {
     throw new Error("Define `chainId` as the chain you want to connect on");
   }
   const baseSigner = await retrieveSignerFromCLIArgs();
+  const signerAddr = await baseSigner.getAddress();
   const connectedSigner = baseSigner.connect(await getProvider(Number(args.chainId)));
-  console.log("Connected to account", connectedSigner.address);
+  console.log("Connected to account", signerAddr);
   const recipient = args.to;
   const token = args.token;
   if (!ethers.utils.isAddress(recipient)) {

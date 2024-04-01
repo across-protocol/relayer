@@ -1,4 +1,4 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts-v2";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import { BigNumber, ethers } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {

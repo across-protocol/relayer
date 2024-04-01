@@ -1,10 +1,14 @@
 import assert from "assert";
 import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
-import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import * as contracts from "@across-protocol/contracts-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { getDeployedContract, getNodeUrlList } from "../src/utils";
+import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
+
+// https://nodejs.org/api/process.html#exit-codes
+export const NODE_SUCCESS = 0;
+export const NODE_INPUT_ERR = 9;
+export const NODE_APP_ERR = 127; // user-defined
 
 export type ERC20 = {
   address: string;
@@ -16,6 +20,7 @@ export type ERC20 = {
 const fallbackProviders: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "https://eth.llamarpc.com",
   [CHAIN_IDs.GOERLI]: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
+  [CHAIN_IDs.SEPOLIA]: "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
 };
 
 async function askQuestion(query: string) {
@@ -101,7 +106,7 @@ export function resolveHubChainId(spokeChainId: number): number {
   }
 
   assert(sdkUtils.chainIsTestnet(spokeChainId), `Unsupported testnet SpokePool chain ID: ${spokeChainId}`);
-  return CHAIN_IDs.GOERLI;
+  return CHAIN_IDs.SEPOLIA;
 }
 
 /**

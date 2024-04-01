@@ -1,3 +1,283 @@
+// ABI definition for CCTP contracts
+const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "bytes",
+        name: "message",
+        type: "bytes",
+      },
+    ],
+    name: "MessageSent",
+    type: "event",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes",
+        name: "message",
+        type: "bytes",
+      },
+      {
+        internalType: "bytes",
+        name: "attestation",
+        type: "bytes",
+      },
+    ],
+    name: "receiveMessage",
+    outputs: [
+      {
+        internalType: "bool",
+        name: "success",
+        type: "bool",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
+export const LINEA_MESSAGE_SERVICE_CONTRACT_ABI = [
+  {
+    inputs: [],
+    name: "minimumFeeInWei",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [{ indexed: true, internalType: "bytes32", name: "_messageHash", type: "bytes32" }],
+    name: "MessageClaimed",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        name: "_from",
+        type: "address",
+      },
+      {
+        indexed: true,
+        name: "_to",
+        type: "address",
+      },
+      {
+        indexed: false,
+        name: "_fee",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        name: "_value",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        name: "_nonce",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        name: "_calldata",
+        type: "bytes",
+      },
+      {
+        indexed: true,
+        name: "_messageHash",
+        type: "bytes32",
+      },
+    ],
+    name: "MessageSent",
+    type: "event",
+  },
+];
+
+export const LINEA_TOKEN_BRIDGE_CONTRACT_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "_token", type: "address" },
+      { internalType: "uint256", name: "_amount", type: "uint256" },
+      { internalType: "address", name: "_recipient", type: "address" },
+    ],
+    name: "bridgeToken",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "sender",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "address",
+        name: "recipient",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "token",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "BridgingInitiated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "nativeToken",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "bridgedToken",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        internalType: "address",
+        name: "recipient",
+        type: "address",
+      },
+    ],
+    name: "BridgingFinalized",
+    type: "event",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "_nativeToken",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "_amount",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "_recipient",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "_chainId",
+        type: "uint256",
+      },
+      {
+        internalType: "bytes",
+        name: "_tokenMetadata",
+        type: "bytes",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+    name: "completeBridging",
+  },
+];
+
+export const LINEA_USDC_BRIDGE_CONTRACT_ABI = [
+  {
+    inputs: [
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "address", name: "to", type: "address" },
+    ],
+    name: "depositTo",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "depositor",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+    ],
+    name: "Deposited",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "recipient",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "ReceivedFromOtherLayer",
+    type: "event",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "recipient", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "receiveFromOtherLayer",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -8,6 +288,18 @@ export const CONTRACT_ADDRESSES: {
   };
 } = {
   1: {
+    lineaMessageService: {
+      address: "0xd19d4B5d358258f05D7B411E21A1460D11B0876F",
+      abi: LINEA_MESSAGE_SERVICE_CONTRACT_ABI,
+    },
+    lineaL1TokenBridge: {
+      address: "0x051F1D88f0aF5763fB888eC4378b4D8B29ea3319",
+      abi: LINEA_TOKEN_BRIDGE_CONTRACT_ABI,
+    },
+    lineaL1UsdcBridge: {
+      address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
+      abi: LINEA_USDC_BRIDGE_CONTRACT_ABI,
+    },
     zkSyncMailbox: {
       address: "0x32400084C286CF3E17e7B677ea9583e60a000324",
       abi: [
@@ -171,10 +463,10 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
-    // OVM, ZkSync and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+    // OVM, ZkSync, Linea, and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xaA282C4E86beFda4a1E7C9c06165869026D27852",
+      address: "0x6e41f79772c3CF7D6d15d17d899e129d5aAAA740",
       abi: [
         { stateMutability: "payable", type: "fallback" },
         {
@@ -203,6 +495,16 @@ export const CONTRACT_ADDRESSES: {
           inputs: [
             { internalType: "address", name: "to", type: "address" },
             { internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "bridgeWethToLinea",
+          outputs: [],
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          inputs: [
+            { internalType: "address", name: "to", type: "address" },
+            { internalType: "uint256", name: "amount", type: "uint256" },
             { internalType: "uint256", name: "l2GasLimit", type: "uint256" },
             { internalType: "uint256", name: "l2GasPerPubdataByteLimit", type: "uint256" },
             { internalType: "address", name: "refundRecipient", type: "address" },
@@ -220,6 +522,16 @@ export const CONTRACT_ADDRESSES: {
             { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
           ],
           name: "ZkSyncEthDepositInitiated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "LineaEthDepositInitiated",
           type: "event",
         },
         { stateMutability: "payable", type: "receive" },
@@ -472,6 +784,65 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    cctpMessageTransmitter: {
+      address: "0x0a992d191deec32afe36203ad87d7d289a738f81",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+    scrollRelayMessenger: {
+      address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
+      abi: [
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "_from",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "_to",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "_value",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_nonce",
+              type: "uint256",
+            },
+            {
+              internalType: "bytes",
+              name: "_message",
+              type: "bytes",
+            },
+            {
+              components: [
+                {
+                  internalType: "uint256",
+                  name: "batchIndex",
+                  type: "uint256",
+                },
+                {
+                  internalType: "bytes",
+                  name: "merkleProof",
+                  type: "bytes",
+                },
+              ],
+              internalType: "struct IL1ScrollMessenger.L2MessageProof",
+              name: "_proof",
+              type: "tuple",
+            },
+          ],
+          name: "relayMessageWithProof",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ],
+    },
   },
   10: {
     daiOptimismBridge: {
@@ -559,6 +930,10 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    cctpMessageTransmitter: {
+      address: "0x4d41f22c5a0e5c74090899e5a8fb597a8842b3e8",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
   },
   137: {
     withdrawableErc20: {
@@ -586,6 +961,10 @@ export const CONTRACT_ADDRESSES: {
           type: "event",
         },
       ],
+    },
+    cctpMessageTransmitter: {
+      address: "0xF3be9355363857F3e001be68856A2f96b4C39Ba9",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
   },
   324: {
@@ -678,6 +1057,10 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    cctpMessageTransmitter: {
+      address: "0xAD09780d193884d503182aD4588450C416D6F9D4",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
   },
   42161: {
     erc20Gateway: {
@@ -730,6 +1113,93 @@ export const CONTRACT_ADDRESSES: {
           type: "function",
         },
       ],
+    },
+    cctpMessageTransmitter: {
+      address: "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+  59144: {
+    l2MessageService: {
+      address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
+      abi: LINEA_MESSAGE_SERVICE_CONTRACT_ABI,
+    },
+    lineaL2UsdcBridge: {
+      address: "0xA2Ee6Fce4ACB62D95448729cDb781e3BEb62504A",
+      abi: LINEA_USDC_BRIDGE_CONTRACT_ABI,
+    },
+    lineaL2TokenBridge: {
+      address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
+      abi: LINEA_TOKEN_BRIDGE_CONTRACT_ABI,
+    },
+    weth: {
+      address: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
+      abi: [
+        {
+          constant: false,
+          inputs: [],
+          name: "deposit",
+          outputs: [],
+          payable: true,
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          constant: false,
+          inputs: [
+            {
+              name: "wad",
+              type: "uint256",
+            },
+          ],
+          name: "withdraw",
+          outputs: [],
+          payable: false,
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          constant: true,
+          inputs: [
+            {
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "balanceOf",
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+            },
+          ],
+          payable: false,
+          stateMutability: "view",
+          type: "function",
+        },
+      ],
+    },
+    eth: {
+      address: "0x0000000000000000000000000000000000000000",
+    },
+  },
+  // Testnets
+  11155111: {
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+  84532: {
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+  },
+  59140: {
+    l2MessageService: {
+      address: "0xC499a572640B64eA1C8c194c43Bc3E19940719dC",
+      abi: LINEA_MESSAGE_SERVICE_CONTRACT_ABI,
     },
   },
 };

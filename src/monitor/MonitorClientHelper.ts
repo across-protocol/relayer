@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { Wallet, winston } from "../utils";
+import { Signer, winston } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
@@ -22,17 +22,21 @@ export interface MonitorClients extends Clients {
 export async function constructMonitorClients(
   config: MonitorConfig,
   logger: winston.Logger,
-  baseSigner: Wallet
+  baseSigner: Signer
 ): Promise<MonitorClients> {
+  const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
+  const { hubPoolClient, configStoreClient } = commonClients;
+
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
-    commonClients.hubPoolClient,
-    commonClients.configStoreClient,
+    hubPoolClient,
+    configStoreClient,
     config,
     baseSigner,
     config.maxRelayerLookBack
@@ -41,7 +45,7 @@ export async function constructMonitorClients(
     logger,
     commonClients,
     spokePoolClients,
-    commonClients.configStoreClient.getChainIdIndicesForBlock(),
+    configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 
@@ -50,9 +54,9 @@ export async function constructMonitorClients(
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
-    baseSigner.address,
-    commonClients.hubPoolClient.hubPool.address,
+  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
+    signerAddr,
+    hubPoolClient.hubPool.address,
     ...spokePoolAddresses,
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
@@ -77,12 +81,12 @@ export async function constructMonitorClients(
 
 export async function updateMonitorClients(clients: MonitorClients): Promise<void> {
   await updateSpokePoolClients(clients.spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
+    "V3FundsDeposited",
+    "RequestedSpeedUpV3Deposit",
+    "FilledV3Relay",
   ]);
   const allL1Tokens = clients.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   await clients.crossChainTransferClient.update(allL1Tokens);
