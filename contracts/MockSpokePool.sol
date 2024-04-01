@@ -9,5 +9,6 @@ import "@across-protocol/contracts-v2/contracts/test/MockSpokePool.sol";
  * this contract is explicitly defined here.
  */
 contract _MockSpokePool is MockSpokePool {
-
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor(address _wrappedNativeTokenAddress) MockSpokePool(_wrappedNativeTokenAddress) {} // solhint-disable-line no-empty-blocks
 }

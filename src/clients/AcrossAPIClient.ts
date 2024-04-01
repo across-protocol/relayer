@@ -1,7 +1,16 @@
 import _ from "lodash";
 import axios, { AxiosError } from "axios";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { bnZero, isDefined, winston, BigNumber, getL2TokenAddresses, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../utils";
+import {
+  bnZero,
+  isDefined,
+  winston,
+  BigNumber,
+  getL2TokenAddresses,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
+  getRedisCache,
+} from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {
@@ -108,6 +117,10 @@ export class AcrossApiClient {
     return this.limits[l1Token];
   }
 
+  getLimitsCacheKey(l1Token: string, destinationChainId: number): string {
+    return `limits_api_${l1Token}_${destinationChainId}`;
+  }
+
   private async callLimits(
     l1Token: string,
     destinationChainIds: number[],
@@ -116,10 +129,44 @@ export class AcrossApiClient {
     const path = "limits";
     const url = `${this.endpoint}/${path}`;
 
+    const redis = await getRedisCache();
     for (const destinationChainId of destinationChainIds) {
       const params = { token: l1Token, destinationChainId, originChainId: 1 };
+      if (redis) {
+        try {
+          const cachedLimits = await redis.get<string>(this.getLimitsCacheKey(l1Token, destinationChainId));
+          if (cachedLimits !== null) {
+            return { maxDeposit: BigNumber.from(cachedLimits) };
+          }
+        } catch (e) {
+          this.logger.debug({
+            at: "AcrossAPIClient",
+            message: "Failed to get cached limits data",
+            l1Token,
+            destinationChainId,
+            error: e,
+          });
+        }
+      }
       try {
         const result = await axios(url, { timeout, params });
+        if (!result?.data?.maxDeposit) {
+          this.logger.error({
+            at: "AcrossAPIClient",
+            message: "Invalid response from /limits, expected maxDeposit field.",
+            url,
+            params,
+            result,
+          });
+          continue;
+        }
+        if (redis) {
+          // Cache limit for 5 minutes.
+          const baseTtl = 300;
+          // Apply a random margin to spread expiry over a larger time window.
+          const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
+          await redis.set(this.getLimitsCacheKey(l1Token, destinationChainId), result.data.maxDeposit.toString(), ttl);
+        }
         return result.data;
       } catch (err) {
         const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));

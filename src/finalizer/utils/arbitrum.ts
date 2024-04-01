@@ -2,17 +2,19 @@ import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "
 import {
   winston,
   convertFromWei,
-  getNetworkName,
   groupObjectCountsByProp,
   Contract,
   getCachedProvider,
   getUniqueLogIndex,
   Signer,
+  getCurrentTime,
+  getRedisCache,
+  getBlockForTimestamp,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { FinalizerPromise, Withdrawal } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 const CHAIN_ID = 42161;
 
@@ -20,20 +22,26 @@ export async function arbitrumOneFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
 
+  // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
+  const redis = await getRedisCache(logger);
+  const [fromBlock, toBlock] = await Promise.all([
+    getBlockForTimestamp(chainId, getCurrentTime() - 9 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
+  ]);
   logger.debug({
-    at: "Finalizer#arbitrumOneFinalizer",
-    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
+    at: "Finalizer#ArbitrumFinalizer",
+    message: "Arbitrum TokensBridged event filter",
+    fromBlock,
+    toBlock,
   });
   // Skip events that are likely not past the seven day challenge period.
   const olderTokensBridgedEvents = spokePoolClient
     .getTokensBridged()
-    .filter((e) => e.blockNumber < latestBlockToFinalize);
+    .filter((e) => e.blockNumber <= toBlock && e.blockNumber >= fromBlock);
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
@@ -43,10 +51,10 @@ async function multicallArbitrumFinalizations(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
-  const withdrawals = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
+  const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
       l2TokenAddress,
       CHAIN_ID,
@@ -54,18 +62,19 @@ async function multicallArbitrumFinalizations(
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
-    const withdrawal: Withdrawal = {
-      l2ChainId: CHAIN_ID,
+    const withdrawal: CrossChainMessage = {
+      originationChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
+      destinationChainId: hubPoolClient.chainId,
     };
 
     return withdrawal;
   });
   return {
     callData,
-    withdrawals,
+    crossChainMessages: crossChainTransfers,
   };
 }
 

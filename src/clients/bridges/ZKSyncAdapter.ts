@@ -12,7 +12,7 @@ import {
   getTokenAddress,
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
-import { SpokePoolClient } from "../SpokePoolClient";
+import { SpokePoolClient } from "../.";
 import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -30,7 +30,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC"]);
+    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -248,7 +248,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     } else {
       this.logger.debug({
         at: this.getName(),
-        message: "ETH balance below threhsold",
+        message: "ETH balance below threshold",
         threshold,
         ethBalance,
       });

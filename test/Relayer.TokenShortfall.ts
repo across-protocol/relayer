@@ -14,44 +14,62 @@ import {
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
+  originChainId,
+  destinationChainId,
   repaymentChainId,
 } from "./constants";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 import { MockCrossChainTransferClient } from "./mocks/MockCrossChainTransferClient";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
+  BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  deposit,
-  destinationChainId,
+  depositV3,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
-  originChainId,
   setupTokensForWallet,
   sinon,
+  toBN,
   toBNWei,
   winston,
 } from "./utils";
 
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, configStore: Contract, l1Token: Contract;
-let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
-let spy: sinon.SinonSpy, spyLogger: winston.Logger;
-
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
-let relayerInstance: Relayer;
-let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
-let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
-
 describe("Relayer: Token balance shortfall", async function () {
+  const noSlowRelays = false; // Don't send slow fills.
+  const bn10 = toBN(10);
+
+  let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
+  let hubPool: Contract, configStore: Contract, l1Token: Contract;
+  let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
+  let spy: sinon.SinonSpy, spyLogger: winston.Logger;
+
+  let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+  let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+  let relayerInstance: Relayer;
+  let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
+  let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+
+  let inputToken: string, outputToken: string;
+  let inputTokenDecimals: BigNumber;
+  let inputAmount: BigNumber, outputAmount: BigNumber;
+
+  const updateAllClients = async () => {
+    await configStoreClient.update();
+    await hubPoolClient.update();
+    await tokenClient.update();
+    await spokePoolClient_1.update();
+    await spokePoolClient_2.update();
+    tokenClient.clearTokenShortfall();
+  };
+
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({
@@ -126,7 +144,6 @@ describe("Relayer: Token balance shortfall", async function () {
         multiCallerClient,
         inventoryClient: new MockInventoryClient(new MockCrossChainTransferClient()),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-        ubaClient: null,
       },
       {
         relayerTokens: [],
@@ -150,54 +167,70 @@ describe("Relayer: Token balance shortfall", async function () {
     await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
 
     await updateAllClients();
+
+    inputToken = erc20_1.address;
+    outputToken = erc20_2.address;
+    inputTokenDecimals = await erc20_1.decimals();
+
+    // Standard deposit outputAmount is 100 tokens. Work backwards to inputAmount to simplify the shortfall math.
+    outputAmount = toBN(100).mul(bn10.pow(inputTokenDecimals));
+    inputAmount = outputAmount.mul(101).div(100);
+
+    const currentTime = await getLastBlockTime(spokePool_1.provider);
+    await Promise.all([spokePool_1, spokePool_2].map((spokePool) => spokePool.setCurrentTime(currentTime)));
   });
 
   it("Produces expected logs based on insufficient single token balance", async function () {
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    // Deposit 100 tokens to be relayed, two times.
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+    await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
 
     // Seed the relayer with 50 tokens. This is insufficient to fill the relay and should produce the expected log.
-    await erc20_2.mint(relayer.address, toBNWei(50));
+    await erc20_2.mint(relayer.address, toBN(50).mul(bn10.pow(inputTokenDecimals)));
 
     await updateAllClients();
-    await relayerInstance.checkForUnfilledDepositsAndFill();
+    await relayerInstance.checkForUnfilledDepositsAndFill(noSlowRelays);
 
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat2:")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 150.00`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "blocking deposits: 0,1")).to.be.true;
 
     // Submitting another relay should increment the shortfall and log accordingly. Total shortfall of 250 now.
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
     await updateAllClients();
-    await relayerInstance.checkForUnfilledDepositsAndFill();
+    await relayerInstance.checkForUnfilledDepositsAndFill(noSlowRelays);
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 250.00`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, "blocking deposits: 2,1,0")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "blocking deposits: 0,1,2")).to.be.true;
 
     // Mint more tokens to the relayer to fill the shortfall. Mint enough to just cover the most recent relay. The
     // Other relays should not be filled.
-    await erc20_2.mint(relayer.address, toBNWei(60));
+    await erc20_2.mint(relayer.address, toBN(60).mul(bn10.pow(inputTokenDecimals)));
     await updateAllClients();
-    await relayerInstance.checkForUnfilledDepositsAndFill();
+    await relayerInstance.checkForUnfilledDepositsAndFill(noSlowRelays);
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 190.00`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "blocking deposits: 1,2")).to.be.true;
 
     const tx = await multiCallerClient.executeTransactionQueue();
-    expect(lastSpyLogIncludes(spy, "Relayed depositId 2")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Relayed depositId 0")).to.be.true;
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
   });
+
   it("Produces expected logs based on insufficient multiple token balance", async function () {
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    await spokePool_2.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     // Deposit 100 tokens to be relayed of each token type.
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await deposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
+    await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      inputAmount,
+      erc20_2.address,
+      outputAmount
+    );
+    await depositV3(spokePool_2, originChainId, depositor, erc20_2.address, inputAmount, erc20_1.address, outputAmount);
 
     await updateAllClients();
 
-    await relayerInstance.checkForUnfilledDepositsAndFill();
+    await relayerInstance.checkForUnfilledDepositsAndFill(noSlowRelays);
 
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat1:")).to.be.true; // both networks should show shortfalls.
@@ -206,12 +239,3 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(lastSpyLogIncludes(spy, "blocking deposits: 0")).to.be.true;
   });
 });
-
-async function updateAllClients() {
-  await configStoreClient.update();
-  await hubPoolClient.update();
-  await tokenClient.update();
-  await spokePoolClient_1.update();
-  await spokePoolClient_2.update();
-  tokenClient.clearTokenShortfall();
-}
