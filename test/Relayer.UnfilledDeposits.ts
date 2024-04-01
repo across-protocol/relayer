@@ -12,7 +12,6 @@ import {
 } from "./constants";
 import { MockInventoryClient, MockProfitClient, MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 import {
-  assert,
   BigNumber,
   Contract,
   SignerWithAddress,
@@ -287,7 +286,6 @@ describe("Relayer: Unfilled Deposits", async function () {
       expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
 
       // expect unfilled deposit to have the same outputAmount, but a lower updatedOutputAmount.
-      assert(sdkUtils.isV3Deposit(unfilledDeposit.deposit));
       expect(unfilledDeposit.deposit.outputAmount).to.deep.eq(outputAmount);
       expect(unfilledDeposit.deposit.updatedOutputAmount).to.deep.eq(updatedOutputAmount);
     });
@@ -307,9 +305,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
-    assert(sdkUtils.isV3Deposit(unfilledDeposits[0].deposit));
-    expect(sdkUtils.getV3RelayHash(unfilledDeposits[0].deposit, destinationChainId)).to.equal(
-      sdkUtils.getV3RelayHash(deposit, deposit.destinationChainId)
+    expect(sdkUtils.getRelayDataHash(unfilledDeposits[0].deposit, destinationChainId)).to.equal(
+      sdkUtils.getRelayDataHash(deposit, deposit.destinationChainId)
     );
 
     await fillV3Relay(spokePool_2, deposit, relayer);

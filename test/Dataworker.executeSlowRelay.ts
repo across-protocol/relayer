@@ -44,53 +44,6 @@ describe("Dataworker: Execute slow relays", async function () {
       spokePoolClients,
     } = await setupDataworker(ethers, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, 0));
   });
-  it("Simple lifecycle", async function () {
-    await updateAllClients();
-
-    // Send a deposit and a fill so that dataworker builds simple roots.
-    const deposit = await depositV3(
-      spokePool_1,
-      destinationChainId,
-      depositor,
-      erc20_1.address,
-      amountToDeposit,
-      erc20_2.address,
-      amountToDeposit
-    );
-    await updateAllClients();
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
-    await updateAllClients();
-
-    const providers = {
-      ...spokePoolClientsToProviders(spokePoolClients),
-      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
-    };
-
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-
-    // Execute queue and check that root bundle is pending:
-    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
-
-    // Advance time and execute rebalance leaves:
-    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
-    await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
-
-    // TEST 3:
-    // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
-    // yet. In the bundle block range, all chains should have increased their start block, including those without
-    // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
-    // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
-    await updateAllClients();
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-
-    // Advance time and execute leaves:
-    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
-    await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
-  });
   it("Executes V3 slow fills", async function () {
     await updateAllClients();
 
@@ -154,7 +107,7 @@ describe("Dataworker: Execute slow relays", async function () {
   it("Ignores V3 slow fills that were replaced by a fast fill", async function () {
     await updateAllClients();
 
-    await depositV3(
+    const deposit = await depositV3(
       spokePool_1,
       destinationChainId,
       depositor,
@@ -164,7 +117,6 @@ describe("Dataworker: Execute slow relays", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    const deposit = spokePoolClients[originChainId].getDeposits()[0];
     await requestSlowFill(spokePool_2, depositor, deposit);
 
     await updateAllClients();
@@ -206,7 +158,7 @@ describe("Dataworker: Execute slow relays", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1);
 
     // Replace slow fill, and check that it no longer tries to get executed by dataworker.
-    await fillV3(spokePool_2, relayer, deposit, deposit.realizedLpFeePct);
+    await fillV3(spokePool_2, relayer, deposit);
     await updateAllClients();
     multiCallerClient.clearTransactionQueue();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));

@@ -253,7 +253,7 @@ export class Relayer {
   // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
   // enabled then request a slow fill instead.
   async evaluateFill(deposit: V3DepositWithBlock, maxBlockNumber: number, sendSlowRelays: boolean): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
     const { hubPoolClient, profitClient, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
 
@@ -288,7 +288,7 @@ export class Relayer {
 
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
     const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
-    if (tokenClient.hasBalanceForFill(deposit, outputAmount) && !selfRelay) {
+    if (tokenClient.hasBalanceForFill(deposit) && !selfRelay) {
       const {
         repaymentChainId,
         realizedLpFeePct,
@@ -315,7 +315,7 @@ export class Relayer {
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
-      tokenClient.captureTokenShortfallForFill(deposit, outputAmount);
+      tokenClient.captureTokenShortfallForFill(deposit);
       if (sendSlowRelays) {
         this.requestSlowFill(deposit);
       }

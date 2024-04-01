@@ -18,7 +18,7 @@ import {
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
-import { Deposit, InventoryConfig } from "../interfaces";
+import { InventoryConfig, V3Deposit } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
@@ -186,8 +186,8 @@ export class InventoryClient {
   // number to the target threshold and:
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
-  async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number> {
-    const { originChainId, destinationChainId } = deposit;
+  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
+    const { originChainId, destinationChainId, inputToken, outputToken, outputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
     // Always refund on L1 if the transfer is to L1.
@@ -199,8 +199,6 @@ export class InventoryClient {
     // for disparate output tokens, so if one appears here then something is wrong. Throw hard and fast in that case.
     // In future, fills for disparate output tokens should probably just take refunds on the destination chain and
     // outsource inventory management to the operator.
-    const inputToken = sdkUtils.getDepositInputToken(deposit);
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
     if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       throw new Error(
@@ -219,8 +217,6 @@ export class InventoryClient {
     const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-
-    const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
     let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
     const startTime = Date.now();

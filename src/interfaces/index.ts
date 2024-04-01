@@ -48,33 +48,22 @@ export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
 export type SlowFillRequest = interfaces.SlowFillRequest;
 export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
-export type SlowFillLeaf = interfaces.SlowFillLeaf;
 export type RootBundleRelay = interfaces.RootBundleRelay;
 export type RootBundleRelayWithBlock = interfaces.RootBundleRelayWithBlock;
 export type RelayerRefundExecution = interfaces.RelayerRefundExecution;
 export type RelayerRefundExecutionWithBlock = interfaces.RelayerRefundExecutionWithBlock;
-export type UnfilledDeposit = interfaces.UnfilledDeposit;
-export type UnfilledDepositsForOriginChain = interfaces.UnfilledDepositsForOriginChain;
 export type Refund = interfaces.Refund;
-export type FillsToRefund = interfaces.FillsToRefund;
 export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
 export const { FillType, FillStatus } = interfaces;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 
-// V2 / V3 interfaces
-export type V2RelayData = interfaces.V2RelayData;
-export type V3RelayData = interfaces.V3RelayData;
-export type V2Deposit = interfaces.V2Deposit;
-export type V3Deposit = interfaces.V3Deposit;
-export type V2DepositWithBlock = interfaces.V2DepositWithBlock;
-export type V3DepositWithBlock = interfaces.V3DepositWithBlock;
-export type V2SpeedUp = interfaces.V2SpeedUp;
-export type V3SpeedUp = interfaces.V3SpeedUp;
-export type V2Fill = interfaces.V2Fill;
-export type V3Fill = interfaces.V3Fill;
-export type V2FillWithBlock = interfaces.V2FillWithBlock;
-export type V3FillWithBlock = interfaces.V3FillWithBlock;
-export type V2SlowFillLeaf = interfaces.V2SlowFillLeaf;
-export type V3SlowFillLeaf = interfaces.V3SlowFillLeaf;
+// V3 shims (to be removed later)
+export type V3RelayData = interfaces.RelayData;
+export type V3Deposit = interfaces.Deposit;
+export type V3DepositWithBlock = interfaces.DepositWithBlock;
+export type V3SpeedUp = interfaces.SpeedUp;
+export type V3Fill = interfaces.Fill;
+export type V3FillWithBlock = interfaces.FillWithBlock;
+export type V3SlowFillLeaf = interfaces.SlowFillLeaf;
