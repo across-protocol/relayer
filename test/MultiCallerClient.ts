@@ -4,6 +4,7 @@ import {
   knownRevertReasons,
   unknownRevertReason,
   unknownRevertReasonMethodsToIgnore,
+  unknownRevertReasons,
 } from "../src/clients";
 import { bnOne, BigNumber, TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
@@ -288,15 +289,17 @@ describe("MultiCallerClient", async function () {
     }
 
     // Verify that the defined "unknown" revert reason against known methods is ignored.
-    txn.args = [{ result: unknownRevertReason }];
-    for (const method of unknownRevertReasonMethodsToIgnore) {
-      txn.method = method;
-      txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
+    for (const unknownRevertReason of unknownRevertReasons) {
+      txn.args = [{ result: unknownRevertReason }];
+      for (const method of unknownRevertReasonMethodsToIgnore) {
+        txn.method = method;
+        txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
 
-      const result = await multiCaller.simulateTransactionQueue([txn]);
-      expect(result.length).to.equal(0);
-      expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
-      expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
+        const result = await multiCaller.simulateTransactionQueue([txn]);
+        expect(result.length).to.equal(0);
+        expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
+        expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
+      }
     }
 
     // Verify that unexpected revert reason against both known and "unknown" methods are logged.
@@ -445,6 +448,32 @@ describe("MultiCallerClient", async function () {
       // txnQueue deliberately has one "spare" txn appended, so it should never be bundled.
       txnQueue.slice(-1).forEach((txn) => expect(txn.method).to.equal(testMethod));
     }
+  });
+
+  it("Handles group ID assignment when building multicall bundles", async function () {
+    const testMethod = "test";
+    const chainId = chainIds[0];
+    const groupIds = ["test1", "test2"];
+    const multicallTxns: AugmentedTransaction[] = [];
+    for (const groupId of groupIds) {
+      const sampleTxn: AugmentedTransaction = {
+        chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: testMethod,
+        args: [],
+        message: "",
+        mrkdwn: "",
+        groupId,
+      };
+      multicallTxns.push(sampleTxn);
+    }
+
+    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns);
+    expect(txnQueue.length).to.equal(groupIds.length);
   });
 
   it("Correctly handles 0-length input to multicall bundle generation", async function () {

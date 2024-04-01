@@ -5,10 +5,10 @@ import {
   startupLogLevel,
   Signer,
   disconnectRedisClients,
-  getRedisCache,
+  isDefined,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
-import { Dataworker } from "./Dataworker";
+import { BundleDataToPersistToDALayerType, Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
@@ -17,8 +17,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { UBAClient } from "../clients/UBAClient";
-import { utils as sdkUtils, clients as sdkClients } from "@across-protocol/sdk-v2";
+import { persistDataToArweave } from "./DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -63,6 +62,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   loopStart = Date.now();
 
+  let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
@@ -109,38 +109,19 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         toBlocks
       );
 
-      const ubaClient = new UBAClient(
-        // @dev: Consider customizing this config when using the UBAClient in prod.
-        new sdkClients.UBAClientConfig(),
-        clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        clients.hubPoolClient,
-        spokePoolClients,
-        await getRedisCache(logger)
-      );
-      const version = clients.configStoreClient.getConfigStoreVersionForTimestamp();
-      if (sdkUtils.isUBA(version)) {
-        await ubaClient.update();
-      }
-
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
-        await dataworker.validatePendingRootBundle(
-          spokePoolClients,
-          config.sendingDisputesEnabled,
-          fromBlocks,
-          ubaClient
-        );
+        await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
       }
 
       if (config.proposerEnabled) {
-        await dataworker.proposeRootBundle(
+        bundleDataToPersist = await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
@@ -153,8 +134,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
@@ -162,21 +142,48 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
         await dataworker.executeRelayerRefundLeaves(
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      // Define a helper function to persist the bundle data to the DALayer.
+      const persistBundle = async () => {
+        // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
+        // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
+        if (config.persistingBundleData && isDefined(bundleDataToPersist)) {
+          await persistDataToArweave(
+            clients.arweaveClient,
+            bundleDataToPersist,
+            logger,
+            `bundles-${bundleDataToPersist.bundleBlockRanges}`
+          );
+        }
+      };
+
+      // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
+      // in parallel. We want to have both of these operations complete, even if one of them fails.
+      const [persistResult, multiCallResult] = await Promise.allSettled([
+        persistBundle(),
+        clients.multiCallerClient.executeTransactionQueue(),
+      ]);
+
+      // If either of the operations failed, log the error.
+      if (persistResult.status === "rejected" || multiCallResult.status === "rejected") {
+        logger.error({
+          at: "Dataworker#index",
+          message: "Failed to persist bundle data to the DALayer or execute the multiCall transaction queue",
+          persistResult: persistResult.status === "rejected" ? persistResult.reason : undefined,
+          multiCallResult: multiCallResult.status === "rejected" ? multiCallResult.reason : undefined,
+        });
+      }
 
       logger.debug({
         at: "Dataworker#index",

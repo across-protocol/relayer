@@ -27,7 +27,9 @@ import {
   createFormatFunction,
   BigNumberish,
   TOKEN_SYMBOLS_MAP,
+  getRedisCache,
 } from "../../utils";
+import { utils } from "@across-protocol/sdk-v2";
 
 import { CONTRACT_ADDRESSES } from "../../common";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
@@ -107,18 +109,38 @@ export abstract class BaseAdapter {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
+  async getAllowanceCacheKey(l1Token: string, targetContract: string): Promise<string> {
+    return `l1CanonicalTokenBridgeAllowance_${l1Token}_${await this.getSigner(
+      this.hubChainId
+    ).getAddress()}_targetContract:${targetContract}`;
+  }
+
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map(
       (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
     );
+    const redis = await getRedisCache(this.logger);
     const allowances = await Promise.all(
-      l1TokenContracts.map((l1TokenContract, index) => {
+      l1TokenContracts.map(async (l1TokenContract, index) => {
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
         // an approval transaction. For example not every chain has a bridge contract for every token. In this case
         // we clearly dont want to send any approval transactions.
         if (l1TokenContract && associatedL1Bridges[index]) {
+          // Check if we've cached already that this allowance is high enough. Returning null means we won't
+          // send an allowance approval transaction.
+          if (redis) {
+            const result = await redis.get<string>(
+              await this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index])
+            );
+            if (result !== null) {
+              const savedAllowance = toBN(result);
+              if (savedAllowance.gte(toBN(MAX_SAFE_ALLOWANCE))) {
+                return null;
+              }
+            }
+          }
           return l1TokenContract.allowance(address, associatedL1Bridges[index]);
         } else {
           return null;
@@ -126,12 +148,19 @@ export abstract class BaseAdapter {
       })
     );
 
-    allowances.forEach((allowance, index) => {
+    await utils.forEachAsync(allowances, async (allowance, index) => {
       if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
         tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
+      } else {
+        // Save allowance in cache with no TTL as these should never decrement.
+        if (redis) {
+          await redis.set(
+            await this.getAllowanceCacheKey(l1TokenContracts[index].address, associatedL1Bridges[index]),
+            MAX_SAFE_ALLOWANCE
+          );
+        }
       }
     });
-
     if (tokensToApprove.length == 0) {
       this.log("No token bridge approvals needed", { l1Tokens });
       return;
@@ -247,12 +276,6 @@ export abstract class BaseAdapter {
    */
   isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
     const relevantSymbols = matchTokenSymbol(l1Token, this.hubChainId);
-
-    // If we don't have a symbol for this token, return that the token is not supported
-    if (relevantSymbols.length === 0) {
-      return false;
-    }
-
     // if the symbol is not in the supported tokens list, it's not supported
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
@@ -269,6 +292,9 @@ export abstract class BaseAdapter {
     simMode: boolean
   ): Promise<TransactionResponse> {
     assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
+    const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
+    const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
     const _txnRequest: AugmentedTransaction = {
       contract,
       chainId: this.hubChainId,
@@ -276,6 +302,8 @@ export abstract class BaseAdapter {
       args,
       gasLimitMultiplier,
       value: msgValue,
+      message,
+      mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${dstChain}.`,
     };
     const { reason, succeed, transaction: txnRequest } = (await this.txnClient.simulate([_txnRequest]))[0];
     const { contract: targetContract, ...txnRequestData } = txnRequest;
@@ -285,8 +313,6 @@ export abstract class BaseAdapter {
       throw new Error(`${message} (${reason})`);
     }
 
-    const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
-    const message = `💌⭐️ Bridging tokens from ${this.hubChainId} to ${this.chainId}`;
     this.logger.debug({
       at: `${this.getName()}#_sendTokenToTargetChain`,
       message,
@@ -295,17 +321,17 @@ export abstract class BaseAdapter {
       amount,
       contract: contract.address,
       txnRequestData,
-      mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${this.chainId}`,
     });
     if (simMode) {
       this.logger.debug({
         at: `${this.getName()}#_sendTokenToTargetChain`,
         message: "Simulation result",
         succeed,
+        ...txnRequest,
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     }
-    return (await this.txnClient.submit(this.hubChainId, [{ ...txnRequest, message }]))[0];
+    return (await this.txnClient.submit(this.hubChainId, [{ ...txnRequest }]))[0];
   }
 
   async _wrapEthIfAboveThreshold(

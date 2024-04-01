@@ -1,10 +1,11 @@
-import { clients, interfaces } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk-v2";
 
 export * from "./InventoryManagement";
 export * from "./SpokePool";
 export * from "./Token";
 export * from "./Error";
 export * from "./Report";
+export * from "./Arweave";
 
 // Bridge interfaces
 export type OutstandingTransfers = interfaces.OutstandingTransfers;
@@ -45,32 +46,24 @@ export type DepositWithBlock = interfaces.DepositWithBlock;
 export type Fill = interfaces.Fill;
 export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
-export type SlowFill = interfaces.SlowFill;
-export type SlowFillLeaf = interfaces.SlowFillLeaf;
-export type RefundRequest = interfaces.RefundRequest;
-export type RefundRequestWithBlock = interfaces.RefundRequestWithBlock;
+export type SlowFillRequest = interfaces.SlowFillRequest;
+export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
 export type RootBundleRelay = interfaces.RootBundleRelay;
 export type RootBundleRelayWithBlock = interfaces.RootBundleRelayWithBlock;
 export type RelayerRefundExecution = interfaces.RelayerRefundExecution;
 export type RelayerRefundExecutionWithBlock = interfaces.RelayerRefundExecutionWithBlock;
-export type UnfilledDeposit = interfaces.UnfilledDeposit;
-export type UnfilledDepositsForOriginChain = interfaces.UnfilledDepositsForOriginChain;
 export type Refund = interfaces.Refund;
-export type FillsToRefund = interfaces.FillsToRefund;
 export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
-
-// UBA interfaces
-export type UbaInflow = interfaces.UbaInflow;
-export type UbaOutflow = interfaces.UbaOutflow;
-export type UbaFlow = interfaces.UbaFlow;
-export type UBASpokeBalanceType = interfaces.UBASpokeBalanceType;
-export type UBAFeeResult = interfaces.UBAFeeResult;
-export type UBABalancingFee = clients.BalancingFeeReturnType;
-export type UBASystemFee = clients.SystemFeeResult;
-export const isUbaInflow = interfaces.isUbaInflow;
-export const isUbaOutflow = interfaces.isUbaOutflow;
-export const outflowIsFill = interfaces.outflowIsFill;
-export const outflowIsRefund = interfaces.outflowIsRefund;
+export const { FillType, FillStatus } = interfaces;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
+
+// V3 shims (to be removed later)
+export type V3RelayData = interfaces.RelayData;
+export type V3Deposit = interfaces.Deposit;
+export type V3DepositWithBlock = interfaces.DepositWithBlock;
+export type V3SpeedUp = interfaces.SpeedUp;
+export type V3Fill = interfaces.Fill;
+export type V3FillWithBlock = interfaces.FillWithBlock;
+export type V3SlowFillLeaf = interfaces.SlowFillLeaf;

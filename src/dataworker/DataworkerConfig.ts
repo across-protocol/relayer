@@ -1,4 +1,10 @@
 import { CommonConfig, ProcessEnv } from "../common";
+import {
+  ArweaveGatewayInterface,
+  ArweaveGatewayInterfaceSS,
+  ArweaveWalletJWKInterface,
+  ArweaveWalletJWKInterfaceSS,
+} from "../interfaces";
 import { BigNumber, assert, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
@@ -30,6 +36,10 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingDisputesEnabled: boolean;
   readonly sendingProposalsEnabled: boolean;
   readonly sendingExecutionsEnabled: boolean;
+  readonly sendingFinalizationsEnabled: boolean;
+
+  // This variable should be set if the user wants to persist bundle data to Arweave.
+  readonly persistingBundleData: boolean;
 
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
   // historical events it needs to fetch and parse.
@@ -37,6 +47,9 @@ export class DataworkerConfig extends CommonConfig {
   readonly dataworkerFastStartBundle: number | string;
 
   readonly bufferToPropose: number;
+
+  readonly arweaveWalletJWK: ArweaveWalletJWKInterface;
+  readonly arweaveGateway: ArweaveGatewayInterface;
 
   constructor(env: ProcessEnv) {
     const {
@@ -49,6 +62,7 @@ export class DataworkerConfig extends CommonConfig {
       SPOKE_ROOTS_LOOKBACK_COUNT,
       SEND_DISPUTES,
       SEND_PROPOSALS,
+      SEND_FINALIZATIONS,
       SEND_EXECUTIONS,
       FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
@@ -56,6 +70,9 @@ export class DataworkerConfig extends CommonConfig {
       DATAWORKER_FAST_START_BUNDLE,
       FORCE_PROPOSAL,
       FORCE_PROPOSAL_BUNDLE_RANGE,
+      PERSIST_BUNDLES_TO_ARWEAVE,
+      ARWEAVE_WALLET_JWK,
+      ARWEAVE_GATEWAY,
     } = env;
     super(env);
 
@@ -89,6 +106,7 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
+    this.sendingFinalizationsEnabled = SEND_FINALIZATIONS === "true";
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
 
     this.forcePropose = FORCE_PROPOSAL === "true";
@@ -105,10 +123,16 @@ export class DataworkerConfig extends CommonConfig {
         assert(Array.isArray(bundleRange), `forceProposalBundleRange[${index}] is not an array`);
         assert(bundleRange.length === 2, `forceProposalBundleRange[${index}] does not have length 2`);
         const [start, end] = bundleRange;
-        assert(typeof start === "number", `forceProposalBundleRange[${index}][start] is not a number`);
-        assert(typeof end === "number", `forceProposalBundleRange[${index}][end] is not a number`);
-        assert(start > 0, `forceProposalBundleRange[${index}][start] is not positive`);
-        assert(end > 0, `forceProposalBundleRange[${index}][end] is not positive`);
+        assert(
+          typeof start === "number" && Number.isInteger(start),
+          `forceProposalBundleRange[${index}][start] is not a number`
+        );
+        assert(
+          typeof end === "number" && Number.isInteger(end),
+          `forceProposalBundleRange[${index}][end] is not a number`
+        );
+        assert(start >= 0, `forceProposalBundleRange[${index}][start] is not non-negative`);
+        assert(end >= 0, `forceProposalBundleRange[${index}][end] is not non-negative`);
         assert(start <= end, `forceProposalBundleRange[${index}][start] >= forceProposalBundleRange[${index}][end]`);
       });
     } else {
@@ -146,6 +170,18 @@ export class DataworkerConfig extends CommonConfig {
         this.dataworkerFastStartBundle >= this.dataworkerFastLookbackCount,
         `dataworkerFastStartBundle=${this.dataworkerFastStartBundle} should be >= dataworkerFastLookbackCount=${this.dataworkerFastLookbackCount}`
       );
+    }
+
+    this.persistingBundleData = PERSIST_BUNDLES_TO_ARWEAVE === "true";
+    if (this.persistingBundleData) {
+      // Load the Arweave wallet JWK from the environment.
+      const _arweaveWalletJWK = JSON.parse(ARWEAVE_WALLET_JWK ?? "{}");
+      assert(ArweaveWalletJWKInterfaceSS.is(_arweaveWalletJWK), "Invalid Arweave wallet JWK");
+      this.arweaveWalletJWK = _arweaveWalletJWK;
+      // Load the Arweave gateway from the environment.
+      const _arweaveGateway = JSON.parse(ARWEAVE_GATEWAY ?? "{}");
+      assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
+      this.arweaveGateway = _arweaveGateway;
     }
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "relayer-v2",
-  "version": "0.1.1",
-  "description": "Across Protocol V2 Relayer Bot",
+  "version": "0.2.0",
+  "description": "Across Protocol V3 Relayer Bot",
   "repository": "git@github.com:across-protocol/relayer-v2.git",
   "author": "UMA Team",
   "license": "AGPL-3.0-only",
@@ -10,12 +10,13 @@
     "node": ">=16.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants-v2": "1.0.8",
-    "@across-protocol/contracts-v2": "2.4.7",
-    "@across-protocol/sdk-v2": "0.20.0",
+    "@across-protocol/constants-v2": "1.0.14",
+    "@across-protocol/contracts-v2": "2.5.4",
+    "@across-protocol/sdk-v2": "0.23.1",
     "@arbitrum/sdk": "^3.1.3",
+    "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
-    "@eth-optimism/sdk": "^3.1.0",
+    "@eth-optimism/sdk": "^3.2.2",
     "@ethersproject/abi": "^5.7.0",
     "@ethersproject/abstract-provider": "^5.7.0",
     "@ethersproject/abstract-signer": "^5.7.0",
@@ -36,6 +37,7 @@
     "lodash.get": "^4.4.2",
     "minimist": "^1.2.8",
     "redis4": "npm:redis@^4.1.0",
+    "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
     "winston": "^3.10.0",
     "zksync-web3": "^0.14.3"
