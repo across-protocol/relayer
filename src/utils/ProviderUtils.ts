@@ -53,8 +53,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
     // request. This queue sends out requests concurrently, but stops once the concurrency limit is reached. The
     // maxConcurrency is configured here.
     this.queue = createQueue(async ({ sendArgs, resolve, reject }: RateLimitTask) => {
-      await super
-        .send(...sendArgs)
+      await this.wrapSendWithLog(...sendArgs)
         .then(resolve)
         .catch(reject);
     }, maxConcurrency);
@@ -71,6 +70,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
         provider: getOriginFromURL(this.connection.url),
         method,
         params,
+        chainId: this.network.chainId,
       };
 
       // In this path we log an rpc response sample.

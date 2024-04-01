@@ -1,6 +1,7 @@
 import * as contracts from "@across-protocol/contracts-v2/dist/test-utils";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { FillStatus } from "../src/interfaces";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -11,7 +12,6 @@ import {
 } from "./constants";
 import { MockInventoryClient, MockProfitClient, MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 import {
-  assert,
   BigNumber,
   Contract,
   SignerWithAddress,
@@ -183,9 +183,8 @@ describe("Relayer: Unfilled Deposits", async function () {
         [...deposits]
           .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
           .map((deposit) => ({
-            unfilledAmount: deposit.outputAmount,
             deposit,
-            fillCount: 0,
+            fillStatus: FillStatus.Unfilled,
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
           }))
@@ -216,9 +215,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
       .to.deep.equal([
         {
-          unfilledAmount: deposit.outputAmount,
-          deposit: deposit,
-          fillCount: 0,
+          deposit,
+          fillStatus: FillStatus.Unfilled,
           invalidFills: [invalidFill],
           version: configStoreClient.configStoreVersion,
         },
@@ -288,7 +286,6 @@ describe("Relayer: Unfilled Deposits", async function () {
       expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
 
       // expect unfilled deposit to have the same outputAmount, but a lower updatedOutputAmount.
-      assert(sdkUtils.isV3Deposit(unfilledDeposit.deposit));
       expect(unfilledDeposit.deposit.outputAmount).to.deep.eq(outputAmount);
       expect(unfilledDeposit.deposit.updatedOutputAmount).to.deep.eq(updatedOutputAmount);
     });
@@ -308,9 +305,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
-    assert(sdkUtils.isV3Deposit(unfilledDeposits[0].deposit));
-    expect(sdkUtils.getV3RelayHash(unfilledDeposits[0].deposit, destinationChainId)).to.equal(
-      sdkUtils.getV3RelayHash(deposit, deposit.destinationChainId)
+    expect(sdkUtils.getRelayDataHash(unfilledDeposits[0].deposit, destinationChainId)).to.equal(
+      sdkUtils.getRelayDataHash(deposit, deposit.destinationChainId)
     );
 
     await fillV3Relay(spokePool_2, deposit, relayer);
@@ -372,9 +368,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
       .to.deep.equal([
         {
-          unfilledAmount: deposit.outputAmount,
-          deposit: deposit,
-          fillCount: 0,
+          deposit,
+          fillStatus: FillStatus.Unfilled,
           invalidFills: [invalidFill],
           version: configStoreClient.configStoreVersion,
         },
