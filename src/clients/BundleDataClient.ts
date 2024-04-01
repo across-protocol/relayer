@@ -207,7 +207,7 @@ export class BundleDataClient {
     return [getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3)];
   }
 
-  async getPersistedNextBundleRefunds(): Promise<CombinedRefunds> {
+  async getPersistedNextBundleRefunds(): Promise<CombinedRefunds | undefined> {
     if (!this.clients.hubPoolClient.hasPendingProposal()) {
       return undefined;
     }
