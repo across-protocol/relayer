@@ -28,9 +28,14 @@ export async function constructRelayerClients(
   baseSigner: Signer
 ): Promise<RelayerClients> {
   const signerAddr = await baseSigner.getAddress();
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
+  // bundle and the pending bundle. 8 hours should cover the latest two bundles on production in
+  // almost all cases. Look back to genesis on testnets.
+  const hubPoolLookBack = sdkUtils.chainIsProd(config.hubPoolChainId) ? 3600 * 8 : Number.POSITIVE_INFINITY;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
   // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
@@ -79,6 +84,7 @@ export async function constructRelayerClients(
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
+    config.relayerMessageGasMultiplier,
     config.relayerGasPadding
   );
   await profitClient.update();
@@ -101,7 +107,14 @@ export async function constructRelayerClients(
     configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
-  const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
+
+  const crossChainAdapterSupportedChains = adapterManager.supportedChains();
+  const crossChainTransferClient = new CrossChainTransferClient(
+    logger,
+    enabledChainIds.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
+    adapterManager
+  );
+
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,
@@ -112,7 +125,6 @@ export async function constructRelayerClients(
     bundleDataClient,
     adapterManager,
     crossChainTransferClient,
-    config.bundleRefundLookback,
     !config.sendingRebalancesEnabled
   );
 

@@ -1,20 +1,13 @@
 import assert from "assert";
-import { utils, typechain, interfaces } from "@across-protocol/sdk-v2";
+import { utils, interfaces, caching } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
-  FillsToRefund,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
   RunningBalances,
-  SlowFillLeaf,
-  SpokePoolClientsByChain,
-  UnfilledDeposit,
-  V2DepositWithBlock,
-  V2FillWithBlock,
-  V2SlowFillLeaf,
   V3FillWithBlock,
   V3SlowFillLeaf,
 } from "../interfaces";
@@ -27,10 +20,7 @@ import {
   count2DDictionaryValues,
   count3DDictionaryValues,
   fixedPointAdjustment,
-  getDepositPath,
-  getFillsInRange,
   getTimestampsForBundleEndBlocks,
-  groupObjectCountsByProp,
   groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
@@ -40,13 +30,9 @@ import { PoolRebalanceRoot } from "./Dataworker";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import {
   addLastRunningBalance,
-  addSlowFillsToRunningBalances,
   constructPoolRebalanceLeaves,
-  initializeRunningBalancesFromRelayerRepayments,
-  subtractExcessFromPreviousSlowFillsFromRunningBalances,
   updateRunningBalance,
   updateRunningBalanceForDeposit,
-  updateRunningBalanceForEarlyDeposit,
 } from "./PoolRebalanceUtils";
 import {
   getAmountToReturnForRelayerRefundLeaf,
@@ -61,6 +47,7 @@ import {
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
+import { any } from "superstruct";
 
 export function getEndBlockBuffers(
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -88,7 +75,7 @@ export async function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  latestInvalidBundleStartBlock: { [chainId: number]: number },
+  earliestValidBundleStartBlock: { [chainId: number]: number },
   isV3 = false
 ): Promise<boolean> {
   assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
@@ -99,7 +86,8 @@ export async function blockRangesAreInvalidForSpokeClients(
       blockRanges,
       chainIdListForBundleEvaluationBlockNumbers
     );
-    assert(Object.keys(endBlockTimestamps).length === Object.values(spokePoolClients).filter(isDefined).length);
+    // There should be a spoke pool client instantiated for every bundle timestamp.
+    assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
   }
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
@@ -120,18 +108,30 @@ export async function blockRangesAreInvalidForSpokeClients(
 
     const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
 
+    const earliestValidBundleStartBlockForChain =
+      earliestValidBundleStartBlock[chainId] ?? spokePoolClient.deploymentBlock;
+
     // If range start block is less than the earliest spoke pool client we can validate or the range end block
     // is greater than the latest client end block, then ranges are invalid.
-    // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
+    // Note: Math.max the from block with the registration block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
     const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
-    if (bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || end > clientLastBlockQueried) {
+    if (bundleRangeFromBlock < earliestValidBundleStartBlockForChain || end > clientLastBlockQueried) {
       return true;
     }
 
     if (endBlockTimestamps !== undefined) {
-      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(start, end);
-      if (endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange) {
+      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(
+        bundleRangeFromBlock,
+        end
+      );
+      // Skip this check if the spokePoolClient.fromBlock is less than or equal to the spokePool deployment block.
+      // In this case, we have all the information for this SpokePool possible so there are no older deposits
+      // that might have expired that we might miss.
+      if (
+        spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
+        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange
+      ) {
         return true;
       }
     }
@@ -141,51 +141,6 @@ export async function blockRangesAreInvalidForSpokeClients(
     // If we get to here, block ranges are valid, return false.
     return false;
   });
-}
-
-export function prettyPrintSpokePoolEvents(
-  blockRangesForChains: number[][],
-  chainIdListForBundleEvaluationBlockNumbers: number[],
-  deposits: V2DepositWithBlock[],
-  allValidFills: V2FillWithBlock[],
-  allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[],
-  unfilledDeposits: UnfilledDeposit[],
-  allInvalidFills: V2FillWithBlock[]
-): AnyObject {
-  const allInvalidFillsInRange = getFillsInRange(
-    allInvalidFills,
-    blockRangesForChains,
-    chainIdListForBundleEvaluationBlockNumbers
-  );
-  const allValidFillsInRange = getFillsInRange(
-    allValidFills,
-    blockRangesForChains,
-    chainIdListForBundleEvaluationBlockNumbers
-  );
-  return {
-    depositsInRangeByOriginChain: groupObjectCountsByTwoProps(deposits, "originChainId", (deposit) =>
-      getDepositPath(deposit)
-    ),
-    allValidFillsInRangeByDestinationChain: groupObjectCountsByTwoProps(
-      allValidFillsInRange,
-      "destinationChainId",
-      (fill) => `${fill.originChainId}-->${utils.getFillOutputToken(fill)}`
-    ),
-    fillsToRefundInRangeByRepaymentChain: groupObjectCountsByTwoProps(
-      allRelayerRefunds,
-      "repaymentChain",
-      (repayment) => repayment.repaymentToken
-    ),
-    unfilledDepositsByDestinationChain: groupObjectCountsByProp(
-      unfilledDeposits,
-      (unfilledDeposit) => unfilledDeposit.deposit.destinationChainId
-    ),
-    allInvalidFillsInRangeByDestinationChain: groupObjectCountsByTwoProps(
-      allInvalidFillsInRange,
-      "destinationChainId",
-      (fill) => `${fill.originChainId}-->${utils.getFillOutputToken(fill)}`
-    ),
-  };
 }
 
 export function prettyPrintV3SpokePoolEvents(
@@ -210,16 +165,11 @@ export function prettyPrintV3SpokePoolEvents(
   };
 }
 
-export function _buildSlowRelayRoot(
-  unfilledDeposits: UnfilledDeposit[],
-  bundleSlowFillsV3: BundleSlowFills
-): {
-  leaves: SlowFillLeaf[];
-  tree: MerkleTree<SlowFillLeaf>;
+export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
+  leaves: V3SlowFillLeaf[];
+  tree: MerkleTree<V3SlowFillLeaf>;
 } {
-  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map((deposit: UnfilledDeposit) =>
-    buildV2SlowFillLeaf(deposit)
-  );
+  const slowRelayLeaves: V3SlowFillLeaf[] = [];
 
   // Append V3 slow fills to the V2 leaf list
   Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
@@ -248,29 +198,7 @@ export function _buildSlowRelayRoot(
   };
 }
 
-function buildV2SlowFillLeaf(unfilledDeposit: UnfilledDeposit): V2SlowFillLeaf {
-  const { deposit } = unfilledDeposit;
-  assert(utils.isV2Deposit(deposit));
-
-  return {
-    relayData: {
-      depositor: deposit.depositor,
-      recipient: deposit.recipient,
-      destinationToken: deposit.destinationToken,
-      amount: deposit.amount,
-      originChainId: deposit.originChainId,
-      destinationChainId: deposit.destinationChainId,
-      realizedLpFeePct: deposit.realizedLpFeePct,
-      relayerFeePct: deposit.relayerFeePct,
-      depositId: deposit.depositId,
-      message: deposit.message,
-    },
-    payoutAdjustmentPct: unfilledDeposit.relayerBalancingFee?.toString() ?? "0",
-  };
-}
-
-function buildV3SlowFillLeaf(deposit: interfaces.V3Deposit): V3SlowFillLeaf {
-  assert(utils.isV3Deposit(deposit));
+function buildV3SlowFillLeaf(deposit: interfaces.Deposit): V3SlowFillLeaf {
   const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
 
   return {
@@ -303,7 +231,6 @@ export type CombinedRefunds = {
 // and expired deposits.
 export function getRefundsFromBundle(
   bundleFillsV3: BundleFillsV3,
-  fillsToRefund: FillsToRefund,
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
 ): CombinedRefunds {
   const combinedRefunds: {
@@ -345,31 +272,11 @@ export function getRefundsFromBundle(
       });
     });
   });
-  Object.entries(fillsToRefund).forEach(([repaymentChainId, fillsForChain]) => {
-    combinedRefunds[repaymentChainId] ??= {};
-    Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
-      // refunds can be undefined if these fills were all slow fill executions.
-      if (refunds === undefined) {
-        return;
-      }
-      if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
-        combinedRefunds[repaymentChainId][l2TokenAddress] = refunds;
-      } else {
-        Object.entries(refunds).forEach(([refundAddress, refundAmount]) => {
-          const existingRefundAmount = combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress];
-          combinedRefunds[repaymentChainId][l2TokenAddress][refundAddress] = refundAmount.add(
-            existingRefundAmount ?? bnZero
-          );
-        });
-      }
-    });
-  });
   return combinedRefunds;
 }
 
 export function _buildRelayerRefundRoot(
   endBlockForMainnet: number,
-  fillsToRefund: FillsToRefund,
   bundleFillsV3: BundleFillsV3,
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
   poolRebalanceLeaves: PoolRebalanceLeaf[],
@@ -382,7 +289,7 @@ export function _buildRelayerRefundRoot(
 } {
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
-  const combinedRefunds = getRefundsFromBundle(bundleFillsV3, fillsToRefund, expiredDepositsToRefundV3);
+  const combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
 
   // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
   Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {
@@ -479,21 +386,13 @@ export function _buildRelayerRefundRoot(
 export async function _buildPoolRebalanceRoot(
   latestMainnetBlock: number,
   mainnetBundleEndBlock: number,
-  fillsToRefund: FillsToRefund,
-  deposits: V2DepositWithBlock[],
-  allValidFills: V2FillWithBlock[],
-  allValidFillsInRange: V2FillWithBlock[],
-  unfilledDeposits: UnfilledDeposit[],
-  earlyDeposits: typechain.FundsDepositedEvent[],
   bundleV3Deposits: BundleDepositsV3,
   bundleFillsV3: BundleFillsV3,
   bundleSlowFillsV3: BundleSlowFills,
   unexecutableSlowFills: BundleExcessSlowFills,
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
   clients: DataworkerClients,
-  spokePoolClients: SpokePoolClientsByChain,
-  maxL1TokenCountOverride: number | undefined,
-  logger?: winston.Logger
+  maxL1TokenCountOverride: number | undefined
 ): Promise<PoolRebalanceRoot> {
   // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
   // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -509,14 +408,6 @@ export async function _buildPoolRebalanceRoot(
   /**
    * REFUNDS FOR FAST FILLS
    */
-
-  initializeRunningBalancesFromRelayerRepayments(
-    runningBalances,
-    realizedLpFees,
-    mainnetBundleEndBlock,
-    clients.hubPoolClient,
-    fillsToRefund
-  );
 
   // Add running balances and lp fees for v3 relayer refunds using BundleDataClient.bundleFillsV3. Refunds
   // should be equal to inputAmount - lpFees so that relayers get to keep the relayer fee. Add the refund amount
@@ -540,9 +431,6 @@ export async function _buildPoolRebalanceRoot(
   /**
    * PAYMENTS SLOW FILLS
    */
-
-  // Add payments to execute slow fills.
-  addSlowFillsToRunningBalances(mainnetBundleEndBlock, runningBalances, clients.hubPoolClient, unfilledDeposits);
 
   // Add running balances and lp fees for v3 slow fills using BundleDataClient.bundleSlowFillsV3.
   // Slow fills should still increment bundleLpFees and updatedOutputAmount should be equal to inputAmount - lpFees.
@@ -568,18 +456,6 @@ export async function _buildPoolRebalanceRoot(
    * EXCESSES FROM UNEXECUTABLE SLOW FILLS
    */
 
-  // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
-  // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
-  // a slow fill.
-  const fillsTriggeringExcesses = await subtractExcessFromPreviousSlowFillsFromRunningBalances(
-    mainnetBundleEndBlock,
-    runningBalances,
-    clients.hubPoolClient,
-    spokePoolClients,
-    allValidFills,
-    allValidFillsInRange
-  );
-
   // Subtract destination chain running balances for BundleDataClient.unexecutableSlowFills.
   // These are all slow fills that are impossible to execute and therefore the amount to return would be
   // the updatedOutputAmount = inputAmount - lpFees.
@@ -600,39 +476,9 @@ export async function _buildPoolRebalanceRoot(
     });
   });
 
-  if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
-    logger.debug({
-      at: "Dataworker#DataworkerUtils",
-      message: "Fills triggering excess returns from L2",
-      fillsTriggeringExcesses,
-    });
-  }
-
   /**
    * DEPOSITS
    */
-
-  // Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
-  // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
-  // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
-  // its important that `deposits` are all in this current block range.
-  deposits.forEach((deposit: V2DepositWithBlock) => {
-    const inputAmount = utils.getDepositInputAmount(deposit);
-    updateRunningBalanceForDeposit(runningBalances, clients.hubPoolClient, deposit, inputAmount.mul(-1));
-  });
-
-  earlyDeposits.forEach((earlyDeposit) => {
-    updateRunningBalanceForEarlyDeposit(
-      runningBalances,
-      clients.hubPoolClient,
-      earlyDeposit,
-      // TODO: fix this.
-      // Because cloneDeep drops the non-array elements of args, we have to use the index rather than the name.
-      // As a fix, earlyDeposits should be treated similarly to other events and transformed at ingestion time
-      // into a type that is more digestable rather than a raw event.
-      earlyDeposit.args[0].mul(-1)
-    );
-  });
 
   // Handle v3Deposits. These decrement running balances from the origin chain equal to the inputAmount.
   // There should not be early deposits in v3.
@@ -715,4 +561,50 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
   // If we get to here, ETH and WETH addresses should be defined, or we'll throw an error.
   const ethAndWeth = getWethAndEth(l2ChainId);
   return ethAndWeth.includes(l2TokenAddress) ? ethAndWeth : [l2TokenAddress];
+}
+
+/**
+ * Persists data to Arweave with a given tag, given that the data doesn't
+ * already exist on Arweave with the tag.
+ * @param client The Arweave client to use for persistence.
+ * @param data The data to persist to Arweave.
+ * @param logger A winston logger
+ * @param tag The tag to use for the data.
+ */
+export async function persistDataToArweave(
+  client: caching.ArweaveClient,
+  data: Record<string, unknown>,
+  logger: winston.Logger,
+  tag?: string
+): Promise<void> {
+  const startTime = Date.now();
+  // Check if data already exists on Arweave with the given tag.
+  // If so, we don't need to persist it again.
+  const matchingTxns = await client.getByTopic(tag, any());
+  if (matchingTxns.length > 0) {
+    logger.info({
+      at: "Dataworker#index",
+      message: `Data already exists on Arweave with tag: ${tag}`,
+      hash: matchingTxns.map((txn) => txn.hash),
+    });
+  } else {
+    const [hashTxn, address, balance] = await Promise.all([
+      client.set(data, tag),
+      client.getAddress(),
+      client.getBalance(),
+    ]);
+    logger.info({
+      at: "Dataworker#index",
+      message: "Persisted data to Arweave! 💾",
+      receipt: `https://arweave.app/tx/${hashTxn}`,
+      rawData: `https://arweave.net/${hashTxn}`,
+      address,
+      balance,
+    });
+  }
+  const endTime = Date.now();
+  logger.debug({
+    at: "Dataworker#index",
+    message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
+  });
 }

@@ -26,14 +26,17 @@ export async function constructMonitorClients(
 ): Promise<MonitorClients> {
   const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
+  const { hubPoolClient, configStoreClient } = commonClients;
+
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
-    commonClients.hubPoolClient,
-    commonClients.configStoreClient,
+    hubPoolClient,
+    configStoreClient,
     config,
     baseSigner,
     config.maxRelayerLookBack
@@ -42,7 +45,7 @@ export async function constructMonitorClients(
     logger,
     commonClients,
     spokePoolClients,
-    commonClients.configStoreClient.getChainIdIndicesForBlock(),
+    configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 
@@ -51,9 +54,9 @@ export async function constructMonitorClients(
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
+  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
     signerAddr,
-    commonClients.hubPoolClient.hubPool.address,
+    hubPoolClient.hubPool.address,
     ...spokePoolAddresses,
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
@@ -78,9 +81,6 @@ export async function constructMonitorClients(
 
 export async function updateMonitorClients(clients: MonitorClients): Promise<void> {
   await updateSpokePoolClients(clients.spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",

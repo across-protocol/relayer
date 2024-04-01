@@ -1,11 +1,20 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
-import { Provider as zksProvider, types as zkTypes, Wallet as zkWallet } from "zksync-web3";
+import { Provider as zksProvider, Wallet as zkWallet } from "zksync-web3";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { convertFromWei, getEthAddressForChain, getUniqueLogIndex, winston, zkSync as zkSyncUtils } from "../../utils";
-import { FinalizerPromise, CrossChainTransfer } from "../types";
+import {
+  convertFromWei,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getEthAddressForChain,
+  getRedisCache,
+  getUniqueLogIndex,
+  winston,
+  zkSync as zkSyncUtils,
+} from "../../utils";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
 
@@ -17,9 +26,6 @@ type zkSyncWithdrawalData = {
   sender: string;
   proof: string[];
 };
-
-const TransactionStatus = zkTypes.TransactionStatus;
-
 /**
  * @returns Withdrawal finalizaton calldata and metadata.
  */
@@ -27,8 +33,7 @@ export async function zkSyncFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  oldestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId: l1ChainId } = hubPoolClient;
   const { chainId: l2ChainId } = spokePoolClient;
@@ -37,11 +42,24 @@ export async function zkSyncFinalizer(
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
   const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
 
-  // Any block younger than latestBlockToFinalize is ignored.
+  // Zksync takes 1 day to finalize so ignore any events
+  // older than 2 days and earlier than 1 day.
+  const redis = await getRedisCache(logger);
+  const [fromBlock, toBlock] = await Promise.all([
+    getBlockForTimestamp(l2ChainId, getCurrentTime() - 2 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(l2ChainId, getCurrentTime() - 1 * 60 * 60 * 24, undefined, redis),
+  ]);
+  logger.debug({
+    at: "Finalizer#ZkSyncFinalizer",
+    message: "ZkSync TokensBridged event filter",
+    fromBlock,
+    toBlock,
+  });
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber > oldestBlockToFinalize);
-  const { committed: l2Committed, finalized: l2Finalized } = await sortWithdrawals(l2Provider, withdrawalsToQuery);
+    .filter(({ blockNumber }) => blockNumber >= fromBlock && blockNumber <= toBlock);
+  const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
+  const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l2Finalized);
   const withdrawalParams = await getWithdrawalParams(wallet, candidates);
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
@@ -54,7 +72,7 @@ export async function zkSyncFinalizer(
     );
     const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
-    const withdrawal: CrossChainTransfer = {
+    const withdrawal: CrossChainMessage = {
       originationChainId: l2ChainId,
       l1TokenSymbol,
       amount: amountFromWei,
@@ -65,18 +83,24 @@ export async function zkSyncFinalizer(
     return withdrawal;
   });
 
+  // The statuses are:
+  // - not-found: The transaction is not found.
+  // - processing/committed: Pending finalization
+  // - finalized: ready to be withdrawn or already withdrawn
   logger.debug({
-    at: "zkSyncFinalizer",
-    message: "zkSync withdrawal status.",
+    at: "ZkSyncFinalizer",
+    message: "ZkSync withdrawal status.",
     statusesGrouped: {
+      withdrawalNotFound: statuses["not-found"]?.length,
+      withdrawalProcessing: statuses["processing"]?.length,
+      // Pending essentially includes txns with the "committed" statuses
       withdrawalPending: withdrawalsToQuery.length - l2Finalized.length,
-      withdrawalReady: candidates.length,
-      withdrawalFinalized: l2Finalized.length - candidates.length,
+      withdrawalFinalizedNotExecuted: candidates.length,
+      withdrawalExecuted: l2Finalized.length - candidates.length,
     },
-    committed: l2Committed,
   });
 
-  return { callData: txns, crossChainTransfers: withdrawals };
+  return { callData: txns, crossChainMessages: withdrawals };
 }
 
 /**
@@ -88,17 +112,15 @@ export async function zkSyncFinalizer(
 async function sortWithdrawals(
   provider: zksProvider,
   tokensBridged: TokensBridged[]
-): Promise<{ committed: TokensBridged[]; finalized: TokensBridged[] }> {
+): Promise<Record<string, TokensBridged[]>> {
   const txnStatus = await Promise.all(
     tokensBridged.map(({ transactionHash }) => provider.getTransactionStatus(transactionHash))
   );
 
   let idx = 0; // @dev Possible to infer the loop index in groupBy ??
-  const { committed = [], finalized = [] } = groupBy(tokensBridged, () =>
-    txnStatus[idx++] === TransactionStatus.Finalized ? "finalized" : "committed"
-  );
+  const statuses = groupBy(tokensBridged, () => txnStatus[idx++]);
 
-  return { committed, finalized };
+  return statuses;
 }
 
 /**

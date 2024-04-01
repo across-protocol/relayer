@@ -18,7 +18,7 @@ import {
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
-import { Deposit, InventoryConfig } from "../interfaces";
+import { InventoryConfig, V3Deposit } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
@@ -53,7 +53,6 @@ export class InventoryClient {
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
-    readonly bundleRefundLookback = 2,
     readonly simMode = false
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
@@ -157,12 +156,10 @@ export class InventoryClient {
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
-    // Increase virtual balance by pending relayer refunds from the latest valid bundles.
-    // Allow caller to set how many bundles to look back for refunds. The default is set to 2 which means
-    // we'll look back only at the two latest valid bundle unless the caller overrides.
-    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
-      this.bundleRefundLookback
-    );
+    // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
+    // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
+    // been executed.
+    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles();
 
     // Consider refunds from next bundle to be proposed:
     const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
@@ -189,8 +186,8 @@ export class InventoryClient {
   // number to the target threshold and:
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
-  async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number> {
-    const { originChainId, destinationChainId } = deposit;
+  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
+    const { originChainId, destinationChainId, inputToken, outputToken, outputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
     // Always refund on L1 if the transfer is to L1.
@@ -202,8 +199,6 @@ export class InventoryClient {
     // for disparate output tokens, so if one appears here then something is wrong. Throw hard and fast in that case.
     // In future, fills for disparate output tokens should probably just take refunds on the destination chain and
     // outsource inventory management to the operator.
-    const inputToken = sdkUtils.getDepositInputToken(deposit);
-    const outputToken = sdkUtils.getDepositOutputToken(deposit);
     if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       throw new Error(
@@ -222,20 +217,28 @@ export class InventoryClient {
     const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-
-    const outputAmount = sdkUtils.getDepositOutputAmount(deposit);
     let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
+    const startTime = Date.now();
     let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
     try {
       // Consider any refunds from executed and to-be executed bundles.
       totalRefundsPerChain = await this.getBundleRefunds(l1Token);
     } catch (e) {
       this.log("Failed to get bundle refunds, defaulting refund chain to hub chain");
-      // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
-      // Inventory management can always rebalance from Mainnet to other chains easily if needed.
-      return hubChainId;
+      // Fallback to ignoring bundle refunds if calculating bundle refunds goes wrong.
+      // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
+      // the relayer's repayment chain of choice.
+      totalRefundsPerChain = Object.fromEntries(
+        this.getEnabledChains().map((chainId) => {
+          return [chainId, toBN(0)];
+        })
+      );
     }
+    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`, {
+      l1Token: l1Token,
+      totalRefundsPerChain,
+    });
 
     // Add upcoming refunds going to this destination chain.
     chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
@@ -259,6 +262,7 @@ export class InventoryClient {
     const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? hubChainId : destinationChainId;
 
     this.log("Evaluated refund Chain", {
+      l1Token: l1Token,
       chainShortfall,
       chainVirtualBalance,
       chainVirtualBalanceWithShortfall,

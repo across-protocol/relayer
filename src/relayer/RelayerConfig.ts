@@ -1,4 +1,5 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
+import { typeguards } from "@across-protocol/sdk-v2";
+import { BigNumber, toBNWei, assert, isDefined, readFileSync, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
@@ -19,6 +20,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerDestinationChains: number[] = [];
   readonly relayerGasPadding: BigNumber;
   readonly relayerGasMultiplier: BigNumber;
+  readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
@@ -37,8 +39,10 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_DESTINATION_CHAINS,
       SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
+      RELAYER_GAS_MESSAGE_MULTIPLIER,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_GAS_PADDING,
+      RELAYER_EXTERNAL_INVENTORY_CONFIG,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
@@ -65,8 +69,21 @@ export class RelayerConfig extends CommonConfig {
     this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
       : [];
-    this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
+
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
+
+    assert(
+      !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
+      "Concurrent inventory management configurations detected."
+    );
+    try {
+      this.inventoryConfig = isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG)
+        ? JSON.parse(readFileSync(RELAYER_EXTERNAL_INVENTORY_CONFIG))
+        : JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+    } catch (err) {
+      const msg = typeguards.isError(err) ? err.message : (err as Record<string, unknown>)?.code;
+      throw new Error(`Inventory config error (${msg ?? "unknown error"})`);
+    }
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
@@ -80,7 +97,7 @@ export class RelayerConfig extends CommonConfig {
       this.inventoryConfig.wrapEtherTargetPerChain ??= {};
       assert(
         this.inventoryConfig.wrapEtherThreshold.gte(this.inventoryConfig.wrapEtherTarget),
-        `default wrapEtherThreshold ${this.inventoryConfig.wrapEtherThreshold} must be >= default wrapEtherTarget ${this.inventoryConfig.wrapEtherTarget}}`
+        `default wrapEtherThreshold ${this.inventoryConfig.wrapEtherThreshold} must be >= default wrapEtherTarget ${this.inventoryConfig.wrapEtherTarget}`
       );
 
       // Validate the per chain target and thresholds for wrapping ETH:
@@ -129,9 +146,13 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
+
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasPadding = toBNWei(RELAYER_GAS_PADDING || Constants.DEFAULT_RELAYER_GAS_PADDING);
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
+    this.relayerMessageGasMultiplier = toBNWei(
+      RELAYER_GAS_MESSAGE_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER
+    );
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
     this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";

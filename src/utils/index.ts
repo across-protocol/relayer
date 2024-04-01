@@ -49,6 +49,7 @@ export {
 // Utils specifically for this bot.
 export * from "./SDKUtils";
 export * from "./chains";
+export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./DepositUtils";
@@ -62,7 +63,6 @@ export * from "./NetworkUtils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";
-export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 export * from "./TimeUtils";
 export * from "./TypeGuards";
