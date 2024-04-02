@@ -308,6 +308,6 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
     // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
     // Essentially the current version of USDT has a vulnerability whose solution
     // requires the user to have a zero allowance prior to setting an approval.
-    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]
+    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
   ],
 };
