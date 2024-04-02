@@ -97,13 +97,20 @@ export async function getUnfilledDeposits(
         // Find all unfilled deposits for the current loops originChain -> destinationChain.
         return originClient
           .getDepositsForDestinationChain(destinationChainId)
-          .filter((deposit) => deposit.blockNumber >= earliestBlockNumber);
+          .filter(({ blockNumber }) => blockNumber >= earliestBlockNumber);
       })
       .flat();
 
     // Resolve the latest fill status for each deposit and filter out any that are now filled.
-    const { spokePool } = destinationClient;
-    const fillStatus = await sdkUtils.fillStatusArray(spokePool, deposits);
+    let fillStatus: number[];
+    try {
+      fillStatus = await sdkUtils.fillStatusArray(destinationClient.spokePool, deposits);
+    } catch (err) {
+      // Assume all deposits are unfilled by default. They may be filtered out later due to other
+      // criteria, and any filled deposits will ultimately fail during fillV3Relay() simulation.
+      fillStatus = deposits.map(() => FillStatus.Unfilled);
+    }
+
     unfilledDeposits[destinationChainId] = deposits
       .map((deposit, idx) => ({ deposit, fillStatus: fillStatus[idx] }))
       .filter(({ fillStatus }) => fillStatus !== FillStatus.Filled)
