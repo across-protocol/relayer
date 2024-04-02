@@ -74,8 +74,12 @@ export async function getUnfilledDeposits(
       const spokePoolClient = spokePoolClients[originChainId];
       const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
       const hints = { lowBlock: spokePoolClient.deploymentBlock };
-      const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
-      originFromBlocks[originChainId] = Math.max(spokePoolClient.deploymentBlock, startBlock);
+      try {
+        const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
+        originFromBlocks[originChainId] = Math.max(spokePoolClient.deploymentBlock, startBlock);
+      } catch {
+        // ...Failed! Do nothing to inherit the maximum lookback.
+      }
     });
   }
 
