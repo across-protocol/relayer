@@ -50,7 +50,7 @@ export class Relayer {
     // If we don't have the latest code to support this deposit, skip it.
     if (depositVersion > configStoreClient.configStoreVersion) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "Skipping deposit that is not supported by this relayer version.",
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
@@ -61,7 +61,7 @@ export class Relayer {
 
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "Skipping deposit from or to disabled chains.",
         deposit,
         enabledOriginChains: this.config.relayerOriginChains,
@@ -77,7 +77,7 @@ export class Relayer {
 
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
       this.logger.debug({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "Ignoring deposit",
         depositor,
         recipient,
@@ -90,7 +90,7 @@ export class Relayer {
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
     if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
       this.logger.debug({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
         deposit,
         l1Token,
@@ -110,7 +110,7 @@ export class Relayer {
 
     if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
         deposit,
       });
@@ -120,7 +120,7 @@ export class Relayer {
     // Skip deposit with message if sending fills with messages is not supported.
     if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
         deposit,
@@ -132,7 +132,7 @@ export class Relayer {
     // making the same relayer fill a deposit multiple times.
     if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
       this.logger.error({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
         deposit,
         invalidFills,
@@ -148,7 +148,7 @@ export class Relayer {
     const { inputAmount } = deposit;
     if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer#filterDeposit",
         message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
         limit: acrossApiClient.getLimit(l1Token.address),
         l1Token: l1Token.address,
