@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
+import { L1Token, V3RelayData, V3Deposit, V3DepositWithBlock } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -25,14 +25,7 @@ const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 type RepaymentFee = { inputAmount: BigNumber; paymentChainId: number; lpFeePct: BigNumber };
-
-type BatchLPFees = {
-  [destinationChainId: number]: {
-    [inputToken: string]: {
-      [quoteTimestamp: number]: RepaymentFee[];
-    };
-  };
-};
+type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
 
 export class Relayer {
   public readonly relayerAddress: string;
@@ -339,6 +332,15 @@ export class Relayer {
   }
 
   /**
+   * For a given deposit, map its relevant attributes to a string to be used as a lookup into the LP fee structure.
+   * @param relayData An object consisting of an originChainId, inputToken and quoteTimestamp.
+   * @returns A string identifying the deposit in a BatchLPFees object.
+   */
+  private getLPFeeKey(relayData: Pick<V3Deposit, "originChainId" | "inputToken" | "quoteTimestamp">): string {
+    return `${relayData.originChainId}-${relayData.inputToken}-${relayData.quoteTimestamp}`;
+  }
+
+  /**
    * For a given destination chain, evaluate and optionally fill each unfilled deposit. Note that each fill should be
    * evaluated sequentially in order to ensure atomic balance updates.
    * @param deposits An array of deposits destined for the same destination chain.
@@ -353,12 +355,17 @@ export class Relayer {
   ): Promise<void> {
     for (let i = 0; i < deposits.length; ++i) {
       const deposit = deposits[i];
-      const relayerLpFees = lpFees[deposit.destinationChainId][deposit.inputToken][deposit.quoteTimestamp];
+      const relayerLpFees = lpFees[this.getLPFeeKey(deposit)];
       await this.evaluateFill(deposit, relayerLpFees, maxBlockNumbers[deposit.originChainId], sendSlowRelays);
     }
   }
 
-  // Compute realizedLpFeePct over all
+  /**
+   * For an array of unfilled deposits, compute the applicable LP fee for each. Fees are computed for repayment on the
+   * destination chain as well as mainnet.
+   * @param deposits An array of deposits.
+   * @returns A BatchLPFees object uniquely identifying LP fees per unique input deposit.
+   */
   async batchComputeLpFees(deposits: V3DepositWithBlock[]): Promise<BatchLPFees> {
     const { hubPoolClient } = this.clients;
 
@@ -371,13 +378,12 @@ export class Relayer {
 
     const _lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(lpFeeRequests);
 
-    const lpFees: BatchLPFees = _lpFees.reduce((acc, lpFee, idx) => {
-      const { destinationChainId, inputToken, inputAmount, quoteTimestamp, paymentChainId } = lpFeeRequests[idx];
-      const { realizedLpFeePct: lpFeePct } = lpFee;
-      acc[destinationChainId] ??= {};
-      acc[destinationChainId][inputToken] ??= {};
-      acc[destinationChainId][inputToken][quoteTimestamp] ??= [];
-      acc[destinationChainId][inputToken][quoteTimestamp].push({ inputAmount, paymentChainId, lpFeePct });
+    const lpFees: BatchLPFees = _lpFees.reduce((acc, { realizedLpFeePct: lpFeePct }, idx) => {
+      const lpFeeRequest = lpFeeRequests[idx];
+      const { inputAmount, paymentChainId } = lpFeeRequest;
+      const key = this.getLPFeeKey(lpFeeRequest);
+      acc[key] ??= [];
+      acc[key].push({ inputAmount, paymentChainId, lpFeePct });
       return acc;
     }, {});
 
