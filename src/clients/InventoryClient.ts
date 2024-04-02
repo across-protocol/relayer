@@ -1,4 +1,4 @@
-import { caching, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   bnZero,
   BigNumber,
@@ -21,6 +21,7 @@ import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { InventoryConfig, V3Deposit } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
+import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
@@ -52,7 +53,6 @@ export class InventoryClient {
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
-    readonly arweaveClient: caching.ArweaveClient,
     readonly simMode = false
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
@@ -159,7 +159,8 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    const refundsToConsider = await this.bundleDataClient.getPendingRefundsFromValidBundles();
+    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles();
+
     // Consider refunds from next bundle to be proposed:
     const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
     refundsToConsider.push(nextBundleRefunds);

@@ -33,7 +33,7 @@ export async function constructRelayerClients(
   // almost all cases. Look back to genesis on testnets.
   const hubPoolLookBack = sdkUtils.chainIsProd(config.hubPoolChainId) ? 3600 * 8 : Number.POSITIVE_INFINITY;
   const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
-  const { configStoreClient, hubPoolClient, arweaveClient } = commonClients;
+  const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
   await hubPoolClient.update();
 
@@ -125,7 +125,6 @@ export async function constructRelayerClients(
     bundleDataClient,
     adapterManager,
     crossChainTransferClient,
-    arweaveClient,
     !config.sendingRebalancesEnabled
   );
 
