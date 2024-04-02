@@ -303,5 +303,11 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
  * @dev this is a generalization for USDT on Ethereum. Other tokens may be added
  */
 export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
-  [CHAIN_IDs.MAINNET]: [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]],
+  [CHAIN_IDs.MAINNET]: [
+    // Required for USDT on Mainnet. Spurred by the following vulnerability:
+    // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+    // Essentially the current version of USDT has a vulnerability whose solution
+    // requires the user to have a zero allowance prior to setting an approval.
+    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]
+  ],
 };
