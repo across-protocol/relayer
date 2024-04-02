@@ -1,6 +1,6 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { HubPoolClient, SpokePoolClient } from "../clients";
+import { HubPoolClient } from "../clients";
 import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
 import { getBlockForTimestamp, getRedisCache } from "../utils";
 import { isDefined } from "./";
@@ -60,7 +60,9 @@ export async function getUnfilledDeposits(
   depositLookBack?: number
 ): Promise<{ [chainId: number]: RelayerUnfilledDeposit[] }> {
   const unfilledDeposits: { [chainId: number]: RelayerUnfilledDeposit[] } = {};
-  const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const chainIds = Object.values(spokePoolClients)
+    .filter(({ isUpdated }) => isUpdated)
+    .map(({ chainId }) => chainId);
   const originFromBlocks: { [chainId: number]: number } = Object.fromEntries(
     Object.values(spokePoolClients).map(({ chainId, deploymentBlock }) => [chainId, deploymentBlock])
   );
@@ -68,17 +70,17 @@ export async function getUnfilledDeposits(
   if (isDefined(depositLookBack)) {
     const blockFinder = undefined;
     const redis = await getRedisCache();
-    await sdkUtils.forEachAsync(Object.values(spokePoolClients), async (spokePoolClient: SpokePoolClient) => {
-      const { chainId: originChainId, deploymentBlock } = spokePoolClient;
+    await sdkUtils.forEachAsync(chainIds, async (originChainId: number) => {
+      const spokePoolClient = spokePoolClients[originChainId];
       const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
-      const hints = { lowBlock: deploymentBlock };
+      const hints = { lowBlock: spokePoolClient.deploymentBlock };
       const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
-      originFromBlocks[originChainId] = Math.max(deploymentBlock, startBlock);
+      originFromBlocks[originChainId] = Math.max(spokePoolClient.deploymentBlock, startBlock);
     });
   }
 
   // Iterate over each chainId and check for unfilled deposits.
-  await sdkUtils.mapAsync(chainIds, async (destinationChainId) => {
+  await sdkUtils.mapAsync(chainIds, async (destinationChainId: number) => {
     const destinationClient = spokePoolClients[destinationChainId];
 
     // For each destination chain, query each _other_ SpokePool for deposits within the lookback.
