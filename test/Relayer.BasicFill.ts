@@ -1,6 +1,5 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
-import { V2FillWithBlock, V3FillWithBlock } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { bnOne, getUnfilledDeposits } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
@@ -30,7 +29,7 @@ import {
   expect,
   fillV3Relay,
   getLastBlockTime,
-  getV3RelayHash,
+  getRelayDataHash,
   lastSpyLogIncludes,
   spyLogIncludes,
   randomAddress,
@@ -203,14 +202,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
-      const fills = spokePoolClient_2
-        .getFillsForOriginChain(deposit.originChainId)
-        .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>);
-      expect(fills.length).to.equal(1);
-      const fill = fills.at(-1)!;
+      let fill = spokePoolClient_2.getFillsForOriginChain(deposit.originChainId).at(-1);
+      expect(fill).to.exist;
+      fill = fill!;
 
-      expect(getV3RelayHash(fill, fill.destinationChainId)).to.equal(
-        getV3RelayHash(deposit, deposit.destinationChainId)
+      expect(getRelayDataHash(fill, fill.destinationChainId)).to.equal(
+        getRelayDataHash(deposit, deposit.destinationChainId)
       );
 
       // Re-run the execution loop and validate that no additional relays are sent.
@@ -513,15 +510,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          const fills = spokePoolClient_2
-            .getFillsForRelayer(relayer.address)
-            .filter(sdkUtils.isV3Fill<V3FillWithBlock, V2FillWithBlock>);
-          expect(fills.length).to.equal(1);
-          const fill = fills.at(-1)!;
+          let fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
+          expect(fill).to.exist;
+          fill = fill!;
 
-          expect(sdkUtils.isV3Fill(fill)).to.be.true;
-          expect(getV3RelayHash(fill, fill.destinationChainId)).to.equal(
-            getV3RelayHash(deposit, deposit.destinationChainId)
+          expect(getRelayDataHash(fill, fill.destinationChainId)).to.equal(
+            getRelayDataHash(deposit, deposit.destinationChainId)
           );
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;

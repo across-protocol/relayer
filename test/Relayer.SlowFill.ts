@@ -30,7 +30,7 @@ import {
   ethers,
   expect,
   getLastBlockTime,
-  getV3RelayHash,
+  getRelayDataHash,
   lastSpyLogIncludes,
   setupTokensForWallet,
   sinon,
@@ -202,8 +202,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     expect(slowFillRequest).to.exist;
     slowFillRequest = slowFillRequest!; // tsc coersion
 
-    expect(getV3RelayHash(slowFillRequest, slowFillRequest.destinationChainId)).to.equal(
-      getV3RelayHash(deposit, deposit.destinationChainId)
+    expect(getRelayDataHash(slowFillRequest, slowFillRequest.destinationChainId)).to.equal(
+      getRelayDataHash(deposit, deposit.destinationChainId)
     );
 
     await relayerInstance.checkForUnfilledDepositsAndFill();

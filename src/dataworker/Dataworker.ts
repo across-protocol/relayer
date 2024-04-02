@@ -8,29 +8,21 @@ import {
   sortEventsDescending,
   BigNumber,
   getNetworkName,
-  getRefund,
   MerkleTree,
   sortEventsAscending,
   isDefined,
   toBNWei,
-  getFillsInRange,
   ZERO_ADDRESS,
 } from "../utils";
 import {
-  FillsToRefund,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
-  SlowFillLeaf,
   SpokePoolClientsByChain,
-  UnfilledDeposit,
   PendingRootBundle,
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
-  V2SlowFillLeaf,
   V3SlowFillLeaf,
-  V2DepositWithBlock,
-  V2FillWithBlock,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -66,9 +58,9 @@ const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
 
 // Create a type for storing a collection of roots
-type RootBundle = {
-  leaves: SlowFillLeaf[];
-  tree: MerkleTree<SlowFillLeaf>;
+type SlowRootBundle = {
+  leaves: V3SlowFillLeaf[];
+  tree: MerkleTree<V3SlowFillLeaf>;
 };
 
 export type BundleDataToPersistToDALayerType = {
@@ -85,8 +77,8 @@ type ProposeRootBundleReturnType = {
   poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
   relayerRefundLeaves: RelayerRefundLeaf[];
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
-  slowFillLeaves: SlowFillLeaf[];
-  slowFillTree: MerkleTree<SlowFillLeaf>;
+  slowFillLeaves: V3SlowFillLeaf[];
+  slowFillTree: MerkleTree<V3SlowFillLeaf>;
   dataToPersistToDALayer: BundleDataToPersistToDALayerType;
 };
 
@@ -133,9 +125,9 @@ export class Dataworker {
     }
   }
 
-  isV3(blockNumber: number): boolean {
-    const versionAtBlock = this.clients.configStoreClient.getConfigStoreVersionForBlock(blockNumber);
-    return sdk.utils.isV3(versionAtBlock);
+  isV3(_blockNumber: number): boolean {
+    _blockNumber; // lint
+    return true;
   }
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
@@ -148,12 +140,9 @@ export class Dataworker {
   async buildSlowRelayRoot(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient }
-  ): Promise<RootBundle> {
-    const { unfilledDeposits, bundleSlowFillsV3 } = await this.clients.bundleDataClient.loadData(
-      blockRangesForChains,
-      spokePoolClients
-    );
-    return _buildSlowRelayRoot(unfilledDeposits, bundleSlowFillsV3);
+  ): Promise<SlowRootBundle> {
+    const { bundleSlowFillsV3 } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+    return _buildSlowRelayRoot(bundleSlowFillsV3);
   }
 
   async buildRelayerRefundRoot(
@@ -171,7 +160,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    const { fillsToRefund, bundleFillsV3, expiredDepositsToRefundV3 } = await this.clients.bundleDataClient.loadData(
+    const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.clients.bundleDataClient.loadData(
       blockRangesForChains,
       spokePoolClients
     );
@@ -180,7 +169,6 @@ export class Dataworker {
       : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
     return _buildRelayerRefundRoot(
       endBlockForMainnet,
-      fillsToRefund,
       bundleFillsV3,
       expiredDepositsToRefundV3,
       poolRebalanceLeaves,
@@ -196,47 +184,24 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBlock?: number
   ): Promise<PoolRebalanceRoot> {
-    const {
-      fillsToRefund,
-      deposits,
-      allValidFills,
-      unfilledDeposits,
-      earlyDeposits,
-      bundleDepositsV3,
-      bundleFillsV3,
-      bundleSlowFillsV3,
-      unexecutableSlowFills,
-      expiredDepositsToRefundV3,
-    } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+    const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
+      await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForChains,
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
-    const allValidFillsInRange = getFillsInRange(
-      allValidFills,
-      blockRangesForChains,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
 
     return await this._getPoolRebalanceRoot(
-      spokePoolClients,
       blockRangesForChains,
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
-      fillsToRefund,
-      deposits,
-      allValidFills,
-      allValidFillsInRange,
-      unfilledDeposits,
-      earlyDeposits,
       bundleDepositsV3,
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
-      expiredDepositsToRefundV3,
-      true
+      expiredDepositsToRefundV3
     );
   }
 
@@ -507,18 +472,8 @@ export class Dataworker {
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
-    const {
-      fillsToRefund,
-      deposits,
-      allValidFills,
-      unfilledDeposits,
-      earlyDeposits,
-      bundleDepositsV3,
-      bundleFillsV3,
-      bundleSlowFillsV3,
-      unexecutableSlowFills,
-      expiredDepositsToRefundV3,
-    } = await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
+    const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
+      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
     // Prepare information about what we need to store to
     // Arweave for the bundle. We will be doing this at a
     // later point so that we can confirm that this data is
@@ -531,31 +486,20 @@ export class Dataworker {
       unexecutableSlowFills,
       bundleSlowFillsV3,
     };
-    const [mainnetBundleStartBlock, mainnetBundleEndBlock] = blockRangesForProposal[0];
-    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
-    const allValidFillsInRange = getFillsInRange(allValidFills, blockRangesForProposal, chainIds);
+    const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
     const poolRebalanceRoot = await this._getPoolRebalanceRoot(
-      spokePoolClients,
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
-      fillsToRefund,
-      deposits,
-      allValidFills,
-      allValidFillsInRange,
-      unfilledDeposits,
-      earlyDeposits,
       bundleDepositsV3,
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
-      expiredDepositsToRefundV3,
-      true
+      expiredDepositsToRefundV3
     );
     const relayerRefundRoot = _buildRelayerRefundRoot(
       mainnetBundleEndBlock,
-      fillsToRefund,
       bundleFillsV3,
       expiredDepositsToRefundV3,
       poolRebalanceRoot.leaves,
@@ -565,7 +509,7 @@ export class Dataworker {
         ? this.maxRefundCountOverride
         : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock)
     );
-    const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits, bundleSlowFillsV3);
+    const slowRelayRoot = _buildSlowRelayRoot(bundleSlowFillsV3);
 
     if (logData) {
       this.logger.debug({
@@ -698,8 +642,8 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<SlowFillLeaf>;
-            leaves: SlowFillLeaf[];
+            tree: MerkleTree<V3SlowFillLeaf>;
+            leaves: V3SlowFillLeaf[];
           };
         };
       }
@@ -717,8 +661,8 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<SlowFillLeaf>;
-            leaves: SlowFillLeaf[];
+            tree: MerkleTree<V3SlowFillLeaf>;
+            leaves: V3SlowFillLeaf[];
           };
         };
       }
@@ -1112,7 +1056,7 @@ export class Dataworker {
             continue;
           }
 
-          const leavesForChain = leaves.filter((leaf) => sdkUtils.getSlowFillLeafChainId(leaf) === chainId);
+          const leavesForChain = leaves.filter((leaf) => leaf.chainId === chainId);
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) =>
@@ -1140,10 +1084,10 @@ export class Dataworker {
   }
 
   async _executeSlowFillLeaf(
-    _leaves: SlowFillLeaf[],
+    _leaves: V3SlowFillLeaf[],
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
-    slowRelayTree: MerkleTree<SlowFillLeaf>,
+    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
@@ -1156,9 +1100,7 @@ export class Dataworker {
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
-        const { method, args } = sdkUtils.isV2SlowFillLeaf(leaf)
-          ? this.encodeV2SlowFillLeaf(slowRelayTree, rootBundleId, leaf)
-          : this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
@@ -1195,7 +1137,7 @@ export class Dataworker {
 
     const sortedFills = client.getFills();
     const latestFills = leaves.map((slowFill) => {
-      const { relayData } = slowFill;
+      const { relayData, chainId: slowFillChainId } = slowFill;
 
       // Start with the most recent fills and search backwards.
       const fill = _.findLast(sortedFills, (fill) => {
@@ -1203,33 +1145,12 @@ export class Dataworker {
           !(
             fill.depositId === relayData.depositId &&
             fill.originChainId === relayData.originChainId &&
-            fill.destinationChainId === sdkUtils.getSlowFillLeafChainId(slowFill) &&
-            fill.depositor === relayData.depositor &&
-            fill.recipient === relayData.recipient &&
-            (sdkUtils.isV3Fill(fill) && sdkUtils.isV3RelayData(relayData)
-              ? fill.inputToken === relayData.inputToken
-              : true) &&
-            sdkUtils.getFillOutputToken(fill) === sdkUtils.getRelayDataOutputToken(relayData) &&
-            sdkUtils.getFillOutputAmount(fill).eq(sdkUtils.getRelayDataOutputAmount(relayData)) &&
-            fill.message === relayData.message
+            sdkUtils.getRelayDataHash(fill, chainId) === sdkUtils.getRelayDataHash(relayData, slowFillChainId)
           )
         ) {
           return false;
         }
-
-        if (sdkUtils.isV2Fill(fill) && sdkUtils.isV2RelayData(relayData)) {
-          return fill.realizedLpFeePct.eq(relayData.realizedLpFeePct) && fill.relayerFeePct.eq(relayData.relayerFeePct);
-        }
-
-        if (sdkUtils.isV3Fill(fill) && sdkUtils.isV3RelayData(relayData)) {
-          return (
-            fill.fillDeadline === relayData.fillDeadline &&
-            fill.exclusivityDeadline === relayData.exclusivityDeadline &&
-            fill.exclusiveRelayer === relayData.exclusiveRelayer
-          );
-        }
-
-        return false;
+        return true;
       });
 
       return fill;
@@ -1239,31 +1160,21 @@ export class Dataworker {
     const fundedLeaves = (
       await Promise.all(
         leaves.map(async (slowFill, idx) => {
-          const destinationChainId = sdkUtils.getSlowFillLeafChainId(slowFill);
+          const destinationChainId = slowFill.chainId;
           if (destinationChainId !== chainId) {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
-          const outputAmount = sdkUtils.getRelayDataOutputAmount(slowFill.relayData);
+          const { outputAmount } = slowFill.relayData;
           const fill = latestFills[idx];
-          let amountRequired: BigNumber;
-          if (sdkUtils.isV3SlowFillLeaf<V3SlowFillLeaf, V2SlowFillLeaf>(slowFill)) {
-            amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
-          } else {
-            // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-            const totalFilledAmount = isDefined(fill) ? sdkUtils.getTotalFilledAmount(fill) : bnZero;
-
-            // Note: the getRefund function just happens to perform the same math we need.
-            // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-            amountRequired = getRefund(outputAmount.sub(totalFilledAmount), slowFill.relayData.realizedLpFeePct);
-          }
+          const amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
 
           // If the fill has been completed there's no need to execute the slow fill leaf.
           if (amountRequired.eq(bnZero)) {
             return undefined;
           }
 
-          const outputToken = sdkUtils.getRelayDataOutputToken(slowFill.relayData);
+          const { outputToken } = slowFill.relayData;
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
@@ -1294,10 +1205,10 @@ export class Dataworker {
 
     const hubChainId = this.clients.hubPoolClient.chainId;
     fundedLeaves.forEach((leaf) => {
-      assert(sdkUtils.getSlowFillLeafChainId(leaf) === chainId);
+      assert(leaf.chainId === chainId);
 
       const { relayData } = leaf;
-      const outputAmount = sdkUtils.getRelayDataOutputAmount(relayData);
+      const { outputAmount } = relayData;
       const mrkdwn =
         `rootBundleId: ${rootBundleId}\n` +
         `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
@@ -1307,9 +1218,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
-        const { method, args } = sdkUtils.isV2SlowFillLeaf(leaf)
-          ? this.encodeV2SlowFillLeaf(slowRelayTree, rootBundleId, leaf)
-          : this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,
@@ -1334,35 +1243,8 @@ export class Dataworker {
     });
   }
 
-  encodeV2SlowFillLeaf(
-    slowRelayTree: MerkleTree<SlowFillLeaf>,
-    rootBundleId: number,
-    leaf: V2SlowFillLeaf
-  ): { method: string; args: (number | BigNumber | string | string[])[] } {
-    const { relayData, payoutAdjustmentPct } = leaf;
-
-    const method = "executeSlowRelayLeaf";
-    const proof = slowRelayTree.getHexProof({ relayData, payoutAdjustmentPct });
-    const args = [
-      relayData.depositor,
-      relayData.recipient,
-      relayData.destinationToken,
-      relayData.amount,
-      relayData.originChainId,
-      relayData.realizedLpFeePct,
-      relayData.relayerFeePct,
-      relayData.depositId,
-      rootBundleId,
-      relayData.message,
-      leaf.payoutAdjustmentPct,
-      proof,
-    ];
-
-    return { method, args };
-  }
-
   encodeV3SlowFillLeaf(
-    slowRelayTree: MerkleTree<SlowFillLeaf>,
+    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
     rootBundleId: number,
     leaf: V3SlowFillLeaf
   ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
@@ -1512,7 +1394,7 @@ export class Dataworker {
       // Now, execute refund and slow fill leaves for Mainnet using new funds. These methods will return early if there
       // are no relevant leaves to execute.
       await this._executeSlowFillLeaf(
-        expectedTrees.slowRelayTree.leaves.filter((leaf) => sdkUtils.getSlowFillLeafChainId(leaf) === hubPoolChainId),
+        expectedTrees.slowRelayTree.leaves.filter((leaf) => leaf.chainId === hubPoolChainId),
         balanceAllocator,
         spokePoolClients[hubPoolChainId],
         expectedTrees.slowRelayTree.tree,
@@ -2197,7 +2079,7 @@ export class Dataworker {
     poolRebalanceRoot: string,
     relayerRefundLeaves: RelayerRefundLeaf[],
     relayerRefundRoot: string,
-    slowRelayLeaves: SlowFillLeaf[],
+    slowRelayLeaves: V3SlowFillLeaf[],
     slowRelayRoot: string
   ): void {
     try {
@@ -2253,22 +2135,14 @@ export class Dataworker {
   }
 
   async _getPoolRebalanceRoot(
-    spokePoolClients: SpokePoolClientsByChain,
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
-    fillsToRefund: FillsToRefund,
-    deposits: V2DepositWithBlock[],
-    allValidFills: V2FillWithBlock[],
-    allValidFillsInRange: V2FillWithBlock[],
-    unfilledDeposits: UnfilledDeposit[],
-    earlyDeposits: sdk.typechain.FundsDepositedEvent[],
     bundleV3Deposits: BundleDepositsV3,
     bundleV3Fills: BundleFillsV3,
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
-    expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
-    logSlowFillExcessData = false
+    expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
   ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
@@ -2278,21 +2152,13 @@ export class Dataworker {
       this.rootCache[key] = _buildPoolRebalanceRoot(
         latestMainnetBlock,
         mainnetBundleEndBlock,
-        fillsToRefund,
-        deposits,
-        allValidFills,
-        allValidFillsInRange,
-        unfilledDeposits,
-        earlyDeposits,
         bundleV3Deposits,
         bundleV3Fills,
         bundleSlowFills,
         unexecutableSlowFills,
         expiredDepositsToRefundV3,
         this.clients,
-        spokePoolClients,
-        this.maxL1TokenCountOverride,
-        logSlowFillExcessData ? this.logger : undefined
+        this.maxL1TokenCountOverride
       );
     }
 
