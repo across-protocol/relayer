@@ -6,6 +6,7 @@ import { V3Deposit } from "../src/interfaces";
 import {
   bnZero,
   bnOne,
+  bnUint256Max as uint256Max,
   CHAIN_IDs,
   BigNumber,
   fixedPointAdjustment as fixedPoint,
@@ -189,12 +190,12 @@ describe("ProfitClient: Consider relay profit", () => {
       const gasToken = profitClient.resolveGasToken(destinationChainId);
       const expected = randomiseGasCost(destinationChainId);
 
-      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.outputAmount);
+      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit);
       expect(tokenGasCost.eq(0)).to.be.false;
 
       const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.address);
 
-      const estimate = await profitClient.estimateFillCost(deposit, deposit.outputAmount);
+      const estimate = await profitClient.estimateFillCost(deposit);
       ["nativeGasCost", "tokenGasCost"].forEach((field) => expect(estimate[field].eq(expected[field])).to.be.true);
 
       expect(estimate.gasCostUsd.eq(tokenGasCost.mul(gasTokenPriceUsd).div(toBN(10).pow(gasToken.decimals)))).to.be
@@ -212,7 +213,7 @@ describe("ProfitClient: Consider relay profit", () => {
       const deposit = { ...v3DepositTemplate, destinationChainId };
 
       const { nativeGasCost: defaultNativeGasCost, tokenGasCost: defaultTokenGasCost } =
-        await profitClient.getTotalGasCost(deposit, deposit.outputAmount);
+        await profitClient.getTotalGasCost(deposit);
 
       for (const padding of gasPadding) {
         profitClient.setGasPadding(padding);
@@ -236,7 +237,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
       const { gasTokenPriceUsd } = randomiseGasCost(destinationChainId);
       const gasToken = profitClient.resolveGasToken(destinationChainId);
-      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit, deposit.outputAmount);
+      const { tokenGasCost } = await profitClient.getTotalGasCost(deposit);
       expect(tokenGasCost.gt(bnZero)).to.be.true;
 
       for (const gasMultiplier of gasMultipliers) {
@@ -253,13 +254,13 @@ describe("ProfitClient: Consider relay profit", () => {
     }
   });
 
-  it("Return 0 when gas cost fails to be fetched", async () => {
+  it("Return uint256Max when gas cost fails to be fetched", async () => {
     const destinationChainId = 137;
     profitClient.setGasCost(destinationChainId, undefined);
     const deposit = { ...v3DepositTemplate, destinationChainId };
     const { nativeGasCost, tokenGasCost } = await profitClient.getTotalGasCost(deposit);
-    expect(nativeGasCost.eq(bnZero)).to.be.true;
-    expect(tokenGasCost.eq(bnZero)).to.be.true;
+    expect(nativeGasCost.eq(uint256Max)).to.be.true;
+    expect(tokenGasCost.eq(uint256Max)).to.be.true;
   });
 
   it("Verify token price and gas cost lookup failures", async () => {
