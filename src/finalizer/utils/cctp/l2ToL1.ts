@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { TransactionRequest } from "@ethersproject/abstract-provider";
-import { ethers } from "hardhat";
+import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
 import {
