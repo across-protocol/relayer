@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { utils as ethersUtils } from "ethers";
-import { L1Token, V3RelayData, V3Deposit, V3DepositWithBlock } from "../interfaces";
+import { L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
 import {
   BigNumber,
   bnZero,
