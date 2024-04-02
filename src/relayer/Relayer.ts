@@ -340,12 +340,18 @@ export class Relayer {
     }
   }
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays = true, simulate = false): Promise<void> {
+  async checkForUnfilledDepositsAndFill(
+    sendSlowRelays = true,
+    simulate = false
+  ): Promise<{ [chainId: number]: string[] }> {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
+    const txnReceipts: { [chainId: number]: string[] } = Object.fromEntries(
+      Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
+    );
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
@@ -353,12 +359,13 @@ export class Relayer {
     const allUnfilledDeposits = Object.values(unfilledDeposits)
       .flat()
       .map(({ deposit }) => deposit);
+
     this.logger.debug({
       at: "Relayer#checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
     });
     if (allUnfilledDeposits.length === 0) {
-      return;
+      return txnReceipts
     }
 
     const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
@@ -382,7 +389,8 @@ export class Relayer {
 
       const destinationChainId = Number(chainId);
       if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
-        await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
+        const receipts = await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
+        txnReceipts[destinationChainId] = receipts[destinationChainId];
       }
     });
 
@@ -393,6 +401,8 @@ export class Relayer {
     if (profitClient.anyCapturedUnprofitableFills()) {
       this.handleUnprofitableFill();
     }
+
+    return txnReceipts;
   }
 
   requestSlowFill(deposit: V3Deposit): void {
