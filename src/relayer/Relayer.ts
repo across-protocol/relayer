@@ -236,7 +236,7 @@ export class Relayer {
       })
     );
     this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
+      at: "Relayer::computeRequiredDepositConfirmations",
       message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
