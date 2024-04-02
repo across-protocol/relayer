@@ -13,6 +13,7 @@ import {
 } from "../interfaces";
 import {
   AnyObject,
+  BigNumber,
   bnZero,
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
@@ -175,7 +176,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
     Object.values(depositsForChain).forEach((deposits) => {
       deposits.forEach((deposit) => {
-        const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit);
+        const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit, deposit.realizedLpFeePct);
         slowRelayLeaves.push(v3SlowFillLeaf);
       });
     });
@@ -198,8 +199,8 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   };
 }
 
-function buildV3SlowFillLeaf(deposit: interfaces.Deposit): V3SlowFillLeaf {
-  const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
+function buildV3SlowFillLeaf(deposit: interfaces.Deposit, lpFeePct: BigNumber): V3SlowFillLeaf {
+  const lpFee = deposit.inputAmount.mul(lpFeePct).div(fixedPointAdjustment);
 
   return {
     relayData: {

@@ -532,9 +532,9 @@ export class BundleDataClient {
     }
 
     // Process fills now that we've populated relay hash dictionary with deposits:
-    const validatedBundleV3Fills: (V3FillWithBlock & { quoteTimestamp: number })[] = [];
-    const validatedBundleSlowFills: V3DepositWithBlock[] = [];
-    const validatedBundleUnexecutableSlowFills: V3DepositWithBlock[] = [];
+    const validatedBundleV3Fills: (V3FillWithBlock & { quoteTimestamp: number; realizedLpFeePct?: BigNumber })[] = [];
+    const validatedBundleSlowFills: (V3DepositWithBlock & { realizedLpFeePct?: BigNumber })[] = [];
+    const validatedBundleUnexecutableSlowFills: (V3DepositWithBlock & { realizedLpFeePct?: BigNumber })[] = [];
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
       for (const destinationChainId of allChainIds) {
