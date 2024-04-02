@@ -1,4 +1,4 @@
-import { ethers } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers } from "../utils";
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
