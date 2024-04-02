@@ -42,8 +42,4 @@ export class HubPoolClient extends clients.HubPoolClient {
 
     return await super.computeRealizedLpFeePct(deposit);
   }
-
-  async batchComputeRealizedLpFeePct(lpFeeRequests: LpFeeRequest[]): Promise<interfaces.RealizedLpFee[]> {
-    return await super.batchComputeRealizedLpFeePct(lpFeeRequests);
-  }
 }
