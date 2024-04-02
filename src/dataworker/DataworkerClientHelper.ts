@@ -58,9 +58,9 @@ export async function constructDataworkerClients(
     new defiLlama.PriceFeed(),
   ]);
 
-  // Define the Arweave client. This should be
-  // read-write signer for the dataworker to persist bundle data if
-  // persistingBundleData is set to true in the config.
+  // Define the Arweave client. We need to use a read-write signer for the
+  // dataworker to persist bundle data if `persistingBundleData` is enabled.
+  // Otherwise, we can use a read-only signer.
   const arweaveClient = new caching.ArweaveClient(
     getArweaveJWKSigner(config.persistingBundleData ? "read-write" : "readonly"),
     logger,
