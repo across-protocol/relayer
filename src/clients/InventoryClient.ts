@@ -21,7 +21,6 @@ import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { InventoryConfig, V3Deposit } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
-import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
@@ -160,23 +159,9 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    // Implementation-Specific: First attempt to reference the Arweave persistence layer. If that fails,
-    //                          manually fetch the pending refunds from the next bundle.
-    let refundsToConsider: CombinedRefunds[] =
-      await this.bundleDataClient.getPersistedPendingRefundsFromLastValidBundle();
-    if (!isDefined(refundsToConsider)) {
-      refundsToConsider = await this.bundleDataClient.getPendingRefundsFromValidBundles();
-    }
-
+    const refundsToConsider = await this.bundleDataClient.getPendingRefundsFromValidBundles();
     // Consider refunds from next bundle to be proposed:
-    // Implementation-Specific: First attempt to reference the Arweave persistence layer. If that fails,
-    //                          manually fetch the pending refunds from the next bundle. Note: this could
-    //                          return undefined in the short time window between the next bundle being
-    //                          proposed and the data being persisted to Arweave.
-    let nextBundleRefunds = await this.bundleDataClient.getPersistedNextBundleRefunds();
-    if (!isDefined(nextBundleRefunds)) {
-      nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
-    }
+    const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
     refundsToConsider.push(nextBundleRefunds);
 
     return Object.fromEntries(
