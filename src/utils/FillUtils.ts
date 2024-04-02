@@ -58,7 +58,7 @@ export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
   depositLookBack?: number,
-  logger?: winston.Logger,
+  logger?: winston.Logger
 ): Promise<{ [chainId: number]: RelayerUnfilledDeposit[] }> {
   const unfilledDeposits: { [chainId: number]: RelayerUnfilledDeposit[] } = {};
   const chainIds = Object.values(spokePoolClients)
