@@ -478,7 +478,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();
 
-      let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Ignoring deposit"))).to.not.be.undefined;
     });
@@ -516,7 +516,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         );
 
         await updateAllClients();
-        let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
         if (update.ignored) {
           Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
           expect(

@@ -365,7 +365,7 @@ export class Relayer {
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
     });
     if (allUnfilledDeposits.length === 0) {
-      return txnReceipts
+      return txnReceipts;
     }
 
     const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
