@@ -240,18 +240,21 @@ export class BundleDataClient {
       hubPoolClient.chainId
     );
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
+
+    // We need to find the widest possible range of blocks to search for refunds. Since we aim to leverage
+    // Arweave's DA layer to look for entries, we need to make sure we're using an expected range. If we
+    // have a pending proposal, we can assume that a corresponding Arweave entry exists. In this case, we
+    // need capture the `impliedBlockRange` so that it matches with the tag in the Arweave entry. If no
+    // pending bundle exists, we should cast as large of a next bundle range as possible to capture the most
+    // data. We can do this with `getWidestPossibleExpectedBlockRange` which is a superset of the ranges for
+    // `impliedBlockRange`.
     const futureBundleEvaluationBlockRanges = hubPoolClient.hasPendingProposal()
-      ? // If we have a pending proposal, this means that we should have an entry stored to
-        // Arweave. If this is the case, we should use the implied bundle range of the pending
-        // proposal.
-        getImpliedBundleBlockRanges(
+      ? getImpliedBundleBlockRanges(
           hubPoolClient,
           this.clients.configStoreClient,
           hubPoolClient.getLatestProposedRootBundle()
         )
-      : // If we don't have access to the pending proposal, we need to cast a wide net and find a large range
-        // to grab the most data possible within the context of the next bundle.
-        getWidestPossibleExpectedBlockRange(
+      : getWidestPossibleExpectedBlockRange(
           chainIds,
           this.spokePoolClients,
           getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
@@ -368,11 +371,15 @@ export class BundleDataClient {
     const key = JSON.stringify(blockRangesForChains);
 
     if (!this.loadDataCache[key]) {
+      // We need to await this data to see if we were able to load
+      // data to Arweave.
       const arweaveData = attemptArweaveLoad
         ? await this.loadPersistedDataFromArweave(blockRangesForChains)
         : undefined;
       const data = isDefined(arweaveData)
-        ? Promise.resolve(arweaveData)
+        ? // We can return the data to a Promise to keep the return type consistent.
+          // Note: this is now a fast operation since we've already loaded the data from Arweave.
+          Promise.resolve(arweaveData)
         : this._loadData(blockRangesForChains, spokePoolClients, logData);
       this.loadDataCache[key] = data;
     }
