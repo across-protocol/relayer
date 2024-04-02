@@ -303,5 +303,5 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
  * @dev this is a generalization for USDT on Ethereum. Other tokens may be added
  */
 export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
-  1: ["0xdAC17F958D2ee523a2206206994597C13D831ec7"],
+  [CHAIN_IDs.MAINNET]: [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
 };
