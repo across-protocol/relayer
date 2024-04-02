@@ -299,6 +299,9 @@ export class Relayer {
       if (isDefined(repaymentChainId)) {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+
+        // Update local balance to account for the enqueued fill.
+        tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
       } else {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
@@ -434,7 +437,6 @@ export class Relayer {
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
-    const { outputToken, outputAmount } = deposit;
     const { spokePoolClients, multiCallerClient } = this.clients;
     this.logger.debug({ at: "Relayer", message: "Filling v3 deposit.", deposit, repaymentChainId, realizedLpFeePct });
 
@@ -458,9 +460,6 @@ export class Relayer {
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
-
-    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, outputAmount);
   }
 
   protected async resolveRepaymentChain(
