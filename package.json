@@ -62,7 +62,7 @@
     "run-disputer": "DISPUTER_ENABLED=true node ./dist/index.js --dataworker",
     "run-executor": "EXECUTOR_ENABLED=true node ./dist/index.js --dataworker",
     "run-proposer": "PROPOSER_ENABLED=true node ./dist/index.js --dataworker",
-    "run-finalizer": "FINALIZER_ENABLED=true HARDHAT_CONFIG=./dist/hardhat.config.js node ./dist/index.js --finalizer",
+    "run-finalizer": "FINALIZER_ENABLED=true node ./dist/index.js --finalizer",
     "relay": "node ./dist/index.js --relayer",
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
     "dispute": "yarn ts-node ./scripts/hubpool.ts dispute"
