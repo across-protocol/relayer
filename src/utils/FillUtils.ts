@@ -106,8 +106,8 @@ export async function getUnfilledDeposits(
     try {
       fillStatus = await sdkUtils.fillStatusArray(destinationClient.spokePool, deposits);
     } catch {
-      // Assume all deposits are unfilled by default. They may be filtered out later due to other
-      // criteria, and any filled deposits will ultimately fail during fillV3Relay() simulation.
+      // Assume all deposits are unfilled. They may be filtered out later due to other criteria,
+      // and any filled deposits will ultimately fail during fillV3Relay() simulation.
       fillStatus = deposits.map(() => FillStatus.Unfilled);
     }
 
