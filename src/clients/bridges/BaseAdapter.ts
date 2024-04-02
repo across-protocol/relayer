@@ -168,12 +168,11 @@ export abstract class BaseAdapter {
     let mrkdwn = "*Approval transactions:* \n";
     for (const { l1Token, targetContract } of tokensToApprove) {
       const { hubChainId } = this;
-      const txnRequests = [];
+      const txs = [];
       if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
-        txnRequests.push(runTransaction(this.logger, l1Token, "approve", [targetContract, bnZero]));
+        txs.push(await runTransaction(this.logger, l1Token, "approve", [targetContract, bnZero]));
       }
-      txnRequests.push(runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]));
-      const txs = await Promise.all(txnRequests);
+      txs.push(await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]));
       const receipts = await Promise.all(txs.map((tx) => tx.wait()));
       const hubNetwork = getNetworkName(hubChainId);
       const spokeNetwork = getNetworkName(this.chainId);
