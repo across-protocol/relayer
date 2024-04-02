@@ -2,7 +2,7 @@ import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
-import { getBlockForTimestamp, getRedisCache } from "../utils";
+import { getBlockForTimestamp, getNetworkError, getNetworkName, getRedisCache, winston } from "../utils";
 import { isDefined } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
@@ -57,7 +57,8 @@ export type RelayerUnfilledDeposit = {
 export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
-  depositLookBack?: number
+  depositLookBack?: number,
+  logger?: winston.Logger,
 ): Promise<{ [chainId: number]: RelayerUnfilledDeposit[] }> {
   const unfilledDeposits: { [chainId: number]: RelayerUnfilledDeposit[] } = {};
   const chainIds = Object.values(spokePoolClients)
@@ -77,8 +78,14 @@ export async function getUnfilledDeposits(
       try {
         const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
         originFromBlocks[originChainId] = Math.max(spokePoolClient.deploymentBlock, startBlock);
-      } catch {
+      } catch (err) {
         // ...Failed! Do nothing to inherit the maximum lookback.
+        const chain = getNetworkName(originChainId);
+        logger?.warn({
+          at: "getUnfilledDeposits",
+          message: `Failed to resolve ${chain} block for timestamp ${timestamp}.`,
+          reason: getNetworkError(err),
+        });
       }
     });
   }
@@ -109,7 +116,15 @@ export async function getUnfilledDeposits(
     let fillStatus: number[];
     try {
       fillStatus = await sdkUtils.fillStatusArray(destinationClient.spokePool, deposits);
-    } catch {
+    } catch (err) {
+      // ...Failed! Do nothing to inherit the maximum lookback.
+      const chain = getNetworkName(destinationClient.chainId);
+      logger?.warn({
+        at: "getUnfilledDeposits",
+        message: `Failed to resolve status of ${deposits.length} fills on on ${chain}.`,
+        reason: getNetworkError(err),
+      });
+
       // Assume all deposits are unfilled. They may be filtered out later due to other criteria,
       // and any filled deposits will ultimately fail during fillV3Relay() simulation.
       fillStatus = deposits.map(() => FillStatus.Unfilled);
