@@ -31,7 +31,7 @@ import {
 } from "../../utils";
 import { utils } from "@across-protocol/sdk-v2";
 
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
@@ -131,9 +131,8 @@ export abstract class BaseAdapter {
           // Check if we've cached already that this allowance is high enough. Returning null means we won't
           // send an allowance approval transaction.
           if (redis) {
-            const result = await redis.get<string>(
-              await this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index])
-            );
+            const key = await this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index]);
+            const result = await redis.get<string>(key);
             if (result !== null) {
               const savedAllowance = toBN(result);
               if (savedAllowance.gte(toBN(MAX_SAFE_ALLOWANCE))) {
@@ -161,22 +160,31 @@ export abstract class BaseAdapter {
         }
       }
     });
-    if (tokensToApprove.length == 0) {
+    if (tokensToApprove.length === 0) {
       this.log("No token bridge approvals needed", { l1Tokens });
       return;
     }
 
     let mrkdwn = "*Approval transactions:* \n";
     for (const { l1Token, targetContract } of tokensToApprove) {
-      const tx = await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]);
-      const receipt = await tx.wait();
       const { hubChainId } = this;
+      const txnRequests = [];
+      if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
+        txnRequests.push(runTransaction(this.logger, l1Token, "approve", [targetContract, bnZero]));
+      }
+      txnRequests.push(runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]));
+      const txs = await Promise.all(txnRequests);
+      const receipts = await Promise.all(txs.map((tx) => tx.wait()));
       const hubNetwork = getNetworkName(hubChainId);
       const spokeNetwork = getNetworkName(this.chainId);
       mrkdwn +=
         ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(targetContract, hubChainId)} ` +
         `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-        `tx: ${blockExplorerLink(receipt.transactionHash, hubChainId)}\n`;
+        `tx: ${blockExplorerLink(receipts[receipts.length - 1].transactionHash, hubChainId)}`;
+      if (receipts.length > 1) {
+        mrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
+      }
+      mrkdwn += "\n";
     }
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }

@@ -295,3 +295,13 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
   84532: 6, // Base Sepolia
   80001: 7, // Polygon PoS Mumbai
 };
+
+/**
+ * A mapping of chain IDs to tokens on that chain which need their allowance
+ * to first be zeroed before setting a new allowance. This is useful for
+ * tokens that have a non-standard approval process.
+ * @dev this is a generalization for USDT on Ethereum. Other tokens may be added
+ */
+export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
+  1: ["0xdAC17F958D2ee523a2206206994597C13D831ec7"],
+};
