@@ -168,28 +168,23 @@ export class BundleDataClient {
     if (!isDefined(this.clients?.arweaveClient)) {
       return undefined;
     }
-    const data = await this.clients.arweaveClient.getByTopic(
+    const persistedData = await this.clients.arweaveClient.getByTopic(
       `bundles-${blockRangesForChains}`,
       BundleDataToPersistToDALayerTypeSS
     );
     // If there is no data or the data is empty, return undefined because we couldn't
     // pull info from the Arweave persistence layer.
-    if (!isDefined(data) || data.length < 1) {
+    if (!isDefined(persistedData) || persistedData.length < 1) {
       return undefined;
     }
-    const {
-      bundleFillsV3: _bundleFillsV3,
-      expiredDepositsToRefundV3: _expiredDepositsToRefundV3,
-      bundleDepositsV3: _bundleDepositsV3,
-      unexecutableSlowFills: _unexecutableSlowFills,
-      bundleSlowFillsV3: _bundleSlowFillsV3,
-    } = data[0].data;
-    const bundleFillsV3 = _bundleFillsV3 as unknown as BundleFillsV3;
-    const expiredDepositsToRefundV3 = _expiredDepositsToRefundV3 as unknown as ExpiredDepositsToRefundV3;
-    const bundleDepositsV3 = _bundleDepositsV3 as unknown as BundleDepositsV3;
-    const unexecutableSlowFills = _unexecutableSlowFills as unknown as BundleExcessSlowFills;
-    const bundleSlowFillsV3 = _bundleSlowFillsV3 as unknown as BundleSlowFills;
-    return { bundleFillsV3, expiredDepositsToRefundV3, bundleDepositsV3, unexecutableSlowFills, bundleSlowFillsV3 };
+    const data = persistedData[0].data;
+    return {
+      bundleFillsV3: data.bundleFillsV3 as unknown as BundleFillsV3,
+      expiredDepositsToRefundV3: data.expiredDepositsToRefundV3 as unknown as ExpiredDepositsToRefundV3,
+      bundleDepositsV3: data.bundleDepositsV3 as unknown as BundleDepositsV3,
+      unexecutableSlowFills: data.unexecutableSlowFills as unknown as BundleExcessSlowFills,
+      bundleSlowFillsV3: data.bundleSlowFillsV3 as unknown as BundleSlowFills,
+    };
   }
 
   async getPendingRefundsFromValidBundles(bundleLookback = 1): Promise<CombinedRefunds[]> {
