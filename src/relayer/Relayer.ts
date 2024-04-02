@@ -370,10 +370,13 @@ export class Relayer {
     const { hubPoolClient } = this.clients;
 
     const lpFeeRequests = deposits
-      .map((deposit) => [
-        { ...deposit, paymentChainId: hubPoolClient.chainId },
-        { ...deposit, paymentChainId: deposit.destinationChainId },
-      ])
+      .map((deposit) => {
+        const request = [{ ...deposit, paymentChainId: deposit.destinationChainId }];
+        if (deposit.destinationChainId !== hubPoolClient.chainId) {
+          request.push({ ...deposit, paymentChainId: hubPoolClient.chainId });
+        }
+        return request;
+      })
       .flat();
 
     const _lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(lpFeeRequests);
