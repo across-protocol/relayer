@@ -232,7 +232,6 @@ export class BundleDataClient {
   // in a valid bundle with all of its leaves executed. This contains refunds from:
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
-  // - Not yet proposed bundles
   async getNextBundleRefunds(): Promise<CombinedRefunds> {
     const hubPoolClient = this.clients.hubPoolClient;
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
@@ -241,14 +240,25 @@ export class BundleDataClient {
       hubPoolClient.chainId
     );
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
-    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
-      chainIds,
-      this.spokePoolClients,
-      getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
-      this.clients,
-      this.clients.hubPoolClient.latestBlockSearched,
-      this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)
-    );
+    const futureBundleEvaluationBlockRanges = hubPoolClient.hasPendingProposal()
+      ? // If we have a pending proposal, this means that we should have an entry stored to
+        // Arweave. If this is the case, we should use the implied bundle range of the pending
+        // proposal.
+        getImpliedBundleBlockRanges(
+          hubPoolClient,
+          this.clients.configStoreClient,
+          hubPoolClient.getLatestProposedRootBundle()
+        )
+      : // If we don't have access to the pending proposal, we need to cast a wide net and find a large range
+        // to grab the most data possible within the context of the next bundle.
+        getWidestPossibleExpectedBlockRange(
+          chainIds,
+          this.spokePoolClients,
+          getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
+          this.clients,
+          this.clients.hubPoolClient.latestBlockSearched,
+          this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)
+        );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
