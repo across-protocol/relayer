@@ -370,8 +370,7 @@ export class BundleDataClient {
     const key = JSON.stringify(blockRangesForChains);
 
     if (!this.loadDataCache[key]) {
-      // We need to await this data to see if we were able to load
-      // data to Arweave.
+      // We need to await this data to see if we were able to load data to Arweave.
       const arweaveData = attemptArweaveLoad
         ? await this.loadPersistedDataFromArweave(blockRangesForChains)
         : undefined;
