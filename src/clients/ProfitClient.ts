@@ -602,7 +602,7 @@ export class ProfitClient {
       assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
       const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-      this.totalGasCosts = await this._getTotalGasCost(deposit, relayer);
+      this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
     });
 
     this.logger.debug({
