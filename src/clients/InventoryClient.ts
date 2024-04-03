@@ -165,17 +165,19 @@ export class InventoryClient {
     const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
     refundsToConsider.push(nextBundleRefunds);
 
-    return Object.fromEntries(
-      this.getEnabledChains()
-        .filter((chainId) => this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
-        .map((chainId) => {
-          const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
-          return [
-            chainId,
-            this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken),
-          ];
-        })
-    );
+    return this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
+      if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
+        return refunds;
+      }
+      const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
+      refunds[chainId] = this.bundleDataClient.getTotalRefund(
+        refundsToConsider,
+        this.relayer,
+        chainId,
+        destinationToken
+      );
+      return refunds;
+    }, {});
   }
 
   // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
