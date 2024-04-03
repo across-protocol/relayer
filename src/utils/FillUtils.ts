@@ -127,7 +127,7 @@ export async function getUnfilledDeposits(
       // Fall back to matching fills against deposits and infer FillStatus from that.
       fillStatus = deposits
         .map((deposit) => destinationClient.getValidUnfilledAmountForDeposit(deposit))
-        .map(({ unfilledAmount }) => unfilledAmount.eq(bnZero) ? FillStatus.Filled : FillStatus.Unfilled);
+        .map(({ unfilledAmount }) => (unfilledAmount.eq(bnZero) ? FillStatus.Filled : FillStatus.Unfilled));
     }
 
     unfilledDeposits[destinationChainId] = deposits
