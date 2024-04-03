@@ -166,13 +166,15 @@ export class InventoryClient {
     refundsToConsider.push(nextBundleRefunds);
 
     return Object.fromEntries(
-      this.getEnabledChains().map((chainId) => {
-        const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
-        return [
-          chainId,
-          this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, Number(chainId), destinationToken),
-        ];
-      })
+      this.getEnabledChains()
+        .filter((chainId) => this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
+        .map((chainId) => {
+          const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
+          return [
+            chainId,
+            this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, Number(chainId), destinationToken),
+          ];
+        })
     );
   }
 
