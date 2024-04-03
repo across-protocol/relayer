@@ -247,8 +247,7 @@ export class BundleDataClient {
     // have a pending proposal, we can assume that a corresponding Arweave entry exists. In this case, we
     // need to capture the `impliedBlockRange` so that it matches with the tag in the Arweave entry. If no
     // pending bundle exists, we should cast as large of a next bundle range as possible to capture the most
-    // data. We can do this with `getWidestPossibleExpectedBlockRange` which is a superset of the ranges for
-    // `impliedBlockRange`.
+    // data. We can do this with `getWidestPossibleExpectedBlockRange`.
     const futureBundleEvaluationBlockRanges = hubPoolClient.hasPendingProposal()
       ? getImpliedBundleBlockRanges(
           hubPoolClient,
