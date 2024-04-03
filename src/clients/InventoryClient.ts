@@ -231,7 +231,6 @@ export class InventoryClient {
       // Consider any refunds from executed and to-be executed bundles.
       totalRefundsPerChain = await this.getBundleRefunds(l1Token);
     } catch (e) {
-      console.error(e);
       this.log("Failed to get bundle refunds, defaulting refund chain to hub chain");
       // Fallback to ignoring bundle refunds if calculating bundle refunds goes wrong.
       // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
