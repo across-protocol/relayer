@@ -26,10 +26,6 @@ const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 export class Relayer {
   public readonly relayerAddress: string;
 
-  // Track by originChainId since depositId is issued on the origin chain.
-  // Key is in the form of "chainId-depositId".
-  private fullyFilledDeposits: { [key: string]: boolean } = {};
-
   constructor(
     relayerAddress: string,
     readonly logger: winston.Logger,
@@ -40,141 +36,159 @@ export class Relayer {
   }
 
   /**
+   * @description For a given deposit, apply relayer-specific filtering to determine whether it should be filled.
+   * @param deposit Deposit object.
+   * @param version Version identified for this deposit.
+   * @param invalidFills An array of any invalid fills detected for this deposit.
+   * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
+   */
+  filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
+    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, outputToken } = deposit;
+    const { acrossApiClient, configStoreClient, hubPoolClient } = this.clients;
+    const { ignoredAddresses, relayerTokens, acceptInvalidFills } = this.config;
+
+    // If we don't have the latest code to support this deposit, skip it.
+    if (depositVersion > configStoreClient.configStoreVersion) {
+      this.logger.warn({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit that is not supported by this relayer version.",
+        latestVersionSupported: configStoreClient.configStoreVersion,
+        latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
+        deposit,
+      });
+      return false;
+    }
+
+    if (!this.routeEnabled(originChainId, destinationChainId)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit from or to disabled chains.",
+        deposit,
+        enabledOriginChains: this.config.relayerOriginChains,
+        enabledDestinationChains: this.config.relayerDestinationChains,
+      });
+      return false;
+    }
+
+    // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
+    if (deposit.quoteTimestamp > hubPoolClient.currentTime) {
+      return false;
+    }
+
+    if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Ignoring deposit",
+        depositor,
+        recipient,
+      });
+      return false;
+    }
+
+    // Skip any L1 tokens that are not specified in the config.
+    // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+    const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit for unwhitelisted token",
+        deposit,
+        l1Token,
+      });
+      return false;
+    }
+
+    // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
+    const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
+    if (deposit.fillDeadline <= currentTime) {
+      return false;
+    }
+
+    if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
+      return false;
+    }
+
+    if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+      this.logger.warn({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit including in-protocol token swap.",
+        deposit,
+      });
+      return false;
+    }
+
+    // Skip deposit with message if sending fills with messages is not supported.
+    if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
+      this.logger.warn({
+        at: "Relayer::filterDeposit",
+        message: "Skipping fill for deposit with message",
+        depositUpdated: isDepositSpedUp(deposit),
+        deposit,
+      });
+      return false;
+    }
+
+    // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
+    // making the same relayer fill a deposit multiple times.
+    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
+      this.logger.error({
+        at: "Relayer::filterDeposit",
+        message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
+        deposit,
+        invalidFills,
+        destinationChainId,
+      });
+      return false;
+    }
+
+    // We query the relayer API to get the deposit limits for different token and destination combinations.
+    // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
+    // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
+    // queries for limits on supported tokens.
+    const { inputAmount } = deposit;
+    if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
+      this.logger.warn({
+        at: "Relayer::filterDeposit",
+        message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
+        limit: acrossApiClient.getLimit(l1Token.address),
+        l1Token: l1Token.address,
+        depositId,
+        inputToken,
+        inputAmount,
+        originChainId,
+        transactionHash: deposit.transactionHash,
+      });
+      return false;
+    }
+
+    // The deposit passed all checks, so we can include it in the list of unfilled deposits.
+    return true;
+  }
+
+  /**
    * @description Retrieve the complete array of unfilled deposits and filter out deposits we can't or choose
    * not to support.
    * @returns An array of filtered RelayerUnfilledDeposit objects.
    */
-  private async _getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
-    const { configStoreClient, hubPoolClient, spokePoolClients, acrossApiClient } = this.clients;
-    const { relayerTokens, ignoredAddresses, acceptInvalidFills } = this.config;
+  private async _getUnfilledDeposits(): Promise<Record<number, RelayerUnfilledDeposit[]>> {
+    const { hubPoolClient, spokePoolClients } = this.clients;
 
-    // Flatten unfilledDeposits for now. @todo: Process deposits in parallel by destination chain.
-    const unfilledDeposits = Object.values(
-      await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack)
-    ).flat();
+    const unfilledDeposits = await getUnfilledDeposits(
+      spokePoolClients,
+      hubPoolClient,
+      this.config.maxRelayerLookBack,
+      this.logger
+    );
 
-    const maxVersion = configStoreClient.configStoreVersion;
-    return sdkUtils.filterAsync(unfilledDeposits, async ({ deposit, version, invalidFills }) => {
-      const { depositId, depositor, recipient, originChainId, destinationChainId, inputToken, outputToken } = deposit;
-      const destinationChain = getNetworkName(destinationChainId);
-
-      // If we don't have the latest code to support this deposit, skip it.
-      if (version > maxVersion) {
-        this.logger.warn({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit that is not supported by this relayer version.",
-          latestVersionSupported: maxVersion,
-          latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
-          deposit,
-        });
-        return false;
-      }
-
-      if (!this.routeEnabled(originChainId, destinationChainId)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit from or to disabled chains.",
-          deposit,
-          enabledOriginChains: this.config.relayerOriginChains,
-          enabledDestinationChains: this.config.relayerDestinationChains,
-        });
-        return false;
-      }
-
-      // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-      if (deposit.quoteTimestamp > hubPoolClient.currentTime) {
-        return false;
-      }
-
-      if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Ignoring deposit",
-          depositor,
-          recipient,
-        });
-        return false;
-      }
-
-      // Skip any L1 tokens that are not specified in the config.
-      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-      const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
-      if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-        this.logger.debug({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit for unwhitelisted token",
-          deposit,
-          l1Token,
-        });
-        return false;
-      }
-
-      // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-      const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
-      if (deposit.fillDeadline <= currentTime) {
-        return false;
-      }
-
-      if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
-        return false;
-      }
-
-      if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
-        this.logger.warn({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping deposit including in-protocol token swap.",
-          deposit,
-        });
-        return false;
-      }
-
-      // Skip deposit with message if sending fills with messages is not supported.
-      if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
-        this.logger.warn({
-          at: "Relayer::getUnfilledDeposits",
-          message: "Skipping fill for deposit with message",
-          depositUpdated: isDepositSpedUp(deposit),
-          deposit,
-        });
-        return false;
-      }
-
-      // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
-      // making the same relayer fill a deposit multiple times.
-      if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
-        this.logger.error({
-          at: "Relayer::getUnfilledDeposits",
-          message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
-          deposit,
-          invalidFills,
-          destinationChain,
-        });
-        return false;
-      }
-
-      // We query the relayer API to get the deposit limits for different token and destination combinations.
-      // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
-      // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
-      // queries for limits on supported tokens.
-      const { inputAmount } = deposit;
-      if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
-        this.logger.warn({
-          at: "Relayer::getUnfilledDeposits",
-          message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-          limit: acrossApiClient.getLimit(l1Token.address),
-          l1Token: l1Token.address,
-          depositId,
-          inputToken,
-          inputAmount,
-          originChainId,
-          transactionHash: deposit.transactionHash,
-        });
-        return false;
-      }
-
-      // The deposit passed all checks, so we can include it in the list of unfilled deposits.
-      return true;
+    // Filter the resulting unfilled deposits according to relayer configuration.
+    Object.keys(unfilledDeposits).forEach((_destinationChainId) => {
+      const destinationChainId = Number(_destinationChainId);
+      unfilledDeposits[destinationChainId] = unfilledDeposits[destinationChainId].filter((deposit) =>
+        this.filterDeposit(deposit)
+      );
     });
+
+    return unfilledDeposits;
   }
 
   /**
@@ -227,7 +241,7 @@ export class Relayer {
       })
     );
     this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
+      at: "Relayer::computeRequiredDepositConfirmations",
       message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
@@ -241,9 +255,10 @@ export class Relayer {
   // a) it exceeds the minimum number of required block confirmations,
   // b) the token balance client has enough tokens to fill it,
   // c) the fill is profitable.
-  // If all hold true then complete the fill. Otherwise, if slow fills are enabled, request a slow fill.
+  // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
+  // enabled then request a slow fill instead.
   async evaluateFill(deposit: V3DepositWithBlock, maxBlockNumber: number, sendSlowRelays: boolean): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
     const { hubPoolClient, profitClient, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
 
@@ -251,7 +266,7 @@ export class Relayer {
     if (deposit.blockNumber > maxBlockNumber) {
       const chain = getNetworkName(originChainId);
       this.logger.debug({
-        at: "Relayer",
+        at: "Relayer::evaluateFill",
         message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
         depositId,
         blockNumber: deposit.blockNumber,
@@ -265,7 +280,7 @@ export class Relayer {
     if (slowDepositors?.includes(depositor)) {
       if (sendSlowRelays) {
         this.logger.debug({
-          at: "Relayer",
+          at: "Relayer::evaluateFill",
           message: "Initiating slow fill for grey listed depositor",
           depositor,
         });
@@ -278,7 +293,7 @@ export class Relayer {
 
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
     const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
-    if (tokenClient.hasBalanceForFill(deposit, outputAmount) && !selfRelay) {
+    if (tokenClient.hasBalanceForFill(deposit) && !selfRelay) {
       const {
         repaymentChainId,
         realizedLpFeePct,
@@ -289,6 +304,9 @@ export class Relayer {
       if (isDefined(repaymentChainId)) {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+
+        // Update local balance to account for the enqueued fill.
+        tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
       } else {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
@@ -305,38 +323,84 @@ export class Relayer {
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
-      tokenClient.captureTokenShortfallForFill(deposit, outputAmount);
+      tokenClient.captureTokenShortfallForFill(deposit);
       if (sendSlowRelays) {
         this.requestSlowFill(deposit);
       }
     }
   }
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
+  /**
+   * For a given destination chain, evaluate and optionally fill each unfilled deposit. Note that each fill should be
+   * evaluated sequentially in order to ensure atomic balance updates.
+   * @param deposits An array of deposits destined for the same destination chain.
+   * @param maxBlockNumbers A map of the highest block number per origin chain to fill.
+   * @returns void
+   */
+  async evaluateFills(
+    deposits: V3DepositWithBlock[],
+    maxBlockNumbers: { [chainId: number]: number },
+    sendSlowRelays: boolean
+  ): Promise<void> {
+    for (let i = 0; i < deposits.length; ++i) {
+      const deposit = deposits[i];
+      await this.evaluateFill(deposit, maxBlockNumbers[deposit.originChainId], sendSlowRelays);
+    }
+  }
+
+  async checkForUnfilledDepositsAndFill(
+    sendSlowRelays = true,
+    simulate = false
+  ): Promise<{ [chainId: number]: string[] }> {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
+    const txnReceipts: { [chainId: number]: string[] } = Object.fromEntries(
+      Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
+    );
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
     const unfilledDeposits = await this._getUnfilledDeposits();
-    const allUnfilledDeposits = Object.values(unfilledDeposits.map(({ deposit }) => deposit));
+    const allUnfilledDeposits = Object.values(unfilledDeposits)
+      .flat()
+      .map(({ deposit }) => deposit);
+
     this.logger.debug({
-      at: "Relayer#checkForUnfilledDepositsAndFill",
+      at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
     });
     if (allUnfilledDeposits.length === 0) {
-      return;
+      return txnReceipts;
     }
 
     const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
-    for (const deposit of allUnfilledDeposits) {
-      const { originChainId } = deposit;
-      const maxBlockNumber = spokePoolClients[originChainId].latestBlockSearched - mdcPerChain[originChainId];
-      await this.evaluateFill(deposit, maxBlockNumber, sendSlowRelays);
-    }
+    const maxBlockNumbers = Object.fromEntries(
+      Object.values(spokePoolClients).map(({ chainId, latestBlockSearched }) => [
+        chainId,
+        latestBlockSearched - mdcPerChain[chainId],
+      ])
+    );
+
+    await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, unfilledDeposits]) => {
+      if (unfilledDeposits.length === 0) {
+        return;
+      }
+
+      await this.evaluateFills(
+        unfilledDeposits.map(({ deposit }) => deposit),
+        maxBlockNumbers,
+        sendSlowRelays
+      );
+
+      const destinationChainId = Number(chainId);
+      if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
+        const receipts = await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
+        txnReceipts[destinationChainId] = receipts[destinationChainId];
+      }
+    });
 
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
     if (tokenClient.anyCapturedShortFallFills()) {
@@ -345,6 +409,8 @@ export class Relayer {
     if (profitClient.anyCapturedUnprofitableFills()) {
       this.handleUnprofitableFill();
     }
+
+    return txnReceipts;
   }
 
   requestSlowFill(deposit: V3Deposit): void {
@@ -352,7 +418,7 @@ export class Relayer {
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
       this.logger.warn({
-        at: "Relayer#requestSlowFill",
+        at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit with message.",
         deposit,
       });
@@ -380,7 +446,7 @@ export class Relayer {
       );
     };
 
-    this.logger.debug({ at: "Relayer", message: "Enqueuing slow fill request.", deposit });
+    this.logger.debug({ at: "Relayer::requestSlowFill", message: "Enqueuing slow fill request.", deposit });
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
@@ -392,23 +458,14 @@ export class Relayer {
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
-    const { originChainId, depositId, outputToken, outputAmount } = deposit;
-    // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
-    // of gas as the second fill would fail).
-    // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried.
-    const fillKey = `${originChainId}-${depositId}`;
-    if (this.fullyFilledDeposits[fillKey]) {
-      this.logger.debug({
-        at: "Relayer",
-        message: "Skipping deposit already filled by this relayer.",
-        originChainId: deposit.originChainId,
-        depositId: deposit.depositId,
-      });
-      return;
-    }
-
     const { spokePoolClients, multiCallerClient } = this.clients;
-    this.logger.debug({ at: "Relayer", message: "Filling v3 deposit.", deposit, repaymentChainId, realizedLpFeePct });
+    this.logger.debug({
+      at: "Relayer::fillRelay",
+      message: "Filling v3 deposit.",
+      deposit,
+      repaymentChainId,
+      realizedLpFeePct,
+    });
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
@@ -430,12 +487,6 @@ export class Relayer {
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
-
-    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, outputAmount);
-
-    // All fills routed through `fillRelay()` will complete the relay.
-    this.fullyFilledDeposits[fillKey] = true;
   }
 
   protected async resolveRepaymentChain(
@@ -474,7 +525,7 @@ export class Relayer {
     // we come up with a smarter profitability check.
     if (!profitable && preferredChainId !== destinationChainId) {
       this.logger.debug({
-        at: "Relayer",
+        at: "Relayer::resolveRepaymentChain",
         message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId} profitability.`,
         deposit: { originChain, depositId, destinationChain, transactionHash },
       });
@@ -494,7 +545,7 @@ export class Relayer {
         // maintaining its inventory allocation by sticking to its preferred repayment chain.
         const deltaRelayerFee = relayerFeePct.sub(fallbackProfitability.grossRelayerFeePct);
         this.logger.info({
-          at: "Relayer",
+          at: "Relayer::resolveRepaymentChain",
           message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chain ${preferredChainId} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on preferred chain as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
             deltaRelayerFee
           )}%`,
@@ -529,7 +580,7 @@ export class Relayer {
       } else {
         // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
         this.logger.debug({
-          at: "Relayer",
+          at: "Relayer::resolveRepaymentChain",
           message: `Taking repayment on destination chain ${destinationChainId} would also not be profitable.`,
           deposit: {
             originChain,
@@ -550,7 +601,7 @@ export class Relayer {
     }
 
     this.logger.debug({
-      at: "Relayer",
+      at: "Relayer::resolveRepaymentChain",
       message: `Preferred chain ${preferredChainId} is${profitable ? "" : " not"} profitable.`,
       deposit: {
         originChain,
@@ -605,7 +656,11 @@ export class Relayer {
       });
     });
 
-    this.logger.warn({ at: "Relayer", message: "Insufficient balance to fill all deposits 💸!", mrkdwn });
+    this.logger.warn({
+      at: "Relayer::handleTokenShortfall",
+      message: "Insufficient balance to fill all deposits 💸!",
+      mrkdwn,
+    });
   }
 
   private handleUnprofitableFill() {
@@ -662,7 +717,11 @@ export class Relayer {
     });
 
     if (mrkdwn) {
-      this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
+      this.logger.warn({
+        at: "Relayer::handleUnprofitableFill",
+        message: "Not relaying unprofitable deposits 🙅‍♂️!",
+        mrkdwn,
+      });
     }
   }
 

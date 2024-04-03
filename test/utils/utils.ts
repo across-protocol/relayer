@@ -57,7 +57,7 @@ export const {
   modifyRelayHelper,
   randomAddress,
 } = utils;
-export const { getV3RelayHash } = sdkUtils;
+export const { getRelayDataHash } = sdkUtils;
 
 export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
