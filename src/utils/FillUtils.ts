@@ -2,7 +2,7 @@ import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
-import { getBlockForTimestamp, getRedisCache } from "../utils";
+import { bnZero, getBlockForTimestamp, getNetworkError, getNetworkName, getRedisCache, winston } from "../utils";
 import { isDefined } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
@@ -57,7 +57,8 @@ export type RelayerUnfilledDeposit = {
 export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
-  depositLookBack?: number
+  depositLookBack?: number,
+  logger?: winston.Logger
 ): Promise<{ [chainId: number]: RelayerUnfilledDeposit[] }> {
   const unfilledDeposits: { [chainId: number]: RelayerUnfilledDeposit[] } = {};
   const chainIds = Object.values(spokePoolClients)
@@ -74,8 +75,18 @@ export async function getUnfilledDeposits(
       const spokePoolClient = spokePoolClients[originChainId];
       const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
       const hints = { lowBlock: spokePoolClient.deploymentBlock };
-      const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
-      originFromBlocks[originChainId] = Math.max(spokePoolClient.deploymentBlock, startBlock);
+      try {
+        const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
+        originFromBlocks[originChainId] = Math.max(spokePoolClient.deploymentBlock, startBlock);
+      } catch (err) {
+        // ...Failed! Do nothing to inherit the maximum lookback.
+        const chain = getNetworkName(originChainId);
+        logger?.warn({
+          at: "getUnfilledDeposits",
+          message: `Failed to resolve ${chain} block for timestamp ${timestamp}.`,
+          reason: getNetworkError(err),
+        });
+      }
     });
   }
 
@@ -97,13 +108,28 @@ export async function getUnfilledDeposits(
         // Find all unfilled deposits for the current loops originChain -> destinationChain.
         return originClient
           .getDepositsForDestinationChain(destinationChainId)
-          .filter((deposit) => deposit.blockNumber >= earliestBlockNumber);
+          .filter(({ blockNumber }) => blockNumber >= earliestBlockNumber);
       })
       .flat();
 
     // Resolve the latest fill status for each deposit and filter out any that are now filled.
-    const { spokePool } = destinationClient;
-    const fillStatus = await sdkUtils.fillStatusArray(spokePool, deposits);
+    let fillStatus: number[];
+    try {
+      fillStatus = await sdkUtils.fillStatusArray(destinationClient.spokePool, deposits);
+    } catch (err) {
+      const chain = getNetworkName(destinationClient.chainId);
+      logger?.warn({
+        at: "getUnfilledDeposits",
+        message: `Failed to resolve status of ${deposits.length} fills on on ${chain}, reverting to iterative pairing.`,
+        reason: getNetworkError(err),
+      });
+
+      // Fall back to matching fills against deposits and infer FillStatus from that.
+      fillStatus = deposits
+        .map((deposit) => destinationClient.getValidUnfilledAmountForDeposit(deposit))
+        .map(({ unfilledAmount }) => (unfilledAmount.eq(bnZero) ? FillStatus.Filled : FillStatus.Unfilled));
+    }
+
     unfilledDeposits[destinationChainId] = deposits
       .map((deposit, idx) => ({ deposit, fillStatus: fillStatus[idx] }))
       .filter(({ fillStatus }) => fillStatus !== FillStatus.Filled)
