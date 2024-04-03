@@ -258,8 +258,17 @@ describe("InventoryClient: Refund chain selection", async function () {
     bundleDataClient.setReturnedNextBundleRefunds({
       10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
     });
+    // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
+    // L1 token and destination chain ID, otherwise it won't be counted in upcoming
+    // refunds.
+    hubPoolClient.setEnableAllL2Tokens(true);
     expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666703"')).to.be.true; // (20-5)/(140-5)=0.11
+
+    // If we set this to false in this test, the destination chain will be default used since the refund data
+    // will be ignored.
+    hubPoolClient.setEnableAllL2Tokens(false);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
   });
 
   it("Correctly throws when Deposit tokens are not equivalent", async function () {
