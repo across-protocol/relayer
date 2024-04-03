@@ -25,15 +25,21 @@ export type TransactionSimulationResult = {
   reason?: string;
 };
 
+const { isError, isEthersError } = typeguards;
+
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const expectedRpcErrorMessages = new Set(["nonce has already been used", "intrinsic gas too low"]);
 const txnRetryable = (error?: unknown): boolean => {
-  if (typeguards.isEthersError(error)) {
+  if (isEthersError(error)) {
     return txnRetryErrors.has(error.code);
   }
 
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
+
+export function getNetworkError(err: unknown): string {
+  return isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+}
 
 export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
   if (!multicall3Addresses[chainId] || !baseSigner) {
@@ -114,10 +120,10 @@ export async function runTransaction(
         nonce,
         notificationPath: "across-error",
       };
-      if (typeguards.isEthersError(error)) {
+      if (isEthersError(error)) {
         const ethersErrors: { reason: string; err: EthersError }[] = [];
         let topError = error;
-        while (typeguards.isEthersError(topError)) {
+        while (isEthersError(topError)) {
           ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
           topError = topError.error as EthersError;
         }
