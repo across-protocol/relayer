@@ -126,7 +126,7 @@ export function getArweaveJWKSigner(keyType: "readonly" | "read-write"): Arweave
   // If the keytype is readonly, we should generate a read-only key
   // on the fly and return it.
   if (keyType === "readonly") {
-    // This is a dummy key. It is meant to fail if used.
+    // This is a dummy key. It is meant to fail if used to write to Arweave.
     return {
       kty: "RSA",
       e: "AQAB",
