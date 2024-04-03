@@ -225,19 +225,9 @@ export class ProfitClient {
     return price;
   }
 
-  async getTotalGasCost(deposit: V3Deposit, fillAmount?: BigNumber): Promise<TransactionCostEstimate> {
-    const { destinationChainId: chainId } = deposit;
-    fillAmount ??= deposit.outputAmount;
-
-    // If there's no attached message, gas consumption from previous fills can be used in most cases.
-    // @todo: Simulate this per-token in future, because some ERC20s consume more gas.
-    if (isMessageEmpty(resolveDepositMessage(deposit)) && isDefined(this.totalGasCosts[chainId])) {
-      return this.totalGasCosts[chainId];
-    }
-
-    const { relayerAddress, relayerFeeQueries } = this;
+  private async _getTotalGasCost(deposit: V3Deposit, relayer: string): Promise<TransactionCostEstimate> {
     try {
-      return await relayerFeeQueries[chainId].getGasCosts(deposit, relayerAddress);
+      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       this.logger.warn({
@@ -245,30 +235,39 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         deposit,
-        fillAmount,
       });
-      return { nativeGasCost: bnZero, tokenGasCost: bnZero };
+      return { nativeGasCost: uint256Max, tokenGasCost: uint256Max };
     }
+  }
+
+  async getTotalGasCost(deposit: V3Deposit): Promise<TransactionCostEstimate> {
+    const { destinationChainId: chainId } = deposit;
+
+    // If there's no attached message, gas consumption from previous fills can be used in most cases.
+    // @todo: Simulate this per-token in future, because some ERC20s consume more gas.
+    if (isMessageEmpty(resolveDepositMessage(deposit)) && isDefined(this.totalGasCosts[chainId])) {
+      return this.totalGasCosts[chainId];
+    }
+
+    return this._getTotalGasCost(deposit, this.relayerAddress);
   }
 
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
-    deposit: V3Deposit,
-    fillAmount?: BigNumber
+    deposit: V3Deposit
   ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
-    fillAmount ??= deposit.outputAmount;
 
     const gasToken = this.resolveGasToken(chainId);
     const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
-    let { nativeGasCost, tokenGasCost } = await this.getTotalGasCost(deposit, fillAmount);
+    let { nativeGasCost, tokenGasCost } = await this.getTotalGasCost(deposit);
 
     Object.entries({
       "gas consumption": nativeGasCost, // raw gas units
       "gas cost": tokenGasCost, // gas token (i.e. wei)
       "gas token price": gasTokenPriceUsd, // usd/gasToken
     }).forEach(([err, field]) => {
-      if (field.lte(bnZero)) {
+      if (field.eq(uint256Max) || field.lte(bnZero)) {
         throw new Error(`Unable to compute gas cost (${err} unknown)`);
       }
     });
@@ -359,10 +358,7 @@ export class ProfitClient {
       : bnZero;
 
     // Estimate the gas cost of filling this relay.
-    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd } = await this.estimateFillCost(
-      deposit,
-      deposit.outputAmount
-    );
+    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd } = await this.estimateFillCost(deposit);
 
     // Determine profitability. netRelayerFeePct effectively represents the capital cost to the relayer;
     // i.e. how much it pays out to the recipient vs. the net fee that it receives for doing so.
@@ -566,18 +562,20 @@ export class ProfitClient {
   }
 
   private async updateGasCosts(): Promise<void> {
-    const { enabledChainIds, hubPoolClient, relayerFeeQueries } = this;
+    const { enabledChainIds, hubPoolClient } = this;
     const outputAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
     const currentTime = getCurrentTime();
 
     // Prefer USDC on mainnet because it's consistent in terms of gas estimation (no unwrap conditional).
     // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
+    // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
+    // the main RL address because it has all supported tokens and approvals in place on all chains.
     const [testSymbol, relayer] =
       this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
 
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.
-    const sampleDeposit: V3Deposit = {
+    const sampleDeposit = {
       depositId: 0,
       depositor: TEST_RECIPIENT,
       recipient: TEST_RECIPIENT,
@@ -603,13 +601,8 @@ export class ProfitClient {
           : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
       assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
-      // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
-      // use the main RL address because it has all supported tokens and approvals in place on all chains.
       const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-      this.totalGasCosts[destinationChainId] = await relayerFeeQueries[destinationChainId].getGasCosts(
-        deposit,
-        relayer
-      );
+      this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
     });
 
     this.logger.debug({
