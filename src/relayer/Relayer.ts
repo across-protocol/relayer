@@ -173,7 +173,12 @@ export class Relayer {
   private async _getUnfilledDeposits(): Promise<Record<number, RelayerUnfilledDeposit[]>> {
     const { hubPoolClient, spokePoolClients } = this.clients;
 
-    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
+    const unfilledDeposits = await getUnfilledDeposits(
+      spokePoolClients,
+      hubPoolClient,
+      this.config.maxRelayerLookBack,
+      this.logger
+    );
 
     // Filter the resulting unfilled deposits according to relayer configuration.
     Object.keys(unfilledDeposits).forEach((_destinationChainId) => {
