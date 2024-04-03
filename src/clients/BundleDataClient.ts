@@ -164,7 +164,9 @@ export class BundleDataClient {
     this.bundleTimestampCache[key] = timestamps;
   }
 
-  private async loadPersistedDataFromArweave(blockRangesForChains: number[][]): Promise<LoadDataReturnValue> {
+  private async loadPersistedDataFromArweave(
+    blockRangesForChains: number[][]
+  ): Promise<LoadDataReturnValue | undefined> {
     if (!isDefined(this.clients?.arweaveClient)) {
       return undefined;
     }
