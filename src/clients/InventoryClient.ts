@@ -172,7 +172,7 @@ export class InventoryClient {
           const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
           return [
             chainId,
-            this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, Number(chainId), destinationToken),
+            this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken),
           ];
         })
     );
