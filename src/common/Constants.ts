@@ -1,4 +1,4 @@
-import { ethers } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers } from "../utils";
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
@@ -294,4 +294,20 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
   421614: 3, // Arbitrum Sepolia
   84532: 6, // Base Sepolia
   80001: 7, // Polygon PoS Mumbai
+};
+
+/**
+ * A mapping of chain IDs to tokens on that chain which need their allowance
+ * to first be zeroed before setting a new allowance. This is useful for
+ * tokens that have a non-standard approval process.
+ * @dev this is a generalization for USDT on Ethereum. Other tokens may be added
+ */
+export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
+  [CHAIN_IDs.MAINNET]: [
+    // Required for USDT on Mainnet. Spurred by the following vulnerability:
+    // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+    // Essentially the current version of USDT has a vulnerability whose solution
+    // requires the user to have a zero allowance prior to setting an approval.
+    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
+  ],
 };
