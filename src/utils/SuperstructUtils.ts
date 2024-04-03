@@ -1,5 +1,4 @@
-import { object, number, optional, string, array, record, coerce, enums, instance, pattern } from "superstruct";
-import { FillType } from "../interfaces";
+import { object, number, optional, string, array, record, coerce, instance, pattern } from "superstruct";
 import { BigNumber } from "ethers";
 
 const PositiveIntegerStringSS = pattern(string(), /\d+/);
@@ -16,20 +15,7 @@ const BigNumberType = coerce(instance(BigNumber), string(), (value) => {
   }
 });
 
-function toEnumValue<T>(value: number, enumType: T): T {
-  const enumKeys = Object.keys(enumType).filter((k) => !isNaN(Number(k)));
-  const key = enumKeys.find((key) => key === String(value));
-  return key !== undefined ? enumType[key] : undefined;
-}
-
-const FillTypeSS = coerce(enums(Object.values(FillType).map(String)), number(), (value) => {
-  const enumValue = toEnumValue(value, FillType);
-  if (enumValue !== undefined) {
-    return enumValue;
-  }
-  throw new Error(`Invalid FillType value: ${value}`);
-});
-
+const FillTypeSS = number();
 const RelayDataCommonSS = {
   originChainId: number(),
   depositor: string(),

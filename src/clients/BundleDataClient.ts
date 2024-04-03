@@ -176,13 +176,24 @@ export class BundleDataClient {
     if (!isDefined(persistedData) || persistedData.length < 1) {
       return undefined;
     }
+
+    // A converter function to account for the fact that our SuperStruct schema does not support numeric
+    // keys in records. Fundamentally, this is a limitation of superstruct itself.
+    const convertTypedStringRecordIntoNumericRecord = <UnderlyingType>(
+      data: Record<string, Record<string, UnderlyingType>>
+    ): Record<number, Record<string, UnderlyingType>> =>
+      Object.keys(data).reduce((acc, chainId) => {
+        acc[Number(chainId)] = data[chainId];
+        return acc;
+      }, {} as Record<number, Record<string, UnderlyingType>>);
+
     const data = persistedData[0].data;
     return {
-      bundleFillsV3: data.bundleFillsV3 as unknown as BundleFillsV3,
-      expiredDepositsToRefundV3: data.expiredDepositsToRefundV3 as unknown as ExpiredDepositsToRefundV3,
-      bundleDepositsV3: data.bundleDepositsV3 as unknown as BundleDepositsV3,
-      unexecutableSlowFills: data.unexecutableSlowFills as unknown as BundleExcessSlowFills,
-      bundleSlowFillsV3: data.bundleSlowFillsV3 as unknown as BundleSlowFills,
+      bundleFillsV3: convertTypedStringRecordIntoNumericRecord(data.bundleFillsV3),
+      expiredDepositsToRefundV3: convertTypedStringRecordIntoNumericRecord(data.expiredDepositsToRefundV3),
+      bundleDepositsV3: convertTypedStringRecordIntoNumericRecord(data.bundleDepositsV3),
+      unexecutableSlowFills: convertTypedStringRecordIntoNumericRecord(data.unexecutableSlowFills),
+      bundleSlowFillsV3: convertTypedStringRecordIntoNumericRecord(data.bundleSlowFillsV3),
     };
   }
 
