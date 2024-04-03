@@ -40,7 +40,7 @@ import {
   ExpiredDepositsToRefundV3,
   LoadDataReturnValue,
 } from "../interfaces/BundleData";
-import { BundleDataToPersistToDALayerTypeSS } from "../utils/SuperstructUtils";
+import { BundleDataSS } from "../utils/SuperstructUtils";
 
 type DataCache = Record<string, Promise<LoadDataReturnValue>>;
 
@@ -168,10 +168,7 @@ export class BundleDataClient {
     if (!isDefined(this.clients?.arweaveClient)) {
       return undefined;
     }
-    const persistedData = await this.clients.arweaveClient.getByTopic(
-      `bundles-${blockRangesForChains}`,
-      BundleDataToPersistToDALayerTypeSS
-    );
+    const persistedData = await this.clients.arweaveClient.getByTopic(`bundles-${blockRangesForChains}`, BundleDataSS);
     // If there is no data or the data is empty, return undefined because we couldn't
     // pull info from the Arweave persistence layer.
     if (!isDefined(persistedData) || persistedData.length < 1) {

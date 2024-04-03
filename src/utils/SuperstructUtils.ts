@@ -1,8 +1,11 @@
-import { BigNumber } from "ethers";
-import { object, number, optional, string, array, record, coerce, enums } from "superstruct";
+import { object, number, optional, string, array, record, coerce, enums, instance, pattern } from "superstruct";
 import { FillType } from "../interfaces";
+import { BigNumber } from "ethers";
 
-const BigNumberType = coerce(object(), string(), (value) => {
+const PositiveIntegerStringSS = pattern(string(), /\d+/);
+const Web3AddressSS = pattern(string(), /^0x[a-fA-F0-9]{40}$/);
+
+const BigNumberType = coerce(instance(BigNumber), string(), (value) => {
   try {
     // Attempt to convert the string to a BigNumber
     return BigNumber.from(value);
@@ -97,15 +100,12 @@ const BundleFillV3SS = object({
   lpFeePct: BigNumberType,
 });
 
-const nestedV3DepositRecordSS = record(
-  coerce(string(), number(), Number),
-  record(string(), array(V3DepositWithBlockSS))
-);
+const nestedV3DepositRecordSS = record(PositiveIntegerStringSS, record(Web3AddressSS, array(V3DepositWithBlockSS)));
 const nestedV3BundleFillsSS = record(
-  // Coerce string key to number
-  coerce(string(), number(), Number),
+  // Must be a chainId
+  PositiveIntegerStringSS,
   record(
-    string(),
+    Web3AddressSS,
     object({
       fills: array(BundleFillV3SS),
       refunds: record(string(), BigNumberType),
@@ -115,7 +115,7 @@ const nestedV3BundleFillsSS = record(
   )
 );
 
-export const BundleDataToPersistToDALayerTypeSS = object({
+export const BundleDataSS = object({
   bundleBlockRanges: array(array(number())),
   bundleDepositsV3: nestedV3DepositRecordSS,
   expiredDepositsToRefundV3: nestedV3DepositRecordSS,
