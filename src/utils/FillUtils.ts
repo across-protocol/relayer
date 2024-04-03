@@ -2,7 +2,7 @@ import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
-import { getBlockForTimestamp, getNetworkError, getNetworkName, getRedisCache, winston } from "../utils";
+import { bnZero, getBlockForTimestamp, getNetworkError, getNetworkName, getRedisCache, winston } from "../utils";
 import { isDefined } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
@@ -117,17 +117,17 @@ export async function getUnfilledDeposits(
     try {
       fillStatus = await sdkUtils.fillStatusArray(destinationClient.spokePool, deposits);
     } catch (err) {
-      // ...Failed! Do nothing to inherit the maximum lookback.
       const chain = getNetworkName(destinationClient.chainId);
       logger?.warn({
         at: "getUnfilledDeposits",
-        message: `Failed to resolve status of ${deposits.length} fills on on ${chain}.`,
+        message: `Failed to resolve status of ${deposits.length} fills on on ${chain}, reverting to iterative pairing.`,
         reason: getNetworkError(err),
       });
 
-      // Assume all deposits are unfilled. They may be filtered out later due to other criteria,
-      // and any filled deposits will ultimately fail during fillV3Relay() simulation.
-      fillStatus = deposits.map(() => FillStatus.Unfilled);
+      // Fall back to matching fills against deposits and infer FillStatus from that.
+      fillStatus = deposits
+        .map((deposit) => destinationClient.getValidUnfilledAmountForDeposit(deposit))
+        .map(({ unfilledAmount }) => unfilledAmount.eq(bnZero) ? FillStatus.Filled : FillStatus.Unfilled);
     }
 
     unfilledDeposits[destinationChainId] = deposits
