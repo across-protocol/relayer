@@ -3,8 +3,8 @@ import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
 import { bnZero, getBlockForTimestamp, getNetworkError, getNetworkName, getRedisCache, winston } from "../utils";
-import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { isDefined } from "./";
+import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getRefundInformationFromFill(
   fill: Fill,

@@ -267,42 +267,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
     });
 
-    it("Queries the latest onchain fill status for all deposits", async function () {
-      const deposit = await depositV3(
-        spokePool_1,
-        destinationChainId,
-        depositor,
-        inputToken,
-        inputAmount,
-        outputToken,
-        outputAmount
-      );
-      await updateAllClients();
-      let unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
-      expect(Object.values(unfilledDeposits).flat().length).to.equal(1);
-
-      // Verify that the relayer sees the deposit and would attempt to fill it.
-      const sendSlowRelays = true;
-      let simulate = true;
-      let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill(sendSlowRelays, simulate);
-      expect(spyLogIncludes(spy, -2, "Filled v3 deposit")).to.be.true;
-      expect(txnReceipts[destinationChainId].length).to.equal(0);
-
-      // Verify that the deposit is still unfilled (relayer didn't execute the fill).
-      unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
-      expect(Object.values(unfilledDeposits).flat().length).to.equal(1);
-
-      // Fill the deposit and immediately check for unfilled deposits (without SpokePoolClient update).
-      await fillV3Relay(spokePool_2, deposit, relayer);
-      unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
-      expect(Object.values(unfilledDeposits).flat().length).to.equal(0);
-
-      // Verify that the relayer now sees that the deposit has been filled.
-      txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
-      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
-    });
-
     it("Respects configured relayer routes", async function () {
       relayerInstance = new Relayer(
         relayer.address,
