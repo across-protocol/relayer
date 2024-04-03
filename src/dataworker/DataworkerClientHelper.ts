@@ -62,7 +62,7 @@ export async function constructDataworkerClients(
   // dataworker to persist bundle data if `persistingBundleData` is enabled.
   // Otherwise, we can use a read-only signer.
   const arweaveClient = new caching.ArweaveClient(
-    getArweaveJWKSigner(config.persistingBundleData ? "read-write" : "readonly"),
+    getArweaveJWKSigner({ keyType: config.persistingBundleData ? "read-write" : "read-only" }),
     logger,
     config.arweaveGateway?.url,
     config.arweaveGateway?.protocol,

@@ -163,7 +163,7 @@ export class DataworkerConfig extends CommonConfig {
     this.persistingBundleData = PERSIST_BUNDLES_TO_ARWEAVE === "true";
     if (this.persistingBundleData) {
       // Call the getArweaveSigner function and allow it to throw if the ARWEAVE_WALLET_JWK is not set.
-      getArweaveJWKSigner("read-write");
+      getArweaveJWKSigner({ keyType: "read-write" });
     }
   }
 }

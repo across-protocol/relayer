@@ -122,10 +122,10 @@ async function getSecretSigner(): Promise<Signer> {
   }
 }
 
-export function getArweaveJWKSigner(keyType: "readonly" | "read-write"): ArweaveWalletJWKInterface {
+export function getArweaveJWKSigner({ keyType, cleanEnv }: SignerOptions): ArweaveWalletJWKInterface {
   // If the keytype is readonly, we should generate a read-only key
   // on the fly and return it.
-  if (keyType === "readonly") {
+  if (keyType === "read-only") {
     // This is a dummy key. It is meant to fail if used to write to Arweave.
     return {
       kty: "RSA",
@@ -138,7 +138,7 @@ export function getArweaveJWKSigner(keyType: "readonly" | "read-write"): Arweave
       dq: "0",
       qi: "0",
     };
-  } else {
+  } else if (keyType === "read-write") {
     const { ARWEAVE_WALLET_JWK } = process.env;
     // If the keytype is read-write, we should load the key from the env.
     if (!isDefined(ARWEAVE_WALLET_JWK)) {
@@ -146,7 +146,12 @@ export function getArweaveJWKSigner(keyType: "readonly" | "read-write"): Arweave
     }
     const arweaveWalletJWK = JSON.parse(process.env.ARWEAVE_WALLET_JWK);
     assert(ArweaveWalletJWKInterfaceSS.is(arweaveWalletJWK), "Invalid Arweave wallet JWK");
+    if (cleanEnv) {
+      cleanKeysFromEnvironment({ arweave: true, eth: false });
+    }
     return arweaveWalletJWK;
+  } else {
+    throw new Error(`getArweaveJWKSigner: Unsupported signer key type (${keyType})`);
   }
 }
 

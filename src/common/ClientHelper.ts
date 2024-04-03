@@ -308,11 +308,11 @@ export async function constructClients(
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
 
-  // Define the Arweave client as "readonly" to prevent any accidental writes to the Arweave network.
+  // Define the Arweave client as "read-only" to prevent any accidental writes to the Arweave network.
   // Only the dataworker should have write access to the Arweave network - we will define that in
   // the more specialized dataworker client helper.
   const arweaveClient = new caching.ArweaveClient(
-    getArweaveJWKSigner("readonly"),
+    getArweaveJWKSigner({ keyType: "read-only" }),
     logger,
     config.arweaveGateway?.url,
     config.arweaveGateway?.protocol,
