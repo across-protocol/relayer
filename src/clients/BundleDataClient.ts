@@ -214,11 +214,13 @@ export class BundleDataClient {
       this.clients.configStoreClient,
       bundle
     );
+    const logData = false;
+    const attemptToLoadFromArweave = true;
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       bundleEvaluationBlockRanges,
       this.spokePoolClients,
-      false,
-      true
+      logData,
+      attemptToLoadFromArweave
     );
     const combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
 
@@ -263,11 +265,13 @@ export class BundleDataClient {
         );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
+    const logData = false;
+    const attemptToLoadFromArweave = true;
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       futureBundleEvaluationBlockRanges,
       this.spokePoolClients,
-      false,
-      true
+      logData,
+      attemptToLoadFromArweave
     );
     return getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
   }
