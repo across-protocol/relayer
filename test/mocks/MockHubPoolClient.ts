@@ -1,11 +1,12 @@
 import { clients } from "@across-protocol/sdk-v2";
-import { Contract, winston } from "../utils";
+import { Contract, winston, BigNumber } from "../utils";
 import { ConfigStoreClient } from "../../src/clients";
 import { MockConfigStoreClient } from "./MockConfigStoreClient";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   public latestBundleEndBlocks: { [chainId: number]: number } = {};
+  public enableAllL2Tokens: boolean | undefined;
 
   constructor(
     logger: winston.Logger,
@@ -27,7 +28,18 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
       0
     );
   }
-  setLpTokenInfo(l1Token: string, lastLpFeeUpdate: number): void {
-    this.lpTokens[l1Token] = { lastLpFeeUpdate };
+  setLpTokenInfo(l1Token: string, lastLpFeeUpdate: number, liquidReserves: BigNumber): void {
+    this.lpTokens[l1Token] = { lastLpFeeUpdate, liquidReserves };
+  }
+
+  setEnableAllL2Tokens(enableAllL2Tokens: boolean): void {
+    this.enableAllL2Tokens = enableAllL2Tokens;
+  }
+
+  l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number): boolean {
+    if (this.enableAllL2Tokens === undefined) {
+      return super.l2TokenEnabledForL1Token(l1Token, destinationChainId);
+    }
+    return this.enableAllL2Tokens;
   }
 }

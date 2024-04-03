@@ -1,11 +1,10 @@
 import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts-v2";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup, SlowFillLeaf } from "../interfaces";
+import { PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup, V3SlowFillLeaf } from "../interfaces";
 import { getParamType, utils } from ".";
 
-export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillLeaf> {
-  const hashFn = (input: SlowFillLeaf) => {
-    const verifyFn = sdkUtils.isV2SlowFillLeaf(input) ? "verifySlowRelayFulfillment" : "verifyV3SlowRelayFulfillment";
+export function buildSlowRelayTree(relays: V3SlowFillLeaf[]): MerkleTree<V3SlowFillLeaf> {
+  const hashFn = (input: V3SlowFillLeaf) => {
+    const verifyFn = "verifyV3SlowRelayFulfillment";
     const paramType = getParamType("MerkleLibTest", verifyFn, "slowFill");
     return utils.keccak256(utils.defaultAbiCoder.encode([paramType], [input]));
   };

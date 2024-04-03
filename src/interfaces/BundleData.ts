@@ -1,18 +1,18 @@
-import { interfaces, typechain } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk-v2";
 import { BigNumber } from "../utils";
 export type ExpiredDepositsToRefundV3 = {
   [originChainId: number]: {
-    [originToken: string]: interfaces.V3DepositWithBlock[];
+    [originToken: string]: interfaces.DepositWithBlock[];
   };
 };
 
 export type BundleDepositsV3 = {
   [originChainId: number]: {
-    [originToken: string]: interfaces.V3DepositWithBlock[];
+    [originToken: string]: interfaces.DepositWithBlock[];
   };
 };
 
-export interface BundleFillV3 extends interfaces.V3FillWithBlock {
+export interface BundleFillV3 extends interfaces.FillWithBlock {
   lpFeePct: BigNumber;
 }
 
@@ -29,21 +29,16 @@ export type BundleFillsV3 = {
 
 export type BundleExcessSlowFills = {
   [destinationChainId: number]: {
-    [destinationToken: string]: interfaces.V3DepositWithBlock[];
+    [destinationToken: string]: interfaces.DepositWithBlock[];
   };
 };
 export type BundleSlowFills = {
   [destinationChainId: number]: {
-    [destinationToken: string]: interfaces.V3DepositWithBlock[];
+    [destinationToken: string]: interfaces.DepositWithBlock[];
   };
 };
 
 export type LoadDataReturnValue = {
-  unfilledDeposits: interfaces.UnfilledDeposit[];
-  fillsToRefund: interfaces.FillsToRefund;
-  allValidFills: interfaces.V2FillWithBlock[];
-  deposits: interfaces.V2DepositWithBlock[];
-  earlyDeposits: typechain.FundsDepositedEvent[];
   bundleDepositsV3: BundleDepositsV3;
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
   bundleFillsV3: BundleFillsV3;

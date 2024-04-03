@@ -1,3 +1,4 @@
+import assert from "assert";
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
@@ -96,7 +97,6 @@ export async function constructSpokePoolClientsForFastDataworker(
     endBlocks
   );
   await updateSpokePoolClients(spokePoolClients, [
-    "FilledRelay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
@@ -104,6 +104,9 @@ export async function constructSpokePoolClientsForFastDataworker(
     "RequestedV3SlowFill",
     "FilledV3Relay",
   ]);
+  Object.values(spokePoolClients).forEach(({ chainId, isUpdated }) =>
+    assert(isUpdated, `Failed to update SpokePoolClient for chain ${chainId}`)
+  );
   return spokePoolClients;
 }
 

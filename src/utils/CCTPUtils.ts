@@ -1,7 +1,6 @@
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import axios, { AxiosError } from "axios";
-import { BigNumber } from "ethers";
-import { ethers } from "hardhat";
+import { ethers, BigNumber } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { isDefined } from "./TypeGuards";
 
