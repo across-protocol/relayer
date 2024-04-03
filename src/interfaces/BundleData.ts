@@ -29,12 +29,12 @@ export type BundleFillsV3 = {
 
 export type BundleExcessSlowFills = {
   [destinationChainId: number]: {
-    [destinationToken: string]: (interfaces.DepositWithBlock & { realizedLpFeePct: BigNumber })[];
+    [destinationToken: string]: (interfaces.DepositWithBlock & { lpFeePct: BigNumber })[];
   };
 };
 export type BundleSlowFills = {
   [destinationChainId: number]: {
-    [destinationToken: string]: (interfaces.DepositWithBlock & { realizedLpFeePct: BigNumber })[];
+    [destinationToken: string]: (interfaces.DepositWithBlock & { lpFeePct: BigNumber })[];
   };
 };
 
