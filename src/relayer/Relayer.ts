@@ -50,7 +50,7 @@ export class Relayer {
     // If we don't have the latest code to support this deposit, skip it.
     if (depositVersion > configStoreClient.configStoreVersion) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "Skipping deposit that is not supported by this relayer version.",
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
@@ -61,7 +61,7 @@ export class Relayer {
 
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "Skipping deposit from or to disabled chains.",
         deposit,
         enabledOriginChains: this.config.relayerOriginChains,
@@ -77,7 +77,7 @@ export class Relayer {
 
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
       this.logger.debug({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "Ignoring deposit",
         depositor,
         recipient,
@@ -90,7 +90,7 @@ export class Relayer {
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
     if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
       this.logger.debug({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
         deposit,
         l1Token,
@@ -110,7 +110,7 @@ export class Relayer {
 
     if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
         deposit,
       });
@@ -120,7 +120,7 @@ export class Relayer {
     // Skip deposit with message if sending fills with messages is not supported.
     if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
         deposit,
@@ -132,7 +132,7 @@ export class Relayer {
     // making the same relayer fill a deposit multiple times.
     if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
       this.logger.error({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
         deposit,
         invalidFills,
@@ -148,7 +148,7 @@ export class Relayer {
     const { inputAmount } = deposit;
     if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
       this.logger.warn({
-        at: "Relayer::getUnfilledDeposits",
+        at: "Relayer::filterDeposit",
         message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
         limit: acrossApiClient.getLimit(l1Token.address),
         l1Token: l1Token.address,
@@ -266,7 +266,7 @@ export class Relayer {
     if (deposit.blockNumber > maxBlockNumber) {
       const chain = getNetworkName(originChainId);
       this.logger.debug({
-        at: "Relayer",
+        at: "Relayer::evaluateFill",
         message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
         depositId,
         blockNumber: deposit.blockNumber,
@@ -280,7 +280,7 @@ export class Relayer {
     if (slowDepositors?.includes(depositor)) {
       if (sendSlowRelays) {
         this.logger.debug({
-          at: "Relayer",
+          at: "Relayer::evaluateFill",
           message: "Initiating slow fill for grey listed depositor",
           depositor,
         });
@@ -304,6 +304,9 @@ export class Relayer {
       if (isDefined(repaymentChainId)) {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+
+        // Update local balance to account for the enqueued fill.
+        tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
       } else {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
@@ -366,7 +369,7 @@ export class Relayer {
       .map(({ deposit }) => deposit);
 
     this.logger.debug({
-      at: "Relayer#checkForUnfilledDepositsAndFill",
+      at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
     });
     if (allUnfilledDeposits.length === 0) {
@@ -415,7 +418,7 @@ export class Relayer {
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
       this.logger.warn({
-        at: "Relayer#requestSlowFill",
+        at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit with message.",
         deposit,
       });
@@ -443,7 +446,7 @@ export class Relayer {
       );
     };
 
-    this.logger.debug({ at: "Relayer", message: "Enqueuing slow fill request.", deposit });
+    this.logger.debug({ at: "Relayer::requestSlowFill", message: "Enqueuing slow fill request.", deposit });
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
@@ -455,9 +458,14 @@ export class Relayer {
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
-    const { outputToken, outputAmount } = deposit;
     const { spokePoolClients, multiCallerClient } = this.clients;
-    this.logger.debug({ at: "Relayer", message: "Filling v3 deposit.", deposit, repaymentChainId, realizedLpFeePct });
+    this.logger.debug({
+      at: "Relayer::fillRelay",
+      message: "Filling v3 deposit.",
+      deposit,
+      repaymentChainId,
+      realizedLpFeePct,
+    });
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
@@ -479,9 +487,6 @@ export class Relayer {
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
-
-    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, outputToken, outputAmount);
   }
 
   protected async resolveRepaymentChain(
@@ -520,7 +525,7 @@ export class Relayer {
     // we come up with a smarter profitability check.
     if (!profitable && preferredChainId !== destinationChainId) {
       this.logger.debug({
-        at: "Relayer",
+        at: "Relayer::resolveRepaymentChain",
         message: `Preferred chain ${preferredChainId} is not profitable. Checking destination chain ${destinationChainId} profitability.`,
         deposit: { originChain, depositId, destinationChain, transactionHash },
       });
@@ -540,7 +545,7 @@ export class Relayer {
         // maintaining its inventory allocation by sticking to its preferred repayment chain.
         const deltaRelayerFee = relayerFeePct.sub(fallbackProfitability.grossRelayerFeePct);
         this.logger.info({
-          at: "Relayer",
+          at: "Relayer::resolveRepaymentChain",
           message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chain ${preferredChainId} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on preferred chain as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
             deltaRelayerFee
           )}%`,
@@ -575,7 +580,7 @@ export class Relayer {
       } else {
         // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
         this.logger.debug({
-          at: "Relayer",
+          at: "Relayer::resolveRepaymentChain",
           message: `Taking repayment on destination chain ${destinationChainId} would also not be profitable.`,
           deposit: {
             originChain,
@@ -596,7 +601,7 @@ export class Relayer {
     }
 
     this.logger.debug({
-      at: "Relayer",
+      at: "Relayer::resolveRepaymentChain",
       message: `Preferred chain ${preferredChainId} is${profitable ? "" : " not"} profitable.`,
       deposit: {
         originChain,
@@ -651,7 +656,11 @@ export class Relayer {
       });
     });
 
-    this.logger.warn({ at: "Relayer", message: "Insufficient balance to fill all deposits 💸!", mrkdwn });
+    this.logger.warn({
+      at: "Relayer::handleTokenShortfall",
+      message: "Insufficient balance to fill all deposits 💸!",
+      mrkdwn,
+    });
   }
 
   private handleUnprofitableFill() {
@@ -708,7 +717,11 @@ export class Relayer {
     });
 
     if (mrkdwn) {
-      this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
+      this.logger.warn({
+        at: "Relayer::handleUnprofitableFill",
+        message: "Not relaying unprofitable deposits 🙅‍♂️!",
+        mrkdwn,
+      });
     }
   }
 
