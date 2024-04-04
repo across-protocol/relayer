@@ -311,3 +311,5 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
     TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
   ],
 };
+
+export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
