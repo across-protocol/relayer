@@ -392,21 +392,25 @@ export class BundleDataClient {
       const arweaveData = attemptArweaveLoad
         ? await this.loadPersistedDataFromArweave(blockRangesForChains)
         : undefined;
-      let data: Promise<LoadDataReturnValue>;
-      if (isDefined(arweaveData)) {
-        this.logger.debug({
-          at: "BundleDataClient#loadData",
-          message: "Loaded data from Arweave",
-          blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
-        });
-        data = Promise.resolve(arweaveData);
-      } else {
-        this.logger.debug({
-          at: "BundleDataClient#loadData",
-          message: "Failed to load data from Arweave",
-          blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
-        });
-        data = this._loadData(blockRangesForChains, spokePoolClients, logData);
+      const data = isDefined(arweaveData)
+        ? // We can return the data to a Promise to keep the return type consistent.
+          // Note: this is now a fast operation since we've already loaded the data from Arweave.
+          Promise.resolve(arweaveData)
+        : this._loadData(blockRangesForChains, spokePoolClients, logData);
+      if (attemptArweaveLoad) {
+        if (isDefined(arweaveData)) {
+          this.logger.debug({
+            at: "BundleDataClient#loadData",
+            message: "Loaded data from Arweave",
+            blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
+          });
+        } else {
+          this.logger.debug({
+            at: "BundleDataClient#loadData",
+            message: "Failed to load data from Arweave",
+            blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
+          });
+        }
       }
       this.loadDataCache[key] = data;
     }
