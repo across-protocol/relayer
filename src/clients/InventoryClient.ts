@@ -235,6 +235,7 @@ export class InventoryClient {
         l1Token,
         originChainId,
         destinationChainId,
+        error: e
       });
       // Fallback to ignoring bundle refunds if calculating bundle refunds goes wrong.
       // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
