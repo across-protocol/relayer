@@ -35,7 +35,6 @@ import {
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
-  spyLogIncludes,
   setupTokensForWallet,
   sinon,
   toBN,
@@ -208,9 +207,12 @@ describe("Relayer: Token balance shortfall", async function () {
     await erc20_2.mint(relayer.address, toBN(60).mul(bn10.pow(inputTokenDecimals)));
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill(noSlowRelays);
-    expect(spyLogIncludes(spy, -2, "Relayed depositId 0")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 190.00`)).to.be.true;
     expect(lastSpyLogIncludes(spy, "blocking deposits: 1,2")).to.be.true;
+
+    const tx = await multiCallerClient.executeTransactionQueue();
+    expect(lastSpyLogIncludes(spy, "Relayed depositId 0")).to.be.true;
+    expect(tx.length).to.equal(1); // There should have been exactly one transaction.
   });
 
   it("Produces expected logs based on insufficient multiple token balance", async function () {

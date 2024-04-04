@@ -348,18 +348,12 @@ export class Relayer {
     }
   }
 
-  async checkForUnfilledDepositsAndFill(
-    sendSlowRelays = true,
-    simulate = false
-  ): Promise<{ [chainId: number]: string[] }> {
+  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
-    const txnReceipts: { [chainId: number]: string[] } = Object.fromEntries(
-      Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
-    );
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
@@ -367,13 +361,12 @@ export class Relayer {
     const allUnfilledDeposits = Object.values(unfilledDeposits)
       .flat()
       .map(({ deposit }) => deposit);
-
     this.logger.debug({
       at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
     });
     if (allUnfilledDeposits.length === 0) {
-      return txnReceipts;
+      return;
     }
 
     const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
@@ -384,22 +377,15 @@ export class Relayer {
       ])
     );
 
-    await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, unfilledDeposits]) => {
+    await sdkUtils.forEachAsync(Object.values(unfilledDeposits), async (unfilledDeposits) => {
       if (unfilledDeposits.length === 0) {
         return;
       }
-
       await this.evaluateFills(
         unfilledDeposits.map(({ deposit }) => deposit),
         maxBlockNumbers,
         sendSlowRelays
       );
-
-      const destinationChainId = Number(chainId);
-      if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
-        const receipts = await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
-        txnReceipts[destinationChainId] = receipts[destinationChainId];
-      }
     });
 
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
@@ -409,8 +395,6 @@ export class Relayer {
     if (profitClient.anyCapturedUnprofitableFills()) {
       this.handleUnprofitableFill();
     }
-
-    return txnReceipts;
   }
 
   requestSlowFill(deposit: V3Deposit): void {
