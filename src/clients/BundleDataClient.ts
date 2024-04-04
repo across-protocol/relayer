@@ -161,13 +161,20 @@ export class BundleDataClient {
     this.bundleTimestampCache[key] = timestamps;
   }
 
+  getArweaveClientKey(blockRangesForChains: number[][]): string {
+    return `bundles-${blockRangesForChains}`;
+  }
+
   private async loadPersistedDataFromArweave(
     blockRangesForChains: number[][]
   ): Promise<LoadDataReturnValue | undefined> {
     if (!isDefined(this.clients?.arweaveClient)) {
       return undefined;
     }
-    const persistedData = await this.clients.arweaveClient.getByTopic(`bundles-${blockRangesForChains}`, BundleDataSS);
+    const persistedData = await this.clients.arweaveClient.getByTopic(
+      this.getArweaveClientKey(blockRangesForChains),
+      BundleDataSS
+    );
     // If there is no data or the data is empty, return undefined because we couldn't
     // pull info from the Arweave persistence layer.
     if (!isDefined(persistedData) || persistedData.length < 1) {
@@ -390,14 +397,14 @@ export class BundleDataClient {
         this.logger.debug({
           at: "BundleDataClient#loadData",
           message: "Loaded data from Arweave",
-          blockRangesForChains,
+          blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
         });
         data = Promise.resolve(arweaveData);
       } else {
         this.logger.debug({
           at: "BundleDataClient#loadData",
           message: "Failed to load data from Arweave",
-          blockRangesForChains,
+          blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
         });
         data = this._loadData(blockRangesForChains, spokePoolClients, logData);
       }
