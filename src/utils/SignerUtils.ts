@@ -142,7 +142,7 @@ export function getArweaveJWKSigner({ keyType, cleanEnv }: SignerOptions): Arwea
     const { ARWEAVE_WALLET_JWK } = process.env;
     // If the keytype is read-write, we should load the key from the env.
     if (!isDefined(ARWEAVE_WALLET_JWK)) {
-      throw new Error("Arweave wallet JWK selected but no ARWEAVE_WALLET_JWK env set!");
+      throw new Error("Arweave wallet JWK requested but no ARWEAVE_WALLET_JWK env set!");
     }
     const arweaveWalletJWK = JSON.parse(process.env.ARWEAVE_WALLET_JWK);
     assert(ArweaveWalletJWKInterfaceSS.is(arweaveWalletJWK), "Invalid Arweave wallet JWK");
