@@ -380,7 +380,7 @@ export class BundleDataClient {
     // Infer chain ID's to load from number of block ranges passed in.
     const allChainIds = blockRangesForChains
       .map((_blockRange, index) => chainIds[index])
-      .filter((chainId) => !_isChainDisabled(chainId));
+      .filter((chainId) => !_isChainDisabled(chainId) && spokePoolClients[chainId] !== undefined);
     allChainIds.forEach((chainId) => {
       const spokePoolClient = spokePoolClients[chainId];
       if (!spokePoolClient.isUpdated) {
@@ -771,7 +771,8 @@ export class BundleDataClient {
         // If there is a valid fill that we saw matching this deposit, then it does not need a refund.
         !fill &&
         deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1] &&
-        deposit.fillDeadline >= bundleBlockTimestamps[destinationChainId][0]
+        deposit.fillDeadline >= bundleBlockTimestamps[destinationChainId][0] &&
+        spokePoolClients[destinationChainId] !== undefined
       ) {
         // If we haven't seen a fill matching this deposit, then we need to rule out that it was filled a long time ago
         // by checkings its on-chain fill status.
@@ -936,11 +937,15 @@ export class BundleDataClient {
           const [_startBlockForChain, _endBlockForChain] = blockRangeForChain;
           const spokePoolClient = spokePoolClients[chainId];
 
-          // We can assume that in production
-          // the block ranges passed into this function would never contain blocks where the spoke pool client
-          // hasn't queried. This is because this function will usually be called
-          // in production with block ranges that were validated by
-          // DataworkerUtils.blockRangesAreInvalidForSpokeClients
+          // Relayer instances using the BundleDataClient for repayment estimates may only relay on a subset of chains.
+          if (!isDefined(spokePoolClient)) {
+            return;
+          }
+
+          // We can assume that in production the block ranges passed into this function would never
+          // contain blocks where the spoke pool client hasn't queried. This is because this function
+          // will usually be called in production with block ranges that were validated by
+          // DataworkerUtils.blockRangesAreInvalidForSpokeClients.
           const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
           const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
           const [startTime, endTime] = [
