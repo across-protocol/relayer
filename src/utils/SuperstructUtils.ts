@@ -42,7 +42,7 @@ const SortableEventSS = {
 const V3DepositSS = {
   destinationChainId: number(),
   quoteTimestamp: number(),
-  realizedLpFeePct: optional(BigNumberType),
+  lpFeePct: BigNumberType,
   relayerFeePct: optional(BigNumberType),
   speedUpSignature: optional(string()),
   updatedRecipient: optional(string()),
