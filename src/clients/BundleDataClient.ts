@@ -106,7 +106,7 @@ function updateBundleFillsV3(
 
 function updateBundleExcessSlowFills(
   dict: BundleExcessSlowFills,
-  deposit: V3DepositWithBlock & { realizedLpFeePct: BigNumber }
+  deposit: V3DepositWithBlock & { lpFeePct: BigNumber }
 ): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
@@ -115,10 +115,7 @@ function updateBundleExcessSlowFills(
   dict[destinationChainId][outputToken].push(deposit);
 }
 
-function updateBundleSlowFills(
-  dict: BundleSlowFills,
-  deposit: V3DepositWithBlock & { realizedLpFeePct: BigNumber }
-): void {
+function updateBundleSlowFills(dict: BundleSlowFills, deposit: V3DepositWithBlock & { lpFeePct: BigNumber }): void {
   const { destinationChainId, outputToken } = deposit;
   if (!dict?.[destinationChainId]?.[outputToken]) {
     assign(dict, [destinationChainId, outputToken], []);
@@ -846,9 +843,8 @@ export class BundleDataClient {
       validatedBundleSlowFills.length > 0
         ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
             validatedBundleSlowFills.map((deposit) => {
-              const { realizedLpFeePct, ...v3Deposit } = deposit;
               return {
-                ...v3Deposit,
+                ...deposit,
                 paymentChainId: deposit.destinationChainId,
               };
             })
@@ -857,9 +853,8 @@ export class BundleDataClient {
       validatedBundleUnexecutableSlowFills.length > 0
         ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
             validatedBundleUnexecutableSlowFills.map((deposit) => {
-              const { realizedLpFeePct, ...v3Deposit } = deposit;
               return {
-                ...v3Deposit,
+                ...deposit,
                 paymentChainId: deposit.destinationChainId,
               };
             })
@@ -877,13 +872,13 @@ export class BundleDataClient {
       );
       updateBundleFillsV3(bundleFillsV3, fill, realizedLpFeePct, chainToSendRefundTo, repaymentToken);
     });
-    v3SlowFillLpFees.forEach(({ realizedLpFeePct }, idx) => {
+    v3SlowFillLpFees.forEach(({ realizedLpFeePct: lpFeePct }, idx) => {
       const deposit = validatedBundleSlowFills[idx];
-      updateBundleSlowFills(bundleSlowFillsV3, { ...deposit, realizedLpFeePct });
+      updateBundleSlowFills(bundleSlowFillsV3, { ...deposit, lpFeePct });
     });
-    v3UnexecutableSlowFillLpFees.forEach(({ realizedLpFeePct }, idx) => {
+    v3UnexecutableSlowFillLpFees.forEach(({ realizedLpFeePct: lpFeePct }, idx) => {
       const deposit = validatedBundleUnexecutableSlowFills[idx];
-      updateBundleExcessSlowFills(unexecutableSlowFills, { ...deposit, realizedLpFeePct });
+      updateBundleExcessSlowFills(unexecutableSlowFills, { ...deposit, lpFeePct });
     });
 
     const v3SpokeEventsReadable = prettyPrintV3SpokePoolEvents(
