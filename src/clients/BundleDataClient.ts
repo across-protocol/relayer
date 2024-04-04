@@ -383,7 +383,7 @@ export class BundleDataClient {
       .filter((chainId) => !_isChainDisabled(chainId));
     allChainIds.forEach((chainId) => {
       const spokePoolClient = spokePoolClients[chainId];
-      if (!spokePoolClient.isUpdated) {
+      if (spokePoolClient && !spokePoolClient.isUpdated) {
         throw new Error(`SpokePoolClient for chain ${chainId} not updated.`);
       }
     });
