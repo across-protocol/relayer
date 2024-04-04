@@ -24,7 +24,7 @@ const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
-type RepaymentFee = { inputAmount: BigNumber; paymentChainId: number; lpFeePct: BigNumber };
+type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
 type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
 
 export class Relayer {
@@ -341,11 +341,13 @@ export class Relayer {
 
   /**
    * For a given deposit, map its relevant attributes to a string to be used as a lookup into the LP fee structure.
-   * @param relayData An object consisting of an originChainId, inputToken and quoteTimestamp.
+   * @param relayData An object consisting of an originChainId, inputToken, inputAmount and quoteTimestamp.
    * @returns A string identifying the deposit in a BatchLPFees object.
    */
-  private getLPFeeKey(relayData: Pick<V3Deposit, "originChainId" | "inputToken" | "quoteTimestamp">): string {
-    return `${relayData.originChainId}-${relayData.inputToken}-${relayData.quoteTimestamp}`;
+  private getLPFeeKey(
+    relayData: Pick<V3Deposit, "originChainId" | "inputToken" | "inputAmount" | "quoteTimestamp">
+  ): string {
+    return `${relayData.originChainId}-${relayData.inputToken}-${relayData.inputAmount}-${relayData.quoteTimestamp}`;
   }
 
   /**
@@ -391,10 +393,10 @@ export class Relayer {
 
     const lpFees: BatchLPFees = _lpFees.reduce((acc, { realizedLpFeePct: lpFeePct }, idx) => {
       const lpFeeRequest = lpFeeRequests[idx];
-      const { inputAmount, paymentChainId } = lpFeeRequest;
+      const { paymentChainId } = lpFeeRequest;
       const key = this.getLPFeeKey(lpFeeRequest);
       acc[key] ??= [];
-      acc[key].push({ inputAmount, paymentChainId, lpFeePct });
+      acc[key].push({ paymentChainId, lpFeePct });
       return acc;
     }, {});
 
