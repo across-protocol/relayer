@@ -42,7 +42,6 @@ const SortableEventSS = {
 const V3DepositSS = {
   destinationChainId: number(),
   quoteTimestamp: number(),
-  lpFeePct: BigNumberType,
   relayerFeePct: optional(BigNumberType),
   speedUpSignature: optional(string()),
   updatedRecipient: optional(string()),
@@ -50,11 +49,17 @@ const V3DepositSS = {
   updatedMessage: optional(string()),
 };
 
-const V3DepositWithBlockSS = object({
+const _V3DepositWithBlockSS = {
   quoteBlockNumber: number(),
   ...V3DepositSS,
   ...SortableEventSS,
   ...V3RelayDataSS,
+};
+
+const V3DepositWithBlockSS = object(_V3DepositWithBlockSS);
+const V3DepositWithBlockLpFeeSS = object({
+  ..._V3DepositWithBlockSS,
+  lpFeePct: BigNumberType,
 });
 
 const V3RelayExecutionEventInfoSS = object({
@@ -84,6 +89,11 @@ const BundleFillV3SS = object({
 });
 
 const nestedV3DepositRecordSS = record(PositiveIntegerStringSS, record(Web3AddressSS, array(V3DepositWithBlockSS)));
+const nestedV3DepositRecordWithLpFeePctSS = record(
+  PositiveIntegerStringSS,
+  record(Web3AddressSS, array(V3DepositWithBlockLpFeeSS))
+);
+
 const nestedV3BundleFillsSS = record(
   // Must be a chainId
   PositiveIntegerStringSS,
@@ -102,7 +112,7 @@ export const BundleDataSS = object({
   bundleBlockRanges: array(array(number())),
   bundleDepositsV3: nestedV3DepositRecordSS,
   expiredDepositsToRefundV3: nestedV3DepositRecordSS,
-  unexecutableSlowFills: nestedV3DepositRecordSS,
-  bundleSlowFillsV3: nestedV3DepositRecordSS,
+  unexecutableSlowFills: nestedV3DepositRecordWithLpFeePctSS,
+  bundleSlowFillsV3: nestedV3DepositRecordWithLpFeePctSS,
   bundleFillsV3: nestedV3BundleFillsSS,
 });
