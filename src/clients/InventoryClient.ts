@@ -245,7 +245,7 @@ export class InventoryClient {
     try {
       // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
       // time, return an object with zero refunds for all chains.
-      totalRefundsPerChain = await Promise.race([this.getBundleRefunds(l1Token), getBundleRefundTimeout(40 * 60)]);
+      totalRefundsPerChain = await Promise.race([this.getBundleRefunds(l1Token), getBundleRefundTimeout(45 * 60)]);
     } catch (e) {
       this.log("Failed to get pending and next bundle refunds, ignoring them in repayment chain choice", {
         l1Token,
