@@ -242,6 +242,9 @@ export class InventoryClient {
 
     const startTime = Date.now();
     let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
+    // TODO: Remove this try-catch. getBundleRefunds should never fail in practice. This was originally added
+    // to catch the case where the relayer's lookback is insufficient to compute a bundle but I believe the current
+    // loadData implementation will just miss events in the case where the lookback is too short, rather than fail.
     try {
       // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
       // time, return an object with zero refunds for all chains.
