@@ -2,6 +2,7 @@ import minimist from "minimist";
 import { Signer } from "ethers";
 import { constants as sdkConsts } from "@across-protocol/sdk-v2";
 import { SignerOptions, getSigner } from "./SignerUtils";
+import { isDefined } from "./TypeGuards";
 
 const keyTypes = ["secret", "mnemonic", "privateKey", "gckms", "void"];
 
@@ -30,7 +31,7 @@ export function retrieveSignerFromCLIArgs(): Promise<Signer> {
   // Build out the signer options to pass to the signer utils.
   const signerOptions: SignerOptions = {
     keyType,
-    gckmsKeys: args.keys ?? [],
+    gckmsKeys: isDefined(args.keys) ? [args.keys] : [],
     roAddress: args.address,
     cleanEnv: false, // TODO: We don't want to clean the env for now. This will be changed in the future.
   };
