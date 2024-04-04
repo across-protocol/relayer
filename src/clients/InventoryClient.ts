@@ -15,6 +15,7 @@ import {
   AnyObject,
   ERC20,
   TOKEN_SYMBOLS_MAP,
+  delay,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -225,13 +226,28 @@ export class InventoryClient {
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
     let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
+    const getDefaultRefundsObject = (): { [chainId: string]: BigNumber } => {
+      return Object.fromEntries(
+        this.getEnabledChains().map((chainId) => {
+          return [chainId, bnZero];
+        })
+      );
+    };
+
+    const getBundleRefundTimeout = async (timeout: number): Promise<{ [chainId: string]: BigNumber }> => {
+      await delay(timeout);
+      this.log(`Timed out getting bundle refunds after ${timeout}s, returning default refund object`);
+      return getDefaultRefundsObject();
+    };
+
     const startTime = Date.now();
     let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
     try {
-      // Consider any refunds from executed and to-be executed bundles.
-      totalRefundsPerChain = await this.getBundleRefunds(l1Token);
+      // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
+      // time, return an object with zero refunds for all chains.
+      totalRefundsPerChain = await Promise.race([this.getBundleRefunds(l1Token), getBundleRefundTimeout(40 * 60)]);
     } catch (e) {
-      this.log("Failed to get bundle refunds, defaulting refund chain to hub chain", {
+      this.log("Failed to get pending and next bundle refunds, ignoring them in repayment chain choice", {
         l1Token,
         originChainId,
         destinationChainId,
