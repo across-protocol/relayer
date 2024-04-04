@@ -70,7 +70,7 @@ if (require.main === module) {
 
   const opts = {
     boolean: ["dataworker", "finalizer", "help", "monitor", "relayer"],
-    string: ["wallet", "keys"],
+    string: ["wallet", "keys", "address"],
     default: { wallet: "secret" },
     alias: { h: "help" },
     unknown: usage,

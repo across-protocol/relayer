@@ -13,6 +13,7 @@ import {
 } from "../interfaces";
 import {
   AnyObject,
+  BigNumber,
   bnZero,
   buildPoolRebalanceLeafTree,
   buildRelayerRefundTree,
@@ -175,7 +176,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
     Object.values(depositsForChain).forEach((deposits) => {
       deposits.forEach((deposit) => {
-        const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit);
+        const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit, deposit.lpFeePct);
         slowRelayLeaves.push(v3SlowFillLeaf);
       });
     });
@@ -198,8 +199,8 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   };
 }
 
-function buildV3SlowFillLeaf(deposit: interfaces.Deposit): V3SlowFillLeaf {
-  const lpFee = deposit.inputAmount.mul(deposit.realizedLpFeePct).div(fixedPointAdjustment);
+function buildV3SlowFillLeaf(deposit: interfaces.Deposit, lpFeePct: BigNumber): V3SlowFillLeaf {
+  const lpFee = deposit.inputAmount.mul(lpFeePct).div(fixedPointAdjustment);
 
   return {
     relayData: {
@@ -444,7 +445,7 @@ export async function _buildPoolRebalanceRoot(
           destinationChainId,
           latestMainnetBlock
         );
-        const lpFee = deposit.realizedLpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
+        const lpFee = deposit.lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
         updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, deposit.inputAmount.sub(lpFee));
         // Slow fill LP fees are accounted for when the slow fill executes and a V3FilledRelay is emitted. i.e. when
         // the slow fill execution is included in bundleFillsV3.
@@ -468,7 +469,7 @@ export async function _buildPoolRebalanceRoot(
           destinationChainId,
           latestMainnetBlock
         );
-        const lpFee = deposit.realizedLpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
+        const lpFee = deposit.lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
         updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, lpFee.sub(deposit.inputAmount));
         // Slow fills don't add to lpFees, only when the slow fill is executed and a V3FilledRelay is emitted, so
         // we don't need to subtract it here. Moreover, the HubPoole expects bundleLpFees to be > 0.
