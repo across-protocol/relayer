@@ -937,11 +937,15 @@ export class BundleDataClient {
           const [_startBlockForChain, _endBlockForChain] = blockRangeForChain;
           const spokePoolClient = spokePoolClients[chainId];
 
-          // We can assume that in production
-          // the block ranges passed into this function would never contain blocks where the spoke pool client
-          // hasn't queried. This is because this function will usually be called
-          // in production with block ranges that were validated by
-          // DataworkerUtils.blockRangesAreInvalidForSpokeClients
+          // Relayer instances using the BundleDataClient for repayment estimates may only relay on a subset of chains.
+          if (!isDefined(spokePoolClient)) {
+            return;
+          }
+
+          // We can assume that in production the block ranges passed into this function would never
+          // contain blocks where the spoke pool client hasn't queried. This is because this function
+          // will usually be called in production with block ranges that were validated by
+          // DataworkerUtils.blockRangesAreInvalidForSpokeClients.
           const startBlockForChain = Math.min(_startBlockForChain, spokePoolClient.latestBlockSearched);
           const endBlockForChain = Math.min(_endBlockForChain, spokePoolClient.latestBlockSearched);
           const [startTime, endTime] = [
