@@ -16,16 +16,8 @@ const BigNumberType = coerce(instance(BigNumber), string(), (value) => {
 });
 
 const FillTypeSS = number();
-const RelayDataCommonSS = {
-  originChainId: number(),
-  depositor: string(),
-  recipient: string(),
-  depositId: number(),
-  message: string(),
-};
 
 const V3RelayDataSS = {
-  ...RelayDataCommonSS,
   inputToken: string(),
   inputAmount: BigNumberType,
   outputToken: string(),
@@ -33,6 +25,11 @@ const V3RelayDataSS = {
   fillDeadline: number(),
   exclusiveRelayer: string(),
   exclusivityDeadline: number(),
+  originChainId: number(),
+  depositor: string(),
+  recipient: string(),
+  depositId: number(),
+  message: string(),
 };
 
 const SortableEventSS = {
