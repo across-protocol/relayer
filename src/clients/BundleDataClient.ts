@@ -335,6 +335,9 @@ export class BundleDataClient {
   deductExecutedRefunds(allRefunds: CombinedRefunds, bundleContainingRefunds: ProposedRootBundle): CombinedRefunds {
     for (const chainIdStr of Object.keys(allRefunds)) {
       const chainId = Number(chainIdStr);
+      if (!isDefined(this.spokePoolClients[chainId])) {
+        continue;
+      }
       const executedRefunds = this.getExecutedRefunds(
         this.spokePoolClients[chainId],
         bundleContainingRefunds.relayerRefundRoot
