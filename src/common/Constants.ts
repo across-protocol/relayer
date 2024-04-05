@@ -312,4 +312,6 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
   ],
 };
 
+export const RELAYER_DEFAULT_INDEXER = "./dist/src/libexec/RelayerSpokePoolIndexer.js";
+
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };

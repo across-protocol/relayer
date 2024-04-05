@@ -1,6 +1,16 @@
+import { ChildProcess } from "child_process";
+import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import winston from "winston";
-import { AcrossApiClient, BundleDataClient, InventoryClient, ProfitClient, TokenClient } from "../clients";
+import {
+  AcrossApiClient,
+  BundleDataClient,
+  HubPoolClient,
+  InventoryClient,
+  ProfitClient,
+  IndexedSpokePoolClient,
+  TokenClient,
+} from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
   CONTRACT_ADDRESSES,
@@ -11,7 +21,14 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { Signer } from "../utils";
+import {
+  getBlockForTimestamp,
+  getDeploymentBlockNumber,
+  getProvider,
+  getRedisCache,
+  Signer,
+  SpokePool,
+} from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
@@ -22,10 +39,47 @@ export interface RelayerClients extends Clients {
   acrossApiClient: AcrossApiClient;
 }
 
+async function indexedSpokePoolClient(
+  baseSigner: Signer,
+  hubPoolClient: HubPoolClient,
+  chainId: number,
+  worker: ChildProcess
+): Promise<IndexedSpokePoolClient> {
+  const { logger } = hubPoolClient;
+
+  // Set up Spoke signers and connect them to spoke pool contract objects:
+  const signer = baseSigner.connect(await getProvider(chainId));
+
+  const blockFinder = undefined;
+  const redis = await getRedisCache(hubPoolClient.logger);
+
+  // Grab latest spoke pool as of `toBlockOverride[1]`. If `toBlockOverride[1]` is undefined, then grabs current
+  // spoke pool.
+  const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, hubPoolClient.latestBlockSearched);
+  const spokePool = new Contract(spokePoolAddr, SpokePool.abi, signer);
+  const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
+  const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
+
+  // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
+  const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
+  const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
+
+  return new IndexedSpokePoolClient(
+    logger,
+    spokePool,
+    hubPoolClient,
+    chainId,
+    registrationBlock,
+    { fromBlock: 0, toBlock: 0, maxBlockLookBack: 5_000 },
+    worker
+  );
+}
+
 export async function constructRelayerClients(
   logger: winston.Logger,
   config: RelayerConfig,
-  baseSigner: Signer
+  baseSigner: Signer,
+  workers: { [chainId: number]: ChildProcess }
 ): Promise<RelayerClients> {
   const signerAddr = await baseSigner.getAddress();
   // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
@@ -45,15 +99,26 @@ export async function constructRelayerClients(
       ? sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains])
       : undefined;
 
-  const spokePoolClients = await constructSpokePoolClientsWithLookback(
-    logger,
-    hubPoolClient,
-    configStoreClient,
-    config,
-    baseSigner,
-    config.maxRelayerLookBack,
-    enabledChains
-  );
+  const spokePoolClients =
+    config.pollingDelay > 0 && config.externalIndexer
+      ? Object.fromEntries(
+          await sdkUtils.mapAsync(
+            enabledChains ?? [1, 10, 137, 324, 8453, 42161, 59144], // @todo: fix
+            async (chainId) => [
+              chainId,
+              await indexedSpokePoolClient(baseSigner, hubPoolClient, chainId, workers[chainId]),
+            ]
+          )
+        )
+      : await constructSpokePoolClientsWithLookback(
+          logger,
+          hubPoolClient,
+          configStoreClient,
+          config,
+          baseSigner,
+          config.maxRelayerLookBack,
+          enabledChains
+        );
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
   // destination chain list.

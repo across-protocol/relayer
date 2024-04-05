@@ -5,6 +5,8 @@ import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
+  readonly externalIndexer: boolean;
+  readonly indexerPath: string;
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
@@ -55,8 +57,13 @@ export class RelayerConfig extends CommonConfig {
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
       RELAYER_IGNORE_LIMITS,
+      RELAYER_EXTERNAL_INDEXER,
+      RELAYER_INDEXER_PATH,
     } = env;
     super(env);
+
+    this.externalIndexer = RELAYER_EXTERNAL_INDEXER === "true";
+    this.indexerPath = RELAYER_INDEXER_PATH ?? Constants.RELAYER_DEFAULT_INDEXER;
 
     // Empty means all chains.
     this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
