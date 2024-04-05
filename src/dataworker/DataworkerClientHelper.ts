@@ -8,7 +8,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer } from "../utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -18,7 +18,6 @@ import { caching } from "@across-protocol/sdk-v2";
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
   bundleDataClient: BundleDataClient;
-  arweaveClient: caching.ArweaveClient;
   priceClient?: PriceClient;
 }
 
@@ -59,9 +58,11 @@ export async function constructDataworkerClients(
     new defiLlama.PriceFeed(),
   ]);
 
-  // Define the Arweave client.
+  // Define the Arweave client. We need to use a read-write signer for the
+  // dataworker to persist bundle data if `persistingBundleData` is enabled.
+  // Otherwise, we can use a read-only signer.
   const arweaveClient = new caching.ArweaveClient(
-    config.arweaveWalletJWK,
+    getArweaveJWKSigner({ keyType: config.persistingBundleData ? "read-write" : "read-only" }),
     logger,
     config.arweaveGateway?.url,
     config.arweaveGateway?.protocol,

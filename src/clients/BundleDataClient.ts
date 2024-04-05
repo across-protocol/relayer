@@ -40,6 +40,7 @@ import {
   ExpiredDepositsToRefundV3,
   LoadDataReturnValue,
 } from "../interfaces/BundleData";
+import { BundleDataSS } from "../utils/SuperstructUtils";
 
 type DataCache = Record<string, Promise<LoadDataReturnValue>>;
 
@@ -160,6 +161,46 @@ export class BundleDataClient {
     this.bundleTimestampCache[key] = timestamps;
   }
 
+  getArweaveClientKey(blockRangesForChains: number[][]): string {
+    return `bundles-${blockRangesForChains}`;
+  }
+
+  private async loadPersistedDataFromArweave(
+    blockRangesForChains: number[][]
+  ): Promise<LoadDataReturnValue | undefined> {
+    if (!isDefined(this.clients?.arweaveClient)) {
+      return undefined;
+    }
+    const persistedData = await this.clients.arweaveClient.getByTopic(
+      this.getArweaveClientKey(blockRangesForChains),
+      BundleDataSS
+    );
+    // If there is no data or the data is empty, return undefined because we couldn't
+    // pull info from the Arweave persistence layer.
+    if (!isDefined(persistedData) || persistedData.length < 1) {
+      return undefined;
+    }
+
+    // A converter function to account for the fact that our SuperStruct schema does not support numeric
+    // keys in records. Fundamentally, this is a limitation of superstruct itself.
+    const convertTypedStringRecordIntoNumericRecord = <UnderlyingType>(
+      data: Record<string, Record<string, UnderlyingType>>
+    ): Record<number, Record<string, UnderlyingType>> =>
+      Object.keys(data).reduce((acc, chainId) => {
+        acc[Number(chainId)] = data[chainId];
+        return acc;
+      }, {} as Record<number, Record<string, UnderlyingType>>);
+
+    const data = persistedData[0].data;
+    return {
+      bundleFillsV3: convertTypedStringRecordIntoNumericRecord(data.bundleFillsV3),
+      expiredDepositsToRefundV3: convertTypedStringRecordIntoNumericRecord(data.expiredDepositsToRefundV3),
+      bundleDepositsV3: convertTypedStringRecordIntoNumericRecord(data.bundleDepositsV3),
+      unexecutableSlowFills: convertTypedStringRecordIntoNumericRecord(data.unexecutableSlowFills),
+      bundleSlowFillsV3: convertTypedStringRecordIntoNumericRecord(data.bundleSlowFillsV3),
+    };
+  }
+
   async getPendingRefundsFromValidBundles(bundleLookback = 1): Promise<CombinedRefunds[]> {
     const refunds = [];
     if (!this.clients.hubPoolClient.isUpdated) {
@@ -188,10 +229,13 @@ export class BundleDataClient {
       this.clients.configStoreClient,
       bundle
     );
+    const logData = false;
+    const attemptToLoadFromArweave = true;
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       bundleEvaluationBlockRanges,
       this.spokePoolClients,
-      false
+      logData,
+      attemptToLoadFromArweave
     );
     const combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
 
@@ -204,7 +248,6 @@ export class BundleDataClient {
   // in a valid bundle with all of its leaves executed. This contains refunds from:
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
-  // - Not yet proposed bundles
   async getNextBundleRefunds(): Promise<CombinedRefunds> {
     const hubPoolClient = this.clients.hubPoolClient;
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
@@ -213,20 +256,36 @@ export class BundleDataClient {
       hubPoolClient.chainId
     );
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
-    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
-      chainIds,
-      this.spokePoolClients,
-      getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
-      this.clients,
-      this.clients.hubPoolClient.latestBlockSearched,
-      this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)
-    );
+
+    // We need to find the widest possible range of blocks to search for refunds. Since we aim to leverage
+    // Arweave's DA layer to look for entries, we need to make sure we're using an expected range. If we
+    // have a pending proposal, we can assume that a corresponding Arweave entry exists. In this case, we
+    // need to capture the `impliedBlockRange` so that it matches with the tag in the Arweave entry. If no
+    // pending bundle exists, we should cast as large of a next bundle range as possible to capture the most
+    // data. We can do this with `getWidestPossibleExpectedBlockRange`.
+    const futureBundleEvaluationBlockRanges = hubPoolClient.hasPendingProposal()
+      ? getImpliedBundleBlockRanges(
+          hubPoolClient,
+          this.clients.configStoreClient,
+          hubPoolClient.getLatestProposedRootBundle()
+        )
+      : getWidestPossibleExpectedBlockRange(
+          chainIds,
+          this.spokePoolClients,
+          getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
+          this.clients,
+          this.clients.hubPoolClient.latestBlockSearched,
+          this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)
+        );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
+    const logData = false;
+    const attemptToLoadFromArweave = true;
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       futureBundleEvaluationBlockRanges,
       this.spokePoolClients,
-      false
+      logData,
+      attemptToLoadFromArweave
     );
     return getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
   }
@@ -323,12 +382,37 @@ export class BundleDataClient {
   async loadData(
     blockRangesForChains: number[][],
     spokePoolClients: SpokePoolClientsByChain,
-    logData = true
+    logData = true,
+    attemptArweaveLoad = false
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
 
     if (!this.loadDataCache[key]) {
-      this.loadDataCache[key] = this._loadData(blockRangesForChains, spokePoolClients, logData);
+      // We need to await this data to see if we were able to load data to Arweave.
+      const arweaveData = attemptArweaveLoad
+        ? await this.loadPersistedDataFromArweave(blockRangesForChains)
+        : undefined;
+      const data = isDefined(arweaveData)
+        ? // We can return the data to a Promise to keep the return type consistent.
+          // Note: this is now a fast operation since we've already loaded the data from Arweave.
+          Promise.resolve(arweaveData)
+        : this._loadData(blockRangesForChains, spokePoolClients, logData);
+      if (attemptArweaveLoad) {
+        if (isDefined(arweaveData)) {
+          this.logger.debug({
+            at: "BundleDataClient#loadData",
+            message: "Loaded data from Arweave",
+            blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
+          });
+        } else {
+          this.logger.debug({
+            at: "BundleDataClient#loadData",
+            message: "Failed to load data from Arweave",
+            blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
+          });
+        }
+      }
+      this.loadDataCache[key] = data;
     }
 
     return this.loadDataFromCache(key);
