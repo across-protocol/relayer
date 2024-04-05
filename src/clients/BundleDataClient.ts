@@ -127,6 +127,8 @@ function updateBundleSlowFills(dict: BundleSlowFills, deposit: V3DepositWithBloc
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
   private loadDataCache: DataCache = {};
+  private arweaveDataCache: Record<string, Promise<LoadDataReturnValue>> = {};
+
   private bundleTimestampCache: Record<string, { [chainId: number]: number[] }> = {};
 
   // eslint-disable-next-line no-useless-constructor
@@ -389,32 +391,23 @@ export class BundleDataClient {
     attemptArweaveLoad = false
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
+    const arweaveKey = this.getArweaveClientKey(blockRangesForChains);
 
     if (!this.loadDataCache[key]) {
-      // We need to await this data to see if we were able to load data to Arweave.
-      const arweaveData = attemptArweaveLoad
-        ? await this.loadPersistedDataFromArweave(blockRangesForChains)
-        : undefined;
+      let arweaveData;
+      if (attemptArweaveLoad) {
+        if (!this.arweaveDataCache[arweaveKey]) {
+          this.arweaveDataCache[arweaveKey] = this.loadPersistedDataFromArweave(blockRangesForChains);
+        }
+        arweaveData = _.cloneDeep(await this.arweaveDataCache[arweaveKey]);
+      } else {
+        arweaveData = undefined;
+      }
       const data = isDefined(arweaveData)
         ? // We can return the data to a Promise to keep the return type consistent.
           // Note: this is now a fast operation since we've already loaded the data from Arweave.
           Promise.resolve(arweaveData)
         : this._loadData(blockRangesForChains, spokePoolClients, logData);
-      if (attemptArweaveLoad) {
-        if (isDefined(arweaveData)) {
-          this.logger.debug({
-            at: "BundleDataClient#loadData",
-            message: "Loaded data from Arweave",
-            blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
-          });
-        } else {
-          this.logger.debug({
-            at: "BundleDataClient#loadData",
-            message: "Failed to load data from Arweave",
-            blockRangesForChains: this.getArweaveClientKey(blockRangesForChains),
-          });
-        }
-      }
       this.loadDataCache[key] = data;
     }
 
