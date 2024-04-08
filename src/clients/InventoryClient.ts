@@ -296,19 +296,24 @@ export class InventoryClient {
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
       const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct);
-      this.log(`Evaluated ${_chain === originChainId ? "origin" : "destination"} refund chain ${_chain}`, {
-        l1Token: l1Token,
-        chainShortfall,
-        chainVirtualBalance,
-        chainVirtualBalanceWithShortfall,
-        chainVirtualBalanceWithShortfallPostRelay,
-        cumulativeVirtualBalance,
-        cumulativeVirtualBalanceWithShortfall,
-        cumulativeVirtualBalanceWithShortfallPostRelay,
-        targetPct,
-        expectedPostRelayAllocation,
-        refundChainId: _chain,
-      });
+      this.log(
+        `Evaluated ${_chain === originChainId ? "origin" : "destination"} refund chain ${_chain} is ${
+          expectedPostRelayAllocation.lte(targetPct) ? "under" : "over"
+        }allocated for deposit ${deposit.depositId}`,
+        {
+          l1Token: l1Token,
+          chainShortfall,
+          chainVirtualBalance,
+          chainVirtualBalanceWithShortfall,
+          chainVirtualBalanceWithShortfallPostRelay,
+          cumulativeVirtualBalance,
+          cumulativeVirtualBalanceWithShortfall,
+          cumulativeVirtualBalanceWithShortfallPostRelay,
+          targetPct,
+          expectedPostRelayAllocation,
+          refundChainId: _chain,
+        }
+      );
       if (expectedPostRelayAllocation.lte(targetPct)) {
         return _chain;
       }
