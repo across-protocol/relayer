@@ -177,7 +177,7 @@ export class BundleDataClient {
     if (!isDefined(this.clients?.arweaveClient)) {
       return undefined;
     }
-    const start = Date.now();
+    const start = performance.now();
     const persistedData = await this.clients.arweaveClient.getByTopic(
       this.getArweaveClientKey(blockRangesForChains),
       BundleDataSS
