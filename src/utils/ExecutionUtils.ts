@@ -16,28 +16,6 @@ export async function processEndPollingLoop(
   return false;
 }
 
-export async function processCrash(
-  logger: winston.Logger,
-  fileName: string,
-  pollingDelay: number,
-  error: AnyObject
-): Promise<boolean> {
-  logger.error({
-    at: `${fileName}#index`,
-    message: `There was an execution error! ${pollingDelay != 0 ? "Re-running loop" : ""}`,
-    reason: error,
-    e: error,
-    error,
-    notificationPath: "across-error",
-  });
-  await delay(5);
-  if (pollingDelay === 0) {
-    return true;
-  }
-
-  return false;
-}
-
 export function startupLogLevel(config: { pollingDelay: number }): string {
   return config.pollingDelay > 0 ? "info" : "debug";
 }

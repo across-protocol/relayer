@@ -1,13 +1,11 @@
 import minimist from "minimist";
 import { CommonConfig } from "./src/common";
 import {
-  AnyObject,
   config,
   delay,
   retrieveSignerFromCLIArgs,
   help,
   Logger,
-  processCrash,
   usage,
   winston,
 } from "./src/utils";
@@ -21,7 +19,6 @@ let logger: winston.Logger;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
-
   const config = new CommonConfig(process.env);
 
   const cmds = {
@@ -48,18 +45,21 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     usage(""); // no return
   } else {
     const signer = await retrieveSignerFromCLIArgs();
-    do {
-      try {
-        // One global signer for use with a specific per-chain provider.
-        // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
-        await cmds[cmd](logger, signer);
-      } catch (error) {
-        if (await processCrash(logger, cmd, config.pollingDelay, error as AnyObject)) {
-          // eslint-disable-next-line no-process-exit
-          process.exit(1);
-        }
-      }
-    } while (config.pollingDelay !== 0);
+    try {
+      // One global signer for use with a specific per-chain provider.
+      // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
+      await cmds[cmd](logger, signer);
+    } catch (error) {
+      logger.error({
+        at: `index`,
+        message: `There was an execution error!`,
+        reason: error,
+        e: error,
+        error,
+        notificationPath: "across-error",
+      });
+      process.exitCode = 1;
+    }
   }
 }
 
