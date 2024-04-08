@@ -34,22 +34,10 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
   } else {
+    // One global signer for use with a specific per-chain provider.
+    // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
     const signer = await retrieveSignerFromCLIArgs();
-    try {
-      // One global signer for use with a specific per-chain provider.
-      // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
-      await cmds[cmd](logger, signer);
-    } catch (error) {
-      logger.error({
-        at: "index",
-        message: "There was an execution error!",
-        reason: error,
-        e: error,
-        error,
-        notificationPath: "across-error",
-      });
-      process.exitCode = 1;
-    }
+    await cmds[cmd](logger, signer);
   }
 }
 
@@ -70,17 +58,17 @@ if (require.main === module) {
 
   run(args)
     .then(() => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(0);
+      process.exitCode = 0;
     })
     .catch(async (error) => {
+      process.exitCode = 1;
       logger.error({
-        at: "InfrastructureEntryPoint",
-        message: "There was an error in the main entry point!",
+        at: "index",
+        message: "There was an execution error!",
+        reason: error,
+        e: error,
         error,
         notificationPath: "across-error",
       });
-      await delay(5);
-      await run(args);
     });
 }
