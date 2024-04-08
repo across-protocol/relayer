@@ -19,6 +19,7 @@ import {
   assert,
   fixedPointAdjustment,
   isDefined,
+  delay,
 } from "../utils";
 import { Clients } from "../common";
 import {
@@ -318,15 +319,30 @@ export class BundleDataClient {
       );
     }
 
-    // Next, load all refunds sent after the last bundle proposal.
+    // Next, load all refunds sent after the last bundle proposal. This can be expensive so we'll cut it off
+    // if it takes too long.
+    const loadDataTimeout = async (timeout: number): Promise<LoadDataReturnValue> => {
+      await delay(timeout);
+      this.logger.debug({
+        at: "BundleDataClient#getNextBundleRefunds",
+        message: `Timeout (${timeout / 60}s) loading next bundle refunds.`,
+      });
+      return {
+        bundleFillsV3: {},
+        expiredDepositsToRefundV3: {},
+        bundleDepositsV3: {},
+        bundleSlowFillsV3: {},
+        unexecutableSlowFills: {},
+      };
+    };
     const logData = false;
     const attemptToLoadFromArweave = false;
-    const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
-      widestBundleBlockRanges,
-      this.spokePoolClients,
-      logData,
-      attemptToLoadFromArweave
-    );
+    // @dev If the loadData call times out, it will continue to resolve in the background, which provides benefits
+    // for the next call to loadData.
+    const { bundleFillsV3, expiredDepositsToRefundV3 } = await Promise.race([
+      this.loadData(widestBundleBlockRanges, this.spokePoolClients, logData, attemptToLoadFromArweave),
+      loadDataTimeout(Number(process.env.LOAD_DATA_TIMEOUT ?? 10 * 60)),
+    ]);
     const nextBundleRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
     combinedRefunds.push(nextBundleRefunds);
     return combinedRefunds;
