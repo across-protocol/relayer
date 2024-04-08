@@ -1,5 +1,4 @@
 import minimist from "minimist";
-import { CommonConfig } from "./src/common";
 import { config, delay, retrieveSignerFromCLIArgs, help, Logger, usage, winston } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
