@@ -3,9 +3,10 @@ import { AnyObject, delay, winston } from "./";
 export async function processEndPollingLoop(
   logger: winston.Logger,
   fileName: string,
-  pollingDelay: number
+  pollingDelay: number,
+  stop = false
 ): Promise<boolean> {
-  if (pollingDelay === 0) {
+  if (pollingDelay === 0 || stop) {
     logger.debug({ at: `${fileName}#index`, message: "End of serverless execution loop - terminating process" });
     await delay(5); // Add a small delay to ensure the transports have fully flushed upstream.
     return true;

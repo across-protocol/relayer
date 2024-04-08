@@ -9,7 +9,7 @@ import {
 } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
@@ -21,16 +21,25 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  let relayerClients: RelayerClients;
 
+  let stop = false;
+  process.on('SIGHUP', () => {
+    logger.debug({
+      at: "run",
+      message: "Received SIGHUP, stopping at end of current loop."
+    });
+    stop = true;
+  });
+
+  logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config, relayerRun });
+  const relayerClients = await constructRelayerClients(logger, config, baseSigner);
+  const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
+
+  let run = 1;
   try {
-    logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config, relayerRun });
-    relayerClients = await constructRelayerClients(logger, config, baseSigner);
-    const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
-
-    logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
-
     for (;;) {
+      logger.debug({ at: "Relayer#index", message: `Starting relayer execution loop ${run}.` });
+      const tLoopStart = performance.now();
       await updateRelayerClients(relayerClients, config);
 
       if (!config.skipRelays) {
@@ -50,7 +59,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       relayerClients.profitClient.clearUnprofitableFills();
       relayerClients.tokenClient.clearTokenShortfall();
 
-      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) {
+      const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+      logger.debug({
+        at: "Relayer#index",
+        message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`
+      });
+
+      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay, stop)) {
         break;
       }
     }
