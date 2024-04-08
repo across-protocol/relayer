@@ -342,10 +342,7 @@ export class BundleDataClient {
         continue;
       }
 
-      const executedRefunds = this.getExecutedRefunds(
-        spokePoolClient,
-        bundleContainingRefunds.relayerRefundRoot
-      );
+      const executedRefunds = this.getExecutedRefunds(spokePoolClient, bundleContainingRefunds.relayerRefundRoot);
 
       for (const tokenAddress of Object.keys(allRefunds[chainId])) {
         const refunds = allRefunds[chainId][tokenAddress];
