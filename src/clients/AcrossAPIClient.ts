@@ -18,7 +18,7 @@ export interface DepositLimits {
 }
 
 export class AcrossApiClient {
-  private endpoint = "https://across.to/api";
+  private endpoint = "https://app.across.to/api";
 
   private limits: { [token: string]: BigNumber } = {};
 
