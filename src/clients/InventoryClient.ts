@@ -225,11 +225,11 @@ export class InventoryClient {
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
     let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
-    const startTime = Date.now();
+    const startTime = performance.now();
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
     // time, return an object with zero refunds for all chains.
     const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
-    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`, {
+    this.log(`Time taken to get bundle refunds: ${Math.floor(performance.now() - startTime) / 1000}s`, {
       l1Token,
       totalRefundsPerChain,
     });
