@@ -477,7 +477,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         spokePoolClients
       );
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-      expect(spyLogIncludes(spy, -1, "invalid V3 fills in range")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
     });
     it("Matches fill with deposit with outputToken = 0x0", async function () {
       await depositV3(
@@ -728,7 +728,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         [originChainId]: spokePoolClient_1,
         [destinationChainId]: spokePoolClient_2,
       });
-      expect(spyLogIncludes(spy, -2, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+      expect(spyLogIncludes(spy, -3, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
       expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
@@ -869,7 +869,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       });
       // Here we can see that the historical query for the deposit actually succeeds, but the deposit itself
       // was not one eligible to be slow filled.
-      expect(spyLogIncludes(spy, -2, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+      expect(spyLogIncludes(spy, -3, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
 
       expect(data1.bundleSlowFillsV3).to.deep.equal({});
       expect(data1.bundleDepositsV3).to.deep.equal({});
