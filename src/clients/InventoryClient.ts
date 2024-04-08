@@ -297,11 +297,15 @@ export class InventoryClient {
 
       const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct);
       this.log(
-        `Evaluated ${_chain === originChainId ? "origin" : "destination"} refund chain ${_chain} is ${
-          expectedPostRelayAllocation.lte(targetPct) ? "under" : "over"
-        }allocated for deposit ${deposit.depositId}`,
+        `Evaluated taking repayment on ${
+          _chain === originChainId ? "origin" : "destination"
+        } chain ${_chain} for deposit ${deposit.depositId}: ${
+          expectedPostRelayAllocation.lte(targetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
+        }`,
         {
           l1Token: l1Token,
+          originChainId,
+          destinationChainId,
           chainShortfall,
           chainVirtualBalance,
           chainVirtualBalanceWithShortfall,
@@ -311,7 +315,7 @@ export class InventoryClient {
           cumulativeVirtualBalanceWithShortfallPostRelay,
           targetPct,
           expectedPostRelayAllocation,
-          refundChainId: _chain,
+          chainsToEvaluate,
         }
       );
       if (expectedPostRelayAllocation.lte(targetPct)) {
