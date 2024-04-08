@@ -208,7 +208,7 @@ export class BundleDataClient {
     };
     this.logger.debug({
       at: "BundleDataClient#loadPersistedDataFromArweave",
-      message: `Loaded persisted data from Arweave in ${Math.floor(Date.now() - start) / 1000}s.`,
+      message: `Loaded persisted data from Arweave in ${Math.floor(performance.now() - start) / 1000}s.`,
       blockRanges: JSON.stringify(blockRangesForChains),
       bundleData: prettyPrintV3SpokePoolEvents(
         bundleData.bundleDepositsV3,
@@ -462,7 +462,7 @@ export class BundleDataClient {
     spokePoolClients: SpokePoolClientsByChain,
     logData = true
   ): Promise<LoadDataReturnValue> {
-    const start = Date.now();
+    const start = performance.now();
     const key = JSON.stringify(blockRangesForChains);
 
     if (!this.clients.configStoreClient.isUpdated) {
@@ -1013,15 +1013,6 @@ export class BundleDataClient {
       expiredDepositsToRefundV3,
       unexecutableSlowFills
     );
-    if (logData) {
-      const mainnetRange = getBlockRangeForChain(blockRangesForChains, this.clients.hubPoolClient.chainId, chainIds);
-      this.logger.debug({
-        at: "BundleDataClient#loadData",
-        message: `Finished loading V3 spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
-        blockRangesForChains,
-        ...v3SpokeEventsReadable,
-      });
-    }
 
     if (bundleInvalidFillsV3.length > 0) {
       this.logger.debug({
@@ -1034,7 +1025,7 @@ export class BundleDataClient {
 
     this.logger.debug({
       at: "BundleDataClient#_loadData",
-      message: `Computed bundle data in ${Math.floor(Date.now() - start) / 1000}s.`,
+      message: `Computed bundle data in ${Math.floor(performance.now() - start) / 1000}s.`,
       blockRangesForChains: JSON.stringify(blockRangesForChains),
       v3SpokeEventsReadable,
     });
