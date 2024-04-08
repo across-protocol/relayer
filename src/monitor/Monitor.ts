@@ -570,9 +570,11 @@ export class Monitor {
         this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
       }
     }
-    for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
-      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
+    for (const refunds of nextBundleRefunds) {
+      for (const relayer of this.monitorConfig.monitoredRelayers) {
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
+        this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
+      }
     }
   }
 

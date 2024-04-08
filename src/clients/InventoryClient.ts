@@ -15,7 +15,6 @@ import {
   AnyObject,
   ERC20,
   TOKEN_SYMBOLS_MAP,
-  delay,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -164,7 +163,7 @@ export class InventoryClient {
 
     // Consider refunds from next bundle to be proposed:
     const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
-    refundsToConsider.push(nextBundleRefunds);
+    refundsToConsider.push(...nextBundleRefunds);
 
     return this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
       if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
@@ -226,46 +225,10 @@ export class InventoryClient {
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
     let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
-    const getDefaultRefundsObject = (): { [chainId: string]: BigNumber } => {
-      return Object.fromEntries(
-        this.getEnabledChains().map((chainId) => {
-          return [chainId, bnZero];
-        })
-      );
-    };
-
-    const getBundleRefundTimeout = async (timeout: number): Promise<{ [chainId: string]: BigNumber }> => {
-      await delay(timeout);
-      this.log(`Timed out getting bundle refunds after ${timeout}s, returning default refund object`);
-      return getDefaultRefundsObject();
-    };
-
     const startTime = Date.now();
-    let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
-    // TODO: Remove this try-catch. getBundleRefunds should never fail in practice. This was originally added
-    // to catch the case where the relayer's lookback is insufficient to compute a bundle but I believe the current
-    // loadData implementation will just miss events in the case where the lookback is too short, rather than fail.
-    try {
-      // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
-      // time, return an object with zero refunds for all chains.
-      totalRefundsPerChain = await Promise.race([this.getBundleRefunds(l1Token), getBundleRefundTimeout(45 * 60)]);
-    } catch (e) {
-      this.log("Failed to get pending and next bundle refunds, ignoring them in repayment chain choice", {
-        l1Token,
-        originChainId,
-        destinationChainId,
-        error: e,
-      });
-      // Fallback to ignoring bundle refunds if calculating bundle refunds goes wrong.
-      // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
-      // the relayer's repayment chain of choice.
-      totalRefundsPerChain = Object.fromEntries(
-        this.getEnabledChains().map((chainId) => {
-          return [chainId, bnZero];
-        })
-      );
-    }
-
+    // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
+    // time, return an object with zero refunds for all chains.
+    const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
     this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`, {
       l1Token,
       totalRefundsPerChain,

@@ -237,7 +237,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       // Before proposal should show refunds:
       expect(
         bundleDataClient.getRefundsFor(
-          await bundleDataClient.getNextBundleRefunds(),
+          (await bundleDataClient.getNextBundleRefunds())[0],
           relayer.address,
           destinationChainId,
           erc20_2.address
@@ -252,7 +252,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       // After proposal but before execution should show upcoming refund:
       expect(
         bundleDataClient.getRefundsFor(
-          await bundleDataClient.getNextBundleRefunds(),
+          (await bundleDataClient.getNextBundleRefunds())[0],
           relayer.address,
           destinationChainId,
           erc20_2.address
@@ -267,7 +267,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
 
       // Should reset to no refunds in "next bundle", though these will show up in pending bundle.
       await updateAllClients();
-      expect(await bundleDataClient.getNextBundleRefunds()).to.deep.equal({});
+      expect(await bundleDataClient.getNextBundleRefunds()).to.deep.equal([{}]);
     });
   });
 });
