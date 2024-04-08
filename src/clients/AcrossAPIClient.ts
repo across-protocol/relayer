@@ -114,7 +114,7 @@ export class AcrossApiClient {
     if (!this.limits[l1Token]) {
       this.logger.warn({
         at: "AcrossApiClient::getLimit",
-        message: `No limit stored for l1Token ${l1Token}, defaulting to 0.`
+        message: `No limit stored for l1Token ${l1Token}, defaulting to 0.`,
       });
       return bnZero;
     }
