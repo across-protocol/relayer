@@ -1,14 +1,6 @@
 import minimist from "minimist";
 import { CommonConfig } from "./src/common";
-import {
-  config,
-  delay,
-  retrieveSignerFromCLIArgs,
-  help,
-  Logger,
-  usage,
-  winston,
-} from "./src/utils";
+import { config, delay, retrieveSignerFromCLIArgs, help, Logger, usage, winston } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -51,8 +43,8 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
       await cmds[cmd](logger, signer);
     } catch (error) {
       logger.error({
-        at: `index`,
-        message: `There was an execution error!`,
+        at: "index",
+        message: "There was an execution error!",
         reason: error,
         e: error,
         error,

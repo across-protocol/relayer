@@ -1,4 +1,4 @@
-import { AnyObject, delay, winston } from "./";
+import { delay, winston } from "./";
 
 export async function processEndPollingLoop(
   logger: winston.Logger,
