@@ -224,7 +224,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const expectedBridgedAmount = toBN("17799999999999999880");
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon-matic")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
     expect(lastSpyLogIncludes(spy, "17.79 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
     expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
 
