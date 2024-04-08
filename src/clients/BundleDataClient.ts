@@ -325,7 +325,7 @@ export class BundleDataClient {
       await delay(timeout);
       this.logger.debug({
         at: "BundleDataClient#getNextBundleRefunds",
-        message: `Timeout (${timeout / 60}s) loading next bundle refunds.`,
+        message: `Timeout (${timeout}s) loading next bundle refunds.`,
       });
       return {
         bundleFillsV3: {},
@@ -341,7 +341,7 @@ export class BundleDataClient {
     // for the next call to loadData.
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await Promise.race([
       this.loadData(widestBundleBlockRanges, this.spokePoolClients, logData, attemptToLoadFromArweave),
-      loadDataTimeout(Number(process.env.LOAD_DATA_TIMEOUT ?? 10 * 60)),
+      loadDataTimeout(Number(process.env.LOAD_DATA_TIMEOUT ?? 10)), // Default 10s timeout
     ]);
     const nextBundleRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
     combinedRefunds.push(nextBundleRefunds);
