@@ -11,7 +11,6 @@ let logger: winston.Logger;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
-  const config = new CommonConfig(process.env);
 
   const cmds = {
     dataworker: runDataworker,
