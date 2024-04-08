@@ -341,7 +341,7 @@ export class BundleDataClient {
     // for the next call to loadData.
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await Promise.race([
       this.loadData(widestBundleBlockRanges, this.spokePoolClients, logData, attemptToLoadFromArweave),
-      loadDataTimeout(Number(process.env.LOAD_DATA_TIMEOUT ?? 10)), // Default 10s timeout
+      loadDataTimeout(Number(process.env.LOAD_DATA_TIMEOUT ?? 20)), // timeout denominated in seconds
     ]);
     const nextBundleRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
     combinedRefunds.push(nextBundleRefunds);
