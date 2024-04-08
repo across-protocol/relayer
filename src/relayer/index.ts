@@ -25,20 +25,20 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   let stop = false;
   process.on('SIGHUP', () => {
     logger.debug({
-      at: "run",
+      at: "Relayer#run",
       message: "Received SIGHUP, stopping at end of current loop."
     });
     stop = true;
   });
 
-  logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config, relayerRun });
+  logger[startupLogLevel(config)]({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", config, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
   let run = 1;
   try {
     for (;;) {
-      logger.debug({ at: "Relayer#index", message: `Starting relayer execution loop ${run}.` });
+      logger.debug({ at: "Relayer#run", message: `Starting relayer execution loop ${run}.` });
       const tLoopStart = performance.now();
       await updateRelayerClients(relayerClients, config);
 
@@ -61,7 +61,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       const runTime = Math.round((performance.now() - tLoopStart) / 1000);
       logger.debug({
-        at: "Relayer#index",
+        at: "Relayer#run",
         message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`
       });
 
