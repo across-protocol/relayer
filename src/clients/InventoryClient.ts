@@ -157,6 +157,8 @@ export class InventoryClient {
 
   async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
     const refunds: CombinedRefunds[] = [];
+    // @dev This call can take a long time if bundle data for the latest bundle and the pending bundle is not
+    // available on Arweave.
     const [pendingRefunds, nextBundleRefunds] = await Promise.all([
       this.bundleDataClient.getPendingRefundsFromValidBundles(),
       this.bundleDataClient.getNextBundleRefunds(this.relayer),
