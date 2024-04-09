@@ -561,8 +561,10 @@ export class Monitor {
     // We realistically only need to check for refunds for the latest validated bundle so leave the bundle
     // count value as its default value of 1.
     const validatedBundleRefunds: CombinedRefunds[] =
-      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles();
-    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
+      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(this.monitorConfig.monitoredRelayers);
+    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds(
+      this.monitorConfig.monitoredRelayers
+    );
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {

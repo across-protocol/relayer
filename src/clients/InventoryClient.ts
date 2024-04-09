@@ -160,8 +160,8 @@ export class InventoryClient {
     // @dev This call can take a long time if bundle data for the latest bundle and the pending bundle is not
     // available on Arweave.
     const [pendingRefunds, nextBundleRefunds] = await Promise.all([
-      this.bundleDataClient.getPendingRefundsFromValidBundles(),
-      this.bundleDataClient.getNextBundleRefunds(this.relayer),
+      this.bundleDataClient.getPendingRefundsFromValidBundles([this.relayer]),
+      this.bundleDataClient.getNextBundleRefunds([this.relayer]),
     ]);
     refunds.push(...pendingRefunds, ...nextBundleRefunds);
     this.logger.debug({
@@ -169,16 +169,24 @@ export class InventoryClient {
       message: "Remaining refunds from last validated bundle (excludes already executed refunds)",
       refunds: pendingRefunds[0],
     });
-    this.logger.debug({
-      at: "InventoryClient#getAllBundleRefunds",
-      message: "Refunds from pending bundle",
-      refunds: nextBundleRefunds[0],
-    });
-    this.logger.debug({
-      at: "InventoryClient#getAllBundleRefunds",
-      message: "Refunds from upcoming bundle",
-      refunds: nextBundleRefunds[1],
-    });
+    if (nextBundleRefunds.length === 2) {
+      this.logger.debug({
+        at: "InventoryClient#getAllBundleRefunds",
+        message: "Refunds from pending bundle",
+        refunds: nextBundleRefunds[0],
+      });
+      this.logger.debug({
+        at: "InventoryClient#getAllBundleRefunds",
+        message: "Refunds from upcoming bundle",
+        refunds: nextBundleRefunds[1],
+      });
+    } else {
+      this.logger.debug({
+        at: "InventoryClient#getAllBundleRefunds",
+        message: "Refunds from upcoming bundle",
+        refunds: nextBundleRefunds[0],
+      });
+    }
     return refunds;
   }
 
