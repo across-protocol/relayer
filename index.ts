@@ -70,6 +70,6 @@ if (require.main === module) {
         error,
         notificationPath: "across-error",
       });
-      await delay(2);
+      await delay(5); // Wait for transports to flush. May or may not be necessary.
     });
 }
