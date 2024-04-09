@@ -311,7 +311,9 @@ export class BundleDataClient {
             chainIds
           );
           // Assume that lp fees are 0 for the sake of speed. In the future we could batch compute
-          // these or make hardcoded assumptions based on the origin-repayment chain direction.
+          // these or make hardcoded assumptions based on the origin-repayment chain direction. This might result
+          // in slight over estimations of refunds, but its not clear whether underestimating or overestimating is
+          // worst from the relayer's perspective.
           const refundAmount = fill.inputAmount;
           refundsForChain[chainToSendRefundTo] ??= {};
           refundsForChain[chainToSendRefundTo][repaymentToken] ??= {};
