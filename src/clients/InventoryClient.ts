@@ -200,8 +200,7 @@ export class InventoryClient {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
-    // Always refund on L1 if the transfer is to L1.
-    if (!this.isInventoryManagementEnabled() || destinationChainId === hubChainId) {
+    if (!this.isInventoryManagementEnabled()) {
       return destinationChainId;
     }
 
@@ -217,6 +216,16 @@ export class InventoryClient {
       );
     }
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
+    // If there is no inventory config for this token then take refund on destination chain.
+    // If neither destination chain nor origin chain have a configuration for this token, then take refund on the
+    // destination chain.
+    if (
+      this.inventoryConfig.tokenConfig?.[l1Token] === undefined ||
+      (this.inventoryConfig.tokenConfig[l1Token][destinationChainId] === undefined &&
+        this.inventoryConfig.tokenConfig[l1Token][originChainId] === undefined)
+    ) {
+      return destinationChainId;
+    }
 
     const startTime = Date.now();
     let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
@@ -245,17 +254,6 @@ export class InventoryClient {
       totalRefundsPerChain,
     });
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
-
-    // If there is no inventory config for this token then take refund on destination chain.
-    // If neither destination chain nor origin chain have a configuration for this token, then take refund on the
-    // destination chain.
-    if (
-      this.inventoryConfig.tokenConfig?.[l1Token] === undefined ||
-      (this.inventoryConfig.tokenConfig[l1Token][destinationChainId] === undefined &&
-        this.inventoryConfig.tokenConfig[l1Token][originChainId] === undefined)
-    ) {
-      return destinationChainId;
-    }
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
     // Prioritize destination chain repayment over origin chain repayment but prefer both over
