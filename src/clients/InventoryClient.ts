@@ -229,7 +229,7 @@ export class InventoryClient {
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
     // time, return an object with zero refunds for all chains.
     const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
-    this.log(`Time taken to get bundle refunds: ${Math.floor(performance.now() - startTime) / 1000}s`, {
+    this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTime) / 1000)}s`, {
       l1Token,
       totalRefundsPerChain,
     });
