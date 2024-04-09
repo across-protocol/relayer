@@ -142,7 +142,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   await updateSpokePoolClients(spokePoolClients, [
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
-    "RequestedV3SlowFill",
     "FilledV3Relay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
