@@ -57,7 +57,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
       });
 
-      if (config.pollingDelay > 0) {
+      if (config.pollingDelay > 0 && !stop) {
         logger.debug({
           at: "relayer#run",
           message: `Waiting polling delay ${config.pollingDelay} s before next loop.`,
