@@ -7,6 +7,7 @@ import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 
 let logger: winston.Logger;
+let cmd: string;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
@@ -22,7 +23,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   // todo Make the mode of operation an operand, rather than an option.
   // i.e. ts-node ./index.ts [options] <relayer|...>
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
-  const cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
+  cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
 
   if (cmd === "help") {
     cmds[cmd]();
@@ -63,11 +64,12 @@ if (require.main === module) {
     .catch(async (error) => {
       process.exitCode = 1;
       logger.error({
-        at: "index",
+        at: cmd ?? "unknown process",
         message: "There was an execution error!",
         reason: error,
         e: error,
         error,
+        args,
         notificationPath: "across-error",
       });
       await delay(5); // Wait for transports to flush. May or may not be necessary.
