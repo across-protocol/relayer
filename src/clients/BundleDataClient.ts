@@ -271,7 +271,7 @@ export class BundleDataClient {
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
   // - Fills sent after the pending, but not validated, bundle
-  async getNextBundleRefunds(): Promise<CombinedRefunds[]> {
+  async getNextBundleRefunds(loadBundleDataTimeoutSeconds = 20): Promise<CombinedRefunds[]> {
     const hubPoolClient = this.clients.hubPoolClient;
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -321,8 +321,8 @@ export class BundleDataClient {
 
     // Next, load all refunds sent after the last bundle proposal. This can be expensive so we'll cut it off
     // if it takes too long.
-    const loadDataTimeout = async (timeout: number): Promise<LoadDataReturnValue> => {
-      await delay(timeout);
+    const loadDataTimeout = async (): Promise<LoadDataReturnValue> => {
+      await delay(loadBundleDataTimeoutSeconds);
       return {
         bundleFillsV3: {},
         expiredDepositsToRefundV3: {},
@@ -337,7 +337,7 @@ export class BundleDataClient {
     // for the next call to loadData.
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await Promise.race([
       this.loadData(widestBundleBlockRanges, this.spokePoolClients, logData, attemptToLoadFromArweave),
-      loadDataTimeout(Number(process.env.LOAD_DATA_TIMEOUT ?? 20)), // timeout denominated in seconds
+      loadDataTimeout(), // timeout denominated in seconds
     ]);
     const nextBundleRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
     combinedRefunds.push(nextBundleRefunds);
