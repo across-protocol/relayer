@@ -251,12 +251,10 @@ export class BundleDataClient {
       this.clients.configStoreClient,
       bundle
     );
-    const logData = false;
     const attemptToLoadFromArweave = true;
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       bundleEvaluationBlockRanges,
       this.spokePoolClients,
-      logData,
       attemptToLoadFromArweave
     );
     const combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
@@ -300,12 +298,10 @@ export class BundleDataClient {
         this.clients.configStoreClient,
         hubPoolClient.getLatestProposedRootBundle()
       );
-      const logData = false;
       const attemptToLoadFromArweave = true;
       const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
         pendingBundleBlockRanges,
         this.spokePoolClients,
-        logData,
         attemptToLoadFromArweave
       );
       combinedRefunds.push(getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3));
@@ -331,12 +327,11 @@ export class BundleDataClient {
         unexecutableSlowFills: {},
       };
     };
-    const logData = false;
     const attemptToLoadFromArweave = false;
     // @dev If the loadData call times out, it will continue to resolve in the background, which provides benefits
     // for the next call to loadData.
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await Promise.race([
-      this.loadData(widestBundleBlockRanges, this.spokePoolClients, logData, attemptToLoadFromArweave),
+      this.loadData(widestBundleBlockRanges, this.spokePoolClients, attemptToLoadFromArweave),
       loadDataTimeout(), // timeout denominated in seconds
     ]);
     const nextBundleRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
@@ -442,7 +437,6 @@ export class BundleDataClient {
   async loadData(
     blockRangesForChains: number[][],
     spokePoolClients: SpokePoolClientsByChain,
-    logData = true,
     attemptArweaveLoad = false
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
@@ -462,7 +456,7 @@ export class BundleDataClient {
         ? // We can return the data to a Promise to keep the return type consistent.
           // Note: this is now a fast operation since we've already loaded the data from Arweave.
           Promise.resolve(arweaveData)
-        : this._loadData(blockRangesForChains, spokePoolClients, logData);
+        : this._loadData(blockRangesForChains, spokePoolClients);
       this.loadDataCache[key] = data;
     }
 
@@ -471,8 +465,7 @@ export class BundleDataClient {
 
   async _loadData(
     blockRangesForChains: number[][],
-    spokePoolClients: SpokePoolClientsByChain,
-    logData = true
+    spokePoolClients: SpokePoolClientsByChain
   ): Promise<LoadDataReturnValue> {
     const start = performance.now();
     const key = JSON.stringify(blockRangesForChains);
@@ -530,14 +523,12 @@ export class BundleDataClient {
     if (!_cachedBundleTimestamps) {
       bundleBlockTimestamps = await this.getBundleBlockTimestamps(chainIds, blockRangesForChains, spokePoolClients);
       this.setBundleTimestampsInCache(key, bundleBlockTimestamps);
-      if (logData) {
-        this.logger.debug({
-          at: "BundleDataClient#loadData",
-          message: "Bundle block timestamps",
-          bundleBlockTimestamps,
-          blockRangesForChains,
-        });
-      }
+      this.logger.debug({
+        at: "BundleDataClient#loadData",
+        message: "Bundle block timestamps",
+        bundleBlockTimestamps,
+        blockRangesForChains: JSON.stringify(blockRangesForChains),
+      });
     } else {
       bundleBlockTimestamps = _cachedBundleTimestamps;
     }

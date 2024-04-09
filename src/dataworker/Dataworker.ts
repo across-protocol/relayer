@@ -473,7 +473,7 @@ export class Dataworker {
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
-      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, logData);
+      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients);
     // Prepare information about what we need to store to
     // Arweave for the bundle. We will be doing this at a
     // later point so that we can confirm that this data is
