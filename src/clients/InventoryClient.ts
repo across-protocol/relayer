@@ -42,6 +42,7 @@ export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
+  private bundleRefundsPromise: Promise<CombinedRefunds[]> = undefined;
 
   constructor(
     readonly relayer: string,
@@ -154,16 +155,44 @@ export class InventoryClient {
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, rebalance, Number(chainId));
   }
 
+  async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
+    const refunds: CombinedRefunds[] = [];
+    const [pendingRefunds, nextBundleRefunds] = await Promise.all([
+      this.bundleDataClient.getPendingRefundsFromValidBundles(),
+      this.bundleDataClient.getNextBundleRefunds(this.relayer),
+    ]);
+    refunds.push(...pendingRefunds, ...nextBundleRefunds);
+    this.logger.debug({
+      at: "InventoryClient#getAllBundleRefunds",
+      message: "Remaining refunds from last validated bundle (excludes already executed refunds)",
+      refunds: pendingRefunds[0],
+    });
+    this.logger.debug({
+      at: "InventoryClient#getAllBundleRefunds",
+      message: "Refunds from pending bundle",
+      refunds: nextBundleRefunds[0],
+    });
+    this.logger.debug({
+      at: "InventoryClient#getAllBundleRefunds",
+      message: "Refunds from upcoming bundle",
+      refunds: nextBundleRefunds[1],
+    });
+    return refunds;
+  }
+
   // Return the upcoming refunds (in pending and next bundles) on each chain.
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
+    let refundsToConsider: CombinedRefunds[] = [];
+
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles();
-
-    // Consider refunds from next bundle to be proposed:
-    const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
-    refundsToConsider.push(...nextBundleRefunds);
+    if (this.bundleRefundsPromise) {
+      refundsToConsider = await this.bundleRefundsPromise;
+    } else {
+      this.bundleRefundsPromise = this.getAllBundleRefunds();
+      refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
+    }
 
     return this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
       if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {

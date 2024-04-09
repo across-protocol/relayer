@@ -19,7 +19,6 @@ import {
   assert,
   fixedPointAdjustment,
   isDefined,
-  delay,
 } from "../utils";
 import { Clients } from "../common";
 import {
@@ -252,10 +251,15 @@ export class BundleDataClient {
       bundle
     );
     const attemptToLoadFromArweave = true;
+    const recomputeBundleData = false;
+    // Only try to load bundle data from Arweave in this function, which is only used
+    // by the relayer and monitor to compute upcoming refunds. For speed purposes,
+    // do not try to recompute the entire bundle.
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       bundleEvaluationBlockRanges,
       this.spokePoolClients,
-      attemptToLoadFromArweave
+      attemptToLoadFromArweave,
+      recomputeBundleData
     );
     const combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
 
@@ -269,7 +273,7 @@ export class BundleDataClient {
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
   // - Fills sent after the pending, but not validated, bundle
-  async getNextBundleRefunds(loadBundleDataTimeoutSeconds = 20): Promise<CombinedRefunds[]> {
+  async getNextBundleRefunds(filteredRefundAddress?: string): Promise<CombinedRefunds[]> {
     const hubPoolClient = this.clients.hubPoolClient;
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -299,10 +303,15 @@ export class BundleDataClient {
         hubPoolClient.getLatestProposedRootBundle()
       );
       const attemptToLoadFromArweave = true;
+      const recomputeBundleData = false;
+      // Only try to load bundle data from Arweave in this function, which is only used
+      // by the relayer and monitor to compute upcoming refunds. For speed purposes,
+      // do not try to recompute the entire bundle.
       const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
         pendingBundleBlockRanges,
         this.spokePoolClients,
-        attemptToLoadFromArweave
+        attemptToLoadFromArweave,
+        recomputeBundleData
       );
       combinedRefunds.push(getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3));
 
@@ -315,27 +324,47 @@ export class BundleDataClient {
       );
     }
 
-    // Next, load all refunds sent after the last bundle proposal. This can be expensive so we'll cut it off
-    // if it takes too long.
-    const loadDataTimeout = async (): Promise<LoadDataReturnValue> => {
-      await delay(loadBundleDataTimeoutSeconds);
-      return {
-        bundleFillsV3: {},
-        expiredDepositsToRefundV3: {},
-        bundleDepositsV3: {},
-        bundleSlowFillsV3: {},
-        unexecutableSlowFills: {},
-      };
-    };
-    const attemptToLoadFromArweave = false;
-    // @dev If the loadData call times out, it will continue to resolve in the background, which provides benefits
-    // for the next call to loadData.
-    const { bundleFillsV3, expiredDepositsToRefundV3 } = await Promise.race([
-      this.loadData(widestBundleBlockRanges, this.spokePoolClients, attemptToLoadFromArweave),
-      loadDataTimeout(), // timeout denominated in seconds
-    ]);
-    const nextBundleRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
-    combinedRefunds.push(nextBundleRefunds);
+    // Next, load all refunds sent after the last bundle proposal. This can be expensive so we'll skip the full
+    // bundle reconstruction and make some simplifying assumptions:
+    // - Only look up fills sent by the input relayer sent after the pending bundle's end blocks
+    // - Assume all fills sent by the input relayer are valid
+    // - Skip LP fee computations and just assume the relayer is being refunded the full deposit.inputAmount
+    const refundsForChain: CombinedRefunds = {};
+    for (const chainId of chainIds) {
+      if (this.spokePoolClients[chainId] === undefined) {
+        continue;
+      }
+      const chainIndex = chainIds.indexOf(chainId);
+      this.spokePoolClients[chainId]
+        .getFills()
+        .filter((fill) =>
+          filteredRefundAddress
+            ? fill.relayer === filteredRefundAddress
+            : true &&
+              fill.blockNumber >= widestBundleBlockRanges[chainIndex][0] &&
+              fill.blockNumber <= widestBundleBlockRanges[chainIndex][1]
+        )
+        .forEach((fill) => {
+          const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
+            fill,
+            this.clients.hubPoolClient,
+            widestBundleBlockRanges,
+            chainIds
+          );
+          // Assume that lp fees are 0 for the sake of speed. In the future we could batch compute
+          // these or make hardcoded assumptions based on the origin-repayment chain direction.
+          const refundAmount = fill.inputAmount;
+          refundsForChain[chainToSendRefundTo] ??= {};
+          refundsForChain[chainToSendRefundTo][repaymentToken] ??= {};
+          if (refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer]) {
+            refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer] =
+              refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer].add(refundAmount);
+          } else {
+            refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer] = refundAmount;
+          }
+        });
+    }
+    combinedRefunds.push(refundsForChain);
     return combinedRefunds;
   }
 
@@ -437,7 +466,8 @@ export class BundleDataClient {
   async loadData(
     blockRangesForChains: number[][],
     spokePoolClients: SpokePoolClientsByChain,
-    attemptArweaveLoad = false
+    attemptArweaveLoad = false,
+    recomputeBundleData = true
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
     const arweaveKey = this.getArweaveClientKey(blockRangesForChains);
@@ -449,15 +479,23 @@ export class BundleDataClient {
           this.arweaveDataCache[arweaveKey] = this.loadPersistedDataFromArweave(blockRangesForChains);
         }
         arweaveData = _.cloneDeep(await this.arweaveDataCache[arweaveKey]);
+        this.loadDataCache[key] = Promise.resolve(arweaveData);
       } else {
         arweaveData = undefined;
+        if (recomputeBundleData) {
+          this.loadDataCache[key] = this._loadData(blockRangesForChains, spokePoolClients);
+        } else {
+          // If we do not recompute the bundle data then return a default, empty set of objects and do
+          // not store it in the cache.
+          return {
+            bundleFillsV3: {},
+            expiredDepositsToRefundV3: {},
+            bundleDepositsV3: {},
+            bundleSlowFillsV3: {},
+            unexecutableSlowFills: {},
+          };
+        }
       }
-      const data = isDefined(arweaveData)
-        ? // We can return the data to a Promise to keep the return type consistent.
-          // Note: this is now a fast operation since we've already loaded the data from Arweave.
-          Promise.resolve(arweaveData)
-        : this._loadData(blockRangesForChains, spokePoolClients);
-      this.loadDataCache[key] = data;
     }
 
     return this.loadDataFromCache(key);
