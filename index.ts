@@ -73,6 +73,5 @@ if (require.main === module) {
         notificationPath: "across-error",
       });
       await delay(5); // Wait for transports to flush. May or may not be necessary.
-      await run(args);
     });
 }
