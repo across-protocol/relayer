@@ -251,15 +251,10 @@ export class BundleDataClient {
       bundle
     );
     const attemptToLoadFromArweave = true;
-    const recomputeBundleData = false;
-    // Only try to load bundle data from Arweave in this function, which is only used
-    // by the relayer and monitor to compute upcoming refunds. For speed purposes,
-    // do not try to recompute the entire bundle.
     const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
       bundleEvaluationBlockRanges,
       this.spokePoolClients,
-      attemptToLoadFromArweave,
-      recomputeBundleData
+      attemptToLoadFromArweave
     );
     const combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
 
@@ -303,15 +298,10 @@ export class BundleDataClient {
         hubPoolClient.getLatestProposedRootBundle()
       );
       const attemptToLoadFromArweave = true;
-      const recomputeBundleData = false;
-      // Only try to load bundle data from Arweave in this function, which is only used
-      // by the relayer and monitor to compute upcoming refunds. For speed purposes,
-      // do not try to recompute the entire bundle.
       const { bundleFillsV3, expiredDepositsToRefundV3 } = await this.loadData(
         pendingBundleBlockRanges,
         this.spokePoolClients,
-        attemptToLoadFromArweave,
-        recomputeBundleData
+        attemptToLoadFromArweave
       );
       combinedRefunds.push(getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3));
 
@@ -466,8 +456,7 @@ export class BundleDataClient {
   async loadData(
     blockRangesForChains: number[][],
     spokePoolClients: SpokePoolClientsByChain,
-    attemptArweaveLoad = false,
-    recomputeBundleData = true
+    attemptArweaveLoad = false
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
     const arweaveKey = this.getArweaveClientKey(blockRangesForChains);
@@ -479,23 +468,15 @@ export class BundleDataClient {
           this.arweaveDataCache[arweaveKey] = this.loadPersistedDataFromArweave(blockRangesForChains);
         }
         arweaveData = _.cloneDeep(await this.arweaveDataCache[arweaveKey]);
-        this.loadDataCache[key] = Promise.resolve(arweaveData);
       } else {
         arweaveData = undefined;
-        if (recomputeBundleData) {
-          this.loadDataCache[key] = this._loadData(blockRangesForChains, spokePoolClients);
-        } else {
-          // If we do not recompute the bundle data then return a default, empty set of objects and do
-          // not store it in the cache.
-          return {
-            bundleFillsV3: {},
-            expiredDepositsToRefundV3: {},
-            bundleDepositsV3: {},
-            bundleSlowFillsV3: {},
-            unexecutableSlowFills: {},
-          };
-        }
       }
+      const data = isDefined(arweaveData)
+        ? // We can return the data to a Promise to keep the return type consistent.
+          // Note: this is now a fast operation since we've already loaded the data from Arweave.
+          Promise.resolve(arweaveData)
+        : this._loadData(blockRangesForChains, spokePoolClients);
+      this.loadDataCache[key] = data;
     }
 
     return this.loadDataFromCache(key);
