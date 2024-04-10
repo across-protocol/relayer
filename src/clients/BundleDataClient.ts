@@ -219,26 +219,18 @@ export class BundleDataClient {
   }
 
   // @dev This function should probably be moved to the InventoryClient since it bypasses loadData completely now.
-  async getPendingRefundsFromValidBundles(
-    filteredRefundAddresses: string[],
-    bundleLookback = 1
-  ): Promise<CombinedRefunds[]> {
+  async getPendingRefundsFromValidBundles(...filteredRefundAddresses: string[]): Promise<CombinedRefunds[]> {
     const refunds = [];
     if (!this.clients.hubPoolClient.isUpdated) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
     }
 
-    let latestBlock = this.clients.hubPoolClient.latestBlockSearched;
-    for (let i = 0; i < bundleLookback; i++) {
-      const bundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(latestBlock);
-      if (bundle !== undefined) {
-        // Update latest block so next iteration can get the next oldest bundle:
-        latestBlock = bundle.blockNumber;
-        refunds.push(await this.getPendingRefundsFromBundle(bundle, filteredRefundAddresses));
-      } else {
-        break;
-      } // No more valid bundles in history!
-    }
+    const bundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+      this.clients.hubPoolClient.latestBlockSearched
+    );
+    if (bundle !== undefined) {
+      refunds.push(await this.getPendingRefundsFromBundle(bundle, ...filteredRefundAddresses));
+    } // No more valid bundles in history!
     return refunds;
   }
 
@@ -246,7 +238,7 @@ export class BundleDataClient {
   // Return refunds from input bundle.
   async getPendingRefundsFromBundle(
     bundle: ProposedRootBundle,
-    filteredRefundAddresses: string[]
+    ...filteredRefundAddresses: string[]
   ): Promise<CombinedRefunds> {
     const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -326,7 +318,7 @@ export class BundleDataClient {
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
   // - Fills sent after the pending, but not validated, bundle
-  async getNextBundleRefunds(filteredRefundAddresses: string[]): Promise<CombinedRefunds[]> {
+  async getNextBundleRefunds(...filteredRefundAddresses: string[]): Promise<CombinedRefunds[]> {
     const hubPoolClient = this.clients.hubPoolClient;
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
