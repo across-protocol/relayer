@@ -264,6 +264,15 @@ export class BundleDataClient {
     } else {
       const { bundleFillsV3, expiredDepositsToRefundV3 } = arweaveData;
       combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
+      // If we don't have a spoke pool client for a chain, then we won't be able to deduct refunds correctly for this
+      // chain. For most of the pending bundle's liveness period, these past refunds are already executed so this is
+      // a reasonable assumption. This empty refund chain also matches what the alternative
+      // `getApproximateRefundsForBlockRange` would return.
+      Object.keys(combinedRefunds).forEach((chainId) => {
+        if (this.spokePoolClients[Number(chainId)] === undefined) {
+          delete combinedRefunds[Number(chainId)];
+        }
+      });
     }
 
     // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
