@@ -319,6 +319,7 @@ export class BundleDataClient {
           refundsForChain[chainToSendRefundTo][repaymentToken] ??= {};
           const existingRefundAmount = refundsForChain[chainToSendRefundTo][repaymentToken][relayer] ?? bnZero;
           refundsForChain[chainToSendRefundTo][repaymentToken][relayer] = existingRefundAmount.add(refundAmount);
+        });
     }
     return refundsForChain;
   }
