@@ -24,7 +24,6 @@ import {
   winston,
   assert,
   getNetworkName,
-  isDefined,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 
@@ -228,32 +227,6 @@ export function getRunningBalanceForL1Token(
 ): BigNumber {
   const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
   return runningBalance.sub(desiredTransferAmount);
-}
-
-// Return block ranges for blocks after initialBlockRanges and up to widestBlockRanges.
-// If a chain is disabled or doesn't have a spoke pool client, return a range of 0
-export function getBlockRangeDelta(
-  initialBlockRanges: number[][],
-  widestBlockRanges: number[][],
-  spokePoolClients: { [chainId: number]: SpokePoolClient },
-  enabledChainIds: number[]
-): number[][] {
-  return widestBlockRanges.map((blockRange, index) => {
-    // If chain is disabled, return disabled range
-    if (initialBlockRanges[index][0] === initialBlockRanges[index][1]) {
-      return initialBlockRanges[index];
-    }
-    // If no spoke pool client for chain, consider it disabled
-    if (!isDefined(spokePoolClients[enabledChainIds[index]])) {
-      return [initialBlockRanges[index][1], initialBlockRanges[index][1]];
-    }
-    // If pending bundle end block and widest end block are the same, return an empty range since there are no
-    // "new" events to consider for this chain.
-    if (initialBlockRanges[index][1] >= blockRange[1]) {
-      return [initialBlockRanges[index][1], initialBlockRanges[index][1]];
-    }
-    return [initialBlockRanges[index][1] + 1, blockRange[1]];
-  });
 }
 
 // This returns a possible next block range that could be submitted as a new root bundle, or used as a reference

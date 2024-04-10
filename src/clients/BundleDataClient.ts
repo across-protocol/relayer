@@ -29,11 +29,7 @@ import {
   getRefundsFromBundle,
   CombinedRefunds,
 } from "../dataworker/DataworkerUtils";
-import {
-  getBlockRangeDelta,
-  getWidestPossibleExpectedBlockRange,
-  isChainDisabled,
-} from "../dataworker/PoolRebalanceUtils";
+import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { utils } from "@across-protocol/sdk-v2";
 import {
   BundleDepositsV3,
@@ -208,7 +204,7 @@ export class BundleDataClient {
     };
     this.logger.debug({
       at: "BundleDataClient#loadPersistedDataFromArweave",
-      message: `Loaded persisted data from Arweave in ${Math.floor(performance.now() - start) / 1000}s.`,
+      message: `Loaded persisted data from Arweave in ${Math.round(performance.now() - start) / 1000}s.`,
       blockRanges: JSON.stringify(blockRangesForChains),
       bundleData: prettyPrintV3SpokePoolEvents(
         bundleData.bundleDepositsV3,
@@ -350,6 +346,27 @@ export class BundleDataClient {
       this.clients.hubPoolClient.latestBlockSearched,
       this.clients.configStoreClient.getEnabledChains(this.clients.hubPoolClient.latestBlockSearched)
     );
+    // Return block ranges for blocks after _pendingBlockRanges and up to widestBlockRanges.
+    // If a chain is disabled or doesn't have a spoke pool client, return a range of 0
+    function getBlockRangeDelta(_pendingBlockRanges: number[][]): number[][] {
+      return widestBundleBlockRanges.map((blockRange, index) => {
+        const initialBlockRange = _pendingBlockRanges[index];
+        // If chain is disabled, return disabled range
+        if (initialBlockRange[0] === initialBlockRange[1]) {
+          return initialBlockRange;
+        }
+        // If pending bundle end block exceeds widest end block or if widest end block is undefined
+        // (which is possible if the spoke pool client for the chain is not defined), return an empty range since there are no
+        // "new" events to consider for this chain.
+        if (!isDefined(blockRange[1]) || initialBlockRange[1] >= blockRange[1]) {
+          return [initialBlockRange[1], initialBlockRange[1]];
+        }
+        // If initialBlockRange][0] > widestBlockRange[0], then we'll ignore any blocks
+        // between initialBlockRange[0] and widestBlockRange[0] (inclusive) for simplicity reasons. In practice
+        // this should not happen.
+        return [initialBlockRange[1] + 1, blockRange[1]];
+      });
+    }
 
     // If there is a pending bundle that has not been fully executed, then it should have arweave
     // data so we can load it from there.
@@ -370,12 +387,7 @@ export class BundleDataClient {
       }
 
       // Shorten the widestBundleBlockRanges now to not double count the pending bundle blocks.
-      widestBundleBlockRanges = getBlockRangeDelta(
-        pendingBundleBlockRanges,
-        widestBundleBlockRanges,
-        this.spokePoolClients,
-        chainIds
-      );
+      widestBundleBlockRanges = getBlockRangeDelta(pendingBundleBlockRanges);
     }
 
     // Next, load all refunds sent after the last bundle proposal. This can be expensive so we'll skip the full
@@ -383,9 +395,15 @@ export class BundleDataClient {
     // - Only look up fills sent by the input relayer sent after the pending bundle's end blocks
     // - Assume all fills sent by the input relayer are valid
     // - Skip LP fee computations and just assume the relayer is being refunded the full deposit.inputAmount
+    const start = performance.now();
     combinedRefunds.push(
       this.getApproximateRefundsForBlockRange(chainIds, widestBundleBlockRanges, filteredRefundAddresses)
     );
+    this.logger.debug({
+      at: "BundleDataClient#getNextBundleRefunds",
+      message: `Loading approximate refunds for next bundle in ${Math.round(performance.now() - start) / 1000}s.`,
+      blockRanges: JSON.stringify(widestBundleBlockRanges),
+    });
     return combinedRefunds;
   }
 
@@ -1082,7 +1100,7 @@ export class BundleDataClient {
 
     this.logger.debug({
       at: "BundleDataClient#_loadData",
-      message: `Computed bundle data in ${Math.floor(performance.now() - start) / 1000}s.`,
+      message: `Computed bundle data in ${Math.round(performance.now() - start) / 1000}s.`,
       blockRangesForChains: JSON.stringify(blockRangesForChains),
       v3SpokeEventsReadable,
     });
