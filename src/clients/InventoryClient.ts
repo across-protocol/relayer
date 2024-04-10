@@ -157,8 +157,6 @@ export class InventoryClient {
 
   async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
     const refunds: CombinedRefunds[] = [];
-    // @dev This call can take a long time if bundle data for the latest bundle and the pending bundle is not
-    // available on Arweave.
     const [pendingRefunds, nextBundleRefunds] = await Promise.all([
       this.bundleDataClient.getPendingRefundsFromValidBundles([this.relayer]),
       this.bundleDataClient.getNextBundleRefunds([this.relayer]),
@@ -200,6 +198,7 @@ export class InventoryClient {
     if (this.bundleRefundsPromise) {
       refundsToConsider = await this.bundleRefundsPromise;
     } else {
+      // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
       this.bundleRefundsPromise = this.getAllBundleRefunds();
       refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     }
