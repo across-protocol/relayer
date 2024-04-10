@@ -18,7 +18,7 @@ export interface DepositLimits {
 }
 
 export class AcrossApiClient {
-  private endpoint = "https://across.to/api";
+  private endpoint = "https://app.across.to/api";
 
   private limits: { [token: string]: BigNumber } = {};
 
@@ -112,7 +112,11 @@ export class AcrossApiClient {
 
   getLimit(l1Token: string): BigNumber {
     if (!this.limits[l1Token]) {
-      throw new Error(`No limit stored for l1Token ${l1Token}`);
+      this.logger.warn({
+        at: "AcrossApiClient::getLimit",
+        message: `No limit stored for l1Token ${l1Token}, defaulting to 0.`,
+      });
+      return bnZero;
     }
     return this.limits[l1Token];
   }

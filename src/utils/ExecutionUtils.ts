@@ -1,4 +1,4 @@
-import { AnyObject, delay, winston } from "./";
+import { delay, winston } from "./";
 
 export async function processEndPollingLoop(
   logger: winston.Logger,
@@ -13,28 +13,6 @@ export async function processEndPollingLoop(
 
   logger.debug({ at: `${fileName}#index`, message: `End of execution loop - waiting polling delay ${pollingDelay}s` });
   await delay(pollingDelay);
-  return false;
-}
-
-export async function processCrash(
-  logger: winston.Logger,
-  fileName: string,
-  pollingDelay: number,
-  error: AnyObject
-): Promise<boolean> {
-  logger.error({
-    at: `${fileName}#index`,
-    message: `There was an execution error! ${pollingDelay != 0 ? "Re-running loop" : ""}`,
-    reason: error,
-    e: error,
-    error,
-    notificationPath: "across-error",
-  });
-  await delay(5);
-  if (pollingDelay === 0) {
-    return true;
-  }
-
   return false;
 }
 

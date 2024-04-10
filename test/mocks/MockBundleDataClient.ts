@@ -20,4 +20,12 @@ export class MockBundleDataClient extends BundleDataClient {
   setReturnedNextBundleRefunds(refunds: CombinedRefunds): void {
     this.nextBundleRefunds = refunds;
   }
+
+  getPersistedPendingRefundsFromLastValidBundle(): Promise<CombinedRefunds[] | undefined> {
+    return Promise.resolve(undefined);
+  }
+
+  getPersistedNextBundleRefunds(): Promise<CombinedRefunds | undefined> {
+    return Promise.resolve(undefined);
+  }
 }
