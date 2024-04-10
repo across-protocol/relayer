@@ -314,16 +314,11 @@ export class BundleDataClient {
           // these or make hardcoded assumptions based on the origin-repayment chain direction. This might result
           // in slight over estimations of refunds, but its not clear whether underestimating or overestimating is
           // worst from the relayer's perspective.
-          const refundAmount = fill.inputAmount;
+          const { relayer, inputAmount: refundAmount } = fill;
           refundsForChain[chainToSendRefundTo] ??= {};
           refundsForChain[chainToSendRefundTo][repaymentToken] ??= {};
-          if (refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer]) {
-            refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer] =
-              refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer].add(refundAmount);
-          } else {
-            refundsForChain[chainToSendRefundTo][repaymentToken][fill.relayer] = refundAmount;
-          }
-        });
+          const existingRefundAmount = refundsForChain[chainToSendRefundTo][repaymentToken][relayer] ?? bnZero;
+          refundsForChain[chainToSendRefundTo][repaymentToken][relayer] = existingRefundAmount.add(refundAmount);
     }
     return refundsForChain;
   }
