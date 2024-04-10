@@ -195,13 +195,11 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    if (this.bundleRefundsPromise) {
-      refundsToConsider = await this.bundleRefundsPromise;
-    } else {
+    if (!isDefined(this.bundleRefundsPromise)) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
       this.bundleRefundsPromise = this.getAllBundleRefunds();
-      refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     }
+    refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
 
     return this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
       if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
