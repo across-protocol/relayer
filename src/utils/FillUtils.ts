@@ -1,9 +1,7 @@
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient } from "../clients";
 import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
-import { bnZero, getBlockForTimestamp, getNetworkError, getNetworkName, getRedisCache, winston } from "../utils";
-import { isDefined } from "./";
+import { bnZero, getNetworkError, getNetworkName, winston } from "../utils";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getRefundInformationFromFill(
@@ -57,38 +55,12 @@ export type RelayerUnfilledDeposit = {
 export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
-  depositLookBack?: number,
   logger?: winston.Logger
 ): Promise<{ [chainId: number]: RelayerUnfilledDeposit[] }> {
   const unfilledDeposits: { [chainId: number]: RelayerUnfilledDeposit[] } = {};
   const chainIds = Object.values(spokePoolClients)
     .filter(({ isUpdated }) => isUpdated)
     .map(({ chainId }) => chainId);
-  const originFromBlocks: { [chainId: number]: number } = Object.fromEntries(
-    Object.values(spokePoolClients).map(({ chainId, deploymentBlock }) => [chainId, deploymentBlock])
-  );
-
-  if (isDefined(depositLookBack)) {
-    const blockFinder = undefined;
-    const redis = await getRedisCache();
-    await sdkUtils.forEachAsync(chainIds, async (originChainId: number) => {
-      const spokePoolClient = spokePoolClients[originChainId];
-      const timestamp = spokePoolClient.getCurrentTime() - depositLookBack;
-      const hints = { lowBlock: spokePoolClient.deploymentBlock };
-      try {
-        const startBlock = await getBlockForTimestamp(originChainId, timestamp, blockFinder, redis, hints);
-        originFromBlocks[originChainId] = Math.max(spokePoolClient.deploymentBlock, startBlock);
-      } catch (err) {
-        // ...Failed! Do nothing to inherit the maximum lookback.
-        const chain = getNetworkName(originChainId);
-        logger?.warn({
-          at: "getUnfilledDeposits",
-          message: `Failed to resolve ${chain} block for timestamp ${timestamp}.`,
-          reason: getNetworkError(err),
-        });
-      }
-    });
-  }
 
   // Iterate over each chainId and check for unfilled deposits.
   await sdkUtils.mapAsync(chainIds, async (destinationChainId: number) => {
@@ -97,19 +69,7 @@ export async function getUnfilledDeposits(
     // For each destination chain, query each _other_ SpokePool for deposits within the lookback.
     const deposits = chainIds
       .filter((chainId) => chainId !== destinationChainId)
-      .map((originChainId) => {
-        const originClient = spokePoolClients[originChainId];
-        const earliestBlockNumber = originFromBlocks[originChainId];
-        const { deploymentBlock, latestBlockSearched } = originClient;
-
-        // Basic sanity check...
-        assert(earliestBlockNumber >= deploymentBlock && earliestBlockNumber <= latestBlockSearched);
-
-        // Find all unfilled deposits for the current loops originChain -> destinationChain.
-        return originClient
-          .getDepositsForDestinationChain(destinationChainId)
-          .filter(({ blockNumber }) => blockNumber >= earliestBlockNumber);
-      })
+      .map((originChainId) => spokePoolClients[originChainId].getDepositsForDestinationChain(destinationChainId))
       .flat();
 
     // Resolve the latest fill status for each deposit and filter out any that are now filled.
