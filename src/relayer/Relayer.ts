@@ -273,7 +273,11 @@ export class Relayer {
         maxBlockNumber,
         transactionHash: deposit.transactionHash,
       });
-      return;
+      // If we're in simulation mode, skip this early exit so that the user can evaluate
+      // the full simulation run.
+      if (this.config.sendingRelaysEnabled)  {
+        return;
+      }
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
