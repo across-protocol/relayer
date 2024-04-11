@@ -130,27 +130,6 @@ describe("InventoryClient: Refund chain selection", async function () {
     );
 
     seedMocks(initialAllocation);
-
-    const inputAmount = toBNWei(1);
-
-    // @dev Any tests using sampleDepositData will only compare destination chain with hub chain since the
-    // origin chain is equal to the hub chain.
-    sampleDepositData = {
-      depositId: 0,
-      originChainId: 137,
-      destinationChainId: 10,
-      depositor: owner.address,
-      recipient: owner.address,
-      inputToken: l2TokensForWeth[137],
-      inputAmount,
-      outputToken: l2TokensForWeth[10],
-      outputAmount: inputAmount.mul(fixedPoint.sub(relayerFeePct)).div(fixedPoint),
-      message: "0x",
-      quoteTimestamp: hubPoolClient.currentTime!,
-      fillDeadline: 0,
-      exclusivityDeadline: 0,
-      exclusiveRelayer: ZERO_ADDRESS,
-    };
   });
 
   describe("origin chain is equal to hub chain", function () {
@@ -333,6 +312,25 @@ describe("InventoryClient: Refund chain selection", async function () {
   });
 
   describe("origin chain is not equal to hub chain", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: 0,
+        originChainId: 1,
+        destinationChainId: 10,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: mainnetWeth,
+        inputAmount,
+        outputToken: l2TokensForWeth[10],
+        outputAmount: inputAmount,
+        message: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+    });
     it("Both origin and destination chain allocations are below target", async function () {
       // Set Polygon allocation lower than target:
       tokenClient.setTokenData(137, l2TokensForWeth[137], toWei(9));
