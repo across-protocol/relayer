@@ -219,21 +219,24 @@ export class InventoryClient {
   }
 
   // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
-  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm:
+  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm for each
+  // of the origin and destination chain:
   // a) Find the chain virtual balance (current balance + pending relays + pending refunds) minus current shortfall.
   // b) Find the cumulative virtual balance, including the total refunds on all chains and excluding current shortfall.
   // c) Consider the size of a and b post relay (i.e after the relay is paid and all current transfers are settled what
   // will the balances be on the target chain and the overall cumulative balance).
   // d) Use c to compute what the post relay post current in-flight transactions allocation would be. Compare this
   // number to the target threshold and:
-  //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
-  //     Else, the post fill amount is within the target, so refund on the destination chain.
+  //     If this number is less than the target for the destination chain + rebalance then select destination chain. We
+  //     slightly prefer destination to origin chain to support relayer capital efficiency.
+  //     Else, if this number is less than the target for the origin chain + rebalance then select origin
+  //     chain.
+  //     Else, take repayment on the Hub chain for ease of transferring out of L1 to any L2.
   async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
-    // Always refund on L1 if the transfer is to L1.
-    if (!this.isInventoryManagementEnabled() || destinationChainId === hubChainId) {
+    if (!this.isInventoryManagementEnabled()) {
       return destinationChainId;
     }
 
@@ -249,17 +252,13 @@ export class InventoryClient {
       );
     }
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
-
-    // If there is no inventory config for this token or this token and destination chain the return the destination chain.
-    if (this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined) {
+    // If there is no inventory config for this token then take refund on destination chain.
+    // If neither destination chain nor origin chain have a configuration for this token, then take refund on the
+    // destination chain.
+    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
+    if (tokenConfig?.[destinationChainId] === undefined && tokenConfig?.[originChainId] === undefined) {
       return destinationChainId;
     }
-    const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
-    const chainVirtualBalance = this.getBalanceOnChainForL1Token(destinationChainId, l1Token);
-    const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
-    let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
     const startTime = performance.now();
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
@@ -269,43 +268,78 @@ export class InventoryClient {
       l1Token,
       totalRefundsPerChain,
     });
-
-    // Add upcoming refunds going to this destination chain.
-    chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-      totalRefundsPerChain[destinationChainId]
-    );
-    // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
-    // equivalents of l1Token on all chains.
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
-    cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
+    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
-    const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
-    // Compute what the balance will be on the target chain, considering this relay and the finalization of the
-    // transfers that are currently flowing through the canonical bridge.
-    const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
-      .mul(this.scalar)
-      .div(cumulativeVirtualBalanceWithShortfallPostRelay);
+    // Prioritize destination chain repayment over origin chain repayment but prefer both over
+    // hub chain repayment if they are under allocated. We don't include hub chain
+    // since its the fallback chain if both destination and origin chain are over allocated.
+    const chainsToEvaluate = [destinationChainId];
+    // Only evaluate origin chain if its not the hub chain.
+    if (originChainId !== hubChainId) {
+      chainsToEvaluate.push(originChainId);
+    }
+    for (const _chain of chainsToEvaluate) {
+      if (this.inventoryConfig.tokenConfig[l1Token][_chain] === undefined) {
+        continue;
+      }
+      // Destination chain:
+      const chainShortfall = this.getTokenShortFall(l1Token, _chain);
+      const chainVirtualBalance = this.getBalanceOnChainForL1Token(_chain, l1Token);
+      const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
+      let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+      // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
+      // on destination chain
+      let chainVirtualBalanceWithShortfallPostRelay =
+        _chain === destinationChainId
+          ? chainVirtualBalanceWithShortfall.sub(outputAmount)
+          : chainVirtualBalanceWithShortfall;
+      // Add upcoming refunds:
+      chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
+        totalRefundsPerChain[_chain]
+      );
+      // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
+      // equivalents of l1Token on all chains.
+      cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
+      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
 
-    // If the post relay allocation, considering funds in transit, is larger than the target threshold then refund on L1
-    // Else, refund on destination chian to keep funds within the target.
-    const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][destinationChainId].targetPct);
-    const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? hubChainId : destinationChainId;
+      // Compute what the balance will be on the target chain, considering this relay and the finalization of the
+      // transfers that are currently flowing through the canonical bridge.
+      const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
+        .mul(this.scalar)
+        .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
-    this.log("Evaluated refund Chain", {
-      l1Token: l1Token,
-      chainShortfall,
-      chainVirtualBalance,
-      chainVirtualBalanceWithShortfall,
-      chainVirtualBalanceWithShortfallPostRelay,
-      cumulativeVirtualBalance,
-      cumulativeVirtualBalanceWithShortfall,
-      cumulativeVirtualBalanceWithShortfallPostRelay,
-      targetPct,
-      expectedPostRelayAllocation,
-      refundChainId,
-    });
-    // If the allocation is greater than the target then refund on L1. Else, refund on destination chain.
-    return refundChainId;
+      const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct);
+      this.log(
+        `Evaluated taking repayment on ${
+          _chain === originChainId ? "origin" : "destination"
+        } chain ${_chain} for deposit ${deposit.depositId}: ${
+          expectedPostRelayAllocation.lte(targetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
+        }`,
+        {
+          l1Token,
+          originChainId,
+          destinationChainId,
+          chainShortfall,
+          chainVirtualBalance,
+          chainVirtualBalanceWithShortfall,
+          chainVirtualBalanceWithShortfallPostRelay,
+          cumulativeVirtualBalance,
+          cumulativeVirtualBalanceWithShortfall,
+          cumulativeVirtualBalanceWithShortfallPostRelay,
+          targetPct,
+          expectedPostRelayAllocation,
+          chainsToEvaluate,
+        }
+      );
+      if (expectedPostRelayAllocation.lte(targetPct)) {
+        return _chain;
+      }
+    }
+
+    // Neither destination chain nor origin chain allocation percentage are lower than their target so take
+    // repayment on the hub chain by default.
+    return hubChainId;
   }
 
   getPossibleRebalances(): Rebalance[] {
