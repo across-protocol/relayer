@@ -32,7 +32,7 @@ export async function cctpL1toL2Finalizer(
   // happen very quickly.
   const lookback = getCurrentTime() - 60 * 60 * 24;
   const redis = await getRedisCache(logger);
-  const fromBlock = await getBlockForTimestamp(spokePoolClient.chainId, lookback, undefined, redis);
+  const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
   logger.debug({
     at: "Finalizer#CCTPL1ToL2Finalizer",
     message: `MessageSent event filter for L1 to ${getNetworkName(spokePoolClient.chainId)}`,
