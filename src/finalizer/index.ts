@@ -63,15 +63,14 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
  */
 const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   // Mainnets
-  1: [lineaL1ToL2Finalizer],
   10: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   137: [polygonFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   8453: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
+  59144: [lineaL1ToL2Finalizer, lineaL2ToL1Finalizer],
   // Testnets
   84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  5: [lineaL1ToL2Finalizer],
-  59140: [lineaL2ToL1Finalizer],
+  59140: [lineaL1ToL2Finalizer, lineaL2ToL1Finalizer],
 };
 
 function enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize: string[], addressesToEnsure: string[]): string[] {
