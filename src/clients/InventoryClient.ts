@@ -255,11 +255,8 @@ export class InventoryClient {
     // If there is no inventory config for this token then take refund on destination chain.
     // If neither destination chain nor origin chain have a configuration for this token, then take refund on the
     // destination chain.
-    if (
-      this.inventoryConfig.tokenConfig?.[l1Token] === undefined ||
-      (this.inventoryConfig.tokenConfig[l1Token][destinationChainId] === undefined &&
-        this.inventoryConfig.tokenConfig[l1Token][originChainId] === undefined)
-    ) {
+    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
+    if (tokenConfig?.[destinationChainId] === undefined && tokenConfig?.[originChainId] === undefined) {
       return destinationChainId;
     }
 
@@ -275,7 +272,8 @@ export class InventoryClient {
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
     // Prioritize destination chain repayment over origin chain repayment but prefer both over
-    // hub chain repayment if they are under allocated.
+    // hub chain repayment if they are under allocated. We don't include hub chain
+    // since its the fallback chain if both destination and origin chain are over allocated.
     const chainsToEvaluate = [destinationChainId];
     // Only evaluate origin chain if its not the hub chain.
     if (originChainId !== hubChainId) {
@@ -319,7 +317,7 @@ export class InventoryClient {
           expectedPostRelayAllocation.lte(targetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
         }`,
         {
-          l1Token: l1Token,
+          l1Token,
           originChainId,
           destinationChainId,
           chainShortfall,
