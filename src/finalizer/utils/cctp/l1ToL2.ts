@@ -7,6 +7,7 @@ import {
   Contract,
   EventSearchConfig,
   Signer,
+  formatUnitsForToken,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
@@ -86,10 +87,9 @@ async function resolveRelatedTxnReceipts(
   targetDestinationChainId: number,
   latestBlockToFinalize: number
 ): Promise<DecodedCCTPMessage[]> {
-  const txnReceipts = (await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch)).filter(
-    (receipt) => receipt.blockNumber >= latestBlockToFinalize
-  );
-  return resolveCCTPRelatedTxns(txnReceipts, currentChainId, targetDestinationChainId);
+  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch);
+  const filteredReceipts = allReceipts.filter((receipt) => receipt.blockNumber >= latestBlockToFinalize);
+  return resolveCCTPRelatedTxns(filteredReceipts, currentChainId, targetDestinationChainId);
 }
 
 /**
@@ -130,7 +130,7 @@ async function generateDepositData(
 ): Promise<CrossChainMessage[]> {
   return messages.map((message) => ({
     l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-    amount: message.amount,
+    amount: formatUnitsForToken("USDC", message.amount), // Format out to 6 decimal places for USDC
     type: "deposit",
     originationChainId,
     destinationChainId,
