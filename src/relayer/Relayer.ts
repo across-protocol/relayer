@@ -275,7 +275,7 @@ export class Relayer {
       });
       // If we're in simulation mode, skip this early exit so that the user can evaluate
       // the full simulation run.
-      if (this.config.sendingRelaysEnabled)  {
+      if (this.config.sendingRelaysEnabled) {
         return;
       }
     }
