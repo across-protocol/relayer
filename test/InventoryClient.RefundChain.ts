@@ -316,11 +316,11 @@ describe("InventoryClient: Refund chain selection", async function () {
       const inputAmount = toBNWei(1);
       sampleDepositData = {
         depositId: 0,
-        originChainId: 1,
+        originChainId: 137,
         destinationChainId: 10,
         depositor: owner.address,
         recipient: owner.address,
-        inputToken: mainnetWeth,
+        inputToken: l2TokensForWeth[137],
         inputAmount,
         outputToken: l2TokensForWeth[10],
         outputAmount: inputAmount,
