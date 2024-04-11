@@ -20,17 +20,10 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { V3Deposit, InventoryConfig } from "../src/interfaces";
-import {
-  ZERO_ADDRESS,
-  bnZero,
-  fixedPointAdjustment as fixedPoint,
-  getNetworkName,
-  TOKEN_SYMBOLS_MAP,
-} from "../src/utils";
+import { ZERO_ADDRESS, bnZero, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks";
 
 describe("InventoryClient: Refund chain selection", async function () {
-  const relayerFeePct = toBN(1337);
   const enabledChainIds = [1, 10, 137, 42161];
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[1];
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[1];
@@ -91,11 +84,7 @@ describe("InventoryClient: Refund chain selection", async function () {
   };
 
   const computeOutputAmount = async (deposit: V3Deposit) => {
-    const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
-      ...deposit,
-      paymentChainId: deposit.destinationChainId,
-    });
-    return deposit.inputAmount.mul(fixedPoint.sub(relayerFeePct.add(realizedLpFeePct))).div(fixedPoint);
+    return deposit.inputAmount;
   };
 
   beforeEach(async function () {
@@ -160,7 +149,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(1);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014396"')).to.be.true; // (20-1)/(140-1)=0.136
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014388"')).to.be.true; // (20-1)/(140-1)=0.136
 
       // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
       // allocation on optimism would be (20-5)/(140-5)=11%. This now below the target plus buffer of 12%. Relayer should
@@ -168,7 +157,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111111111111111155"')).to.be.true; // (20-5)/(140-5)=0.11
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111111111111111111"')).to.be.true; // (20-5)/(140-5)=0.11
 
       // Now consider a bigger relay that should force refunds on the L2 chain. Set the relay size to 10 WETH. now post
       // relay allocation would be (20-10)/(140-10)=0.076. This is below the target threshold of 10% and so the bot should
@@ -176,7 +165,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(10);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"76923076923077018"')).to.be.true; // (20-10)/(140-10)=0.076
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"76923076923076923"')).to.be.true; // (20-10)/(140-10)=0.076
     });
 
     it("Correctly factors in cross chain transfers when deciding where to refund", async function () {
@@ -215,15 +204,16 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(1.69);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+
       expect(lastSpyLogIncludes(spy, 'chainShortfall":"15000000000000000000"')).to.be.true;
       expect(lastSpyLogIncludes(spy, 'chainVirtualBalance":"24800000000000000000"')).to.be.true; // (10+14.8)=24.8
       expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfall":"9800000000000000000"')).to.be.true; // 24.8-15=9.8
-      expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfallPostRelay":"8110000000000002260"')).to.be.true; // 9.8-1.69=8.11
+      expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfallPostRelay":"8110000000000000000"')).to.be.true; // 9.8-1.69=8.11
       expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalance":"140000000000000000000')).to.be.true; // 140-15+15=140
       expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfall":"125000000000000000000"')).to.be.true; // 140-15=125
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfallPostRelay":"123310000000000002260"')).to.be
+      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfallPostRelay":"123310000000000000000"')).to.be
         .true; // 125-1.69=123.31
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"65769199578298614')).to.be.true; // 8.11/123.31 = 0.0657
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"65769199578298597')).to.be.true; // 8.11/123.31 = 0.0657
 
       // Now consider if this small relay was larger to the point that we should be refunding on the L2. set it to 5 WETH.
       // Numerically we can shortcut some of the computations above to the following: chain virtual balance with shortfall
@@ -233,7 +223,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
       // Check only the final step in the computation.
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"40000000000000053"')).to.be.true; // 4.8/120 = 0.04
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"40000000000000000"')).to.be.true; // 4.8/120 = 0.04
 
       // Consider that we manually send the relayer som funds while it's large transfer is currently in the bridge. This
       // is to validate that the module considers funds in transit correctly + dropping funds indirectly onto the L2 wallet.
@@ -265,7 +255,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // refunds.
       hubPoolClient.setEnableAllL2Tokens(true);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666703"')).to.be.true; // (20-5)/(140-5)=0.11
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true; // (20-5)/(140-5)=0.11
 
       // If we set this to false in this test, the destination chain will be default used since the refund data
       // will be ignored.
@@ -342,7 +332,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111940298507462730"')).to.be.true;
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111940298507462686"')).to.be.true;
     });
     it("Origin chain allocation does not depend on subtracting from numerator", async function () {
       // Post relay allocation does not subtract anything from chain virtual balance, unlike
@@ -360,7 +350,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(10);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"71428571428571421"')).to.be.true;
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"71428571428571428"')).to.be.true;
     });
     it("Origin allocation is below target", async function () {
       // Set Polygon allocation lower than target:
@@ -375,7 +365,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"35714285714285712"')).to.be.true;
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"35714285714285714"')).to.be.true;
     });
     it("Origin allocation depends on outstanding transfers", async function () {
       // Set Polygon allocation lower than target:
@@ -401,7 +391,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Polygon (origin chain): (15)/(160-5)=9.6% > 7%
       // Relayer should now default to hub chain.
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"99999999999999995"')).to.be.true;
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"100000000000000000"')).to.be.true;
     });
     it("Origin allocation depends on short falls", async function () {
       // Set Polygon allocation lower than target:
@@ -444,7 +434,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Polygon (origin chain): (10)/(155-5)=6.7% > 7%
       // Relayer should still pick origin chain but compute a different allocation.
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"68965517241379307"')).to.be.true;
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"68965517241379310"')).to.be.true;
     });
   });
 });
