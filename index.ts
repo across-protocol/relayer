@@ -1,5 +1,16 @@
 import minimist from "minimist";
-import { config, delay, retrieveSignerFromCLIArgs, help, Logger, usage, winston } from "./src/utils";
+import { CommonConfig } from "./src/common";
+import {
+  AnyObject,
+  config,
+  delay,
+  retrieveSignerFromCLIArgs,
+  help,
+  Logger,
+  processCrash,
+  usage,
+  winston,
+} from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -7,10 +18,11 @@ import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 
 let logger: winston.Logger;
-let cmd: string;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
+
+  const config = new CommonConfig(process.env);
 
   const cmds = {
     dataworker: runDataworker,
@@ -23,7 +35,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   // todo Make the mode of operation an operand, rather than an option.
   // i.e. ts-node ./index.ts [options] <relayer|...>
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
-  cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
+  const cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
 
   if (cmd === "help") {
     cmds[cmd]();
@@ -35,10 +47,19 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
   } else {
-    // One global signer for use with a specific per-chain provider.
-    // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
     const signer = await retrieveSignerFromCLIArgs();
-    await cmds[cmd](logger, signer);
+    do {
+      try {
+        // One global signer for use with a specific per-chain provider.
+        // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
+        await cmds[cmd](logger, signer);
+      } catch (error) {
+        if (await processCrash(logger, cmd, config.pollingDelay, error as AnyObject)) {
+          // eslint-disable-next-line no-process-exit
+          process.exit(1);
+        }
+      }
+    } while (config.pollingDelay !== 0);
   }
 }
 
@@ -59,19 +80,17 @@ if (require.main === module) {
 
   run(args)
     .then(() => {
-      process.exitCode = 0;
+      // eslint-disable-next-line no-process-exit
+      process.exit(0);
     })
     .catch(async (error) => {
-      process.exitCode = 1;
       logger.error({
-        at: cmd ?? "unknown process",
-        message: "There was an execution error!",
-        reason: error,
-        e: error,
+        at: "InfrastructureEntryPoint",
+        message: "There was an error in the main entry point!",
         error,
-        args,
         notificationPath: "across-error",
       });
-      await delay(5); // Wait for transports to flush. May or may not be necessary.
+      await delay(5);
+      await run(args);
     });
 }
