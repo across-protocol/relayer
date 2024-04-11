@@ -1,25 +1,32 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { TransactionRequest } from "@ethersproject/abstract-provider";
+import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
 import {
   Contract,
+  EventSearchConfig,
   Signer,
   getBlockForTimestamp,
+  getCachedProvider,
   getCurrentTime,
   getNetworkName,
+  getProvider,
   getRedisCache,
+  paginatedEventQuery,
   winston,
 } from "../../../utils";
 import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { getBlockRangeByHoursOffsets } from "../linea/common";
+import { uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
   // Let's just assume for now CCTP transfers don't take longer than 1 day and can
   // happen very quickly.
@@ -31,8 +38,13 @@ export async function cctpL1toL2Finalizer(
     message: `MessageSent event filter for L1 to ${getNetworkName(spokePoolClient.chainId)}`,
     fromBlock,
   });
-  const decodedMessages = await resolveRelatedTxnReceipts(hubPoolClient, spokePoolClient.chainId, fromBlock);
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
+  const decodedMessages = await resolveRelatedTxnReceipts(
+    l1ToL2AddressesToFinalize,
+    hubPoolClient.chainId,
+    spokePoolClient.chainId,
+    fromBlock
+  );
+  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[spokePoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
     crossChainMessages: await generateDepositData(decodedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
@@ -40,19 +52,44 @@ export async function cctpL1toL2Finalizer(
   };
 }
 
+async function findRelevantTxnReceiptsForCCTPDeposits(
+  currentChainId: number,
+  addressesToSearch: string[]
+): Promise<TransactionReceipt[]> {
+  const provider = getCachedProvider(currentChainId);
+  const tokenMessengerContract = new Contract(
+    CONTRACT_ADDRESSES[currentChainId].cctpTokenMessenger.address,
+    CONTRACT_ADDRESSES[currentChainId].cctpTokenMessenger.abi,
+    provider
+  );
+  const eventFilter = tokenMessengerContract.filters.DepositForBurn(
+    undefined,
+    undefined, // This should be the UDSC address, but we are currently blocked
+    undefined,
+    addressesToSearch // All depositors that we are monitoring for
+  );
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(currentChainId, 24, 0);
+  const searchConfig: EventSearchConfig = {
+    fromBlock,
+    toBlock,
+    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[currentChainId] || 10_000,
+  };
+  const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
+  const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
+  // Return the receipts, without duplicated transaction hashes
+  return uniqWith(receipts, (a, b) => a.transactionHash.toLowerCase() === b.transactionHash.toLowerCase());
+}
+
 async function resolveRelatedTxnReceipts(
-  client: HubPoolClient,
+  addressesToSearch: string[],
+  currentChainId: number,
   targetDestinationChainId: number,
   latestBlockToFinalize: number
 ): Promise<DecodedCCTPMessage[]> {
-  // Resolve the receipts to all collected txns
-  const txnReceipts = await Promise.all(
-    client
-      .getExecutedRootBundles()
-      .filter((bundle) => bundle.blockNumber >= latestBlockToFinalize)
-      .map((bundle) => client.hubPool.provider.getTransactionReceipt(bundle.transactionHash))
+  const txnReceipts = (await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch)).filter(
+    (receipt) => receipt.blockNumber >= latestBlockToFinalize
   );
-  return resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);
+  return resolveCCTPRelatedTxns(txnReceipts, currentChainId, targetDestinationChainId);
 }
 
 /**
