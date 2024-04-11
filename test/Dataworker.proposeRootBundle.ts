@@ -56,23 +56,10 @@ describe("Dataworker: Propose root bundle", async function () {
   it("Simple lifecycle", async function () {
     await updateAllClients();
 
-    const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
-      return spy
-        .getCalls()
-        .sort((logA: unknown, logB: unknown) => logB["callId"] - logA["callId"]) // Sort by callId in descending order
-        .find((log: unknown) => log["lastArg"]["message"].includes(message)).lastArg;
-    };
-    const getMostRecentLoadDataResults = (): { blockRangesForChains: number[] } => {
-      return getMostRecentLog(spy, "Finished loading V3 spoke pool data");
-    };
-
     // TEST 1:
     // Before submitting any spoke pool transactions, check that dataworker behaves as expected with no roots.
-    const latestBlock1 = await hubPool.provider.getBlockNumber();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
-    const loadDataResults1 = getMostRecentLoadDataResults();
-    expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map(() => [0, latestBlock1]));
 
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -101,8 +88,6 @@ describe("Dataworker: Propose root bundle", async function () {
     );
     const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const loadDataResults2 = getMostRecentLoadDataResults();
-    expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot2.tree.getHexRoot());
@@ -140,17 +125,8 @@ describe("Dataworker: Propose root bundle", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    const latestBlock3 = await hubPool.provider.getBlockNumber();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const blockRange3 = [
-      [latestBlock2 + 1, latestBlock3],
-      [latestBlock2 + 1, latestBlock3],
-      [latestBlock2 + 1, latestBlock3],
-      [latestBlock2 + 1, latestBlock3],
-    ];
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
-    const loadDataResults3 = getMostRecentLoadDataResults();
-    expect(loadDataResults3.blockRangesForChains).to.deep.equal(blockRange3);
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
@@ -179,8 +155,6 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const loadDataResults4 = getMostRecentLoadDataResults();
-    expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot4.tree.getHexRoot());

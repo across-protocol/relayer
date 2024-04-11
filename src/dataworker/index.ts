@@ -54,13 +54,13 @@ export async function createDataworker(
 }
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
-  let loopStart = Date.now();
+  let loopStart = performance.now();
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger.debug({
     at: "Dataworker#index",
-    message: `Time to update non-spoke clients: ${(Date.now() - loopStart) / 1000}s`,
+    message: `Time to update non-spoke clients: ${(performance.now() - loopStart) / 1000}s`,
   });
-  loopStart = Date.now();
+  loopStart = performance.now();
 
   let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
   try {
@@ -187,9 +187,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
       logger.debug({
         at: "Dataworker#index",
-        message: `Time to update spoke pool clients and run dataworker function: ${(Date.now() - loopStart) / 1000}s`,
+        message: `Time to update spoke pool clients and run dataworker function: ${
+          (performance.now() - loopStart) / 1000
+        }s`,
       });
-      loopStart = Date.now();
+      loopStart = performance.now();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;

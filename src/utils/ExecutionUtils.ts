@@ -1,5 +1,10 @@
 import { delay, winston } from "./";
 
+export function exit(code: number) {
+  // eslint-disable-next-line no-process-exit
+  process.exit(code);
+}
+
 export async function processEndPollingLoop(
   logger: winston.Logger,
   fileName: string,

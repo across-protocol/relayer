@@ -9,8 +9,8 @@ export class MockBundleDataClient extends BundleDataClient {
     return [this.pendingBundleRefunds];
   }
 
-  async getNextBundleRefunds(): Promise<CombinedRefunds> {
-    return this.nextBundleRefunds;
+  async getNextBundleRefunds(): Promise<CombinedRefunds[]> {
+    return [this.nextBundleRefunds];
   }
 
   setReturnedPendingBundleRefunds(refunds: CombinedRefunds): void {

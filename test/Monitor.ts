@@ -1,4 +1,3 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   BalanceAllocator,
   BundleDataClient,
@@ -74,10 +73,9 @@ describe("Monitor", async function () {
     }
   };
 
-  const { fixedPointAdjustment: fixedPoint } = sdkUtils;
   const computeRelayerRefund = async (request: V3DepositWithBlock & { paymentChainId: number }): Promise<BigNumber> => {
-    const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(request);
-    return request.inputAmount.mul(fixedPoint.sub(realizedLpFeePct)).div(fixedPoint);
+    // @dev Monitor currently doesn't factor in LP fee into relayer refund calculation for simplicity and speed.
+    return request.inputAmount;
   };
 
   beforeEach(async function () {
