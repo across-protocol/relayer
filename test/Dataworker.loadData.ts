@@ -477,7 +477,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         spokePoolClients
       );
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-      expect(spyLogIncludes(spy, -1, "invalid V3 fills in range")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
     });
     it("Matches fill with deposit with outputToken = 0x0", async function () {
       await depositV3(
