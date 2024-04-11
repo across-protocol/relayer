@@ -165,7 +165,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         inputToken: mainnetWeth,
         inputAmount,
         outputToken: l2TokensForWeth[10],
-        outputAmount: inputAmount.mul(fixedPoint.sub(relayerFeePct)).div(fixedPoint),
+        outputAmount: inputAmount,
         message: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
         fillDeadline: 0,
