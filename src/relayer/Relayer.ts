@@ -15,7 +15,6 @@ import {
   toBNWei,
   winston,
   fixedPointAdjustment,
-  CHAIN_IDs,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -274,9 +273,9 @@ export class Relayer {
         maxBlockNumber,
         transactionHash: deposit.transactionHash,
       });
-      // If we're in simulation mode on mainnet, skip this early exit so that the user can evaluate
+      // If we're in simulation mode, skip this early exit so that the user can evaluate
       // the full simulation run.
-      if (this.config.sendingRelaysEnabled || this.clients.hubPoolClient.chainId !== CHAIN_IDs.MAINNET) {
+      if (this.config.sendingRelaysEnabled) {
         return;
       }
     }
