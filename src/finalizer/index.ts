@@ -160,9 +160,11 @@ export async function finalize(
             client,
             l1ToL2AddressesToFinalize
           );
+
           callData.forEach((txn, idx) => {
             finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
           });
+
           totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
           totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
           totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
@@ -414,7 +416,6 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }
-
       const loopEndPostFinalizations = performance.now();
 
       logger.debug({
