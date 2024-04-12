@@ -72,5 +72,5 @@ if (require.main === module) {
       });
       await delay(5); // Wait for transports to flush. May or may not be necessary.
     })
-  .finally(() => exit(exitCode));
+    .finally(() => exit(exitCode));
 }
