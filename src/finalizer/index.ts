@@ -122,20 +122,18 @@ export async function finalize(
     const network = getNetworkName(chainId);
 
     // For certain chains we always want to track certain addresses for finalization:
-    // LineaL1ToL2: Always track HubPool, AtomicDepositor, LineaSpokePool. HubPool sends messages and tokens to the
-    // SpokePool, while the relayer rebalances ETH via the AtomicDepositor
-    if (chainId === hubChainId) {
-      if (chainId !== CHAIN_IDs.MAINNET) {
-        logger.warn({
-          at: "Finalizer",
-          message: "Testnet Finalizer: skipping finalizations where from or to address is set to AtomicDepositor",
-        });
-      }
-      l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
+    // If the chain needs an L1->L2 finalization, always track HubPool, AtomicDepositor. HubPool sends messages and
+    // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor
+    if (sdkUtils.chainRequiresL1ToL2Finalization(chainId)) {
+      const addressesToEnsure = [
         hubPoolClient.hubPool.address,
-        spokePoolClients[hubChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI].spokePool.address,
         CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
-      ]);
+      ];
+      // For linea specifically, we want to include the Linea Spokepool as well.
+      if (sdkUtils.chainIsLinea(chainId)) {
+        addressesToEnsure.push(spokePoolClients[CHAIN_IDs.LINEA].spokePool.address);
+      }
+      l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, addressesToEnsure);
     }
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
