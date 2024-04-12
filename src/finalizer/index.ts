@@ -101,75 +101,80 @@ export async function finalize(
   const finalizationsToBatch: { txn: Multicall2Call; crossChainMessage?: CrossChainMessage }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
-  for (const chainId of configuredChainIds) {
-    const client = spokePoolClients[chainId];
-    if (client === undefined) {
-      logger.warn({
-        at: "Finalizer",
-        message: `Skipping finalizations for ${getNetworkName(
-          chainId
-        )} because spoke pool client does not exist, is it disabled?`,
-        configuredChainIds,
-        availableChainIds: Object.keys(spokePoolClients),
-      });
-      continue;
-    }
-
-    // We want to first resolve a possible override for the finalizer, and
-    // then fallback to the default finalizer.
-    const chainSpecificFinalizers = (chainFinalizerOverrides[chainId] ?? [chainFinalizers[chainId]]).filter(isDefined);
-    assert(chainSpecificFinalizers?.length > 0, `No finalizer available for chain ${chainId}`);
-
-    const network = getNetworkName(chainId);
-
-    // For certain chains we always want to track certain addresses for finalization:
-    // LineaL1ToL2: Always track HubPool, AtomicDepositor, LineaSpokePool. HubPool sends messages and tokens to the
-    // SpokePool, while the relayer rebalances ETH via the AtomicDepositor
-    if (chainId === hubChainId) {
-      if (chainId !== CHAIN_IDs.MAINNET) {
+  await Promise.all(
+    configuredChainIds.map(async (chainId) => {
+      const client = spokePoolClients[chainId];
+      if (client === undefined) {
         logger.warn({
           at: "Finalizer",
-          message: "Testnet Finalizer: skipping finalizations where from or to address is set to AtomicDepositor",
+          message: `Skipping finalizations for ${getNetworkName(
+            chainId
+          )} because spoke pool client does not exist, is it disabled?`,
+          configuredChainIds,
+          availableChainIds: Object.keys(spokePoolClients),
         });
+        return;
       }
-      l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
-        hubPoolClient.hubPool.address,
-        spokePoolClients[hubChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI].spokePool.address,
-        CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
-      ]);
-    }
 
-    // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
-    // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the
-    // normal finalizer for each chain. This is going to cause an overlap of finalization attempts on USDC.
-    // However, that's okay because each finalizer will only attempt to finalize the messages that it is
-    // responsible for.
-    let totalWithdrawalsForChain = 0;
-    let totalDepositsForChain = 0;
-    let totalMiscTxnsForChain = 0;
-    for (const finalizer of chainSpecificFinalizers) {
-      const { callData, crossChainMessages } = await finalizer(
-        logger,
-        hubSigner,
-        hubPoolClient,
-        client,
-        l1ToL2AddressesToFinalize
+      // We want to first resolve a possible override for the finalizer, and
+      // then fallback to the default finalizer.
+      const chainSpecificFinalizers = (chainFinalizerOverrides[chainId] ?? [chainFinalizers[chainId]]).filter(
+        isDefined
       );
+      assert(chainSpecificFinalizers?.length > 0, `No finalizer available for chain ${chainId}`);
 
-      callData.forEach((txn, idx) => {
-        finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
+      const network = getNetworkName(chainId);
+
+      // For certain chains we always want to track certain addresses for finalization:
+      // LineaL1ToL2: Always track HubPool, AtomicDepositor, LineaSpokePool. HubPool sends messages and tokens to the
+      // SpokePool, while the relayer rebalances ETH via the AtomicDepositor
+      if (chainId === hubChainId) {
+        if (chainId !== CHAIN_IDs.MAINNET) {
+          logger.warn({
+            at: "Finalizer",
+            message: "Testnet Finalizer: skipping finalizations where from or to address is set to AtomicDepositor",
+          });
+        }
+        l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
+          hubPoolClient.hubPool.address,
+          spokePoolClients[hubChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI].spokePool
+            .address,
+          CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
+        ]);
+      }
+
+      // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
+      // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the
+      // normal finalizer for each chain. This is going to cause an overlap of finalization attempts on USDC.
+      // However, that's okay because each finalizer will only attempt to finalize the messages that it is
+      // responsible for.
+      let totalWithdrawalsForChain = 0;
+      let totalDepositsForChain = 0;
+      let totalMiscTxnsForChain = 0;
+      await Promise.all(
+        chainSpecificFinalizers.map(async (finalizer) => {
+          const { callData, crossChainMessages } = await finalizer(
+            logger,
+            hubSigner,
+            hubPoolClient,
+            client,
+            l1ToL2AddressesToFinalize
+          );
+          callData.forEach((txn, idx) => {
+            finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
+          });
+          totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
+          totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
+          totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
+        })
+      );
+      const totalTransfers = totalWithdrawalsForChain + totalDepositsForChain + totalMiscTxnsForChain;
+      logger.debug({
+        at: "finalize",
+        message: `Found ${totalTransfers} ${network} messages (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
       });
-
-      totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
-      totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
-      totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
-    }
-    const totalTransfers = totalWithdrawalsForChain + totalDepositsForChain + totalMiscTxnsForChain;
-    logger.debug({
-      at: "finalize",
-      message: `Found ${totalTransfers} ${network} messages (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
-    });
-  }
+    })
+  );
   const multicall2Lookup = Object.fromEntries(
     await Promise.all(
       uniq([
