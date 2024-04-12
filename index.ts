@@ -57,11 +57,10 @@ if (require.main === module) {
 
   const args = minimist(process.argv.slice(2), opts);
 
+  let exitCode = 0;
   run(args)
-    .then(() => {
-      exit(0);
-    })
     .catch(async (error) => {
+      exitCode = 1;
       logger.error({
         at: cmd ?? "unknown process",
         message: "There was an execution error!",
@@ -72,6 +71,6 @@ if (require.main === module) {
         notificationPath: "across-error",
       });
       await delay(5); // Wait for transports to flush. May or may not be necessary.
-      exit(1);
-    });
+    })
+    .finally(() => exit(exitCode));
 }
