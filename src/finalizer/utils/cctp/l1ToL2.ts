@@ -7,12 +7,12 @@ import {
   Contract,
   EventSearchConfig,
   Signer,
+  TOKEN_SYMBOLS_MAP,
   formatUnitsForToken,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
   getNetworkName,
-  getProvider,
   getRedisCache,
   paginatedEventQuery,
   winston,
@@ -65,7 +65,7 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
   );
   const eventFilter = tokenMessengerContract.filters.DepositForBurn(
     undefined,
-    undefined, // This should be the UDSC address, but we are currently blocked
+    TOKEN_SYMBOLS_MAP._USDC.addresses[currentChainId], // Filter by only USDC token deposits
     undefined,
     addressesToSearch // All depositors that we are monitoring for
   );
