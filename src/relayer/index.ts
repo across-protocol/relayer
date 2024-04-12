@@ -1,15 +1,7 @@
-import {
-  getCurrentTime,
-  processEndPollingLoop,
-  winston,
-  config,
-  startupLogLevel,
-  Signer,
-  disconnectRedisClients,
-} from "../utils";
+import { config, delay, disconnectRedisClients, getCurrentTime, Signer, startupLogLevel, winston } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
@@ -21,16 +13,25 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  let relayerClients: RelayerClients;
 
+  let stop = config.pollingDelay === 0;
+  process.on("SIGHUP", () => {
+    logger.debug({
+      at: "Relayer#run",
+      message: "Received SIGHUP, stopping at end of current loop.",
+    });
+    stop = true;
+  });
+
+  logger[startupLogLevel(config)]({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", config, relayerRun });
+  const relayerClients = await constructRelayerClients(logger, config, baseSigner);
+  const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
+
+  let run = 1;
   try {
-    logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config, relayerRun });
-    relayerClients = await constructRelayerClients(logger, config, baseSigner);
-    const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
-
-    logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
-
-    for (;;) {
+    do {
+      logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
+      const tLoopStart = performance.now();
       await updateRelayerClients(relayerClients, config);
 
       if (!config.skipRelays) {
@@ -50,10 +51,20 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       relayerClients.profitClient.clearUnprofitableFills();
       relayerClients.tokenClient.clearTokenShortfall();
 
-      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) {
-        break;
+      const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+      logger.debug({
+        at: "Relayer#run",
+        message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
+      });
+
+      if (config.pollingDelay > 0 && !stop) {
+        logger.debug({
+          at: "relayer#run",
+          message: `Waiting polling delay ${config.pollingDelay} s before next loop.`,
+        });
+        await delay(config.pollingDelay);
       }
-    }
+    } while (!stop);
   } finally {
     await disconnectRedisClients(logger);
   }
