@@ -188,7 +188,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       logger.debug({
         at: "Dataworker#index",
         message: `Time to update spoke pool clients and run dataworker function: ${
-          (performance.now() - loopStart) / 1000
+          (dataworkerFunctionLoopTimerEnd - loopStart) / 1000
         }s`,
         timeToLoadSpokes: (dataworkerFunctionLoopTimerStart - loopStart) / 1000,
         timeToRunDataworkerFunctions: (dataworkerFunctionLoopTimerEnd - dataworkerFunctionLoopTimerStart) / 1000,
