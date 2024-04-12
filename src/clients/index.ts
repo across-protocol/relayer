@@ -1,7 +1,7 @@
 import { clients } from "@across-protocol/sdk-v2";
 
 export type SpokePoolClient = clients.SpokePoolClient;
-export const { SpokePoolClient } = clients;
+export const { SpokePoolClient, SpokePoolUpdate } = clients;
 
 export * from "./BalanceAllocator";
 export * from "./BundleDataClient";
