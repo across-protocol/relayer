@@ -406,7 +406,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           minDepositConfirmations: {
             default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
           },
-          sendingRelaysEnabled: false,
+          sendingRelaysEnabled: true,
         } as unknown as RelayerConfig
       );
 
