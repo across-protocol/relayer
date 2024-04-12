@@ -388,8 +388,9 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
 
   try {
     for (;;) {
-      const loopStart = Date.now();
+      const loopStart = performance.now();
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
+      const loopStartPostSpokePoolUpdates = performance.now();
 
       if (config.finalizerEnabled) {
         const availableChains = commonClients.configStoreClient
@@ -409,7 +410,14 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }
 
-      logger.debug({ at: "Finalizer#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
+      const loopEndPostFinalizations = performance.now();
+
+      logger.debug({
+        at: "Finalizer#index",
+        message: `Time to loop: ${(loopEndPostFinalizations - loopStart) / 1000}s`,
+        timeToUpdateSpokeClients: (loopStartPostSpokePoolUpdates - loopStart) / 1000,
+        timeToFinalize: (loopEndPostFinalizations - loopStartPostSpokePoolUpdates) / 1000,
+      });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;
