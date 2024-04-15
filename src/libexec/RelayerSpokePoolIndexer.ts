@@ -7,6 +7,7 @@ import * as utils from "../../scripts/utils";
 import { SpokePoolClientMessage } from "../clients";
 import {
   disconnectRedisClients,
+  exit,
   isDefined,
   getBlockForTimestamp,
   getDeploymentBlockNumber,
@@ -37,6 +38,7 @@ const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 let logger: winston.Logger;
 let chain: string;
+let stop = false;
 
 class EventManager {
   public readonly chain: string;
@@ -210,11 +212,10 @@ async function listen(
     );
   });
 
+  const delay = period * 1000;
   do {
-    // @todo: - Support graceful teardown after SIGHUP.
-    await setTimeout(period);
-    // eslint-disable-next-line no-constant-condition
-  } while (true);
+    await setTimeout(delay);
+  } while (!stop);
 }
 
 function getWSProviders(chainId: number, quorum = 1): WebSocketProvider[] {
@@ -252,12 +253,13 @@ async function run(argv: string[]): Promise<void> {
     maxBlockRange,
   };
 
-  logger.debug({
-    at: "RelayerSpokePoolIndexer::run",
-    message: `Starting Relayer SpokePool Indexer for ${getNetworkName(chainId)}.`,
-    opts,
-  });
+  logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
   const spokePool = await utils.getSpokePoolContract(chainId);
+
+  process.on("SIGHUP", () => {
+    logger.debug({ at: "Relayer#run", message: "Received SIGHUP, stopping..." });
+    stop = true;
+  });
 
   // EnabledDepositRoutes should always look back over the entire history.
   // @note: An improvement is on the way...
@@ -293,8 +295,7 @@ async function run(argv: string[]): Promise<void> {
       });
       throw err;
     }
-    // eslint-disable-next-line no-constant-condition
-  } while (true);
+  } while (!stop);
 }
 
 if (require.main === module) {
@@ -308,5 +309,8 @@ if (require.main === module) {
       logger.error({ at: "RelayerSpokePoolIndexer", message: "Process exited with error.", error });
       process.exitCode = NODE_APP_ERR;
     })
-    .finally(async () => await disconnectRedisClients());
+    .finally(async () => {
+      await disconnectRedisClients();
+      exit(process.exitCode);
+    });
 }
