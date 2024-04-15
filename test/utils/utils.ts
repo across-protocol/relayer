@@ -287,31 +287,6 @@ export async function enableRoutesOnHubPool(
   }
 }
 
-export async function simpleDeposit(
-  spokePool: Contract,
-  token: Contract,
-  recipient: SignerWithAddress,
-  depositor: SignerWithAddress,
-  destinationChainId: number = utils.destinationChainId,
-  amountToDeposit: utils.BigNumber = utils.amountToDeposit,
-  depositRelayerFeePct: utils.BigNumber = utils.depositRelayerFeePct
-): Promise<Deposit> {
-  const depositObject = await utils.depositV2(
-    spokePool,
-    token,
-    recipient,
-    depositor,
-    destinationChainId,
-    amountToDeposit,
-    depositRelayerFeePct
-  );
-  return {
-    ...depositObject,
-    realizedLpFeePct: toBNWei("0"),
-    destinationToken: ZERO_ADDRESS,
-  };
-}
-
 export async function getLastBlockTime(provider: providers.Provider): Promise<number> {
   return (await provider.getBlock(await provider.getBlockNumber())).timestamp;
 }
