@@ -49,7 +49,7 @@ export class InventoryClient {
   private readonly scalar: BigNumber;
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
   private bundleRefundsPromise: Promise<CombinedRefunds[]> = undefined;
-  private excessRunningBalanceCache: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+  private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
 
   constructor(
     readonly relayer: string,
@@ -288,9 +288,11 @@ export class InventoryClient {
     // We need to calculate the latest running balance for each optimistic rollup chain.
     // We'll add the last proposed running balance plus new deposits and refunds.
     if (this.prioritizeLpUtilization) {
-      const excessRunningBalances = this.excessRunningBalanceCache[l1Token]
-        ? this.excessRunningBalanceCache[l1Token]
-        : await this.getExcessRunningBalances(l1Token);
+      if (!isDefined(this.excessRunningBalancePromises[l1Token])) {
+        // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
+        this.excessRunningBalancePromises[l1Token] = this.getExcessRunningBalances(l1Token);
+      }
+      const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token]);
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
       const chainsWithExcessSpokeBalances = SLOW_WITHDRAWAL_CHAINS.filter((chainId) =>
@@ -434,7 +436,7 @@ export class InventoryClient {
           l1Token,
           chainId
         );
-        const pctOverTarget = latestRunningBalance.gt(0)
+        const pctOverTarget = latestRunningBalance.gt(targetSpokeBalanceForChain.target)
           ? targetSpokeBalanceForChain.target.gt(0)
             ? latestRunningBalance
                 .sub(targetSpokeBalanceForChain.target)
@@ -459,7 +461,6 @@ export class InventoryClient {
       l1Token,
       excessPcts,
     });
-    this.excessRunningBalanceCache[l1Token] = excessPcts;
     return excessPcts;
   }
 
