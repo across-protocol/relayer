@@ -99,26 +99,25 @@ export async function constructRelayerClients(
       ? sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains])
       : undefined;
 
-  const spokePoolClients =
-    config.pollingDelay > 0 && config.externalIndexer
-      ? Object.fromEntries(
-          await sdkUtils.mapAsync(
-            enabledChains ?? [1, 10, 137, 324, 8453, 42161, 59144], // @todo: fix
-            async (chainId) => [
-              chainId,
-              await indexedSpokePoolClient(baseSigner, hubPoolClient, chainId, workers[chainId]),
-            ]
-          )
-        )
-      : await constructSpokePoolClientsWithLookback(
-          logger,
-          hubPoolClient,
-          configStoreClient,
-          config,
-          baseSigner,
-          config.maxRelayerLookBack,
-          enabledChains
-        );
+  let spokePoolClients: SpokePoolClientsByChain;
+  if (config.pollingDelay > 0 && config.externalIndexer) {
+    spokePoolClients = Object.fromEntries(
+      await sdkUtils.mapAsync(enabledChains ?? configStoreClient.getEnabledChains(), async (chainId) => [
+        chainId,
+        await indexedSpokePoolClient(baseSigner, hubPoolClient, chainId, workers[chainId]),
+      ])
+    );
+  } else {
+    spokePoolClients = await constructSpokePoolClientsWithLookback(
+      logger,
+      hubPoolClient,
+      configStoreClient,
+      config,
+      baseSigner,
+      config.maxRelayerLookBack,
+      enabledChains
+    );
+  }
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
   // destination chain list.
