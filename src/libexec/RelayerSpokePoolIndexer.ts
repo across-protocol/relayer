@@ -12,10 +12,10 @@ import {
   getBlockForTimestamp,
   getDeploymentBlockNumber,
   getNetworkName,
-  getNodeUrlList,
   getOriginFromURL,
   getProvider,
   getRedisCache,
+  getWSProviders,
   Logger,
   paginatedEventQuery,
   sortEventsAscending,
@@ -352,12 +352,6 @@ async function listen(
   do {
     await setTimeout(INDEXER_POLLING_PERIOD);
   } while (!stop);
-}
-
-function getWSProviders(chainId: number, quorum = 1): WebSocketProvider[] {
-  const urls = getNodeUrlList(chainId, quorum, "wss");
-  const providers = urls.map((url: string) => new ethersProviders.WebSocketProvider(url));
-  return providers;
 }
 
 /**
