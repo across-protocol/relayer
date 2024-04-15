@@ -57,20 +57,40 @@ class EventManager {
     this.blockNumber = 0;
   }
 
+  /**
+   * Record an Ethers event. If quorum is 1 then the event will be enqueued for transfer. If this is a new event and
+   * quorum > 1 then its hash will be recorded for future reference. If the same event is received multiple times then
+   * it will be enqueued for transfer. This applies a rudimentary quorum system to the event and ensures that providers
+   * agree on the events being transmitted.
+   * @param event Ethers event to be recorded.
+   * @param provider A string uniquely identifying the provider that supplied the event.
+   * @returns void
+   */
   add(event: Event, provider: string): void {
     provider; // @todo: Store the provider to ensure that quorum is satisfied by separate providers.
     assert(!event.removed);
 
     const eventHash = this.hashEvent(event);
 
+    // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
+    // already found in the `eventHashes` array, then at least one provider has already supplied it.
     const eventHashes = (this.eventHashes[event.blockNumber] ??= []);
-    if (eventHashes.indexOf(eventHash) === -1) {
+    if (eventHashes.indexOf(eventHash) === -1 && this.quorum > 1) {
       eventHashes.push(eventHash);
     } else {
       this.events[eventHash] = event;
     }
   }
 
+  /**
+   * Remove an Ethers event. This event may have previously been ingested, and subsequently invalidated due to a chain
+   * re-org. The EventManager does not necessarily know whether it's seen this event before, so it initially attempts
+   * to flush the event from its local pending buffer and subsequently propagates the removal to the parent process
+   * for further processing (if defined).
+   * @param event Ethers event to be recorded.
+   * @param provider A string uniquely identifying the provider that supplied the event.
+   * @returns void
+   */
   remove(event: Event, provider: string): void {
     provider; // @todo: TBD whether this is needed here.
     assert(event.removed);
@@ -83,16 +103,24 @@ class EventManager {
     if (idx !== -1) {
       eventHashes.splice(idx, 1); // Drop the event hash from `blockNumber`;
     }
-
     delete this.events[eventHash]; // Drop the event entirely.
 
-    // Notify the SpokePoolClient in case the reorg is deeper then the configured finality.
-    const message = {
-      event: JSON.stringify(mangleEvent(event), sdkUtils.jsonReplacerWithBigNumbers),
-    };
-    process.send(JSON.stringify(message));
+    if (isDefined(process.send)) {
+      // Notify the SpokePoolClient in case the reorg is deeper then the configured finality.
+      const message = {
+        event: JSON.stringify(mangleEvent(event), sdkUtils.jsonReplacerWithBigNumbers),
+      };
+      process.send(JSON.stringify(message));
+    }
   }
 
+  /**
+   * Record a new block. This function triggers the existing queue of pending events to be evaluated for basic finality.
+   * Events meeting finality criteria are submitted to the parent process (if defined). Events submitted are
+   * subsequently flushed from this class.
+   * @param blockNumber Number of the latest block.
+   * @returns void
+   */
   tick(blockNumber: number): void {
     this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
 
@@ -112,6 +140,11 @@ class EventManager {
     eventHashes.forEach((eventHash) => delete this.events[eventHash]);
   }
 
+  /**
+   * Produce a SHA256 hash representing an Ethers event, based on select input fields.
+   * @param event An Ethers event to be hashed.
+   * @returns A SHA256 string derived from the event.
+   */
   hashEvent(event: Event): string {
     const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, args } = event;
     return ethersUtils.id(
@@ -121,15 +154,24 @@ class EventManager {
 }
 
 /**
- * Stringification of an Ethers event produces unreliable results for Event.args and it can be consolidated into an
- * array, dropping the named k/v pairs. Sub out the array component of `args` to ensure it's parsed correctly on the
- * receiving side.
+ * Sub out the array component of `args` to ensure it's correctly stringified before transmission.
+ * Stringification of an Ethers event can produce unreliable results for Event.args and it can be consolidated into an
+ * array, dropping the named k/v pairs.
+ * @param event An Ethers event.
+ * @returns A modified Ethers event, ensuring that the Event.args object consists of named k/v pairs.
  */
 function mangleEvent(event: Event): Event {
   return { ...event, args: sdkUtils.spreadEvent(event.args) };
 }
 
-function getEventFilter(contract: Contract, eventName: string, filterArgs: string[]): EventFilter {
+/**
+ * Given an event name and contract, return the corresponding Ethers EventFilter object.
+ * @param contract Ethers Constract instance.
+ * @param eventName The name of the event to be filtered.
+ * @param filterArgs Optional filter arguments to be applied.
+ * @returns An Ethers EventFilter instance.
+ */
+function getEventFilter(contract: Contract, eventName: string, filterArgs: string[] = []): EventFilter {
   const filter = contract.filters[eventName];
   if (!isDefined(filter)) {
     throw new Error(`Event ${eventName} not defined for contract`);
@@ -140,6 +182,14 @@ function getEventFilter(contract: Contract, eventName: string, filterArgs: strin
   return filter();
 }
 
+/**
+ * Given the inputs for a SpokePoolClient update, consolidate the inputs into a message and submit it to the parent
+ * process (if defined).
+ * @param blockNumber Block number up to which the update applies.
+ * @param currentTime The SpokePool timestamp at blockNumber.
+ * @param events An array of Ethers Event objects to be submitted.
+ * @returns void
+ */
 function postEvents(blockNumber: number, currentTime: number, events: Event[]): void {
   if (!isDefined(process.send)) {
     return;
@@ -154,6 +204,14 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
   process.send(JSON.stringify(message));
 }
 
+/**
+ * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the
+ * parent process (if defined).
+ * @param spokePool Ethers Constract instance.
+ * @param eventName The name of the event to be filtered.
+ * @param opts Options to configure event scraping behaviour.
+ * @returns void
+ */
 async function scrapeEvents(spokePool: Contract, eventName: string, opts: ScraperOpts): Promise<void> {
   const { lookback, deploymentBlock, filterArgs, maxBlockRange } = opts;
   const { provider } = spokePool;
@@ -184,6 +242,14 @@ async function scrapeEvents(spokePool: Contract, eventName: string, opts: Scrape
   postEvents(toBlock, currentTime, events.map(mangleEvent));
 }
 
+/**
+ * Given a SpokePool contract instance and an array of event names, subscribe to all future event emissions.
+ * Periodically transmit received events to the parent process (if defined).
+ * @param eventMgr Ethers Constract instance.
+ * @param eventName The name of the event to be filtered.
+ * @param opts Options to configure event scraping behaviour.
+ * @returns void
+ */
 async function listen(
   eventMgr: EventManager,
   spokePool: Contract,
@@ -201,7 +267,7 @@ async function listen(
   // @todo: Should probably prune blocks and events > 100x finality.
   providers[0].on("block", (blockNumber) => eventMgr.tick(blockNumber));
 
-  // Setup listeners for each supplied provider.
+  // Add a handler for each new instance of a subscribed.
   providers.forEach((provider) => {
     const host = getOriginFromURL(provider.connection.url);
     filters.forEach((filter) =>
@@ -212,6 +278,7 @@ async function listen(
     );
   });
 
+  // @todo: Periodically submit to the parent process on this loop.
   const delay = period * 1000;
   do {
     await setTimeout(delay);
@@ -224,6 +291,9 @@ function getWSProviders(chainId: number, quorum = 1): WebSocketProvider[] {
   return providers;
 }
 
+/**
+ * Main entry point.
+ */
 async function run(argv: string[]): Promise<void> {
   const args = minimist(argv);
 
@@ -265,13 +335,15 @@ async function run(argv: string[]): Promise<void> {
   // @note: An improvement is on the way...
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and dedpulication.
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Scraping previous ${chain} events.`, opts });
-  await Promise.all([
-    scrapeEvents(spokePool.connect(provider), "EnabledDepositRoute", { ...opts, lookback: undefined }),
-    scrapeEvents(spokePool.connect(provider), "V3FundsDeposited", opts),
-    scrapeEvents(spokePool.connect(provider), "FilledV3Relay", opts),
-    scrapeEvents(spokePool.connect(provider), "RelayedRootBundle", opts),
-    scrapeEvents(spokePool.connect(provider), "ExecutedRelayerRefundRoot", opts),
-  ]);
+  if (lookback > 0) {
+    await Promise.all([
+      scrapeEvents(spokePool.connect(provider), "EnabledDepositRoute", { ...opts, lookback: undefined }),
+      scrapeEvents(spokePool.connect(provider), "V3FundsDeposited", opts),
+      scrapeEvents(spokePool.connect(provider), "FilledV3Relay", opts),
+      scrapeEvents(spokePool.connect(provider), "RelayedRootBundle", opts),
+      scrapeEvents(spokePool.connect(provider), "ExecutedRelayerRefundRoot", opts),
+    ]);
+  }
 
   // Events to listen for.
   const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
