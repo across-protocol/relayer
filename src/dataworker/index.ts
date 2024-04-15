@@ -187,11 +187,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       const dataworkerFunctionLoopTimerEnd = performance.now();
       logger.debug({
         at: "Dataworker#index",
-        message: `Time to update spoke pool clients and run dataworker function: ${
+        message: `Time to update spoke pool clients and run dataworker function: ${Math.round(
           (dataworkerFunctionLoopTimerEnd - loopStart) / 1000
-        }s`,
-        timeToLoadSpokes: (dataworkerFunctionLoopTimerStart - loopStart) / 1000,
-        timeToRunDataworkerFunctions: (dataworkerFunctionLoopTimerEnd - dataworkerFunctionLoopTimerStart) / 1000,
+        )}s`,
+        timeToLoadSpokes: Math.round((dataworkerFunctionLoopTimerStart - loopStart) / 1000),
+        timeToRunDataworkerFunctions: Math.round(
+          (dataworkerFunctionLoopTimerEnd - dataworkerFunctionLoopTimerStart) / 1000
+        ),
       });
       loopStart = performance.now();
 
