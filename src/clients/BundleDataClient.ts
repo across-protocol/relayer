@@ -19,6 +19,7 @@ import {
   assert,
   fixedPointAdjustment,
   isDefined,
+  toBN,
 } from "../utils";
 import { Clients } from "../common";
 import {
@@ -281,6 +282,9 @@ export class BundleDataClient {
   }
 
   // @dev This helper function should probably be moved to the InventoryClient
+  // @dev This function does not perfectly match fills and deposits. Therefore this calculation can be
+  // griefed by someone sending invalid fills. We compare fill and deposit input and output amount along with
+  // origin and destination chain and deposit ID. This should prevent most practical griefing attacks.
   getApproximateRefundsForBlockRange(
     chainIds: number[],
     blockRanges: number[][],
@@ -294,12 +298,29 @@ export class BundleDataClient {
       const chainIndex = chainIds.indexOf(chainId);
       this.spokePoolClients[chainId]
         .getFills()
-        .filter(
-          (fill) =>
-            filteredRefundAddresses.includes(fill.relayer) &&
+        .filter((fill) => {
+          if (filteredRefundAddresses.length > 0 && !filteredRefundAddresses.includes(fill.relayer)) {
+            return false;
+          }
+          // We match fill and deposit on originChain - depositId - inputAmount so even if a griefer fakes the fill
+          // they will at least have paid the same `outputAmount` as the real deposit, which is going to be
+          // an economic deterrance if the griefer wants to materially affect this refund computation. This is because
+          // the inputAmount must also be large if the outputAmount is going to be large. This seems like a reasonable
+          // compromise between security and performance.
+
+          // If origin spoke pool client isn't defined, we can't validate it.
+          if (this.spokePoolClients[fill.originChainId] === undefined) {
+            return false;
+          }
+          const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
+          const hasMatchingDeposit =
+            matchingDeposit?.inputAmount.eq(fill.inputAmount) && matchingDeposit?.outputAmount.eq(fill.outputAmount);
+          return (
             fill.blockNumber >= blockRanges[chainIndex][0] &&
-            fill.blockNumber <= blockRanges[chainIndex][1]
-        )
+            fill.blockNumber <= blockRanges[chainIndex][1] &&
+            hasMatchingDeposit
+          );
+        })
         .forEach((fill) => {
           const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
             fill,
@@ -319,6 +340,35 @@ export class BundleDataClient {
         });
     }
     return refundsForChain;
+  }
+
+  getUpcomingDepositAmount(chainId: number, l2Token: string, latestBlockToSearch: number): BigNumber {
+    if (this.spokePoolClients[chainId] === undefined) {
+      return toBN(0);
+    }
+    return this.spokePoolClients[chainId]
+      .getDeposits()
+      .filter((deposit) => deposit.blockNumber > latestBlockToSearch && deposit.inputToken === l2Token)
+      .reduce((acc, deposit) => {
+        return acc.add(deposit.inputAmount);
+      }, toBN(0));
+  }
+
+  async getLatestProposedBundleData(): Promise<{ bundleData: LoadDataReturnValue; blockRanges: number[][] }> {
+    const hubPoolClient = this.clients.hubPoolClient;
+    // If there is pending bundle, return its bundle data from arweave, otherwise return the latest
+    // executed bundle.
+    const bundleBlockRanges = getImpliedBundleBlockRanges(
+      hubPoolClient,
+      this.clients.configStoreClient,
+      hubPoolClient.hasPendingProposal()
+        ? hubPoolClient.getLatestProposedRootBundle()
+        : this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(this.clients.hubPoolClient.latestBlockSearched)
+    );
+    return {
+      blockRanges: bundleBlockRanges,
+      bundleData: await this.loadArweaveData(bundleBlockRanges),
+    };
   }
 
   // @dev This function should probably be moved to the InventoryClient since it bypasses loadData completely now.

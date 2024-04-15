@@ -115,7 +115,9 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient,
       bundleDataClient,
       adapterManager,
-      crossChainTransferClient
+      crossChainTransferClient,
+      false, // simMode
+      false // prioritizeUtilization
     );
 
     seedMocks(initialAllocation);
@@ -293,7 +295,9 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         bundleDataClient,
         adapterManager,
-        crossChainTransferClient
+        crossChainTransferClient,
+        false, // simMode
+        false // prioritizeUtilization
       );
       expect(await _inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(
         sampleDepositData.destinationChainId

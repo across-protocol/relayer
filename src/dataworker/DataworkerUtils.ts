@@ -392,8 +392,8 @@ export async function _buildPoolRebalanceRoot(
   bundleSlowFillsV3: BundleSlowFills,
   unexecutableSlowFills: BundleExcessSlowFills,
   expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
-  clients: DataworkerClients,
-  maxL1TokenCountOverride: number | undefined
+  clients: Pick<DataworkerClients, "hubPoolClient" | "configStoreClient">,
+  maxL1TokenCountOverride?: number
 ): Promise<PoolRebalanceRoot> {
   // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
   // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
