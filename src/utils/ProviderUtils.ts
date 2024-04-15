@@ -710,6 +710,12 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   return provider;
 }
 
+export function getWSProviders(chainId: number, quorum = 1): ethers.providers.WebSocketProvider[] {
+  const urls = getNodeUrlList(chainId, quorum, "wss");
+  const providers = urls.map((url) => new providers.WebSocketProvider(url));
+  return providers;
+}
+
 export function getNodeUrlList(chainId: number, quorum = 1, protocol: "https" | "wss" = "https"): string[] {
   const resolveUrls = (): string[] => {
     const [envPrefix, providerPrefix] =
