@@ -299,6 +299,10 @@ export class BundleDataClient {
       this.spokePoolClients[chainId]
         .getFills()
         .filter((fill) => {
+          if (fill.blockNumber < blockRanges[chainIndex][0] || fill.blockNumber > blockRanges[chainIndex][1]) {
+            return false;
+          }
+
           // If the fill was sent by one of the whitelisted addresses, then we can just assume its valid.
           if (whitelistedRelayerAddresses.includes(fill.relayer)) {
             return true;
@@ -316,11 +320,7 @@ export class BundleDataClient {
           const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
           const hasMatchingDeposit =
             matchingDeposit?.inputAmount.eq(fill.inputAmount) && matchingDeposit?.outputAmount.eq(fill.outputAmount);
-          return (
-            fill.blockNumber >= blockRanges[chainIndex][0] &&
-            fill.blockNumber <= blockRanges[chainIndex][1] &&
-            hasMatchingDeposit
-          );
+          return hasMatchingDeposit;
         })
         .forEach((fill) => {
           const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
