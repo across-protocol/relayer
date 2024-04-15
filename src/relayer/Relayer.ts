@@ -76,11 +76,13 @@ export class Relayer {
     }
 
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
+      const [origin, destination] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: "Ignoring deposit",
+        message: `Ignoring ${origin} deposit destined for ${destination}.`,
         depositor,
         recipient,
+        transactionHash: deposit.transactionHash,
       });
       return false;
     }
