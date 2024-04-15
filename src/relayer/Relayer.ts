@@ -505,7 +505,14 @@ export class Relayer {
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
+    const start = performance.now();
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
+    this.logger.debug({
+      at: "Relayer::resolveRepaymentChain",
+      message: `Determined preferred repayment chain for deposit from ${originChain} to ${destinationChain} in ${
+        Math.round(performance.now() - start) / 1000
+      }s.`,
+    });
     const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
       ...deposit,
       paymentChainId: preferredChainId,

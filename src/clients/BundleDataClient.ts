@@ -220,7 +220,7 @@ export class BundleDataClient {
   }
 
   // @dev This function should probably be moved to the InventoryClient since it bypasses loadData completely now.
-  async getPendingRefundsFromValidBundles(...filteredRefundAddresses: string[]): Promise<CombinedRefunds[]> {
+  async getPendingRefundsFromValidBundles(...whitelistedRelayerAddresses: string[]): Promise<CombinedRefunds[]> {
     const refunds = [];
     if (!this.clients.hubPoolClient.isUpdated) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
@@ -230,7 +230,7 @@ export class BundleDataClient {
       this.clients.hubPoolClient.latestBlockSearched
     );
     if (bundle !== undefined) {
-      refunds.push(await this.getPendingRefundsFromBundle(bundle, ...filteredRefundAddresses));
+      refunds.push(await this.getPendingRefundsFromBundle(bundle, ...whitelistedRelayerAddresses));
     } // No more valid bundles in history!
     return refunds;
   }
@@ -239,7 +239,7 @@ export class BundleDataClient {
   // Return refunds from input bundle.
   async getPendingRefundsFromBundle(
     bundle: ProposedRootBundle,
-    ...filteredRefundAddresses: string[]
+    ...whitelistedRelayerAddresses: string[]
   ): Promise<CombinedRefunds> {
     const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -260,7 +260,7 @@ export class BundleDataClient {
       combinedRefunds = this.getApproximateRefundsForBlockRange(
         chainIds,
         bundleEvaluationBlockRanges,
-        filteredRefundAddresses
+        whitelistedRelayerAddresses
       );
     } else {
       const { bundleFillsV3, expiredDepositsToRefundV3 } = arweaveData;
@@ -288,7 +288,7 @@ export class BundleDataClient {
   getApproximateRefundsForBlockRange(
     chainIds: number[],
     blockRanges: number[][],
-    filteredRefundAddresses: string[]
+    whitelistedRelayerAddresses: string[]
   ): CombinedRefunds {
     const refundsForChain: CombinedRefunds = {};
     for (const chainId of chainIds) {
@@ -299,8 +299,9 @@ export class BundleDataClient {
       this.spokePoolClients[chainId]
         .getFills()
         .filter((fill) => {
-          if (filteredRefundAddresses.length > 0 && !filteredRefundAddresses.includes(fill.relayer)) {
-            return false;
+          // If the fill was sent by one of the whitelisted addresses, then we can just assume its valid.
+          if (whitelistedRelayerAddresses.includes(fill.relayer)) {
+            return true;
           }
           // We match fill and deposit on originChain - depositId - inputAmount so even if a griefer fakes the fill
           // they will at least have paid the same `outputAmount` as the real deposit, which is going to be
@@ -377,7 +378,7 @@ export class BundleDataClient {
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
   // - Fills sent after the pending, but not validated, bundle
-  async getNextBundleRefunds(...filteredRefundAddresses: string[]): Promise<CombinedRefunds[]> {
+  async getNextBundleRefunds(...whitelistedRelayerAddresses: string[]): Promise<CombinedRefunds[]> {
     const hubPoolClient = this.clients.hubPoolClient;
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -430,7 +431,7 @@ export class BundleDataClient {
       const arweaveData = await this.loadArweaveData(pendingBundleBlockRanges);
       if (arweaveData === undefined) {
         combinedRefunds.push(
-          this.getApproximateRefundsForBlockRange(chainIds, pendingBundleBlockRanges, filteredRefundAddresses)
+          this.getApproximateRefundsForBlockRange(chainIds, pendingBundleBlockRanges, whitelistedRelayerAddresses)
         );
       } else {
         const { bundleFillsV3, expiredDepositsToRefundV3 } = arweaveData;
@@ -448,7 +449,7 @@ export class BundleDataClient {
     // - Skip LP fee computations and just assume the relayer is being refunded the full deposit.inputAmount
     const start = performance.now();
     combinedRefunds.push(
-      this.getApproximateRefundsForBlockRange(chainIds, widestBundleBlockRanges, filteredRefundAddresses)
+      this.getApproximateRefundsForBlockRange(chainIds, widestBundleBlockRanges, whitelistedRelayerAddresses)
     );
     this.logger.debug({
       at: "BundleDataClient#getNextBundleRefunds",
