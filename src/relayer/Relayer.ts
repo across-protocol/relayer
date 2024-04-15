@@ -509,7 +509,7 @@ export class Relayer {
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     this.logger.debug({
       at: "Relayer::resolveRepaymentChain",
-      message: `Determined preferred repayment chain for deposit from ${originChain} to ${destinationChain} in ${
+      message: `Determined preferred repayment chain ${preferredChainId} for deposit from ${originChain} to ${destinationChain} in ${
         Math.round(performance.now() - start) / 1000
       }s.`,
     });

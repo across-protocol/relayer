@@ -8,7 +8,7 @@ import {
   FillType,
   FillStatus,
 } from "../interfaces";
-import { SpokePoolClient } from "../clients";
+import { ConfigStoreClient, SpokePoolClient } from "../clients";
 import {
   winston,
   BigNumber,
@@ -29,6 +29,7 @@ import {
   prettyPrintV3SpokePoolEvents,
   getRefundsFromBundle,
   CombinedRefunds,
+  _buildPoolRebalanceRoot,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { utils } from "@across-protocol/sdk-v2";
@@ -42,6 +43,7 @@ import {
   LoadDataReturnValue,
 } from "../interfaces/BundleData";
 import { BundleDataSS } from "../utils/SuperstructUtils";
+import { PoolRebalanceRoot } from "../dataworker/Dataworker";
 
 type DataCache = Record<string, Promise<LoadDataReturnValue>>;
 
@@ -327,7 +329,7 @@ export class BundleDataClient {
             fill,
             this.clients.hubPoolClient,
             blockRanges,
-            chainIds
+            this.chainIdListForBundleEvaluationBlockNumbers
           );
           // Assume that lp fees are 0 for the sake of speed. In the future we could batch compute
           // these or make hardcoded assumptions based on the origin-repayment chain direction. This might result
@@ -369,6 +371,28 @@ export class BundleDataClient {
     return {
       blockRanges: bundleBlockRanges,
       bundleData: await this.loadArweaveData(bundleBlockRanges),
+    };
+  }
+
+  async getLatestPoolRebalanceRoot(): Promise<{ root: PoolRebalanceRoot; blockRanges: number[][] }> {
+    const { bundleData, blockRanges } = await this.getLatestProposedBundleData();
+    const hubPoolClient = this.clients.hubPoolClient;
+    const root = await _buildPoolRebalanceRoot(
+      hubPoolClient.latestBlockSearched,
+      blockRanges[0][1],
+      bundleData.bundleDepositsV3,
+      bundleData.bundleFillsV3,
+      bundleData.bundleSlowFillsV3,
+      bundleData.unexecutableSlowFills,
+      bundleData.expiredDepositsToRefundV3,
+      {
+        hubPoolClient,
+        configStoreClient: hubPoolClient.configStoreClient as ConfigStoreClient,
+      }
+    );
+    return {
+      root,
+      blockRanges,
     };
   }
 

@@ -18,12 +18,12 @@ import {
   formatFeePct,
   fixedPointAdjustment,
 } from "../utils";
-import { HubPoolClient, TokenClient, BundleDataClient, ConfigStoreClient } from ".";
+import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { InventoryConfig, V3Deposit } from "../interfaces";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES } from "../common";
-import { CombinedRefunds, _buildPoolRebalanceRoot } from "../dataworker/DataworkerUtils";
+import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
@@ -376,20 +376,7 @@ export class InventoryClient {
 
   async getExcessRunningBalances(l1Token: string): Promise<{ [chainId: number]: BigNumber }> {
     const start = performance.now();
-    const { bundleData, blockRanges } = await this.bundleDataClient.getLatestProposedBundleData();
-    const latestPoolRebalanceRoot = await _buildPoolRebalanceRoot(
-      this.hubPoolClient.latestBlockSearched,
-      blockRanges[0][1],
-      bundleData.bundleDepositsV3,
-      bundleData.bundleFillsV3,
-      bundleData.bundleSlowFillsV3,
-      bundleData.unexecutableSlowFills,
-      bundleData.expiredDepositsToRefundV3,
-      {
-        hubPoolClient: this.hubPoolClient,
-        configStoreClient: this.hubPoolClient.configStoreClient as ConfigStoreClient,
-      }
-    );
+    const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
     const excessPcts = Object.fromEntries(
       await sdkUtils.mapAsync(SLOW_WITHDRAWAL_CHAINS, async (chainId) => {
