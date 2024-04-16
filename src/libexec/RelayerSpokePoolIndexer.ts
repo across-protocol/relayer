@@ -134,8 +134,8 @@ class EventManager {
       .map(({ idx }) => idx);
 
     if (eventIdxs.length > 0) {
-      // Extract the set of dropped events for further notification.
-      const droppedEvents = eventIdxs.map((idx) => events[idx]);
+      // Extract the set of dropped events names for further notification.
+      const droppedEventNames = sdkUtils.dedupArray(eventIdxs.map((idx) => events[idx].event));
 
       // Remove each event in reverse to ensure that indexes remain valid until the last has been removed.
       eventIdxs.reverse().forEach((idx) => events.splice(idx, 1));
@@ -146,9 +146,9 @@ class EventManager {
         provider,
       });
 
-      // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality.
-      // @todo: Batch these updates; this requires a tweak to the message format.
-      droppedEvents.forEach(removeEvent);
+      // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality. Batch these
+      // by transactionHash, but recognise that multiple different events may have occurred in the same transaction.
+      removeEvent(event.transactionHash, droppedEventNames);
     }
   }
 
@@ -255,13 +255,14 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
  * @param event Ethers Event instance.
  * @returns void
  */
-function removeEvent(event: Event): void {
+function removeEvent(transactionHash: string, eventNames: string[]): void {
   if (!isDefined(process.send)) {
     return;
   }
 
   const message: SpokePoolClientMessage = {
-    event: JSON.stringify(mangleEvent(event), sdkUtils.jsonReplacerWithBigNumbers),
+    transactionHash,
+    eventNames,
   };
   process.send(JSON.stringify(message));
 }
