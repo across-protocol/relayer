@@ -325,7 +325,7 @@ async function run(argv: string[]): Promise<void> {
   assert(Number.isInteger(period), "period must be numeric ");
   assert(Number.isInteger(lookback), "lookback must be numeric");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) !== ethersUtils.isAddress(relayer), "relayer address is invalid");
+  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), "relayer address is invalid");
 
   chain = getNetworkName(chainId);
 
