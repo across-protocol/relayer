@@ -75,12 +75,12 @@ class EventManager {
     // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
     // already found in the `eventHashes` array, then at least one provider has already supplied it.
     const eventHashes = (this.eventHashes[event.blockNumber] ??= []);
-    const eventHashIdx = eventHashes.indexOf(eventHash);
-    if (eventHashIdx === -1) {
+    const idx = eventHashes.indexOf(eventHash);
+    if (idx === -1) {
       eventHashes.push(eventHash);
     }
 
-    if (eventHashIdx !== -1 || this.quorum === 1) {
+    if (idx !== -1 || this.quorum === 1) {
       this.events[eventHash] = event;
     }
   }
@@ -100,8 +100,8 @@ class EventManager {
 
     const { blockNumber } = event;
     const eventHash = this.hashEvent(event);
-    const eventHashes = this.eventHashes[blockNumber];
 
+    const eventHashes = (this.eventHashes[blockNumber] ??= []);
     const idx = eventHashes.indexOf(eventHash);
     if (idx !== -1) {
       eventHashes.splice(idx, 1); // Drop the event hash from `blockNumber`;
