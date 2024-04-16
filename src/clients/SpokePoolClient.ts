@@ -79,7 +79,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
           const error = typeguards.isError(err) ? err.message : "unknown error";
           this.logger.warn({
             at: "SpokePoolClient#receive",
-            message: "Received malformed message from ${this.chain} indexed.",
+            message: `Received malformed message from ${this.chain} indexed.`,
             error,
           });
           return;
