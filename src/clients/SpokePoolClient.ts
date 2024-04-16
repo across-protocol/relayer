@@ -1,7 +1,7 @@
 import assert from "assert";
 import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { clients, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
 
 export const { SpokePoolClient } = clients;
@@ -59,7 +59,18 @@ export class IndexedSpokePoolClient extends SpokePoolClient {
 
     if (isDefined(this.worker)) {
       this.worker.on("message", (rawMessage: string) => {
-        const message = JSON.parse(rawMessage);
+        let message: SpokePoolClientMessage;
+        try {
+          message = JSON.parse(rawMessage);
+        } catch (err) {
+          const error = typeguards.isError(err) ? err.message : "unknown error";
+          this.logger.warn({
+            at: "SpokePoolClient#receive",
+            message: "Received malformed message from ${this.chain} indexed.",
+            error,
+          });
+          return;
+        }
 
         if (isSpokePoolEventRemoved(message)) {
           const event = JSON.parse(message.event, sdkUtils.jsonReviverWithBigNumbers);
