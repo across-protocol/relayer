@@ -47,14 +47,12 @@ async function indexedSpokePoolClient(
 ): Promise<IndexedSpokePoolClient> {
   const { logger } = hubPoolClient;
 
-  // Set up Spoke signers and connect them to spoke pool contract objects:
+  // Set up Spoke signers and connect them to spoke pool contract objects.
   const signer = baseSigner.connect(await getProvider(chainId));
 
   const blockFinder = undefined;
   const redis = await getRedisCache(hubPoolClient.logger);
 
-  // Grab latest spoke pool as of `toBlockOverride[1]`. If `toBlockOverride[1]` is undefined, then grabs current
-  // spoke pool.
   const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, hubPoolClient.latestBlockSearched);
   const spokePool = new Contract(spokePoolAddr, SpokePool.abi, signer);
   const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
