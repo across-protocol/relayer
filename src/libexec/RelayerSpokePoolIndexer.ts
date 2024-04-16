@@ -298,7 +298,7 @@ async function listen(
   providers.forEach((provider) => {
     const host = getOriginFromURL(provider.connection.url);
     eventNames.forEach((eventName) => {
-      const filter = getEventFilter(spokePool, eventName, filterArgs);
+      const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
       spokePool.connect(provider).on(filter, (...rawEvent) => {
         const event = rawEvent.at(-1);
         (event.removed ? eventMgr.remove : eventMgr.add).bind(eventMgr)(event, host);
