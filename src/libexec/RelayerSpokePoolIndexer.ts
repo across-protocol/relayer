@@ -25,7 +25,6 @@ import {
 type WebSocketProvider = ethersProviders.WebSocketProvider;
 type EventSearchConfig = sdkUtils.EventSearchConfig;
 type ScraperOpts = {
-  period?: number; // Polling update period.
   lookback?: number; // Event lookback (in seconds).
   finality?: number; // Event finality (in blocks).
   quorum?: number; // Provider quorum to apply.
@@ -35,6 +34,8 @@ type ScraperOpts = {
 };
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
+
+const INDEXER_POLLING_PERIOD = 2000; // ms; time to sleep between checking for exit request via SIGUP.
 
 let logger: winston.Logger;
 let chain: string;
@@ -322,7 +323,7 @@ async function listen(
 ): Promise<void> {
   assert(providers.length > 0);
 
-  const { period, filterArgs } = opts;
+  const { filterArgs } = opts;
 
   // On each new block, submit any "finalised" events.
   // ethers block subscription drops most useful information, notably the timestamp for new blocks.
@@ -344,10 +345,8 @@ async function listen(
     });
   });
 
-  // @todo: Periodically submit to the parent process on this loop.
-  const delay = period * 1000;
   do {
-    await setTimeout(delay);
+    await setTimeout(INDEXER_POLLING_PERIOD);
   } while (!stop);
 }
 
@@ -366,18 +365,9 @@ async function run(argv: string[]): Promise<void> {
   };
   const args = minimist(argv, minimistOpts);
 
-  const {
-    chainId,
-    finality = 32,
-    quorum = 1,
-    period = 60,
-    lookback = 7200,
-    relayer = null,
-    maxBlockRange = 10_000,
-  } = args;
+  const { chainId, finality = 32, quorum = 1, lookback = 7200, relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(finality), "finality must be numeric ");
-  assert(Number.isInteger(period), "period must be numeric ");
   assert(Number.isInteger(lookback), "lookback must be numeric");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), "relayer address is invalid");
@@ -399,7 +389,6 @@ async function run(argv: string[]): Promise<void> {
   const opts = {
     finality,
     quorum,
-    period,
     deploymentBlock,
     lookback: nBlocks,
     maxBlockRange,

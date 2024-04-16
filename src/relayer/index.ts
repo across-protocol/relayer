@@ -20,7 +20,6 @@ let logger: winston.Logger;
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 type IndexerOpts = {
-  samplePeriod?: number;
   lookback?: number;
   blockRange?: number;
 };
@@ -35,10 +34,7 @@ function startWorker(cmd: string, path: string, chainId: number, opts: IndexerOp
 }
 
 function startWorkers(config: RelayerConfig): { [chainId: number]: ChildProcess } {
-  // Set the sampling period to less than half the polling delay, capped at a minimum of 5 seconds.
-  // The default indexer implementation isn't fast enough to loop faster than that.
-  const period = Math.max(Math.floor(config.pollingDelay / 2) - 1, 5);
-  const sampleOpts = { period, lookback: config.maxRelayerLookBack };
+  const sampleOpts = { lookback: config.maxRelayerLookBack };
 
   const chainIds = sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains]);
   assert(chainIds.length > 0); // @todo: Fix to work with undefined chain IDs (default to the complete set).
