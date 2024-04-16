@@ -121,7 +121,7 @@ class EventManager {
    * @param blockNumber Number of the latest block.
    * @returns void
    */
-  tick(blockNumber: number): void {
+  tick(blockNumber: number, currentTime: number): void {
     this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
 
     const finalised = blockNumber - this.finality;
@@ -133,7 +133,6 @@ class EventManager {
       .filter((event) => isDefined(event) && finalised >= event.blockNumber)
       .map(mangleEvent);
 
-    const currentTime = Math.floor(Date.now() / 1000); // @todo
     postEvents(blockNumber, currentTime, events);
 
     // Flush the confirmed events.
@@ -265,7 +264,12 @@ async function listen(
 
   // On each new block, submit any "finalised" events.
   // @todo: Should probably prune blocks and events > 100x finality.
-  providers[0].on("block", (blockNumber) => eventMgr.tick(blockNumber));
+  // ethers block subscription drops most useful information, notably the timestamp for new blocks.
+  // The "official unofficial" strategy is to use an internal provider method to subscribe.
+  // https://github.com/ethers-io/ethers.js/discussions/1951#discussioncomment-1229670
+  providers[0]._subscribe("newHeads", ["newHeads"], ({ number: blockNumber, timestamp }) => {
+    eventMgr.tick(parseInt(blockNumber), parseInt(timestamp))
+  });
 
   // Add a handler for each new instance of a subscribed.
   providers.forEach((provider) => {
