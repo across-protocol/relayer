@@ -256,7 +256,6 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
  * @returns void
  */
 function removeEvent(event: Event): void {
-  assert(event.removed);
   if (!isDefined(process.send)) {
     return;
   }
