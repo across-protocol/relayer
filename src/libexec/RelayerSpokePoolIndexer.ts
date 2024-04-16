@@ -263,8 +263,6 @@ async function listen(
 
   const { period, filterArgs } = opts;
 
-  const filters = eventNames.map((event) => getEventFilter(spokePool, event, filterArgs));
-
   // On each new block, submit any "finalised" events.
   // @todo: Should probably prune blocks and events > 100x finality.
   // ethers block subscription drops most useful information, notably the timestamp for new blocks.
@@ -277,12 +275,13 @@ async function listen(
   // Add a handler for each new instance of a subscribed.
   providers.forEach((provider) => {
     const host = getOriginFromURL(provider.connection.url);
-    filters.forEach((filter) =>
+    eventNames.forEach((eventName) => {
+      const filter = getEventFilter(spokePool, eventName, filterArgs);
       spokePool.connect(provider).on(filter, (...rawEvent) => {
         const event = rawEvent.at(-1);
         (event.removed ? eventMgr.remove : eventMgr.add).bind(eventMgr)(event, host);
       })
-    );
+    });
   });
 
   // @todo: Periodically submit to the parent process on this loop.
