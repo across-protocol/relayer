@@ -267,9 +267,9 @@ async function listen(
   // ethers block subscription drops most useful information, notably the timestamp for new blocks.
   // The "official unofficial" strategy is to use an internal provider method to subscribe.
   // https://github.com/ethers-io/ethers.js/discussions/1951#discussioncomment-1229670
-  providers[0]._subscribe("newHeads", ["newHeads"], ({ number: blockNumber, timestamp }) => {
+  await providers[0]._subscribe("newHeads", ["newHeads"], ({ number: blockNumber, timestamp }) =>
     eventMgr.tick(parseInt(blockNumber), parseInt(timestamp))
-  });
+  );
 
   // Add a handler for each new instance of a subscribed.
   providers.forEach((provider) => {
