@@ -241,7 +241,7 @@ export class InventoryClient {
   //     chain.
   //     Else, take repayment on the Hub chain for ease of transferring out of L1 to any L2.
   async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
-    const { originChainId, destinationChainId, inputToken, outputToken, outputAmount } = deposit;
+    const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
     if (!this.isInventoryManagementEnabled()) {
