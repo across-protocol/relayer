@@ -43,8 +43,7 @@ let stop = false;
 
 class EventManager {
   public readonly chain: string;
-  public readonly eventHashes: { [blockNumber: number]: string[] } = {};
-  public readonly events: { [eventHash: string]: Event } = {};
+  public readonly events: { [blockNumber: number]: (Event & { providers: string[] })[] } = {};
 
   private blockNumber: number;
 
@@ -59,6 +58,33 @@ class EventManager {
   }
 
   /**
+   * Use a number of key attributes from an Ethers event to find any corresponding stored event. Note that this does
+   * not guarantee an exact 1:1 match for the complete event. This is not possible without excluding numerous fields
+   * on a per-event basis, because some providers append implementation-specific information to events. Rather, it
+   * relies on known important fields matching.
+   * @param event Event to search for.
+   * @returns The matching event, or undefined.
+   */
+  findEvent(event: Event): (Event & { providers: string[] }) | undefined {
+    return this.events[event.blockNumber]?.find(
+      (storedEvent) =>
+        storedEvent.logIndex === event.logIndex &&
+        storedEvent.transactionIndex === event.transactionIndex &&
+        storedEvent.transactionHash === event.transactionHash &&
+        this.hashEvent(storedEvent) === this.hashEvent(event)
+    );
+  }
+
+  /**
+   * For a given Ethers Event, identify its quorum based on the number of unique providers that have supplied it.
+   * @param event An Ethers Event with appended provider information.
+   * @returns The number of unique providers that reported this event.
+   */
+  getEventQuorum(event: Event & { providers: string[] }): number {
+    return sdkUtils.dedupArray(event.providers).length;
+  }
+
+  /**
    * Record an Ethers event. If quorum is 1 then the event will be enqueued for transfer. If this is a new event and
    * quorum > 1 then its hash will be recorded for future reference. If the same event is received multiple times then
    * it will be enqueued for transfer. This applies a rudimentary quorum system to the event and ensures that providers
@@ -68,21 +94,22 @@ class EventManager {
    * @returns void
    */
   add(event: Event, provider: string): void {
-    provider; // @todo: Store the provider to ensure that quorum is satisfied by separate providers.
     assert(!event.removed);
-
-    const eventHash = this.hashEvent(event);
 
     // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
     // already found in the `eventHashes` array, then at least one provider has already supplied it.
-    const eventHashes = (this.eventHashes[event.blockNumber] ??= []);
-    const idx = eventHashes.indexOf(eventHash);
-    if (idx === -1) {
-      eventHashes.push(eventHash);
-    }
+    const events = (this.events[event.blockNumber] ??= []);
+    const storedEvent = this.findEvent(event);
 
-    if (idx !== -1 || this.quorum === 1) {
-      this.events[eventHash] = event;
+    // Store or update the set of events for this block number.
+    if (!isDefined(storedEvent)) {
+      // Event hasn't been seen before, so store it.
+      events.push({ ...event, providers: [provider] });
+    } else {
+      if (!storedEvent.providers.includes(provider)) {
+        // Event has been seen before, but not from this provider. Store it.
+        storedEvent.providers.push(provider);
+      }
     }
   }
 
@@ -96,21 +123,33 @@ class EventManager {
    * @returns void
    */
   remove(event: Event, provider: string): void {
-    provider; // @todo: TBD whether this is needed here.
     assert(event.removed);
 
-    const { blockNumber } = event;
-    const eventHash = this.hashEvent(event);
+    const events = this.events[event.blockNumber] ?? [];
 
-    const eventHashes = (this.eventHashes[blockNumber] ??= []);
-    const idx = eventHashes.indexOf(eventHash);
-    if (idx !== -1) {
-      eventHashes.splice(idx, 1); // Drop the event hash from `blockNumber`;
+    // Filter coarsely on transactionHash, since a reorg should invalidate multiple events within a single transaction hash.
+    const eventIdxs = events
+      .map((event, idx) => ({ ...event, idx }))
+      .filter(({ transactionHash }) => transactionHash === event.transactionHash)
+      .map(({ idx }) => idx);
+
+    if (eventIdxs.length > 0) {
+      // Extract the set of dropped events for further notification.
+      const droppedEvents = eventIdxs.map((idx) => events[idx]);
+
+      // Remove each event in reverse to ensure that indexes remain valid until the last has been removed.
+      eventIdxs.reverse().forEach((idx) => events.splice(idx, 1));
+
+      this.logger.warn({
+        at: "EventManager::remove",
+        message: `Dropped ${eventIdxs.length} event(s) at ${this.chain} block ${event.blockNumber}.`,
+        provider,
+      });
+
+      // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality.
+      // @todo: Batch these updates; this requires a tweak to the message format.
+      droppedEvents.forEach(removeEvent);
     }
-    delete this.events[eventHash]; // Drop the event entirely.
-
-    // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality.
-    removeEvent(event);
   }
 
   /**
@@ -126,19 +165,18 @@ class EventManager {
     // After `finality` blocks behind head, events for a block are considered finalised.
     // This is configurable and will almost always be less than chain finality guarantees.
     const finalised = blockNumber - this.finality;
-    const eventHashes = this.eventHashes[finalised] ?? [];
 
-    // Collect the finalised events for sending.
-    const events = eventHashes
-      .map((eventHash) => this.events[eventHash])
-      .filter((event) => isDefined(event) && finalised >= event.blockNumber)
-      .map(mangleEvent);
+    // Collect the events that met quorum, strip out the provider information, and mangle the results for sending.
+    const events = (this.events[finalised] ?? [])
+      .filter((event) => this.getEventQuorum(event) >= this.quorum)
+      .map(({ providers, ...event }) => mangleEvent(event));
 
+    // Post an update to the parent. Do this irrespective of whether there were new events or not, since there's
+    // information in blockNumber and currentTIme alone.
     postEvents(blockNumber, currentTime, events);
 
-    // Flush the confirmed events.
-    eventHashes.forEach((eventHash) => delete this.events[eventHash]);
-    delete this.eventHashes[finalised];
+    // Flush the events that were just submitted.
+    delete this.events[finalised];
   }
 
   /**
