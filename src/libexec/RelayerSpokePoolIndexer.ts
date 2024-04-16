@@ -31,7 +31,7 @@ type ScraperOpts = {
   quorum?: number; // Provider quorum to apply.
   deploymentBlock: number; // SpokePool deployment block
   maxBlockRange?: number; // Maximum block range for paginated getLogs queries.
-  filterArgs?: string[]; // Event-specific filter criteria to apply.
+  filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
 };
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
@@ -172,15 +172,21 @@ function mangleEvent(event: Event): Event {
  * @param filterArgs Optional filter arguments to be applied.
  * @returns An Ethers EventFilter instance.
  */
-function getEventFilter(contract: Contract, eventName: string, filterArgs: string[] = []): EventFilter {
+function getEventFilter(contract: Contract, eventName: string, filterArgs?: string[]): EventFilter {
   const filter = contract.filters[eventName];
   if (!isDefined(filter)) {
     throw new Error(`Event ${eventName} not defined for contract`);
   }
 
-  filterArgs; // @todo
+  return isDefined(filterArgs) ? filter(...filterArgs) : filter();
+}
 
-  return filter();
+function getEventFilterArgs(relayer?: string): { [event: string]: string[] } {
+  const FilledV3Relay = !isDefined(relayer)
+    ? undefined
+    : [null, null, null, null, null, null, null, null, null, null, relayer];
+
+  return { FilledV3Relay };
 }
 
 /**
@@ -256,7 +262,7 @@ async function scrapeEvents(spokePool: Contract, eventName: string, opts: Scrape
   assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
   const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
 
-  const filter = getEventFilter(spokePool, eventName, filterArgs);
+  const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
   const events = await pollEvents(filter, searchConfig);
   postEvents(toBlock, currentTime, events.map(mangleEvent));
 }
@@ -317,9 +323,20 @@ function getWSProviders(chainId: number, quorum = 1): WebSocketProvider[] {
  * Main entry point.
  */
 async function run(argv: string[]): Promise<void> {
-  const args = minimist(argv);
+  const minimistOpts = {
+    string: ["relayer"],
+  };
+  const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, quorum = 1, period = 60, lookback = 7200, relayer, maxBlockRange = 10_000 } = args;
+  const {
+    chainId,
+    finality = 32,
+    quorum = 1,
+    period = 60,
+    lookback = 7200,
+    relayer = null,
+    maxBlockRange = 10_000,
+  } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(finality), "finality must be numeric ");
   assert(Number.isInteger(period), "period must be numeric ");
@@ -348,6 +365,7 @@ async function run(argv: string[]): Promise<void> {
     deploymentBlock,
     lookback: nBlocks,
     maxBlockRange,
+    filterArgs: getEventFilterArgs(relayer),
   };
 
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
