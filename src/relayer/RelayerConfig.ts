@@ -62,7 +62,8 @@ export class RelayerConfig extends CommonConfig {
     } = env;
     super(env);
 
-    this.externalIndexer = RELAYER_EXTERNAL_INDEXER === "true";
+    // External indexing is dependent on looping mode being configured.
+    this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";
     this.indexerPath = RELAYER_INDEXER_PATH ?? Constants.RELAYER_DEFAULT_INDEXER;
 
     // Empty means all chains.

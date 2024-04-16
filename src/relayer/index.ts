@@ -70,8 +70,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const config = new RelayerConfig(process.env);
 
   let workers: { [chainId: number]: ChildProcess };
-  const externalIndexer = config.pollingDelay > 0 && config.externalIndexer;
-  if (externalIndexer) {
+  if (config.externalIndexer) {
     workers = startWorkers(config);
   }
 
@@ -127,7 +126,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
     } while (!stop);
   } finally {
-    if (externalIndexer) {
+    if (config.externalIndexer) {
       Object.entries(workers).forEach(([_chainId, worker]) => {
         logger.debug({ at: "Relayer::runRelayer", message: `Cleaning up indexer for chainId ${_chainId}.` });
         worker.kill("SIGHUP");
