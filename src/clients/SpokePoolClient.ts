@@ -15,6 +15,7 @@ type SpokePoolEventRemoved = {
 type SpokePoolEventsAdded = {
   blockNumber: number;
   currentTime: number;
+  oldestTime: number;
   nEvents: number; // Number of events.
   data: string;
 };
@@ -34,6 +35,7 @@ export class IndexedSpokePoolClient extends SpokePoolClient {
 
   private pendingBlockNumber: number;
   private pendingCurrentTime: number;
+  private pendingOldestTime: number;
 
   private pendingEvents: Event[][];
   private pendingEventsRemoved: Event[];
@@ -75,7 +77,7 @@ export class IndexedSpokePoolClient extends SpokePoolClient {
           return;
         }
 
-        const { blockNumber, currentTime, nEvents, data } = message;
+        const { blockNumber, currentTime, oldestTime, nEvents, data } = message;
         if (nEvents > 0) {
           const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
           if (!Array.isArray(pendingEvents) || pendingEvents.length !== nEvents) {
@@ -111,6 +113,7 @@ export class IndexedSpokePoolClient extends SpokePoolClient {
 
         this.pendingBlockNumber = blockNumber;
         this.pendingCurrentTime = currentTime;
+        this.pendingOldestTime ??= oldestTime;
       });
     }
   }
@@ -179,7 +182,7 @@ export class IndexedSpokePoolClient extends SpokePoolClient {
     return {
       success: true,
       currentTime: this.pendingCurrentTime,
-      oldestTime: this.pendingCurrentTime, // @todo: Cleanup (relayer doesn't care about this).
+      oldestTime: this.pendingOldestTime,
       firstDepositId,
       latestDepositId,
       searchEndBlock: this.pendingBlockNumber,

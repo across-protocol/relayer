@@ -38,6 +38,7 @@ const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 let logger: winston.Logger;
 let chain: string;
+let oldestTime: number;
 let stop = false;
 
 class EventManager {
@@ -198,6 +199,7 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
   const message: SpokePoolClientMessage = {
     blockNumber,
     currentTime,
+    oldestTime,
     nEvents: events.length,
     data: JSON.stringify(sortEventsAscending(events), sdkUtils.jsonReplacerWithBigNumbers),
   };
@@ -331,14 +333,19 @@ async function run(argv: string[]): Promise<void> {
   const blockFinder = undefined;
   const cache = await getRedisCache();
   const latestBlock = await provider.getBlock("latest");
-  const startBlock = await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache);
+
+  const deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
+  const startBlock = Math.max(
+    deploymentBlock,
+    await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
+  );
   const nBlocks = latestBlock.number - startBlock;
 
   const opts = {
     finality,
     quorum,
     period,
-    deploymentBlock: getDeploymentBlockNumber("SpokePool", chainId),
+    deploymentBlock,
     lookback: nBlocks,
     maxBlockRange,
   };
@@ -355,8 +362,16 @@ async function run(argv: string[]): Promise<void> {
   // @note: An improvement is on the way...
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and dedpulication.
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Scraping previous ${chain} events.`, opts });
+
+  // The SpokePoolClient reports on the timestamp of the oldest block searched. The relayer likely doesn't need this,
+  // but resolve it anyway for consistency with the main SpokePoolClient implementation.
+  const resolveOldestTime = async (blockTag: ethersProviders.BlockTag) => {
+    oldestTime = (await spokePool.connect(provider).getCurrentTime({ blockTag })).toNumber();
+  };
+
   if (lookback > 0) {
     await Promise.all([
+      resolveOldestTime(startBlock),
       scrapeEvents(spokePool.connect(provider), "EnabledDepositRoute", { ...opts, lookback: undefined }),
       scrapeEvents(spokePool.connect(provider), "V3FundsDeposited", opts),
       scrapeEvents(spokePool.connect(provider), "FilledV3Relay", opts),
@@ -365,9 +380,11 @@ async function run(argv: string[]): Promise<void> {
     ]);
   }
 
+  // If no lookback was specified then default to the timestamp of the latest block.
+  oldestTime ??= latestBlock.timestamp;
+
   // Events to listen for.
   const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
-
   const eventMgr = new EventManager(logger, chainId, finality, quorum);
   do {
     let providers: WebSocketProvider[] = [];
