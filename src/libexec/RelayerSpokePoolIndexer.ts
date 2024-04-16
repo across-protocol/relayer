@@ -108,13 +108,8 @@ class EventManager {
     }
     delete this.events[eventHash]; // Drop the event entirely.
 
-    if (isDefined(process.send)) {
-      // Notify the SpokePoolClient in case the reorg is deeper then the configured finality.
-      const message = {
-        event: JSON.stringify(mangleEvent(event), sdkUtils.jsonReplacerWithBigNumbers),
-      };
-      process.send(JSON.stringify(message));
-    }
+    // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality.
+    removeEvent(event);
   }
 
   /**
@@ -202,6 +197,23 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
     currentTime,
     nEvents: events.length,
     data: JSON.stringify(sortEventsAscending(events), sdkUtils.jsonReplacerWithBigNumbers),
+  };
+  process.send(JSON.stringify(message));
+}
+
+/**
+ * Given an event removal notification, post the message to the parent process.
+ * @param event Ethers Event instance.
+ * @returns void
+ */
+function removeEvent(event: Event): void {
+  assert(event.removed);
+  if (!isDefined(process.send)) {
+    return;
+  }
+
+  const message: SpokePoolClientMessage = {
+    event: JSON.stringify(mangleEvent(event), sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }
