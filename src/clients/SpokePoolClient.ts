@@ -1,10 +1,9 @@
 import assert from "assert";
 import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
+import { object, min as Min, string, integer } from "superstruct";
 import { clients, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
-
-export const { SpokePoolClient } = clients;
 
 export type SpokePoolClient = clients.SpokePoolClient;
 
@@ -22,15 +21,27 @@ type SpokePoolEventsAdded = {
 
 export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
 
-export function isSpokePoolEventsAdded(message: SpokePoolClientMessage): message is SpokePoolEventsAdded {
-  return isDefined((message as SpokePoolEventsAdded).blockNumber);
+const EventsAddedMessage = object({
+  blockNumber: Min(integer(), 0),
+  currentTime: Min(integer(), 0),
+  oldestTime: Min(integer(), 0),
+  nEvents: Min(integer(), 0),
+  data: string(),
+});
+
+const EventRemovedMessage = object({
+  event: string(),
+});
+
+export function isSpokePoolEventsAdded(message: unknown): message is SpokePoolEventsAdded {
+  return EventsAddedMessage.is(message);
 }
 
-export function isSpokePoolEventRemoved(message: SpokePoolClientMessage): message is SpokePoolEventRemoved {
-  return isDefined((message as SpokePoolEventRemoved).event);
+export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolEventRemoved {
+  return EventRemovedMessage.is(message);
 }
 
-export class IndexedSpokePoolClient extends SpokePoolClient {
+export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   public chain: string;
 
   private pendingBlockNumber: number;
