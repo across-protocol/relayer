@@ -280,7 +280,7 @@ async function listen(
       spokePool.connect(provider).on(filter, (...rawEvent) => {
         const event = rawEvent.at(-1);
         (event.removed ? eventMgr.remove : eventMgr.add).bind(eventMgr)(event, host);
-      })
+      });
     });
   });
 
