@@ -341,12 +341,13 @@ export class InventoryClient {
         .mul(this.scalar)
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
-      const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct);
+      // Add some buffer to target to allow relayer to support slight overages.
+      const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct).mul(3).div(2);
       this.log(
         `Evaluated taking repayment on ${
           _chain === originChainId ? "origin" : _chain === destinationChainId ? "destination" : "slow withdrawal"
         } chain ${_chain} for deposit ${deposit.depositId}: ${
-          expectedPostRelayAllocation.lte(targetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
+          expectedPostRelayAllocation.lte(thresholdPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
         }`,
         {
           l1Token,
@@ -359,12 +360,12 @@ export class InventoryClient {
           cumulativeVirtualBalance,
           cumulativeVirtualBalanceWithShortfall,
           cumulativeVirtualBalanceWithShortfallPostRelay,
-          targetPct,
+          thresholdPct,
           expectedPostRelayAllocation,
           chainsToEvaluate,
         }
       );
-      if (expectedPostRelayAllocation.lte(targetPct)) {
+      if (expectedPostRelayAllocation.lte(thresholdPct)) {
         return _chain;
       }
     }
