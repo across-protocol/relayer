@@ -101,7 +101,7 @@ export async function finalize(
   const finalizationsToBatch: { txn: Multicall2Call; crossChainMessage?: CrossChainMessage }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
-  for (const chainId of configuredChainIds) {
+  await sdkUtils.mapAsync(configuredChainIds, async (chainId) => {
     const client = spokePoolClients[chainId];
     if (client === undefined) {
       logger.warn({
@@ -112,7 +112,7 @@ export async function finalize(
         configuredChainIds,
         availableChainIds: Object.keys(spokePoolClients),
       });
-      continue;
+      return;
     }
 
     // We want to first resolve a possible override for the finalizer, and
@@ -147,7 +147,7 @@ export async function finalize(
     let totalWithdrawalsForChain = 0;
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
-    for (const finalizer of chainSpecificFinalizers) {
+    await sdkUtils.mapAsync(chainSpecificFinalizers, async (finalizer) => {
       const { callData, crossChainMessages } = await finalizer(
         logger,
         hubSigner,
@@ -163,13 +163,13 @@ export async function finalize(
       totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
       totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
       totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
-    }
+    });
     const totalTransfers = totalWithdrawalsForChain + totalDepositsForChain + totalMiscTxnsForChain;
     logger.debug({
       at: "finalize",
       message: `Found ${totalTransfers} ${network} messages (${totalWithdrawalsForChain} withdrawals | ${totalDepositsForChain} deposits | ${totalMiscTxnsForChain} misc txns) for finalization.`,
     });
-  }
+  });
   const multicall2Lookup = Object.fromEntries(
     await Promise.all(
       uniq([
@@ -388,8 +388,9 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
 
   try {
     for (;;) {
-      const loopStart = Date.now();
+      const loopStart = performance.now();
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
+      const loopStartPostSpokePoolUpdates = performance.now();
 
       if (config.finalizerEnabled) {
         const availableChains = commonClients.configStoreClient
@@ -408,8 +409,14 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }
+      const loopEndPostFinalizations = performance.now();
 
-      logger.debug({ at: "Finalizer#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
+      logger.debug({
+        at: "Finalizer#index",
+        message: `Time to loop: ${Math.round((loopEndPostFinalizations - loopStart) / 1000)}s`,
+        timeToUpdateSpokeClients: Math.round((loopStartPostSpokePoolUpdates - loopStart) / 1000),
+        timeToFinalize: Math.round((loopEndPostFinalizations - loopStartPostSpokePoolUpdates) / 1000),
+      });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;
