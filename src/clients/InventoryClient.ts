@@ -17,6 +17,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   formatFeePct,
   fixedPointAdjustment,
+  toBNWei,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -240,7 +241,11 @@ export class InventoryClient {
   //     Else, if this number is less than the target for the origin chain + rebalance then select origin
   //     chain.
   //     Else, take repayment on the Hub chain for ease of transferring out of L1 to any L2.
-  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
+  async determineRefundChainId(
+    deposit: V3Deposit,
+    relayerTargetMultiplier = toBNWei("1"),
+    l1Token?: string
+  ): Promise<number> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
@@ -342,7 +347,9 @@ export class InventoryClient {
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
       // Add some buffer to target to allow relayer to support slight overages.
-      const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct).mul(3).div(2);
+      const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct)
+        .mul(relayerTargetMultiplier)
+        .div(fixedPointAdjustment);
       this.log(
         `Evaluated taking repayment on ${
           _chain === originChainId ? "origin" : _chain === destinationChainId ? "destination" : "slow withdrawal"

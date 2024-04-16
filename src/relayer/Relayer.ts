@@ -506,7 +506,13 @@ export class Relayer {
     const destinationChain = getNetworkName(destinationChainId);
 
     const start = performance.now();
-    const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
+    // Allow relayer to have up to a 50% excess of balance on the refund chain over the configured target.
+    const relayerTargetMultiplier = toBNWei("1.5");
+    const preferredChainId = await inventoryClient.determineRefundChainId(
+      deposit,
+      relayerTargetMultiplier,
+      hubPoolToken.address
+    );
     this.logger.debug({
       at: "Relayer::resolveRepaymentChain",
       message: `Determined preferred repayment chain ${preferredChainId} for deposit from ${originChain} to ${destinationChain} in ${
