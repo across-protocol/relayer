@@ -290,7 +290,7 @@ export class InventoryClient {
     if (this.prioritizeLpUtilization) {
       if (!isDefined(this.excessRunningBalancePromises[l1Token])) {
         // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-        this.excessRunningBalancePromises[l1Token] = this.getExcessRunningBalances(l1Token);
+        this.excessRunningBalancePromises[l1Token] = this.getExcessRunningBalances(l1Token, inputAmount);
       }
       const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token]);
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
@@ -374,7 +374,7 @@ export class InventoryClient {
     return hubChainId;
   }
 
-  async getExcessRunningBalances(l1Token: string): Promise<{ [chainId: number]: BigNumber }> {
+  async getExcessRunningBalances(l1Token: string, refundAmount: BigNumber): Promise<{ [chainId: number]: BigNumber }> {
     const start = performance.now();
     const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
@@ -416,7 +416,12 @@ export class InventoryClient {
           upcomingRefunds?.[chainId]?.[this.getDestinationTokenForL1Token(l1Token, chainId)] ?? {}
         ).reduce((acc, curr) => acc.add(curr), bnZero);
 
-        const latestRunningBalance = runningBalanceForToken.sub(upcomingDeposits).add(upcomingRefundForChain);
+        // Updated running balance is last known running balance minus deposits plus upcoming refunds.
+        // We also need to consider the refund amount that will be added to the running balance.
+        const latestRunningBalance = runningBalanceForToken
+          .sub(upcomingDeposits)
+          .add(upcomingRefundForChain)
+          .add(refundAmount);
         const targetSpokeBalanceForChain = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(
           l1Token,
           chainId
@@ -442,6 +447,7 @@ export class InventoryClient {
             upcomingDeposits,
             upcomingRefundForChain,
             targetSpokeBalanceForChain: targetSpokeBalanceForChain.target,
+            refundAmount,
             pctOverTarget: `${formatFeePct(pctOverTarget)}%`,
           }
         );
