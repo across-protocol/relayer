@@ -554,11 +554,11 @@ export class Monitor {
   }
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
-    // We realistically only need to check for refunds for the latest validated bundle so leave the bundle
-    // count value as its default value of 1.
     const validatedBundleRefunds: CombinedRefunds[] =
-      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles();
-    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
+      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(...this.monitorConfig.monitoredRelayers);
+    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds(
+      ...this.monitorConfig.monitoredRelayers
+    );
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {
@@ -566,9 +566,11 @@ export class Monitor {
         this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
       }
     }
-    for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
-      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
+    for (const refunds of nextBundleRefunds) {
+      for (const relayer of this.monitorConfig.monitoredRelayers) {
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
+        this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
+      }
     }
   }
 

@@ -578,7 +578,7 @@ export async function persistDataToArweave(
   logger: winston.Logger,
   tag?: string
 ): Promise<void> {
-  const startTime = Date.now();
+  const startTime = performance.now();
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const matchingTxns = await client.getByTopic(tag, any());
@@ -603,7 +603,7 @@ export async function persistDataToArweave(
       balance,
     });
   }
-  const endTime = Date.now();
+  const endTime = performance.now();
   logger.debug({
     at: "Dataworker#index",
     message: `Time to persist data to Arweave: ${endTime - startTime}ms`,

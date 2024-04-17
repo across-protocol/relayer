@@ -1,5 +1,5 @@
 import minimist from "minimist";
-import { config, delay, retrieveSignerFromCLIArgs, help, Logger, usage, winston } from "./src/utils";
+import { config, delay, exit, retrieveSignerFromCLIArgs, help, Logger, usage, winston } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -57,12 +57,10 @@ if (require.main === module) {
 
   const args = minimist(process.argv.slice(2), opts);
 
+  let exitCode = 0;
   run(args)
-    .then(() => {
-      process.exitCode = 0;
-    })
     .catch(async (error) => {
-      process.exitCode = 1;
+      exitCode = 1;
       logger.error({
         at: cmd ?? "unknown process",
         message: "There was an execution error!",
@@ -73,5 +71,6 @@ if (require.main === module) {
         notificationPath: "across-error",
       });
       await delay(5); // Wait for transports to flush. May or may not be necessary.
-    });
+    })
+    .finally(() => exit(exitCode));
 }

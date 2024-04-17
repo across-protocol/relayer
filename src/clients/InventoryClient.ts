@@ -42,6 +42,7 @@ export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
+  private bundleRefundsPromise: Promise<CombinedRefunds[]> = undefined;
 
   constructor(
     readonly relayer: string,
@@ -154,16 +155,51 @@ export class InventoryClient {
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, rebalance, Number(chainId));
   }
 
+  async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
+    const refunds: CombinedRefunds[] = [];
+    const [pendingRefunds, nextBundleRefunds] = await Promise.all([
+      this.bundleDataClient.getPendingRefundsFromValidBundles(this.relayer),
+      this.bundleDataClient.getNextBundleRefunds(this.relayer),
+    ]);
+    refunds.push(...pendingRefunds, ...nextBundleRefunds);
+    this.logger.debug({
+      at: "InventoryClient#getAllBundleRefunds",
+      message: "Remaining refunds from last validated bundle (excludes already executed refunds)",
+      refunds: pendingRefunds[0],
+    });
+    if (nextBundleRefunds.length === 2) {
+      this.logger.debug({
+        at: "InventoryClient#getAllBundleRefunds",
+        message: "Refunds from pending bundle",
+        refunds: nextBundleRefunds[0],
+      });
+      this.logger.debug({
+        at: "InventoryClient#getAllBundleRefunds",
+        message: "Refunds from upcoming bundle",
+        refunds: nextBundleRefunds[1],
+      });
+    } else {
+      this.logger.debug({
+        at: "InventoryClient#getAllBundleRefunds",
+        message: "Refunds from upcoming bundle",
+        refunds: nextBundleRefunds[0],
+      });
+    }
+    return refunds;
+  }
+
   // Return the upcoming refunds (in pending and next bundles) on each chain.
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
+    let refundsToConsider: CombinedRefunds[] = [];
+
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    const refundsToConsider: CombinedRefunds[] = await this.bundleDataClient.getPendingRefundsFromValidBundles();
-
-    // Consider refunds from next bundle to be proposed:
-    const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
-    refundsToConsider.push(nextBundleRefunds);
+    if (!isDefined(this.bundleRefundsPromise)) {
+      // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
+      this.bundleRefundsPromise = this.getAllBundleRefunds();
+    }
+    refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
 
     return this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
       if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
@@ -183,21 +219,24 @@ export class InventoryClient {
   }
 
   // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
-  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm:
+  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm for each
+  // of the origin and destination chain:
   // a) Find the chain virtual balance (current balance + pending relays + pending refunds) minus current shortfall.
   // b) Find the cumulative virtual balance, including the total refunds on all chains and excluding current shortfall.
   // c) Consider the size of a and b post relay (i.e after the relay is paid and all current transfers are settled what
   // will the balances be on the target chain and the overall cumulative balance).
   // d) Use c to compute what the post relay post current in-flight transactions allocation would be. Compare this
   // number to the target threshold and:
-  //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
-  //     Else, the post fill amount is within the target, so refund on the destination chain.
+  //     If this number is less than the target for the destination chain + rebalance then select destination chain. We
+  //     slightly prefer destination to origin chain to support relayer capital efficiency.
+  //     Else, if this number is less than the target for the origin chain + rebalance then select origin
+  //     chain.
+  //     Else, take repayment on the Hub chain for ease of transferring out of L1 to any L2.
   async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
-    // Always refund on L1 if the transfer is to L1.
-    if (!this.isInventoryManagementEnabled() || destinationChainId === hubChainId) {
+    if (!this.isInventoryManagementEnabled()) {
       return destinationChainId;
     }
 
@@ -213,81 +252,94 @@ export class InventoryClient {
       );
     }
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
-
-    // If there is no inventory config for this token or this token and destination chain the return the destination chain.
-    if (this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined) {
+    // If there is no inventory config for this token then take refund on destination chain.
+    // If neither destination chain nor origin chain have a configuration for this token, then take refund on the
+    // destination chain.
+    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
+    if (tokenConfig?.[destinationChainId] === undefined && tokenConfig?.[originChainId] === undefined) {
       return destinationChainId;
     }
-    const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
-    const chainVirtualBalance = this.getBalanceOnChainForL1Token(destinationChainId, l1Token);
-    const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
-    let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(outputAmount);
 
-    const startTime = Date.now();
-    let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
-    try {
-      // Consider any refunds from executed and to-be executed bundles.
-      totalRefundsPerChain = await this.getBundleRefunds(l1Token);
-    } catch (e) {
-      this.log("Failed to get bundle refunds, defaulting refund chain to hub chain", {
-        l1Token,
-        originChainId,
-        destinationChainId,
-        error: e,
-      });
-      // Fallback to ignoring bundle refunds if calculating bundle refunds goes wrong.
-      // This would create issues if there are relatively a lot of upcoming relayer refunds that would affect
-      // the relayer's repayment chain of choice.
-      totalRefundsPerChain = Object.fromEntries(
-        this.getEnabledChains().map((chainId) => {
-          return [chainId, bnZero];
-        })
-      );
-    }
-
-    this.log(`Time taken to get bundle refunds: ${Math.floor(Date.now() - startTime) / 1000}s`, {
+    const startTime = performance.now();
+    // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
+    // time, return an object with zero refunds for all chains.
+    const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
+    this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTime) / 1000)}s`, {
       l1Token,
       totalRefundsPerChain,
     });
-
-    // Add upcoming refunds going to this destination chain.
-    chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-      totalRefundsPerChain[destinationChainId]
-    );
-    // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
-    // equivalents of l1Token on all chains.
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
-    cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
+    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
-    const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
-    // Compute what the balance will be on the target chain, considering this relay and the finalization of the
-    // transfers that are currently flowing through the canonical bridge.
-    const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
-      .mul(this.scalar)
-      .div(cumulativeVirtualBalanceWithShortfallPostRelay);
+    // Prioritize destination chain repayment over origin chain repayment but prefer both over
+    // hub chain repayment if they are under allocated. We don't include hub chain
+    // since its the fallback chain if both destination and origin chain are over allocated.
+    const chainsToEvaluate = [destinationChainId];
+    // Only evaluate origin chain if its not the hub chain.
+    if (originChainId !== hubChainId) {
+      chainsToEvaluate.push(originChainId);
+    }
+    for (const _chain of chainsToEvaluate) {
+      if (this.inventoryConfig.tokenConfig[l1Token][_chain] === undefined) {
+        continue;
+      }
+      // Destination chain:
+      const chainShortfall = this.getTokenShortFall(l1Token, _chain);
+      const chainVirtualBalance = this.getBalanceOnChainForL1Token(_chain, l1Token);
+      const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
+      let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+      // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
+      // on destination chain
+      let chainVirtualBalanceWithShortfallPostRelay =
+        _chain === destinationChainId
+          ? chainVirtualBalanceWithShortfall.sub(outputAmount)
+          : chainVirtualBalanceWithShortfall;
+      // Add upcoming refunds:
+      chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
+        totalRefundsPerChain[_chain]
+      );
+      // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
+      // equivalents of l1Token on all chains.
+      cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
+      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
 
-    // If the post relay allocation, considering funds in transit, is larger than the target threshold then refund on L1
-    // Else, refund on destination chian to keep funds within the target.
-    const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][destinationChainId].targetPct);
-    const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? hubChainId : destinationChainId;
+      // Compute what the balance will be on the target chain, considering this relay and the finalization of the
+      // transfers that are currently flowing through the canonical bridge.
+      const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
+        .mul(this.scalar)
+        .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
-    this.log("Evaluated refund Chain", {
-      l1Token: l1Token,
-      chainShortfall,
-      chainVirtualBalance,
-      chainVirtualBalanceWithShortfall,
-      chainVirtualBalanceWithShortfallPostRelay,
-      cumulativeVirtualBalance,
-      cumulativeVirtualBalanceWithShortfall,
-      cumulativeVirtualBalanceWithShortfallPostRelay,
-      targetPct,
-      expectedPostRelayAllocation,
-      refundChainId,
-    });
-    // If the allocation is greater than the target then refund on L1. Else, refund on destination chain.
-    return refundChainId;
+      const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct);
+      this.log(
+        `Evaluated taking repayment on ${
+          _chain === originChainId ? "origin" : "destination"
+        } chain ${_chain} for deposit ${deposit.depositId}: ${
+          expectedPostRelayAllocation.lte(targetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
+        }`,
+        {
+          l1Token,
+          originChainId,
+          destinationChainId,
+          chainShortfall,
+          chainVirtualBalance,
+          chainVirtualBalanceWithShortfall,
+          chainVirtualBalanceWithShortfallPostRelay,
+          cumulativeVirtualBalance,
+          cumulativeVirtualBalanceWithShortfall,
+          cumulativeVirtualBalanceWithShortfallPostRelay,
+          targetPct,
+          expectedPostRelayAllocation,
+          chainsToEvaluate,
+        }
+      );
+      if (expectedPostRelayAllocation.lte(targetPct)) {
+        return _chain;
+      }
+    }
+
+    // Neither destination chain nor origin chain allocation percentage are lower than their target so take
+    // repayment on the hub chain by default.
+    return hubChainId;
   }
 
   getPossibleRebalances(): Rebalance[] {

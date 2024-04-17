@@ -54,14 +54,13 @@ export async function createDataworker(
 }
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
-  let loopStart = Date.now();
+  let loopStart = performance.now();
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger.debug({
     at: "Dataworker#index",
-    message: `Time to update non-spoke clients: ${(Date.now() - loopStart) / 1000}s`,
+    message: `Time to update non-spoke clients: ${(performance.now() - loopStart) / 1000}s`,
   });
-  loopStart = Date.now();
-
+  loopStart = performance.now();
   let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
@@ -108,7 +107,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         fromBlocks,
         toBlocks
       );
-
+      const dataworkerFunctionLoopTimerStart = performance.now();
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
@@ -185,11 +184,18 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         });
       }
 
+      const dataworkerFunctionLoopTimerEnd = performance.now();
       logger.debug({
         at: "Dataworker#index",
-        message: `Time to update spoke pool clients and run dataworker function: ${(Date.now() - loopStart) / 1000}s`,
+        message: `Time to update spoke pool clients and run dataworker function: ${Math.round(
+          (dataworkerFunctionLoopTimerEnd - loopStart) / 1000
+        )}s`,
+        timeToLoadSpokes: Math.round((dataworkerFunctionLoopTimerStart - loopStart) / 1000),
+        timeToRunDataworkerFunctions: Math.round(
+          (dataworkerFunctionLoopTimerEnd - dataworkerFunctionLoopTimerStart) / 1000
+        ),
       });
-      loopStart = Date.now();
+      loopStart = performance.now();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;

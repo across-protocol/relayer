@@ -710,15 +710,23 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   return provider;
 }
 
-export function getNodeUrlList(chainId: number, quorum = 1): string[] {
+export function getWSProviders(chainId: number, quorum = 1): ethers.providers.WebSocketProvider[] {
+  const urls = getNodeUrlList(chainId, quorum, "wss");
+  return urls.map((url) => new ethers.providers.WebSocketProvider(url));
+}
+
+export function getNodeUrlList(chainId: number, quorum = 1, protocol: "https" | "wss" = "https"): string[] {
   const resolveUrls = (): string[] => {
-    const providers = process.env[`RPC_PROVIDERS_${chainId}`] ?? process.env["RPC_PROVIDERS"];
+    const [envPrefix, providerPrefix] =
+      protocol === "https" ? ["RPC_PROVIDERS", "RPC_PROVIDER"] : ["RPC_WS_PROVIDERS", "RPC_WS_PROVIDER"];
+
+    const providers = process.env[`${envPrefix}_${chainId}`] ?? process.env[envPrefix];
     if (providers === undefined) {
       throw new Error(`No RPC providers defined for chainId ${chainId}`);
     }
 
     const nodeUrls = providers.split(",").map((provider) => {
-      const envVar = `RPC_PROVIDER_${provider}_${chainId}`;
+      const envVar = `${providerPrefix}_${provider}_${chainId}`;
       const url = process.env[envVar];
       if (url === undefined) {
         throw new Error(`Missing RPC provider URL for chain ${chainId} (${envVar})`);

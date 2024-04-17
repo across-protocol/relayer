@@ -1,7 +1,7 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnOne, getUnfilledDeposits } from "../src/utils";
+import { bnOne, getNetworkName, getUnfilledDeposits } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -406,7 +406,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           minDepositConfirmations: {
             default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
           },
-          sendingRelaysEnabled: false,
+          sendingRelaysEnabled: true,
         } as unknown as RelayerConfig
       );
 
@@ -480,7 +480,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
-      expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Ignoring deposit"))).to.not.be.undefined;
+      const [origin, destination] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
+      expect(
+        spy
+          .getCalls()
+          .find(({ lastArg }) => lastArg.message.includes(`Ignoring ${origin} deposit destined for ${destination}.`))
+      ).to.not.be.undefined;
     });
 
     it("Uses lowest outputAmount on updated deposits", async function () {

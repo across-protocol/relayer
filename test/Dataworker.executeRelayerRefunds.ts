@@ -136,7 +136,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
 
       // No bundle is validated so no refunds.
-      const refunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      const refunds = await bundleDataClient.getPendingRefundsFromValidBundles(relayer.address);
       expect(bundleDataClient.getTotalRefund(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         toBN(0)
       );
@@ -157,7 +157,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
       const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
       expect(validatedRootBundles.length).to.equal(1);
-      const refunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      const refunds = await bundleDataClient.getPendingRefundsFromValidBundles(relayer.address);
       const totalRefund1 = bundleDataClient.getTotalRefund(
         refunds,
         relayer.address,
@@ -171,9 +171,6 @@ describe("Dataworker: Execute relayer refunds", async function () {
         toBN(0)
       );
       expect(bundleDataClient.getTotalRefund(refunds, relayer.address, destinationChainId, erc20_1.address)).to.equal(
-        toBN(0)
-      );
-      expect(bundleDataClient.getTotalRefund(refunds, hubPool.address, destinationChainId, erc20_2.address)).to.equal(
         toBN(0)
       );
 
@@ -194,8 +191,8 @@ describe("Dataworker: Execute relayer refunds", async function () {
       // then it means that `getPendingRefundsFromLatestBundle` is mutating the return value of `.loadData` which is
       // stored in the bundle data client's cache. `getPendingRefundsFromLatestBundle` should instead be using a
       // deep cloned copy of `.loadData`'s output.
-      await bundleDataClient.getPendingRefundsFromValidBundles(2);
-      const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      await bundleDataClient.getPendingRefundsFromValidBundles(relayer.address);
+      const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromValidBundles(relayer.address);
       expect(
         bundleDataClient.getTotalRefund(postExecutionRefunds, relayer.address, destinationChainId, erc20_2.address)
       ).to.equal(toBN(0));
@@ -230,14 +227,14 @@ describe("Dataworker: Execute relayer refunds", async function () {
 
       // Should include refunds for most recently validated bundle but not count first one
       // since they were already refunded.
-      const refunds2 = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      const refunds2 = await bundleDataClient.getPendingRefundsFromValidBundles(relayer.address);
       expect(bundleDataClient.getTotalRefund(refunds2, relayer.address, destinationChainId, erc20_2.address)).to.gt(0);
     });
     it("Refunds in next bundle", async function () {
       // Before proposal should show refunds:
       expect(
         bundleDataClient.getRefundsFor(
-          await bundleDataClient.getNextBundleRefunds(),
+          (await bundleDataClient.getNextBundleRefunds(relayer.address))[0],
           relayer.address,
           destinationChainId,
           erc20_2.address
@@ -252,7 +249,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       // After proposal but before execution should show upcoming refund:
       expect(
         bundleDataClient.getRefundsFor(
-          await bundleDataClient.getNextBundleRefunds(),
+          (await bundleDataClient.getNextBundleRefunds(relayer.address))[0],
           relayer.address,
           destinationChainId,
           erc20_2.address
@@ -267,7 +264,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
 
       // Should reset to no refunds in "next bundle", though these will show up in pending bundle.
       await updateAllClients();
-      expect(await bundleDataClient.getNextBundleRefunds()).to.deep.equal({});
+      expect(await bundleDataClient.getNextBundleRefunds(relayer.address)).to.deep.equal([{}]);
     });
   });
 });

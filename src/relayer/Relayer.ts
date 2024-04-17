@@ -80,11 +80,13 @@ export class Relayer {
     }
 
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
+      const [origin, destination] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: "Ignoring deposit",
+        message: `Ignoring ${origin} deposit destined for ${destination}.`,
         depositor,
         recipient,
+        transactionHash: deposit.transactionHash,
       });
       return false;
     }
@@ -278,7 +280,11 @@ export class Relayer {
         maxBlockNumber,
         transactionHash: deposit.transactionHash,
       });
-      return;
+      // If we're in simulation mode, skip this early exit so that the user can evaluate
+      // the full simulation run.
+      if (this.config.sendingRelaysEnabled) {
+        return;
+      }
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
