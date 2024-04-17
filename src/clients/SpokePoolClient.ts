@@ -59,7 +59,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     readonly hubPoolClient: clients.HubPoolClient | null,
     readonly chainId: number,
     public deploymentBlock: number,
-    readonly worker: ChildProcess
+    readonly worker?: ChildProcess
   ) {
     // EventSearchConfig isn't required for this SpokePoolClient specialisation, so sub in dummy values.
     const eventSearchConfig = { fromBlock: 0, toBlock: 0 };
@@ -70,76 +70,94 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     this.pendingCurrentTime = 0;
     this.pendingEvents = this.queryableEventNames.map(() => []);
     this.pendingEventsRemoved = [];
+  }
 
+  /**
+   * Listen for indexer updates.
+   * @returns void
+   */
+  init(): void {
     if (isDefined(this.worker)) {
-      this.worker.on("message", (rawMessage: string) => {
-        let message: SpokePoolClientMessage;
-        try {
-          message = JSON.parse(rawMessage);
-        } catch (err) {
-          const error = typeguards.isError(err) ? err.message : "unknown error";
-          this.logger.warn({
-            at: "SpokePoolClient#receive",
-            message: `Received malformed message from ${this.chain} indexed.`,
-            error,
-          });
-          return;
-        }
+      this.worker.on("message", (message) => this.indexerUpdate(message));
+      this.logger.debug({ at: "SpokePoolClient#init", message: "Listening for ${this.chain} events." });
+    }
+  }
 
-        if (isSpokePoolEventRemoved(message)) {
-          this.pendingEventsRemoved.push(message);
-          return;
-        }
+  /**
+   * Receive an update from the external indexer process.
+   * @param rawMessage Message to be parsed.
+   * @returns void
+   */
+  protected indexerUpdate(rawMessage: unknown): void {
+    if (typeof rawMessage !== "string") {
+      return;
+    }
 
-        if (!isSpokePoolEventsAdded(message)) {
-          this.logger.warn({
-            at: "SpokePoolClient#receive",
-            message: `Received unrecognised message from ${this.chain} indexer.`,
-            data: message,
-          });
-          return;
-        }
-
-        const { blockNumber, currentTime, oldestTime, nEvents, data } = message;
-        if (nEvents > 0) {
-          const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
-          if (!Array.isArray(pendingEvents) || pendingEvents.length !== nEvents) {
-            this.logger.warn({
-              at: "SpokePoolClient#receive",
-              message: `Received malformed event update events from ${this.chain} indexer.`,
-              blockNumber,
-              nEvents,
-              pendingEvents,
-            });
-            return;
-          }
-
-          this.logger.debug({
-            at: "SpokePoolClient#receive",
-            message: `Received ${nEvents} ${this.chain} events from indexer.`,
-          });
-
-          pendingEvents.forEach((event) => {
-            const eventIdx = this.queryableEventNames.indexOf(event.event);
-            if (eventIdx === -1 || event.removed) {
-              this.logger.warn({
-                at: "SpokePoolClient#receive",
-                message: `Received unrecognised or invalid event from ${this.chain} indexer.`,
-                event,
-              });
-              return;
-            }
-
-            this.pendingEvents[eventIdx].push(event);
-          });
-        }
-
-        this.pendingBlockNumber = blockNumber;
-        this.pendingCurrentTime = currentTime;
-        if (!isDefined(this.pendingOldestTime) && oldestTime > 0) {
-          this.pendingOldestTime = oldestTime;
-        }
+    let message: SpokePoolClientMessage;
+    try {
+      message = JSON.parse(rawMessage);
+    } catch (err) {
+      const error = typeguards.isError(err) ? err.message : "unknown error";
+      this.logger.warn({
+        at: "SpokePoolClient#indexerUpdate",
+        message: `Received malformed message from ${this.chain} indexed.`,
+        error,
       });
+      return;
+    }
+
+    if (isSpokePoolEventRemoved(message)) {
+      this.pendingEventsRemoved.push(message);
+      return;
+    }
+
+    if (!isSpokePoolEventsAdded(message)) {
+      this.logger.warn({
+        at: "SpokePoolClient#indexerUpdate",
+        message: `Received unrecognised message from ${this.chain} indexer.`,
+        data: message,
+      });
+      return;
+    }
+
+    const { blockNumber, currentTime, oldestTime, nEvents, data } = message;
+    if (nEvents > 0) {
+      const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
+      if (!Array.isArray(pendingEvents) || pendingEvents.length !== nEvents) {
+        this.logger.warn({
+          at: "SpokePoolClient#indexerUpdate",
+          message: `Received malformed event update events from ${this.chain} indexer.`,
+          blockNumber,
+          nEvents,
+          pendingEvents,
+        });
+        return;
+      }
+
+      this.logger.debug({
+        at: "SpokePoolClient#indexerUpdate",
+        message: `Received ${nEvents} ${this.chain} events from indexer.`,
+      });
+
+      pendingEvents.forEach((event) => {
+        const eventIdx = this.queryableEventNames.indexOf(event.event);
+        if (eventIdx === -1 || event.removed) {
+          this.logger.warn({
+            at: "SpokePoolClient#indexerUpdate",
+            message: `Received unrecognised or invalid event from ${this.chain} indexer.`,
+            event,
+          });
+          return;
+        }
+
+        this.pendingEvents[eventIdx].push(event);
+      });
+    }
+
+    this.pendingBlockNumber = blockNumber;
+    this.pendingCurrentTime = currentTime;
+    if (!isDefined(this.pendingOldestTime) && oldestTime > 0) {
+      this.pendingOldestTime = oldestTime;
     }
   }
 

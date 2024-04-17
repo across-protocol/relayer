@@ -62,7 +62,17 @@ async function indexedSpokePoolClient(
   const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
   const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
 
-  return new IndexedSpokePoolClient(logger, spokePool, hubPoolClient, chainId, registrationBlock, worker);
+  const spokePoolClient = new IndexedSpokePoolClient(
+    logger,
+    spokePool,
+    hubPoolClient,
+    chainId,
+    registrationBlock,
+    worker
+  );
+  spokePoolClient.init();
+
+  return spokePoolClient;
 }
 
 export async function constructRelayerClients(
