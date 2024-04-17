@@ -259,7 +259,7 @@ export class Relayer {
   async evaluateFill(
     deposit: V3DepositWithBlock,
     fillStatus: number,
-    lpFees: RepaymentFee[]
+    lpFees: RepaymentFee[],
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
@@ -336,9 +336,7 @@ export class Relayer {
    * @param relayData An object consisting of an originChainId, inputToken, inputAmount and quoteTimestamp.
    * @returns A string identifying the deposit in a BatchLPFees object.
    */
-  private getLPFeeKey(
-    relayData: Pick<V3Deposit, "originChainId" | "inputToken" | "inputAmount" | "quoteTimestamp">
-  ): string {
+  getLPFeeKey(relayData: Pick<V3Deposit, "originChainId" | "inputToken" | "inputAmount" | "quoteTimestamp">): string {
     return `${relayData.originChainId}-${relayData.inputToken}-${relayData.inputAmount}-${relayData.quoteTimestamp}`;
   }
 
@@ -358,7 +356,13 @@ export class Relayer {
     for (let i = 0; i < deposits.length; ++i) {
       const { fillStatus, ...deposit } = deposits[i];
       const relayerLpFees = lpFees[this.getLPFeeKey(deposit)];
-      await this.evaluateFill(deposit, fillStatus, relayerLpFees, maxBlockNumbers[deposit.originChainId], sendSlowRelays);
+      await this.evaluateFill(
+        deposit,
+        fillStatus,
+        relayerLpFees,
+        maxBlockNumbers[deposit.originChainId],
+        sendSlowRelays
+      );
     }
   }
 

@@ -1,7 +1,8 @@
 import * as contracts from "@across-protocol/contracts-v2/dist/test-utils";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
-import { FillStatus } from "../src/interfaces";
+import { DepositWithBlock, FillStatus } from "../src/interfaces";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -340,6 +341,67 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(0);
+  });
+
+  it("Batch-computes LP fees correctly", async function () {
+    const nLoops = 25;
+    const [lpTokenAddr] = await hubPool.pooledTokens(l1Token.address);
+    const lpToken = new Contract(lpTokenAddr, ERC20.abi, owner);
+
+    const deposits: DepositWithBlock[] = [];
+    for (let i = 0; i < nLoops; ++i) {
+      // HubPool and origin SpokePool timestamps must be synchronised for quoteTimestamp validation.
+      const quoteTimestamp = (await hubPool.provider.getBlock("latest")).timestamp;
+      await spokePool_1.setCurrentTime(quoteTimestamp);
+
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        inputAmount.add(i),
+        erc20_2.address,
+        outputAmount,
+        { quoteTimestamp }
+      );
+      deposits.push(deposit);
+
+      // Modify the HubPool LP balance to ensure that subsequent deposits will receive a different LP fee.
+      const lpTokenBalance = await lpToken.balanceOf(owner.address);
+      (await hubPool.removeLiquidity(l1Token.address, lpTokenBalance.div(2), false)).wait();
+    }
+    await hubPoolClient.update();
+
+    // Get the relayer's LP fee computation for repayment on both destination and HubPool chains.
+    const relayerLPFees = await relayerInstance.batchComputeLpFees(deposits);
+
+    // Compute LP fees for taking repayment on the HubPool chain.
+    let hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: destinationChainId }))
+    );
+
+    // Verify LP fees for repayment on the destination chain.
+    deposits.forEach((deposit, idx) => {
+      const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+      const relayerLpFee = relayerLPFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === destinationChainId);
+      expect(relayerLpFee).to.exist;
+      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+    });
+
+    // Compute LP fees for taking repayment on the HubPool chain.
+    hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: hubPoolClient.chainId }))
+    );
+
+    // Verify LP fees for repayment on the HubPool chain.
+    deposits.forEach((deposit, idx) => {
+      const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+      const relayerLpFee = relayerLPFees[lpFeeKey].find(
+        ({ paymentChainId }) => paymentChainId === hubPoolClient.chainId
+      );
+      expect(relayerLpFee).to.exist;
+      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+    });
   });
 
   it("Skip invalid fills from the same relayer", async function () {
