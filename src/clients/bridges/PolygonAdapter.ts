@@ -20,6 +20,7 @@ import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { CCTPAdapter } from "./CCTPAdapter";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
@@ -111,7 +112,7 @@ const tokenToBridge = {
 
 type SupportedL1Token = string;
 
-export class PolygonAdapter extends BaseAdapter {
+export class PolygonAdapter extends CCTPAdapter {
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -249,6 +250,9 @@ export class PolygonAdapter extends BaseAdapter {
       .map((l1Token) => {
         if (this.isWeth(l1Token)) {
           return this.getL1TokenGateway(l1Token)?.address;
+        }
+        if (this.isL1TokenUsdc(l1Token)) {
+          return this.getL1CCTPTokenMessengerBridge().address;
         }
         if (!this.isSupportedToken(l1Token)) {
           return null;

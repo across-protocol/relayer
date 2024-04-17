@@ -21,6 +21,7 @@ import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { CCTPAdapter } from "./CCTPAdapter";
 
 // TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
@@ -53,7 +54,7 @@ type SupportedL1Token = string;
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
 // wont get stuck.
 
-export class ArbitrumAdapter extends BaseAdapter {
+export class ArbitrumAdapter extends CCTPAdapter {
   l2GasPrice: BigNumber = toBN(20e9);
   l2GasLimit: BigNumber = toBN(150000);
   // abi.encoding of the maxL2Submission cost. of 0.01e18
@@ -160,6 +161,9 @@ export class ArbitrumAdapter extends BaseAdapter {
       .map((l1Token) => {
         if (!this.isSupportedToken(l1Token)) {
           return null;
+        }
+        if (this.isL1TokenUsdc(l1Token)) {
+          return this.getL1CCTPTokenMessengerBridge().address;
         }
         return this.getL1Bridge(l1Token).address;
       })
