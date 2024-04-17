@@ -209,21 +209,24 @@ export class InventoryClient {
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
-    const totalRefundsPerChain = this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
-      if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
-        refunds[chainId] = toBN(0);
-      } else {
-        const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
-        refunds[chainId] = this.bundleDataClient.getTotalRefund(
-          refundsToConsider,
-          this.relayer,
-          chainId,
-          destinationToken
-        );
+    const totalRefundsPerChain = this.getEnabledChains().reduce(
+      (refunds: { [chainId: string]: BigNumber }, chainId) => {
+        if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
+          refunds[chainId] = toBN(0);
+        } else {
+          const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
+          refunds[chainId] = this.bundleDataClient.getTotalRefund(
+            refundsToConsider,
+            this.relayer,
+            chainId,
+            destinationToken
+          );
+          return refunds;
+        }
         return refunds;
-      }
-      return refunds;
-    }, {});
+      },
+      {}
+    );
     if (startTimer) {
       this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTimer) / 1000)}s`, {
         l1Token,
