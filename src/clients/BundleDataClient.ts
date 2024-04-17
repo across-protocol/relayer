@@ -317,7 +317,9 @@ export class BundleDataClient {
             return false;
           }
           const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
-          const hasMatchingDeposit = matchingDeposit !== undefined && utils.getRelayHashFromEvent(fill) === utils.getRelayHashFromEvent(matchingDeposit);
+          const hasMatchingDeposit =
+            matchingDeposit !== undefined &&
+            utils.getRelayHashFromEvent(fill) === utils.getRelayHashFromEvent(matchingDeposit);
           return hasMatchingDeposit;
         })
         .forEach((fill) => {
