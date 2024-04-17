@@ -3,7 +3,7 @@ import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
 import { array, integer, object, min as Min, string } from "superstruct";
 import { clients, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
+import { getNetworkName, isDefined, winston } from "../utils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
 
