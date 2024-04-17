@@ -284,9 +284,6 @@ export class BundleDataClient {
   }
 
   // @dev This helper function should probably be moved to the InventoryClient
-  // @dev This function does not perfectly match fills and deposits. Therefore this calculation can be
-  // griefed by someone sending invalid fills. We compare fill and deposit input and output amount along with
-  // origin and destination chain and deposit ID. This should prevent most practical griefing attacks.
   getApproximateRefundsForBlockRange(
     chainIds: number[],
     blockRanges: number[][],
@@ -320,8 +317,7 @@ export class BundleDataClient {
             return false;
           }
           const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
-          const hasMatchingDeposit =
-            matchingDeposit?.inputAmount.eq(fill.inputAmount) && matchingDeposit?.outputAmount.eq(fill.outputAmount);
+          const hasMatchingDeposit = utils.getRelayHashFromEvent(fill) === utils.getRelayHashFromEvent(matchingDeposit);
           return hasMatchingDeposit;
         })
         .forEach((fill) => {

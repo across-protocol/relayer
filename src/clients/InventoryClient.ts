@@ -18,12 +18,14 @@ import {
   formatFeePct,
   fixedPointAdjustment,
   toBNWei,
+  bnComparatorDescending,
+  MAX_UINT_VAL,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { InventoryConfig, V3Deposit } from "../interfaces";
 import lodash from "lodash";
-import { CONTRACT_ADDRESSES } from "../common";
+import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
@@ -40,10 +42,6 @@ export type Rebalance = {
 };
 
 const { CHAIN_IDs } = constants;
-
-// Deciding not to add to constants because this chain list is specific to this client which has to care about
-// which chains have slow canonical L2-->L1 bridges.
-const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM];
 
 export class InventoryClient {
   private logDisabledManagement = false;
@@ -204,13 +202,14 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
+    let startTimer;
     if (!isDefined(this.bundleRefundsPromise)) {
+      startTimer = performance.now();
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
-
-    return this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
+    const totalRefundsPerChain = this.getEnabledChains().reduce((refunds: { [chainId: string]: BigNumber }, chainId) => {
       if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
         refunds[chainId] = toBN(0);
       } else {
@@ -225,6 +224,13 @@ export class InventoryClient {
       }
       return refunds;
     }, {});
+    if (startTimer) {
+      this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTimer) / 1000)}s`, {
+        l1Token,
+        totalRefundsPerChain,
+      });
+    }
+    return totalRefundsPerChain;
   }
 
   // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
@@ -274,35 +280,26 @@ export class InventoryClient {
       return destinationChainId;
     }
 
-    const startTime = performance.now();
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
     // time, return an object with zero refunds for all chains.
     const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
-    this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTime) / 1000)}s`, {
-      l1Token,
-      totalRefundsPerChain,
-    });
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
     // Build list of chains we want to evaluate for repayment:
-    const chainsToEvaluate = [];
+    const chainsToEvaluate: number[] = [];
     // Add optimistic rollups to front of evaluation list because these are chains with long withdrawal periods
     // that we want to prioritize taking repayment on if the chain is going to end up sending funds back to the
     // hub in the next root bundle over the slow canonical bridge.
     // We need to calculate the latest running balance for each optimistic rollup chain.
     // We'll add the last proposed running balance plus new deposits and refunds.
     if (this.prioritizeLpUtilization) {
-      if (!isDefined(this.excessRunningBalancePromises[l1Token])) {
-        // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-        this.excessRunningBalancePromises[l1Token] = this.getExcessRunningBalances(l1Token, inputAmount);
-      }
-      const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token]);
+      const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(l1Token, inputAmount);
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
       const chainsWithExcessSpokeBalances = SLOW_WITHDRAWAL_CHAINS.filter((chainId) =>
-        excessRunningBalances[chainId].gt(0)
-      ).sort((a, b) => (excessRunningBalances[b].gt(excessRunningBalances[a]) ? 1 : -1));
+        excessRunningBalancePcts[chainId].gt(0)
+      ).sort((x, y) => bnComparatorDescending(excessRunningBalancePcts[x], excessRunningBalancePcts[y]));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
     // Add destination and origin chain if they are not already added.
@@ -358,6 +355,7 @@ export class InventoryClient {
         }`,
         {
           l1Token,
+          outputAmount,
           originChainId,
           destinationChainId,
           chainShortfall,
@@ -382,14 +380,22 @@ export class InventoryClient {
     return hubChainId;
   }
 
-  async getExcessRunningBalances(l1Token: string, refundAmount: BigNumber): Promise<{ [chainId: number]: BigNumber }> {
-    const start = performance.now();
+  async getLatestRunningBalances(l1Token: string): Promise<{ [chainId: number]: BigNumber }> {
     const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-    const excessPcts = Object.fromEntries(
+    const start = performance.now();
+    const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(SLOW_WITHDRAWAL_CHAINS, async (chainId) => {
         if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
-          return [chainId, toBN(0)];
+          return [
+            chainId,
+            {
+              absLatestRunningBalance: toBN(0),
+              lastProposedRunningBalance: toBN(0),
+              depositsPostProposal: toBN(0),
+              refundsPostProposal: toBN(0),
+            },
+          ];
         }
         const chainIdIndex = chainIds.indexOf(chainId);
         const blockRange = blockRanges[chainIdIndex];
@@ -425,48 +431,124 @@ export class InventoryClient {
         ).reduce((acc, curr) => acc.add(curr), bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
-        // We also need to consider the refund amount that will be added to the running balance.
-        const latestRunningBalance = runningBalanceForToken
-          .sub(upcomingDeposits)
-          .add(upcomingRefundForChain)
-          .add(refundAmount);
-        const targetSpokeBalanceForChain = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(
-          l1Token,
-          chainId
-        );
-        // A negative running balance means that the spoke has a balance, so we should compare the absolute value
-        // of the negative running balance with the target. If the running balance is positive, then the hub
+        const latestRunningBalance = runningBalanceForToken.sub(upcomingDeposits).add(upcomingRefundForChain);
+        // A negative running balance means that the spoke has a balance. If the running balance is positive, then the hub
         // owes it funds and its below target so we don't want to take additional repayment.
-        const absLatestRunningBalance = latestRunningBalance.abs();
-        const pctOverTarget = latestRunningBalance.lt(0)
-          ? absLatestRunningBalance.gt(targetSpokeBalanceForChain.target)
-            ? targetSpokeBalanceForChain.target.gt(0)
-              ? absLatestRunningBalance
-                  .sub(targetSpokeBalanceForChain.target)
-                  .mul(fixedPointAdjustment)
-                  .div(targetSpokeBalanceForChain.target)
-              : toBN(1)
-            : toBN(0)
-          : toBN(0);
-        this.log(
-          `Approximated latest running balance for ORU chain ${chainId} for token ${l1Token}: ${absLatestRunningBalance.toString()}`,
+        const absLatestRunningBalance = latestRunningBalance.lt(0) ? latestRunningBalance.abs() : toBN(0);
+        return [
+          chainId,
           {
-            runningBalanceInLatestProposal: runningBalanceForToken,
-            upcomingDeposits,
-            upcomingRefundForChain,
-            targetSpokeBalanceForChain: targetSpokeBalanceForChain.target,
-            refundAmount,
-            pctOverTarget: `${formatFeePct(pctOverTarget)}%`,
-          }
-        );
-        return [chainId, pctOverTarget];
+            absLatestRunningBalance,
+            lastProposedRunningBalance: runningBalanceForToken,
+            depositsPostProposal: upcomingDeposits,
+            refundsPostProposal: upcomingRefundForChain,
+          },
+        ];
       })
     );
-    this.log(`Time taken to get excess running balances: ${Math.round(performance.now() - start) / 1000}s`, {
-      l1Token,
-      excessPcts: Object.fromEntries(Object.entries(excessPcts).map(([k, v]) => [k, formatFeePct(v)])),
+    this.log(
+      `Approximated latest (abs. val) running balance for ORU chains for token ${l1Token} in ${
+        Math.round(performance.now() - start) / 1000
+      }s`,
+      { runningBalances }
+    );
+
+    return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
+  }
+
+  /**
+   * @param excessRunningBalances Dictionary of "excess" running balances per chain. Running balances
+   * are recorded in PoolRebalanceLeaves and are positive if the Hub owes the Spoke funds and negative otherwise.
+   * Therefore, running balances can only be considered "excess" if the running balance as recorded in the
+   * PoolRebalanceLeaf is negative. This is denoting that the Hub is over-allocated on the Spoke.
+   * @param l1Token Token we are comparing running balances for against spoke pool targets.
+   * @param refundAmount Amount that will be refunded to the relayer. This value gets subtracted from running
+   * balance excesses before comparing with the spoke pool target, since refunds are taken out of spoke pool balances.
+   * @returns Dictionary of excess percentages for each chain. The excess percentage is the percentage of the
+   * excess running balance over the spoke pool target balance. If the absolute running balance is 0, then
+   * the excess percentage is 0. If the target is 0, then the excess percentage is infinite.
+   */
+  _getExcessRunningBalancePcts(
+    excessRunningBalances: { [chainId: number]: BigNumber },
+    l1Token: string,
+    refundAmount: BigNumber
+  ): { [chainId: number]: BigNumber } {
+    const pcts = Object.fromEntries(
+      Object.entries(excessRunningBalances).map(([chainId, excess]) => {
+        const target = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(
+          l1Token,
+          Number(chainId)
+        ).target;
+        const excessPostRelay = excess.sub(refundAmount);
+        if (excessPostRelay.lte(0)) {
+          return [
+            chainId,
+            {
+              pct: toBN(0),
+              target,
+              excess,
+              excessPostRelay,
+            },
+          ];
+        }
+        if (target.lte(0)) {
+          return [
+            chainId,
+            {
+              pct: toBN(MAX_UINT_VAL),
+              target,
+              excess,
+              excessPostRelay,
+            },
+          ];
+        }
+        if (excessPostRelay.lte(target)) {
+          return [
+            chainId,
+            {
+              pct: toBN(0),
+              target,
+              excess,
+              excessPostRelay,
+            },
+          ];
+        }
+        return [
+          chainId,
+          {
+            pct: excessPostRelay.sub(target).mul(this.scalar).div(target),
+            target,
+            excess,
+            excessPostRelay,
+          },
+        ];
+      })
+    );
+    this.log(`Computed excess running balances for ${l1Token}`, {
+      refundAmount,
+      excessRunningBalancePcts: Object.fromEntries(
+        Object.entries(pcts).map(([k, v]) => [
+          k,
+          {
+            ...pcts[k],
+            pct: formatFeePct(v.pct) + "%",
+          },
+        ])
+      ),
     });
-    return excessPcts;
+    return Object.fromEntries(Object.entries(pcts).map(([k, v]) => [k, v.pct]));
+  }
+
+  async getExcessRunningBalancePcts(
+    l1Token: string,
+    refundAmount: BigNumber
+  ): Promise<{ [chainId: number]: BigNumber }> {
+    if (!isDefined(this.excessRunningBalancePromises[l1Token])) {
+      // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
+      this.excessRunningBalancePromises[l1Token] = this.getLatestRunningBalances(l1Token);
+    }
+    const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token]);
+    return await this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmount);
   }
 
   getPossibleRebalances(): Rebalance[] {

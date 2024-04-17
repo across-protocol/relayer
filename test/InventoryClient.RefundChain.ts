@@ -493,7 +493,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       };
     });
     it("selects slow withdrawal chain with excess running balance and under relayer allocation", async function () {
-      // Initial allocations are all under allocated so the first slow withdrawal chain should be selected.
+      // Initial allocations are all under allocated so the first slow withdrawal chain should be selected since it has
+      // the highest overage.
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
 
       // If we instead drop the excess on 42161 to 0, then we should take repayment on

@@ -73,3 +73,4 @@ export * from "./RedisUtils";
 export * from "./UmaUtils";
 export * from "./TokenUtils";
 export * from "./CLIUtils";
+export * from "./BNUtils";
