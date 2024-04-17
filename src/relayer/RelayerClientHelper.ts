@@ -68,7 +68,6 @@ async function indexedSpokePoolClient(
     hubPoolClient,
     chainId,
     registrationBlock,
-    { fromBlock: 0, toBlock: 0, maxBlockLookBack: 5_000 },
     worker
   );
 }
