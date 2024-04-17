@@ -41,7 +41,7 @@ export class MockInventoryClient extends InventoryClient {
     this.excessRunningBalancePcts[l1Token] = balances;
   }
 
-  async getExcessRunningBalances(l1Token: string): Promise<{ [chainId: number]: BigNumber }> {
+  async getExcessRunningBalancePcts(l1Token: string): Promise<{ [chainId: number]: BigNumber }> {
     return Promise.resolve(this.excessRunningBalancePcts[l1Token]);
   }
 
