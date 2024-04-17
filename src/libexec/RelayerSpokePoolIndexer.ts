@@ -340,7 +340,11 @@ async function listen(
       const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
       spokePool.connect(provider).on(filter, (...rawEvent) => {
         const event = rawEvent.at(-1);
-        (event.removed ? eventMgr.remove : eventMgr.add).bind(eventMgr)(event, host);
+        if (event.removed) {
+          eventMgr.remove(event, host);
+        } else {
+          eventMgr.add(event, host);
+        }
       });
     });
   });
