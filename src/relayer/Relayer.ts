@@ -383,8 +383,14 @@ export class Relayer {
 
     const lpFeeRequests = deposits
       .map((deposit) => {
-        const request = [{ ...deposit, paymentChainId: deposit.destinationChainId }];
-        if (deposit.destinationChainId !== hubPoolClient.chainId) {
+        // Query the LP fee for repayment on origin and destination chain IDs unconditionally.
+        // Optionally also query for HubPool chain repayment if it's not origin or destination.
+        const { originChainId, destinationChainId } = deposit;
+        const request = [
+          { ...deposit, paymentChainId: destinationChainId },
+          { ...deposit, paymentChainId: originChainId },
+        ];
+        if (![originChainId, destinationChainId].includes(hubPoolClient.chainId)) {
           request.push({ ...deposit, paymentChainId: hubPoolClient.chainId });
         }
         return request;

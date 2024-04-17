@@ -388,6 +388,18 @@ describe("Relayer: Unfilled Deposits", async function () {
       expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
 
+    // Compute LP fees for taking repayment on the origin chain.
+    hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: originChainId }))
+    );
+
+    // Verify LP fees for repayment on the origin chain.
+    deposits.forEach((deposit, idx) => {
+      const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+      const relayerLpFee = relayerLPFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === originChainId);
+      expect(relayerLpFee).to.exist;
+      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+    });
     // Compute LP fees for taking repayment on the HubPool chain.
     hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
       deposits.map((deposit) => ({ ...deposit, paymentChainId: hubPoolClient.chainId }))
