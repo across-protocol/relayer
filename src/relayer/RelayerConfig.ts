@@ -58,13 +58,13 @@ export class RelayerConfig extends CommonConfig {
       MIN_DEPOSIT_CONFIRMATIONS,
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
-      RELAYER_INDEXER_PATH,
+      RELAYER_SPOKEPOOL_INDEXER_PATH,
     } = env;
     super(env);
 
     // External indexing is dependent on looping mode being configured.
     this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";
-    this.indexerPath = RELAYER_INDEXER_PATH ?? Constants.RELAYER_DEFAULT_INDEXER;
+    this.indexerPath = RELAYER_SPOKEPOOL_INDEXER_PATH ?? Constants.RELAYER_DEFAULT_SPOKEPOOL_INDEXER;
 
     // Empty means all chains.
     this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
