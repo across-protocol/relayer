@@ -47,8 +47,8 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     public deploymentBlock: number,
     readonly worker?: ChildProcess
   ) {
-    // EventSearchConfig isn't required for this SpokePoolClient specialisation, so sub in dummy values.
-    const eventSearchConfig = { fromBlock: 0, toBlock: 0 };
+    // EventSearchConfig isn't required for this SpokePoolClient specialisation, so sub in safe defaults.
+    const eventSearchConfig = { fromBlock: deploymentBlock, maxBlockLookBack: 5_000 };
     super(logger, spokePool, hubPoolClient, chainId, deploymentBlock, eventSearchConfig);
 
     this.chain = getNetworkName(chainId);
