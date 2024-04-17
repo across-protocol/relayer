@@ -400,6 +400,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       expect(relayerLpFee).to.exist;
       expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
+
     // Compute LP fees for taking repayment on the HubPool chain.
     hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
       deposits.map((deposit) => ({ ...deposit, paymentChainId: hubPoolClient.chainId }))
