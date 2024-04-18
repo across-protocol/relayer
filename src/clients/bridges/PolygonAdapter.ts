@@ -216,21 +216,36 @@ export class PolygonAdapter extends CCTPAdapter {
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
-  async sendTokenToTargetChain(
+  sendTokenToTargetChain(
     address: string,
     l1Token: string,
     l2Token: string,
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    let method = "depositFor";
-    // note that the amount is the bytes 32 encoding of the amount.
-    let args = [address, l1Token, bnToHex(amount)];
+    if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
+      return this.sendCCTPTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    } else {
+      let method = "depositFor";
+      // note that the amount is the bytes 32 encoding of the amount.
+      let args = [address, l1Token, bnToHex(amount)];
 
-    // If this token is WETH (the tokenToEvent maps to the ETH method) then we modify the params to deposit ETH.
-    if (this.isWeth(l1Token)) {
-      method = "bridgeWethToPolygon";
-      args = [address, amount.toString()];
+      // If this token is WETH (the tokenToEvent maps to the ETH method) then we modify the params to deposit ETH.
+      if (this.isWeth(l1Token)) {
+        method = "bridgeWethToPolygon";
+        args = [address, amount.toString()];
+      }
+      return this._sendTokenToTargetChain(
+        l1Token,
+        l2Token,
+        amount,
+        this.getL1TokenGateway(l1Token),
+        method,
+        args,
+        1,
+        BigNumber.from(0),
+        simMode
+      );
     }
     return await this._sendTokenToTargetChain(
       l1Token,

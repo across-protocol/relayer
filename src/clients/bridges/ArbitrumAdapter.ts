@@ -171,35 +171,39 @@ export class ArbitrumAdapter extends CCTPAdapter {
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
-  async sendTokenToTargetChain(
+  sendTokenToTargetChain(
     address: string,
     l1Token: string,
     l2Token: string,
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    const args = [
-      l1Token, // token
-      address, // to
-      amount, // amount
-      this.l2GasLimit, // maxGas
-      this.l2GasPrice, // gasPriceBid
-      this.transactionSubmissionData, // data
-    ];
-    // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
-    // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
-    const gasMultiplier = 1.2;
-    return await this._sendTokenToTargetChain(
-      l1Token,
-      l2Token,
-      amount,
-      this.getL1GatewayRouter(),
-      "outboundTransfer",
-      args,
-      gasMultiplier,
-      this.l1SubmitValue,
-      simMode
-    );
+    if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
+      return this.sendCCTPTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    } else {
+      const args = [
+        l1Token, // token
+        address, // to
+        amount, // amount
+        this.l2GasLimit, // maxGas
+        this.l2GasPrice, // gasPriceBid
+        this.transactionSubmissionData, // data
+      ];
+      // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
+      // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
+      const gasMultiplier = 1.2;
+      return this._sendTokenToTargetChain(
+        l1Token,
+        l2Token,
+        amount,
+        this.getL1GatewayRouter(),
+        "outboundTransfer",
+        args,
+        gasMultiplier,
+        this.l1SubmitValue,
+        simMode
+      );
+    }
   }
 
   // The arbitrum relayer expects to receive ETH steadily per HubPool bundle processed, since it is the L2 refund

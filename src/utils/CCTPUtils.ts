@@ -14,6 +14,10 @@ export type DecodedCCTPMessage = {
   attestation: string;
 };
 
+export function cctpAddressToBytes32(address: string): string {
+  return ethers.utils.hexZeroPad(address, 32);
+}
+
 /**
  * Used to map a CCTP domain to a chain id. This is the inverse of chainIdsToCctpDomains.
  * Note: due to the nature of testnet/mainnet chain ids mapping to the same CCTP domain, we

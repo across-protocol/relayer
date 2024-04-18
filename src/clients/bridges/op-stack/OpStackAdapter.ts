@@ -19,6 +19,7 @@ import { CONTRACT_ADDRESSES } from "../../../common";
 import { OpStackBridge } from "./OpStackBridgeInterface";
 import { WethBridge } from "./WethBridge";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
+import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
@@ -39,6 +40,17 @@ export class OpStackAdapter extends BaseAdapter {
     const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
     if (wethAddress && !this.customBridges[wethAddress]) {
       this.customBridges[wethAddress] = new WethBridge(
+        this.chainId,
+        this.hubChainId,
+        this.getSigner(this.hubChainId),
+        this.getSigner(chainId)
+      );
+    }
+
+    // We should manually override the bridge for USDC to use CCTP.
+    const usdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
+    if (usdcAddress) {
+      this.customBridges[usdcAddress] = new UsdcCCTPBridge(
         this.chainId,
         this.hubChainId,
         this.getSigner(this.hubChainId),
