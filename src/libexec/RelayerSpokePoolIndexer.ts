@@ -131,13 +131,10 @@ class EventManager {
     // Filter coarsely on transactionHash, since a reorg should invalidate multiple events within a single transaction hash.
     const eventIdxs = events
       .map((event, idx) => ({ ...event, idx }))
-      .filter(({ transactionHash }) => transactionHash === event.transactionHash)
+      .filter(({ blockHash }) => blockHash === event.blockHash)
       .map(({ idx }) => idx);
 
     if (eventIdxs.length > 0) {
-      // Extract the set of dropped events names for further notification.
-      const droppedEventNames = sdkUtils.dedupArray(eventIdxs.map((idx) => events[idx].event));
-
       // Remove each event in reverse to ensure that indexes remain valid until the last has been removed.
       eventIdxs.reverse().forEach((idx) => events.splice(idx, 1));
 
@@ -149,7 +146,7 @@ class EventManager {
 
       // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality. Batch these
       // by transactionHash, but recognise that multiple different events may have occurred in the same transaction.
-      removeEvent(event.transactionHash, droppedEventNames);
+      removeEvent(event);
     }
   }
 
@@ -256,14 +253,13 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
  * @param event Ethers Event instance.
  * @returns void
  */
-function removeEvent(transactionHash: string, eventNames: string[]): void {
+function removeEvent(event: Event): void {
   if (!isDefined(process.send)) {
     return;
   }
 
   const message: SpokePoolClientMessage = {
-    transactionHash,
-    eventNames,
+    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }

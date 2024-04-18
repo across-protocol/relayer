@@ -1,15 +1,14 @@
 import assert from "assert";
 import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
-import { array, integer, object, min as Min, string } from "superstruct";
+import { integer, object, min as Min, string } from "superstruct";
 import { clients, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { getNetworkName, isDefined, winston } from "../utils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
 
 type SpokePoolEventRemoved = {
-  transactionHash: string;
-  eventNames: string[];
+  event: string;
 };
 
 type SpokePoolEventsAdded = {
@@ -31,8 +30,7 @@ const EventsAddedMessage = object({
 });
 
 const EventRemovedMessage = object({
-  transactionHash: string(),
-  eventNames: array(string()),
+  event: string(),
 });
 
 export function isSpokePoolEventsAdded(message: unknown): message is SpokePoolEventsAdded {
@@ -51,7 +49,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   private pendingOldestTime: number;
 
   private pendingEvents: Event[][];
-  private pendingEventsRemoved: SpokePoolEventRemoved[];
+  private pendingEventsRemoved: Event[];
 
   constructor(
     readonly logger: winston.Logger,
@@ -79,7 +77,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   init(): void {
     if (isDefined(this.worker)) {
       this.worker.on("message", (message) => this.indexerUpdate(message));
-      this.logger.debug({ at: "SpokePoolClient#init", message: "Listening for ${this.chain} events." });
+      this.logger.debug({ at: "SpokePoolClient#init", message: `Listening for ${this.chain} events.` });
     }
   }
 
@@ -107,7 +105,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     }
 
     if (isSpokePoolEventRemoved(message)) {
-      this.pendingEventsRemoved.push(message);
+      this.pendingEventsRemoved.push(JSON.parse(message.event, sdkUtils.jsonReviverWithBigNumbers));
       return;
     }
 
@@ -166,79 +164,79 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    * @param event An Ethers event instance.
    * @returns void
    */
-  protected removeEvent(transactionHash: string, eventNames: string[]): boolean {
+  protected removeEvent(event: Event): boolean {
     let removed = false;
-    this.logger.debug({
-      at: "SpokePoolClient::removeEvent",
-      message: `Removing event(s) for ${this.chain} transactionHash.`,
-      transactionHash,
-    });
+    const eventIdx = this.queryableEventNames.indexOf(event.event);
+    const pendingEvents = this.pendingEvents[eventIdx];
 
-    eventNames.forEach((eventName) => {
-      const eventIdx = this.queryableEventNames.indexOf(eventName);
-      const pendingEvents = this.pendingEvents[eventIdx];
+    const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex } = event;
 
-      // First check for removal from any pending events.
-      const pendingEventIdxs = pendingEvents
-        .map((pending, idx) => ({ ...pending, idx }))
-        .filter((pending) => pending.transactionHash === transactionHash)
-        .map(({ idx }) => idx);
+    // First check for removal from any pending events.
+    const pendingEvent = pendingEvents
+      .map((event, idx) => ({ ...event, idx }))
+      .find((pending) => {
+        pending.logIndex === logIndex &&
+        pending.transactionIndex === transactionIndex &&
+        pending.transactionHash === transactionHash &&
+        pending.blockHash === blockHash
+      })
 
-      if (pendingEventIdxs.length > 0) {
-        removed = true;
+    if (isDefined(pendingEvent)) {
+      removed = true;
 
-        const { blockNumber } = pendingEvents[pendingEventIdxs[0]];
+      // Splice out the events in reverse order.
+      pendingEvents.splice(pendingEvent.idx, 1);
 
-        // Splice out the events in reverse order.
-        pendingEventIdxs.reverse().forEach((idx) => pendingEvents.splice(idx, 1));
+      this.logger.debug({
+        at: "SpokePoolClient#removeEvent",
+        message: `Removed ${this.chain} ${eventName} event for block ${blockNumber}.`,
+        event,
+      });
+    }
 
-        this.logger.debug({
-          at: "SpokePoolClient#removeEvent",
-          message: `Removed ${this.chain} ${eventName} event for block ${blockNumber}.`,
-          transactionHash,
-        });
-      }
+    // Back out any events that were previously ingested via update(). This is best-effort and may help to save the
+    // relayer from filling a deposit where it must wait for additional deposit confirmations. Note that this is
+    // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
+    // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
+    if (eventName === "V3FundsDeposited") {
+      const { depositId } = event.args;
+      const depositHashes = Object.values(this.depositHashes)
+        .filter((deposit) => {
+          deposit.logIndex === logIndex
+          deposit.transactionIndex === transactionIndex
+          deposit.transactionHash === transactionHash
+        })
+        .map(() => this.getDepositHash({ depositId, originChainId: this.chainId }));
 
-      // Back out any events that were previously ingested via update(). This is best-effort and may help to save the
-      // relayer from filling a deposit where it must wait for additional deposit confirmations. Note that this is
-      // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
-      // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
-      if (eventName === "V3FundsDeposited") {
-        const depositHashes = Object.values(this.depositHashes)
-          .filter((deposit) => deposit.transactionHash === transactionHash)
-          .map((deposit) => this.getDepositHash(deposit));
+      depositHashes.forEach((hash) => delete this.depositHashes[hash]);
 
-        depositHashes.forEach((hash) => delete this.depositHashes[hash]);
-
-        this.logger.warn({
-          at: "SpokePoolClient#removeEvent",
-          message: `Removed ${depositHashes.length} pre-ingested ${this.chain} ${eventName} events.`,
-          transactionHash,
-        });
-      } else if (eventName === "EnabledDepositRoute") {
-        // These are hard to back out because they're not stored with transaction information. They should be extremely
-        // rare, but at the margins could risk making an invalid fill based on the resolved outputToken for a deposit
-        // that specifies outputToken 0x0. Simply bail in this case; everything should be OK on the next run.
-        assert(false, "Detected re-org affecting deposit route events.");
-      } else {
-        // Retaining any remaining event types should be non-critical for relayer operation. They may
-        // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
-        this.logger.warn({
-          at: "SpokePoolClient#removeEvent",
-          message: `Detected re-org affecting pre-ingested ${this.chain} ${eventName} events. Ignoring.`,
-          transactionHash,
-        });
-      }
-    });
+      this.logger.warn({
+        at: "SpokePoolClient#removeEvent",
+        message: `Removed ${depositHashes.length} pre-ingested ${this.chain} ${eventName} events.`,
+        transactionHash,
+      });
+    } else if (eventName === "EnabledDepositRoute") {
+      // These are hard to back out because they're not stored with transaction information. They should be extremely
+      // rare, but at the margins could risk making an invalid fill based on the resolved outputToken for a deposit
+      // that specifies outputToken 0x0. Simply bail in this case; everything should be OK on the next run.
+      assert(false, "Detected re-org affecting deposit route events.");
+    } else {
+      // Retaining any remaining event types should be non-critical for relayer operation. They may
+      // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
+      this.logger.warn({
+        at: "SpokePoolClient#removeEvent",
+        message: `Detected re-org affecting pre-ingested ${this.chain} ${eventName} events. Ignoring.`,
+        transactionHash,
+        blockHash,
+      });
+    }
 
     return removed;
   }
 
   protected async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {
     // If any events have been removed upstream, remove them first.
-    this.pendingEventsRemoved = this.pendingEventsRemoved.filter(({ transactionHash, eventNames }) =>
-      this.removeEvent(transactionHash, eventNames)
-    );
+    this.pendingEventsRemoved = this.pendingEventsRemoved.filter(this.removeEvent);
 
     const events = eventsToQuery.map((eventName) => {
       const eventIdx = this.queryableEventNames.indexOf(eventName);
