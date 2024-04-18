@@ -39,11 +39,18 @@ function startWorkers(config: RelayerConfig): { [chainId: number]: ChildProcess 
   const chainIds = sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains]);
   assert(chainIds.length > 0); // @todo: Fix to work with undefined chain IDs (default to the complete set).
 
+  // Identify the lowest configured deposit confirmation threshold.
+  // Configure the indexer to relay any events that meet that threshold.
+  const mdcs = config.minDepositConfirmations;
+  const [depositThreshold] = Object.keys(config.minDepositConfirmations)
+    .filter((n) => !Number.isNaN(n))
+    .sort((x, y) => Number(x) - Number(y));
+
   return Object.fromEntries(
     chainIds.map((chainId: number) => {
       const opts = {
         ...sampleOpts,
-        finality: chainId === 137 ? 32 : 1,
+        finality: mdcs[depositThreshold][chainId] ?? mdcs["default"][chainId] ?? 1024,
         blockRange: config.maxRelayerLookBack[chainId] ?? 5_000,
       };
       const chain = getNetworkName(chainId);
