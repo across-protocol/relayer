@@ -136,7 +136,9 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
         this.pendingBlockNumber = blockNumber;
         this.pendingCurrentTime = currentTime;
-        this.pendingOldestTime ??= oldestTime;
+        if (!isDefined(this.pendingOldestTime) && oldestTime > 0) {
+          this.pendingOldestTime = oldestTime;
+        }
       });
     }
   }
