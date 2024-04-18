@@ -91,21 +91,10 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       return;
     }
 
-    let message: SpokePoolClientMessage;
-    try {
-      message = JSON.parse(rawMessage);
-    } catch (err) {
-      const error = typeguards.isError(err) ? err.message : "unknown error";
-      this.logger.warn({
-        at: "SpokePoolClient#indexerUpdate",
-        message: `Received malformed message from ${this.chain} indexed.`,
-        error,
-      });
-      return;
-    }
-
+    const message = JSON.parse(rawMessage);
     if (isSpokePoolEventRemoved(message)) {
-      this.pendingEventsRemoved.push(JSON.parse(message.event, sdkUtils.jsonReviverWithBigNumbers));
+      const event = JSON.parse(message.event, sdkUtils.jsonReviverWithBigNumbers);
+      this.pendingEventsRemoved.push(event);
       return;
     }
 
