@@ -1,9 +1,9 @@
 import assert from "assert";
 import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
-import { integer, object, min as Min, string } from "superstruct";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { getNetworkName, isDefined, winston } from "../utils";
+import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
 
@@ -20,18 +20,6 @@ type SpokePoolEventsAdded = {
 };
 
 export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
-
-const EventsAddedMessage = object({
-  blockNumber: Min(integer(), 0),
-  currentTime: Min(integer(), 0),
-  oldestTime: Min(integer(), 0),
-  nEvents: Min(integer(), 0),
-  data: string(),
-});
-
-const EventRemovedMessage = object({
-  event: string(),
-});
 
 export function isSpokePoolEventsAdded(message: unknown): message is SpokePoolEventsAdded {
   return EventsAddedMessage.is(message);

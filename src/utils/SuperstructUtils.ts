@@ -1,4 +1,4 @@
-import { object, number, optional, string, array, record, coerce, instance, pattern } from "superstruct";
+import { object, min, number, optional, string, array, record, coerce, instance, integer, pattern } from "superstruct";
 import { BigNumber } from "ethers";
 
 const PositiveIntegerStringSS = pattern(string(), /\d+/);
@@ -115,4 +115,16 @@ export const BundleDataSS = object({
   unexecutableSlowFills: nestedV3DepositRecordWithLpFeePctSS,
   bundleSlowFillsV3: nestedV3DepositRecordWithLpFeePctSS,
   bundleFillsV3: nestedV3BundleFillsSS,
+});
+
+export const EventsAddedMessage = object({
+  blockNumber: min(integer(), 0),
+  currentTime: min(integer(), 0),
+  oldestTime: min(integer(), 0),
+  nEvents: min(integer(), 0),
+  data: string(),
+});
+
+export const EventRemovedMessage = object({
+  event: string(),
 });
