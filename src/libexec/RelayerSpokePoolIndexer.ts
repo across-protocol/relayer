@@ -54,7 +54,7 @@ class EventManager {
     public readonly finality: number,
     public readonly quorum: number
   ) {
-    chain = getNetworkName(chainId);
+    this.chain = getNetworkName(chainId);
     this.blockNumber = 0;
   }
 
