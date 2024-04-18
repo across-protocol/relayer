@@ -39,6 +39,123 @@ const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
   },
 ];
 
+export const CCTP_TOKEN_MESSENGER_CONTRACT_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "uint64",
+        name: "nonce",
+        type: "uint64",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "burnToken",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "depositor",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "bytes32",
+        name: "mintRecipient",
+        type: "bytes32",
+      },
+      {
+        indexed: false,
+        internalType: "uint32",
+        name: "destinationDomain",
+        type: "uint32",
+      },
+      {
+        indexed: false,
+        internalType: "bytes32",
+        name: "destinationTokenMessenger",
+        type: "bytes32",
+      },
+      {
+        indexed: false,
+        internalType: "bytes32",
+        name: "destinationCaller",
+        type: "bytes32",
+      },
+    ],
+    name: "DepositForBurn",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "mintRecipient",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "mintToken",
+        type: "address",
+      },
+    ],
+    name: "MintAndWithdraw",
+    type: "event",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        internalType: "uint32",
+        name: "destinationDomain",
+        type: "uint32",
+      },
+      {
+        internalType: "bytes32",
+        name: "mintRecipient",
+        type: "bytes32",
+      },
+      {
+        internalType: "address",
+        name: "burnToken",
+        type: "address",
+      },
+    ],
+    name: "depositForBurn",
+    outputs: [
+      {
+        internalType: "uint64",
+        name: "_nonce",
+        type: "uint64",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
 export const LINEA_MESSAGE_SERVICE_CONTRACT_ABI = [
   {
     inputs: [],
@@ -788,6 +905,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0a992d191deec32afe36203ad87d7d289a738f81",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
+    cctpTokenMessenger: {
+      address: "0xbd3fa81b58ba92a82136038b25adec7066af3155",
+      abi: CCTP_TOKEN_MESSENGER_CONTRACT_ABI,
+    },
     scrollRelayMessenger: {
       address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
       abi: [
@@ -934,6 +1055,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4d41f22c5a0e5c74090899e5a8fb597a8842b3e8",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
+    cctpTokenMessenger: {
+      address: "0x2B4069517957735bE00ceE0fadAE88a26365528f",
+      abi: CCTP_TOKEN_MESSENGER_CONTRACT_ABI,
+    },
   },
   137: {
     withdrawableErc20: {
@@ -965,6 +1090,10 @@ export const CONTRACT_ADDRESSES: {
     cctpMessageTransmitter: {
       address: "0xF3be9355363857F3e001be68856A2f96b4C39Ba9",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9daF8c91AEFAE50b9c0E69629D3F6Ca40cA3B3FE",
+      abi: CCTP_TOKEN_MESSENGER_CONTRACT_ABI,
     },
   },
   324: {
@@ -1061,6 +1190,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xAD09780d193884d503182aD4588450C416D6F9D4",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
+    cctpTokenMessenger: {
+      address: "0x1682Ae6375C4E4A97e4B583BC394c861A46D8962",
+      abi: CCTP_TOKEN_MESSENGER_CONTRACT_ABI,
+    },
   },
   42161: {
     erc20Gateway: {
@@ -1117,6 +1250,10 @@ export const CONTRACT_ADDRESSES: {
     cctpMessageTransmitter: {
       address: "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x19330d10D9Cc8751218eaf51E8885D058642E08A",
+      abi: CCTP_TOKEN_MESSENGER_CONTRACT_ABI,
     },
   },
   59144: {
@@ -1189,11 +1326,19 @@ export const CONTRACT_ADDRESSES: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
     },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_CONTRACT_ABI,
+    },
   },
   84532: {
     cctpMessageTransmitter: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_CONTRACT_ABI,
     },
   },
   59140: {
