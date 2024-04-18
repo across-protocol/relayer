@@ -39,8 +39,8 @@ const INDEXER_POLLING_PERIOD = 2000; // ms; time to sleep between checking for e
 
 let logger: winston.Logger;
 let chain: string;
-let oldestTime: number;
 let stop = false;
+let oldestTime = 0;
 
 class EventManager {
   public readonly chain: string;
