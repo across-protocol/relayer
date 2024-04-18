@@ -176,10 +176,10 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       .map((event, idx) => ({ ...event, idx }))
       .find((pending) => {
         pending.logIndex === logIndex &&
-        pending.transactionIndex === transactionIndex &&
-        pending.transactionHash === transactionHash &&
-        pending.blockHash === blockHash
-      })
+          pending.transactionIndex === transactionIndex &&
+          pending.transactionHash === transactionHash &&
+          pending.blockHash === blockHash;
+      });
 
     if (isDefined(pendingEvent)) {
       removed = true;
@@ -200,20 +200,15 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
     if (eventName === "V3FundsDeposited") {
       const { depositId } = event.args;
-      const depositHashes = Object.values(this.depositHashes)
-        .filter((deposit) => {
-          deposit.logIndex === logIndex
-          deposit.transactionIndex === transactionIndex
-          deposit.transactionHash === transactionHash
-        })
-        .map(() => this.getDepositHash({ depositId, originChainId: this.chainId }));
+      assert(isDefined(depositId));
 
-      depositHashes.forEach((hash) => delete this.depositHashes[hash]);
+      const depositHash = this.getDepositHash({ depositId, originChainId: this.chainId });
+      delete this.depositHashes[depositHash];
 
       this.logger.warn({
         at: "SpokePoolClient#removeEvent",
-        message: `Removed ${depositHashes.length} pre-ingested ${this.chain} ${eventName} events.`,
-        transactionHash,
+        message: `Removed 1 pre-ingested ${this.chain} ${eventName} event.`,
+        event,
       });
     } else if (eventName === "EnabledDepositRoute") {
       // These are hard to back out because they're not stored with transaction information. They should be extremely
