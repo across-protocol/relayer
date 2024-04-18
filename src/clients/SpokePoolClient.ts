@@ -2,7 +2,7 @@ import assert from "assert";
 import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
 import { integer, object, min as Min, string } from "superstruct";
-import { clients, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { getNetworkName, isDefined, winston } from "../utils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -87,9 +87,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    * @returns void
    */
   protected indexerUpdate(rawMessage: unknown): void {
-    if (typeof rawMessage !== "string") {
-      return;
-    }
+    assert(typeof rawMessage === "string", `Unexpected ${this.chain} message data type`);
 
     const message = JSON.parse(rawMessage);
     if (isSpokePoolEventRemoved(message)) {
@@ -98,28 +96,15 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       return;
     }
 
-    if (!isSpokePoolEventsAdded(message)) {
-      this.logger.warn({
-        at: "SpokePoolClient#indexerUpdate",
-        message: `Received unrecognised message from ${this.chain} indexer.`,
-        data: message,
-      });
-      return;
-    }
+    assert(isSpokePoolEventsAdded(message), `Expected ${this.chain} SpokePoolEventsAdded message`);
 
     const { blockNumber, currentTime, oldestTime, nEvents, data } = message;
     if (nEvents > 0) {
       const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
-      if (!Array.isArray(pendingEvents) || pendingEvents.length !== nEvents) {
-        this.logger.warn({
-          at: "SpokePoolClient#indexerUpdate",
-          message: `Received malformed event update events from ${this.chain} indexer.`,
-          blockNumber,
-          nEvents,
-          pendingEvents,
-        });
-        return;
-      }
+      assert(
+        Array.isArray(pendingEvents) && pendingEvents.length !== nEvents,
+        `Expected ${this.chain} pendingEvents array of length ${nEvents}`
+      );
 
       this.logger.debug({
         at: "SpokePoolClient#indexerUpdate",
@@ -128,14 +113,10 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
       pendingEvents.forEach((event) => {
         const eventIdx = this.queryableEventNames.indexOf(event.event);
-        if (eventIdx === -1 || event.removed) {
-          this.logger.warn({
-            at: "SpokePoolClient#indexerUpdate",
-            message: `Received unrecognised or invalid event from ${this.chain} indexer.`,
-            event,
-          });
-          return;
-        }
+        assert(
+          eventIdx !== -1 && event.removed === false,
+          event.removed ? "Incorrectly received removed event" : `Unsupported event name (${event.event})`
+        );
 
         this.pendingEvents[eventIdx].push(event);
       });
