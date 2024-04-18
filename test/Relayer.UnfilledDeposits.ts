@@ -27,6 +27,7 @@ import {
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
+  randomAddress,
   setupTokensForWallet,
 } from "./utils";
 
@@ -373,7 +374,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await hubPoolClient.update();
 
     // Get the relayer's LP fee computation for repayment on both destination and HubPool chains.
-    const relayerLPFees = await relayerInstance.batchComputeLpFees(deposits);
+    const relayerLpFees = await relayerInstance.batchComputeLpFees(deposits);
 
     // Compute LP fees for taking repayment on the HubPool chain.
     let hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
@@ -383,7 +384,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Verify LP fees for repayment on the destination chain.
     deposits.forEach((deposit, idx) => {
       const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
-      const relayerLpFee = relayerLPFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === destinationChainId);
+      const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === destinationChainId);
       expect(relayerLpFee).to.exist;
       expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
@@ -396,7 +397,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Verify LP fees for repayment on the origin chain.
     deposits.forEach((deposit, idx) => {
       const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
-      const relayerLpFee = relayerLPFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === originChainId);
+      const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === originChainId);
       expect(relayerLpFee).to.exist;
       expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
@@ -409,12 +410,29 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Verify LP fees for repayment on the HubPool chain.
     deposits.forEach((deposit, idx) => {
       const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
-      const relayerLpFee = relayerLPFees[lpFeeKey].find(
+      const relayerLpFee = relayerLpFees[lpFeeKey].find(
         ({ paymentChainId }) => paymentChainId === hubPoolClient.chainId
       );
       expect(relayerLpFee).to.exist;
       expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
+
+    // Test for collisions on the LP fee key.
+    const [deposit] = deposits;
+    let lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+    expect(relayerLpFees[lpFeeKey]).to.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, originChainId: destinationChainId });
+    expect(relayerLpFees[lpFeeKey]).not.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: randomAddress() });
+    expect(relayerLpFees[lpFeeKey]).to.not.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputAmount: deposit.inputAmount.add(1) });
+    expect(relayerLpFees[lpFeeKey]).to.not.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, quoteTimestamp: deposit.quoteTimestamp - 1 });
+    expect(relayerLpFees[lpFeeKey]).to.not.exist;
   });
 
   it("Skip invalid fills from the same relayer", async function () {
