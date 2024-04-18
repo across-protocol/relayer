@@ -90,8 +90,10 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     if (nEvents > 0) {
       const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
       assert(
-        Array.isArray(pendingEvents) && pendingEvents.length !== nEvents,
-        `Expected ${this.chain} pendingEvents array of length ${nEvents}`
+        Array.isArray(pendingEvents) && pendingEvents.length === nEvents,
+        Array.isArray(pendingEvents)
+          ? `Expected ${nEvents} ${this.chain} pendingEvents, got ${pendingEvents.length}`
+          : `Expected array of ${this.chain} pendingEvents`
       );
 
       this.logger.debug({
