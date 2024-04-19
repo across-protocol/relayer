@@ -288,14 +288,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
         // Even after simulating sync, there are not enough liquid reserves.
         fakeHubPool.multicall.returns([
-          hubPool.interface.encodeFunctionResult("pooledTokens", [
-            ZERO_ADDRESS, // lp token address
-            true, // enabled
-            0, // last lp fee update
-            bnZero, // utilized reserves
-            liquidReserves, // liquid reserves, set less than netSendAmount
-            bnZero, // unaccumulated fees
-          ]),
           ZERO_ADDRESS, // sync output
           hubPool.interface.encodeFunctionResult("pooledTokens", [
             ZERO_ADDRESS, // lp token address
@@ -328,14 +320,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
         // This won't be enough. However, we should test that the dataworker simulates sync-ing the exchange
         // rate and sees that the liquid reserves post-sync are enough to execute the leaf.
         fakeHubPool.multicall.returns([
-          hubPool.interface.encodeFunctionResult("pooledTokens", [
-            ZERO_ADDRESS, // lp token address
-            true, // enabled
-            0, // last lp fee update
-            bnZero, // utilized reserves
-            liquidReserves, // liquid reserves, set less than netSendAmount
-            bnZero, // unaccumulated fees
-          ]),
           ZERO_ADDRESS, // sync output
           hubPool.interface.encodeFunctionResult("pooledTokens", [
             ZERO_ADDRESS, // lp token address
@@ -368,14 +352,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         balanceAllocator.addUsed(1, l1Token_1.address, hubPool.address, netSendAmount.mul(-1));
         fakeHubPool.multicall.returns([
-          hubPool.interface.encodeFunctionResult("pooledTokens", [
-            ZERO_ADDRESS, // lp token address
-            true, // enabled
-            0, // last lp fee update
-            bnZero, // utilized reserves
-            liquidReserves, // liquid reserves, set less than netSendAmount
-            bnZero, // unaccumulated fees
-          ]),
           ZERO_ADDRESS, // sync output
           hubPool.interface.encodeFunctionResult("pooledTokens", [
             ZERO_ADDRESS, // lp token address
@@ -404,14 +380,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const liquidReserves = toBNWei("0");
         balanceAllocator.addUsed(1, l1Token_1.address, hubPool.address, netSendAmount.mul(-1));
         fakeHubPool.multicall.returns([
-          hubPool.interface.encodeFunctionResult("pooledTokens", [
-            ZERO_ADDRESS, // lp token address
-            true, // enabled
-            0, // last lp fee update
-            bnZero, // utilized reserves
-            liquidReserves, // liquid reserves, set less than netSendAmount
-            bnZero, // unaccumulated fees
-          ]),
           ZERO_ADDRESS, // sync output
           hubPool.interface.encodeFunctionResult("pooledTokens", [
             ZERO_ADDRESS, // lp token address

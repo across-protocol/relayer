@@ -1706,12 +1706,11 @@ export class Dataworker {
 
         // @dev: Virtual balance = post-sync liquid reserves + any used balance.
         const multicallInput = [
-          hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
           hubPool.interface.encodeFunctionData("sync", [l1Token]),
           hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
         ];
         const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
-        const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[2]);
+        const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[1]);
         const updatedLiquidReserves = updatedPooledTokens.liquidReserves;
         const virtualHubPoolBalance = updatedLiquidReserves.sub(
           balanceAllocator.getUsed(hubPoolChainId, l1Token, hubPool.address)
