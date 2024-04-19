@@ -190,9 +190,7 @@ async function listen(
         const event = rawEvent.at(-1);
         if (event.removed) {
           eventMgr.remove(event, host);
-
-          // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality. Batch these
-          // by transactionHash, but recognise that multiple different events may have occurred in the same transaction.
+          // Notify the parent immediately in case the event was already submitted.
           removeEvent(event);
         } else {
           eventMgr.add(event, host);
