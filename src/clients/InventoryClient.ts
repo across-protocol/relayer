@@ -429,6 +429,8 @@ export class InventoryClient {
         );
         const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
         const upcomingRefunds = allBundleRefunds.pop(); // @dev upcoming refunds are always pushed last into this list.
+        // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
+        // one of the refund entries for a chain can be undefined.
         const upcomingRefundForChain = Object.values(
           upcomingRefunds?.[chainId]?.[this.getDestinationTokenForL1Token(l1Token, chainId)] ?? {}
         ).reduce((acc, curr) => acc.add(curr), bnZero);
