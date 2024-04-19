@@ -37,7 +37,7 @@ type ScraperOpts = {
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
-const INDEXER_POLLING_PERIOD = 2000; // ms; time to sleep between checking for exit request via SIGUP.
+const INDEXER_POLLING_PERIOD = 2000; // ms; time to sleep between checking for exit request via SIGHUP.
 
 let logger: winston.Logger;
 let chain: string;
