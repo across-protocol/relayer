@@ -163,13 +163,14 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       assert(isDefined(depositId));
 
       const depositHash = this.getDepositHash({ depositId, originChainId: this.chainId });
-      delete this.depositHashes[depositHash];
-
-      this.logger.warn({
-        at: "SpokePoolClient#removeEvent",
-        message: `Removed 1 pre-ingested ${this.chain} ${eventName} event.`,
-        event,
-      });
+      if (isDefined(this.depositHashes[depositHash])) {
+        delete this.depositHashes[depositHash];
+        this.logger.warn({
+          at: "SpokePoolClient#removeEvent",
+          message: `Removed 1 pre-ingested ${this.chain} ${eventName} event.`,
+          event,
+        });
+      }
     } else if (eventName === "EnabledDepositRoute") {
       // These are hard to back out because they're not stored with transaction information. They should be extremely
       // rare, but at the margins could risk making an invalid fill based on the resolved outputToken for a deposit
