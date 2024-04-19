@@ -95,8 +95,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
   let oldestTime: number;
 
   /**
-   * postEvents() and removeEvent() emulate the indexer's corresponding functions.
-   * They use process.send() to submit a message to the SpokePoolClient. In this test, the SpokePoolClient
+   * postEvents() and removeEvent() emulate the indexer's corresponding functions. The indexer uses
+   * process.send() to submit a message to the SpokePoolClient. In this test, the SpokePoolClient
    * instance is immediately accessible and the message handler callback is called directly.
    */
   const postEvents = (blockNumber: number, currentTime: number, events: Event[]): void => {
