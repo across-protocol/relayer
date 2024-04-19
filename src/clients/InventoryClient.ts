@@ -476,48 +476,20 @@ export class InventoryClient {
           Number(chainId)
         ).target;
         const excessPostRelay = excess.sub(refundAmount);
-        if (excessPostRelay.lte(0)) {
-          return [
-            chainId,
-            {
-              pct: toBN(0),
-              target,
-              excess,
-              excessPostRelay,
-            },
-          ];
-        }
+        const returnObj = {
+          pct: toBN(0),
+          target,
+          excess,
+          excessPostRelay,
+        };
+        // If target is greater than excess running balance, then pct will
+        // be set to 0. If target is 0 then pct is infinite.
         if (target.lte(0)) {
-          return [
-            chainId,
-            {
-              pct: toBN(MAX_UINT_VAL),
-              target,
-              excess,
-              excessPostRelay,
-            },
-          ];
+          returnObj.pct = toBN(MAX_UINT_VAL);
+        } else if (excessPostRelay.gt(target)) {
+          returnObj.pct = excessPostRelay.sub(target).mul(this.scalar).div(target);
         }
-        if (excessPostRelay.lte(target)) {
-          return [
-            chainId,
-            {
-              pct: toBN(0),
-              target,
-              excess,
-              excessPostRelay,
-            },
-          ];
-        }
-        return [
-          chainId,
-          {
-            pct: excessPostRelay.sub(target).mul(this.scalar).div(target),
-            target,
-            excess,
-            excessPostRelay,
-          },
-        ];
+        return [chainId, returnObj];
       })
     );
     this.log(`Computed excess running balances for ${l1Token}`, {
