@@ -180,7 +180,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     } else {
       // Retaining any remaining event types should be non-critical for relayer operation. They may
       // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
-      this.logger.warn({
+      this.logger.debug({
         at: "SpokePoolClient#removeEvent",
         message: `Detected re-org affecting pre-ingested ${this.chain} ${eventName} events. Ignoring.`,
         transactionHash,
