@@ -1703,8 +1703,17 @@ export class Dataworker {
           });
           return;
         }
-        // @dev: Virtual balance = current balance + any used balance.
-        const virtualHubPoolBalance = currHubPoolLiquidReserves.sub(
+
+        // @dev: Virtual balance = post-sync liquid reserves + any used balance.
+        const multicallInput = [
+          hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+          hubPool.interface.encodeFunctionData("sync", [l1Token]),
+          hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+        ];
+        const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
+        const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[2]);
+        const updatedLiquidReserves = updatedPooledTokens.liquidReserves;
+        const virtualHubPoolBalance = updatedLiquidReserves.sub(
           balanceAllocator.getUsed(hubPoolChainId, l1Token, hubPool.address)
         );
 
@@ -1717,6 +1726,7 @@ export class Dataworker {
             leaf: leaf,
             l1Token,
             netSendAmount: leaf.netSendAmounts[idx],
+            updatedLiquidReserves,
             virtualHubPoolBalance,
           });
           return;
@@ -1724,25 +1734,32 @@ export class Dataworker {
         this.logger.debug({
           at: "Dataworker#executePoolRebalanceLeaves",
           message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${tokenSymbol}`,
-          currHubPoolLiquidReserves,
+          updatedLiquidReserves,
           virtualHubPoolBalance,
           netSendAmount: leaf.netSendAmounts[idx],
           leaf,
         });
         updatedL1Tokens.add(l1Token);
-        if (submitExecution) {
-          this.clients.multiCallerClient.enqueueTransaction({
-            contract: this.clients.hubPoolClient.hubPool,
-            chainId: hubPoolChainId,
-            method: "exchangeRateCurrent",
-            args: [l1Token],
-            message: "Updated exchange rate ♻️!",
-            mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
-            unpermissioned: true,
-          });
-        }
       });
     });
+
+    // Submit executions at the end since the above double loop runs in parallel and we don't want to submit
+    // multiple transactions for the same token.
+    if (submitExecution) {
+      for (const l1Token of updatedL1Tokens) {
+        const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.hubPoolClient.hubPool,
+          chainId: hubPoolChainId,
+          method: "exchangeRateCurrent",
+          args: [l1Token],
+          message: "Updated exchange rate ♻️!",
+          mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
+          unpermissioned: true,
+        });
+      }
+    }
+
     return updatedL1Tokens;
   }
 
