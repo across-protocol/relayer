@@ -144,7 +144,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     if (isDefined(pendingEvent)) {
       removed = true;
 
-      // Splice out the events in reverse order.
+      // Drop the relevant event.
       pendingEvents.splice(pendingEvent.idx, 1);
 
       this.logger.debug({
