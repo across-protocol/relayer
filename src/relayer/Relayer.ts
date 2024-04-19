@@ -589,8 +589,9 @@ export class Relayer {
         Math.round(performance.now() - start) / 1000
       }s.`,
     });
-    const { lpFeePct } = repaymentFees.find(({ paymentChainId }) => paymentChainId === preferredChainId);
-    assert(isDefined(lpFeePct));
+    const repaymentFee = repaymentFees?.find(({ paymentChainId }) => paymentChainId === preferredChainId);
+    assert(isDefined(repaymentFee));
+    const { lpFeePct } = repaymentFee;
 
     const {
       profitable,
