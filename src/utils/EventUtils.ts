@@ -96,8 +96,9 @@ export class EventManager {
    * @param event An Ethers Event with appended provider information.
    * @returns The number of unique providers that reported this event.
    */
-  getEventQuorum(event: Event & { providers: string[] }): number {
-    return dedupArray(event.providers).length;
+  getEventQuorum(event: Event): number {
+    const storedEvent = this.findEvent(event);
+    return isDefined(storedEvent) ? dedupArray(storedEvent.providers).length : 0;
   }
 
   /**
@@ -173,9 +174,10 @@ export class EventManager {
     // This is configurable and will almost always be less than chain finality guarantees.
     const finalised = blockNumber - this.finality;
 
-    // Collect the events that met quorum, strip out the provider information, and mangle the results for sending.
+    // Collect the events that met quorum, stripping out the provider information.
     const events = (this.events[finalised] ?? [])
-      .filter((event) => this.getEventQuorum(event) >= this.quorum);
+      .filter((event) => this.getEventQuorum(event) >= this.quorum)
+      .map(({ providers, ...event }) => event);
 
     // Flush the events that were just submitted.
     delete this.events[finalised];
