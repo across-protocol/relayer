@@ -97,10 +97,10 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 3 transactions: 1 for the to chain, 1 for the from chain, and 1 for the extra ETH sent to cover
-    // arbitrum gas fees. exchangeRateCurrent isn't updated because liquidReserves wouldn't increase after calling
-    // sync() on the spoke pool.
-    expect(multiCallerClient.transactionCount()).to.equal(3);
+    // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
+    // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
+    // console.log(spy.getCall(-1))
+    expect(multiCallerClient.transactionCount()).to.equal(4);
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -268,7 +268,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       it("exits early if passed in liquid reserves are greater than net send amount", async function () {
         const netSendAmount = toBNWei("1");
         const liquidReserves = toBNWei("2");
-        // For this test,pass in a liquid reserves object
+        // For this test, pass in a liquid reserves object
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {
             [l1Token_1.address]: liquidReserves,
@@ -285,6 +285,20 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const liquidReserves = toBNWei("0");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         balanceAllocator.addUsed(hubPoolClient.chainId, l1Token_1.address, hubPool.address, toBNWei(0));
+
+        // Even after simulating sync, there are not enough liquid reserves.
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            liquidReserves, // liquid reserves, >= than netSendAmount
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
+
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
@@ -296,16 +310,31 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(updated.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
-      it("submits update: liquid reserves read from HubPoolClient", async function () {
-        const netSendAmount = toBNWei("1");
-
-        // Liquid reserves are read from HubPoolClient.
-        // Liquid reserves are below net send amount, but virtual balance is above net send amount.
-        const liquidReserves = toBNWei("0");
+      it("submits update: liquid reserves post-sync are enough to execute leaf", async function () {
+        const netSendAmount = toBNWei("10");
+        const liquidReserves = toBNWei("1");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        balanceAllocator.addUsed(1, l1Token_1.address, hubPool.address, netSendAmount.mul(-1));
+        balanceAllocator.addUsed(hubPoolClient.chainId, l1Token_1.address, hubPool.address, toBNWei(1));
+
+        // At this point, passed in liquid reserves will be 1 and the balance allocator will add 1.
+        // This won't be enough. However, we should test that the dataworker simulates sync-ing the exchange
+        // rate and sees that the liquid reserves post-sync are enough to execute the leaf.
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            netSendAmount, // liquid reserves, >= than netSendAmount
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
+
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-          {},
+          {
+            [l1Token_1.address]: liquidReserves,
+          },
           balanceAllocator,
           [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
@@ -314,17 +343,27 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(updated.has(l1Token_1.address)).to.be.true;
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
-      it("submits update: liquid reserves parameterized", async function () {
+      it("submits update: liquid reserves plus balanceAllocator.used are sufficient", async function () {
         const netSendAmount = toBNWei("1");
 
-        // Liquid reserves are passed as input.
+        // Liquid reserves are read from HubPoolClient.
         // Liquid reserves are below net send amount, but virtual balance is above net send amount.
         const liquidReserves = toBNWei("0");
+        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         balanceAllocator.addUsed(1, l1Token_1.address, hubPool.address, netSendAmount.mul(-1));
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            liquidReserves, // liquid reserves, >= than netSendAmount
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-          {
-            [l1Token_1.address]: liquidReserves,
-          },
+          {},
           balanceAllocator,
           [{ netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
@@ -340,14 +379,25 @@ describe("Dataworker: Execute pool rebalances", async function () {
         // Liquid reserves are below net send amount, but virtual balance is above net send amount.
         const liquidReserves = toBNWei("0");
         balanceAllocator.addUsed(1, l1Token_1.address, hubPool.address, netSendAmount.mul(-1));
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            netSendAmount, // liquid reserves, >= than netSendAmount
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {
             [l1Token_1.address]: liquidReserves,
           },
           balanceAllocator,
           [
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
+            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 137 },
+            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 10 },
           ],
           true
         );
