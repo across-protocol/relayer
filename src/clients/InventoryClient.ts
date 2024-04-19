@@ -290,7 +290,7 @@ export class InventoryClient {
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
       const chainsWithExcessSpokeBalances = SLOW_WITHDRAWAL_CHAINS.filter((chainId) =>
-        excessRunningBalancePcts[chainId].gt(0)
+        excessRunningBalancePcts[chainId].gt(0) && tokenConfig?.[chainId] !== undefined
       ).sort((x, y) => bnComparatorDescending(excessRunningBalancePcts[x], excessRunningBalancePcts[y]));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
@@ -299,11 +299,20 @@ export class InventoryClient {
     // hub chain repayment if they are under allocated. We don't include hub chain
     // since its the fallback chain if both destination and origin chain are over allocated.
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
-    if (!chainsToEvaluate.includes(destinationChainId)) {
+    if (!chainsToEvaluate.includes(destinationChainId) && tokenConfig?.[destinationChainId] !== undefined) {
       chainsToEvaluate.push(destinationChainId);
     }
-    if (!chainsToEvaluate.includes(originChainId) && originChainId !== hubChainId) {
+    if (!chainsToEvaluate.includes(originChainId) && originChainId !== hubChainId && tokenConfig?.[originChainId] !== undefined) {
       chainsToEvaluate.push(originChainId);
+    }
+
+    // At this point, if there are no repayment chains to evaluate, then the user likely hasn't set a token config,
+    // therefore, take repayment on destination chain by default.
+    if (chainsToEvaluate.length === 0) {
+      this.log(`No chains to evaluate for ${l1Token}, defaulting to destination chain--likely no token config set`, {
+        tokenConfig,
+      });
+      return destinationChainId;
     }
 
     for (const _chain of chainsToEvaluate) {

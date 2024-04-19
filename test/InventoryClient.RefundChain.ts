@@ -289,7 +289,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
 
     it("token config is not defined", async function () {
-      // Defaults to mainnet.
+      // Defaults to destination chain.
       const _inventoryClient = new InventoryClient(
         owner.address,
         spyLogger,
@@ -306,7 +306,9 @@ describe("InventoryClient: Refund chain selection", async function () {
         false, // simMode
         false // prioritizeUtilization
       );
-      expect(await _inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(hubPoolClient.chainId);
+      expect(await _inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(
+        sampleDepositData.destinationChainId
+      );
     });
   });
 
