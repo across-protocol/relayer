@@ -44,7 +44,6 @@ let chain: string;
 let stop = false;
 let oldestTime = 0;
 
-
 /**
  * Given an event name and contract, return the corresponding Ethers EventFilter object.
  * @param contract Ethers Constract instance.
