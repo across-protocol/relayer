@@ -485,7 +485,6 @@ export class InventoryClient {
         // If target is greater than excess running balance, then pct will
         // be set to 0. If target is 0 then pct is infinite.
         if (target.lte(0)) {
-          returnObj.pct = toBN(MAX_UINT_VAL);
           returnObj.pct = MAX_UINT_VAL;
         } else if (excessPostRelay.gt(target)) {
           returnObj.pct = excessPostRelay.sub(target).mul(this.scalar).div(target);
