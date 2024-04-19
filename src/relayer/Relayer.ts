@@ -19,6 +19,7 @@ import {
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
+import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -373,8 +374,8 @@ export class Relayer {
   }
 
   /**
-   * For an array of unfilled deposits, compute the applicable LP fee for each. Fees are computed for repayment on the
-   * destination chain as well as mainnet.
+   * For an array of unfilled deposits, compute the applicable LP fee for each. Fees are computed for all possible
+   * repayment chains which include origin, destination, all slow-withdrawal chains and mainnet.
    * @param deposits An array of deposits.
    * @returns A BatchLPFees object uniquely identifying LP fees per unique input deposit.
    */
@@ -389,6 +390,13 @@ export class Relayer {
           { ...deposit, paymentChainId: destinationChainId },
           { ...deposit, paymentChainId: originChainId },
         ];
+
+        // We also might take repayment on slow withdrawal chains if inventory management is enabled.
+        if (this.clients.inventoryClient.isInventoryManagementEnabled()) {
+          SLOW_WITHDRAWAL_CHAINS.filter((chainId) => ![originChainId, destinationChainId].includes(chainId)).forEach(
+            (paymentChainId) => request.push({ ...deposit, paymentChainId })
+          );
+        }
 
         // Optionally also query for HubPool chain repayment if it's not origin or destination.
         if (![originChainId, destinationChainId].includes(hubPoolClient.chainId)) {
