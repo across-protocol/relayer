@@ -259,7 +259,7 @@ function removeEvent(event: Event): void {
   }
 
   const message: SpokePoolClientMessage = {
-    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
+    event: JSON.stringify(mangleEvent(event), sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }

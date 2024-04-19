@@ -191,7 +191,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
   protected async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {
     // If any events have been removed upstream, remove them first.
-    this.pendingEventsRemoved = this.pendingEventsRemoved.filter(this.removeEvent);
+    this.pendingEventsRemoved = this.pendingEventsRemoved.filter((event) => !this.removeEvent(event));
 
     const events = eventsToQuery.map((eventName) => {
       const eventIdx = this.queryableEventNames.indexOf(eventName);
