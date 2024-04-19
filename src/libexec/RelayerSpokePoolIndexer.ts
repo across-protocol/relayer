@@ -7,6 +7,7 @@ import * as utils from "../../scripts/utils";
 import { SpokePoolClientMessage } from "../clients";
 import {
   disconnectRedisClients,
+  EventManager,
   exit,
   isDefined,
   getBlockForTimestamp,
@@ -17,6 +18,7 @@ import {
   getRedisCache,
   getWSProviders,
   Logger,
+  mangleEventArgs,
   paginatedEventQuery,
   sortEventsAscending,
   winston,
@@ -42,164 +44,6 @@ let chain: string;
 let stop = false;
 let oldestTime = 0;
 
-class EventManager {
-  public readonly chain: string;
-  public readonly events: { [blockNumber: number]: (Event & { providers: string[] })[] } = {};
-
-  private blockNumber: number;
-
-  constructor(
-    private readonly logger: winston.Logger,
-    public readonly chainId: number,
-    public readonly finality: number,
-    public readonly quorum: number
-  ) {
-    this.chain = getNetworkName(chainId);
-    this.blockNumber = 0;
-  }
-
-  /**
-   * Use a number of key attributes from an Ethers event to find any corresponding stored event. Note that this does
-   * not guarantee an exact 1:1 match for the complete event. This is not possible without excluding numerous fields
-   * on a per-event basis, because some providers append implementation-specific information to events. Rather, it
-   * relies on known important fields matching.
-   * @param event Event to search for.
-   * @returns The matching event, or undefined.
-   */
-  findEvent(event: Event): (Event & { providers: string[] }) | undefined {
-    return this.events[event.blockNumber]?.find(
-      (storedEvent) =>
-        storedEvent.logIndex === event.logIndex &&
-        storedEvent.transactionIndex === event.transactionIndex &&
-        storedEvent.transactionHash === event.transactionHash &&
-        this.hashEvent(storedEvent) === this.hashEvent(event)
-    );
-  }
-
-  /**
-   * For a given Ethers Event, identify its quorum based on the number of unique providers that have supplied it.
-   * @param event An Ethers Event with appended provider information.
-   * @returns The number of unique providers that reported this event.
-   */
-  getEventQuorum(event: Event & { providers: string[] }): number {
-    return sdkUtils.dedupArray(event.providers).length;
-  }
-
-  /**
-   * Record an Ethers event. If quorum is 1 then the event will be enqueued for transfer. If this is a new event and
-   * quorum > 1 then its hash will be recorded for future reference. If the same event is received multiple times then
-   * it will be enqueued for transfer. This applies a rudimentary quorum system to the event and ensures that providers
-   * agree on the events being transmitted.
-   * @param event Ethers event to be recorded.
-   * @param provider A string uniquely identifying the provider that supplied the event.
-   * @returns void
-   */
-  add(event: Event, provider: string): void {
-    assert(!event.removed);
-
-    // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
-    // already found in the `eventHashes` array, then at least one provider has already supplied it.
-    const events = (this.events[event.blockNumber] ??= []);
-    const storedEvent = this.findEvent(event);
-
-    // Store or update the set of events for this block number.
-    if (!isDefined(storedEvent)) {
-      // Event hasn't been seen before, so store it.
-      events.push({ ...event, providers: [provider] });
-    } else {
-      if (!storedEvent.providers.includes(provider)) {
-        // Event has been seen before, but not from this provider. Store it.
-        storedEvent.providers.push(provider);
-      }
-    }
-  }
-
-  /**
-   * Remove an Ethers event. This event may have previously been ingested, and subsequently invalidated due to a chain
-   * re-org. The EventManager does not necessarily know whether it's seen this event before, so it initially attempts
-   * to flush the event from its local pending buffer and subsequently propagates the removal to the parent process
-   * for further processing (if defined).
-   * @param event Ethers event to be recorded.
-   * @param provider A string uniquely identifying the provider that supplied the event.
-   * @returns void
-   */
-  remove(event: Event, provider: string): void {
-    assert(event.removed);
-
-    const events = this.events[event.blockNumber] ?? [];
-
-    // Filter coarsely on transactionHash, since a reorg should invalidate multiple events within a single transaction hash.
-    const eventIdxs = events
-      .map((event, idx) => ({ ...event, idx }))
-      .filter(({ blockHash }) => blockHash === event.blockHash)
-      .map(({ idx }) => idx);
-
-    if (eventIdxs.length > 0) {
-      // Remove each event in reverse to ensure that indexes remain valid until the last has been removed.
-      eventIdxs.reverse().forEach((idx) => events.splice(idx, 1));
-
-      this.logger.warn({
-        at: "EventManager::remove",
-        message: `Dropped ${eventIdxs.length} event(s) at ${this.chain} block ${event.blockNumber}.`,
-        provider,
-      });
-
-      // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality. Batch these
-      // by transactionHash, but recognise that multiple different events may have occurred in the same transaction.
-      removeEvent(event);
-    }
-  }
-
-  /**
-   * Record a new block. This function triggers the existing queue of pending events to be evaluated for basic finality.
-   * Events meeting finality criteria are submitted to the parent process (if defined). Events submitted are
-   * subsequently flushed from this class.
-   * @param blockNumber Number of the latest block.
-   * @returns void
-   */
-  tick(blockNumber: number, currentTime: number): void {
-    this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
-
-    // After `finality` blocks behind head, events for a block are considered finalised.
-    // This is configurable and will almost always be less than chain finality guarantees.
-    const finalised = blockNumber - this.finality;
-
-    // Collect the events that met quorum, strip out the provider information, and mangle the results for sending.
-    const events = (this.events[finalised] ?? [])
-      .filter((event) => this.getEventQuorum(event) >= this.quorum)
-      .map(({ providers, ...event }) => mangleEvent(event));
-
-    // Post an update to the parent. Do this irrespective of whether there were new events or not, since there's
-    // information in blockNumber and currentTIme alone.
-    postEvents(blockNumber, currentTime, events);
-
-    // Flush the events that were just submitted.
-    delete this.events[finalised];
-  }
-
-  /**
-   * Produce a SHA256 hash representing an Ethers event, based on select input fields.
-   * @param event An Ethers event to be hashed.
-   * @returns A SHA256 string derived from the event.
-   */
-  hashEvent(event: Event): string {
-    const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, args } = event;
-    return ethersUtils.id(
-      `${eventName}-${blockNumber}-${blockHash}-${transactionHash}-${transactionIndex}-${logIndex}-${args.join("-")}`
-    );
-  }
-}
-
-/**
- * Sub out the array component of `args` to ensure it's correctly stringified before transmission.
- * Stringification of an Ethers event can produce unreliable results for Event.args and it can be consolidated into an
- * array, dropping the named k/v pairs.
- * @param event An Ethers event.
- * @returns A modified Ethers event, ensuring that the Event.args object consists of named k/v pairs.
- */
-function mangleEvent(event: Event): Event {
-  return { ...event, args: sdkUtils.spreadEvent(event.args) };
-}
 
 /**
  * Given an event name and contract, return the corresponding Ethers EventFilter object.
@@ -238,12 +82,16 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
     return;
   }
 
+  // Drop the array component of event.args and retain the named k/v pairs,
+  // otherwise stringification tends to retain only the array.
+  events = sortEventsAscending(events.map(mangleEventArgs));
+
   const message: SpokePoolClientMessage = {
     blockNumber,
     currentTime,
     oldestTime,
     nEvents: events.length,
-    data: JSON.stringify(sortEventsAscending(events), sdkUtils.jsonReplacerWithBigNumbers),
+    data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }
@@ -259,7 +107,7 @@ function removeEvent(event: Event): void {
   }
 
   const message: SpokePoolClientMessage = {
-    event: JSON.stringify(mangleEvent(event), sdkUtils.jsonReplacerWithBigNumbers),
+    event: JSON.stringify(mangleEventArgs(event), sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }
@@ -299,7 +147,7 @@ async function scrapeEvents(spokePool: Contract, eventName: string, opts: Scrape
 
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
   const events = await pollEvents(filter, searchConfig);
-  postEvents(toBlock, currentTime, events.map(mangleEvent));
+  postEvents(toBlock, currentTime, events);
 }
 
 /**
@@ -324,10 +172,15 @@ async function listen(
   // On each new block, submit any "finalised" events.
   // ethers block subscription drops most useful information, notably the timestamp for new blocks.
   // The "official unofficial" strategy is to use an internal provider method to subscribe.
-  // https://github.com/ethers-io/ethers.js/discussions/1951#discussioncomment-1229670
-  await providers[0]._subscribe("newHeads", ["newHeads"], ({ number: blockNumber, timestamp }) =>
-    eventMgr.tick(parseInt(blockNumber), parseInt(timestamp))
-  );
+  // See also: https://github.com/ethers-io/ethers.js/discussions/1951#discussioncomment-1229670
+  await providers[0]._subscribe("newHeads", ["newHeads"], ({ number: blockNumber, timestamp: currentTime }) => {
+    [blockNumber, currentTime] = [parseInt(blockNumber), parseInt(currentTime)];
+    const events = eventMgr.tick(blockNumber);
+
+    // Post an update to the parent. Do this irrespective of whether there were new events or not, since there's
+    // information in blockNumber and currentTime alone.
+    postEvents(blockNumber, currentTime, events);
+  });
 
   // Add a handler for each new instance of a subscribed.
   providers.forEach((provider) => {
@@ -338,6 +191,10 @@ async function listen(
         const event = rawEvent.at(-1);
         if (event.removed) {
           eventMgr.remove(event, host);
+
+          // Notify the SpokePoolClient immediately in case the reorg is deeper then the configured finality. Batch these
+          // by transactionHash, but recognise that multiple different events may have occurred in the same transaction.
+          removeEvent(event);
         } else {
           eventMgr.add(event, host);
         }
