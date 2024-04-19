@@ -289,8 +289,8 @@ export class InventoryClient {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(l1Token, inputAmount);
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
-      const chainsWithExcessSpokeBalances = SLOW_WITHDRAWAL_CHAINS.filter((chainId) =>
-        excessRunningBalancePcts[chainId].gt(0) && tokenConfig?.[chainId] !== undefined
+      const chainsWithExcessSpokeBalances = SLOW_WITHDRAWAL_CHAINS.filter(
+        (chainId) => excessRunningBalancePcts[chainId].gt(0) && tokenConfig?.[chainId] !== undefined
       ).sort((x, y) => bnComparatorDescending(excessRunningBalancePcts[x], excessRunningBalancePcts[y]));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
@@ -302,7 +302,11 @@ export class InventoryClient {
     if (!chainsToEvaluate.includes(destinationChainId) && tokenConfig?.[destinationChainId] !== undefined) {
       chainsToEvaluate.push(destinationChainId);
     }
-    if (!chainsToEvaluate.includes(originChainId) && originChainId !== hubChainId && tokenConfig?.[originChainId] !== undefined) {
+    if (
+      !chainsToEvaluate.includes(originChainId) &&
+      originChainId !== hubChainId &&
+      tokenConfig?.[originChainId] !== undefined
+    ) {
       chainsToEvaluate.push(originChainId);
     }
 
