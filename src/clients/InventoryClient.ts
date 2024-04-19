@@ -418,6 +418,8 @@ export class InventoryClient {
           this.getDestinationTokenForL1Token(l1Token, chainId),
           blockRange[1]
         );
+        // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
+        // been accounted for in the latest running balance set in `runningBalanceForToken`.
         const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
         const upcomingRefunds = allBundleRefunds.pop(); // @dev upcoming refunds are always pushed last into this list.
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
