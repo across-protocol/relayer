@@ -486,6 +486,7 @@ export class InventoryClient {
         // be set to 0. If target is 0 then pct is infinite.
         if (target.lte(0)) {
           returnObj.pct = toBN(MAX_UINT_VAL);
+          returnObj.pct = MAX_UINT_VAL;
         } else if (excessPostRelay.gt(target)) {
           returnObj.pct = excessPostRelay.sub(target).mul(this.scalar).div(target);
         }
@@ -498,7 +499,7 @@ export class InventoryClient {
         Object.entries(pcts).map(([k, v]) => [
           k,
           {
-            ...pcts[k],
+            ...v,
             pct: formatFeePct(v.pct) + "%",
           },
         ])
@@ -516,7 +517,7 @@ export class InventoryClient {
       this.excessRunningBalancePromises[l1Token] = this.getLatestRunningBalances(l1Token);
     }
     const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token]);
-    return await this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmount);
+    return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmount);
   }
 
   getPossibleRebalances(): Rebalance[] {
