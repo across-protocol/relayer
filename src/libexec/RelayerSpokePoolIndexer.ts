@@ -216,7 +216,7 @@ async function run(argv: string[]): Promise<void> {
   const { chainId, finality = 32, quorum = 1, lookback = 7200, relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(finality), "finality must be numeric ");
-  assert(Number.isInteger(quorum), "quorum must be numeric ");  
+  assert(Number.isInteger(quorum), "quorum must be numeric ");
   assert(Number.isInteger(lookback), "lookback must be numeric");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), "relayer address is invalid");
