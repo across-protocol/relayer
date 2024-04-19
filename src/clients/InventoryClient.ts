@@ -17,9 +17,9 @@ import {
   TOKEN_SYMBOLS_MAP,
   formatFeePct,
   fixedPointAdjustment,
-  toBNWei,
   bnComparatorDescending,
   MAX_UINT_VAL,
+  toBNWei,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -250,11 +250,7 @@ export class InventoryClient {
   //     Else, if this number is less than the target for the origin chain + rebalance then select origin
   //     chain.
   //     Else, take repayment on the Hub chain for ease of transferring out of L1 to any L2.
-  async determineRefundChainId(
-    deposit: V3Deposit,
-    relayerTargetMultiplier = toBNWei("1"),
-    l1Token?: string
-  ): Promise<number> {
+  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
@@ -274,14 +270,7 @@ export class InventoryClient {
       );
     }
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
-    // If there is no inventory config for this token then take refund on destination chain.
-    // If neither destination chain nor origin chain have a configuration for this token, then take refund on the
-    // destination chain. This maintains the relayer balance allocation at the risk of increasing utilization. In
-    // production, this should never be undefined.
     const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
-    if (tokenConfig?.[destinationChainId] === undefined && tokenConfig?.[originChainId] === undefined) {
-      return destinationChainId;
-    }
 
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
     // time, return an object with zero refunds for all chains.
@@ -316,8 +305,10 @@ export class InventoryClient {
     if (!chainsToEvaluate.includes(originChainId) && originChainId !== hubChainId) {
       chainsToEvaluate.push(originChainId);
     }
+
     for (const _chain of chainsToEvaluate) {
-      if (this.inventoryConfig.tokenConfig[l1Token][_chain] === undefined) {
+      if (tokenConfig?.[_chain] === undefined) {
+        this.log(`Token config for ${l1Token} not configured for chain ${_chain}`, { tokenConfig });
         continue;
       }
       // Destination chain:
@@ -346,9 +337,9 @@ export class InventoryClient {
         .mul(this.scalar)
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
-      // Add some buffer to target to allow relayer to support slight overages.
+      // Consider configured buffer for target to allow relayer to support slight overages.
       const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][_chain].targetPct)
-        .mul(relayerTargetMultiplier)
+        .mul(tokenConfig[_chain].targetOverageBuffer ?? toBNWei("1"))
         .div(fixedPointAdjustment);
       this.log(
         `Evaluated taking repayment on ${

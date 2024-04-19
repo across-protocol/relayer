@@ -375,7 +375,11 @@ export class BundleDataClient {
     );
     return {
       blockRanges: bundleBlockRanges,
-      bundleData: await this.loadData(bundleBlockRanges, this.spokePoolClients),
+      bundleData: await this.loadData(
+        bundleBlockRanges,
+        this.spokePoolClients,
+        true // this bundle data should have been published to arweave
+      ),
     };
   }
 

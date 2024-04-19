@@ -1,4 +1,4 @@
-import { BigNumber } from ".";
+import { BigNumber } from "ethers";
 
 export function bnComparatorDescending(a: BigNumber, b: BigNumber) {
   if (b.gt(a)) {
