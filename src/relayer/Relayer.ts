@@ -386,7 +386,7 @@ export class Relayer {
       .map((deposit) => {
         // Query the LP fee for repayment on origin and destination chain IDs unconditionally.
         const { originChainId, destinationChainId } = deposit;
-        const l1Token = hubPoolClient.getL1TokenInfoForL2Token(deposit.inputToken, originChainId);
+        const l1Token = hubPoolClient.getL1TokenInfoForL2Token(deposit.inputToken, originChainId).address;
         const request = [
           { ...deposit, paymentChainId: destinationChainId },
           { ...deposit, paymentChainId: originChainId },
