@@ -279,6 +279,9 @@ export class InventoryClient {
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
+    // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
+    // getBundleRefunds async call. Therefore, we choose not to compute them in parallel.
+
     // Build list of chains we want to evaluate for repayment:
     const chainsToEvaluate: number[] = [];
     // Add optimistic rollups to front of evaluation list because these are chains with long withdrawal periods
