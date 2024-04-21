@@ -295,7 +295,7 @@ export class InventoryClient {
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
       const chainsWithExcessSpokeBalances = Object.entries(excessRunningBalancePcts)
-        .filter(([chainId, pct]) => pct.gt(0) && this._l1TokenEnabledForChain(l1Token, Number(chainId)))
+        .filter(([, pct]) => pct.gt(0))
         .sort(([, pctx], [, pcty]) => bnComparatorDescending(pctx, pcty))
         .map(([chainId]) => Number(chainId));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
@@ -305,13 +305,16 @@ export class InventoryClient {
     // hub chain repayment if they are under allocated. We don't include hub chain
     // since its the fallback chain if both destination and origin chain are over allocated.
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
-    if (!chainsToEvaluate.includes(destinationChainId) && tokenConfig?.[destinationChainId] !== undefined) {
+    if (
+      !chainsToEvaluate.includes(destinationChainId) &&
+      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId))
+    ) {
       chainsToEvaluate.push(destinationChainId);
     }
     if (
       !chainsToEvaluate.includes(originChainId) &&
       originChainId !== hubChainId &&
-      tokenConfig?.[originChainId] !== undefined
+      this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
       chainsToEvaluate.push(originChainId);
     }
