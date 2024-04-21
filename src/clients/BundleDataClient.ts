@@ -222,7 +222,7 @@ export class BundleDataClient {
   }
 
   // @dev This function should probably be moved to the InventoryClient since it bypasses loadData completely now.
-  async getPendingRefundsFromValidBundles(...whitelistedRelayerAddresses: string[]): Promise<CombinedRefunds[]> {
+  async getPendingRefundsFromValidBundles(): Promise<CombinedRefunds[]> {
     const refunds = [];
     if (!this.clients.hubPoolClient.isUpdated) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
@@ -232,17 +232,14 @@ export class BundleDataClient {
       this.clients.hubPoolClient.latestBlockSearched
     );
     if (bundle !== undefined) {
-      refunds.push(await this.getPendingRefundsFromBundle(bundle, ...whitelistedRelayerAddresses));
+      refunds.push(await this.getPendingRefundsFromBundle(bundle));
     } // No more valid bundles in history!
     return refunds;
   }
 
   // @dev This function should probably be moved to the InventoryClient since it bypasses loadData completely now.
   // Return refunds from input bundle.
-  async getPendingRefundsFromBundle(
-    bundle: ProposedRootBundle,
-    ...whitelistedRelayerAddresses: string[]
-  ): Promise<CombinedRefunds> {
+  async getPendingRefundsFromBundle(bundle: ProposedRootBundle): Promise<CombinedRefunds> {
     const nextBundleMainnetStartBlock = this.clients.hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
       this.clients.hubPoolClient.latestBlockSearched,
@@ -263,11 +260,7 @@ export class BundleDataClient {
     // so as not to affect this approximate refund count.
     const arweaveData = await this.loadArweaveData(bundleEvaluationBlockRanges);
     if (arweaveData === undefined) {
-      combinedRefunds = this.getApproximateRefundsForBlockRange(
-        chainIds,
-        bundleEvaluationBlockRanges,
-        whitelistedRelayerAddresses
-      );
+      combinedRefunds = this.getApproximateRefundsForBlockRange(chainIds, bundleEvaluationBlockRanges);
     } else {
       const { bundleFillsV3, expiredDepositsToRefundV3 } = arweaveData;
       combinedRefunds = getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3);
@@ -288,11 +281,7 @@ export class BundleDataClient {
   }
 
   // @dev This helper function should probably be moved to the InventoryClient
-  getApproximateRefundsForBlockRange(
-    chainIds: number[],
-    blockRanges: number[][],
-    whitelistedRelayerAddresses: string[]
-  ): CombinedRefunds {
+  getApproximateRefundsForBlockRange(chainIds: number[], blockRanges: number[][]): CombinedRefunds {
     const refundsForChain: CombinedRefunds = {};
     for (const chainId of chainIds) {
       if (this.spokePoolClients[chainId] === undefined) {
@@ -305,16 +294,6 @@ export class BundleDataClient {
           if (fill.blockNumber < blockRanges[chainIndex][0] || fill.blockNumber > blockRanges[chainIndex][1]) {
             return false;
           }
-
-          // If the fill was sent by one of the whitelisted addresses, then we can just assume its valid.
-          if (whitelistedRelayerAddresses.includes(fill.relayer)) {
-            return true;
-          }
-          // We match fill and deposit on originChain - depositId - inputAmount so even if a griefer fakes the fill
-          // they will at least have paid the same `outputAmount` as the real deposit, which is going to be
-          // an economic deterrance if the griefer wants to materially affect this refund computation. This is because
-          // the inputAmount must also be large if the outputAmount is going to be large. This seems like a reasonable
-          // compromise between security and performance.
 
           // If origin spoke pool client isn't defined, we can't validate it.
           if (this.spokePoolClients[fill.originChainId] === undefined) {
@@ -411,7 +390,7 @@ export class BundleDataClient {
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
   // - Fills sent after the pending, but not validated, bundle
-  async getNextBundleRefunds(...whitelistedRelayerAddresses: string[]): Promise<CombinedRefunds[]> {
+  async getNextBundleRefunds(): Promise<CombinedRefunds[]> {
     const hubPoolClient = this.clients.hubPoolClient;
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -466,9 +445,7 @@ export class BundleDataClient {
       // ok for this use case.
       const arweaveData = await this.loadArweaveData(pendingBundleBlockRanges);
       if (arweaveData === undefined) {
-        combinedRefunds.push(
-          this.getApproximateRefundsForBlockRange(chainIds, pendingBundleBlockRanges, whitelistedRelayerAddresses)
-        );
+        combinedRefunds.push(this.getApproximateRefundsForBlockRange(chainIds, pendingBundleBlockRanges));
       } else {
         const { bundleFillsV3, expiredDepositsToRefundV3 } = arweaveData;
         combinedRefunds.push(getRefundsFromBundle(bundleFillsV3, expiredDepositsToRefundV3));
@@ -480,13 +457,10 @@ export class BundleDataClient {
 
     // Next, load all refunds sent after the last bundle proposal. This can be expensive so we'll skip the full
     // bundle reconstruction and make some simplifying assumptions:
-    // - Only look up fills sent by the input relayer sent after the pending bundle's end blocks
-    // - Assume all fills sent by the input relayer are valid
+    // - Only look up fills sent after the pending bundle's end blocks
     // - Skip LP fee computations and just assume the relayer is being refunded the full deposit.inputAmount
     const start = performance.now();
-    combinedRefunds.push(
-      this.getApproximateRefundsForBlockRange(chainIds, widestBundleBlockRanges, whitelistedRelayerAddresses)
-    );
+    combinedRefunds.push(this.getApproximateRefundsForBlockRange(chainIds, widestBundleBlockRanges));
     this.logger.debug({
       at: "BundleDataClient#getNextBundleRefunds",
       message: `Loading approximate refunds for next bundle in ${Math.round(performance.now() - start) / 1000}s.`,

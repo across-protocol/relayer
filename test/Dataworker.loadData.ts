@@ -1190,8 +1190,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
       const refunds = await bundleDataClient.getApproximateRefundsForBlockRange(
         [originChainId, destinationChainId],
-        getDefaultBlockRange(5),
-        []
+        getDefaultBlockRange(5)
       );
       expect(refunds).to.deep.equal({
         [originChainId]: {
@@ -1201,33 +1200,18 @@ describe("Dataworker: Load data used in all functions", async function () {
         },
       });
 
-      // Should also include an invalid fill if that fill's relayer address is whitelisted
+      // Send an invalid fill and check it is not included.
       await fillV3(spokePool_1, relayer, { ...deposit1, depositId: deposit1.depositId + 1 }, originChainId);
       await updateAllClients();
       expect(
         await bundleDataClient.getApproximateRefundsForBlockRange(
           [originChainId, destinationChainId],
-          getDefaultBlockRange(5),
-          [relayer.address]
+          getDefaultBlockRange(5)
         )
       ).to.deep.equal({
         [originChainId]: {
           [erc20_1.address]: {
-            [relayer.address]: amountToDeposit.mul(3),
-          },
-        },
-      });
-      expect(
-        await bundleDataClient.getApproximateRefundsForBlockRange(
-          [originChainId, destinationChainId],
-          getDefaultBlockRange(5),
-          []
-        )
-      ).to.deep.equal({
-        [originChainId]: {
-          [erc20_1.address]: {
-            [relayer.address]: amountToDeposit.mul(2), // Relayer is not whitelisted this time so doesn't include the
-            // invalid fill.
+            [relayer.address]: amountToDeposit.mul(2),
           },
         },
       });
