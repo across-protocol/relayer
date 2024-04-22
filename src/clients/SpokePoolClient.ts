@@ -132,21 +132,19 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex } = event;
 
     // First check for removal from any pending events.
-    const pendingEvent = pendingEvents
-      .map((event, idx) => ({ ...event, idx }))
-      .find(
-        (pending) =>
-          pending.logIndex === logIndex &&
-          pending.transactionIndex === transactionIndex &&
-          pending.transactionHash === transactionHash &&
-          pending.blockHash === blockHash
-      );
+    const pendingEventIdx = pendingEvents.findIndex(
+      (pending) =>
+        pending.logIndex === logIndex &&
+        pending.transactionIndex === transactionIndex &&
+        pending.transactionHash === transactionHash &&
+        pending.blockHash === blockHash
+    );
 
-    if (isDefined(pendingEvent)) {
+    if (pendingEventIdx !== -1) {
       removed = true;
 
       // Drop the relevant event.
-      pendingEvents.splice(pendingEvent.idx, 1);
+      pendingEvents.splice(pendingEventIdx, 1);
 
       this.logger.debug({
         at: "SpokePoolClient#removeEvent",
