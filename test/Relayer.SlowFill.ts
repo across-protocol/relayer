@@ -135,7 +135,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       null,
       null,
       null,
-      null,
+      hubPoolClient,
       null,
       null,
       mockCrossChainTransferClient

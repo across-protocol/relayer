@@ -149,7 +149,7 @@ describe("Relayer: Token balance shortfall", async function () {
           null,
           null,
           null,
-          null,
+          hubPoolClient,
           null,
           null,
           new MockCrossChainTransferClient()
