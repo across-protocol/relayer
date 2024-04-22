@@ -4,6 +4,8 @@ export type SpokePoolClient = clients.SpokePoolClient;
 export type SpokePoolUpdate = clients.SpokePoolUpdate;
 export const { SpokePoolClient } = clients;
 
+export { IndexedSpokePoolClient, SpokePoolClientMessage } from "./SpokePoolClient";
+
 export * from "./BalanceAllocator";
 export * from "./BundleDataClient";
 export * from "./HubPoolClient";
