@@ -262,7 +262,7 @@ export class PolygonAdapter extends BaseAdapter {
     return new Contract(
       tokenToBridge[l1Token].l1BridgeAddress,
       CONTRACT_ADDRESSES[1].polygonBridge.abi,
-      this.getSigner(1)
+      this.getSigner(this.hubChainId)
     );
   }
 
@@ -273,7 +273,7 @@ export class PolygonAdapter extends BaseAdapter {
       return new Contract(
         CONTRACT_ADDRESSES[1].polygonRootChainManager.address,
         CONTRACT_ADDRESSES[1].polygonRootChainManager.abi,
-        this.getSigner(1)
+        this.getSigner(this.hubChainId)
       );
     }
   }
