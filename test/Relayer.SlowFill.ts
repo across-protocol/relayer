@@ -129,7 +129,17 @@ describe("Relayer: Initiates slow fill requests", async function () {
     }
 
     mockCrossChainTransferClient = new MockCrossChainTransferClient();
-    mockInventoryClient = new MockInventoryClient(mockCrossChainTransferClient);
+    mockInventoryClient = new MockInventoryClient(
+      null,
+      null,
+      null,
+      null,
+      null,
+      hubPoolClient,
+      null,
+      null,
+      mockCrossChainTransferClient
+    );
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
