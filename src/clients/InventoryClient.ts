@@ -525,10 +525,15 @@ export class InventoryClient {
         // be set to 0. If target is 0 then pct is infinite.
         if (target.gte(excessPostRelay)) {
           returnObj.pct = toBN(0);
-        } else if (target.lte(0)) {
-          returnObj.pct = MAX_UINT_VAL;
-        } else if (excessPostRelay.gt(target)) {
-          returnObj.pct = excessPostRelay.sub(target).mul(this.scalar).div(target);
+        } else {
+          if (target.eq(0)) {
+            returnObj.pct = MAX_UINT_VAL;
+          } else {
+            // @dev If target is negative, then the denominator will be negative,
+            // so we use the .abs() of the denominator to ensure the pct is positive. The
+            // numerator will always be positive because in this branch, excessPostRelay > target.
+            returnObj.pct = excessPostRelay.sub(target).mul(this.scalar).div(target.abs());
+          }
         }
         return [chainId, returnObj];
       })
