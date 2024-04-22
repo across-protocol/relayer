@@ -237,6 +237,29 @@ export class InventoryClient {
     return totalRefundsPerChain;
   }
 
+  /**
+   * Returns possible repayment chain options for a deposit. This is designed to be called by the relayer
+   * so that it can batch compute LP fees for all possible repayment chains. By locating this function
+   * here it ensures that the relayer and the inventory client are in sync as to which chains are possible
+   * repayment chains for a given deposit.
+   * @param deposit V3Deposit
+   * @returns list of chain IDs that are possible repayment chains for the deposit.
+   */
+  getPossibleRepaymentChainIds(deposit: V3Deposit): number[] {
+    // Destination and Origin chain are always included in the repayment chain list.
+    const { originChainId, destinationChainId, inputToken } = deposit;
+    const chainIds = [originChainId, destinationChainId];
+    const l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId).address;
+
+    if (this.isInventoryManagementEnabled()) {
+      chainIds.push(...this.getSlowWithdrawalRepaymentChains(l1Token));
+    }
+    if (![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)) {
+      chainIds.push(this.hubPoolClient.chainId);
+    }
+    return chainIds;
+  }
+
   // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
   // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm for each
   // of the origin and destination chain:
@@ -322,15 +345,6 @@ export class InventoryClient {
       chainsToEvaluate.push(originChainId);
     }
 
-    // At this point, if there are no repayment chains to evaluate, then the user likely hasn't set a token config,
-    // therefore, take repayment on destination chain by default.
-    if (chainsToEvaluate.length === 0) {
-      this.log(`No chains to evaluate for ${l1Token}, defaulting to destination chain--likely no token config set`, {
-        tokenConfig,
-      });
-      return destinationChainId;
-    }
-
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
     for (const _chain of chainsToEvaluate) {
@@ -394,7 +408,9 @@ export class InventoryClient {
     }
 
     // None of the chain allocation percentages are lower than their target so take
-    // repayment on the hub chain by default.
+    // repayment on the hub chain by default. The caller has also set a token config so they are not expecting
+    // repayments to default to destination chain. If caller wanted repayments to default to destination
+    // chain, then they should not set a token config.
     return hubChainId;
   }
 
@@ -955,7 +971,7 @@ export class InventoryClient {
   }
 
   isInventoryManagementEnabled(): boolean {
-    if (this?.inventoryConfig?.tokenConfig) {
+    if (this?.inventoryConfig?.tokenConfig && Object.keys(this.inventoryConfig.tokenConfig).length > 0) {
       return true;
     }
     // Use logDisabledManagement to avoid spamming the logs on every check if this module is enabled.

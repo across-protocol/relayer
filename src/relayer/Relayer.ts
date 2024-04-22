@@ -381,28 +381,14 @@ export class Relayer {
   async batchComputeLpFees(deposits: V3DepositWithBlock[]): Promise<BatchLPFees> {
     const { hubPoolClient, inventoryClient } = this.clients;
 
+    // We need to compute LP fees for any possible repayment chain the inventory client could select
+    // for each deposit filled.
     const lpFeeRequests = deposits
       .map((deposit) => {
-        // Query the LP fee for repayment on origin and destination chain IDs unconditionally.
-        const { originChainId, destinationChainId } = deposit;
-        const l1Token = hubPoolClient.getL1TokenInfoForL2Token(deposit.inputToken, originChainId).address;
-        const request = [
-          { ...deposit, paymentChainId: destinationChainId },
-          { ...deposit, paymentChainId: originChainId },
-        ];
-
-        // We also might take repayment on slow withdrawal chains if inventory management is enabled.
-        if (inventoryClient.isInventoryManagementEnabled()) {
-          inventoryClient
-            .getSlowWithdrawalRepaymentChains(l1Token)
-            .forEach((paymentChainId) => request.push({ ...deposit, paymentChainId }));
-        }
-
-        // Optionally also query for HubPool chain repayment if it's not origin or destination.
-        if (![originChainId, destinationChainId].includes(hubPoolClient.chainId)) {
-          request.push({ ...deposit, paymentChainId: hubPoolClient.chainId });
-        }
-        return request;
+        const possibleRepaymentChainIds = inventoryClient.getPossibleRepaymentChainIds(deposit);
+        return possibleRepaymentChainIds.map((paymentChainId) => {
+          return { ...deposit, paymentChainId };
+        });
       })
       .flat();
 

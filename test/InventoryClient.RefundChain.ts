@@ -309,6 +309,13 @@ describe("InventoryClient: Refund chain selection", async function () {
         sampleDepositData.destinationChainId
       );
     });
+    it("includes origin, destination in repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(2);
+    });
   });
 
   describe("origin chain is not equal to hub chain", function () {
@@ -446,11 +453,21 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"68965517241379310"')).to.be.true;
     });
+    it("includes origin, destination and hub chain in repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId, 1].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(3);
+    });
   });
 
   describe("evaluates slow withdrawal chains with excess running balances", function () {
     let excessRunningBalances: { [chainId: number]: BigNumber };
     beforeEach(async function () {
+      // "enable" all pool rebalance routes so that inventory client evaluates slow withdrawal chains
+      // as possible repayment chains.
+      hubPoolClient.setEnableAllL2Tokens(true);
       excessRunningBalances = {
         [10]: toWei("0.1"),
         [42161]: toWei("0.2"),
@@ -501,6 +518,16 @@ describe("InventoryClient: Refund chain selection", async function () {
       excessRunningBalances[42161] = toWei("0");
       (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+    });
+    it("includes slow withdrawal chains in possible repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      inventoryClient.getSlowWithdrawalRepaymentChains(mainnetWeth).forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(4);
     });
   });
 });
