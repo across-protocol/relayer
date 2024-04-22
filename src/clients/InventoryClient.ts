@@ -293,7 +293,7 @@ export class InventoryClient {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmount,
-        SLOW_WITHDRAWAL_CHAINS.filter((chainId) => this._l1TokenEnabledForChain(l1Token, Number(chainId)))
+        this.getSlowWithdrawalRepaymentChains(l1Token)
       );
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
@@ -968,6 +968,21 @@ export class InventoryClient {
 
   _l1TokenEnabledForChain(l1Token: string, chainId: number): boolean {
     return this.inventoryConfig.tokenConfig?.[l1Token]?.[String(chainId)] !== undefined;
+  }
+
+  /**
+   * @notice Return possible repayment chains for L1 token that have "slow withdrawals" from L2 to L1, so
+   * taking repayment on these chains would be done to reduce HubPool utilization and keep funds out of the
+   * slow withdrawal canonical bridges.
+   * @param l1Token
+   * @returns list of chains for l1Token that have a token config enabled and have pool rebalance routes set.
+   */
+  getSlowWithdrawalRepaymentChains(l1Token: string): number[] {
+    return SLOW_WITHDRAWAL_CHAINS.filter(
+      (chainId) =>
+        this._l1TokenEnabledForChain(l1Token, Number(chainId)) &&
+        this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, Number(chainId))
+    );
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {

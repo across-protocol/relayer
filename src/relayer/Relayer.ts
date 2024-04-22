@@ -19,7 +19,6 @@ import {
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
-import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -394,11 +393,9 @@ export class Relayer {
 
         // We also might take repayment on slow withdrawal chains if inventory management is enabled.
         if (inventoryClient.isInventoryManagementEnabled()) {
-          SLOW_WITHDRAWAL_CHAINS.filter(
-            (chainId) =>
-              inventoryClient._l1TokenEnabledForChain(l1Token, chainId) &&
-              ![originChainId, destinationChainId].includes(chainId)
-          ).forEach((paymentChainId) => request.push({ ...deposit, paymentChainId }));
+          inventoryClient
+            .getSlowWithdrawalRepaymentChains(l1Token)
+            .forEach((paymentChainId) => request.push({ ...deposit, paymentChainId }));
         }
 
         // Optionally also query for HubPool chain repayment if it's not origin or destination.

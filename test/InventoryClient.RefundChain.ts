@@ -28,7 +28,6 @@ import {
   MockInventoryClient,
   MockTokenClient,
 } from "./mocks";
-import { SLOW_WITHDRAWAL_CHAINS } from "../src/common";
 
 describe("InventoryClient: Refund chain selection", async function () {
   const enabledChainIds = [1, 10, 137, 42161];
@@ -457,7 +456,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         [42161]: toWei("0.2"),
       };
       // Fill in rest of slow withdrawal chains with 0 excess since we won't test them.
-      SLOW_WITHDRAWAL_CHAINS.forEach((chainId) => {
+      inventoryClient.getSlowWithdrawalRepaymentChains(mainnetWeth).forEach((chainId) => {
         if (!excessRunningBalances[chainId]) {
           excessRunningBalances[chainId] = toWei("0");
         }
