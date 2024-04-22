@@ -373,28 +373,22 @@ export class Relayer {
   }
 
   /**
-   * For an array of unfilled deposits, compute the applicable LP fee for each. Fees are computed for repayment on the
-   * destination chain as well as mainnet.
+   * For an array of unfilled deposits, compute the applicable LP fee for each. Fees are computed for all possible
+   * repayment chains which include origin, destination, all slow-withdrawal chains and mainnet.
    * @param deposits An array of deposits.
    * @returns A BatchLPFees object uniquely identifying LP fees per unique input deposit.
    */
   async batchComputeLpFees(deposits: V3DepositWithBlock[]): Promise<BatchLPFees> {
-    const { hubPoolClient } = this.clients;
+    const { hubPoolClient, inventoryClient } = this.clients;
 
+    // We need to compute LP fees for any possible repayment chain the inventory client could select
+    // for each deposit filled.
     const lpFeeRequests = deposits
       .map((deposit) => {
-        // Query the LP fee for repayment on origin and destination chain IDs unconditionally.
-        const { originChainId, destinationChainId } = deposit;
-        const request = [
-          { ...deposit, paymentChainId: destinationChainId },
-          { ...deposit, paymentChainId: originChainId },
-        ];
-
-        // Optionally also query for HubPool chain repayment if it's not origin or destination.
-        if (![originChainId, destinationChainId].includes(hubPoolClient.chainId)) {
-          request.push({ ...deposit, paymentChainId: hubPoolClient.chainId });
-        }
-        return request;
+        const possibleRepaymentChainIds = inventoryClient.getPossibleRepaymentChainIds(deposit);
+        return possibleRepaymentChainIds.map((paymentChainId) => {
+          return { ...deposit, paymentChainId };
+        });
       })
       .flat();
 
@@ -570,9 +564,17 @@ export class Relayer {
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
+    const start = performance.now();
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
-    const { lpFeePct } = repaymentFees.find(({ paymentChainId }) => paymentChainId === preferredChainId);
-    assert(isDefined(lpFeePct));
+    this.logger.debug({
+      at: "Relayer::resolveRepaymentChain",
+      message: `Determined preferred repayment chain ${preferredChainId} for deposit from ${originChain} to ${destinationChain} in ${
+        Math.round(performance.now() - start) / 1000
+      }s.`,
+    });
+    const repaymentFee = repaymentFees?.find(({ paymentChainId }) => paymentChainId === preferredChainId);
+    assert(isDefined(repaymentFee));
+    const { lpFeePct } = repaymentFee;
 
     const {
       profitable,

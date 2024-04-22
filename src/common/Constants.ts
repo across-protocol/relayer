@@ -313,3 +313,6 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 };
 
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
+
+// Chains with slow (> 2 day liveness) canonical L2-->L1 bridges.
+export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM];
