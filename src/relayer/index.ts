@@ -95,6 +95,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     do {
       logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       const tLoopStart = performance.now();
+      if (run !== 1) {
+        await relayerClients.configStoreClient.update();
+        await relayerClients.hubPoolClient.update();
+      }
       await updateRelayerClients(relayerClients, config);
 
       if (!config.skipRelays) {
