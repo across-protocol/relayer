@@ -133,7 +133,7 @@ export class RelayerConfig extends CommonConfig {
       });
       Object.keys(this.inventoryConfig?.tokenConfig ?? {}).forEach((l1Token) => {
         Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
-          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget } =
+          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } =
             this.inventoryConfig.tokenConfig[l1Token][chainId];
           assert(
             targetPct !== undefined && thresholdPct !== undefined,
@@ -145,6 +145,12 @@ export class RelayerConfig extends CommonConfig {
           );
           this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct = toBNWei(targetPct).div(100);
           this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct = toBNWei(thresholdPct).div(100);
+          // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
+          // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
+          // holding more tokens than the targetPct, but perhaps a better default is 100%
+          this.inventoryConfig.tokenConfig[l1Token][chainId].targetOverageBuffer = toBNWei(
+            targetOverageBuffer ?? "1.5"
+          );
           if (unwrapWethThreshold !== undefined) {
             this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethThreshold = toBNWei(unwrapWethThreshold);
           }

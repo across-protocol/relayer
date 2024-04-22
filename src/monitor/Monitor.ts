@@ -555,10 +555,8 @@ export class Monitor {
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const validatedBundleRefunds: CombinedRefunds[] =
-      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(...this.monitorConfig.monitoredRelayers);
-    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds(
-      ...this.monitorConfig.monitoredRelayers
-    );
+      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles();
+    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {
