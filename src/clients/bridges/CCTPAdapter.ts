@@ -70,7 +70,6 @@ export abstract class CCTPAdapter extends BaseAdapter {
 
     const l1Bridge = this.getL1CCTPTokenMessengerBridge();
     const l1BridgeMethod = "depositForBurn";
-    // prettier-ignore
     const l1BridgeArgs = [amount, this.l2DestinationDomain, cctpAddressToBytes32(address), l1Token];
     return this._sendTokenToTargetChain(
       l1Token,
