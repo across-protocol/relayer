@@ -174,7 +174,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       // These are hard to back out because they're not stored with transaction information. They should be extremely
       // rare, but at the margins could risk making an invalid fill based on the resolved outputToken for a deposit
       // that specifies outputToken 0x0. Simply bail in this case; everything should be OK on the next run.
-      assert(false, "Detected re-org affecting deposit route events.");
+      throw new Error("Detected re-org affecting deposit route events.");
     } else {
       // Retaining any remaining event types should be non-critical for relayer operation. They may
       // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
