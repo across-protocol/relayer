@@ -253,7 +253,7 @@ async function run(argv: string[]): Promise<void> {
   });
 
   process.on("disconnect", () => {
-    logger.debug({ at: "Relayer#run", message: "Parent disconnected, stopping..." });
+    logger.debug({ at: "Relayer::run", message: "Parent disconnected, stopping..." });
     stop = true;
   });
 
