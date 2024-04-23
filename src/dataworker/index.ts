@@ -167,6 +167,34 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         }
       };
 
+      // The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
+      // exit if a proposal is already pending.
+      const executeProposal = async () => {
+        const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
+        if (isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0") {
+          logger[startupLogLevel(config)]({
+            at: "Dataworker#index",
+            message: "Exiting early as a proposal is already pending",
+          });
+        } else {
+          await clients.multiCallerClient.executeTransactionQueue();
+        }
+      };
+
+      // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
+      // in parallel. We want to have both of these operations complete, even if one of them fails.
+      const [persistResult, multiCallResult] = await Promise.allSettled([persistBundle(), executeProposal()]);
+
+      // If either of the operations failed, log the error.
+      if (persistResult.status === "rejected" || multiCallResult.status === "rejected") {
+        logger.error({
+          at: "Dataworker#index",
+          message: "Failed to persist bundle data to the DALayer or execute the multiCall transaction queue",
+          persistResult: persistResult.status === "rejected" ? persistResult.reason : undefined,
+          multiCallResult: multiCallResult.status === "rejected" ? multiCallResult.reason : undefined,
+        });
+      }
+
       const dataworkerFunctionLoopTimerEnd = performance.now();
       logger.debug({
         at: "Dataworker#index",
@@ -179,37 +207,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         ),
       });
       loopStart = performance.now();
-
-      // The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
-      // exit if a proposal is already pending.
-      const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
-      if (isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0") {
-        logger[startupLogLevel(config)]({
-          at: "Dataworker#index",
-          message: "Exiting early as a proposal is already pending",
-        });
-        if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
-          break;
-        } else {
-          continue;
-        }
-      }
-      // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
-      // in parallel. We want to have both of these operations complete, even if one of them fails.
-      const [persistResult, multiCallResult] = await Promise.allSettled([
-        persistBundle(),
-        clients.multiCallerClient.executeTransactionQueue(),
-      ]);
-
-      // If either of the operations failed, log the error.
-      if (persistResult.status === "rejected" || multiCallResult.status === "rejected") {
-        logger.error({
-          at: "Dataworker#index",
-          message: "Failed to persist bundle data to the DALayer or execute the multiCall transaction queue",
-          persistResult: persistResult.status === "rejected" ? persistResult.reason : undefined,
-          multiCallResult: multiCallResult.status === "rejected" ? multiCallResult.reason : undefined,
-        });
-      }
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;
