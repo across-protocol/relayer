@@ -167,6 +167,37 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         }
       };
 
+      const dataworkerFunctionLoopTimerEnd = performance.now();
+      logger.debug({
+        at: "Dataworker#index",
+        message: `Time to update spoke pool clients and run dataworker function: ${Math.round(
+          (dataworkerFunctionLoopTimerEnd - loopStart) / 1000
+        )}s`,
+        timeToLoadSpokes: Math.round((dataworkerFunctionLoopTimerStart - loopStart) / 1000),
+        timeToRunDataworkerFunctions: Math.round(
+          (dataworkerFunctionLoopTimerEnd - dataworkerFunctionLoopTimerStart) / 1000
+        ),
+      });
+      loopStart = performance.now();
+
+      // The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
+      // exit if a proposal is already pending.
+      const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
+      if (
+        config.proposerEnabled &&
+        isDefined(bundleDataToPersist) &&
+        pendingProposal.unclaimedPoolRebalanceLeafCount.eq(0)
+      ) {
+        logger[startupLogLevel(config)]({
+          at: "Dataworker#index",
+          message: "Exiting early as a proposal is already pending",
+        });
+        if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
+          break;
+        } else {
+          continue;
+        }
+      }
       // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
       // in parallel. We want to have both of these operations complete, even if one of them fails.
       const [persistResult, multiCallResult] = await Promise.allSettled([
@@ -183,19 +214,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           multiCallResult: multiCallResult.status === "rejected" ? multiCallResult.reason : undefined,
         });
       }
-
-      const dataworkerFunctionLoopTimerEnd = performance.now();
-      logger.debug({
-        at: "Dataworker#index",
-        message: `Time to update spoke pool clients and run dataworker function: ${Math.round(
-          (dataworkerFunctionLoopTimerEnd - loopStart) / 1000
-        )}s`,
-        timeToLoadSpokes: Math.round((dataworkerFunctionLoopTimerStart - loopStart) / 1000),
-        timeToRunDataworkerFunctions: Math.round(
-          (dataworkerFunctionLoopTimerEnd - dataworkerFunctionLoopTimerStart) / 1000
-        ),
-      });
-      loopStart = performance.now();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;
