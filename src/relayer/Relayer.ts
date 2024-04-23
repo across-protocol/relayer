@@ -448,7 +448,7 @@ export class Relayer {
       }
 
       await this.evaluateFills(
-        unfilledDeposits.map(({ deposit, fillStatus }) => ({ ...deposit, fillStatus })).slice(0, 1),
+        unfilledDeposits.map(({ deposit, fillStatus }) => ({ ...deposit, fillStatus })),
         lpFees,
         maxBlockNumbers,
         sendSlowRelays
