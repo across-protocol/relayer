@@ -596,7 +596,12 @@ export class Relayer {
 
     // Save this for later in case none of the preferred chains are profitable and destination chain is profitable,
     // then use this to calculate the virtual delta in the gross relayer fee.
-    const topPreferredChainProfitability = await profitClient.isFillProfitable(deposit, lpFeePcts[0], hubPoolToken, preferredChainIds[0]);
+    const topPreferredChainProfitability = await profitClient.isFillProfitable(
+      deposit,
+      lpFeePcts[0],
+      hubPoolToken,
+      preferredChainIds[0]
+    );
 
     for (let i = 0; i < preferredChainIds.length; i++) {
       const _preferredChainId = preferredChainIds[i];
@@ -679,7 +684,9 @@ export class Relayer {
         // maintaining its inventory allocation by sticking to its preferred repayment chain.
         this.logger.info({
           at: "Relayer::resolveRepaymentChain",
-          message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chains ${JSON.stringify(preferredChainIds)} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on top preferred chain ${preferredChainId} as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
+          message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chains ${JSON.stringify(
+            preferredChainIds
+          )} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on top preferred chain ${preferredChainId} as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
             deltaRelayerFee
           )}%`,
           deposit: {
@@ -714,7 +721,9 @@ export class Relayer {
         // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
         this.logger.debug({
           at: "Relayer::resolveRepaymentChain",
-          message: `Taking repayment for deposit ${depositId} with preferred chains ${JSON.stringify(preferredChainIds)} on destination chain ${destinationChainId} would also not be profitable.`,
+          message: `Taking repayment for deposit ${depositId} with preferred chains ${JSON.stringify(
+            preferredChainIds
+          )} on destination chain ${destinationChainId} would also not be profitable.`,
           deposit: {
             originChain,
             depositId,

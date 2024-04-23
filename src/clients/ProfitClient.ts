@@ -409,7 +409,12 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
   }
 
-  async getFillProfitability(deposit: V3Deposit, lpFeePct: BigNumber, l1Token: L1Token, repaymentChainId: number): Promise<FillProfit> {
+  async getFillProfitability(
+    deposit: V3Deposit,
+    lpFeePct: BigNumber,
+    l1Token: L1Token,
+    repaymentChainId: number
+  ): Promise<FillProfit> {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
