@@ -186,7 +186,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       if (
         config.proposerEnabled &&
         isDefined(bundleDataToPersist) &&
-        pendingProposal.unclaimedPoolRebalanceLeafCount.eq(0)
+        pendingProposal.unclaimedPoolRebalanceLeafCount.toString() === "0"
       ) {
         logger[startupLogLevel(config)]({
           at: "Dataworker#index",
