@@ -1,4 +1,3 @@
-import { utils } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../common";
 import {
   BigNumber,
@@ -8,10 +7,8 @@ import {
   assert,
   bnZero,
   compareAddressesSimple,
-  isDefined,
-  paginatedEventQuery,
 } from "../../utils";
-import { cctpAddressToBytes32, hasCCTPMessageBeenProcessed } from "../../utils/CCTPUtils";
+import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
 import { BaseAdapter } from "./BaseAdapter";
 
 /**
@@ -99,33 +96,18 @@ export abstract class CCTPAdapter extends BaseAdapter {
     const l1TokenMessenger = this.getL1CCTPTokenMessengerBridge();
     const l2MessageTransmitter = this.getL2CCTPMessageTransmitter();
 
-    const l1Filter = l1TokenMessenger.filters.DepositForBurn(
-      undefined,
+    const outstandingTxns = await retrieveOutstandingCCTPBridgeUSDCTransfers(
+      l1TokenMessenger,
+      l2MessageTransmitter,
+      l1SearchConfig,
       TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId],
-      undefined,
-      cctpAddressToBytes32(address)
+      this.hubChainId,
+      this.chainId,
+      address
     );
 
-    const initializationTransactions = await paginatedEventQuery(l1TokenMessenger, l1Filter, l1SearchConfig);
-
-    const outstandingTxnHashes = (
-      await utils.mapAsync(initializationTransactions, async (event) => {
-        const { nonce, amount, destinationDomain } = event.args;
-        if (destinationDomain !== this.l2DestinationDomain) {
-          return undefined;
-        }
-        if (await hasCCTPMessageBeenProcessed(this.l1SourceDomain, nonce, l2MessageTransmitter)) {
-          return undefined;
-        }
-        return {
-          amount: BigNumber.from(amount.toString()),
-          txHash: event.transactionHash,
-        };
-      })
-    ).filter(isDefined);
-
-    const totalAmount = outstandingTxnHashes.reduce((acc, { amount }) => acc.add(amount), bnZero);
-    const depositTxHashes = outstandingTxnHashes.map(({ txHash }) => txHash);
+    const totalAmount = outstandingTxns.reduce((acc, { args: { amount } }) => acc.add(amount.toString()), bnZero);
+    const depositTxHashes = outstandingTxns.map(({ transactionHash }) => transactionHash);
 
     return {
       totalAmount,

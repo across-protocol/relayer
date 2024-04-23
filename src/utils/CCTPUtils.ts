@@ -3,6 +3,8 @@ import axios, { AxiosError } from "axios";
 import { ethers, BigNumber } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { isDefined } from "./TypeGuards";
+import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
+import { utils } from "@across-protocol/sdk-v2";
 
 export type DecodedCCTPMessage = {
   messageHash: string;
@@ -37,6 +39,44 @@ export function cctpAddressToBytes32(address: string): string {
 export function hashCCTPSourceAndNonce(source: number, nonce: number): string {
   // Encode and hash the values directly
   return ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [source, nonce]));
+}
+
+export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
+  sourceTokenMessenger: ethers.Contract,
+  destinationMessageTransmitter: ethers.Contract,
+  sourceSearchConfig: EventSearchConfig,
+  sourceToken: string,
+  sourceChainId: number,
+  destinationChainId: number,
+  fromAddress: string
+): Promise<ethers.Event[]> {
+  const sourceDomain = chainIdsToCctpDomains[sourceChainId];
+  const targetDestinationDomain = chainIdsToCctpDomains[destinationChainId];
+
+  const sourceFilter = sourceTokenMessenger.filters.DepositForBurn(
+    undefined,
+    sourceToken,
+    undefined,
+    cctpAddressToBytes32(fromAddress)
+  );
+  const initializationTransactions = await paginatedEventQuery(sourceTokenMessenger, sourceFilter, sourceSearchConfig);
+
+  return (
+    await utils.mapAsync(initializationTransactions, async (event) => {
+      const { nonce, destinationDomain } = event.args;
+      // Ensure that the destination domain matches the target destination domain so that we don't
+      // have any double counting of messages.
+      if (destinationDomain !== targetDestinationDomain) {
+        return undefined;
+      }
+      // Call into the destinationMessageTransmitter contract to determine if the message has been processed
+      // on the destionation chain.
+      if (await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter)) {
+        return undefined;
+      }
+      return event;
+    })
+  ).filter(isDefined);
 }
 
 /**
