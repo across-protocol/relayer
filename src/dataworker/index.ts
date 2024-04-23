@@ -183,11 +183,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
       // exit if a proposal is already pending.
       const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
-      if (
-        config.proposerEnabled &&
-        isDefined(bundleDataToPersist) &&
-        pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0"
-      ) {
+      if (isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0") {
         logger[startupLogLevel(config)]({
           at: "Dataworker#index",
           message: "Exiting early as a proposal is already pending",
