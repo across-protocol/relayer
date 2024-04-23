@@ -4,9 +4,12 @@ export interface InventoryConfig {
   tokenConfig: {
     [l1Token: string]: {
       [chainId: string]: {
+        targetOverageBuffer: BigNumber; // The relayer will be allowed to hold this multiple times the targetPct
+        // of the full token balance on this chain.
         targetPct: BigNumber; // The desired amount of the given token on the L2 chainId.
         thresholdPct: BigNumber; // Threshold, below which, we will execute a rebalance.
-        unwrapWethThreshold?: BigNumber; // Threshold for ETH on this chain to trigger WETH unwrapping to maintain ETH balance
+        unwrapWethThreshold?: BigNumber; // Threshold for ETH on this chain to trigger WETH unwrapping to maintain
+        // ETH balance
         unwrapWethTarget?: BigNumber; // Amount of WETH to unwrap to refill ETH balance. Unused if unwrapWethThreshold
         // is undefined.
       };

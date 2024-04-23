@@ -14,6 +14,7 @@ import {
   paginatedEventQuery,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  bnZero,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
@@ -238,7 +239,7 @@ export class PolygonAdapter extends BaseAdapter {
       method,
       args,
       1,
-      BigNumber.from(0),
+      bnZero,
       simMode
     );
   }
@@ -262,7 +263,7 @@ export class PolygonAdapter extends BaseAdapter {
     return new Contract(
       tokenToBridge[l1Token].l1BridgeAddress,
       CONTRACT_ADDRESSES[1].polygonBridge.abi,
-      this.getSigner(1)
+      this.getSigner(this.hubChainId)
     );
   }
 
@@ -273,7 +274,7 @@ export class PolygonAdapter extends BaseAdapter {
       return new Contract(
         CONTRACT_ADDRESSES[1].polygonRootChainManager.address,
         CONTRACT_ADDRESSES[1].polygonRootChainManager.abi,
-        this.getSigner(1)
+        this.getSigner(this.hubChainId)
       );
     }
   }
