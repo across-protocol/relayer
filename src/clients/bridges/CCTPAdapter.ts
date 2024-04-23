@@ -1,3 +1,4 @@
+import { utils } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../common";
 import {
   BigNumber,
@@ -7,8 +8,10 @@ import {
   assert,
   bnZero,
   compareAddressesSimple,
+  isDefined,
+  paginatedEventQuery,
 } from "../../utils";
-import { cctpAddressToBytes32 } from "../../utils/CCTPUtils";
+import { cctpAddressToBytes32, hasCCTPMessageBeenProcessed } from "../../utils/CCTPUtils";
 import { BaseAdapter } from "./BaseAdapter";
 
 /**
@@ -18,8 +21,18 @@ import { BaseAdapter } from "./BaseAdapter";
  */
 export abstract class CCTPAdapter extends BaseAdapter {
   /**
+   * Get the CCTP domain of the hub chain. This is used to determine the source
+   * domain of a CCTP message.
+   * @returns The CCTP domain of the hub chain
+   */
+  private get l1SourceDomain(): number {
+    return chainIdsToCctpDomains[this.hubChainId];
+  }
+
+  /**
    * Get the CCTP domain of the target chain. This is used to determine the destination
    * domain of a CCTP message.
+   * @returns The CCTP domain of the target chain
    */
   private get l2DestinationDomain(): number {
     return chainIdsToCctpDomains[this.chainId];
@@ -56,7 +69,80 @@ export abstract class CCTPAdapter extends BaseAdapter {
     );
   }
 
-  protected sendCCTPTokenToTargetChain(
+  protected getL2CCTPTokenMessengerBridge(): Contract {
+    return new Contract(
+      CONTRACT_ADDRESSES[this.chainId].cctpTokenMessenger.address,
+      CONTRACT_ADDRESSES[this.chainId].cctpTokenMessenger.abi,
+      this.getSigner(this.chainId)
+    );
+  }
+
+  protected getL2CCTPMessageTransmitter(): Contract {
+    return new Contract(
+      CONTRACT_ADDRESSES[this.chainId].cctpMessageTransmitter.address,
+      CONTRACT_ADDRESSES[this.chainId].cctpMessageTransmitter.abi,
+      this.getSigner(this.chainId)
+    );
+  }
+
+  /**
+   * Retrieves the outstanding transfers for USDC from the hub chain to
+   * the destination chain.
+   * @param address The address to check for outstanding transfers
+   * @returns The outstanding transfers for the given address
+   */
+  protected async getOutstandingCctpTransfers(
+    address: string
+  ): Promise<{ totalAmount: BigNumber; depositTxHashes: string[] }> {
+    const { l1SearchConfig } = this.getUpdatedSearchConfigs();
+
+    const l1TokenMessenger = this.getL1CCTPTokenMessengerBridge();
+    const l2MessageTransmitter = this.getL2CCTPMessageTransmitter();
+
+    const l1Filter = l1TokenMessenger.filters.DepositForBurn(
+      undefined,
+      TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId],
+      undefined,
+      cctpAddressToBytes32(address)
+    );
+
+    const initializationTransactions = await paginatedEventQuery(l1TokenMessenger, l1Filter, l1SearchConfig);
+
+    const outstandingTxnHashes = (
+      await utils.mapAsync(initializationTransactions, async (event) => {
+        const { nonce, amount, destinationDomain } = event.args;
+        if (destinationDomain !== this.l2DestinationDomain) {
+          return undefined;
+        }
+        if (await hasCCTPMessageBeenProcessed(this.l1SourceDomain, nonce, l2MessageTransmitter)) {
+          return undefined;
+        }
+        return {
+          amount: BigNumber.from(amount.toString()),
+          txHash: event.transactionHash,
+        };
+      })
+    ).filter(isDefined);
+
+    const totalAmount = outstandingTxnHashes.reduce((acc, { amount }) => acc.add(amount), bnZero);
+    const depositTxHashes = outstandingTxnHashes.map(({ txHash }) => txHash);
+
+    return {
+      totalAmount,
+      depositTxHashes,
+    };
+  }
+
+  /**
+   * A helper function to send USDC via CCTP to the target chain
+   * @param address The recipient address on the target chain
+   * @param l1Token The token on the hub chain - must be USDC
+   * @param l2Token The token on the target chain - must be USDC
+   * @param amount The amount of funds to send via CCTP
+   * @param simMode Whether or not to simulate the transaction
+   * @returns The transaction response of the CCTP message
+   */
+  protected sendCctpTokenToTargetChain(
     address: string,
     l1Token: string,
     l2Token: string,

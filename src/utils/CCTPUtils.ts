@@ -14,8 +14,46 @@ export type DecodedCCTPMessage = {
   attestation: string;
 };
 
+/**
+ * Used to convert an ETH Address string to a 32-byte hex string.
+ * @param address The address to convert.
+ * @returns The 32-byte hex string representation of the address - required for CCTP messages.
+ */
 export function cctpAddressToBytes32(address: string): string {
   return ethers.utils.hexZeroPad(address, 32);
+}
+
+/**
+ * The CCTP Message Transmitter contract updates a local dictionary for each source domain / nonce it receives. It won't
+ * attempt to process a message if the nonce has been seen before. If the nonce has been used before, the message has
+ * been received and processed already. This function replicates the `function _hashSourceAndNonce(uint32 _source, uint64 _nonce)` function
+ * in the MessageTransmitter contract.
+ * @link https://github.com/circlefin/evm-cctp-contracts/blob/817397db0a12963accc08ff86065491577bbc0e5/src/MessageTransmitter.sol#L279-L308
+ * @link https://github.com/circlefin/evm-cctp-contracts/blob/817397db0a12963accc08ff86065491577bbc0e5/src/MessageTransmitter.sol#L369-L381
+ * @param source The source domain
+ * @param nonce The nonce provided by the destination transaction (DepositForBurn event)
+ * @returns The hash of the source and nonce following the hashing algorithm of the MessageTransmitter contract.
+ */
+export function hashCCTPSourceAndNonce(source: number, nonce: number): string {
+  // Encode and hash the values directly
+  return ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [source, nonce]));
+}
+
+/**
+ * Calls into the CCTP MessageTransmitter contract and determines whether or not a message has been processed.
+ * @param sourceDomain The source domain of the message.
+ * @param nonce The nonce of the message.
+ * @param contract The CCTP MessageTransmitter contract to call.
+ * @returns Whether or not the message has been processed.
+ */
+export async function hasCCTPMessageBeenProcessed(
+  sourceDomain: number,
+  nonce: number,
+  contract: ethers.Contract
+): Promise<boolean> {
+  const nonceHash = hashCCTPSourceAndNonce(sourceDomain, nonce);
+  const resultingCall = await contract.usedNonces(nonceHash);
+  return Number(resultingCall) === 1;
 }
 
 /**

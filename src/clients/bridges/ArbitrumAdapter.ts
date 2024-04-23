@@ -179,7 +179,7 @@ export class ArbitrumAdapter extends CCTPAdapter {
     simMode = false
   ): Promise<TransactionResponse> {
     if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
-      return this.sendCCTPTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+      return this.sendCctpTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
     } else {
       const args = [
         l1Token, // token
