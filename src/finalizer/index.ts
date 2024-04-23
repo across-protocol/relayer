@@ -63,15 +63,14 @@ const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
  */
 const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
   // Mainnets
-  1: [lineaL1ToL2Finalizer],
   10: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   137: [polygonFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   8453: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
   42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
+  59144: [lineaL1ToL2Finalizer, lineaL2ToL1Finalizer],
   // Testnets
   84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  5: [lineaL1ToL2Finalizer],
-  59140: [lineaL2ToL1Finalizer],
+  59140: [lineaL1ToL2Finalizer, lineaL2ToL1Finalizer],
 };
 
 function enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize: string[], addressesToEnsure: string[]): string[] {
@@ -123,20 +122,18 @@ export async function finalize(
     const network = getNetworkName(chainId);
 
     // For certain chains we always want to track certain addresses for finalization:
-    // LineaL1ToL2: Always track HubPool, AtomicDepositor, LineaSpokePool. HubPool sends messages and tokens to the
-    // SpokePool, while the relayer rebalances ETH via the AtomicDepositor
-    if (chainId === hubChainId) {
-      if (chainId !== CHAIN_IDs.MAINNET) {
-        logger.warn({
-          at: "Finalizer",
-          message: "Testnet Finalizer: skipping finalizations where from or to address is set to AtomicDepositor",
-        });
-      }
-      l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, [
+    // If the chain needs an L1->L2 finalization, always track HubPool, AtomicDepositor. HubPool sends messages and
+    // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor
+    if (sdkUtils.chainRequiresL1ToL2Finalization(chainId)) {
+      const addressesToEnsure = [
         hubPoolClient.hubPool.address,
-        spokePoolClients[hubChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI].spokePool.address,
         CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
-      ]);
+      ];
+      // For linea specifically, we want to include the Linea Spokepool as well.
+      if (sdkUtils.chainIsLinea(chainId)) {
+        addressesToEnsure.push(spokePoolClients[CHAIN_IDs.LINEA].spokePool.address);
+      }
+      l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, addressesToEnsure);
     }
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
