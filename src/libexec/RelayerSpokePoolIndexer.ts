@@ -77,7 +77,7 @@ function getEventFilterArgs(relayer?: string): { [event: string]: string[] } {
  * @returns void
  */
 function postEvents(blockNumber: number, currentTime: number, events: Event[]): void {
-  if (!isDefined(process.send)) {
+  if (!isDefined(process.send) || stop) {
     return;
   }
 
@@ -101,7 +101,7 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
  * @returns void
  */
 function removeEvent(event: Event): void {
-  if (!isDefined(process.send)) {
+  if (!isDefined(process.send) || stop) {
     return;
   }
 
@@ -249,6 +249,11 @@ async function run(argv: string[]): Promise<void> {
 
   process.on("SIGHUP", () => {
     logger.debug({ at: "Relayer#run", message: "Received SIGHUP, stopping..." });
+    stop = true;
+  });
+
+  process.on("disconnect", () => {
+    logger.debug({ at: "Relayer#run", message: "Parent disconnected, stopping..." });
     stop = true;
   });
 
