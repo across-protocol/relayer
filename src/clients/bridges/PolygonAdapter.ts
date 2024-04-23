@@ -243,21 +243,10 @@ export class PolygonAdapter extends CCTPAdapter {
         method,
         args,
         1,
-        BigNumber.from(0),
+        bnZero,
         simMode
       );
     }
-    return await this._sendTokenToTargetChain(
-      l1Token,
-      l2Token,
-      amount,
-      this.getL1TokenGateway(l1Token),
-      method,
-      args,
-      1,
-      bnZero,
-      simMode
-    );
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
