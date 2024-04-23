@@ -42,6 +42,7 @@ export const knownRevertReasons = new Set([
 export const unknownRevertReasons = [
   "missing revert data in call exception; Transaction reverted without a reason string",
   "execution reverted",
+  "Error"
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
@@ -54,6 +55,7 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
   "executeSlowRelayLeaf",
   "executeRelayerRefundLeaf",
   "executeRootBundle",
+  "proposeRootBundle"
 ]);
 
 // @dev The dataworker executor personality typically bundles an Optimism L1 deposit via multicall3 aggregate(). Per
