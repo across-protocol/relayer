@@ -160,9 +160,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
       const proposalCollision =
         isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0";
-      const executorCollision =
-        poolRebalanceLeafExecutionCount > 0 &&
-        pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== poolRebalanceLeafExecutionCount.toString();
 
       // Define a helper function to persist the bundle data to the DALayer.
       const persistBundle = async () => {
@@ -179,6 +176,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       };
 
       const executeDataworkerTransactions = async () => {
+        const executorCollision =
+          poolRebalanceLeafExecutionCount > 0 &&
+          pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== poolRebalanceLeafExecutionCount.toString();
         if (proposalCollision || executorCollision) {
           logger[startupLogLevel(config)]({
             at: "Dataworker#index",
