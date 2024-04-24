@@ -41,7 +41,8 @@ export class AcrossApiClient {
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
-    const updateAge = Math.round(Date.now() / 1000) - this.updateTimestamp;
+    const now = Math.round(Date.now() / 1000);
+    const updateAge = now - this.updateTimestamp;
     if (ignoreLimits || updateAge < API_UPDATE_RETENTION_TIME) {
       this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits", updateAge });
       return;
@@ -112,7 +113,7 @@ export class AcrossApiClient {
       limits: this.limits,
     });
     this.updatedLimits = true;
-    this.updateTimestamp = Math.round(Date.now() / 1000);
+    this.updateTimestamp = now;
   }
 
   getLimit(l1Token: string): BigNumber {
