@@ -77,7 +77,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     workers = startWorkers(config);
   }
 
-  let stop = config.pollingDelay === 0;
+  const loop = config.pollingDelay > 0;
+  let stop = !loop;
   process.on("SIGHUP", () => {
     logger.debug({
       at: "Relayer#run",
@@ -93,7 +94,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   let run = 1;
   try {
     do {
-      logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
+      if (loop) {
+        logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
+      }
+
       const tLoopStart = performance.now();
       if (run !== 1) {
         await relayerClients.configStoreClient.update();
@@ -118,18 +122,22 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       relayerClients.profitClient.clearUnprofitableFills();
       relayerClients.tokenClient.clearTokenShortfall();
 
-      const runTime = Math.round((performance.now() - tLoopStart) / 1000);
-      logger.debug({
-        at: "Relayer#run",
-        message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
-      });
-
-      if (config.pollingDelay > 0 && !stop) {
+      const tLoopStop = performance.now();
+      const runTime = Math.round((tLoopStop - tLoopStart) / 1000);
+      if (loop) {
         logger.debug({
-          at: "relayer#run",
-          message: `Waiting polling delay ${config.pollingDelay} s before next loop.`,
+          at: "Relayer#run",
+          message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
         });
-        await delay(config.pollingDelay);
+
+        if (!stop && runTime < config.pollingDelay) {
+          const delta = config.pollingDelay - runTime;
+          logger.debug({
+            at: "relayer#run",
+            message: `Waiting ${delta} s before next loop.`,
+          });
+          await delay(delta);
+        }
       }
     } while (!stop);
   } finally {
