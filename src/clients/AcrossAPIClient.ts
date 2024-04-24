@@ -21,11 +21,10 @@ const API_UPDATE_RETENTION_TIME = 60; // seconds
 
 export class AcrossApiClient {
   private endpoint = "https://app.across.to/api";
-
   private limits: { [token: string]: BigNumber } = {};
+  private updatedAt = 0;
 
   public updatedLimits = false;
-  public updateTimestamp = 0;
 
   // Note: Max vercel execution duration is 1 minute
   constructor(
@@ -42,7 +41,7 @@ export class AcrossApiClient {
 
   async update(ignoreLimits: boolean): Promise<void> {
     const now = Math.round(Date.now() / 1000);
-    const updateAge = now - this.updateTimestamp;
+    const updateAge = now - this.updatedAt;
     if (ignoreLimits || updateAge < API_UPDATE_RETENTION_TIME) {
       this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits", updateAge });
       return;
@@ -113,7 +112,7 @@ export class AcrossApiClient {
       limits: this.limits,
     });
     this.updatedLimits = true;
-    this.updateTimestamp = now;
+    this.updatedAt = now;
   }
 
   getLimit(l1Token: string): BigNumber {
