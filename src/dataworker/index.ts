@@ -159,13 +159,16 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
       // leaves to be executed but the proposed bundle was already executed, then exit early.
       const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
-      const proposalCollision = isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount !== 0;
 
       // Define a helper function to persist the bundle data to the DALayer.
       const persistBundle = async () => {
         // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
         // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
-        if (config.persistingBundleData && !proposalCollision && isDefined(bundleDataToPersist)) {
+        if (
+          config.persistingBundleData &&
+          isDefined(bundleDataToPersist) &&
+          pendingProposal.unclaimedPoolRebalanceLeafCount === 0
+        ) {
           await persistDataToArweave(
             clients.arweaveClient,
             bundleDataToPersist,
@@ -176,6 +179,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       };
 
       const executeDataworkerTransactions = async () => {
+        const proposalCollision = isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
         const executorCollision =
           poolRebalanceLeafExecutionCount > 0 &&
           pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount;
