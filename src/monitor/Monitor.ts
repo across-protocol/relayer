@@ -411,7 +411,8 @@ export class Monitor {
             chainId,
             [token],
             signerAddress,
-            deficit
+            deficit,
+            true // refreshBalances force refreshes on-chain balances.
           );
           if (canRefill) {
             this.logger.debug({

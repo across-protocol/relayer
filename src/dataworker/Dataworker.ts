@@ -1179,7 +1179,9 @@ export class Dataworker {
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
             client.spokePool.address,
-            amountRequired
+            amountRequired,
+            true // refreshBalances set to true. The dataworker takes a long time to run and balances can change
+            // in the  middle of the run, therefore we should force refresh the balances
           );
 
           if (!success) {
@@ -1500,7 +1502,9 @@ export class Dataworker {
           }
 
           const success = await balanceAllocator.requestBalanceAllocations(
-            requests.filter((req) => req.amount.gt(bnZero))
+            requests.filter((req) => req.amount.gt(bnZero)),
+            true // refreshBalances is set to true because dataworker functions take a long time to run and
+            // balances can change in the middle of the run, so we force refresh.
           );
 
           if (!success) {
@@ -2041,7 +2045,11 @@ export class Dataworker {
           }
           // We use the requestBalanceAllocations instead of two separate calls to requestBalanceAllocation because
           // we want the balance to be set in an atomic transaction.
-          const success = await balanceAllocator.requestBalanceAllocations(balanceRequestsToQuery);
+          const success = await balanceAllocator.requestBalanceAllocations(
+            balanceRequestsToQuery,
+            true // refreshBalances is set to true because dataworker functions take a long time to run and
+            // balances can change in the middle of the run, so we force refresh.
+          );
           if (!success) {
             this.logger.warn({
               at: "Dataworker#executeRelayerRefundLeaves",

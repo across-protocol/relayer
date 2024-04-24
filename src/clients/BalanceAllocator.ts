@@ -19,7 +19,8 @@ export class BalanceAllocator {
   // Note: The caller is suggesting that `tokens` for a request are interchangeable.
   // The tokens whose balances are depleted first should be placed at the front of the array.
   async requestBalanceAllocations(
-    requests: { chainId: number; tokens: string[]; holder: string; amount: BigNumber }[]
+    requests: { chainId: number; tokens: string[]; holder: string; amount: BigNumber }[],
+    refreshBalances = false
   ): Promise<boolean> {
     // Do all async work up-front to avoid atomicity problems with updating used.
     const requestsWithBalances = await Promise.all(
@@ -29,7 +30,7 @@ export class BalanceAllocator {
             request.tokens.map(
               async (token): Promise<[string, BigNumber]> => [
                 token,
-                await this.getBalance(request.chainId, token, request.holder),
+                await this.getBalance(request.chainId, token, request.holder, refreshBalances),
               ]
             )
           )
@@ -92,13 +93,14 @@ export class BalanceAllocator {
     chainId: number,
     tokens: string[],
     holder: string,
-    amount: BigNumber
+    amount: BigNumber,
+    refreshBalances = false
   ): Promise<boolean> {
-    return this.requestBalanceAllocations([{ chainId, tokens, holder, amount }]);
+    return this.requestBalanceAllocations([{ chainId, tokens, holder, amount }], refreshBalances);
   }
 
-  async getBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
-    if (!this.balances?.[chainId]?.[token]?.[holder]) {
+  async getBalance(chainId: number, token: string, holder: string, refreshBalances = false): Promise<BigNumber> {
+    if (!this.balances?.[chainId]?.[token]?.[holder] || refreshBalances) {
       const balance = await this._queryBalance(chainId, token, holder);
       // To avoid inconsitencies, we recheck the balances value after the query.
       // If it exists, skip the assignment so the value doesn't change after being set.
