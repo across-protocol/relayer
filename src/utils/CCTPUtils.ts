@@ -4,7 +4,7 @@ import { ethers, BigNumber } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { isDefined } from "./TypeGuards";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
-import { utils } from "@across-protocol/sdk-v2";
+import { bnZero } from "./SDKUtils";
 
 export type DecodedCCTPMessage = {
   messageHash: string;
@@ -41,6 +41,18 @@ export function hashCCTPSourceAndNonce(source: number, nonce: number): string {
   return ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [source, nonce]));
 }
 
+/**
+ * Retrieves all outstanding CCTP bridge transfers for a given target -> destination chain, a source token address, and a from address.
+ * @param sourceTokenMessenger The CCTP TokenMessenger contract on the source chain. The "Bridge Contract" of CCTP
+ * @param destinationMessageTransmitter The CCTP MessageTransmitter contract on the destination chain. The "Message Handler Contract" of CCTP
+ * @param sourceSearchConfig The search configuration to use when querying the sourceTokenMessenger contract via `paginatedEventQuery`.
+ * @param sourceToken The token address of the token being transferred.
+ * @param sourceChainId The chainId of the source chain.
+ * @param destinationChainId The chainId of the destination chain.
+ * @param fromAddress The address that initiated the transfer.
+ * @returns A list of outstanding CCTP bridge transfers. These are transfers that have been initiated but not yet finalized on the destination chain.
+ * @dev Reference `hasCCTPMessageBeenProcessed` for more information on how the message is determined to be processed.
+ */
 export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
   sourceTokenMessenger: ethers.Contract,
   destinationMessageTransmitter: ethers.Contract,
@@ -53,16 +65,11 @@ export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
   const sourceDomain = chainIdsToCctpDomains[sourceChainId];
   const targetDestinationDomain = chainIdsToCctpDomains[destinationChainId];
 
-  const sourceFilter = sourceTokenMessenger.filters.DepositForBurn(
-    undefined,
-    sourceToken,
-    undefined,
-    cctpAddressToBytes32(fromAddress)
-  );
+  const sourceFilter = sourceTokenMessenger.filters.DepositForBurn(undefined, sourceToken, undefined, fromAddress);
   const initializationTransactions = await paginatedEventQuery(sourceTokenMessenger, sourceFilter, sourceSearchConfig);
 
-  return (
-    await utils.mapAsync(initializationTransactions, async (event) => {
+  const outstandingTransactions = await Promise.all(
+    initializationTransactions.map(async (event) => {
       const { nonce, destinationDomain } = event.args;
       // Ensure that the destination domain matches the target destination domain so that we don't
       // have any double counting of messages.
@@ -70,13 +77,16 @@ export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
         return undefined;
       }
       // Call into the destinationMessageTransmitter contract to determine if the message has been processed
-      // on the destionation chain.
-      if (await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter)) {
+      // on the destionation chain. We want to make sure the message **hasn't** been processed.
+      const isMessageProcessed = await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter);
+      if (isMessageProcessed) {
         return undefined;
       }
       return event;
     })
-  ).filter(isDefined);
+  );
+
+  return outstandingTransactions.filter(isDefined);
 }
 
 /**
@@ -92,8 +102,9 @@ export async function hasCCTPMessageBeenProcessed(
   contract: ethers.Contract
 ): Promise<boolean> {
   const nonceHash = hashCCTPSourceAndNonce(sourceDomain, nonce);
-  const resultingCall = await contract.usedNonces(nonceHash);
-  return Number(resultingCall) === 1;
+  const resultingCall = await contract.callStatic.usedNonces(nonceHash);
+  // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
+  return (resultingCall ?? bnZero).toNumber() === 1;
 }
 
 /**
