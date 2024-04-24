@@ -17,12 +17,15 @@ export interface DepositLimits {
   maxDeposit: BigNumber;
 }
 
+const API_UPDATE_RETENTION_TIME = 60; // seconds
+
 export class AcrossApiClient {
   private endpoint = "https://app.across.to/api";
 
   private limits: { [token: string]: BigNumber } = {};
 
   public updatedLimits = false;
+  public updateTimestamp = 0;
 
   // Note: Max vercel execution duration is 1 minute
   constructor(
@@ -38,8 +41,9 @@ export class AcrossApiClient {
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
-    if (ignoreLimits) {
-      this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits" });
+    const updateAge = Math.round(Date.now() / 1000) - this.updateTimestamp;
+    if (ignoreLimits || updateAge < API_UPDATE_RETENTION_TIME) {
+      this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits", updateAge });
       return;
     }
 
@@ -108,6 +112,7 @@ export class AcrossApiClient {
       limits: this.limits,
     });
     this.updatedLimits = true;
+    this.updateTimestamp = Math.round(Date.now() / 1000);
   }
 
   getLimit(l1Token: string): BigNumber {
