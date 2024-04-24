@@ -62,6 +62,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   loopStart = performance.now();
   let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
+  let poolRebalanceLeafExecutionCount = 0;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
@@ -129,7 +130,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        await dataworker.executePoolRebalanceLeaves(
+        poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
@@ -167,14 +168,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         }
       };
 
-      // The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
-      // exit if a proposal is already pending.
-      const executeProposal = async () => {
+      // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
+      // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
+      // leaves to be executed but the proposed bundle was already executed, then exit early.
+      const executeDataworkerTransactions = async () => {
         const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
-        if (isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0") {
+        const proposalCollision =
+          isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0";
+        const executorCollision =
+          pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== poolRebalanceLeafExecutionCount.toString();
+        if (proposalCollision || executorCollision) {
           logger[startupLogLevel(config)]({
             at: "Dataworker#index",
-            message: "Exiting early as a proposal is already pending",
+            message: "Exiting early due to dataworker function collision",
+            proposalCollision,
+            executorCollision,
+            pendingProposal,
           });
         } else {
           await clients.multiCallerClient.executeTransactionQueue();
@@ -183,7 +192,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
       // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
       // in parallel. We want to have both of these operations complete, even if one of them fails.
-      const [persistResult, multiCallResult] = await Promise.allSettled([persistBundle(), executeProposal()]);
+      const [persistResult, multiCallResult] = await Promise.allSettled([
+        persistBundle(),
+        executeDataworkerTransactions(),
+      ]);
 
       // If either of the operations failed, log the error.
       if (persistResult.status === "rejected" || multiCallResult.status === "rejected") {

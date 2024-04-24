@@ -95,7 +95,11 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
+    let leafCount = await dataworkerInstance.executePoolRebalanceLeaves(
+      spokePoolClients,
+      new BalanceAllocator(providers)
+    );
+    expect(leafCount).to.equal(2);
 
     // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
     // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
@@ -114,7 +118,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
+    expect(leafCount).to.equal(0);
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
   describe("update exchange rates", function () {
