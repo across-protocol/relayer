@@ -1257,12 +1257,22 @@ export class Dataworker {
     return { method, args };
   }
 
+  /**
+   * @notice Executes outstanding pool rebalance leaves if they have passed the challenge window. Includes
+   * exchange rate updates needed to execute leaves.
+   * @param spokePoolClients
+   * @param balanceAllocator
+   * @param submitExecution
+   * @param earliestBlocksInSpokePoolClients
+   * @returns number of leaves executed
+   */
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<void> {
+  ): Promise<number> {
+    let leafCount = 0;
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Executing pool rebalance leaves",
@@ -1280,7 +1290,7 @@ export class Dataworker {
         at: "Dataworker#executePoolRebalanceLeaves",
         message: "No pending proposal, nothing to execute",
       });
-      return;
+      return leafCount;
     }
 
     this.logger.debug({
@@ -1320,7 +1330,7 @@ export class Dataworker {
           reason,
         });
       }
-      return;
+      return leafCount;
     }
 
     if (valid && !expectedTrees) {
@@ -1331,7 +1341,7 @@ export class Dataworker {
         reason,
         notificationPath: "across-error",
       });
-      return;
+      return leafCount;
     }
 
     // Exit early if challenge period timestamp has not passed:
@@ -1341,7 +1351,7 @@ export class Dataworker {
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
-      return;
+      return leafCount;
     }
 
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
@@ -1354,7 +1364,7 @@ export class Dataworker {
       executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
     );
     if (unexecutedLeaves.length === 0) {
-      return;
+      return leafCount;
     }
 
     // There are three times that we should look to update the HubPool's liquid reserves:
@@ -1379,7 +1389,7 @@ export class Dataworker {
         mainnetLeaves[0],
         submitExecution
       );
-      await this._executePoolRebalanceLeaves(
+      leafCount += await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
@@ -1418,7 +1428,7 @@ export class Dataworker {
     // HubPool that we want to capture an increased liquidReserves for.
     const nonHubChainPoolRebalanceLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
     if (nonHubChainPoolRebalanceLeaves.length === 0) {
-      return;
+      return leafCount;
     }
     const updatedL1Tokens = await this._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
       updatedLiquidReserves,
@@ -1445,13 +1455,14 @@ export class Dataworker {
     await this._updateOldExchangeRates(l1TokensWithPotentiallyOlderUpdate, submitExecution);
 
     // Perform similar funding checks for remaining non-mainnet pool rebalance leaves.
-    await this._executePoolRebalanceLeaves(
+    leafCount += await this._executePoolRebalanceLeaves(
       spokePoolClients,
       nonHubChainPoolRebalanceLeaves,
       balanceAllocator,
       expectedTrees.poolRebalanceTree.tree,
       submitExecution
     );
+    return leafCount;
   }
 
   async _executePoolRebalanceLeaves(
@@ -1462,7 +1473,7 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator,
     tree: MerkleTree<PoolRebalanceLeaf>,
     submitExecution: boolean
-  ): Promise<void> {
+  ): Promise<number> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const fundedLeaves = (
       await Promise.all(
@@ -1575,6 +1586,7 @@ export class Dataworker {
         this.logger.debug({ at: "Dataworker#executePoolRebalanceLeaves", message: mrkdwn });
       }
     });
+    return fundedLeaves.length;
   }
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
