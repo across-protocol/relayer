@@ -175,8 +175,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
         const proposalCollision =
           isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0";
-        const executorCollision = 
-  pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== poolRebalanceLeafExecutionCount;
+        const executorCollision =
+        pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== poolRebalanceLeafExecutionCount;
         if (proposalCollision || executorCollision) {
           logger[startupLogLevel(config)]({
             at: "Dataworker#index",
