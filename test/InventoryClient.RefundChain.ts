@@ -365,6 +365,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Relayer should default to hub chain.
       sampleDepositData.inputAmount = toWei(10);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
+      expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.equal(1)
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"71428571428571428"')).to.be.true;
     });
     it("Origin allocation is below target", async function () {
       // Set Polygon allocation lower than target:
@@ -378,6 +380,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Relayer should choose to refund origin since destination isn't an option.
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
+      expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.equal(137);
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"35714285714285714"')).to.be.true;
     });
     it("Origin allocation depends on outstanding transfers", async function () {
       // Set Polygon allocation lower than target:
