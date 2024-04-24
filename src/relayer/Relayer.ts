@@ -722,7 +722,7 @@ export class Relayer {
       });
     });
 
-    this.logger.warn({
+    this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
       at: "Relayer::handleTokenShortfall",
       message: "Insufficient balance to fill all deposits 💸!",
       mrkdwn,
