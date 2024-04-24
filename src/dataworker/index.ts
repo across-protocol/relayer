@@ -171,18 +171,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
       // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
       // leaves to be executed but the proposed bundle was already executed, then exit early.
-      // @dev This assumes that this bot is running in a serverless setting
-      // and that there is the possibility of overlapping runs that could cause one run to "front-run" a previous
-      // bot instance.
       const executeDataworkerTransactions = async () => {
         const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
         const proposalCollision =
           isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0";
-        // This assumes that all pool leaves get executed together in a single transaction. This should
-        // always be the case, which means that the unclaimed leaf count is always in either exactly two states:
-        // equal to the maximum unclaimed leaf count or 0.
-        const executorCollision =
-          poolRebalanceLeafExecutionCount > 0 && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() === "0";
+        const executorCollision = pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== poolRebalanceLeafExecutionCount;
         if (proposalCollision || executorCollision) {
           logger[startupLogLevel(config)]({
             at: "Dataworker#index",
