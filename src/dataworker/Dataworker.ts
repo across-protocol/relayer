@@ -23,6 +23,7 @@ import {
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   V3SlowFillLeaf,
+  FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -1165,6 +1166,23 @@ export class Dataworker {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
+          // @dev check if there's been a duplicate leaf execution and if so, then exit early.
+          // Since this function is happening near the end of the dataworker run and leaf executions are
+          // relatively infrequent, the additional RPC latency and cost is acceptable.
+          const fillStatus = await sdkUtils.relayFillStatus(
+            client.spokePool,
+            slowFill.relayData,
+            "latest",
+            destinationChainId
+          );
+          if (fillStatus === FillStatus.Filled) {
+            this.logger.debug({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: `Slow Fill Leaf for output token ${slowFill.relayData.outputToken} on chain ${destinationChainId} already executed`,
+            });
+            return undefined;
+          }
+
           const { outputAmount } = slowFill.relayData;
           const fill = latestFills[idx];
           const amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
@@ -2016,6 +2034,29 @@ export class Dataworker {
             throw new Error("Leaf chainId does not match input chainId");
           }
           const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+          // @dev check if there's been a duplicate leaf execution and if so, then exit early.
+          // Since this function is happening near the end of the dataworker run and leaf executions are
+          // relatively infrequent, the additional RPC latency and cost is acceptable.
+          // @dev Can only filter on indexed events.
+          const eventFilter = client.spokePool.filters.ExecutedRelayerRefundRoot(
+            null, // amountToReturn
+            leaf.chainId,
+            null, // refundAmounts
+            rootBundleId,
+            leaf.leafId
+          );
+          const duplicateEvents = await client.spokePool.queryFilter(
+            eventFilter,
+            client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
+          );
+          if (duplicateEvents.length > 0) {
+            this.logger.debug({
+              at: "Dataworker#executeRelayerRefundLeaves",
+              message: `Relayer Refund Leaf #${leaf.leafId} for ${l1TokenInfo?.symbol} on chain ${leaf.chainId} already executed`,
+              duplicateEvents,
+            });
+            return undefined;
+          }
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
           const balanceRequestsToQuery = [
