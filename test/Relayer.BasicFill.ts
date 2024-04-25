@@ -14,7 +14,7 @@ import {
   repaymentChainId,
 } from "./constants";
 import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
-import { MockedMultiCallerClient, TestTokenClient } from "./mocks/MockMultiCallerClient";
+import { MockedMultiCallerClient, TestTokenClient } from "./mocks";
 import {
   BigNumber,
   Contract,
