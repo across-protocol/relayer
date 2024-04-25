@@ -102,6 +102,11 @@ export async function getRedisCache(
   logger?: winston.Logger,
   url?: string
 ): Promise<CachingMechanismInterface | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
+  }
+
   const client = await getRedis(logger, url);
   if (client) {
     return new RedisCache(client);
