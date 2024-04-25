@@ -52,7 +52,7 @@
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
     "eslint": "eslint .",
-    "test": "hardhat test",
+    "test": "RELAYER_TEST=true hardhat test",
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
