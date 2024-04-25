@@ -23,6 +23,7 @@ import {
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   V3SlowFillLeaf,
+  FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -1168,30 +1169,12 @@ export class Dataworker {
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
-          // @dev Can only filter on indexed events.
-          const eventFilter = client.spokePool.filters.FilledV3Relay(
-            null, // inputToken
-            null, // outputToken
-            null, // inputAmount
-            null, // outputAmount
-            null, // repaymentChainId
-            slowFill.relayData.originChainId,
-            slowFill.relayData.depositId,
-            null, // fillDeadline,
-            null, // exclusivityDeadline,
-            null, // exclusiveRelayer,
-            null, // relayer,
-            null, // depositor,
-            null, // recipient,
-            null, // message
-            null //  relayExecutionInfo
-          );
-          const duplicateEvents = await client.spokePool.queryFilter(eventFilter);
-          if (duplicateEvents.length > 0) {
+          const relayDataHash = sdkUtils.getRelayDataHash(slowFill.relayData, destinationChainId);
+          const fillStatus: BigNumber = await client.spokePool.fillStatuses(relayDataHash);
+          if (fillStatus.toNumber() === FillStatus.Filled) {
             this.logger.debug({
               at: "Dataworker#executeSlowRelayLeaves",
-              message: "Leaf already executed",
-              duplicateEvents,
+              message: `Slow Fill Leaf for output token ${slowFill.relayData.outputToken} on chain ${destinationChainId} already executed`,
             });
             return undefined;
           }
@@ -2046,6 +2029,7 @@ export class Dataworker {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
+          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
@@ -2055,21 +2039,20 @@ export class Dataworker {
             leaf.chainId,
             null, // refundAmounts
             rootBundleId,
-            leaf.leafId,
-            null, // l2TokenAddress
-            null, // refundAddresses
-            null // msg.sender of the leaf execution.
+            leaf.leafId
           );
-          const duplicateEvents = await client.spokePool.queryFilter(eventFilter);
+          const duplicateEvents = await client.spokePool.queryFilter(
+            eventFilter,
+            client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
+          );
           if (duplicateEvents.length > 0) {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeaves",
-              message: "Leaf already executed",
+              message: `Relayer Refund Leaf #${leaf.leafId} for ${l1TokenInfo?.symbol} on chain ${leaf.chainId} already executed`,
               duplicateEvents,
             });
             return undefined;
           }
-          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
           const balanceRequestsToQuery = [
