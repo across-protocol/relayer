@@ -1,5 +1,5 @@
 import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
-import { MockConfigStoreClient } from "./mocks";
+import { MockConfigStoreClient, TestTokenClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
@@ -13,7 +13,6 @@ import {
   toBNWei,
   winston,
 } from "./utils";
-import { TestTokenClient } from "./mocks";
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_2: Contract;

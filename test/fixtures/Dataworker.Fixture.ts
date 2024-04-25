@@ -26,7 +26,7 @@ import {
 } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
-import { BundleDataClient, TokenClient } from "../../src/clients";
+import { BundleDataClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient, TestTokenClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
