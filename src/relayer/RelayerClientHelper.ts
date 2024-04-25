@@ -203,20 +203,27 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
   // having a "first run" update and then a "normal" update that considers this. see previous implementation here
   // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
-  await updateSpokePoolClients(spokePoolClients, [
+  const spokePoolEvents = [
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
     "FilledV3Relay",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
-  ]);
+  ];
 
-  // Update the token client first so that inventory client has latest balances.
-  await clients.tokenClient.update();
+  // Update the token client before the inventory client has latest balances.
+  await Promise.all([updateSpokePoolClients(spokePoolClients, spokePoolEvents), clients.tokenClient.update()]);
+
+  const setTokenApprovals = async (): Promise<void> => {
+    if (config.sendingRelaysEnabled) {
+      await clients.tokenClient.setOriginTokenApprovals();
+    }
+  };
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
+    setTokenApprovals(),
     clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
@@ -227,7 +234,4 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // The token client needs route data, so wait for update before checking approvals.
   clients.tokenClient.clearTokenData();
   await clients.tokenClient.update();
-  if (config.sendingRelaysEnabled) {
-    await clients.tokenClient.setOriginTokenApprovals();
-  }
 }
