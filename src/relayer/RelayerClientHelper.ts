@@ -215,7 +215,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // Update the token client before the inventory client has latest balances.
   await Promise.all([updateSpokePoolClients(spokePoolClients, spokePoolEvents), clients.tokenClient.update()]);
 
-  const setTokenApprovals = async (): Promise<void> => {
+  const setSpokeTokenApprovals = async (): Promise<void> => {
     if (config.sendingRelaysEnabled) {
       await clients.tokenClient.setOriginTokenApprovals();
     }
@@ -223,11 +223,11 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
-    setTokenApprovals(),
     clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
-    clients.inventoryClient.setL1TokenApprovals(),
+    clients.inventoryClient.setL1TokenApprovals(), // Approve bridge contracts (if rebalancing enabled)
+    setSpokeTokenApprovals(), // Check SpokePool inputToken approvals on each chain.
   ]);
 
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
