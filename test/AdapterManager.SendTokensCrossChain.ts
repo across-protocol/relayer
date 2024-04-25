@@ -36,7 +36,7 @@ let adapterManager: AdapterManager; // tested
 let l1AtomicDepositor: FakeContract;
 
 // Optimism contracts
-let l1OptimismBridge: FakeContract, l1OptimismDaiBridge: FakeContract, l1OptimismSnxBridge: FakeContract;
+let l1OptimismDaiBridge: FakeContract, l1OptimismSnxBridge: FakeContract;
 
 // Polygon contracts
 let l1PolygonRootChainManager: FakeContract;
@@ -322,7 +322,6 @@ async function constructChainSpecificFakes() {
   l1AtomicDepositor = await makeFake("atomicDepositor", CONTRACT_ADDRESSES[1].atomicDepositor.address);
 
   // Optimism contracts
-  l1OptimismBridge = await makeFake("ovmStandardBridge_10", CONTRACT_ADDRESSES[1].ovmStandardBridge_10.address);
   l1OptimismDaiBridge = await makeFake("daiOptimismBridge", CONTRACT_ADDRESSES[1].daiOptimismBridge.address);
   l1OptimismSnxBridge = await makeFake("snxOptimismBridge", CONTRACT_ADDRESSES[1].snxOptimismBridge.address);
 
