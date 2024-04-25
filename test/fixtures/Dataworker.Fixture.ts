@@ -26,9 +26,9 @@ import {
 } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
-import { BundleDataClient } from "../../src/clients";
+import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient, MockedMultiCallerClient, TestTokenClient } from "../mocks";
+import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk-v2";
 
@@ -190,7 +190,7 @@ export async function setupDataworker(
       spokePoolDeploymentBlocks
     );
 
-  const tokenClient = new TestTokenClient(spyLogger, relayer.address, {}, hubPoolClient);
+  const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
   // load events from. Dataworker needs a client mapped to every chain ID set in testChainIdList.

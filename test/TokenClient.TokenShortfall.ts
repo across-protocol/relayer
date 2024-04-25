@@ -1,5 +1,5 @@
 import { SpokePoolClient, TokenClient } from "../src/clients";
-import { MockConfigStoreClient, MockHubPoolClient, TestTokenClient } from "./mocks";
+import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
@@ -71,7 +71,7 @@ describe("TokenClient: Token shortfall", async function () {
     });
     hubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
 
-    tokenClient = new TestTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Captures and tracks token shortfall", async function () {

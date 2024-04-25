@@ -11,13 +11,7 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import {
-  MockInventoryClient,
-  MockProfitClient,
-  MockConfigStoreClient,
-  MockedMultiCallerClient,
-  TestTokenClient,
-} from "./mocks";
+import { MockInventoryClient, MockProfitClient, MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 import {
   BigNumber,
   Contract,
@@ -117,7 +111,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
-    tokenClient = new TestTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     await profitClient.initToken(l1Token);
 

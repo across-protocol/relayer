@@ -17,7 +17,7 @@ import {
   utf8ToHex,
   winston,
 } from "./utils";
-import { MockHubPoolClient, TestTokenClient } from "./mocks";
+import { MockHubPoolClient } from "./mocks";
 
 describe("TokenClient: Origin token approval", async function () {
   let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
@@ -99,7 +99,7 @@ describe("TokenClient: Origin token approval", async function () {
     hubPoolClient.setTokenMapping(l1Token_2.address, originChainId, weth_1.address);
     hubPoolClient.setTokenMapping(l1Token_2.address, destinationChainId, weth_2.address);
 
-    tokenClient = new TestTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Executes expected L2 token approvals and produces logs", async function () {

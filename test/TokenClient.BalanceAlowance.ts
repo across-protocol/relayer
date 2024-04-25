@@ -1,6 +1,6 @@
 import { ConfigStoreClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
-import { MockHubPoolClient, TestTokenClient } from "./mocks";
+import { MockHubPoolClient } from "./mocks";
 import {
   Contract,
   SignerWithAddress,
@@ -99,7 +99,7 @@ describe("TokenClient: Balance and Allowance", async function () {
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    tokenClient = new TestTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Fetches all associated balances", async function () {
