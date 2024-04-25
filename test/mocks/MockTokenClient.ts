@@ -1,7 +1,13 @@
 import { BigNumber, toBN } from "../../src/utils";
 import { TokenClient } from "../../src/clients";
 
-export class MockTokenClient extends TokenClient {
+export class TestTokenClient extends TokenClient {
+  protected override async getRedis(): Promise<undefined> {
+    return;
+  }
+}
+
+export class MockTokenClient extends TestTokenClient {
   public override tokenData: { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } } =
     {};
   public tokenShortfall: {

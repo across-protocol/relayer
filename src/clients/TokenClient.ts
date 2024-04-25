@@ -1,5 +1,5 @@
 import { HubPoolClient, SpokePoolClient } from ".";
-import { V3Deposit } from "../interfaces";
+import { CachingMechanismInterface, V3Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -238,9 +238,10 @@ export class TokenClient {
     token: Contract,
     blockTag: number | "latest"
   ): Promise<BigNumber> {
-    const redis = await getRedisCache(this.logger);
+    const key = await this._getAllowanceCacheKey(spokePoolClient, token.address);
+    const redis = await this.getRedis();
     if (redis) {
-      const result = await redis.get<string>(await this._getAllowanceCacheKey(spokePoolClient, token.address));
+      const result = await redis.get<string>(key);
       if (result !== null) {
         return toBN(result);
       }
@@ -250,7 +251,7 @@ export class TokenClient {
     });
     if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
       // Save allowance in cache with no TTL as these should be exhausted.
-      await redis.set(await this._getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
+      await redis.set(key, MAX_SAFE_ALLOWANCE);
     }
     return allowance;
   }
@@ -260,7 +261,7 @@ export class TokenClient {
   }
 
   private async _getBondToken(): Promise<string> {
-    const redis = await getRedisCache(this.logger);
+    const redis = await this.getRedis();
     if (redis) {
       const cachedBondToken = await redis.get<string>(this._getBondTokenCacheKey());
       if (cachedBondToken !== null) {
@@ -282,5 +283,9 @@ export class TokenClient {
       this.logger.warn({ at: "TokenBalanceClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
     }
     return hasData;
+  }
+
+  protected async getRedis(): Promise<CachingMechanismInterface | undefined> {
+    return getRedisCache(this.logger);
   }
 }
