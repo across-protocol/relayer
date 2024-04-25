@@ -143,7 +143,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 10, // 12s/block
+  1: 5, // 12s/block
   10: 60, // 2s/block
   137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
