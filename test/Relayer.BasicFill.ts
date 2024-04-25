@@ -14,7 +14,7 @@ import {
   repaymentChainId,
 } from "./constants";
 import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
-import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import { MockedMultiCallerClient, TestTokenClient } from "./mocks/MockMultiCallerClient";
 import {
   BigNumber,
   Contract,
@@ -131,7 +131,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TestTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);

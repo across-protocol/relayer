@@ -13,6 +13,7 @@ import {
   toBNWei,
   winston,
 } from "./utils";
+import { TestTokenClient } from "./mocks";
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_2: Contract;
@@ -58,7 +59,7 @@ describe("TokenClient: Token shortfall", async function () {
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
     const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TestTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Captures and tracks token shortfall", async function () {

@@ -16,6 +16,7 @@ import {
   utf8ToHex,
   winston,
 } from "./utils";
+import { TestTokenClient } from "./mocks";
 
 let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract, l1Token_1: Contract;
@@ -69,7 +70,7 @@ describe("TokenClient: Origin token approval", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TestTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Executes expected L2 token approvals and produces logs", async function () {

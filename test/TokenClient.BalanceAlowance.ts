@@ -11,6 +11,7 @@ import {
   toBNWei,
   winston,
 } from "./utils";
+import { TestTokenClient } from "./mocks";
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
@@ -56,7 +57,7 @@ describe("TokenClient: Balance and Allowance", async function () {
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
     const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TestTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Fetches all associated balances", async function () {
