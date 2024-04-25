@@ -115,13 +115,12 @@ export class ArbitrumAdapter extends CCTPAdapter {
       }
     }
 
-    const results = await Promise.all(promises);
+    const [results, resolvedCCTPEvents] = await Promise.all([
+      Promise.all(promises),
+      Promise.all(this.monitoredAddresses.map((monitoredAddress) => cctpOutstandingTransfersPromise[monitoredAddress])),
+    ]);
     const resultingCCTPEvents: Record<string, SortableEvent[]> = Object.fromEntries(
-      await Promise.all(
-        Object.entries(cctpOutstandingTransfersPromise).map(async ([monitoredAddress, promise]) => {
-          return [monitoredAddress, await promise];
-        })
-      )
+      this.monitoredAddresses.map((monitoredAddress, idx) => [monitoredAddress, resolvedCCTPEvents[idx]])
     );
 
     // 2 events per token.
