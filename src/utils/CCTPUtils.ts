@@ -26,6 +26,16 @@ export function cctpAddressToBytes32(address: string): string {
 }
 
 /**
+ * Used to convert a 32-byte hex string with padding to a standard ETH address.
+ * @param bytes32 The 32-byte hex string to convert.
+ * @returns The ETH address representation of the 32-byte hex string.
+ */
+export function cctpBytes32ToAddress(bytes32: string): string {
+  // Grab the last 20 bytes of the 32-byte hex string
+  return ethers.utils.getAddress(ethers.utils.hexDataSlice(bytes32, 12));
+}
+
+/**
  * The CCTP Message Transmitter contract updates a local dictionary for each source domain / nonce it receives. It won't
  * attempt to process a message if the nonce has been seen before. If the nonce has been used before, the message has
  * been received and processed already. This function replicates the `function _hashSourceAndNonce(uint32 _source, uint64 _nonce)` function

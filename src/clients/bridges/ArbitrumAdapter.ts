@@ -88,10 +88,15 @@ export class ArbitrumAdapter extends CCTPAdapter {
     const availableL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
     const promises: Promise<Event[]>[] = [];
+    const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
     const validTokens: string[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableL1Tokens) {
+        if (this.isL1TokenUsdc(l1Token)) {
+          cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
+        }
+
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
 
@@ -111,6 +116,13 @@ export class ArbitrumAdapter extends CCTPAdapter {
     }
 
     const results = await Promise.all(promises);
+    const resultingCCTPEvents: Record<string, SortableEvent[]> = Object.fromEntries(
+      await Promise.all(
+        Object.entries(cctpOutstandingTransfersPromise).map(async ([monitoredAddress, promise]) => {
+          return [monitoredAddress, await promise];
+        })
+      )
+    );
 
     // 2 events per token.
     const numEventsPerMonitoredAddress = 2 * validTokens.length;
@@ -148,6 +160,13 @@ export class ArbitrumAdapter extends CCTPAdapter {
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
         assign(eventsStorage, [monitoredAddress, l1Token], events);
       });
+      if (isDefined(resultingCCTPEvents[monitoredAddress])) {
+        assign(
+          this.l1DepositInitiatedEvents,
+          [monitoredAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]],
+          resultingCCTPEvents[monitoredAddress]
+        );
+      }
     }
 
     return this.computeOutstandingCrossChainTransfers(validTokens);

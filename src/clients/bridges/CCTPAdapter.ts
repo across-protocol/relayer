@@ -1,4 +1,5 @@
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../common";
+import { SortableEvent } from "../../interfaces";
 import {
   BigNumber,
   Contract,
@@ -7,8 +8,13 @@ import {
   assert,
   bnZero,
   compareAddressesSimple,
+  spreadEventWithBlockNumber,
 } from "../../utils";
-import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
+import {
+  cctpAddressToBytes32,
+  cctpBytes32ToAddress,
+  retrieveOutstandingCCTPBridgeUSDCTransfers,
+} from "../../utils/CCTPUtils";
 import { BaseAdapter } from "./BaseAdapter";
 
 /**
@@ -88,15 +94,13 @@ export abstract class CCTPAdapter extends BaseAdapter {
    * @param address The address to check for outstanding transfers
    * @returns The outstanding transfers for the given address
    */
-  protected async getOutstandingCctpTransfers(
-    address: string
-  ): Promise<{ totalAmount: BigNumber; depositTxHashes: string[] }> {
+  protected async getOutstandingCctpTransfers(address: string): Promise<SortableEvent[]> {
     const { l1SearchConfig } = this.getUpdatedSearchConfigs();
 
     const l1TokenMessenger = this.getL1CCTPTokenMessengerBridge();
     const l2MessageTransmitter = this.getL2CCTPMessageTransmitter();
 
-    const outstandingTxns = await retrieveOutstandingCCTPBridgeUSDCTransfers(
+    const events = await retrieveOutstandingCCTPBridgeUSDCTransfers(
       l1TokenMessenger,
       l2MessageTransmitter,
       l1SearchConfig,
@@ -106,13 +110,10 @@ export abstract class CCTPAdapter extends BaseAdapter {
       address
     );
 
-    const totalAmount = outstandingTxns.reduce((acc, { args: { amount } }) => acc.add(amount.toString()), bnZero);
-    const depositTxHashes = outstandingTxns.map(({ transactionHash }) => transactionHash);
-
-    return {
-      totalAmount,
-      depositTxHashes,
-    };
+    return events.map((event) => ({
+      ...spreadEventWithBlockNumber(event),
+      to: cctpBytes32ToAddress(event.args.mintRecipient),
+    }));
   }
 
   /**
