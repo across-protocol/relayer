@@ -56,7 +56,7 @@ export abstract class CCTPAdapter extends BaseAdapter {
    * @returns Whether or not this token is USDC on the target chain
    */
   protected isL2TokenUsdc(l2Token: string): boolean {
-    return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId]);
+    return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP._USDC.addresses[this.chainId]);
   }
 
   /**
@@ -134,8 +134,8 @@ export abstract class CCTPAdapter extends BaseAdapter {
   ): Promise<TransactionResponse> {
     // Sanity check to ensure that the token is USDC as this is the only token
     // configured to be bridged via CCTP
-    assert(this.isL1TokenUsdc(l1Token), "Token must be USDC from the hub chain");
-    assert(this.isL2TokenUsdc(l2Token), "Token must be USDC on the target chain");
+    assert(this.isL1TokenUsdc(l1Token), "Token must be native USDC from the hub chain");
+    assert(this.isL2TokenUsdc(l2Token), "Token must be native USDC on the target chain");
 
     const l1Bridge = this.getL1CCTPTokenMessengerBridge();
     const l1BridgeMethod = "depositForBurn";
