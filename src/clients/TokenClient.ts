@@ -213,7 +213,7 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: string[],
     signer: Signer
-  ): Promise<{ tokenData: Record<string, { balance: BigNumber; allowance: BigNumber }> }> {
+  ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const tokens = hubPoolTokens
       .map((address) => {
         try {
