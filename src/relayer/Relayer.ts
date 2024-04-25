@@ -520,7 +520,7 @@ export class Relayer {
     const { spokePoolClients, multiCallerClient } = this.clients;
     this.logger.debug({
       at: "Relayer::fillRelay",
-      message: "Filling v3 deposit.",
+      message: `Filling v3 deposit ${deposit.depositId} with repayment on ${repaymentChainId}.`,
       deposit,
       repaymentChainId,
       realizedLpFeePct,
@@ -612,30 +612,18 @@ export class Relayer {
         profitable,
         nativeGasCost: gasLimit,
         tokenGasCost: gasCost,
-        grossRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
+        netRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
       } = i === 0
         ? topPreferredChainProfitability
         : await profitClient.isFillProfitable(deposit, lpFeePct, hubPoolToken, _preferredChainId));
 
-      this.logger.debug({
-        at: "Relayer::resolveRepaymentChain",
-        message: `Preferred chain #${i + 1} (${_preferredChainId} in eligible chains ${JSON.stringify(
-          preferredChainIds
-        )}) is${profitable ? "" : " not"} profitable.`,
-        deposit: {
-          originChain,
-          depositId,
-          destinationChain,
-          transactionHash,
-          token: hubPoolToken.symbol,
-          inputAmount,
-          outputAmount,
-        },
-        preferredChainLpFeePct: `${formatFeePct(lpFeePct)}%`,
-        preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
-      });
-
       if (profitable) {
+        this.logger.debug({
+          at: "Relayer::resolveRepaymentChain",
+          message: `Selected preferred repayment chain ${_preferredChainId} for deposit ${depositId}, #${
+            i + 1
+          } in eligible chains ${JSON.stringify(preferredChainIds)} list.`,
+        });
         preferredChainId = _preferredChainId;
         break;
       }
@@ -672,13 +660,13 @@ export class Relayer {
         profitable,
         nativeGasCost: gasLimit,
         tokenGasCost: gasCost,
-        grossRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
+        netRelayerFeePct: relayerFeePct, // gross relayer fee is equal to total fee minus the lp fee.
       } = topPreferredChainProfitability);
       assert(!profitable, `Preferred chain ${destinationChainId} should not be profitable.`);
       lpFeePct = lpFeePcts[0];
       if (fallbackProfitability.profitable) {
         preferredChainId = preferredChainIds[0];
-        const deltaRelayerFee = relayerFeePct.sub(fallbackProfitability.grossRelayerFeePct);
+        const deltaRelayerFee = relayerFeePct.sub(fallbackProfitability.netRelayerFeePct);
         // This is the delta in the gross relayer fee. If negative, then the destination chain would have had a higher
         // gross relayer fee, and therefore represents a virtual loss to the relayer. However, the relayer is
         // maintaining its inventory allocation by sticking to its preferred repayment chain.
@@ -686,7 +674,7 @@ export class Relayer {
           at: "Relayer::resolveRepaymentChain",
           message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chains ${JSON.stringify(
             preferredChainIds
-          )} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on top preferred chain ${preferredChainId} as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
+          )} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on top preferred chain ${preferredChainId} as favor to depositor who assumed repayment on destination chain in their quote. Delta in net relayer fee: ${formatFeePct(
             deltaRelayerFee
           )}%`,
           deposit: {
@@ -703,7 +691,7 @@ export class Relayer {
           deltaLpFeePct: `${formatFeePct(destinationChainLpFeePct.sub(lpFeePct))}%`,
           // relayer fee is the gross relayer fee using the destination chain lp fee: inputAmount - outputAmount - lpFee.
           preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
-          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
+          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.netRelayerFeePct)}%`,
           deltaRelayerFee: `${formatFeePct(deltaRelayerFee)}%`,
         });
 
@@ -737,7 +725,7 @@ export class Relayer {
           preferredChainLpFeePct: `${formatFeePct(lpFeePct)}%`,
           destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
           preferredChainRelayerFeePct: `${formatFeePct(relayerFeePct)}%`,
-          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.grossRelayerFeePct)}%`,
+          destinationChainRelayerFeePct: `${formatFeePct(fallbackProfitability.netRelayerFeePct)}%`,
         });
       }
     }
