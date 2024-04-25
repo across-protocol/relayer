@@ -1,5 +1,5 @@
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
-import { MockConfigStoreClient, TestTokenClient } from "./mocks";
+import { SpokePoolClient, TokenClient } from "../src/clients";
+import { MockConfigStoreClient, MockHubPoolClient, TestTokenClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
@@ -14,14 +14,20 @@ import {
   winston,
 } from "./utils";
 
-let spokePool_1: Contract, spokePool_2: Contract;
-let erc20_2: Contract;
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let owner: SignerWithAddress, spyLogger: winston.Logger;
-let tokenClient: TokenClient; // tested
-let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
-
 describe("TokenClient: Token shortfall", async function () {
+  let spokePool_1: Contract, spokePool_2: Contract;
+  let erc20_2: Contract;
+  let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+  let owner: SignerWithAddress, spyLogger: winston.Logger;
+  let tokenClient: TokenClient; // tested
+  let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+
+  const updateAllClients = async () => {
+    await spokePoolClient_1.update();
+    await spokePoolClient_2.update();
+    await tokenClient.update();
+  };
+
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
@@ -35,7 +41,7 @@ describe("TokenClient: Token shortfall", async function () {
       erc20: erc20_2,
       deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    const { hubPool } = await deployAndConfigureHubPool(owner, [], ZERO_ADDRESS, ZERO_ADDRESS);
+    const { hubPool, l1Token_1 } = await deployAndConfigureHubPool(owner, [], ZERO_ADDRESS, ZERO_ADDRESS);
     const { configStore } = await deployConfigStore(owner, []);
 
     const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
@@ -55,8 +61,15 @@ describe("TokenClient: Token shortfall", async function () {
       spokePool2DeploymentBlock
     );
 
-    const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
+    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    const hubPoolClient = new MockHubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
+
+    hubPoolClient.addL1Token({
+      symbol: await l1Token_1.symbol(),
+      decimals: await l1Token_1.decimals(),
+      address: l1Token_1.address,
+    });
+    hubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
 
     tokenClient = new TestTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
@@ -96,9 +109,3 @@ describe("TokenClient: Token shortfall", async function () {
     expect(tokenShortFallData2).to.deep.equal(tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address]);
   });
 });
-
-async function updateAllClients() {
-  await spokePoolClient_1.update();
-  await spokePoolClient_2.update();
-  await tokenClient.update();
-}
