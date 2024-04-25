@@ -90,7 +90,9 @@ export class AdapterManager {
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
   // (not the ERC20), or if the relayer expects to be sent ETH perhaps as a gas refund from an original L1 to L2
-  // deposit.
+  // deposit. This currently happens on Arbitrum, where the relayer address is set as the Arbitrum_Adapter's
+  // L2 refund recipient, and on ZkSync, because the relayer is set as the refund recipient when rebalancing
+  // inventory from L1 to ZkSync via the AtomicDepositor.
   async wrapEthIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
       this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
