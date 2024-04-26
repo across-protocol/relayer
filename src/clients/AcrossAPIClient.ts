@@ -1,6 +1,5 @@
 import _ from "lodash";
 import axios, { AxiosError } from "axios";
-import { SpokePoolClientsByChain } from "../interfaces";
 import {
   bnZero,
   isDefined,
@@ -10,6 +9,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   getRedisCache,
+  bnUint256Max as uint256Max,
 } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 
@@ -19,7 +19,7 @@ export interface DepositLimits {
 
 export class AcrossApiClient {
   private endpoint = "https://app.across.to/api";
-
+  private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
 
   public updatedLimits = false;
@@ -28,17 +28,19 @@ export class AcrossApiClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
-    readonly spokePoolClients: SpokePoolClientsByChain,
+    chainIds: number[],
     readonly tokensQuery: string[] = [],
     readonly timeout: number = 3000
   ) {
     if (Object.keys(tokensQuery).length === 0) {
-      this.tokensQuery = Object.entries(TOKEN_SYMBOLS_MAP).map(([, details]) => details.addresses[CHAIN_IDs.MAINNET]);
+      this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[CHAIN_IDs.MAINNET]);
     }
+
+    this.chainIds = chainIds.filter((chainId) => chainId !== hubPoolClient.chainId);
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
-    if (ignoreLimits) {
+    if (ignoreLimits || this.chainIds.length === 0) {
       this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits" });
       return;
     }
@@ -61,37 +63,29 @@ export class AcrossApiClient {
     this.updatedLimits = false;
 
     // /limits
-    // - Store the max deposit limit for each L1 token. DestinationChainId doesn't matter since HubPool
-    // liquidity is shared for all tokens and affects maxDeposit. We don't care about maxDepositInstant
-    // when deciding whether a relay will be refunded.
-    const mainnetSpokePoolClient = this.spokePoolClients[hubPoolClient.chainId];
-    if (!mainnetSpokePoolClient.isUpdated) {
-      throw new Error("Mainnet SpokePoolClient for chainId must be updated before AcrossAPIClient");
-    }
-
+    // Store the max deposit limit for each L1 token. The origin chain can be any supported chain
+    // expect the HubPool chain. This assumes the worst-case bridging delay of SpokePool -> mainnet.
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
         const l2TokenAddresses = getL2TokenAddresses(l1Token);
-        const destinationChains = Object.keys(l2TokenAddresses)
+        const originChainIds = Object.keys(l2TokenAddresses)
           .map((chainId) => Number(chainId))
           .filter((chainId) => {
             try {
-              // Verify that a token mapping exists on the destination chain.
+              // Verify that a token mapping exists on the origin chain.
               hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId); // throws if not found.
-              return (
-                chainId !== hubPoolClient.chainId && Object.keys(this.spokePoolClients).includes(chainId.toString())
-              );
+              return this.chainIds.includes(chainId);
             } catch {
               return false;
             }
           });
 
         // No valid deposit routes from mainnet for this token. We won't record a limit for it.
-        if (destinationChains.length === 0) {
+        if (originChainIds.length === 0) {
           return undefined;
         }
 
-        return this.callLimits(l1Token, destinationChains);
+        return this.callLimits(l1Token, originChainIds);
       })
     );
 
@@ -116,7 +110,12 @@ export class AcrossApiClient {
     this.updatedLimits = true;
   }
 
-  getLimit(l1Token: string): BigNumber {
+  getLimit(originChainId: number, l1Token: string): BigNumber {
+    // Funds can be bridged from mainnet to anywhere, so don't apply any constraint.
+    if (originChainId === this.hubPoolClient.chainId) {
+      return uint256Max;
+    }
+
     if (!this.limits[l1Token]) {
       this.logger.warn({
         at: "AcrossApiClient::getLimit",
@@ -127,24 +126,24 @@ export class AcrossApiClient {
     return this.limits[l1Token];
   }
 
-  getLimitsCacheKey(l1Token: string, destinationChainId: number): string {
-    return `limits_api_${l1Token}_${destinationChainId}`;
+  getLimitsCacheKey(l1Token: string, originChainId: number): string {
+    return `limits_api_${l1Token}_${originChainId}`;
   }
 
-  private async callLimits(
-    l1Token: string,
-    destinationChainIds: number[],
-    timeout = this.timeout
-  ): Promise<DepositLimits> {
+  private async callLimits(l1Token: string, originChainIds: number[], timeout = this.timeout): Promise<DepositLimits> {
     const path = "limits";
     const url = `${this.endpoint}/${path}`;
 
     const redis = await getRedisCache();
-    for (const destinationChainId of destinationChainIds) {
-      const params = { token: l1Token, destinationChainId, originChainId: 1 };
+
+    // Assume worst-case payout on mainnet.
+    const destinationChainId = this.hubPoolClient.chainId;
+    for (const originChainId of originChainIds) {
+      const token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, originChainId);
+      const params = { token, originChainId, destinationChainId };
       if (redis) {
         try {
-          const cachedLimits = await redis.get<string>(this.getLimitsCacheKey(l1Token, destinationChainId));
+          const cachedLimits = await redis.get<string>(this.getLimitsCacheKey(l1Token, originChainId));
           if (cachedLimits !== null) {
             return { maxDeposit: BigNumber.from(cachedLimits) };
           }
@@ -153,7 +152,7 @@ export class AcrossApiClient {
             at: "AcrossAPIClient",
             message: "Failed to get cached limits data",
             l1Token,
-            destinationChainId,
+            originChainId,
             error: e,
           });
         }
@@ -175,7 +174,7 @@ export class AcrossApiClient {
           const baseTtl = 300;
           // Apply a random margin to spread expiry over a larger time window.
           const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
-          await redis.set(this.getLimitsCacheKey(l1Token, destinationChainId), result.data.maxDeposit.toString(), ttl);
+          await redis.set(this.getLimitsCacheKey(l1Token, originChainId), result.data.maxDeposit.toString(), ttl);
         }
         return result.data;
       } catch (err) {

@@ -119,18 +119,13 @@ export async function constructRelayerClients(
     );
   }
 
-  // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
-  // destination chain list.
-  const destinationSpokePoolClients =
-    config.relayerDestinationChains.length === 0
-      ? spokePoolClients
-      : Object.fromEntries(
-          Object.keys(spokePoolClients)
-            .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
-            .map((chainId) => [chainId, spokePoolClients[chainId]])
-        );
+  // Determine which origin chains to query limits for.
+  const srcChainIds =
+    config.relayerOriginChains.length > 0
+      ? config.relayerOriginChains
+      : Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, srcChainIds, config.relayerTokens);
 
-  const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, destinationSpokePoolClients, config.relayerTokens);
   const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
