@@ -147,16 +147,17 @@ export class Relayer {
       return false;
     }
 
-    // We query the relayer API to get the deposit limits for different token and destination combinations.
+    // We query the relayer API to get the deposit limits for different token and origin combinations.
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
     const { inputAmount } = deposit;
-    if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
+    const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
+    if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
         message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-        limit: acrossApiClient.getLimit(l1Token.address),
+        limit,
         l1Token: l1Token.address,
         depositId,
         inputToken,
