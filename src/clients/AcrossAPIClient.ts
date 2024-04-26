@@ -40,6 +40,7 @@ export class AcrossApiClient {
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
+    // If no chainIds are specified, the origin chain is assumed to be the HubPool chain, so skip update.
     if (ignoreLimits || this.chainIds.length === 0) {
       this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits" });
       return;
