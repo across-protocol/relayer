@@ -64,7 +64,7 @@ export class AcrossApiClient {
 
     // /limits
     // Store the max deposit limit for each L1 token. The origin chain can be any supported chain
-    // expect the HubPool chain. This assumes the worst-case bridging delay of SpokePool -> mainnet.
+    // expect the HubPool chain. This assumes the worst-case bridging delay of !mainnet -> mainnet.
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
         const l2TokenAddresses = getL2TokenAddresses(l1Token);
