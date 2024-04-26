@@ -43,11 +43,13 @@ export class AcrossApiClient {
       return;
     }
 
+    const { hubPoolClient } = this;
+
     // Note: Skip tokens not currently enabled in HubPool as we won't be able to relay them.
-    if (!this.hubPoolClient.isUpdated) {
+    if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient must be updated before AcrossAPIClient");
     }
-    const enabledTokens = this.hubPoolClient.getL1Tokens().map((token) => token.address);
+    const enabledTokens = hubPoolClient.getL1Tokens().map((token) => token.address);
     const tokensQuery = this.tokensQuery.filter((token) => enabledTokens.includes(token));
     this.logger.debug({
       at: "AcrossAPIClient",
@@ -62,7 +64,7 @@ export class AcrossApiClient {
     // - Store the max deposit limit for each L1 token. DestinationChainId doesn't matter since HubPool
     // liquidity is shared for all tokens and affects maxDeposit. We don't care about maxDepositInstant
     // when deciding whether a relay will be refunded.
-    const mainnetSpokePoolClient = this.spokePoolClients[this.hubPoolClient.chainId];
+    const mainnetSpokePoolClient = this.spokePoolClients[hubPoolClient.chainId];
     if (!mainnetSpokePoolClient.isUpdated) {
       throw new Error("Mainnet SpokePoolClient for chainId must be updated before AcrossAPIClient");
     }
@@ -73,11 +75,15 @@ export class AcrossApiClient {
         const destinationChains = Object.keys(l2TokenAddresses)
           .map((chainId) => Number(chainId))
           .filter((chainId) => {
-            return (
-              chainId !== CHAIN_IDs.MAINNET &&
-              mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, chainId) &&
-              Object.keys(this.spokePoolClients).includes(chainId.toString())
-            );
+            try {
+              // Verify that a token mapping exists on the destination chain.
+              hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId); // throws if not found.
+              return (
+                chainId !== hubPoolClient.chainId && Object.keys(this.spokePoolClients).includes(chainId.toString())
+              );
+            } catch {
+              return false;
+            }
           });
 
         // No valid deposit routes from mainnet for this token. We won't record a limit for it.
