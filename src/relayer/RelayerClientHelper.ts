@@ -202,7 +202,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
     "FilledV3Relay",
-    "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
   ]);
