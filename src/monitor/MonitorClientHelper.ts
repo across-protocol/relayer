@@ -81,7 +81,6 @@ export async function constructMonitorClients(
 
 export async function updateMonitorClients(clients: MonitorClients): Promise<void> {
   await updateSpokePoolClients(clients.spokePoolClients, [
-    "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
     "V3FundsDeposited",

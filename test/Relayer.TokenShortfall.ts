@@ -133,6 +133,7 @@ describe("Relayer: Token balance shortfall", async function () {
       await profitClient.initToken(erc20);
     }
 
+    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -154,7 +155,7 @@ describe("Relayer: Token balance shortfall", async function () {
           null,
           new MockCrossChainTransferClient()
         ),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
       },
       {
         relayerTokens: [],
