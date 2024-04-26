@@ -168,14 +168,24 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
   it("Correctly sends tokens to chain: Polygon", async function () {
     const chainId = CHAIN_IDs.POLYGON;
-    //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
-    expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
-      relayer.address, // user
-      mainnetTokens.usdc, // root token
-      bnToHex(amountToSend) // deposit data. bytes encoding of the amount to send.
+
+    //  CCTP tokens:
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      false,
+      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
+    );
+    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
+      amountToSend, // amount
+      chainIdsToCctpDomains[chainId], // destinationDomain
+      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      mainnetTokens.usdc // token
     );
 
+    //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.dai, amountToSend);
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
       relayer.address, // user
@@ -200,16 +210,24 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
   it("Correctly sends tokens to chain: Arbitrum", async function () {
     const chainId = CHAIN_IDs.ARBITRUM;
-    //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
-    expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
-      mainnetTokens.usdc, // token
-      relayer.address, // to
-      amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+
+    //  CCTP tokens:
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      false,
+      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
     );
+    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
+      amountToSend, // amount
+      chainIdsToCctpDomains[chainId], // destinationDomain
+      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      mainnetTokens.usdc // token
+    );
+
+    //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.wbtc, amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens.wbtc, // token

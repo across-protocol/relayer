@@ -147,7 +147,7 @@ export abstract class CCTPAdapter extends BaseAdapter {
       l1Bridge,
       l1BridgeMethod,
       l1BridgeArgs,
-      2,
+      2, // Gas multiplier
       bnZero,
       simMode
     );
