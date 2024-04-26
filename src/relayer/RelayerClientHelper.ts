@@ -217,10 +217,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   const apiClientUpdate = acrossApiClient.update(config.ignoreLimits);
 
   // InventoryClient updates depend on the tokenClient and SpokePoolClients.
-  await Promise.all([
-    clients.tokenClient.update(),
-    updateSpokePoolClients(spokePoolClients, spokePoolEvents),
-  ]);
+  await Promise.all([clients.tokenClient.update(), updateSpokePoolClients(spokePoolClients, spokePoolEvents)]);
 
   await Promise.all([
     inventoryClient.update(),
@@ -230,10 +227,5 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // Refresh the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
   clients.tokenClient.clearTokenData();
-  await Promise.all([
-    profitClientUpdate,
-    inputTokenApprovals,
-    apiClientUpdate,
-    tokenClient.update(),
-  ]);
+  await Promise.all([profitClientUpdate, inputTokenApprovals, apiClientUpdate, tokenClient.update()]);
 }
