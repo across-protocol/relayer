@@ -111,7 +111,7 @@ export class AcrossApiClient {
   }
 
   getLimit(originChainId: number, l1Token: string): BigNumber {
-    // Funds can be bridged from mainnet to anywhere, so don't apply any constraint.
+    // Funds can be JIT-bridged from mainnet to anywhere, so don't apply any constraint.
     if (originChainId === this.hubPoolClient.chainId) {
       return uint256Max;
     }
