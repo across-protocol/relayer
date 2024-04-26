@@ -17,6 +17,7 @@ import {
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
+  resolveSpokePoolActivationBlock,
   updateClients,
   updateSpokePoolClients,
 } from "../common";
@@ -49,25 +50,14 @@ async function indexedSpokePoolClient(
 
   // Set up Spoke signers and connect them to spoke pool contract objects.
   const signer = baseSigner.connect(await getProvider(chainId));
-
-  const blockFinder = undefined;
-  const redis = await getRedisCache(hubPoolClient.logger);
-
-  const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, hubPoolClient.latestBlockSearched);
-  const spokePool = new Contract(spokePoolAddr, SpokePool.abi, signer);
-  const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
-  const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
-
-  // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
-  const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
-  const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
+  const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId);
 
   const spokePoolClient = new IndexedSpokePoolClient(
     logger,
-    spokePool,
+    SpokePool.connect(spokePoolAddr, signer),
     hubPoolClient,
     chainId,
-    registrationBlock,
+    await resolveSpokePoolActivationBlock(chainId, hubPoolClient),
     worker
   );
   spokePoolClient.init();
