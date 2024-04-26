@@ -115,7 +115,7 @@ export async function hasCCTPMessageBeenProcessed(
   contract: ethers.Contract
 ): Promise<boolean> {
   const nonceHash = hashCCTPSourceAndNonce(sourceDomain, nonce);
-  const resultingCall = (await contract.callStatic.usedNonces(nonceHash)) as BigNumber;
+  const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
   // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
   return (resultingCall ?? bnZero).toNumber() === 1;
 }
