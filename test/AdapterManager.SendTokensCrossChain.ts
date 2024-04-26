@@ -36,7 +36,7 @@ let adapterManager: AdapterManager; // tested
 let l1AtomicDepositor: FakeContract;
 
 // Optimism contracts
-let l1OptimismDaiBridge: FakeContract, l1OptimismSnxBridge: FakeContract;
+let l1OptimismBridge: FakeContract, l1OptimismDaiBridge: FakeContract, l1OptimismSnxBridge: FakeContract;
 
 // Polygon contracts
 let l1PolygonRootChainManager: FakeContract;
@@ -62,6 +62,7 @@ const mainnetTokens = {
   dai: TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET],
   wbtc: TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET],
   snx: TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET],
+  bal: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET],
 } as const;
 
 const addAttrib = (obj: unknown) =>
@@ -118,6 +119,17 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
   it("Correctly sends tokens to chain: Optimism", async function () {
     const chainId = CHAIN_IDs.OPTIMISM;
+
+    //  ERC20 tokens:
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.bal, amountToSend);
+    expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
+      mainnetTokens.bal, // l1 token
+      getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
+      amountToSend, // amount
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      "0x" // data
+    );
+
     //  CCTP tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
@@ -274,6 +286,16 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc // token
     );
 
+    //  ERC20 tokens:
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.bal, amountToSend);
+    expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
+      mainnetTokens.bal, // l1 token
+      getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
+      amountToSend, // amount
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      "0x" // data
+    );
+
     // DAI should not be a custom token on base.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.dai, amountToSend);
     expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
@@ -322,6 +344,7 @@ async function constructChainSpecificFakes() {
   l1AtomicDepositor = await makeFake("atomicDepositor", CONTRACT_ADDRESSES[1].atomicDepositor.address);
 
   // Optimism contracts
+  l1OptimismBridge = await makeFake("ovmStandardBridge_10", CONTRACT_ADDRESSES[1].ovmStandardBridge_10.address);
   l1OptimismDaiBridge = await makeFake("daiOptimismBridge", CONTRACT_ADDRESSES[1].daiOptimismBridge.address);
   l1OptimismSnxBridge = await makeFake("snxOptimismBridge", CONTRACT_ADDRESSES[1].snxOptimismBridge.address);
 
