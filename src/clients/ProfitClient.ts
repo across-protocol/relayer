@@ -600,7 +600,6 @@ export class ProfitClient {
         (chainId) => !isDefined(totalGasCosts[chainId]) || totalGasCosts[chainId].nativeGasCost.eq(uint256Max)
       ),
       async (destinationChainId) => {
-        const currentGasCost = totalGasCosts[destinationChainId];
         const outputToken =
           destinationChainId === hubPoolClient.chainId
             ? hubToken
