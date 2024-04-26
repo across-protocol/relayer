@@ -267,12 +267,7 @@ async function run(argv: string[]): Promise<void> {
   };
 
   if (lookback > 0) {
-    const events = [
-      "V3FundsDeposited",
-      "FilledV3Relay",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot"
-    ];
+    const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     const _spokePool = spokePool.connect(quorumProvider);
     await Promise.all([
       resolveOldestTime(_spokePool, startBlock),
