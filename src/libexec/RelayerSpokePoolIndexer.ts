@@ -223,10 +223,10 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const provider = await getProvider(chainId);
+  const quorumProvider = await getProvider(chainId);
   const blockFinder = undefined;
   const cache = await getRedisCache();
-  const latestBlock = await provider.getBlock("latest");
+  const latestBlock = await quorumProvider.getBlock("latest");
 
   const deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
   const startBlock = Math.max(
@@ -257,25 +257,21 @@ async function run(argv: string[]): Promise<void> {
     stop = true;
   });
 
-  // EnabledDepositRoutes should always look back over the entire history.
-  // @note: An improvement is on the way...
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and dedpulication.
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Scraping previous ${chain} events.`, opts });
 
   // The SpokePoolClient reports on the timestamp of the oldest block searched. The relayer likely doesn't need this,
   // but resolve it anyway for consistency with the main SpokePoolClient implementation.
-  const resolveOldestTime = async (blockTag: ethersProviders.BlockTag) => {
-    oldestTime = (await spokePool.connect(provider).getCurrentTime({ blockTag })).toNumber();
+  const resolveOldestTime = async (spokePool: Contract, blockTag: ethersProviders.BlockTag) => {
+    oldestTime = (await spokePool.getCurrentTime({ blockTag })).toNumber();
   };
 
   if (lookback > 0) {
+    const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
+    const _spokePool = spokePool.connect(quorumProvider);
     await Promise.all([
-      resolveOldestTime(startBlock),
-      scrapeEvents(spokePool.connect(provider), "EnabledDepositRoute", { ...opts, lookback: undefined }),
-      scrapeEvents(spokePool.connect(provider), "V3FundsDeposited", opts),
-      scrapeEvents(spokePool.connect(provider), "FilledV3Relay", opts),
-      scrapeEvents(spokePool.connect(provider), "RelayedRootBundle", opts),
-      scrapeEvents(spokePool.connect(provider), "ExecutedRelayerRefundRoot", opts),
+      resolveOldestTime(_spokePool, startBlock),
+      ...events.map((event) => scrapeEvents(_spokePool, event, opts)),
     ]);
   }
 
