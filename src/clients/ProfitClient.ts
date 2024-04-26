@@ -593,16 +593,20 @@ export class ProfitClient {
     };
 
     // Pre-fetch total gas costs for relays on enabled chains.
+    const { totalGasCosts } = this;
     const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
-      const outputToken =
-        destinationChainId === hubPoolClient.chainId
-          ? hubToken
-          : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
-      assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
+      const currentGasCost = totalGasCosts[destinationChainId];
+      if (!isDefined(currentGasCost) || currentGasCost.nativeGasCost.eq(uint256Max)) {
+        const outputToken =
+          destinationChainId === hubPoolClient.chainId
+            ? hubToken
+            : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
+        assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
 
-      const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-      this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
+        const deposit = { ...sampleDeposit, destinationChainId, outputToken };
+        totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
+      }
     });
 
     this.logger.debug({

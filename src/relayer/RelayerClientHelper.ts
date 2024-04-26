@@ -151,7 +151,6 @@ export async function constructRelayerClients(
     config.relayerMessageGasMultiplier,
     config.relayerGasPadding
   );
-  await profitClient.update();
 
   // The relayer will originate cross chain rebalances from both its own EOA address and the atomic depositor address
   // so we should track both for accurate cross-chain inventory management.
@@ -212,6 +211,8 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "ExecutedRelayerRefundRoot",
   ];
 
+  const profitClientUpdate = clients.profitClient.update();
+
   // Update the token client before the inventory client has latest balances.
   await Promise.all([updateSpokePoolClients(spokePoolClients, spokePoolEvents), clients.tokenClient.update()]);
 
@@ -220,18 +221,25 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
       await clients.tokenClient.setOriginTokenApprovals();
     }
   };
+  const spokeTokenApprovalsUpdate = setSpokeTokenApprovals();
+  const apiClientUpdate = clients.acrossApiClient.update(config.ignoreLimits);
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
-    clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(), // Approve bridge contracts (if rebalancing enabled)
-    setSpokeTokenApprovals(), // Check SpokePool inputToken approvals on each chain.
   ]);
 
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
   // The token client needs route data, so wait for update before checking approvals.
   clients.tokenClient.clearTokenData();
-  await clients.tokenClient.update();
+
+  // Wait for any residual promises to resolve.
+  await Promise.all([
+    clients.tokenClient.update(),
+    profitClientUpdate,
+    apiClientUpdate,
+    spokeTokenApprovalsUpdate,
+  ]);
 }
