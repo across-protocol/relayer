@@ -140,6 +140,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
       null,
       mockCrossChainTransferClient
     );
+
+    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -151,7 +153,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: mockInventoryClient,
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
       },
       {
         relayerTokens: [],
