@@ -18,6 +18,7 @@ import {
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { persistDataToArweave } from "./DataworkerUtils";
+import { PendingRootBundle } from "../interfaces";
 
 config();
 let logger: winston.Logger;
@@ -154,11 +155,20 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }
 
+      // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
+      // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
+      // leaves to be executed but the proposed bundle was already executed, then exit early.
+      const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
+
       // Define a helper function to persist the bundle data to the DALayer.
       const persistBundle = async () => {
         // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
         // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
-        if (config.persistingBundleData && isDefined(bundleDataToPersist)) {
+        if (
+          config.persistingBundleData &&
+          isDefined(bundleDataToPersist) &&
+          pendingProposal.unclaimedPoolRebalanceLeafCount === 0
+        ) {
           await persistDataToArweave(
             clients.arweaveClient,
             bundleDataToPersist,
@@ -168,15 +178,16 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         }
       };
 
-      // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
-      // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
-      // leaves to be executed but the proposed bundle was already executed, then exit early.
       const executeDataworkerTransactions = async () => {
-        const pendingProposal = await clients.hubPoolClient.hubPool.rootBundleProposal();
-        const proposalCollision =
-          isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== "0";
+        const proposalCollision = isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
+        // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
+        // does not match the number of leaves the executor wants to execute, or the pending root bundle's
+        // challenge period timestamp is in the future. This latter case is rarer but it can
+        // happen if a proposal in addition to the root bundle execution happens in the middle of this executor run.
         const executorCollision =
-          pendingProposal.unclaimedPoolRebalanceLeafCount.toString() !== poolRebalanceLeafExecutionCount.toString();
+          poolRebalanceLeafExecutionCount > 0 &&
+          (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
+            pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
         if (proposalCollision || executorCollision) {
           logger[startupLogLevel(config)]({
             at: "Dataworker#index",

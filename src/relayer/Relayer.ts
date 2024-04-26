@@ -125,7 +125,7 @@ export class Relayer {
 
     // Skip deposit with message if sending fills with messages is not supported.
     if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
-      this.logger.warn({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
@@ -147,16 +147,17 @@ export class Relayer {
       return false;
     }
 
-    // We query the relayer API to get the deposit limits for different token and destination combinations.
+    // We query the relayer API to get the deposit limits for different token and origin combinations.
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
     const { inputAmount } = deposit;
-    if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
+    const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
+    if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
         message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-        limit: acrossApiClient.getLimit(l1Token.address),
+        limit,
         l1Token: l1Token.address,
         depositId,
         inputToken,
@@ -610,7 +611,7 @@ export class Relayer {
         // gross relayer fee, and therefore represents a virtual loss to the relayer. However, the relayer is
         // maintaining its inventory allocation by sticking to its preferred repayment chain.
         const deltaRelayerFee = relayerFeePct.sub(fallbackProfitability.grossRelayerFeePct);
-        this.logger.info({
+        this.logger[this.config.sendingRelaysEnabled ? "info" : "debug"]({
           at: "Relayer::resolveRepaymentChain",
           message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chain ${preferredChainId} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on preferred chain as favor to depositor who assumed repayment on destination chain in their quote. Delta in gross relayer fee: ${formatFeePct(
             deltaRelayerFee
@@ -722,7 +723,7 @@ export class Relayer {
       });
     });
 
-    this.logger.warn({
+    this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
       at: "Relayer::handleTokenShortfall",
       message: "Insufficient balance to fill all deposits 💸!",
       mrkdwn,
@@ -783,7 +784,7 @@ export class Relayer {
     });
 
     if (mrkdwn) {
-      this.logger.warn({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::handleUnprofitableFill",
         message: "Not relaying unprofitable deposits 🙅‍♂️!",
         mrkdwn,
