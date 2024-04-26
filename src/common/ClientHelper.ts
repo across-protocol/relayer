@@ -47,7 +47,11 @@ async function getSpokePoolSigners(
  * @param hubPoolClient HubPoolClient instance.
  * @returns SpokePool activation block number on chainId.
  */
-export async function resolveSpokePoolActivationBlock(chainId: number, hubPoolClient: HubPoolClient, blockNumber?: number): Promise<number> {
+export async function resolveSpokePoolActivationBlock(
+  chainId: number,
+  hubPoolClient: HubPoolClient,
+  blockNumber?: number
+): Promise<number> {
   const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, blockNumber);
   const key = `relayer_${chainId}_spokepool_${spokePoolAddr}_activation_block`;
 
@@ -70,7 +74,7 @@ export async function resolveSpokePoolActivationBlock(chainId: number, hubPoolCl
   const day = 24 * 3600;
   const minAge = 7 * day;
   if (isDefined(redis) && getCurrentTime() - timestamp > minAge) {
-    const ttl = Math.round(30 * day - (Math.random() * day)); // ttl 29 - 30 days.
+    const ttl = Math.round(30 * day - Math.random() * day); // ttl 29 - 30 days.
     await redis.set(key, activationBlock.toString(), ttl);
   }
 
