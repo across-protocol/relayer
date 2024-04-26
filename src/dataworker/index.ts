@@ -180,9 +180,14 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
       const executeDataworkerTransactions = async () => {
         const proposalCollision = isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
+        // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
+        // does not match the number of leaves the executor wants to execute, or the pending root bundle's
+        // challenge period timestamp is in the future. This latter case is rarer but it can
+        // happen if a proposal in addition to the root bundle execution happens in the middle of this executor run.
         const executorCollision =
           poolRebalanceLeafExecutionCount > 0 &&
-          pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount;
+          (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
+            pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
         if (proposalCollision || executorCollision) {
           logger[startupLogLevel(config)]({
             at: "Dataworker#index",
