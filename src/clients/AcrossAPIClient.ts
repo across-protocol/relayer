@@ -69,7 +69,7 @@ export class AcrossApiClient {
       tokensQuery.map((l1Token) => {
         const l2TokenAddresses = getL2TokenAddresses(l1Token);
         const originChainIds = Object.keys(l2TokenAddresses)
-          .map((chainId) => Number(chainId))
+          .map(Number)
           .filter((chainId) => {
             try {
               // Verify that a token mapping exists on the origin chain.
