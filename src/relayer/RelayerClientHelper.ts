@@ -208,7 +208,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // Start updates w/ no dependencies first, and wait on them last.
   const profitClientUpdate = profitClient.update();
   const inputTokenApprovals = config.sendingRelaysEnabled ? tokenClient.setOriginTokenApprovals() : async () => true;
-
   const apiClientUpdate = acrossApiClient.update(config.ignoreLimits);
 
   // InventoryClient updates depend on the tokenClient and SpokePoolClients.
