@@ -191,7 +191,13 @@ export async function constructRelayerClients(
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-  const { spokePoolClients } = clients;
+  const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = clients;
+
+  const setSpokeTokenApprovals = async (): Promise<void> => {
+    if (config.sendingRelaysEnabled) {
+      await clients.tokenClient.setOriginTokenApprovals();
+    }
+  };
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
@@ -205,30 +211,29 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "ExecutedRelayerRefundRoot",
   ];
 
-  const profitClientUpdate = clients.profitClient.update();
+  // Start updates w/ no dependencies first, and wait on them last.
+  const profitClientUpdate = profitClient.update();
+  const inputTokenApprovals = setSpokeTokenApprovals();
+  const apiClientUpdate = acrossApiClient.update(config.ignoreLimits);
 
-  // Update the token client before the inventory client has latest balances.
-  await Promise.all([updateSpokePoolClients(spokePoolClients, spokePoolEvents), clients.tokenClient.update()]);
-
-  const setSpokeTokenApprovals = async (): Promise<void> => {
-    if (config.sendingRelaysEnabled) {
-      await clients.tokenClient.setOriginTokenApprovals();
-    }
-  };
-  const spokeTokenApprovalsUpdate = setSpokeTokenApprovals();
-  const apiClientUpdate = clients.acrossApiClient.update(config.ignoreLimits);
-
-  // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
+  // InventoryClient updates depend on the tokenClient and SpokePoolClients.
   await Promise.all([
-    clients.inventoryClient.update(),
-    clients.inventoryClient.wrapL2EthIfAboveThreshold(),
-    clients.inventoryClient.setL1TokenApprovals(), // Approve bridge contracts (if rebalancing enabled)
+    clients.tokenClient.update(),
+    updateSpokePoolClients(spokePoolClients, spokePoolEvents),
   ]);
 
-  // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
-  // The token client needs route data, so wait for update before checking approvals.
-  clients.tokenClient.clearTokenData();
+  await Promise.all([
+    inventoryClient.update(),
+    inventoryClient.wrapL2EthIfAboveThreshold(),
+    inventoryClient.setL1TokenApprovals(), // Approve bridge contracts (if rebalancing enabled)
+  ]);
 
-  // Wait for any residual promises to resolve.
-  await Promise.all([clients.tokenClient.update(), profitClientUpdate, apiClientUpdate, spokeTokenApprovalsUpdate]);
+  // Refresh the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
+  clients.tokenClient.clearTokenData();
+  await Promise.all([
+    profitClientUpdate,
+    inputTokenApprovals,
+    apiClientUpdate,
+    tokenClient.update(),
+  ]);
 }
