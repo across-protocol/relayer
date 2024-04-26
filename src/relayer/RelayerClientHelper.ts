@@ -193,12 +193,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
   const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = clients;
 
-  const setSpokeTokenApprovals = async (): Promise<void> => {
-    if (config.sendingRelaysEnabled) {
-      await clients.tokenClient.setOriginTokenApprovals();
-    }
-  };
-
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
   // having a "first run" update and then a "normal" update that considers this. see previous implementation here
@@ -213,7 +207,8 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // Start updates w/ no dependencies first, and wait on them last.
   const profitClientUpdate = profitClient.update();
-  const inputTokenApprovals = setSpokeTokenApprovals();
+  const inputTokenApprovals = config.sendingRelaysEnabled ? tokenClient.setOriginTokenApprovals() : async () => true;
+
   const apiClientUpdate = acrossApiClient.update(config.ignoreLimits);
 
   // InventoryClient updates depend on the tokenClient and SpokePoolClients.
