@@ -386,7 +386,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
   try {
     for (;;) {
       const loopStart = performance.now();
-      await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
+      await updateSpokePoolClients(spokePoolClients, ["TokensBridged"]);
       const loopStartPostSpokePoolUpdates = performance.now();
 
       if (config.finalizerEnabled) {
