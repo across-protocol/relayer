@@ -241,7 +241,7 @@ export class PolygonAdapter extends CCTPAdapter {
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
+    if (this.isL1TokenUsdc(l1Token)) {
       return this.sendCctpTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
     } else {
       let method = "depositFor";
