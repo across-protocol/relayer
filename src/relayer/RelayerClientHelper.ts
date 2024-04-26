@@ -1,5 +1,4 @@
 import { ChildProcess } from "child_process";
-import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import winston from "winston";
 import {
@@ -22,14 +21,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import {
-  getBlockForTimestamp,
-  getDeploymentBlockNumber,
-  getProvider,
-  getRedisCache,
-  Signer,
-  SpokePool,
-} from "../utils";
+import { getProvider, Signer, SpokePool } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
