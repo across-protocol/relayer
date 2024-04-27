@@ -21,6 +21,7 @@ import {
   MAX_UINT_VAL,
   toBNWei,
   assert,
+  compareAddressesSimple,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -260,6 +261,35 @@ export class InventoryClient {
     return chainIds;
   }
 
+  /**
+   * Returns true if the depositor-specified output token is supported by the this inventory client.
+   * @param deposit V3 Deposit to consider
+   * @returns boolean True if output and input tokens are equivalent or if input token is USDC and output token
+   * is Bridged USDC.
+   */
+  validateOutputToken(deposit: V3Deposit): boolean {
+    const { inputToken, outputToken, originChainId, destinationChainId } = deposit;
+
+    // Return true if input and output tokens are mapped to the same L1 token via PoolRebalanceRoutes
+    const equivalentTokens = this.hubPoolClient.areTokensEquivalent(
+      inputToken,
+      originChainId,
+      outputToken,
+      destinationChainId
+    );
+    if (equivalentTokens) {
+      return true;
+    }
+
+    // Return true if input token is USDC and output token is Bridged USDC.
+    const isInputTokenUSDC = compareAddressesSimple(inputToken, TOKEN_SYMBOLS_MAP["_USDC"].addresses[originChainId]);
+    const isOutputTokenBridgedUSDC = compareAddressesSimple(
+      outputToken,
+      TOKEN_SYMBOLS_MAP["USDC.e"].addresses[destinationChainId]
+    );
+    return isInputTokenUSDC && isOutputTokenBridgedUSDC;
+  }
+
   // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
   // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm for each
   // of the origin and destination chain:
@@ -283,10 +313,11 @@ export class InventoryClient {
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
-    // for disparate output tokens, so if one appears here then something is wrong. Throw hard and fast in that case.
+    // for disparate output tokens (unless the output token is USDC.e and the input token is USDC),
+    // so if one appears here then something is wrong. Throw hard and fast in that case.
     // In future, fills for disparate output tokens should probably just take refunds on the destination chain and
     // outsource inventory management to the operator.
-    if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+    if (!this.validateOutputToken(deposit)) {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       throw new Error(
         `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId}` +
@@ -356,8 +387,12 @@ export class InventoryClient {
       let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
       // on destination chain
+      // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
+      // This is possible when the output token is USDC.e and the input token is USDC which would still cause
+      // validateOutputToken() to return true above.
       let chainVirtualBalanceWithShortfallPostRelay =
-        _chain === destinationChainId
+        _chain === destinationChainId &&
+        this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
           ? chainVirtualBalanceWithShortfall.sub(outputAmount)
           : chainVirtualBalanceWithShortfall;
       // Add upcoming refunds:
