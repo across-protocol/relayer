@@ -75,7 +75,8 @@ export class InventoryClient {
       .reduce((acc, curr) => acc.add(curr), bnZero);
   }
 
-  // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
+  // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a
+  // virtual balance on that chain, and counting ETH and WETH balances together.
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
     // We want to skip any l2 token that is not present in the inventory config.
     chainId = Number(chainId);
@@ -88,9 +89,10 @@ export class InventoryClient {
       this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || bnZero;
 
     // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
-    return balance.add(
-      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
-    );
+    // If token is WETH, also consider ETH balance.
+    return balance
+      .add(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token))
+      .add(l1Token === this.l1Weth() ? this.tokenClient.getNativeTokenBalance(chainId) : bnZero);
   }
 
   // Get the fraction of funds allocated on each chain.
@@ -759,6 +761,10 @@ export class InventoryClient {
     }
   }
 
+  l1Weth(): string {
+    return TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolClient.chainId];
+  }
+
   async unwrapWeth(): Promise<void> {
     // Note: these types are just used inside this method, so they are declared in-line.
     type ChainInfo = {
@@ -778,7 +784,7 @@ export class InventoryClient {
       if (!this.isInventoryManagementEnabled()) {
         return;
       }
-      const l1Weth = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolClient.chainId];
+      const l1Weth = this.l1Weth();
       const chains = await Promise.all(
         this.getEnabledChains()
           .map((chainId) => {

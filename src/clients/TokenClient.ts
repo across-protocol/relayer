@@ -17,6 +17,7 @@ import {
   winston,
   getRedisCache,
 } from "../utils";
+import { utils } from "@across-protocol/sdk-v2";
 
 type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {
@@ -27,6 +28,7 @@ export class TokenClient {
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
   bondToken: Contract | undefined;
+  nativeTokenBalance: { [chainId: number]: BigNumber } = {};
 
   constructor(
     readonly logger: winston.Logger,
@@ -173,6 +175,18 @@ export class TokenClient {
     }
   }
 
+  getNativeTokenBalance(chainId: number): BigNumber {
+    return this.nativeTokenBalance[chainId] ?? bnZero;
+  }
+
+  async _getNativeTokenBalances(): Promise<{ [chainId: number]: BigNumber }> {
+    return Object.fromEntries(
+      await utils.mapAsync(Object.entries(this.spokePoolClients), async ([chainId, spokePoolClient]) => {
+        return [chainId, await spokePoolClient.spokePool.signer.getBalance(this.relayerAddress)];
+      })
+    );
+  }
+
   async update(): Promise<void> {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
     const { hubPoolClient } = this;
@@ -183,8 +197,13 @@ export class TokenClient {
       this.fetchTokenData(chainId, hubPoolTokens, this.spokePoolClients[chainId].spokePool.signer)
     );
 
-    const [bondToken, ...balanceInfo] = await Promise.all([this._getBondToken(), ...balanceQueries]);
+    const [bondToken, nativeTokenBalances, ...balanceInfo] = await Promise.all([
+      this._getBondToken(),
+      this._getNativeTokenBalances(),
+      ...balanceQueries,
+    ]);
     this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
+    this.nativeTokenBalance = nativeTokenBalances;
 
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
