@@ -282,15 +282,11 @@ export class InventoryClient {
     }
 
     // Return true if input token is USDC and output token is Bridged USDC.
-    const isInputTokenUSDC =
-      TOKEN_SYMBOLS_MAP["_USDC"].addresses?.[originChainId] &&
-      compareAddressesSimple(inputToken, TOKEN_SYMBOLS_MAP["_USDC"].addresses[originChainId]);
-    const isOutputTokenBridgedUSDC =
-      TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses?.[destinationChainId] &&
-      compareAddressesSimple(
-        outputToken,
-        TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses[destinationChainId]
-      );
+    const isInputTokenUSDC = compareAddressesSimple(inputToken, TOKEN_SYMBOLS_MAP["_USDC"].addresses?.[originChainId]);
+    const isOutputTokenBridgedUSDC = compareAddressesSimple(
+      outputToken,
+      TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses?.[destinationChainId]
+    );
     return isInputTokenUSDC && isOutputTokenBridgedUSDC;
   }
 
