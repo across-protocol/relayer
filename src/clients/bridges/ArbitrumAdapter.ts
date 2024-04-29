@@ -69,8 +69,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     super(
       spokePoolClients,
       42161,
-      // We don't need to filter on the atomic depositor address in this adapter.
-      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
+      monitoredAddresses,
       logger,
       resolveTokenSymbols(
         Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),

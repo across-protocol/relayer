@@ -120,8 +120,7 @@ export class PolygonAdapter extends BaseAdapter {
     super(
       spokePoolClients,
       137,
-      // We don't need to filter on the atomic depositor address in this adapter.
-      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
+      monitoredAddresses,
       logger,
       resolveTokenSymbols(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
     );

@@ -26,14 +26,7 @@ export class LineaAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      CHAIN_IDs.LINEA,
-      // We don't need to filter on the atomic depositor address in this adapter.
-      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
-      logger,
-      ["USDC", "USDT", "WETH", "WBTC", "DAI"]
-    );
+    super(spokePoolClients, CHAIN_IDs.LINEA, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
   }
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Note: Linea has two bridges: one for

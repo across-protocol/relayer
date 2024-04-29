@@ -87,6 +87,15 @@ export class OpStackAdapter extends BaseAdapter {
       this.monitoredAddresses.map((monitoredAddress) =>
         Promise.all(
           l1Tokens.map(async (l1Token) => {
+            const isWeth = l1Token === this.getL1Weth();
+            // If token is WETH then we only care to monitor the atomic weth depositor address.
+            if (isWeth && monitoredAddress !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS) {
+              return;
+            }
+            // If token is not weth, then we do not care about the atomic weth depositor address.
+            if (!isWeth && monitoredAddress === BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS) {
+              return;
+            }
             const bridge = this.getBridge(l1Token);
 
             const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
@@ -98,8 +107,7 @@ export class OpStackAdapter extends BaseAdapter {
             // atomic weth depositor contract address which is the `monitoredAddress` used to catch the
             // transfer events. The following event filters are designed only to catch transfers initiated by an EOA on
             // L1 sending WETH via the AtomicWethDepositor and receiving ETH on the L2 side at their EOA.
-            const relayerAddress =
-              l1Token === this.getL1Weth() ? await this.getSigner(this.chainId).getAddress() : monitoredAddress;
+            const relayerAddress = isWeth ? await this.getSigner(this.chainId).getAddress() : monitoredAddress;
             assign(this.l1DepositInitiatedEvents, [relayerAddress, l1Token], depositInitiatedResults.map(processEvent));
             assign(this.l2DepositFinalizedEvents, [relayerAddress, l1Token], depositFinalizedResults.map(processEvent));
           })

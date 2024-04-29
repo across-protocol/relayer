@@ -63,12 +63,6 @@ export class WethBridge implements OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<Event[]> {
-    // If fromAddress is not the atomic weth depositor then return early and avoid incurring an unneccessary
-    // RPC request. The following event filters are designed only to catch transfers initiated by an EOA on
-    // L1 sending WETH via the AtomicWethDepositor and receiving ETH on the L2 side at their EOA.
-    if (fromAddress !== this.atomicDepositor.address) {
-      return [];
-    }
     // When bridging WETH to OP stack chains, ETH is bridged via the AtomicDepositor contract and received as ETH
     // on L2. The InventoryClient is built to abstract this subtlety and assumes that WETH is being rebalanced
     // from L1 to L2. Therefore, L1 to L2 ETH transfers should only be considered finalized if they are followed

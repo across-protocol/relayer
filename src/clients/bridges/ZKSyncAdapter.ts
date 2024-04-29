@@ -32,14 +32,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      324,
-      // We don't need to filter on the atomic depositor address in this adapter.
-      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
-      logger,
-      ["USDC", "USDT", "WETH", "WBTC", "DAI"]
-    );
+    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
