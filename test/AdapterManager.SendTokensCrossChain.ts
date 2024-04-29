@@ -131,7 +131,14 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     //  CCTP tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      undefined,
+      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
+    );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
       chainIdsToCctpDomains[chainId], // destinationDomain
@@ -296,7 +303,14 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Base", async function () {
     const chainId = CHAIN_IDs.BASE;
     //  CCTP tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      undefined,
+      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
+    );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
       chainIdsToCctpDomains[chainId], // destinationDomain
