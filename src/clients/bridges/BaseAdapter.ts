@@ -50,7 +50,7 @@ type SupportedTokenSymbol = string;
 
 export abstract class BaseAdapter {
   static readonly HUB_CHAIN_ID = 1; // @todo: Make dynamic
-  static readonly ATOMIC_DEPOSITOR_ADDRESS = CONTRACT_ADDRESSES[this.HUB_CHAIN_ID].atomicDepositor.address;
+  static readonly ATOMIC_DEPOSITOR_ADDRESS = CONTRACT_ADDRESSES[this.HUB_CHAIN_ID]?.atomicDepositor.address;
 
   readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
 
