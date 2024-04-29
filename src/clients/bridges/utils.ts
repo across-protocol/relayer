@@ -19,13 +19,15 @@ import { Event } from "ethers";
  * l2EthDepositEvents will match with the same l2WrapEvent.
  */
 export function matchL2EthDepositAndWrapEvents(l2EthDepositEvents: Event[], _l2WrapEvents: Event[]): Event[] {
-  let l2WrapEvents = [..._l2WrapEvents]; // deep-copy because we're going to modify this in-place.
+  const l2WrapEvents = [..._l2WrapEvents]; // deep-copy because we're going to modify this in-place.
   return l2EthDepositEvents.filter((l2EthDepositEvent: Event) => {
     // Search from left to right to find the first following wrap event.
-    const followingWrapEvent = l2WrapEvents.find((wrapEvent) => wrapEvent.blockNumber > l2EthDepositEvent.blockNumber);
+    const followingWrapEventIndex = l2WrapEvents.findIndex(
+      (wrapEvent) => wrapEvent.blockNumber >= l2EthDepositEvent.blockNumber
+    );
     // Delete the wrap event from the l2 wrap events array to avoid duplicate processing.
-    if (followingWrapEvent) {
-      l2WrapEvents = l2WrapEvents.splice(l2WrapEvents.indexOf(followingWrapEvent));
+    if (followingWrapEventIndex >= 0) {
+      l2WrapEvents.splice(followingWrapEventIndex, 1);
       return true;
     }
     return false;
