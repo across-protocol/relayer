@@ -155,6 +155,10 @@ export class LineaAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
+      // We don't need to filter on the atomic depositor address in this adapter.
+      if (address === this.atomicDepositorAddress) {
+        return;
+      }
       await sdk.utils.mapAsync(supportedL1Tokens, async (l1Token) => {
         if (this.isWeth(l1Token)) {
           const atomicDepositor = this.getAtomicDepositor();
