@@ -286,8 +286,11 @@ export class InventoryClient {
       TOKEN_SYMBOLS_MAP["_USDC"].addresses?.[originChainId] &&
       compareAddressesSimple(inputToken, TOKEN_SYMBOLS_MAP["_USDC"].addresses[originChainId]);
     const isOutputTokenBridgedUSDC =
-      TOKEN_SYMBOLS_MAP["USDC.e"].addresses?.[destinationChainId] &&
-      compareAddressesSimple(outputToken, TOKEN_SYMBOLS_MAP["USDC.e"].addresses[destinationChainId]);
+      TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses?.[destinationChainId] &&
+      compareAddressesSimple(
+        outputToken,
+        TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses[destinationChainId]
+      );
     return isInputTokenUSDC && isOutputTokenBridgedUSDC;
   }
 
