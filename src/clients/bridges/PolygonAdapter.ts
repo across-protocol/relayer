@@ -241,7 +241,8 @@ export class PolygonAdapter extends CCTPAdapter {
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    if (this.isL1TokenUsdc(l1Token)) {
+    // If both the L1 & L2 tokens are native USDC, we use the CCTP bridge.
+    if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
       return this.sendCctpTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
     } else {
       let method = "depositFor";
@@ -269,17 +270,19 @@ export class PolygonAdapter extends CCTPAdapter {
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     const associatedL1Bridges = l1Tokens
-      .map((l1Token) => {
-        if (this.isWeth(l1Token)) {
-          return this.getL1TokenGateway(l1Token)?.address;
-        }
-        if (this.isL1TokenUsdc(l1Token)) {
-          return this.getL1CCTPTokenMessengerBridge().address;
-        }
+      .flatMap((l1Token) => {
         if (!this.isSupportedToken(l1Token)) {
-          return null;
+          return [];
         }
-        return this.getL1Bridge(l1Token).address;
+        if (this.isWeth(l1Token)) {
+          return [this.getL1TokenGateway(l1Token)?.address];
+        }
+        const bridgeAddresses: string[] = [];
+        if (this.isL1TokenUsdc(l1Token)) {
+          bridgeAddresses.push(this.getL1CCTPTokenMessengerBridge().address);
+        }
+        bridgeAddresses.push(this.getL1Bridge(l1Token).address);
+        return bridgeAddresses;
       })
       .filter(isDefined);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);

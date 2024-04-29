@@ -176,14 +176,16 @@ export class ArbitrumAdapter extends CCTPAdapter {
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
     const associatedL1Bridges = l1Tokens
-      .map((l1Token) => {
+      .flatMap((l1Token) => {
         if (!this.isSupportedToken(l1Token)) {
-          return null;
+          return [];
         }
+        const bridgeAddresses: string[] = [];
         if (this.isL1TokenUsdc(l1Token)) {
-          return this.getL1CCTPTokenMessengerBridge().address;
+          bridgeAddresses.push(this.getL1CCTPTokenMessengerBridge().address);
         }
-        return this.getL1Bridge(l1Token).address;
+        bridgeAddresses.push(this.getL1Bridge(l1Token).address);
+        return bridgeAddresses;
       })
       .filter(isDefined);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
@@ -196,7 +198,8 @@ export class ArbitrumAdapter extends CCTPAdapter {
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    if (this.isL1TokenUsdc(l1Token)) {
+    // If both the L1 & L2 tokens are native USDC, we use the CCTP bridge.
+    if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
       return this.sendCctpTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
     } else {
       const args = [
