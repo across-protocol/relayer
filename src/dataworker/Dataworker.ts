@@ -23,6 +23,7 @@ import {
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
   V3SlowFillLeaf,
+  FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator } from "../clients";
@@ -1165,6 +1166,23 @@ export class Dataworker {
             throw new Error(`Leaf chainId does not match input chainId (${destinationChainId} != ${chainId})`);
           }
 
+          // @dev check if there's been a duplicate leaf execution and if so, then exit early.
+          // Since this function is happening near the end of the dataworker run and leaf executions are
+          // relatively infrequent, the additional RPC latency and cost is acceptable.
+          const fillStatus = await sdkUtils.relayFillStatus(
+            client.spokePool,
+            slowFill.relayData,
+            "latest",
+            destinationChainId
+          );
+          if (fillStatus === FillStatus.Filled) {
+            this.logger.debug({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: `Slow Fill Leaf for output token ${slowFill.relayData.outputToken} on chain ${destinationChainId} already executed`,
+            });
+            return undefined;
+          }
+
           const { outputAmount } = slowFill.relayData;
           const fill = latestFills[idx];
           const amountRequired = isDefined(fill) ? bnZero : slowFill.updatedOutputAmount;
@@ -1257,12 +1275,22 @@ export class Dataworker {
     return { method, args };
   }
 
+  /**
+   * @notice Executes outstanding pool rebalance leaves if they have passed the challenge window. Includes
+   * exchange rate updates needed to execute leaves.
+   * @param spokePoolClients
+   * @param balanceAllocator
+   * @param submitExecution
+   * @param earliestBlocksInSpokePoolClients
+   * @returns number of leaves executed
+   */
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<void> {
+  ): Promise<number> {
+    let leafCount = 0;
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Executing pool rebalance leaves",
@@ -1280,7 +1308,7 @@ export class Dataworker {
         at: "Dataworker#executePoolRebalanceLeaves",
         message: "No pending proposal, nothing to execute",
       });
-      return;
+      return leafCount;
     }
 
     this.logger.debug({
@@ -1320,7 +1348,7 @@ export class Dataworker {
           reason,
         });
       }
-      return;
+      return leafCount;
     }
 
     if (valid && !expectedTrees) {
@@ -1331,7 +1359,7 @@ export class Dataworker {
         reason,
         notificationPath: "across-error",
       });
-      return;
+      return leafCount;
     }
 
     // Exit early if challenge period timestamp has not passed:
@@ -1341,7 +1369,7 @@ export class Dataworker {
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
-      return;
+      return leafCount;
     }
 
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
@@ -1354,7 +1382,7 @@ export class Dataworker {
       executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
     );
     if (unexecutedLeaves.length === 0) {
-      return;
+      return leafCount;
     }
 
     // There are three times that we should look to update the HubPool's liquid reserves:
@@ -1379,7 +1407,7 @@ export class Dataworker {
         mainnetLeaves[0],
         submitExecution
       );
-      await this._executePoolRebalanceLeaves(
+      leafCount += await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
@@ -1418,7 +1446,7 @@ export class Dataworker {
     // HubPool that we want to capture an increased liquidReserves for.
     const nonHubChainPoolRebalanceLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
     if (nonHubChainPoolRebalanceLeaves.length === 0) {
-      return;
+      return leafCount;
     }
     const updatedL1Tokens = await this._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
       updatedLiquidReserves,
@@ -1445,13 +1473,14 @@ export class Dataworker {
     await this._updateOldExchangeRates(l1TokensWithPotentiallyOlderUpdate, submitExecution);
 
     // Perform similar funding checks for remaining non-mainnet pool rebalance leaves.
-    await this._executePoolRebalanceLeaves(
+    leafCount += await this._executePoolRebalanceLeaves(
       spokePoolClients,
       nonHubChainPoolRebalanceLeaves,
       balanceAllocator,
       expectedTrees.poolRebalanceTree.tree,
       submitExecution
     );
+    return leafCount;
   }
 
   async _executePoolRebalanceLeaves(
@@ -1462,7 +1491,7 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator,
     tree: MerkleTree<PoolRebalanceLeaf>,
     submitExecution: boolean
-  ): Promise<void> {
+  ): Promise<number> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const fundedLeaves = (
       await Promise.all(
@@ -1575,6 +1604,7 @@ export class Dataworker {
         this.logger.debug({ at: "Dataworker#executePoolRebalanceLeaves", message: mrkdwn });
       }
     });
+    return fundedLeaves.length;
   }
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
@@ -2004,6 +2034,29 @@ export class Dataworker {
             throw new Error("Leaf chainId does not match input chainId");
           }
           const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+          // @dev check if there's been a duplicate leaf execution and if so, then exit early.
+          // Since this function is happening near the end of the dataworker run and leaf executions are
+          // relatively infrequent, the additional RPC latency and cost is acceptable.
+          // @dev Can only filter on indexed events.
+          const eventFilter = client.spokePool.filters.ExecutedRelayerRefundRoot(
+            null, // amountToReturn
+            leaf.chainId,
+            null, // refundAmounts
+            rootBundleId,
+            leaf.leafId
+          );
+          const duplicateEvents = await client.spokePool.queryFilter(
+            eventFilter,
+            client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
+          );
+          if (duplicateEvents.length > 0) {
+            this.logger.debug({
+              at: "Dataworker#executeRelayerRefundLeaves",
+              message: `Relayer Refund Leaf #${leaf.leafId} for ${l1TokenInfo?.symbol} on chain ${leaf.chainId} already executed`,
+              duplicateEvents,
+            });
+            return undefined;
+          }
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
           const balanceRequestsToQuery = [

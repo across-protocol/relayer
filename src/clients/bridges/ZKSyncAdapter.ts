@@ -11,6 +11,7 @@ import {
   ZERO_ADDRESS,
   getTokenAddress,
   TOKEN_SYMBOLS_MAP,
+  bnZero,
 } from "../../utils";
 import { SpokePoolClient } from "../.";
 import assert from "assert";
@@ -176,7 +177,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       address, // Refund recipient. Can set to caller address if an EOA.
     ];
     let method = "bridgeWethToZkSync";
-    let value = BigNumber.from(0);
+    let value = bnZero;
 
     // If not using AtomicDepositor with WETH, sending over default ERC20 bridge requires including enough
     // msg.value to cover the L2 transaction cost.

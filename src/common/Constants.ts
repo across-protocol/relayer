@@ -143,7 +143,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 10, // 12s/block
+  1: 5, // 12s/block
   10: 60, // 2s/block
   137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
@@ -312,4 +312,10 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
   ],
 };
 
+// Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.
+export const RELAYER_DEFAULT_SPOKEPOOL_INDEXER = "./dist/src/libexec/RelayerSpokePoolIndexer.js";
+
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
+
+// Chains with slow (> 2 day liveness) canonical L2-->L1 bridges.
+export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM];

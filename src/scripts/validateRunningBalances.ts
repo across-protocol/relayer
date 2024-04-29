@@ -445,7 +445,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
         spokeClientToBlocks
       );
       await updateSpokePoolClients(spokePoolClientsForBundle, [
-        "EnabledDepositRoute",
         "RelayedRootBundle",
         "ExecutedRelayerRefundRoot",
         "V3FundsDeposited",

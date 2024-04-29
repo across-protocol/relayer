@@ -115,6 +115,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     await profitClient.initToken(l1Token);
 
+    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -125,8 +126,8 @@ describe("Relayer: Unfilled Deposits", async function () {
         profitClient,
         tokenClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
+        inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
       },
       {
         relayerTokens: [],

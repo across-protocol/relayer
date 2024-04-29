@@ -98,7 +98,6 @@ export async function constructSpokePoolClientsForFastDataworker(
     endBlocks
   );
   await updateSpokePoolClients(spokePoolClients, [
-    "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
     "V3FundsDeposited",

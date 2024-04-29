@@ -21,7 +21,13 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { V3Deposit, InventoryConfig } from "../src/interfaces";
 import { ZERO_ADDRESS, bnZero, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
-import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks";
+import {
+  MockAdapterManager,
+  MockBundleDataClient,
+  MockHubPoolClient,
+  MockInventoryClient,
+  MockTokenClient,
+} from "./mocks";
 
 describe("InventoryClient: Refund chain selection", async function () {
   const enabledChainIds = [1, 10, 137, 42161];
@@ -115,7 +121,9 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient,
       bundleDataClient,
       adapterManager,
-      crossChainTransferClient
+      crossChainTransferClient,
+      false, // simMode
+      false // prioritizeUtilization
     );
 
     seedMocks(initialAllocation);
@@ -280,7 +288,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
 
     it("token config is not defined", async function () {
-      // Defaults to destination chain
+      // Defaults to destination chain.
       const _inventoryClient = new InventoryClient(
         owner.address,
         spyLogger,
@@ -293,11 +301,20 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         bundleDataClient,
         adapterManager,
-        crossChainTransferClient
+        crossChainTransferClient,
+        false, // simMode
+        false // prioritizeUtilization
       );
       expect(await _inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(
         sampleDepositData.destinationChainId
       );
+    });
+    it("includes origin, destination in repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(2);
     });
   });
 
@@ -435,6 +452,82 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Relayer should still pick origin chain but compute a different allocation.
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"68965517241379310"')).to.be.true;
+    });
+    it("includes origin, destination and hub chain in repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId, 1].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(3);
+    });
+  });
+
+  describe("evaluates slow withdrawal chains with excess running balances", function () {
+    let excessRunningBalances: { [chainId: number]: BigNumber };
+    beforeEach(async function () {
+      // "enable" all pool rebalance routes so that inventory client evaluates slow withdrawal chains
+      // as possible repayment chains.
+      hubPoolClient.setEnableAllL2Tokens(true);
+      excessRunningBalances = {
+        [10]: toWei("0.1"),
+        [42161]: toWei("0.2"),
+      };
+      // Fill in rest of slow withdrawal chains with 0 excess since we won't test them.
+      inventoryClient.getSlowWithdrawalRepaymentChains(mainnetWeth).forEach((chainId) => {
+        if (!excessRunningBalances[chainId]) {
+          excessRunningBalances[chainId] = toWei("0");
+        }
+      });
+      inventoryClient = new MockInventoryClient(
+        owner.address,
+        spyLogger,
+        inventoryConfig,
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        bundleDataClient,
+        adapterManager,
+        crossChainTransferClient
+      );
+      (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: 0,
+        originChainId: 137,
+        destinationChainId: 1,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: l2TokensForWeth[137],
+        inputAmount,
+        outputToken: l2TokensForWeth[1],
+        outputAmount: inputAmount,
+        message: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+    });
+    it("selects slow withdrawal chain with excess running balance and under relayer allocation", async function () {
+      // Initial allocations are all under allocated so the first slow withdrawal chain should be selected since it has
+      // the highest overage.
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+
+      // If we instead drop the excess on 42161 to 0, then we should take repayment on
+      // the next slow withdrawal chain.
+      excessRunningBalances[42161] = toWei("0");
+      (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+    });
+    it("includes slow withdrawal chains in possible repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      inventoryClient.getSlowWithdrawalRepaymentChains(mainnetWeth).forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(4);
     });
   });
 });

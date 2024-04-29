@@ -1096,4 +1096,125 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.deep.equal(cache3);
     });
   });
+
+  describe("Miscellaneous functions", function () {
+    it("getUpcomingDepositAmount", async function () {
+      // Send two deposits on different chains
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        ZERO_ADDRESS,
+        amountToDeposit
+      );
+      await depositV3(
+        spokePool_2,
+        originChainId,
+        depositor,
+        erc20_2.address,
+        amountToDeposit,
+        ZERO_ADDRESS,
+        amountToDeposit
+      );
+      await updateAllClients();
+      expect(await bundleDataClient.getUpcomingDepositAmount(originChainId, erc20_1.address, 0)).to.equal(
+        amountToDeposit
+      );
+      expect(await bundleDataClient.getUpcomingDepositAmount(destinationChainId, erc20_2.address, 0)).to.equal(
+        amountToDeposit
+      );
+
+      // Removes deposits using block, token, and chain filters.
+      expect(
+        await bundleDataClient.getUpcomingDepositAmount(
+          originChainId,
+          erc20_1.address,
+          spokePoolClient_1.latestBlockSearched // block higher than the deposit
+        )
+      ).to.equal(0);
+      expect(
+        await bundleDataClient.getUpcomingDepositAmount(
+          originChainId,
+          erc20_2.address, // diff token
+          0
+        )
+      ).to.equal(0);
+      expect(
+        await bundleDataClient.getUpcomingDepositAmount(
+          destinationChainId, // diff chain
+          erc20_1.address,
+          0
+        )
+      ).to.equal(0);
+
+      // spoke pool client for chain not defined
+      expect(
+        await bundleDataClient.getUpcomingDepositAmount(
+          originChainId + destinationChainId + repaymentChainId + 1, // spoke pool client for chain is not defined in BundleDataClient
+          erc20_1.address,
+          0
+        )
+      ).to.equal(0);
+    });
+    it("getApproximateRefundsForBlockRange", async function () {
+      // Send two deposits on different chains
+      // Fill both deposits and request repayment on same chain
+      await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        ZERO_ADDRESS,
+        amountToDeposit
+      );
+      await depositV3(
+        spokePool_2,
+        originChainId,
+        depositor,
+        erc20_2.address,
+        amountToDeposit,
+        ZERO_ADDRESS,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const deposit1 = spokePoolClient_1.getDeposits()[0];
+      const deposit2 = spokePoolClient_2.getDeposits()[0];
+
+      await fillV3(spokePool_2, relayer, deposit1, originChainId);
+      await fillV3(spokePool_1, relayer, deposit2, originChainId);
+
+      // Approximate refunds should count both fills
+      await updateAllClients();
+      const refunds = await bundleDataClient.getApproximateRefundsForBlockRange(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5)
+      );
+      expect(refunds).to.deep.equal({
+        [originChainId]: {
+          [erc20_1.address]: {
+            [relayer.address]: amountToDeposit.mul(2),
+          },
+        },
+      });
+
+      // Send an invalid fill and check it is not included.
+      await fillV3(spokePool_1, relayer, { ...deposit1, depositId: deposit1.depositId + 1 }, originChainId);
+      await updateAllClients();
+      expect(
+        await bundleDataClient.getApproximateRefundsForBlockRange(
+          [originChainId, destinationChainId],
+          getDefaultBlockRange(5)
+        )
+      ).to.deep.equal({
+        [originChainId]: {
+          [erc20_1.address]: {
+            [relayer.address]: amountToDeposit.mul(2),
+          },
+        },
+      });
+    });
+  });
 });
