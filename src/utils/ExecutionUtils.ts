@@ -1,6 +1,6 @@
 import { delay, winston } from "./";
 
-export function exit(code: number) {
+export function exit(code: number): void {
   // eslint-disable-next-line no-process-exit
   process.exit(code);
 }
