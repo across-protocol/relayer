@@ -214,15 +214,18 @@ export class Relayer {
   }
 
   computeRequiredDepositConfirmations(deposits: V3Deposit[]): { [chainId: number]: number } {
-    const { profitClient } = this.clients;
+    const { profitClient, tokenClient } = this.clients;
     const { minDepositConfirmations } = this.config;
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits.reduce((agg, deposit) => {
-      const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
-      agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
-      return agg;
-    }, {});
+    // Filter out deposits where the relayer doesn't have the balance to make the fill.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
+      .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
+      .reduce((agg, deposit) => {
+        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        return agg;
+      }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(minDepositConfirmations)
