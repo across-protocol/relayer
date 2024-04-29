@@ -138,7 +138,6 @@ export class PolygonAdapter extends BaseAdapter {
 
     const promises: Promise<Event[]>[] = [];
     const validTokens: SupportedL1Token[] = [];
-
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableTokens) {
