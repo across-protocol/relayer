@@ -82,7 +82,7 @@ export class OpStackAdapter extends BaseAdapter {
       this.monitoredAddresses.map((monitoredAddress) =>
         Promise.all(
           l1Tokens.map(async (l1Token) => {
-            const isWeth = l1Token === this.getL1Weth();
+            const isWeth = l1Token === this.wethAddress;
             // If token is WETH then we only care to monitor the atomic weth depositor address.
             if (isWeth && monitoredAddress !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS) {
               return;
