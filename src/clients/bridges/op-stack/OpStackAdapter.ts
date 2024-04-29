@@ -10,7 +10,6 @@ import {
   spreadEventWithBlockNumber,
   assign,
   winston,
-  TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
 import { SpokePoolClient } from "../..";
 import { BaseAdapter } from "..";
@@ -40,7 +39,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
-    const wethAddress = this.getL1Weth();
+    const wethAddress = this.wethAddress;
     if (wethAddress && !this.customBridges[wethAddress]) {
       this.customBridges[wethAddress] = new WethBridge(
         this.chainId,
@@ -62,10 +61,6 @@ export class OpStackAdapter extends BaseAdapter {
       Object.keys(this.customBridges).every(checkAddressChecksum),
       `Invalid or non-checksummed bridge address in customBridges keys: ${Object.keys(this.customBridges)}`
     );
-  }
-
-  getL1Weth(): string {
-    return TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {

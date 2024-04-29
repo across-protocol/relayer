@@ -120,7 +120,9 @@ export class ZKSyncAdapter extends BaseAdapter {
         assign(
           this.l1DepositInitiatedEvents,
           [address, l1TokenAddress],
-          // If token is WETH, the event doesn't have a token or l1Token param.
+          // An initiatedQueryResult could be a zkSync DepositInitiated or an AtomicDepositor
+          // ZkSyncEthDepositInitiated event, subject to whether the deposit token was WETH or not.
+          // A ZkSyncEthDepositInitiated event doesn't have a token or l1Token param.
           initiatedQueryResult.map(processEvent).filter((e) => isWeth || e.l1Token === l1TokenAddress)
         );
         assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
