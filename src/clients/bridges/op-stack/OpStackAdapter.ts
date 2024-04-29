@@ -36,7 +36,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
-    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
+    const wethAddress = this.getL1Weth();
     if (wethAddress && !this.customBridges[wethAddress]) {
       this.customBridges[wethAddress] = new WethBridge(
         this.chainId,
@@ -58,6 +58,10 @@ export class OpStackAdapter extends BaseAdapter {
       Object.keys(this.customBridges).every(checkAddressChecksum),
       `Invalid or non-checksummed bridge address in customBridges keys: ${Object.keys(this.customBridges)}`
     );
+  }
+
+  getL1Weth(): string {
+    return TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -86,16 +90,14 @@ export class OpStackAdapter extends BaseAdapter {
               bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig),
             ]);
 
-            assign(
-              this.l1DepositInitiatedEvents,
-              [monitoredAddress, l1Token],
-              depositInitiatedResults.map(processEvent)
-            );
-            assign(
-              this.l2DepositFinalizedEvents,
-              [monitoredAddress, l1Token],
-              depositFinalizedResults.map(processEvent)
-            );
+            // If l1Token is WETH then always map the transfer information to the relayer/signer address, not the
+            // atomic weth depositor contract address which is the `monitoredAddress` used to catch the
+            // transfer events. The following event filters are designed only to catch transfers initiated by an EOA on
+            // L1 sending WETH via the AtomicWethDepositor and receiving ETH on the L2 side at their EOA.
+            const relayerAddress =
+              l1Token === this.getL1Weth() ? await this.getSigner(this.chainId).getAddress() : monitoredAddress;
+            assign(this.l1DepositInitiatedEvents, [relayerAddress, l1Token], depositInitiatedResults.map(processEvent));
+            assign(this.l2DepositFinalizedEvents, [relayerAddress, l1Token], depositFinalizedResults.map(processEvent));
           })
         )
       )
