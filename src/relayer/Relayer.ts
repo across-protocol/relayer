@@ -214,15 +214,18 @@ export class Relayer {
   }
 
   computeRequiredDepositConfirmations(deposits: V3Deposit[]): { [chainId: number]: number } {
-    const { profitClient } = this.clients;
+    const { profitClient, tokenClient } = this.clients;
     const { minDepositConfirmations } = this.config;
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits.reduce((agg, deposit) => {
-      const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
-      agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
-      return agg;
-    }, {});
+    // Filter out deposits where the relayer doesn't have the balance to make the fill.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
+      .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
+      .reduce((agg, deposit) => {
+        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        return agg;
+      }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(minDepositConfirmations)
@@ -319,15 +322,11 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
-      const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
-        ...deposit,
-        paymentChainId: destinationChainId,
-      });
-
       // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
-      this.fillRelay(deposit, destinationChainId, realizedLpFeePct);
+      const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
+      this.fillRelay(deposit, destinationChainId, lpFeePct);
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
