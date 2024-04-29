@@ -89,7 +89,6 @@ export class ArbitrumAdapter extends BaseAdapter {
 
     const promises: Promise<Event[]>[] = [];
     const validTokens: string[] = [];
-
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableL1Tokens) {
