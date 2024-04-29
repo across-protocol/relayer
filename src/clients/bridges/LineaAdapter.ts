@@ -26,7 +26,14 @@ export class LineaAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, CHAIN_IDs.LINEA, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
+    super(
+      spokePoolClients,
+      CHAIN_IDs.LINEA,
+      // We don't need to filter on the atomic depositor address in this adapter.
+      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
+      logger,
+      ["USDC", "USDT", "WETH", "WBTC", "DAI"]
+    );
   }
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Note: Linea has two bridges: one for
@@ -155,10 +162,6 @@ export class LineaAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
-      // We don't need to filter on the atomic depositor address in this adapter.
-      if (address === this.atomicDepositorAddress) {
-        return;
-      }
       await sdk.utils.mapAsync(supportedL1Tokens, async (l1Token) => {
         if (this.isWeth(l1Token)) {
           const atomicDepositor = this.getAtomicDepositor();

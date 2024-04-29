@@ -120,7 +120,8 @@ export class PolygonAdapter extends BaseAdapter {
     super(
       spokePoolClients,
       137,
-      monitoredAddresses,
+      // We don't need to filter on the atomic depositor address in this adapter.
+      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
       logger,
       resolveTokenSymbols(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
     );
@@ -138,11 +139,8 @@ export class PolygonAdapter extends BaseAdapter {
     const promises: Promise<Event[]>[] = [];
     const validTokens: SupportedL1Token[] = [];
 
-    // We don't need to filter on the atomic depositor address in this adapter.
-    const monitoredAddresses = this.monitoredAddresses.filter((address) => address !== this.atomicDepositorAddress);
-
     // Fetch bridge events for all monitored addresses.
-    for (const monitoredAddress of monitoredAddresses) {
+    for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableTokens) {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Token = this.getL2Token(l1Token);
@@ -184,14 +182,14 @@ export class PolygonAdapter extends BaseAdapter {
 
     // Segregate the events list by monitored address.
     const resultsByMonitoredAddress = Object.fromEntries(
-      monitoredAddresses.map((monitoredAddress, index) => {
+      this.monitoredAddresses.map((monitoredAddress, index) => {
         const start = index * numEventsPerMonitoredAddress;
         return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
       })
     );
 
     // Process events for each monitored address.
-    for (const monitoredAddress of monitoredAddresses) {
+    for (const monitoredAddress of this.monitoredAddresses) {
       const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
       eventsToProcess.forEach((result, index) => {
         const l1Token = validTokens[Math.floor(index / 2)];

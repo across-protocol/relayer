@@ -32,7 +32,14 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
+    super(
+      spokePoolClients,
+      324,
+      // We don't need to filter on the atomic depositor address in this adapter.
+      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
+      logger,
+      ["USDC", "USDT", "WETH", "WBTC", "DAI"]
+    );
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -65,13 +72,6 @@ export class ZKSyncAdapter extends BaseAdapter {
     };
 
     await utils.mapAsync(this.monitoredAddresses, async (address) => {
-      // If the address is the atomic depositor, then skip this address because the following event filters
-      // won't return anything since the atomic depositor is hardcoded in certain event filters. This function
-      // is designed to return any cross chain transfers involving EOA's who sent WETH to L2 via the
-      // atomic depositor contract or who sent ERC20 through the l1ERC20Bridge.
-      if (address === atomicWethDepositor.address) {
-        return;
-      }
       return await utils.mapAsync(supportedL1Tokens, async (l1TokenAddress) => {
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);

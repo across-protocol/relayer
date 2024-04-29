@@ -69,7 +69,8 @@ export class ArbitrumAdapter extends BaseAdapter {
     super(
       spokePoolClients,
       42161,
-      monitoredAddresses,
+      // We don't need to filter on the atomic depositor address in this adapter.
+      monitoredAddresses.filter((address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS),
       logger,
       resolveTokenSymbols(
         Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
@@ -89,11 +90,8 @@ export class ArbitrumAdapter extends BaseAdapter {
     const promises: Promise<Event[]>[] = [];
     const validTokens: string[] = [];
 
-    // We don't need to filter on the atomic depositor address in this adapter.
-    const monitoredAddresses = this.monitoredAddresses.filter((address) => address !== this.atomicDepositorAddress);
-
     // Fetch bridge events for all monitored addresses.
-    for (const monitoredAddress of monitoredAddresses) {
+    for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableL1Tokens) {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
@@ -120,14 +118,14 @@ export class ArbitrumAdapter extends BaseAdapter {
 
     // Segregate the events list by monitored address.
     const resultsByMonitoredAddress = Object.fromEntries(
-      monitoredAddresses.map((monitoredAddress, index) => {
+      this.monitoredAddresses.map((monitoredAddress, index) => {
         const start = index * numEventsPerMonitoredAddress;
         return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
       })
     );
 
     // Process events for each monitored address.
-    for (const monitoredAddress of monitoredAddresses) {
+    for (const monitoredAddress of this.monitoredAddresses) {
       const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
       // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents and
       // l2DepositFinalizedEvents state from the BaseAdapter.

@@ -32,6 +32,10 @@ export class OpStackAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
+    // This is the only chain adapter where we do care about the atomic weth depositor
+    // and not just the relayer address. This is because the L1 event
+    // ETHDepositInitiated and the L2 event DepositFinalized both index on the
+    // fromAddress which is the AtomicWethDepositor.
     super(spokePoolClients, chainId, monitoredAddresses, logger, supportedTokens);
     this.l2Gas = 200000;
 
