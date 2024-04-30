@@ -1,5 +1,5 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { bnZero, getCurrentTime, MAX_UINT_VAL, toBN, toBNWei } from "../src/utils";
+import { bnZero, getCurrentTime, MAX_UINT_VAL, toBNWei } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
