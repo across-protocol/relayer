@@ -1,6 +1,6 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
-import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
+import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts-v2";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber, Contract, providers } from "ethers";
@@ -27,7 +27,7 @@ export {
   lastSpyLogLevel,
   spyLogIncludes,
   spyLogLevel,
-} from "@uma/financial-templates-lib";
+} from "@uma/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 export const {
   ethers,
