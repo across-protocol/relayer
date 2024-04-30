@@ -10,7 +10,6 @@ import {
 } from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { BridgeTransactionDetails, OpStackBridge } from "./OpStackBridgeInterface";
-import { matchL2EthDepositAndWrapEvents } from "../utils";
 
 export class WethBridge implements OpStackBridge {
   private readonly l1Bridge: Contract;
@@ -50,12 +49,28 @@ export class WethBridge implements OpStackBridge {
     };
   }
 
-  queryL1BridgeInitiationEvents(
+  async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<Event[]> {
-    return paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.ETHDepositInitiated(fromAddress), eventConfig);
+    // We need to be smart about the filtering here because the ETHDepositInitiated event does not
+    // index on the `toAddress` which is the `fromAddress` that we pass in here and the address we want
+    // to actually filter on. So we make some simplifying assumptions:
+    // - For our tracking purposes, the ETHDepositInitiated `fromAddress` will be the 
+    //   AtomicDepositor if the fromAddress is an EOA.
+    const isContract = (await this.l1Bridge.provider.getCode(fromAddress)) !== "0x";
+    const events = await paginatedEventQuery(
+      this.l1Bridge,
+      this.l1Bridge.filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
+      eventConfig
+    );
+    // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
+    // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
+    if (!isContract) {
+      return events.filter((event) => event.args._to === fromAddress);
+    }
+    return events;
   }
 
   async queryL2BridgeFinalizationEvents(
@@ -63,27 +78,21 @@ export class WethBridge implements OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<Event[]> {
-    // When bridging WETH to OP stack chains, ETH is bridged via the AtomicDepositor contract and received as ETH
-    // on L2. The InventoryClient is built to abstract this subtlety and assumes that WETH is being rebalanced
-    // from L1 to L2. Therefore, L1 to L2 ETH transfers should only be considered finalized if they are followed
-    // by an L2 Wrapped Ether "Deposit" event, signifying that the relayer has received WETH into their inventory.
-    const l2EthDepositEvents = await paginatedEventQuery(
+    const isContract = (await this.l2Bridge.provider.getCode(fromAddress)) !== "0x";
+    const events = await paginatedEventQuery(
       this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+      this.l2Bridge.filters.DepositFinalized(
+        ZERO_ADDRESS,
+        undefined,
+        isContract ? fromAddress : this.atomicDepositor.address
+      ),
       eventConfig
     );
-    // We only care about WETH finalization events initiated by the relayer running this rebalancer logic, so only
-    // filter on Deposit events sent from the provided signer. We can't simply filter on `fromAddress` because
-    // this would require that the AtomicWethDepositor address wrapped the ETH into WETH, which is not the case for
-    // ETH transfers initiated by the AtomicWethDepositor. ETH is sent from the AtomicWethDepositor contract
-    // on L1 and received as ETH on L2 by the recipient, which is finally wrapped into WETH on the L2 by the
-    // recipient--the L2 signer in this class.
-    const l2EthWrapEvents = await this.queryL2WrapEthEvents(await this.l2Weth.signer.getAddress(), eventConfig);
-
-    return matchL2EthDepositAndWrapEvents(l2EthDepositEvents, l2EthWrapEvents);
-  }
-
-  private queryL2WrapEthEvents(fromAddress: string, eventConfig: EventSearchConfig): Promise<Event[]> {
-    return paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Deposit(fromAddress), eventConfig);
+    // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
+    // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
+    if (!isContract) {
+      return events.filter((event) => event.args._to === fromAddress);
+    }
+    return events;
   }
 }

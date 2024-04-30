@@ -25,31 +25,23 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
-    // @dev We only need to monitor the atomic weth depositor contract address when tracking outstanding crosschain
-    // transfers for certain chains. Most chains we can simply monitor the relayer's EOA address. One notable
-    // exception is OP stack chains, where we need to monitor the atomic depositor contract address because the
-    // crosschain transfer events do not allow us to filter on the "recipient" address, which would be the L2
-    // relayer EOA.
-    const monitoredAddressesExclusingAtomicDepositor = this.monitoredAddresses.filter(
-      (address) => address !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS
-    );
     if (this.spokePoolClients[10] !== undefined) {
       this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[137] !== undefined) {
-      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddressesExclusingAtomicDepositor);
+      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[42161] !== undefined) {
-      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddressesExclusingAtomicDepositor);
+      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[324] !== undefined) {
-      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddressesExclusingAtomicDepositor);
+      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[8453] !== undefined) {
       this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[59144] !== undefined) {
-      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, monitoredAddressesExclusingAtomicDepositor);
+      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, monitoredAddresses);
     }
 
     logger.debug({

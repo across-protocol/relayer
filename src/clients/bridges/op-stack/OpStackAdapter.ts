@@ -31,10 +31,6 @@ export class OpStackAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    // This is the only chain adapter where we do care about the atomic weth depositor
-    // and not just the relayer address. This is because the L1 event
-    // ETHDepositInitiated and the L2 event DepositFinalized both index on the
-    // fromAddress which is the AtomicWethDepositor.
     super(spokePoolClients, chainId, monitoredAddresses, logger, supportedTokens);
     this.l2Gas = 200000;
 
@@ -82,15 +78,6 @@ export class OpStackAdapter extends BaseAdapter {
       this.monitoredAddresses.map((monitoredAddress) =>
         Promise.all(
           l1Tokens.map(async (l1Token) => {
-            const isWeth = l1Token === this.wethAddress;
-            // If token is WETH then we only care to monitor the atomic weth depositor address.
-            if (isWeth && monitoredAddress !== BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS) {
-              return;
-            }
-            // If token is not weth, then we do not care about the atomic weth depositor address.
-            if (!isWeth && monitoredAddress === BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS) {
-              return;
-            }
             const bridge = this.getBridge(l1Token);
 
             const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
@@ -98,13 +85,16 @@ export class OpStackAdapter extends BaseAdapter {
               bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig),
             ]);
 
-            // If l1Token is WETH then always map the transfer information to the relayer/signer address, not the
-            // atomic weth depositor contract address which is the `monitoredAddress` used to catch the
-            // transfer events. The following event filters are designed only to catch transfers initiated by an EOA on
-            // L1 sending WETH via the AtomicWethDepositor and receiving ETH on the L2 side at their EOA.
-            const relayerAddress = isWeth ? await this.getSigner(this.chainId).getAddress() : monitoredAddress;
-            assign(this.l1DepositInitiatedEvents, [relayerAddress, l1Token], depositInitiatedResults.map(processEvent));
-            assign(this.l2DepositFinalizedEvents, [relayerAddress, l1Token], depositFinalizedResults.map(processEvent));
+            assign(
+              this.l1DepositInitiatedEvents,
+              [monitoredAddress, l1Token],
+              depositInitiatedResults.map(processEvent)
+            );
+            assign(
+              this.l2DepositFinalizedEvents,
+              [monitoredAddress, l1Token],
+              depositFinalizedResults.map(processEvent)
+            );
           })
         )
       )

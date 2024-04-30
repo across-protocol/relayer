@@ -50,7 +50,6 @@ type SupportedTokenSymbol = string;
 
 export abstract class BaseAdapter {
   static readonly HUB_CHAIN_ID = 1; // @todo: Make dynamic
-  static readonly ATOMIC_DEPOSITOR_ADDRESS = CONTRACT_ADDRESSES[this.HUB_CHAIN_ID]?.atomicDepositor.address;
 
   readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
 
@@ -58,7 +57,7 @@ export abstract class BaseAdapter {
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
-  readonly atomicDepositorAddress = BaseAdapter.ATOMIC_DEPOSITOR_ADDRESS;
+  readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId]?.atomicDepositor.address;
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};

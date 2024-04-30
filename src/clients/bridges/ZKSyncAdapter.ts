@@ -20,7 +20,6 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
-import { matchL2EthDepositAndWrapEvents } from "./utils";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -40,9 +39,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
-    const l2WethContract = this.getL2Weth();
     const atomicWethDepositor = this.getAtomicDepositor();
-    const aliasedAtomicWethDepositor = zksync.utils.applyL1ToL2Alias(atomicWethDepositor.address);
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -71,13 +68,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
         let initiatedQueryResult: Event[], finalizedQueryResult: Event[];
         if (isWeth) {
-          // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
-          // will appear in mailbox. We should only count the finalized event if it is followed
-          // by a WETH deposit event on the L2 chain, signaling that the end recipient has received
-          // WETH as desired.
-          let wethDepositedResult: Event[];
-          let _finalizedQueryResult: Event[] = [];
-          [initiatedQueryResult, _finalizedQueryResult, wethDepositedResult] = await Promise.all([
+          [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             // Filter on 'from' address and 'to' address
             paginatedEventQuery(
               atomicWethDepositor,
@@ -85,19 +76,13 @@ export class ZKSyncAdapter extends BaseAdapter {
               l1SearchConfig
             ),
 
-            // Filter on transfers between aliased AtomicDepositor address and l2Receiver
+            // Filter on transfers to l2Receiver
             paginatedEventQuery(
               l2EthContract,
-              l2EthContract.filters.Transfer(aliasedAtomicWethDepositor, address),
+              l2EthContract.filters.Transfer(null, address),
               l2SearchConfig
             ),
-
-            // WETH deposits should have the 'from' equal to the zero address and the 'to' be the recipient.
-            paginatedEventQuery(l2WethContract, l2WethContract.filters.Transfer(ZERO_ADDRESS, address), l2SearchConfig),
           ]);
-
-          // Filter out finalized events that are not followed by a WETH deposit event.
-          finalizedQueryResult = matchL2EthDepositAndWrapEvents(_finalizedQueryResult, wethDepositedResult);
         } else {
           const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
@@ -296,15 +281,6 @@ export class ZKSyncAdapter extends BaseAdapter {
       throw new Error(`contractData not found for chain ${chainId}`);
     }
     return new Contract(ethContractData.address, ethContractData.abi, this.getSigner(chainId));
-  }
-
-  private getL2Weth(): Contract {
-    const { chainId } = this;
-    const wethContractData = CONTRACT_ADDRESSES[chainId]?.weth;
-    if (!wethContractData) {
-      throw new Error(`contractData not found for chain ${chainId}`);
-    }
-    return new Contract(wethContractData.address, wethContractData.abi, this.getSigner(chainId));
   }
 
   private getL1ERC20BridgeContract(): Contract {
