@@ -105,44 +105,48 @@ export class RelayerConfig extends CommonConfig {
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
-      this.inventoryConfig.wrapEtherThreshold = this.inventoryConfig.wrapEtherThreshold
-        ? toBNWei(this.inventoryConfig.wrapEtherThreshold)
-        : toBNWei(1); // default to keeping 2 Eth on the target chains and wrapping the rest to WETH.
-      this.inventoryConfig.wrapEtherThresholdPerChain ??= {};
-      this.inventoryConfig.wrapEtherTarget = this.inventoryConfig.wrapEtherTarget
-        ? toBNWei(this.inventoryConfig.wrapEtherTarget)
-        : this.inventoryConfig.wrapEtherThreshold; // default to wrapping ETH to threshold, same as target.
-      this.inventoryConfig.wrapEtherTargetPerChain ??= {};
+
+      const { inventoryConfig } = this;
+
+      // Default to 1 Eth on the target chains and wrapping the rest to WETH.
+      inventoryConfig.wrapEtherThreshold = toBNWei(inventoryConfig.wrapEtherThreshold ?? 1);
+
+      inventoryConfig.wrapEtherThresholdPerChain ??= {};
+      inventoryConfig.wrapEtherTarget = inventoryConfig.wrapEtherTarget
+        ? toBNWei(inventoryConfig.wrapEtherTarget)
+        : inventoryConfig.wrapEtherThreshold; // default to wrapping ETH to threshold, same as target.
+
+      inventoryConfig.wrapEtherTargetPerChain ??= {};
       assert(
-        this.inventoryConfig.wrapEtherThreshold.gte(this.inventoryConfig.wrapEtherTarget),
-        `default wrapEtherThreshold ${this.inventoryConfig.wrapEtherThreshold} must be >= default wrapEtherTarget ${this.inventoryConfig.wrapEtherTarget}`
+        inventoryConfig.wrapEtherThreshold.gte(inventoryConfig.wrapEtherTarget),
+        `default wrapEtherThreshold ${inventoryConfig.wrapEtherThreshold} must be >= default wrapEtherTarget ${inventoryConfig.wrapEtherTarget}`
       );
 
       // Validate the per chain target and thresholds for wrapping ETH:
-      Object.keys(this.inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
-        if (this.inventoryConfig.wrapEtherThresholdPerChain[chainId] !== undefined) {
-          this.inventoryConfig.wrapEtherThresholdPerChain[chainId] = toBNWei(
-            this.inventoryConfig.wrapEtherThresholdPerChain[chainId]
-          );
+      const wrapThresholds = inventoryConfig.wrapEtherThresholdPerChain;
+      const wrapTargets = inventoryConfig.wrapEtherTargetPerChain;;
+      Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
+        if (wrapThresholds[chainId] !== undefined) {
+          wrapThresholds[chainId] = toBNWei(wrapThresholds[chainId]); // Promote to 18 decimals.
         }
       });
-      Object.keys(this.inventoryConfig.wrapEtherTargetPerChain).forEach((chainId) => {
-        if (this.inventoryConfig.wrapEtherTargetPerChain[chainId] !== undefined) {
-          this.inventoryConfig.wrapEtherTargetPerChain[chainId] = toBNWei(
-            this.inventoryConfig.wrapEtherTargetPerChain[chainId]
-          );
+
+      Object.keys(inventoryConfig.wrapEtherTargetPerChain).forEach((chainId) => {
+        if (wrapTargets[chainId] !== undefined) {
+          wrapTargets[chainId] = toBNWei(wrapTargets[chainId]); // Promote to 18 decimals.
+
           // Check newly set target against threshold
-          const threshold =
-            this.inventoryConfig.wrapEtherThresholdPerChain[chainId] ?? this.inventoryConfig.wrapEtherThreshold;
-          const target = this.inventoryConfig.wrapEtherTargetPerChain[chainId];
+          const threshold = wrapThresholds[chainId] ?? inventoryConfig.wrapEtherThreshold;
+          const target = wrapTargets[chainId];
           assert(
             threshold.gte(target),
-            `wrapEtherThresholdPerChain ${threshold.toString()} must be >= wrapEtherTargetPerChain ${target}`
+            `Chain ${chainId} wrapEtherThresholdPerChain ${threshold} must be >= wrapEtherTargetPerChain ${target}`
           );
         }
       });
-      Object.keys(this.inventoryConfig?.tokenConfig ?? {}).forEach((l1Token) => {
-        Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
+
+      Object.keys(inventoryConfig?.tokenConfig ?? {}).forEach((l1Token) => {
+        Object.keys(inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
           const tokenConfig = this.inventoryConfig.tokenConfig[l1Token][chainId];
 
           const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } = tokenConfig;
