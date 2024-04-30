@@ -8,6 +8,7 @@ import { L1Token } from "../../src/interfaces";
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   public latestBundleEndBlocks: { [chainId: number]: number } = {};
   public enableAllL2Tokens: boolean | undefined;
+  private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
 
   constructor(
     logger: winston.Logger,
@@ -31,6 +32,27 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   }
   setLpTokenInfo(l1Token: string, lastLpFeeUpdate: number, liquidReserves: BigNumber): void {
     this.lpTokens[l1Token] = { lastLpFeeUpdate, liquidReserves };
+  }
+
+  mapTokenInfo(token: string, symbol: string, l1Token?: string, decimals?: number): void {
+    this.tokenInfoMap[token] = {
+      symbol,
+      address: l1Token ?? token,
+      decimals: decimals ?? 18,
+    };
+  }
+
+  getL1TokenInfoForAddress(token: string): L1Token {
+    // If output token is mapped manually to a symbol in the symbol map,
+    // use that info.
+    if (this.tokenInfoMap[token]) {
+      return this.tokenInfoMap[token];
+    }
+    return {
+      symbol: token,
+      address: token,
+      decimals: 18,
+    };
   }
 
   setEnableAllL2Tokens(enableAllL2Tokens: boolean): void {
