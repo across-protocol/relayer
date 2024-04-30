@@ -28,7 +28,7 @@ import {
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
+import { MockConfigStoreClient, SimpleMockHubPoolClient, MockedMultiCallerClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk-v2";
 
@@ -170,7 +170,7 @@ export async function setupDataworker(
 
   await configStoreClient.update();
 
-  const hubPoolClient = new sdkClients.HubPoolClient(
+  const hubPoolClient = new SimpleMockHubPoolClient(
     spyLogger,
     hubPool,
     configStoreClient,

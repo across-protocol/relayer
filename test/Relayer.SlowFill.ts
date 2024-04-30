@@ -17,7 +17,7 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import { MockInventoryClient } from "./mocks";
+import { MockInventoryClient, SimpleMockHubPoolClient } from "./mocks";
 import {
   Contract,
   SignerWithAddress,
@@ -102,7 +102,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
     configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
@@ -169,6 +169,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     await setupTokensForWallet(spokePool_2, depositor, [erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], weth, 10);
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol(), l1Token.address);
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol(), l1Token.address);
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);

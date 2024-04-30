@@ -700,8 +700,7 @@ export class Relayer {
       const chainId = Number(_chainId);
       mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
-        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
-        const formatter = createFormatFunction(2, 4, false, decimals);
+        const { symbol, formatter } = this.formatAmount(chainId, token);
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
@@ -731,14 +730,17 @@ export class Relayer {
     });
   }
 
+  private formatAmount(
+    chainId: number,
+    tokenAddress: string
+  ): { symbol: string; decimals: number; formatter: (amount: string) => string } {
+    const { symbol, decimals } = this.clients.hubPoolClient.getL1TokenInfoForAddress(tokenAddress, chainId);
+    return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
+  }
+
   private handleUnprofitableFill() {
     const { profitClient } = this.clients;
     const unprofitableDeposits = profitClient.getUnprofitableFills();
-
-    const formatAmount = (chainId: number, token: string, amount: BigNumber): { symbol: string; amount: string } => {
-      const { symbol, decimals } = getL1TokenInfo(token, chainId);
-      return { symbol, amount: createFormatFunction(2, 4, false, decimals)(amount.toString()) };
-    };
 
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
@@ -753,17 +755,10 @@ export class Relayer {
 
         const { originChainId, destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = deposit;
         const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, originChainId);
-
-        const { symbol: inputSymbol, amount: formattedInputAmount } = formatAmount(
-          originChainId,
-          inputToken,
-          inputAmount
-        );
-        const { symbol: outputSymbol, amount: formattedOutputAmount } = formatAmount(
-          destinationChainId,
-          outputToken,
-          outputAmount
-        );
+        const { symbol: inputSymbol, formatter: inputFormatter } = this.formatAmount(originChainId, inputToken);
+        const formattedInputAmount = inputFormatter(inputAmount.toString());
+        const { symbol: outputSymbol, formatter: outputFormatter } = this.formatAmount(destinationChainId, outputToken);
+        const formattedOutputAmount = outputFormatter(outputAmount.toString());
 
         const { symbol: gasTokenSymbol, decimals: gasTokenDecimals } = profitClient.resolveGasToken(destinationChainId);
         const formattedGasCost = createFormatFunction(2, 10, false, gasTokenDecimals)(gasCost.toString());

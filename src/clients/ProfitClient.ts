@@ -373,7 +373,7 @@ export class ProfitClient {
       outputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
     } else {
       // This function will throw if the token is not found in the TOKEN_SYMBOLS_MAP for the destination chain.
-      outputTokenInfo = this.getL1TokenInfoForOutputToken(deposit);
+      outputTokenInfo = hubPoolClient.getL1TokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
     }
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenInfo.symbol);
     const outputTokenScalar = toBNWei(1, 18 - outputTokenInfo.decimals);
@@ -430,10 +430,6 @@ export class ProfitClient {
       netRelayerFeeUsd,
       profitable,
     };
-  }
-
-  getL1TokenInfoForOutputToken(deposit: Pick<Deposit, "outputToken" | "destinationChainId">): L1Token {
-    return getL1TokenInfo(deposit.outputToken, deposit.destinationChainId);
   }
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.

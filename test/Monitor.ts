@@ -22,7 +22,7 @@ import { MAX_UINT_VAL, getNetworkName, toBN } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { MockAdapterManager } from "./mocks";
+import { MockAdapterManager, SimpleMockHubPoolClient } from "./mocks";
 import {
   BigNumber,
   Contract,
@@ -100,6 +100,10 @@ describe("Monitor", async function () {
       constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       0
     ));
+
+    [l2Token.address, erc20_2.address, l1Token.address].forEach((token) =>
+      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(token, "L1Token1", l1Token.address)
+    );
 
     defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
