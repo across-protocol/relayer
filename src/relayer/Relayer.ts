@@ -16,6 +16,7 @@ import {
   toBNWei,
   winston,
   fixedPointAdjustment,
+  getL1TokenInfo,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -703,7 +704,8 @@ export class Relayer {
         const formatter = createFormatFunction(2, 4, false, decimals);
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
-          const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
+          // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
+          const l1Token = getL1TokenInfo(token, chainId);
           crossChainLog =
             "There is " +
             formatter(
@@ -730,11 +732,11 @@ export class Relayer {
   }
 
   private handleUnprofitableFill() {
-    const { hubPoolClient, profitClient } = this.clients;
+    const { profitClient } = this.clients;
     const unprofitableDeposits = profitClient.getUnprofitableFills();
 
     const formatAmount = (chainId: number, token: string, amount: BigNumber): { symbol: string; amount: string } => {
-      const { symbol, decimals } = hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
+      const { symbol, decimals } = getL1TokenInfo(token, chainId);
       return { symbol, amount: createFormatFunction(2, 4, false, decimals)(amount.toString()) };
     };
 

@@ -319,7 +319,7 @@ describe("ProfitClient: Consider relay profit", () => {
             outputAmount,
           };
           hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
-          hubPoolClient.setTokenMapping(token.address, deposit.destinationChainId, deposit.outputToken);
+          profitClient.mapAddress(deposit.outputToken, token.symbol);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.
@@ -395,7 +395,7 @@ describe("ProfitClient: Consider relay profit", () => {
             outputAmount,
           };
           hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
-          hubPoolClient.setTokenMapping(token.address, deposit.destinationChainId, deposit.outputToken);
+          profitClient.mapAddress(deposit.outputToken, token.symbol);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.
@@ -478,7 +478,7 @@ describe("ProfitClient: Consider relay profit", () => {
     const deposit = { ...v3DepositTemplate };
     const l1Token = tokens.WETH;
     hubPoolClient.setTokenMapping(l1Token.address, originChainId, deposit.inputToken);
-    hubPoolClient.setTokenMapping(l1Token.address, destinationChainId, deposit.outputToken);
+    profitClient.mapAddress(deposit.outputToken, l1Token.symbol);
     randomiseGasCost(destinationChainId);
 
     const outputTokenPriceUsd = profitClient.getPriceOfToken(l1Token.symbol);
@@ -497,7 +497,7 @@ describe("ProfitClient: Consider relay profit", () => {
     const deposit = { ...v3DepositTemplate, updatedOutputAmount };
 
     hubPoolClient.setTokenMapping(tokens.WETH.address, originChainId, deposit.inputToken);
-    hubPoolClient.setTokenMapping(tokens.WETH.address, destinationChainId, deposit.outputToken);
+    profitClient.mapAddress(deposit.outputToken, tokens.WETH.symbol);
     const outputTokenPriceUsd = profitClient.getPriceOfToken(tokens.WETH.symbol);
 
     let expectedOutputAmountUsd = deposit.outputAmount.mul(outputTokenPriceUsd).div(fixedPoint);

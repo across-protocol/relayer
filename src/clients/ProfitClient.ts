@@ -26,6 +26,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   ZERO_ADDRESS,
+  getL1TokenInfo,
 } from "../utils";
 import {
   Deposit,
@@ -112,6 +113,13 @@ const QUERY_HANDLERS: {
   11155420: relayFeeCalculator.OptimismSepoliaQueries,
 };
 
+// Hard-coded mapping of token symbols that should be treated as having equivalent
+// prices. The right-hand side should map to a token symbol in TOKEN_SYMBOLS_MAP.
+const TOKEN_EQUIVALENCE_REMAPPING: { [symbol: string]: string } = {
+  ["USDC.e"]: "USDC",
+  ["USDbC"]: "USDC",
+};
+
 const { PriceClient } = priceClient;
 const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
@@ -174,6 +182,14 @@ export class ProfitClient {
     }
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
+
+    // Validate TOKEN_EQUIVALENCE_REMAPPING
+    Object.entries(TOKEN_EQUIVALENCE_REMAPPING).forEach(([from, to]) => {
+      assert(
+        isDefined(TOKEN_SYMBOLS_MAP[to]),
+        `Token symbol ${from} is mapped to ${to} which does not exist in TOKEN_SYMBOLS_MAP`
+      );
+    });
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
@@ -204,8 +220,15 @@ export class ProfitClient {
    * @returns Address corresponding to token.
    */
   resolveTokenAddress(token: string): string {
-    const address = ethersUtils.isAddress(token) ? token : this.tokenSymbolMap[token];
-    assert(isDefined(address), `Unable to resolve address for token ${token}`);
+    if (ethersUtils.isAddress(token)) {
+      return token;
+    }
+    const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
+    const address = this.tokenSymbolMap[remappedTokenSymbol];
+    assert(
+      isDefined(address),
+      `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
+    );
     return address;
   }
 
@@ -338,7 +361,20 @@ export class ProfitClient {
     const scaledInputAmount = deposit.inputAmount.mul(inputTokenScalar);
     const inputAmountUsd = scaledInputAmount.mul(inputTokenPriceUsd).div(fixedPoint);
 
-    const outputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
+    // Unlike the input token, output token is not always resolvable via HubPoolClient since outputToken
+    // can be any arbitrary token.
+    let outputTokenInfo: L1Token;
+    // If the output token and the input token are equivalent, then we can look up the token info
+    // via the HubPoolClient since the output token is mapped via PoolRebalanceRoute to the HubPool.
+    // If not, then we should look up outputToken in the TOKEN_SYMBOLS_MAP for the destination chain.
+    const matchingTokens =
+      TOKEN_SYMBOLS_MAP[inputTokenInfo.symbol]?.addresses[deposit.destinationChainId] === deposit.outputToken;
+    if (matchingTokens) {
+      outputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
+    } else {
+      // This function will throw if the token is not found in the TOKEN_SYMBOLS_MAP for the destination chain.
+      outputTokenInfo = this.getL1TokenInfoForOutputToken(deposit);
+    }
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenInfo.symbol);
     const outputTokenScalar = toBNWei(1, 18 - outputTokenInfo.decimals);
     const effectiveOutputAmount = min(deposit.outputAmount, deposit.updatedOutputAmount ?? deposit.outputAmount);
@@ -394,6 +430,10 @@ export class ProfitClient {
       netRelayerFeeUsd,
       profitable,
     };
+  }
+
+  getL1TokenInfoForOutputToken(deposit: Pick<Deposit, "outputToken" | "destinationChainId">): L1Token {
+    return getL1TokenInfo(deposit.outputToken, deposit.destinationChainId);
   }
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.

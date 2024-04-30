@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { ProfitClient } from "../../src/clients";
-import { SpokePoolClientsByChain } from "../../src/interfaces";
+import { L1Token, SpokePoolClientsByChain, V3Deposit } from "../../src/interfaces";
 import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
@@ -11,6 +11,7 @@ const defaultFillCost = toBN(100_000); // gas
 const defaultGasPrice = bnOne; // wei per gas
 
 export class MockProfitClient extends ProfitClient {
+  private tokenAddressMap: { [tokenAddress: string]: string } = {};
   constructor(
     logger: winston.Logger,
     hubPoolClient: HubPoolClient | MockHubPoolClient,
@@ -74,6 +75,25 @@ export class MockProfitClient extends ProfitClient {
 
   mapToken(symbol: string, address: string): void {
     this.tokenSymbolMap[symbol] = address;
+  }
+
+  mapAddress(address: string, symbol: string): void {
+    this.tokenAddressMap[address] = symbol;
+  }
+
+  getL1TokenInfoForOutputToken(deposit: V3Deposit): L1Token {
+    // If output token is mapped manually to a symbol in the symbol map,
+    // use that info.
+    if (this.tokenAddressMap[deposit.outputToken]) {
+      const matchedSymbol = this.tokenAddressMap[deposit.outputToken];
+      const overriddenAddress = this.tokenSymbolMap[matchedSymbol];
+      return {
+        address: overriddenAddress,
+        symbol: matchedSymbol,
+        decimals: TOKEN_SYMBOLS_MAP[matchedSymbol].decimals,
+      };
+    }
+    return super.getL1TokenInfoForOutputToken(deposit);
   }
 
   setTokenPrice(token: string, price: BigNumber | undefined): void {
