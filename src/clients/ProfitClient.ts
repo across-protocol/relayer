@@ -26,7 +26,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   ZERO_ADDRESS,
-  getL1TokenInfo,
 } from "../utils";
 import {
   Deposit,
