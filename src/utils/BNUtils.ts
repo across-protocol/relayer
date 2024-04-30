@@ -1,6 +1,6 @@
 import { BigNumber } from "ethers";
 
-export function bnComparatorDescending(a: BigNumber, b: BigNumber) {
+export function bnComparatorDescending(a: BigNumber, b: BigNumber): -1 | 0 | 1 {
   if (b.gt(a)) {
     return 1;
   } else if (a.gt(b)) {
@@ -10,7 +10,7 @@ export function bnComparatorDescending(a: BigNumber, b: BigNumber) {
   }
 }
 
-export function bnComparatorAscending(a: BigNumber, b: BigNumber) {
+export function bnComparatorAscending(a: BigNumber, b: BigNumber): -1 | 0 | 1 {
   if (a.gt(b)) {
     return 1;
   } else if (b.gt(a)) {
