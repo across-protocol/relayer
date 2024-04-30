@@ -79,6 +79,8 @@ describe("Monitor", async function () {
   };
 
   beforeEach(async function () {
+    let _hubPoolClient: HubPoolClient;
+    let _updateAllClients: () => Promise<void>;
     ({
       configStoreClient,
       hubPool,
@@ -90,16 +92,29 @@ describe("Monitor", async function () {
       l1Token_1: l1Token,
       spokePool_1,
       spokePool_2,
-      hubPoolClient,
+      hubPoolClient: _hubPoolClient,
       spokePoolClients,
       multiCallerClient,
-      updateAllClients,
+      updateAllClients: _updateAllClients,
     } = await setupDataworker(
       ethers,
       constants.MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       0
     ));
+
+    // Use a mock hub pool client for these tests so we can hardcode the L1TokenInfo for arbitrary tokens.
+    hubPoolClient = new SimpleMockHubPoolClient(
+      spyLogger,
+      hubPool,
+      configStoreClient,
+      _hubPoolClient.deploymentBlock,
+      _hubPoolClient.chainId
+    );
+    updateAllClients = async () => {
+      await _updateAllClients();
+      await hubPoolClient.update();
+    };
 
     [l2Token.address, erc20_2.address, l1Token.address].forEach((token) =>
       (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(token, "L1Token1", l1Token.address)

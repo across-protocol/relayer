@@ -48,16 +48,6 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
 export class SimpleMockHubPoolClient extends HubPoolClient {
   private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
 
-  constructor(
-    logger: winston.Logger,
-    hubPool: Contract,
-    configStoreClient: ConfigStoreClient | MockConfigStoreClient,
-    deploymentBlock = 0,
-    chainId = 1
-  ) {
-    super(logger, hubPool, configStoreClient, deploymentBlock, chainId);
-  }
-
   mapTokenInfo(token: string, symbol: string, l1Token?: string): void {
     this.tokenInfoMap[token] = {
       symbol,
