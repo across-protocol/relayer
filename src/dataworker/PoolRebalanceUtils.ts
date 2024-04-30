@@ -231,7 +231,7 @@ export function getRunningBalanceForL1Token(
 
 // This returns a possible next block range that could be submitted as a new root bundle, or used as a reference
 // when evaluating  pending root bundle. The block end numbers must be less than the latest blocks for each chain ID
-// (because we can't evaluate events in the future), and greater than the the expected start blocks, which are the
+// (because we can't evaluate events in the future), and greater than the expected start blocks, which are the
 // greater of 0 and the latest bundle end block for an executed root bundle proposal + 1.
 export function getWidestPossibleExpectedBlockRange(
   chainIdListForBundleEvaluationBlockNumbers: number[],
