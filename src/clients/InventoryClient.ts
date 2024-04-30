@@ -293,7 +293,7 @@ export class InventoryClient {
           ` (${inputToken} != ${outputToken})`
       );
     }
-    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
+    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
     const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
 
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
