@@ -15,6 +15,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   bnZero,
+  assert,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./";
@@ -136,7 +137,6 @@ export class PolygonAdapter extends BaseAdapter {
     const availableTokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
     const promises: Promise<Event[]>[] = [];
-    const validTokens: SupportedL1Token[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableTokens) {
@@ -169,20 +169,19 @@ export class PolygonAdapter extends BaseAdapter {
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
           paginatedEventQuery(l2Token, l2Token.filters[l2Method](...l2SearchFilter), l2SearchConfig)
         );
-        validTokens.push(l1Token);
       }
     }
 
     const results = await Promise.all(promises);
 
     // 2 events per token.
-    const numEventsPerMonitoredAddress = 2 * validTokens.length;
+    const numEventsPerMonitoredAddress = 2 * availableTokens.length;
 
     // Segregate the events list by monitored address.
     const resultsByMonitoredAddress = Object.fromEntries(
       this.monitoredAddresses.map((monitoredAddress, index) => {
         const start = index * numEventsPerMonitoredAddress;
-        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress)];
       })
     );
 
@@ -190,7 +189,11 @@ export class PolygonAdapter extends BaseAdapter {
     for (const monitoredAddress of this.monitoredAddresses) {
       const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
       eventsToProcess.forEach((result, index) => {
-        const l1Token = validTokens[Math.floor(index / 2)];
+        if (eventsToProcess.length === 0) {
+          return;
+        }
+        assert(eventsToProcess.length % 2 === 0, "Events list length should be even");
+        const l1Token = availableTokens[Math.floor(index / 2)];
         const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
         const events = result.map((event) => {
           // Hacky typing here. We should probably rework the structure of this function to improve.
@@ -212,7 +215,7 @@ export class PolygonAdapter extends BaseAdapter {
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
     this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
-    return this.computeOutstandingCrossChainTransfers(validTokens);
+    return this.computeOutstandingCrossChainTransfers(availableTokens);
   }
 
   async sendTokenToTargetChain(
