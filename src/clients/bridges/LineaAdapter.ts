@@ -157,19 +157,18 @@ export class LineaAdapter extends BaseAdapter {
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
       await sdk.utils.mapAsync(supportedL1Tokens, async (l1Token) => {
         if (this.isWeth(l1Token)) {
-          const atomicDepositor = this.getAtomicDepositor();
           const l1MessageService = this.getL1MessageService();
           const l2MessageService = this.getL2MessageService();
 
           // We need to do the following sequential steps.
-          // 1. Get all initiated MessageSent events from the L1MessageService where the 'from' address is
-          //    the AtomicDepositor and the 'to' address is the user's address.
+          // 1. Get all initiated MessageSent events from the L1MessageService where the 'to' address is the 
+          //    user's address.
           // 2. Pipe the resulting _messageHash argument from step 1 into the MessageClaimed event filter
           // 3. For each MessageSent, match the _messageHash to the _messageHash in the MessageClaimed event
           //    any unmatched MessageSent events are considered outstanding transfers.
           const initiatedQueryResult = await paginatedEventQuery(
             l1MessageService,
-            l1MessageService.filters.MessageSent(atomicDepositor.address, address),
+            l1MessageService.filters.MessageSent(null, address),
             l1SearchConfig
           );
           const internalMessageHashes = initiatedQueryResult.map(({ args }) => args._messageHash);
