@@ -1,3 +1,4 @@
+import { utils as ethersUtils } from "ethers";
 import { typeguards } from "@across-protocol/sdk-v2";
 import {
   BigNumber,
@@ -145,11 +146,22 @@ export class RelayerConfig extends CommonConfig {
         }
       });
 
-      Object.keys(inventoryConfig?.tokenConfig ?? {}).forEach((l1Token) => {
-        Object.keys(inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
-          const tokenConfig = inventoryConfig.tokenConfig[l1Token][chainId];
+      const rawTokenConfigs = inventoryConfig?.tokenConfig ?? {};
+      const tokenConfigs = (inventoryConfig.tokenConfig = {});
+      Object.keys(rawTokenConfigs).forEach((l1Token) => {
+        // If the l1Token is a symbol, resolve the correct address.
+        const effectiveL1Token = ethersUtils.isAddress(l1Token)
+          ? l1Token
+          : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
 
-          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } = tokenConfig;
+        Object.keys(rawTokenConfigs[l1Token]).forEach((chainId) => {
+          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } =
+            rawTokenConfigs[l1Token][chainId];
+
+          tokenConfigs[effectiveL1Token] ??= {};
+          tokenConfigs[effectiveL1Token][chainId] ??= { targetPct, thresholdPct, targetOverageBuffer };
+          const tokenConfig = tokenConfigs[effectiveL1Token][chainId];
+
           assert(
             targetPct !== undefined && thresholdPct !== undefined,
             `Bad config. Must specify targetPct, thresholdPct for ${l1Token} on ${chainId}`
@@ -167,7 +179,7 @@ export class RelayerConfig extends CommonConfig {
           tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
 
           // For WETH, also consider any unwrap target/threshold.
-          if (l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
+          if (effectiveL1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
             if (unwrapWethThreshold !== undefined) {
               tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
             }
