@@ -126,7 +126,7 @@ function createSendErrorWithMessage(message: string, sendError: any) {
 function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): boolean {
   if (method === "eth_getBlockByNumber") {
     // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
-    // led alchemy and quicknode to disagree on the the miner field's value.
+    // led alchemy and quicknode to disagree on the miner field's value.
     return compareResultsAndFilterIgnoredKeys(
       [
         "miner", // polygon (sometimes)

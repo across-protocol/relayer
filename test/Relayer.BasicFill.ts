@@ -389,7 +389,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     it("Ignores deposits older than min deposit confirmation threshold", async function () {
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
 
-      // Set MDC such that the deposit is is ignored. The profit client will return a fill USD amount of $0,
+      // Set MDC such that the deposit is ignored. The profit client will return a fill USD amount of $0,
       // so we need to set the MDC for the `0` threshold to be large enough such that the deposit would be ignored.
       relayerInstance = new Relayer(
         relayer.address,
