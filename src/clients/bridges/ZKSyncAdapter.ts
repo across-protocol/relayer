@@ -77,11 +77,7 @@ export class ZKSyncAdapter extends BaseAdapter {
             ),
 
             // Filter on transfers to l2Receiver
-            paginatedEventQuery(
-              l2EthContract,
-              l2EthContract.filters.Transfer(null, address),
-              l2SearchConfig
-            ),
+            paginatedEventQuery(l2EthContract, l2EthContract.filters.Transfer(null, address), l2SearchConfig),
           ]);
         } else {
           const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);

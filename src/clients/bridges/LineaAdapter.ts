@@ -161,7 +161,7 @@ export class LineaAdapter extends BaseAdapter {
           const l2MessageService = this.getL2MessageService();
 
           // We need to do the following sequential steps.
-          // 1. Get all initiated MessageSent events from the L1MessageService where the 'to' address is the 
+          // 1. Get all initiated MessageSent events from the L1MessageService where the 'to' address is the
           //    user's address.
           // 2. Pipe the resulting _messageHash argument from step 1 into the MessageClaimed event filter
           // 3. For each MessageSent, match the _messageHash to the _messageHash in the MessageClaimed event

@@ -15,7 +15,6 @@ export class WethBridge implements OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
   private readonly atomicDepositor: Contract;
-  private readonly l2Weth: Contract;
 
   constructor(private l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
@@ -26,9 +25,6 @@ export class WethBridge implements OpStackBridge {
 
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
-
-    const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
-    this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
   }
 
   get l1Gateway(): string {
@@ -57,7 +53,7 @@ export class WethBridge implements OpStackBridge {
     // We need to be smart about the filtering here because the ETHDepositInitiated event does not
     // index on the `toAddress` which is the `fromAddress` that we pass in here and the address we want
     // to actually filter on. So we make some simplifying assumptions:
-    // - For our tracking purposes, the ETHDepositInitiated `fromAddress` will be the 
+    // - For our tracking purposes, the ETHDepositInitiated `fromAddress` will be the
     //   AtomicDepositor if the fromAddress is an EOA.
     const isContract = (await this.l1Bridge.provider.getCode(fromAddress)) !== "0x";
     const events = await paginatedEventQuery(
