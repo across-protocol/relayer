@@ -124,7 +124,7 @@ export class RelayerConfig extends CommonConfig {
 
       // Validate the per chain target and thresholds for wrapping ETH:
       const wrapThresholds = inventoryConfig.wrapEtherThresholdPerChain;
-      const wrapTargets = inventoryConfig.wrapEtherTargetPerChain;;
+      const wrapTargets = inventoryConfig.wrapEtherTargetPerChain;
       Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
         if (wrapThresholds[chainId] !== undefined) {
           wrapThresholds[chainId] = toBNWei(wrapThresholds[chainId]); // Promote to 18 decimals.
@@ -160,11 +160,13 @@ export class RelayerConfig extends CommonConfig {
           );
           tokenConfig.targetPct = toBNWei(targetPct).div(100);
           tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
+
           // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
           // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
           // holding more tokens than the targetPct, but perhaps a better default is 100%
           tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
 
+          // For WETH, also consider any unwrap target/threshold.
           if (l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
             if (unwrapWethThreshold !== undefined) {
               tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
