@@ -290,24 +290,24 @@ export class InventoryClient {
     return isInputTokenUSDC && isOutputTokenBridgedUSDC;
   }
 
-/*
-  * Return all eligible repayment chains for a deposit. If inventory management is enabled, then this function will
-  * only choose chains where the post-relay balance allocation for a potential repayment chain is under the maximum
-  * allowed allocation on that chain. Origin, Destination, and HubChains are always evaluated as potential
-  * repayment chains in addition to  "Slow Withdrawal chains" such as Base, Optimism and Arbitrum for which
-  * taking repayment would reduce HubPool utilization. Post-relay allocation percentages take into
-  * account pending cross-chain inventory-management transfers, upcoming bundle refunds, token shortfalls
-  * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
-  * selected if the SpokePool's running balance for that chain is over the system's desired target.
-  * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
-  * chains are over-allocated.
-  * @dev If inventory management is disabled, then destinationChain is used as a default.
-  * @param deposit Deposit to determine repayment chains for.
-  * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
-  * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
-  * to lowest priority.
-  */
- async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
+  /*
+   * Return all eligible repayment chains for a deposit. If inventory management is enabled, then this function will
+   * only choose chains where the post-relay balance allocation for a potential repayment chain is under the maximum
+   * allowed allocation on that chain. Origin, Destination, and HubChains are always evaluated as potential
+   * repayment chains in addition to  "Slow Withdrawal chains" such as Base, Optimism and Arbitrum for which
+   * taking repayment would reduce HubPool utilization. Post-relay allocation percentages take into
+   * account pending cross-chain inventory-management transfers, upcoming bundle refunds, token shortfalls
+   * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
+   * selected if the SpokePool's running balance for that chain is over the system's desired target.
+   * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
+   * chains are over-allocated.
+   * @dev If inventory management is disabled, then destinationChain is used as a default.
+   * @param deposit Deposit to determine repayment chains for.
+   * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
+   * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
+   * to lowest priority.
+   */
+  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
