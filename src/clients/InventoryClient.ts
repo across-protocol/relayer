@@ -112,6 +112,18 @@ export class InventoryClient {
     );
   }
 
+  // @note: l1Token is current needed because not all l2 tokens (USDC.e, USDbC, ...) map back to an L1 token.
+  getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
+    l2Token ??= this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
+    const balance = this.tokenClient.getBalance(chainId, l2Token);
+
+    // @todo: This will resolve all outstanding transfers for the L1 token, but it should be filtered for _only_
+    // transfers that apply to the specific L2 token. This needs to be fixed in the crossChainTransferClient
+    return balance.add(
+      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+    );
+  }
+
   // Get the fraction of funds allocated on each chain.
   getChainDistribution(l1Token: string): { [chainId: number]: BigNumber } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
@@ -147,6 +159,7 @@ export class InventoryClient {
 
     const shortfall = this.getTokenShortFall(l1Token, chainId);
     const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
+
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
   }
@@ -381,10 +394,8 @@ export class InventoryClient {
     for (const _chain of chainsToEvaluate) {
       assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
       // Destination chain:
-
       const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, outputToken);
-
-      const chainVirtualBalance = this.getBalanceOnChainForL1Token(_chain, l1Token);
+      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, outputToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
