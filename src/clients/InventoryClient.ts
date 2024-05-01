@@ -35,6 +35,7 @@ type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: Big
 export type Rebalance = {
   chainId: number;
   l1Token: string;
+  l2Token: string;
   thresholdPct: BigNumber;
   targetPct: BigNumber;
   currentAllocPct: BigNumber;
@@ -159,9 +160,15 @@ export class InventoryClient {
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
-  trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string): void {
+  trackCrossChainTransfer(l1Token: string, l2Token: string, rebalance: BigNumber, chainId: number | string): void {
     this.tokenClient.decrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
-    this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, rebalance, Number(chainId));
+    this.crossChainTransferClient.increaseOutstandingTransfer(
+      this.relayer,
+      l1Token,
+      l2Token,
+      rebalance,
+      Number(chainId)
+    );
   }
 
   async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
@@ -630,9 +637,11 @@ export class InventoryClient {
           const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
           const balance = this.tokenClient.getBalance(1, l1Token);
           // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
+          const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
           rebalancesRequired.push({
             chainId,
             l1Token,
+            l2Token,
             currentAllocPct,
             thresholdPct,
             targetPct,
@@ -705,7 +714,8 @@ export class InventoryClient {
             });
             possibleRebalances.push(rebalance);
             // Decrement token balance in client for this chain and increment cross chain counter.
-            this.trackCrossChainTransfer(l1Token, amount, chainId);
+            const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
+            this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
           }
         } else {
           // Extract unexecutable rebalances for logging.
