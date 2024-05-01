@@ -12,7 +12,12 @@ export class CrossChainTransferClient {
   ) {}
 
   // Get any funds currently in the canonical bridge.
-  getOutstandingCrossChainTransferAmount(address: string, chainId: number | string, l1Token: string, l2Token?: string): BigNumber {
+  getOutstandingCrossChainTransferAmount(
+    address: string,
+    chainId: number | string,
+    l1Token: string,
+    l2Token?: string
+  ): BigNumber {
     const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
     if (!transfers) {
       return bnZero;
@@ -29,7 +34,12 @@ export class CrossChainTransferClient {
       .reduce((acc, curr) => acc.add(curr), bnZero);
   }
 
-  getOutstandingCrossChainTransferTxs(address: string, chainId: number | string, l1Token: string, l2Token?: string): string[] {
+  getOutstandingCrossChainTransferTxs(
+    address: string,
+    chainId: number | string,
+    l1Token: string,
+    l2Token?: string
+  ): string[] {
     const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
     if (!transfers) {
       return [];
@@ -40,7 +50,9 @@ export class CrossChainTransferClient {
     }
 
     // No specific l2Token specified; return the set of all l1Token transfers to chainId.
-    return Object.values(transfers).map(({ depositTxHashes }) => depositTxHashes).flat();
+    return Object.values(transfers)
+      .map(({ depositTxHashes }) => depositTxHashes)
+      .flat();
   }
 
   getEnabledChains(): number[] {
@@ -51,8 +63,14 @@ export class CrossChainTransferClient {
     return this.getEnabledChains().filter((chainId) => chainId !== 1);
   }
 
-  increaseOutstandingTransfer(address: string, l1Token: string, l2Token: string, rebalance: BigNumber, chainId: number): void {
-    const transfers = this.outstandingCrossChainTransfers[chainId] ??= {};
+  increaseOutstandingTransfer(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    rebalance: BigNumber,
+    chainId: number
+  ): void {
+    const transfers = (this.outstandingCrossChainTransfers[chainId] ??= {});
     transfers[address] ??= {};
     transfers[address][l1Token] ??= {};
     transfers[address][l1Token][l2Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
