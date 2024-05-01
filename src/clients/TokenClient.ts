@@ -231,7 +231,7 @@ export class TokenClient {
         const { symbol } = hubPoolClient.getL1Tokens().find((hubPoolToken) => hubPoolToken.address === address);
         if (symbol === "USDC") {
           // At the moment, constants-v3 defines native usdc as _USDC.
-          const usdcAliases = ["_USDC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
+          const usdcAliases = ["_USDC", "USDC.e", "USDbC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
           usdcAliases
             .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
             .filter(isDefined)
