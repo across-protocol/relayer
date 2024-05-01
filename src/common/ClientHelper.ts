@@ -58,7 +58,8 @@ export async function resolveSpokePoolActivationBlock(
   const redis = await getRedisCache(hubPoolClient.logger);
   if (isDefined(redis)) {
     const activationBlock = await redis.get(key);
-    if (isDefined(activationBlock) && typeof activationBlock === "string") {
+    const numericActivationBlock = Number(activationBlock);
+    if (Number.isInteger(numericActivationBlock) && numericActivationBlock > 0) {
       return Number(activationBlock);
     }
   }
