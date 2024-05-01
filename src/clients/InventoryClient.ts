@@ -413,7 +413,9 @@ export class InventoryClient {
 
     // Always add hubChain as a fallback option if inventory management is enabled. If none of the chainsToEvaluate
     // were selected, then this function will return just the hub chain as a fallback option.
-    eligibleRefundChains.push(hubChainId);
+    if (!eligibleRefundChains.includes(hubChainId)) {
+      eligibleRefundChains.push(hubChainId);
+    }
     return eligibleRefundChains;
   }
 
