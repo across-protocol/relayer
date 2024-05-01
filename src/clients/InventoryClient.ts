@@ -36,6 +36,7 @@ type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: Big
 export type Rebalance = {
   chainId: number;
   l1Token: string;
+  l2Token: string;
   thresholdPct: BigNumber;
   targetPct: BigNumber;
   currentAllocPct: BigNumber;
@@ -126,6 +127,13 @@ export class InventoryClient {
   }
 
   // Get the fraction of funds allocated on each chain.
+  _getChainDistribution(l1Token: string, chainId: number, l2Token: string): BigNumber {
+    const balance = this.getBalanceOnChain(chainId, l1Token, l2Token);
+    const cumulativeBalance = this.getCumulativeBalance(l1Token);
+
+    return cumulativeBalance.gt(bnZero) ? balance.mul(this.scalar).div(cumulativeBalance) : bnZero;
+  }
+
   getChainDistribution(l1Token: string): { [chainId: number]: BigNumber } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution: { [chainId: number]: BigNumber } = {};
@@ -651,25 +659,21 @@ export class InventoryClient {
   }
 
   getPossibleRebalances(): Rebalance[] {
-    const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
-    return this._getPossibleRebalances(tokenDistributionPerL1Token);
-  }
-
-  _getPossibleRebalances(tokenDistributionPerL1Token: TokenDistributionPerL1Token): Rebalance[] {
+    const chainIds = this.getEnabledChains();
+    const l1Tokens = this.getL1Tokens();
     const rebalancesRequired: Rebalance[] = [];
 
     // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
-    for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
+    l1Tokens.forEach((l1Token) => {
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
       if (cumulativeBalance.eq(bnZero)) {
-        continue;
+        return;
       }
 
-      for (const chainId of this.getEnabledL2Chains()) {
-        // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
-        // as they're not present on all L2s.
+      chainIds.forEach((chainId) => {
+        // Skip if there's no configuration for l1Token on chainId.
         if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
-          continue;
+          return;
         }
 
         const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
@@ -677,25 +681,29 @@ export class InventoryClient {
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
           const { thresholdPct, targetPct } = tokenConfig;
-          if (currentAllocPct.lt(thresholdPct)) {
-            const deltaPct = targetPct.sub(currentAllocPct);
-            const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
-            const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
-            // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
-            rebalancesRequired.push({
-              chainId,
-              l1Token,
-              currentAllocPct,
-              thresholdPct,
-              targetPct,
-              balance,
-              cumulativeBalance,
-              amount,
-            });
+
+          if (currentAllocPct.gte(thresholdPct)) {
+            return;
           }
+
+          const deltaPct = targetPct.sub(currentAllocPct);
+          const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
+          const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
+          rebalancesRequired.push({
+            chainId,
+            l1Token,
+            l2Token,
+            currentAllocPct,
+            thresholdPct,
+            targetPct,
+            balance,
+            cumulativeBalance,
+            amount,
+          });
         });
-      }
-    }
+      });
+    });
+
     return rebalancesRequired;
   }
 
@@ -715,14 +723,13 @@ export class InventoryClient {
       const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
       this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
-      const rebalancesRequired = this._getPossibleRebalances(tokenDistributionPerL1Token);
+      const rebalancesRequired = this.getPossibleRebalances();
       if (rebalancesRequired.length === 0) {
         this.log("No rebalances required");
         return;
       }
 
       // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
-
       for (const rebalance of rebalancesRequired) {
         const { balance, amount, l1Token, chainId } = rebalance;
 
@@ -811,12 +818,13 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, balance, cumulativeBalance, amount } of rebalances) {
+        for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
           if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
           }
           const { symbol, decimals } = tokenInfo;
+          const distribution = this._getChainDistribution(l1Token, chainId, l2Token);
           const formatter = createFormatFunction(2, 4, false, decimals);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
@@ -824,7 +832,7 @@ export class InventoryClient {
             `${formatter(balance.toString())} on L1. There is currently ` +
             `${formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString())} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
-            `${this.formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100).toString())}% of the total ` +
+            `${this.formatWei(distribution.mul(100).toString())}% of the total ` +
             `${formatter(cumulativeBalance.toString())} ${symbol}.` +
             " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
