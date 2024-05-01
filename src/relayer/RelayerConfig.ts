@@ -152,7 +152,8 @@ export class RelayerConfig extends CommonConfig {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
           ? l1Token
-          : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
+          : TOKEN_SYMBOLS_MAP[l1Token]?.addresses[this.hubPoolChainId];
+        assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
 
         Object.keys(rawTokenConfigs[l1Token]).forEach((chainId) => {
           const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } =
