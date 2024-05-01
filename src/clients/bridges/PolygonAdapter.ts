@@ -193,7 +193,7 @@ export class PolygonAdapter extends BaseAdapter {
           return;
         }
         assert(eventsToProcess.length % 2 === 0, "Events list length should be even");
-        const l1Token = availableTokens[Math.floor(index / 2)];
+        const l1Token = availableTokens[index / 2]; // @dev length is even, no need to floor()
         const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
         const events = result.map((event) => {
           // Hacky typing here. We should probably rework the structure of this function to improve.
