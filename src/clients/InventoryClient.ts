@@ -151,6 +151,20 @@ export class InventoryClient {
     return distribution;
   }
 
+  //  // Get the distribution of all tokens, spread over all chains.
+  //  getTokenDistribution(l1Token: string): TokenDistribution {
+  //    const tokenDistribution: TokenDistribution = {};
+  //    const chainIds = this.getEnabledChains();
+  //
+  //    chainIds.forEach((chainId) => {
+  //      tokenDistribution[chainId] = {};
+  //      this.getDestinationTokensForL1Token(l1Token, chainId).forEach((l2Token) => {
+  //        tokenDistribution[chainId][l2Token] = this._getChainDistribution(l1Token, chainId, l2Token);
+  //      });
+  //    });
+  //    return tokenDistribution;
+  //  }
+
   // Get the distribution of all tokens, spread over all chains.
   getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
     const distributionPerL1Token: TokenDistributionPerL1Token = {};
@@ -258,7 +272,7 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    let startTimer;
+    let startTimer: number;
     if (!isDefined(this.bundleRefundsPromise)) {
       startTimer = performance.now();
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
