@@ -47,7 +47,7 @@ export class Relayer {
    * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
-    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, outputToken } = deposit;
+    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient } = this.clients;
     const { ignoredAddresses, relayerTokens, acceptInvalidFills } = this.config;
 
@@ -114,7 +114,7 @@ export class Relayer {
       return false;
     }
 
-    if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
