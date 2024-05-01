@@ -25,6 +25,7 @@ import {
   assign,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
 } from "../utils";
 import {
@@ -112,13 +113,6 @@ const QUERY_HANDLERS: {
   11155420: relayFeeCalculator.OptimismSepoliaQueries,
 };
 
-// Hard-coded mapping of token symbols that should be treated as having equivalent
-// prices. The right-hand side should map to a token symbol in TOKEN_SYMBOLS_MAP.
-const TOKEN_EQUIVALENCE_REMAPPING: { [symbol: string]: string } = {
-  ["USDC.e"]: "USDC",
-  ["USDbC"]: "USDC",
-};
-
 const { PriceClient } = priceClient;
 const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
@@ -181,14 +175,6 @@ export class ProfitClient {
     }
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
-
-    // Validate TOKEN_EQUIVALENCE_REMAPPING
-    Object.entries(TOKEN_EQUIVALENCE_REMAPPING).forEach(([from, to]) => {
-      assert(
-        isDefined(TOKEN_SYMBOLS_MAP[to]),
-        `Token symbol ${from} is mapped to ${to} which does not exist in TOKEN_SYMBOLS_MAP`
-      );
-    });
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
