@@ -14,7 +14,7 @@ export class BaseChainAdapter extends OpStackAdapter {
       // Custom Bridges
       {},
       logger,
-      ["BAL", "DAI", "ETH", "WETH", "USDC"],
+      ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
       spokePoolClients,
       monitoredAddresses
     );
