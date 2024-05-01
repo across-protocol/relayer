@@ -201,7 +201,7 @@ export class MultiCallerClient {
     // need to simulate transactions individually. If the batch failed, then we need to
     // simulate the transactions individually and pick out the successful ones.
     const batchTxns: AugmentedTransaction[] = valueTxns.concat(
-      await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
+      await this.buildMultiCallBundles(txns, this.chunkSize[chainId], true)
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
@@ -307,15 +307,15 @@ export class MultiCallerClient {
     } as AugmentedTransaction;
   }
 
-  buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
+  buildMultiCallBundle(transactions: AugmentedTransaction[], simulate: boolean): AugmentedTransaction[] {
     // Split transactions by target contract if they are not all the same.
     const txnsGroupedByTarget = lodash.groupBy(transactions, (txn) => txn.contract.address);
     return Object.values(txnsGroupedByTarget).map((txns) => {
-      return this._buildMultiCallBundle(txns);
+      return this._buildMultiCallBundle(txns, simulate);
     });
   }
 
-  _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+  _buildMultiCallBundle(transactions: AugmentedTransaction[], simulate: boolean): AugmentedTransaction {
     const mrkdwn: string[] = [];
     const callData: string[] = [];
     let gasLimit: BigNumber | undefined = bnZero;
@@ -342,6 +342,11 @@ export class MultiCallerClient {
       // simulated. In this case, drop the aggregation and revert to undefined to force estimation on submission.
       gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit) ? gasLimit.add(txn.gasLimit) : undefined;
     });
+    const multicallMethod = !simulate
+      ? transactions.every((txn) => ["fillV3Relay", "requestV3SlowFill"].includes(txn.method))
+        ? "tryMulticall"
+        : "multicall"
+      : "multicall";
 
     this.logger.debug({
       at: "MultiCallerClient",
@@ -354,7 +359,7 @@ export class MultiCallerClient {
     return {
       chainId,
       contract,
-      method: "multicall",
+      method: multicallMethod,
       args: [callData],
       gasLimit,
       message: "Across multicall transaction",
@@ -364,7 +369,8 @@ export class MultiCallerClient {
 
   async buildMultiCallBundles(
     txns: AugmentedTransaction[],
-    chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
+    chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE,
+    simulate = false
   ): Promise<AugmentedTransaction[]> {
     if (txns.length === 0) {
       return [];
@@ -425,14 +431,14 @@ export class MultiCallerClient {
       return getTxnChunks(multicallerTxns.concat(multisenderTxns))
         .map((txnChunk) => {
           // Don't wrap single transactions in a multicall.
-          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk, simulate) : txnChunk[0];
         })
         .flat();
     } else {
       // We can support sending multiple transactions to different contracts via an external multisender
       // contract.
       const multicallerTxnBundle = getTxnChunks(multicallerTxns)
-        .map((txnChunk) => (txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0]))
+        .map((txnChunk) => (txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk, simulate) : txnChunk[0]))
         .flat();
       const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
       const multisenderTxnBundle = await Promise.all(

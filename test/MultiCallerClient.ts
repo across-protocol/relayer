@@ -602,4 +602,73 @@ describe("MultiCallerClient", async function () {
     expect(bundle[1].args[0][0].callData).to.equal(encodeFunctionData("test()", []));
     expect(bundle[1].args[0][1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
   });
+
+  it("Correctly uses tryMulticall when only calling relayer functions", async function () {
+    const spokePoolMethods = ["fillV3Relay", "requestV3SlowFill"];
+    const chainId = chainIds[0];
+    const multicallTxns: AugmentedTransaction[] = [];
+    for (const spokePoolMethod of spokePoolMethods) {
+      const sampleTxn: AugmentedTransaction = {
+        chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: spokePoolMethod,
+        args: [],
+        message: "",
+        mrkdwn: "",
+      };
+      multicallTxns.push(sampleTxn);
+    }
+    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns);
+    expect(txnQueue[0].method).to.equal("tryMulticall");
+  });
+
+  it("Correctly uses multicall when using even a single non-relayer function", async function () {
+    const spokePoolMethods = ["fillV3Relay", "requestV3SlowFill", "test"];
+    const chainId = chainIds[0];
+    const multicallTxns: AugmentedTransaction[] = [];
+    for (const spokePoolMethod of spokePoolMethods) {
+      const sampleTxn: AugmentedTransaction = {
+        chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: spokePoolMethod,
+        args: [],
+        message: "",
+        mrkdwn: "",
+      };
+      multicallTxns.push(sampleTxn);
+    }
+    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns);
+    expect(txnQueue[0].method).to.equal("multicall");
+  });
+
+  it("Uses multicall instead of tryMulticall for simulations", async function () {
+    const spokePoolMethods = ["fillV3Relay", "requestV3SlowFill"];
+    const chainId = chainIds[0];
+    const multicallTxns: AugmentedTransaction[] = [];
+    for (const spokePoolMethod of spokePoolMethods) {
+      const sampleTxn: AugmentedTransaction = {
+        chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: spokePoolMethod,
+        args: [],
+        message: "",
+        mrkdwn: "",
+      };
+      multicallTxns.push(sampleTxn);
+    }
+    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns, undefined, true);
+    expect(txnQueue[0].method).to.equal("multicall");
+  });
 });
