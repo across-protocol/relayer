@@ -382,10 +382,7 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
       // Destination chain:
 
-      // @todo: Determine whether this should be reduced over all repayment token balances, or only the repayment token.
-      // Per current implementation, it returns the shortfall for the sum of all destination tokens that map to l1Token,
-      // not necessarily just the repayment token.
-      const chainShortfall = this.getTokenShortFall(l1Token, _chain);
+      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, outputToken);
 
       const chainVirtualBalance = this.getBalanceOnChainForL1Token(_chain, l1Token);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
