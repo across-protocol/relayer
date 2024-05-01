@@ -188,6 +188,7 @@ export class RelayerConfig extends CommonConfig {
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
           ? l1Token
           : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
+        assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
 
         tokenConfigs[effectiveL1Token] ??= {};
         const hubTokenConfig = rawTokenConfigs[l1Token];
