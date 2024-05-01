@@ -12,14 +12,35 @@ export class CrossChainTransferClient {
   ) {}
 
   // Get any funds currently in the canonical bridge.
-  getOutstandingCrossChainTransferAmount(address: string, chainId: number | string, l1Token: string): BigNumber {
-    const amount = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token]?.totalAmount;
-    return amount ? toBN(amount) : bnZero;
+  getOutstandingCrossChainTransferAmount(address: string, chainId: number | string, l1Token: string, l2Token?: string): BigNumber {
+    const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
+    if (!transfers) {
+      return bnZero;
+    }
+
+    if (l2Token) {
+      return transfers[l2Token]?.totalAmount ?? bnZero;
+    }
+
+    // No specific l2Token specified; return the sum of all l1Token transfers to chainId.
+    return Object.values(transfers)
+      .map(({ totalAmount }) => totalAmount)
+      .flat()
+      .reduce((acc, curr) => acc.add(curr), bnZero);
   }
 
-  getOutstandingCrossChainTransferTxs(address: string, chainId: number | string, l1Token: string): string[] {
-    const txHashes = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token]?.depositTxHashes;
-    return txHashes ? txHashes : [];
+  getOutstandingCrossChainTransferTxs(address: string, chainId: number | string, l1Token: string, l2Token?: string): string[] {
+    const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
+    if (!transfers) {
+      return [];
+    }
+
+    if (l2Token) {
+      return transfers[l2Token]?.depositTxHashes ?? [];
+    }
+
+    // No specific l2Token specified; return the set of all l1Token transfers to chainId.
+    return Object.values(transfers).map(({ depositTxHashes }) => depositTxHashes).flat();
   }
 
   getEnabledChains(): number[] {
@@ -30,26 +51,18 @@ export class CrossChainTransferClient {
     return this.getEnabledChains().filter((chainId) => chainId !== 1);
   }
 
-  increaseOutstandingTransfer(address: string, l1Token: string, rebalance: BigNumber, chainId: number): void {
-    if (!this.outstandingCrossChainTransfers[chainId]) {
-      this.outstandingCrossChainTransfers[chainId] = {};
-    }
-    const transfers = this.outstandingCrossChainTransfers[chainId];
-    if (transfers[address] === undefined) {
-      transfers[address] = {};
-    }
-    if (transfers[address][l1Token] === undefined) {
-      transfers[address][l1Token] = {
-        totalAmount: bnZero,
-        depositTxHashes: [],
-      };
-    }
+  increaseOutstandingTransfer(address: string, l1Token: string, l2Token: string, rebalance: BigNumber, chainId: number): void {
+    const transfers = this.outstandingCrossChainTransfers[chainId] ??= {};
+    transfers[address] ??= {};
+    transfers[address][l1Token] ??= {};
+    transfers[address][l1Token][l2Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
 
     // TODO: Require a tx hash here so we can track it as well.
-    transfers[address][l1Token].totalAmount = this.getOutstandingCrossChainTransferAmount(
+    transfers[address][l1Token][l2Token].totalAmount = this.getOutstandingCrossChainTransferAmount(
       address,
       chainId,
-      l1Token
+      l1Token,
+      l2Token
     ).add(rebalance);
   }
 
