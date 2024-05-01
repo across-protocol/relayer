@@ -5,6 +5,7 @@ import {
   BigNumber,
   bnZero,
   Contract,
+  dedupArray,
   ERC20,
   isDefined,
   MAX_SAFE_ALLOWANCE,
@@ -16,6 +17,7 @@ import {
   toBN,
   winston,
   getRedisCache,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 
 type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -214,16 +216,31 @@ export class TokenClient {
     hubPoolTokens: string[],
     signer: Signer
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
+    const { hubPoolClient } = this;
     const tokens = hubPoolTokens
       .map((address) => {
+        let tokenAddrs: string[] = [];
         try {
-          const spokePoolToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(address, chainId);
-          return new Contract(spokePoolToken, ERC20.abi, signer);
+          const spokePoolToken = hubPoolClient.getL2TokenForL1TokenAtBlock(address, chainId);
+          tokenAddrs.push(spokePoolToken);
         } catch {
-          return undefined;
+          // No known deployment for this token on the SpokePool.
         }
+
+        // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
+        const { symbol } = hubPoolClient.getL1Tokens().find((hubPoolToken) => hubPoolToken.address === address);
+        if (symbol === "USDC") {
+          // At the moment, constants-v3 defines native usdc as _USDC.
+          const usdcAliases = ["_USDC", "USDC.e", "USDbC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
+          usdcAliases
+            .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
+            .filter(isDefined)
+            .forEach((address) => tokenAddrs.push(address));
+          tokenAddrs = dedupArray(tokenAddrs);
+        }
+        return tokenAddrs.filter(isDefined).map((address) => new Contract(address, ERC20.abi, signer));
       })
-      .filter(isDefined);
+      .flat();
 
     const tokenData = Object.fromEntries(
       await Promise.all(
