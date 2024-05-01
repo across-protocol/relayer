@@ -16,7 +16,6 @@ import {
   toBNWei,
   winston,
   fixedPointAdjustment,
-  getL1TokenInfo,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
