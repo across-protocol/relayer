@@ -215,7 +215,7 @@ export class InventoryClient {
         if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           refunds[chainId] = toBN(0);
         } else {
-          const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
+          const destinationToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
           refunds[chainId] = this.bundleDataClient.getTotalRefund(
             refundsToConsider,
             this.relayer,
@@ -447,23 +447,21 @@ export class InventoryClient {
         } else {
           runningBalanceForToken = leaf.runningBalances[l1TokenIndex];
         }
+        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
         // Approximate latest running balance as last known proposed running balance...
         // - minus total deposit amount on chain since the latest end block proposed
         // - plus total refund amount on chain since the latest end block proposed
-        const upcomingDeposits = this.bundleDataClient.getUpcomingDepositAmount(
-          chainId,
-          this.getDestinationTokenForL1Token(l1Token, chainId),
-          blockRange[1]
-        );
+        const upcomingDeposits = this.bundleDataClient.getUpcomingDepositAmount(chainId, l2Token, blockRange[1]);
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
         const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
         const upcomingRefunds = allBundleRefunds.pop(); // @dev upcoming refunds are always pushed last into this list.
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
-        const upcomingRefundForChain = Object.values(
-          upcomingRefunds?.[chainId]?.[this.getDestinationTokenForL1Token(l1Token, chainId)] ?? {}
-        ).reduce((acc, curr) => acc.add(curr), bnZero);
+        const upcomingRefundForChain = Object.values(upcomingRefunds?.[chainId]?.[l2Token] ?? {}).reduce(
+          (acc, curr) => acc.add(curr),
+          bnZero
+        );
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = runningBalanceForToken.sub(upcomingDeposits).add(upcomingRefundForChain);
@@ -807,7 +805,8 @@ export class InventoryClient {
 
       chains.forEach((chainInfo) => {
         const { chainId, unwrapWethThreshold, unwrapWethTarget, balance } = chainInfo;
-        const l2WethBalance = this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId));
+        const l2Weth = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Weth, Number(chainId));
+        const l2WethBalance = this.tokenClient.getBalance(chainId, l2Weth);
 
         if (balance.lt(unwrapWethThreshold)) {
           const amountToUnwrap = unwrapWethTarget.sub(balance);
@@ -836,7 +835,7 @@ export class InventoryClient {
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const { chainInfo, amount } of unwrapsRequired) {
         const { chainId } = chainInfo;
-        const l2Weth = this.getDestinationTokenForL1Token(l1Weth, chainId);
+        const l2Weth = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Weth, Number(chainId));
         this.tokenClient.decrementLocalBalance(chainId, l2Weth, amount);
         const receipt = await this._unwrapWeth(chainId, l2Weth, amount);
         executedTransactions.push({ chainInfo, amount, hash: receipt.hash });
@@ -859,14 +858,13 @@ export class InventoryClient {
 
       for (const { chainInfo, amount } of unexecutedUnwraps) {
         const { chainId } = chainInfo;
+        const l2Weth = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Weth, Number(chainId));
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
         const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
           "- WETH unwrap blocked. Required to send " +
           `${formatter(amount.toString())} but relayer has ` +
-          `${formatter(
-            this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId)).toString()
-          )} WETH balance.\n`;
+          `${formatter(this.tokenClient.getBalance(chainId, l2Weth).toString())} WETH balance.\n`;
       }
 
       if (mrkdwn) {
