@@ -28,6 +28,7 @@ type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
 type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
 type RepaymentChainProfitability = {
   gasLimit: BigNumber;
+  gasCost: BigNumber;
   relayerFeePct: BigNumber;
   lpFeePct: BigNumber;
 };
