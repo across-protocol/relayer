@@ -1,4 +1,4 @@
-import { BigNumber, bnZero, winston, assign, toBN, DefaultLogLevels, AnyObject } from "../../utils";
+import { BigNumber, bnZero, winston, assign, DefaultLogLevels, AnyObject } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces";
 
