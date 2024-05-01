@@ -342,11 +342,9 @@ export class MultiCallerClient {
       // simulated. In this case, drop the aggregation and revert to undefined to force estimation on submission.
       gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit) ? gasLimit.add(txn.gasLimit) : undefined;
     });
-    const multicallMethod = !simulate
-      ? transactions.every((txn) => ["fillV3Relay", "requestV3SlowFill"].includes(txn.method))
-        ? "tryMulticall"
-        : "multicall"
-      : "multicall";
+    const method = !simulate && transactions.every((txn) => ["fillV3Relay", "requestV3SlowFill"].includes(txn.method))
+    ? "tryMulticall"
+    : "multicall"
 
     this.logger.debug({
       at: "MultiCallerClient",
@@ -359,7 +357,7 @@ export class MultiCallerClient {
     return {
       chainId,
       contract,
-      method: multicallMethod,
+      method,
       args: [callData],
       gasLimit,
       message: "Across multicall transaction",

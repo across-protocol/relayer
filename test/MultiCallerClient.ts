@@ -623,7 +623,7 @@ describe("MultiCallerClient", async function () {
       multicallTxns.push(sampleTxn);
     }
     const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns);
-    expect(txnQueue[0].method).to.equal("tryMulticall");
+    txnQueue.forEach(({ method }) => expect(method).to.equal("tryMulticall"));
   });
 
   it("Correctly uses multicall when using even a single non-relayer function", async function () {
@@ -646,7 +646,7 @@ describe("MultiCallerClient", async function () {
       multicallTxns.push(sampleTxn);
     }
     const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns);
-    expect(txnQueue[0].method).to.equal("multicall");
+    txnQueue.forEach(({ method }) => expect(method).to.equal("multicall"));
   });
 
   it("Uses multicall instead of tryMulticall for simulations", async function () {
@@ -669,6 +669,6 @@ describe("MultiCallerClient", async function () {
       multicallTxns.push(sampleTxn);
     }
     const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(multicallTxns, undefined, true);
-    expect(txnQueue[0].method).to.equal("multicall");
+    txnQueue.forEach(({ method }) => expect(method).to.equal("multicall"));
   });
 });
