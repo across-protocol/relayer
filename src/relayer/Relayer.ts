@@ -734,7 +734,7 @@ export class Relayer {
     chainId: number,
     tokenAddress: string
   ): { symbol: string; decimals: number; formatter: (amount: string) => string } {
-    const { symbol, decimals } = this.clients.hubPoolClient.getL1TokenInfoForAddress(tokenAddress, chainId);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
     return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
   }
 

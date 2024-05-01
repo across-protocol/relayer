@@ -183,8 +183,8 @@ describe("Relayer: Token balance shortfall", async function () {
 
     inputToken = erc20_1.address;
     outputToken = erc20_2.address;
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol(), l1Token.address);
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol(), l1Token.address);
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol());
     inputTokenDecimals = await erc20_1.decimals();
 
     // Standard deposit outputAmount is 100 tokens. Work backwards to inputAmount to simplify the shortfall math.

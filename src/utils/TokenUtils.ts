@@ -17,7 +17,7 @@ export function getEthAddressForChain(chainId: number): string {
   return CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
 }
 
-export function getL1TokenInfo(l2TokenAddress: string, chainId: number): L1Token {
+export function getTokenInfo(l2TokenAddress: string, chainId: number): L1Token {
   // @dev This might give false positives if tokens on different networks have the same address. I'm not sure how
   // to get around this...
   const tokenObject = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === l2TokenAddress);
@@ -27,7 +27,7 @@ export function getL1TokenInfo(l2TokenAddress: string, chainId: number): L1Token
     );
   }
   return {
-    address: tokenObject.addresses[CHAIN_IDs.MAINNET],
+    address: l2TokenAddress,
     symbol: tokenObject.symbol,
     decimals: tokenObject.decimals,
   };

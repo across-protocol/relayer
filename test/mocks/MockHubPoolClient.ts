@@ -34,15 +34,15 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     this.lpTokens[l1Token] = { lastLpFeeUpdate, liquidReserves };
   }
 
-  mapTokenInfo(token: string, symbol: string, l1Token?: string, decimals?: number): void {
+  mapTokenInfo(token: string, symbol: string, decimals?: number): void {
     this.tokenInfoMap[token] = {
       symbol,
-      address: l1Token ?? token,
+      address: token,
       decimals: decimals ?? 18,
     };
   }
 
-  getL1TokenInfoForAddress(token: string): L1Token {
+  getTokenInfoForAddress(token: string): L1Token {
     // If output token is mapped manually to a symbol in the symbol map,
     // use that info.
     if (this.tokenInfoMap[token]) {
@@ -70,20 +70,20 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
 export class SimpleMockHubPoolClient extends HubPoolClient {
   private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
 
-  mapTokenInfo(token: string, symbol: string, l1Token?: string): void {
+  mapTokenInfo(token: string, symbol: string, decimals = 18): void {
     this.tokenInfoMap[token] = {
       symbol,
-      address: l1Token ?? token,
-      decimals: 18,
+      address: token,
+      decimals,
     };
   }
 
-  getL1TokenInfoForAddress(token: string, chainId: number): L1Token {
+  getTokenInfoForAddress(token: string, chainId: number): L1Token {
     // If output token is mapped manually to a symbol in the symbol map,
     // use that info.
     if (this.tokenInfoMap[token]) {
       return this.tokenInfoMap[token];
     }
-    return super.getL1TokenInfoForAddress(token, chainId);
+    return super.getTokenInfoForAddress(token, chainId);
   }
 }

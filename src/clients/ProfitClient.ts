@@ -372,7 +372,7 @@ export class ProfitClient {
       outputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
     } else {
       // This function will throw if the token is not found in the TOKEN_SYMBOLS_MAP for the destination chain.
-      outputTokenInfo = hubPoolClient.getL1TokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
+      outputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
     }
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenInfo.symbol);
     const outputTokenScalar = toBNWei(1, 18 - outputTokenInfo.decimals);
@@ -402,14 +402,9 @@ export class ProfitClient {
       ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
       : bnZero;
 
-    // If either token prices are unknown, assume the relay is unprofitable. Force non-equivalent tokens
-    // to be unprofitable for now. The relayer may be updated in future to support in-protocol swaps.
-    const equivalentTokens = outputTokenInfo.address === inputTokenInfo.address;
+    // If either token prices are unknown, assume the relay is unprofitable.
     const profitable =
-      equivalentTokens &&
-      inputTokenPriceUsd.gt(bnZero) &&
-      outputTokenPriceUsd.gt(bnZero) &&
-      netRelayerFeePct.gte(minRelayerFeePct);
+      inputTokenPriceUsd.gt(bnZero) && outputTokenPriceUsd.gt(bnZero) && netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       totalFeePct,

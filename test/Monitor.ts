@@ -117,7 +117,7 @@ describe("Monitor", async function () {
     };
 
     [l2Token.address, erc20_2.address, l1Token.address].forEach((token) =>
-      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(token, "L1Token1", l1Token.address)
+      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(token, "L1Token1")
     );
 
     defaultMonitorEnvVars = {
