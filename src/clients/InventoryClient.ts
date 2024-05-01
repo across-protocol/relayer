@@ -171,9 +171,15 @@ export class InventoryClient {
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
-  trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string): void {
+  trackCrossChainTransfer(l1Token: string, l2Token: string, rebalance: BigNumber, chainId: number | string): void {
     this.tokenClient.decrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
-    this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, rebalance, Number(chainId));
+    this.crossChainTransferClient.increaseOutstandingTransfer(
+      this.relayer,
+      l1Token,
+      l2Token,
+      rebalance,
+      Number(chainId)
+    );
   }
 
   async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
@@ -711,7 +717,8 @@ export class InventoryClient {
             });
             possibleRebalances.push(rebalance);
             // Decrement token balance in client for this chain and increment cross chain counter.
-            this.trackCrossChainTransfer(l1Token, amount, chainId);
+            const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
+            this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
           }
         } else {
           // Extract unexecutable rebalances for logging.
