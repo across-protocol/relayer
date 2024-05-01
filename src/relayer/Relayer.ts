@@ -703,7 +703,7 @@ export class Relayer {
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = getL1TokenInfo(token, chainId);
+          const l1Token = this.clients.hubPoolClient.getTokenInfoForAddress(token, chainId);
           crossChainLog =
             "There is " +
             formatter(
