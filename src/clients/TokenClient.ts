@@ -1,10 +1,13 @@
+import { Signer } from "ethers";
 import { HubPoolClient, SpokePoolClient } from ".";
-import { V3Deposit } from "../interfaces";
+import { CachingMechanismInterface, V3Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
   Contract,
+  dedupArray,
   ERC20,
+  isDefined,
   MAX_SAFE_ALLOWANCE,
   MAX_UINT_VAL,
   assign,
@@ -14,6 +17,7 @@ import {
   toBN,
   winston,
   getRedisCache,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 
 type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -124,7 +128,7 @@ export class TokenClient {
     Object.entries(this.tokenData).forEach(([_chainId, tokenMap]) => {
       const chainId = Number(_chainId);
       Object.entries(tokenMap).forEach(([token, { balance, allowance }]) => {
-        if (balance.gt(0) && allowance.lt(MAX_SAFE_ALLOWANCE)) {
+        if (balance.gt(bnZero) && allowance.lt(MAX_SAFE_ALLOWANCE)) {
           tokensToApprove.push({ chainId, token });
         }
       });
@@ -173,19 +177,23 @@ export class TokenClient {
 
   async update(): Promise<void> {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
+    const { hubPoolClient } = this;
 
-    const [balanceInfo, bondToken] = await Promise.all([
-      Promise.all(Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))),
-      this._getBondToken(),
-    ]);
+    const hubPoolTokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
+    const chainIds = Object.values(this.spokePoolClients).map(({ chainId }) => chainId);
+    const balanceQueries = chainIds.map((chainId) =>
+      this.fetchTokenData(chainId, hubPoolTokens, this.spokePoolClients[chainId].spokePool.signer)
+    );
 
+    const [bondToken, ...balanceInfo] = await Promise.all([this._getBondToken(), ...balanceQueries]);
     this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
 
-    for (const { chainId, tokenData } of balanceInfo) {
+    balanceInfo.forEach((tokenData, idx) => {
+      const chainId = chainIds[idx];
       for (const token of Object.keys(tokenData)) {
         assign(this.tokenData, [chainId, token], tokenData[token]);
       }
-    }
+    });
 
     // Remove allowance from token data when logging.
     const balanceData = Object.fromEntries(
@@ -203,54 +211,68 @@ export class TokenClient {
     this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData });
   }
 
-  async fetchTokenData(spokePoolClient: SpokePoolClient): Promise<{
-    tokenData: Record<string, { balance: BigNumber; allowance: BigNumber }>;
-    chainId: number;
-  }> {
-    const tokens = spokePoolClient
-      .getAllOriginTokens()
-      .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
+  async fetchTokenData(
+    chainId: number,
+    hubPoolTokens: string[],
+    signer: Signer
+  ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
+    const { hubPoolClient } = this;
+    const tokens = hubPoolTokens
+      .map((address) => {
+        let tokenAddrs: string[] = [];
+        try {
+          const spokePoolToken = hubPoolClient.getL2TokenForL1TokenAtBlock(address, chainId);
+          tokenAddrs.push(spokePoolToken);
+        } catch {
+          // No known deployment for this token on the SpokePool.
+        }
 
-    const blockTag = spokePoolClient.eventSearchConfig.toBlock ?? "latest";
+        // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
+        const { symbol } = hubPoolClient.getL1Tokens().find((hubPoolToken) => hubPoolToken.address === address);
+        if (symbol === "USDC") {
+          // At the moment, constants-v3 defines native usdc as _USDC.
+          const usdcAliases = ["_USDC", "USDC.e", "USDbC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
+          usdcAliases
+            .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
+            .filter(isDefined)
+            .forEach((address) => tokenAddrs.push(address));
+          tokenAddrs = dedupArray(tokenAddrs);
+        }
+        return tokenAddrs.filter(isDefined).map((address) => new Contract(address, ERC20.abi, signer));
+      })
+      .flat();
+
     const tokenData = Object.fromEntries(
       await Promise.all(
         tokens.map(async (token) => {
-          const balance: BigNumber = await token.balanceOf(this.relayerAddress, { blockTag });
-          const allowance = await this._getAllowance(spokePoolClient, token, blockTag);
+          const balance: BigNumber = await token.balanceOf(this.relayerAddress);
+          const allowance = await this._getAllowance(this.spokePoolClients[chainId], token);
           return [token.address, { balance, allowance }];
         })
       )
     );
 
-    return { tokenData, chainId: spokePoolClient.chainId };
+    return tokenData;
   }
 
-  private async _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): Promise<string> {
-    return `l2TokenAllowance_${
-      spokePoolClient.chainId
-    }_${originToken}_${await spokePoolClient.spokePool.signer.getAddress()}_targetContract:${
-      spokePoolClient.spokePool.address
-    }`;
+  private _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): string {
+    const { chainId, spokePool } = spokePoolClient;
+    return `l2TokenAllowance_${chainId}_${originToken}_${this.relayerAddress}_targetContract:${spokePool.address}`;
   }
 
-  private async _getAllowance(
-    spokePoolClient: SpokePoolClient,
-    token: Contract,
-    blockTag: number | "latest"
-  ): Promise<BigNumber> {
-    const redis = await getRedisCache(this.logger);
+  private async _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
+    const key = this._getAllowanceCacheKey(spokePoolClient, token.address);
+    const redis = await this.getRedis();
     if (redis) {
-      const result = await redis.get<string>(await this._getAllowanceCacheKey(spokePoolClient, token.address));
+      const result = await redis.get<string>(key);
       if (result !== null) {
         return toBN(result);
       }
     }
-    const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address, {
-      blockTag,
-    });
+    const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
     if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
       // Save allowance in cache with no TTL as these should be exhausted.
-      await redis.set(await this._getAllowanceCacheKey(spokePoolClient, token.address), MAX_SAFE_ALLOWANCE);
+      await redis.set(key, MAX_SAFE_ALLOWANCE);
     }
     return allowance;
   }
@@ -260,7 +282,7 @@ export class TokenClient {
   }
 
   private async _getBondToken(): Promise<string> {
-    const redis = await getRedisCache(this.logger);
+    const redis = await this.getRedis();
     if (redis) {
       const cachedBondToken = await redis.get<string>(this._getBondTokenCacheKey());
       if (cachedBondToken !== null) {
@@ -282,5 +304,9 @@ export class TokenClient {
       this.logger.warn({ at: "TokenBalanceClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
     }
     return hasData;
+  }
+
+  protected async getRedis(): Promise<CachingMechanismInterface | undefined> {
+    return getRedisCache(this.logger);
   }
 }

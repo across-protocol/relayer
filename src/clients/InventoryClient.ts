@@ -21,6 +21,7 @@ import {
   MAX_UINT_VAL,
   toBNWei,
   assert,
+  compareAddressesSimple,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -261,23 +262,52 @@ export class InventoryClient {
   }
 
   /**
-   * Return all eligible repayment chains for a deposit. If inventory management is enabled, then this function will
-   * only choose chains where the post-relay balance allocation for a potential repayment chain is under the maximum
-   * allowed allocation on that chain. Origin, Destination, and HubChains are always evaluated as potential
-   * repayment chains in addition to  "Slow Withdrawal chains" such as Base, Optimism and Arbitrum for which
-   * taking repayment would reduce HubPool utilization. Post-relay allocation percentages take into
-   * account pending cross-chain inventory-management transfers, upcoming bundle refunds, token shortfalls
-   * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
-   * selected if the SpokePool's running balance for that chain is over the system's desired target.
-   * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
-   * chains are over-allocated.
-   * @dev If inventory management is disabled, then destinationChain is used as a default.
-   * @param deposit Deposit to determine repayment chains for.
-   * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
-   * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
-   * to lowest priority.
+   * Returns true if the depositor-specified output token is supported by the this inventory client.
+   * @param deposit V3 Deposit to consider
+   * @returns boolean True if output and input tokens are equivalent or if input token is USDC and output token
+   * is Bridged USDC.
    */
-  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
+  validateOutputToken(deposit: V3Deposit): boolean {
+    const { inputToken, outputToken, originChainId, destinationChainId } = deposit;
+
+    // Return true if input and output tokens are mapped to the same L1 token via PoolRebalanceRoutes
+    const equivalentTokens = this.hubPoolClient.areTokensEquivalent(
+      inputToken,
+      originChainId,
+      outputToken,
+      destinationChainId
+    );
+    if (equivalentTokens) {
+      return true;
+    }
+
+    // Return true if input token is USDC and output token is Bridged USDC.
+    const isInputTokenUSDC = compareAddressesSimple(inputToken, TOKEN_SYMBOLS_MAP["_USDC"].addresses?.[originChainId]);
+    const isOutputTokenBridgedUSDC = compareAddressesSimple(
+      outputToken,
+      TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses?.[destinationChainId]
+    );
+    return isInputTokenUSDC && isOutputTokenBridgedUSDC;
+  }
+
+/*
+  * Return all eligible repayment chains for a deposit. If inventory management is enabled, then this function will
+  * only choose chains where the post-relay balance allocation for a potential repayment chain is under the maximum
+  * allowed allocation on that chain. Origin, Destination, and HubChains are always evaluated as potential
+  * repayment chains in addition to  "Slow Withdrawal chains" such as Base, Optimism and Arbitrum for which
+  * taking repayment would reduce HubPool utilization. Post-relay allocation percentages take into
+  * account pending cross-chain inventory-management transfers, upcoming bundle refunds, token shortfalls
+  * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
+  * selected if the SpokePool's running balance for that chain is over the system's desired target.
+  * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
+  * chains are over-allocated.
+  * @dev If inventory management is disabled, then destinationChain is used as a default.
+  * @param deposit Deposit to determine repayment chains for.
+  * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
+  * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
+  * to lowest priority.
+  */
+ async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
@@ -286,17 +316,18 @@ export class InventoryClient {
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
-    // for disparate output tokens, so if one appears here then something is wrong. Throw hard and fast in that case.
+    // for disparate output tokens (unless the output token is USDC.e and the input token is USDC),
+    // so if one appears here then something is wrong. Throw hard and fast in that case.
     // In future, fills for disparate output tokens should probably just take refunds on the destination chain and
     // outsource inventory management to the operator.
-    if (!this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+    if (!this.validateOutputToken(deposit)) {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       throw new Error(
         `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId}` +
           ` (${inputToken} != ${outputToken})`
       );
     }
-    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(outputToken, destinationChainId);
+    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
     const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
 
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
@@ -360,8 +391,12 @@ export class InventoryClient {
       let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
       // on destination chain
+      // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
+      // This is possible when the output token is USDC.e and the input token is USDC which would still cause
+      // validateOutputToken() to return true above.
       let chainVirtualBalanceWithShortfallPostRelay =
-        _chain === destinationChainId
+        _chain === destinationChainId &&
+        this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
           ? chainVirtualBalanceWithShortfall.sub(outputAmount)
           : chainVirtualBalanceWithShortfall;
       // Add upcoming refunds:

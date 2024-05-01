@@ -53,7 +53,7 @@ export class Relayer {
    * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
-    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, outputToken } = deposit;
+    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient } = this.clients;
     const { ignoredAddresses, relayerTokens, acceptInvalidFills } = this.config;
 
@@ -120,7 +120,7 @@ export class Relayer {
       return false;
     }
 
-    if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
@@ -153,16 +153,17 @@ export class Relayer {
       return false;
     }
 
-    // We query the relayer API to get the deposit limits for different token and destination combinations.
+    // We query the relayer API to get the deposit limits for different token and origin combinations.
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
     const { inputAmount } = deposit;
-    if (acrossApiClient.updatedLimits && inputAmount.gt(acrossApiClient.getLimit(l1Token.address))) {
+    const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
+    if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
         message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-        limit: acrossApiClient.getLimit(l1Token.address),
+        limit,
         l1Token: l1Token.address,
         depositId,
         inputToken,
@@ -219,15 +220,18 @@ export class Relayer {
   }
 
   computeRequiredDepositConfirmations(deposits: V3Deposit[]): { [chainId: number]: number } {
-    const { profitClient } = this.clients;
+    const { profitClient, tokenClient } = this.clients;
     const { minDepositConfirmations } = this.config;
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits.reduce((agg, deposit) => {
-      const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
-      agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
-      return agg;
-    }, {});
+    // Filter out deposits where the relayer doesn't have the balance to make the fill.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
+      .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
+      .reduce((agg, deposit) => {
+        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        return agg;
+      }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(minDepositConfirmations)
@@ -323,15 +327,11 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
-      const { realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct({
-        ...deposit,
-        paymentChainId: destinationChainId,
-      });
-
       // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
-      this.fillRelay(deposit, destinationChainId, realizedLpFeePct);
+      const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
+      this.fillRelay(deposit, destinationChainId, lpFeePct);
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
