@@ -26,7 +26,7 @@
     "@maticnetwork/maticjs-ethers": "^1.0.3",
     "@openzeppelin/hardhat-upgrades": "^1.28.0",
     "@uma/common": "2.33.0",
-    "@uma/financial-templates-lib": "^2.34.1",
+    "@uma/logger": "1.2.0",
     "async": "^3.2.4",
     "axios": "^1.6.1",
     "dotenv": "^16.3.1",
