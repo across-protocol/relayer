@@ -150,7 +150,7 @@ export class LineaAdapter extends BaseAdapter {
       : this.getL1TokenBridge();
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const outstandingTransfers: OutstandingTransfers = {};
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -190,16 +190,26 @@ export class LineaAdapter extends BaseAdapter {
               const txHash = event.transactionHash;
               const amount = event.args._value;
               outstandingTransfers[address] ??= {};
-              outstandingTransfers[address][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
-              outstandingTransfers[address][l1Token] = {
-                totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
-                depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
+              outstandingTransfers[address][l1Token] ??= {};
+
+              const l2Weth = TOKEN_SYMBOLS_MAP.WETH.addresses[this.chainId];
+
+              outstandingTransfers[address][l1Token][l2Weth] ??= { totalAmount: bnZero, depositTxHashes: [] };
+              outstandingTransfers[address][l1Token][l2Weth] = {
+                totalAmount: outstandingTransfers[address][l1Token][l2Weth].totalAmount.add(amount),
+                depositTxHashes: [...outstandingTransfers[address][l1Token][l2Weth].depositTxHashes, txHash],
               };
             });
         } else {
           const isUsdc = this.isUsdc(l1Token);
           const l1Bridge = this.getL1Bridge(l1Token);
           const l2Bridge = this.getL2Bridge(l1Token);
+
+          // We either know this is USDC which is drawn from USDC.e or we can get the L2 token address from the L1 token address
+          // in the standard case.
+          const l2Token = isUsdc
+            ? TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.chainId]
+            : sdk.utils.getL2TokenAddresses(l1Token, this.hubChainId)[this.chainId];
 
           // Define the initialized and finalized event filters for the L1 and L2 bridges
           const [filterL1, filterL2] = isUsdc
@@ -228,10 +238,10 @@ export class LineaAdapter extends BaseAdapter {
               const txHash = initialEvent.transactionHash;
               const amount = initialEvent.args.amount;
               outstandingTransfers[address] ??= {};
-              outstandingTransfers[address][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
-              outstandingTransfers[address][l1Token] = {
-                totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
-                depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
+              outstandingTransfers[address][l1Token][l2Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
+              outstandingTransfers[address][l1Token][l2Token] = {
+                totalAmount: outstandingTransfers[address][l1Token][l2Token].totalAmount.add(amount),
+                depositTxHashes: [...outstandingTransfers[address][l1Token][l2Token].depositTxHashes, txHash],
               };
             });
         }
