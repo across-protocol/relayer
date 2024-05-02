@@ -40,6 +40,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
     const atomicWethDepositor = this.getAtomicDepositor();
+    const hubPool = this.getHubPool();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -66,19 +67,50 @@ export class ZKSyncAdapter extends BaseAdapter {
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
 
+        const isContract = (await atomicWethDepositor.provider.getCode(address)) !== "0x";
+
+        // This adapter will only work to track EOA's or the HubPool's transfers.
+        if (isContract && address !== hubPool.address) {
+          return;
+        }
+
         let initiatedQueryResult: Event[], finalizedQueryResult: Event[];
         if (isWeth) {
+          // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
+          // AtomicDepositor. If sending WETH from a contract, then the only event we can track from a ZkSync contract
+          // is the NewPriorityRequest event which doesn't have any parameters about the 'to' or 'amount' sent.
+          // Therefore, we must track the HubPool and assume any transfers we are tracking from contracts are
+          // being sent by the HubPool.
+
+          // If WETH transfer originated from EOA, track on aliasedAtomicDepositor address
+          // otherwise track on aliased contract sender address. This will only work to track transfers
+          // sent from the HubPool on L1.
+          const aliasedSenderAddress = zksync.utils.applyL1ToL2Alias(
+            isContract ? address : atomicWethDepositor.address
+          );
+          // If WETH transfer originated from EOA, the EOA should receive the funds, otherwise
+          // we can assume the HubPool sent to the SpokePool, another address, the funds, so we
+          // don't filter on it. Again, this will only work if the monitored address is the hubPool
+          // or an EOA who used the atomic depositor.
+          const recipientAddress = isContract ? null : address;
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             // Filter on 'from' address and 'to' address
             paginatedEventQuery(
-              atomicWethDepositor,
-              atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
+              isContract ? hubPool : atomicWethDepositor,
+              isContract
+                ? hubPool.filters.TokensRelayed()
+                : atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
               l1SearchConfig
             ),
-
-            // Filter on transfers to l2Receiver
-            paginatedEventQuery(l2EthContract, l2EthContract.filters.Transfer(null, address), l2SearchConfig),
+            paginatedEventQuery(
+              l2EthContract,
+              l2EthContract.filters.Transfer(aliasedSenderAddress, recipientAddress),
+              l2SearchConfig
+            ),
           ]);
+
+          // Filter here since TokensRelayed does not have any indexed params.
+          initiatedQueryResult = initiatedQueryResult.filter((e) => e.args.to === address);
         } else {
           const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
@@ -274,9 +306,17 @@ export class ZKSyncAdapter extends BaseAdapter {
     const { chainId } = this;
     const ethContractData = CONTRACT_ADDRESSES[chainId]?.eth;
     if (!ethContractData) {
-      throw new Error(`contractData not found for chain ${chainId}`);
+      throw new Error(`ethContractData not found for chain ${chainId}`);
     }
     return new Contract(ethContractData.address, ethContractData.abi, this.getSigner(chainId));
+  }
+
+  private getHubPool(): Contract {
+    const hubPoolContractData = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool;
+    if (!hubPoolContractData) {
+      throw new Error(`hubPoolContractData not found for chain ${this.hubChainId}`);
+    }
+    return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.getSigner(this.hubChainId));
   }
 
   private getL1ERC20BridgeContract(): Contract {

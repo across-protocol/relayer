@@ -18,7 +18,12 @@ export class WethBridge implements OpStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
 
-  constructor(private l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    private l2chainId: number,
+    readonly hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider
+  ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
@@ -107,6 +112,13 @@ export class WethBridge implements OpStackBridge {
 
       return matchL2EthDepositAndWrapEvents(l2EthDepositEvents, l2EthWrapEvents);
     } else {
+      // Since we can only index on the `toAddress` for the DepositFinalized event, we can't support
+      // monitoring the hub pool address
+      const hubPoolContract = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
+      if (fromAddress === hubPoolContract) {
+        return [];
+      }
+
       return await paginatedEventQuery(
         this.l2Bridge,
         this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
