@@ -107,7 +107,7 @@ export class InventoryClient {
   getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
     let balance: BigNumber;
     if (isDefined(l2Token)) {
-      balance = balance.add(this.tokenClient.getBalance(chainId, l2Token));
+      balance = this.tokenClient.getBalance(chainId, l2Token);
     } else {
       const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
       balance = l2Tokens
