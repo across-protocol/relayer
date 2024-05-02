@@ -20,6 +20,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
+import { matchL2EthDepositAndWrapEvents } from "./utils";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -39,6 +40,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
+    const l2WethContract = this.getL2Weth();
     const atomicWethDepositor = this.getAtomicDepositor();
     const hubPool = this.getHubPool();
     const spokePoolAddress = this.spokePoolClients[this.chainId].spokePool.address;
@@ -75,7 +77,7 @@ export class ZKSyncAdapter extends BaseAdapter {
           return;
         }
 
-        let initiatedQueryResult: Event[], finalizedQueryResult: Event[];
+        let initiatedQueryResult: Event[], finalizedQueryResult: Event[], wrapQueryResult: Event[];
         if (isWeth) {
           // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
           // AtomicDepositor. If sending WETH from a contract, then the only event we can track from a ZkSync contract
@@ -88,7 +90,9 @@ export class ZKSyncAdapter extends BaseAdapter {
           const aliasedSenderAddress = zksync.utils.applyL1ToL2Alias(
             isContract ? hubPool.address : atomicWethDepositor.address
           );
-          [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+
+          // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
+          [initiatedQueryResult, finalizedQueryResult, wrapQueryResult] = await Promise.all([
             // Filter on 'from' address and 'to' address
             paginatedEventQuery(
               isContract ? hubPool : atomicWethDepositor,
@@ -102,12 +106,24 @@ export class ZKSyncAdapter extends BaseAdapter {
               l2EthContract.filters.Transfer(aliasedSenderAddress, address),
               l2SearchConfig
             ),
+            isContract
+              ? Promise.resolve([])
+              : paginatedEventQuery(
+                  l2WethContract,
+                  l2WethContract.filters.Transfer(ZERO_ADDRESS, address),
+                  l2SearchConfig
+                ),
           ]);
 
-          // Filter here if monitoring SpokePool since TokensRelayed does not have any indexed params.
-          initiatedQueryResult = isContract
-            ? initiatedQueryResult.filter((e) => e.args.to === address && e.args.l1Token === l1TokenAddress)
-            : initiatedQueryResult;
+          if (isContract) {
+            // Filter here if monitoring SpokePool since TokensRelayed does not have any indexed params.
+            initiatedQueryResult = initiatedQueryResult.filter(
+              (e) => e.args.to === address && e.args.l1Token === l1TokenAddress
+            );
+          } else {
+            // If EOA, additionally verify that the ETH deposit was followed by a WETH wrap event.
+            finalizedQueryResult = matchL2EthDepositAndWrapEvents(finalizedQueryResult, wrapQueryResult);
+          }
         } else {
           const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
@@ -306,6 +322,15 @@ export class ZKSyncAdapter extends BaseAdapter {
       throw new Error(`ethContractData not found for chain ${chainId}`);
     }
     return new Contract(ethContractData.address, ethContractData.abi, this.getSigner(chainId));
+  }
+
+  private getL2Weth(): Contract {
+    const { chainId } = this;
+    const wethContractData = CONTRACT_ADDRESSES[chainId]?.weth;
+    if (!wethContractData) {
+      throw new Error(`wethContractData not found for chain ${chainId}`);
+    }
+    return new Contract(wethContractData.address, wethContractData.abi, this.getSigner(chainId));
   }
 
   private getHubPool(): Contract {
