@@ -183,8 +183,12 @@ export class InventoryClient {
       .reduce((acc, curr) => acc.add(curr), bnZero);
   }
 
-  getRepaymentTokenForL1Token(l1Token: string, chainId: number | string): string {
-    return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+  getRepaymentTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    try {
+      return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+    } catch {
+      return undefined;
+    }
   }
 
   getDestinationTokensForL1Token(l1Token: string, chainId: number | string): string[] {
@@ -194,7 +198,12 @@ export class InventoryClient {
       return Object.keys(tokenConfig).filter((k) => isDefined(tokenConfig[k][chainId]));
     }
 
-    return [this.getRepaymentTokenForL1Token(l1Token, chainId)];
+    const destinationToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
+    if (!isDefined(destinationToken)) {
+      return [];
+    }
+
+    return [destinationToken];
   }
 
   getEnabledChains(): number[] {
