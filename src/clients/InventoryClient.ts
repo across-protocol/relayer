@@ -143,7 +143,7 @@ export class InventoryClient {
 
         const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
-          // THe effective balance is the current balance + inbound bridge transfers.
+          // The effective balance is the current balance + inbound bridge transfers.
           const effectiveBalance = this.getBalanceOnChain(chainId, l1Token, l2Token);
           distribution[chainId][l2Token] = effectiveBalance.mul(this.scalar).div(cumulativeBalance);
         });
