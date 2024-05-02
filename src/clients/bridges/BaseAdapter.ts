@@ -35,7 +35,7 @@ import { CONTRACT_ADDRESSES, TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common"
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
-  to: string;
+  transactionHash: string;
 }
 
 interface Events {
@@ -334,7 +334,6 @@ export abstract class BaseAdapter {
         at: `${this.getName()}#_sendTokenToTargetChain`,
         message: "Simulation result",
         succeed,
-        ...txnRequest,
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     }
