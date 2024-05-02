@@ -17,6 +17,7 @@ export class WethBridge implements OpStackBridge {
   private readonly l2Bridge: Contract;
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
+  private readonly hubPoolAddress: string;
 
   constructor(
     private l2chainId: number,
@@ -35,6 +36,8 @@ export class WethBridge implements OpStackBridge {
 
     const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
     this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
+
+    this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
 
   get l1Gateway(): string {
@@ -66,6 +69,13 @@ export class WethBridge implements OpStackBridge {
     // - For our tracking purposes, the ETHDepositInitiated `fromAddress` will be the
     //   AtomicDepositor if the fromAddress is an EOA.
     const isContract = (await this.l1Bridge.provider.getCode(fromAddress)) !== "0x";
+
+    // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
+    // monitoring the spoke pool address
+    if (isContract && fromAddress !== this.hubPoolAddress) {
+      return [];
+    }
+
     const events = await paginatedEventQuery(
       this.l1Bridge,
       this.l1Bridge.filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
@@ -115,8 +125,7 @@ export class WethBridge implements OpStackBridge {
     } else {
       // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
       // monitoring the spoke pool address
-      const hubPoolContract = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
-      if (fromAddress !== hubPoolContract) {
+      if (fromAddress !== this.hubPoolAddress) {
         return [];
       }
 
