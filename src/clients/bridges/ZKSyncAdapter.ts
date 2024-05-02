@@ -41,6 +41,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     const l2EthContract = this.getL2Eth();
     const atomicWethDepositor = this.getAtomicDepositor();
     const hubPool = this.getHubPool();
+    const spokePoolAddress = this.spokePoolClients[this.chainId].spokePool.address;
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -67,10 +68,10 @@ export class ZKSyncAdapter extends BaseAdapter {
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
 
-        const isContract = (await atomicWethDepositor.provider.getCode(address)) !== "0x";
-
-        // This adapter will only work to track EOA's or the HubPool's transfers.
-        if (isContract && address !== hubPool.address) {
+        // Try to detect if the address is the spoke pool address
+        const isContract = (await l2EthContract.provider.getCode(address)) !== "0x";
+        // This adapter will only work to track EOA's or the SpokePool's transfers.
+        if (isContract && address !== spokePoolAddress) {
           return;
         }
 
@@ -83,16 +84,10 @@ export class ZKSyncAdapter extends BaseAdapter {
           // being sent by the HubPool.
 
           // If WETH transfer originated from EOA, track on aliasedAtomicDepositor address
-          // otherwise track on aliased contract sender address. This will only work to track transfers
-          // sent from the HubPool on L1.
+          // otherwise track on aliased hub pool address. This will only work to track the SpokePool address.
           const aliasedSenderAddress = zksync.utils.applyL1ToL2Alias(
-            isContract ? address : atomicWethDepositor.address
+            isContract ? hubPool.address : atomicWethDepositor.address
           );
-          // If WETH transfer originated from EOA, the EOA should receive the funds, otherwise
-          // we can assume the HubPool sent to the SpokePool, another address, the funds, so we
-          // don't filter on it. Again, this will only work if the monitored address is the hubPool
-          // or an EOA who used the atomic depositor.
-          const recipientAddress = isContract ? null : address;
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             // Filter on 'from' address and 'to' address
             paginatedEventQuery(
@@ -104,13 +99,15 @@ export class ZKSyncAdapter extends BaseAdapter {
             ),
             paginatedEventQuery(
               l2EthContract,
-              l2EthContract.filters.Transfer(aliasedSenderAddress, recipientAddress),
+              l2EthContract.filters.Transfer(aliasedSenderAddress, address),
               l2SearchConfig
             ),
           ]);
 
-          // Filter here since TokensRelayed does not have any indexed params.
-          initiatedQueryResult = initiatedQueryResult.filter((e) => e.args._to === address);
+          // Filter here if monitoring SpokePool since TokensRelayed does not have any indexed params.
+          initiatedQueryResult = isContract
+            ? initiatedQueryResult.filter((e) => e.args.to === address && e.args.l1Token === l1TokenAddress)
+            : initiatedQueryResult;
         } else {
           const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
