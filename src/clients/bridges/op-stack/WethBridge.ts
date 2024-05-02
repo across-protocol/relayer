@@ -112,10 +112,10 @@ export class WethBridge implements OpStackBridge {
 
       return matchL2EthDepositAndWrapEvents(l2EthDepositEvents, l2EthWrapEvents);
     } else {
-      // Since we can only index on the `toAddress` for the DepositFinalized event, we can't support
-      // monitoring the hub pool address
+      // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
+      // monitoring the spoke pool address
       const hubPoolContract = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
-      if (fromAddress === hubPoolContract) {
+      if (fromAddress !== hubPoolContract) {
         return [];
       }
 
