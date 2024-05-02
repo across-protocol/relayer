@@ -127,14 +127,6 @@ export class InventoryClient {
     );
   }
 
-  // Get the fraction of funds allocated on each chain.
-  _getChainDistribution(l1Token: string, chainId: number, l2Token: string): BigNumber {
-    const balance = this.getBalanceOnChain(chainId, l1Token, l2Token);
-    const cumulativeBalance = this.getCumulativeBalance(l1Token);
-
-    return cumulativeBalance.gt(bnZero) ? balance.mul(this.scalar).div(cumulativeBalance) : bnZero;
-  }
-
   getChainDistribution(l1Token: string): { [chainId: number]: TokenDistribution } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution: { [chainId: number]: TokenDistribution } = {};
@@ -143,13 +135,18 @@ export class InventoryClient {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
       // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
       if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
-        const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
-        if (cumulativeBalance.gt(bnZero)) {
-          distribution[chainId] ??= {};
-          distribution[chainId][l2Token] = this.getBalanceOnChainForL1Token(chainId, l1Token)
-            .mul(this.scalar)
-            .div(cumulativeBalance);
+        distribution[chainId] ??= {};
+
+        if (cumulativeBalance.eq(bnZero)) {
+          return;
         }
+
+        const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
+        l2Tokens.forEach((l2Token) => {
+          // THe effective balance is the current balance + inbound bridge transfers.
+          const effectiveBalance = this.getBalanceOnChain(chainId, l1Token, l2Token);
+          distribution[chainId][l2Token] = effectiveBalance.mul(this.scalar).div(cumulativeBalance);
+        });
       }
     });
     return distribution;
@@ -262,7 +259,7 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    let startTimer;
+    let startTimer: number;
     if (!isDefined(this.bundleRefundsPromise)) {
       startTimer = performance.now();
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
@@ -691,7 +688,6 @@ export class InventoryClient {
           const deltaPct = targetPct.sub(currentAllocPct);
           const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
           const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
-          const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
           rebalancesRequired.push({
             chainId,
             l1Token,
@@ -705,7 +701,7 @@ export class InventoryClient {
           });
         });
       });
-    });
+    }
 
     return rebalancesRequired;
   }
