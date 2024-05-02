@@ -220,7 +220,7 @@ export class InventoryClient {
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     const totalRefundsPerChain = this.getEnabledChains().reduce(
       (refunds: { [chainId: string]: BigNumber }, chainId) => {
-        if (!this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId)) {
+        if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           refunds[chainId] = toBN(0);
         } else {
           const destinationToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
