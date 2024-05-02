@@ -132,7 +132,7 @@ export class ArbitrumAdapter extends BaseAdapter {
           return;
         }
         assert(eventsToProcess.length % 2 === 0, "Events list length should be even");
-        const l1Token = availableL1Tokens[index / 2]; // @dev length is even, no need to floor()
+        const l1Token = availableL1Tokens[Math.floor(index / 2)];
         // l1Token is not an indexed field on Aribtrum gateway's deposit events, so these events are for all tokens.
         // Therefore, we need to filter unrelated deposits of other tokens.
         const filteredEvents = result.filter((event) => spreadEvent(event.args)["l1Token"] === l1Token);
