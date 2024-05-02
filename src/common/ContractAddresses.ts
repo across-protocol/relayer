@@ -37,6 +37,25 @@ const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  {
+    inputs: [
+      {
+        internalType: "bytes32",
+        name: "",
+        type: "bytes32",
+      },
+    ],
+    name: "usedNonces",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
 ];
 
 export const CCTP_TOKEN_MESSENGER_CONTRACT_ABI = [
