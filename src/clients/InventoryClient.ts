@@ -90,29 +90,8 @@ export class InventoryClient {
   // Get the total balance across all chains, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getCumulativeBalance(l1Token: string): BigNumber {
     return this.getEnabledChains()
-      .map((chainId) => this.getBalanceOnChainForL1Token(chainId, l1Token))
+      .map((chainId) => this.getBalanceOnChain(chainId, l1Token))
       .reduce((acc, curr) => acc.add(curr), bnZero);
-  }
-
-  // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
-  getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
-    // We want to skip any l2 token that is not present in the inventory config.
-    chainId = Number(chainId);
-    if (chainId !== this.hubPoolClient.chainId && !this._l1TokenEnabledForChain(l1Token, chainId)) {
-      return bnZero;
-    }
-
-    const balances = this.getDestinationTokensForL1Token(l1Token, chainId).map(
-      (token) => this.tokenClient.getBalance(Number(chainId), token) || bnZero
-    );
-
-    // If the chain does not have this token (EG BOBA on Optimism) then 0.
-    const balance = balances.reduce((acc, curr) => acc.add(curr), bnZero);
-
-    // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
-    return balance.add(
-      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
-    );
   }
 
   /**
@@ -143,6 +122,11 @@ export class InventoryClient {
     );
   }
 
+  /**
+   * Determine the allocation of an l1 token across all configured remote chain IDs.
+   * @param l1Token L1 token to query.
+   * @returns Distribution of l1Token by chain ID and l2Token.
+   */
   getChainDistribution(l1Token: string): { [chainId: number]: TokenDistribution } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution: { [chainId: number]: TokenDistribution } = {};
@@ -186,7 +170,7 @@ export class InventoryClient {
     }
 
     const shortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
-    const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
+    const currentBalance = this.getBalanceOnChain(chainId, l1Token).sub(shortfall);
 
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -845,7 +829,7 @@ export class InventoryClient {
             `- ${symbol} transfer blocked. Required to send ` +
             `${formatter(amount.toString())} but relayer has ` +
             `${formatter(balance.toString())} on L1. There is currently ` +
-            `${formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString())} ${symbol} on ` +
+            `${formatter(this.getBalanceOnChain(chainId, l1Token).toString())} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
             `${this.formatWei(distributionPct.toString())}% of the total ` +
             `${formatter(cumulativeBalance.toString())} ${symbol}.` +
@@ -1024,7 +1008,7 @@ export class InventoryClient {
         const chainId = Number(_chainId);
 
         Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
-          const balanceOnChain = this.getBalanceOnChainForL1Token(chainId, l1Token);
+          const balanceOnChain = this.getBalanceOnChain(chainId, l1Token, l2Token);
           const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
             this.relayer,
             chainId,
