@@ -15,8 +15,8 @@ export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0
   }
 }
 
-export function compareAddressesSimple(addressA?: string, addressB?: string): boolean {
-  if (!addressA || !addressB) {
+export function compareAddressesSimple(addressA: string, addressB: string): boolean {
+  if (addressA === undefined || addressB === undefined) {
     return false;
   }
   return addressA.toLowerCase() === addressB.toLowerCase();
