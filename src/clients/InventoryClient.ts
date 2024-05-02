@@ -610,7 +610,7 @@ export class InventoryClient {
     const rebalancesRequired: Rebalance[] = [];
 
     // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
-    for (const l1Token of Object.keys(this.getL1Tokens())) {
+    for (const l1Token of this.getL1Tokens()) {
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
       if (cumulativeBalance.eq(bnZero)) {
         continue;

@@ -142,7 +142,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         ).to.equal(toBN(0)); // For now no cross-chain transfers
 
         const expectedShare = initialAllocation[chainId][l1Token].mul(toWei(1)).div(initialTotals[l1Token]);
-        expect(tokenDistribution[l1Token][chainId]).to.equal(expectedShare);
+        const l2Token = (l1Token === mainnetWeth ? l2TokensForWeth : l2TokensForUsdc)[chainId];
+        expect(tokenDistribution[l1Token][chainId][l2Token]).to.equal(expectedShare);
       }
     }
   });
