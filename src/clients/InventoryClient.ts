@@ -31,7 +31,8 @@ import lodash from "lodash";
 import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
+type TokenDistribution = { [l2Token: string]: BigNumber };
+type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
 
 export type Rebalance = {
   chainId: number;
@@ -134,15 +135,18 @@ export class InventoryClient {
     return cumulativeBalance.gt(bnZero) ? balance.mul(this.scalar).div(cumulativeBalance) : bnZero;
   }
 
-  getChainDistribution(l1Token: string): { [chainId: number]: BigNumber } {
+  getChainDistribution(l1Token: string): { [chainId: number]: TokenDistribution } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    const distribution: { [chainId: number]: BigNumber } = {};
+    const distribution: { [chainId: number]: TokenDistribution } = {};
+
     this.getEnabledChains().forEach((chainId) => {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
       // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
       if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
+        const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
         if (cumulativeBalance.gt(bnZero)) {
-          distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
+          distribution[chainId] ??= {};
+          distribution[chainId][l2Token] = this.getBalanceOnChainForL1Token(chainId, l1Token)
             .mul(this.scalar)
             .div(cumulativeBalance);
         }
@@ -674,11 +678,9 @@ export class InventoryClient {
 
   getPossibleRebalances(): Rebalance[] {
     const chainIds = this.getEnabledChains();
-    const l1Tokens = this.getL1Tokens();
     const rebalancesRequired: Rebalance[] = [];
 
-    // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
-    l1Tokens.forEach((l1Token) => {
+    for (const l1Token of this.getL1Tokens()) {
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
       if (cumulativeBalance.eq(bnZero)) {
         return;
@@ -703,6 +705,7 @@ export class InventoryClient {
           const deltaPct = targetPct.sub(currentAllocPct);
           const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
           const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
+          const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
           rebalancesRequired.push({
             chainId,
             l1Token,
@@ -838,15 +841,15 @@ export class InventoryClient {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
           }
           const { symbol, decimals } = tokenInfo;
-          const distribution = this._getChainDistribution(l1Token, chainId, l2Token);
           const formatter = createFormatFunction(2, 4, false, decimals);
+          const distributionPct = tokenDistributionPerL1Token[l1Token][chainId][l2Token].mul(100);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
             `${formatter(amount.toString())} but relayer has ` +
             `${formatter(balance.toString())} on L1. There is currently ` +
             `${formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString())} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
-            `${this.formatWei(distribution.mul(100).toString())}% of the total ` +
+            `${this.formatWei(distributionPct.toString())}% of the total ` +
             `${formatter(cumulativeBalance.toString())} ${symbol}.` +
             " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
@@ -877,6 +880,7 @@ export class InventoryClient {
     // Note: these types are just used inside this method, so they are declared in-line.
     type ChainInfo = {
       chainId: number;
+      weth: string;
       unwrapWethThreshold: BigNumber;
       unwrapWethTarget: BigNumber;
       balance: BigNumber;
@@ -902,7 +906,10 @@ export class InventoryClient {
             if (chainId === CHAIN_IDs.POLYGON || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
               return null;
             }
-            return { chainId, unwrapWethThreshold, unwrapWethTarget };
+            const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
+            assert(isDefined(weth), `No WETH definition for ${getNetworkName(chainId)}`);
+
+            return { chainId, weth, unwrapWethThreshold, unwrapWethTarget };
           })
           // This filters out all nulls, which removes any chains that are meant to be ignored.
           .filter(isDefined)
@@ -918,8 +925,8 @@ export class InventoryClient {
       this.log("Checking WETH unwrap thresholds for chains with thresholds set", { chains });
 
       chains.forEach((chainInfo) => {
-        const { chainId, unwrapWethThreshold, unwrapWethTarget, balance } = chainInfo;
-        const l2WethBalance = this.tokenClient.getBalance(chainId, this.getRepaymentTokenForL1Token(l1Weth, chainId));
+        const { chainId, weth, unwrapWethThreshold, unwrapWethTarget, balance } = chainInfo;
+        const l2WethBalance = this.tokenClient.getBalance(chainId, weth);
 
         if (balance.lt(unwrapWethThreshold)) {
           const amountToUnwrap = unwrapWethTarget.sub(balance);
@@ -947,10 +954,9 @@ export class InventoryClient {
       // sends each transaction one after the other with incrementing nonce. this will be left for a follow on PR as this
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const { chainInfo, amount } of unwrapsRequired) {
-        const { chainId } = chainInfo;
-        const l2Weth = this.getRepaymentTokenForL1Token(l1Weth, chainId);
-        this.tokenClient.decrementLocalBalance(chainId, l2Weth, amount);
-        const receipt = await this._unwrapWeth(chainId, l2Weth, amount);
+        const { chainId, weth } = chainInfo;
+        this.tokenClient.decrementLocalBalance(chainId, weth, amount);
+        const receipt = await this._unwrapWeth(chainId, weth, amount);
         executedTransactions.push({ chainInfo, amount, hash: receipt.hash });
       }
 
@@ -970,15 +976,13 @@ export class InventoryClient {
       }
 
       for (const { chainInfo, amount } of unexecutedUnwraps) {
-        const { chainId } = chainInfo;
+        const { chainId, weth } = chainInfo;
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
         const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
           "- WETH unwrap blocked. Required to send " +
           `${formatter(amount.toString())} but relayer has ` +
-          `${formatter(
-            this.tokenClient.getBalance(chainId, this.getRepaymentTokenForL1Token(l1Weth, chainId)).toString()
-          )} WETH balance.\n`;
+          `${formatter(this.tokenClient.getBalance(chainId, weth).toString())} WETH balance.\n`;
       }
 
       if (mrkdwn) {
@@ -993,7 +997,7 @@ export class InventoryClient {
     }
   }
 
-  constructConsideringRebalanceDebugLog(distribution: { [l1Token: string]: { [chainId: number]: BigNumber } }): void {
+  constructConsideringRebalanceDebugLog(distribution: TokenDistributionPerL1Token): void {
     const logData: {
       [symbol: string]: {
         [chainId: number]: {
@@ -1018,23 +1022,26 @@ export class InventoryClient {
       cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(l1Token).toString());
       logData[symbol] ??= {};
 
-      Object.entries(distributionForToken).forEach(([_chainId, amount]) => {
+      Object.keys(distributionForToken).forEach((_chainId) => {
         const chainId = Number(_chainId);
-        logData[symbol][chainId] = {
-          actualBalanceOnChain: formatter(
-            this.getBalanceOnChainForL1Token(chainId, l1Token)
-              .sub(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token))
-              .toString()
-          ),
-          virtualBalanceOnChain: formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString()),
-          outstandingTransfers: formatter(
-            this.crossChainTransferClient
-              .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
-              .toString()
-          ),
-          tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
-          proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
-        };
+
+        Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
+          const balanceOnChain = this.getBalanceOnChainForL1Token(chainId, l1Token);
+          const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+            this.relayer,
+            chainId,
+            l1Token
+          );
+          const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
+
+          logData[symbol][chainId] = {
+            actualBalanceOnChain: formatter(actualBalanceOnChain.toString()),
+            virtualBalanceOnChain: formatter(balanceOnChain.toString()),
+            outstandingTransfers: formatter(transfers.toString()),
+            tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
+            proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
+          };
+        });
       });
     });
 
