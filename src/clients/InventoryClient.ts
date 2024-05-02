@@ -800,6 +800,7 @@ export class InventoryClient {
     // Note: these types are just used inside this method, so they are declared in-line.
     type ChainInfo = {
       chainId: number;
+      weth: string;
       unwrapWethThreshold: BigNumber;
       unwrapWethTarget: BigNumber;
       balance: BigNumber;
@@ -827,7 +828,10 @@ export class InventoryClient {
             if (chainId === CHAIN_IDs.POLYGON || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
               return null;
             }
-            return { chainId, unwrapWethThreshold, unwrapWethTarget };
+            const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
+            assert(isDefined(weth), `No WETH definition for ${getNetworkName(chainId)}`);
+
+            return { chainId, weth, unwrapWethThreshold, unwrapWethTarget };
           })
           // This filters out all nulls, which removes any chains that are meant to be ignored.
           .filter(isDefined)
@@ -843,8 +847,8 @@ export class InventoryClient {
       this.log("Checking WETH unwrap thresholds for chains with thresholds set", { chains });
 
       chains.forEach((chainInfo) => {
-        const { chainId, unwrapWethThreshold, unwrapWethTarget, balance } = chainInfo;
-        const l2WethBalance = this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId));
+        const { chainId, weth, unwrapWethThreshold, unwrapWethTarget, balance } = chainInfo;
+        const l2WethBalance = this.tokenClient.getBalance(chainId, weth);
 
         if (balance.lt(unwrapWethThreshold)) {
           const amountToUnwrap = unwrapWethTarget.sub(balance);
@@ -872,10 +876,9 @@ export class InventoryClient {
       // sends each transaction one after the other with incrementing nonce. this will be left for a follow on PR as this
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const { chainInfo, amount } of unwrapsRequired) {
-        const { chainId } = chainInfo;
-        const l2Weth = this.getDestinationTokenForL1Token(l1Weth, chainId);
-        this.tokenClient.decrementLocalBalance(chainId, l2Weth, amount);
-        const receipt = await this._unwrapWeth(chainId, l2Weth, amount);
+        const { chainId, weth } = chainInfo;
+        this.tokenClient.decrementLocalBalance(chainId, weth, amount);
+        const receipt = await this._unwrapWeth(chainId, weth, amount);
         executedTransactions.push({ chainInfo, amount, hash: receipt.hash });
       }
 
@@ -895,15 +898,13 @@ export class InventoryClient {
       }
 
       for (const { chainInfo, amount } of unexecutedUnwraps) {
-        const { chainId } = chainInfo;
+        const { chainId, weth } = chainInfo;
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
         const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
           "- WETH unwrap blocked. Required to send " +
           `${formatter(amount.toString())} but relayer has ` +
-          `${formatter(
-            this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId)).toString()
-          )} WETH balance.\n`;
+          `${formatter(this.tokenClient.getBalance(chainId, weth).toString())} WETH balance.\n`;
       }
 
       if (mrkdwn) {
