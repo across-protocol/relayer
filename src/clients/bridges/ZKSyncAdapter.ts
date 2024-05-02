@@ -110,7 +110,7 @@ export class ZKSyncAdapter extends BaseAdapter {
           ]);
 
           // Filter here since TokensRelayed does not have any indexed params.
-          initiatedQueryResult = initiatedQueryResult.filter((e) => e.args.to === address);
+          initiatedQueryResult = initiatedQueryResult.filter((e) => e.args._to === address);
         } else {
           const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([

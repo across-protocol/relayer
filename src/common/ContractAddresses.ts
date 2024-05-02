@@ -635,7 +635,7 @@ export const CONTRACT_ADDRESSES: {
           anonymous: false,
           inputs: [
             { indexed: true, internalType: "address", name: "from", type: "address" },
-            { indexed: true, internalType: "address", name: "to", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
             { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
           ],
           name: "ZkSyncEthDepositInitiated",
