@@ -67,14 +67,7 @@ export class UsdcCCTPBridge implements OpStackBridge {
       fromAddress
     );
   }
-  queryL2BridgeFinalizationEvents(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _l1Token: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _fromAddress: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _eventConfig: EventSearchConfig
-  ): Promise<Event[]> {
+  queryL2BridgeFinalizationEvents(): Promise<Event[]> {
     // Per the documentation of the BaseAdapter's computeOutstandingCrossChainTransfers method, we can return an empty array here
     // and only return the relevant outstanding events from queryL1BridgeInitiationEvents.
     // Relevant link: https://github.com/across-protocol/relayer-v2/blob/master/src/clients/bridges/BaseAdapter.ts#L189
