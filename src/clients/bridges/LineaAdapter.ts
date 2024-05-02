@@ -155,6 +155,10 @@ export class LineaAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
+      // We can only support monitoring the spoke pool contract, not the hub pool.
+      if (address === CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address) {
+        return;
+      }
       await sdk.utils.mapAsync(supportedL1Tokens, async (l1Token) => {
         if (this.isWeth(l1Token)) {
           const l1MessageService = this.getL1MessageService();
