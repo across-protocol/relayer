@@ -84,7 +84,8 @@ export class WethBridge implements OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<Event[]> {
-    const isContract = (await this.l2Bridge.provider.getCode(fromAddress)) !== "0x";
+    // Check if the sender is a contract on the L1 network.
+    const isContract = (await this.l1Bridge.provider.getCode(fromAddress)) !== "0x";
     if (!isContract) {
       // When bridging WETH to OP stack chains from an EOA, ETH is bridged via the AtomicDepositor contract
       // and received as ETH on L2. The InventoryClient is built to abstract this subtlety and
