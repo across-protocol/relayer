@@ -115,10 +115,26 @@ export class InventoryClient {
     );
   }
 
-  // @note: l1Token is current needed because not all l2 tokens (USDC.e, USDbC, ...) map back to an L1 token.
+  /**
+   * Determine the effective/virtual balance of an l1 token that has been deployed to another chain.
+   * Includes both the actual balance on the chain and any pending inbound transfers to the target chain.
+   * If l2Token is supplied, return its balance on the specified chain. Otherwise, return the total allocation
+   * of l1Token on the specified chain.
+   * @param chainId Chain to query token balance on.
+   * @param l1Token L1 token to query on chainId (after mapping).
+   * @param l2Token Optional l2 token address to narrow the balance reporting.
+   * @returns Balance of l1Token on chainId.
+   */
   getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
-    l2Token ??= this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
-    const balance = this.tokenClient.getBalance(chainId, l2Token);
+    let balance: BigNumber;
+    if (isDefined(l2Token)) {
+      balance = balance.add(this.tokenClient.getBalance(chainId, l2Token));
+    } else {
+      const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
+      balance = l2Tokens
+        .map((l2Token) => this.tokenClient.getBalance(chainId, l2Token))
+        .reduce((acc, curr) => acc.add(curr), bnZero);
+    }
 
     // @todo: This will resolve all outstanding transfers for the L1 token, but it should be filtered for _only_
     // transfers that apply to the specific L2 token. This needs to be fixed in the crossChainTransferClient
