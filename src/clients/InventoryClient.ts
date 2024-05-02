@@ -139,6 +139,13 @@ export class InventoryClient {
   }
 
   getDestinationTokenForL1Token(l1Token: string, chainId: number | string): string {
+    // TODO: Need to replace calling into the HubPoolClient with calling into TOKEN_SYMBOLS_MAP. For example,
+    // imagine there is a utility function getL2TokenInfo(l1Token: string, chainId: number): L1Token that
+    // looks into TOKEN_SYMBOLS_MAP and returns an L1Token object using a token entry that contains the l1Token address.
+    // We'd need to be able to tie-break between tokens that map to the same L1Token (USDC.e, USDC), so maybe
+    // this function would either return multiple L1Token objects or we'd need to pass in a symbol/l2TokenAddress.
+
+    // return getL2TokenInfo(l1Token, chainId).address
     return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
   }
 
