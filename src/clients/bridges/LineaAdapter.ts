@@ -139,7 +139,7 @@ export class LineaAdapter extends BaseAdapter {
       : this.getL1TokenBridge();
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const outstandingTransfers: OutstandingTransfers = {};
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
