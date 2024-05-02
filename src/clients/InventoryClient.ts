@@ -627,7 +627,6 @@ export class InventoryClient {
         const { thresholdPct, targetPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
         if (currentAllocPct.lt(thresholdPct)) {
           const deltaPct = targetPct.sub(currentAllocPct);
-          // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
           const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
           const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
           const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
