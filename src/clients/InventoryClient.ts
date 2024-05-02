@@ -213,10 +213,10 @@ export class InventoryClient {
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     const totalRefundsPerChain = this.getEnabledChains().reduce(
       (refunds: { [chainId: string]: BigNumber }, chainId) => {
-        if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
+        if (!this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId)) {
           refunds[chainId] = toBN(0);
         } else {
-          const destinationToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+          const destinationToken = this.hubPoolClient.getTokenInfoForAddress(l1Token, Number(chainId));
           refunds[chainId] = this.bundleDataClient.getTotalRefund(
             refundsToConsider,
             this.relayer,
@@ -482,7 +482,7 @@ export class InventoryClient {
         } else {
           runningBalanceForToken = leaf.runningBalances[l1TokenIndex];
         }
-        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+        const l2Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, Number(chainId));
         // Approximate latest running balance as last known proposed running balance...
         // - minus total deposit amount on chain since the latest end block proposed
         // - plus total refund amount on chain since the latest end block proposed
@@ -840,7 +840,7 @@ export class InventoryClient {
 
       chains.forEach((chainInfo) => {
         const { chainId, unwrapWethThreshold, unwrapWethTarget, balance } = chainInfo;
-        const l2Weth = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Weth, Number(chainId));
+        const l2Weth = this.hubPoolClient.getDestinationTokenForL1Token(l1Weth, Number(chainId));
         const l2WethBalance = this.tokenClient.getBalance(chainId, l2Weth);
 
         if (balance.lt(unwrapWethThreshold)) {
@@ -893,7 +893,7 @@ export class InventoryClient {
 
       for (const { chainInfo, amount } of unexecutedUnwraps) {
         const { chainId } = chainInfo;
-        const l2Weth = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Weth, Number(chainId));
+        const l2Weth = this.hubPoolClient.getDestinationTokenForL1Token(l1Weth, Number(chainId));
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
         const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
