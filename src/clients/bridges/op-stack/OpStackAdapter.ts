@@ -10,6 +10,7 @@ import {
   spreadEventWithBlockNumber,
   assign,
   winston,
+  TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
 import { SpokePoolClient } from "../..";
 import { BaseAdapter } from "..";
