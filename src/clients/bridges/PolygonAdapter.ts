@@ -269,6 +269,8 @@ export class PolygonAdapter extends CCTPAdapter {
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+    const l1TokenListToApprove = [];
+
     const associatedL1Bridges = l1Tokens
       .flatMap((l1Token) => {
         if (!this.isSupportedToken(l1Token)) {
@@ -282,10 +284,15 @@ export class PolygonAdapter extends CCTPAdapter {
           bridgeAddresses.push(this.getL1CCTPTokenMessengerBridge().address);
         }
         bridgeAddresses.push(this.getL1Bridge(l1Token).address);
+
+        // Push the l1 token to the list of tokens to approve N times, where N is the number of bridges.
+        // I.e. the arrays have to be parallel.
+        l1TokenListToApprove.push(...Array(bridgeAddresses.length).fill(l1Token));
+
         return bridgeAddresses;
       })
       .filter(isDefined);
-    await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(address, l1TokenListToApprove, associatedL1Bridges);
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
