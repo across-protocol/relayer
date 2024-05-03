@@ -5,6 +5,8 @@ import {
   BigNumber,
   CHAIN_IDs,
   Contract,
+  EventSearchConfig,
+  Event,
   TOKEN_SYMBOLS_MAP,
   TransactionResponse,
   assert,
@@ -157,38 +159,24 @@ export class LineaAdapter extends BaseAdapter {
           // 2. Pipe the resulting _messageHash argument from step 1 into the MessageClaimed event filter
           // 3. For each MessageSent, match the _messageHash to the _messageHash in the MessageClaimed event
           //    any unmatched MessageSent events are considered outstanding transfers.
-          const _initiatedQueryResult = await paginatedEventQuery(
+          const initiatedQueryResult = await this.getWethDepositInitiatedEvents(
             l1MessageService,
-            l1MessageService.filters.MessageSent(null, address),
+            address,
             l1SearchConfig
           );
-          // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
-          // those with 0 value.
-          const initiatedQueryResult = _initiatedQueryResult.filter(({ args }) => args._value.gt(0));
           const internalMessageHashes = initiatedQueryResult.map(({ args }) => args._messageHash);
-          const finalizedQueryResult = await paginatedEventQuery(
+          const finalizedQueryResult = await this.getWethDepositFinalizedEvents(
             l2MessageService,
-            // Passing in an array of message hashes results in an OR filter
-            l2MessageService.filters.MessageClaimed(internalMessageHashes),
+            internalMessageHashes,
             l2SearchConfig
           );
-          initiatedQueryResult
-            .filter(
-              ({ args }) =>
-                !finalizedQueryResult.some(
-                  (finalizedEvent) => args._messageHash.toLowerCase() === finalizedEvent.args._messageHash.toLowerCase()
-                )
-            )
-            .forEach((event) => {
-              const txHash = event.transactionHash;
-              const amount = event.args._value;
-              outstandingTransfers[address] ??= {};
-              outstandingTransfers[address][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
-              outstandingTransfers[address][l1Token] = {
-                totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
-                depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
-              };
-            });
+          this.matchWethDepositEvents(
+            initiatedQueryResult,
+            finalizedQueryResult,
+            outstandingTransfers,
+            address,
+            l1Token
+          );
         } else {
           const isUsdc = this.isUsdc(l1Token);
           const l1Bridge = this.getL1Bridge(l1Token);
@@ -197,59 +185,192 @@ export class LineaAdapter extends BaseAdapter {
           // Define the initialized and finalized event filters for the L1 and L2 bridges. We only filter
           // on the recipient so that the filters work both to track Hub-->Spoke transfers and EOA transfers, and
           // because some filters like ReceivedFromOtherLayer only index the recipient.
-          const [filterL1, filterL2] = isUsdc
-            ? [
-                l1Bridge.filters.Deposited(null /* depositor */, null, address /* to */),
-                l2Bridge.filters.ReceivedFromOtherLayer(address /* recipient */),
-              ]
-            : [
-                l1Bridge.filters.BridgingInitiated(
-                  null /* sender */,
-                  null /* recipient, non-indexed must be null */,
-                  l1Token
-                ),
-                l2Bridge.filters.BridgingFinalized(l1Token),
-              ];
-
-          const [_initiatedQueryResult, _finalizedQueryResult] = await Promise.all([
-            paginatedEventQuery(l1Bridge, filterL1, l1SearchConfig),
-            paginatedEventQuery(l2Bridge, filterL2, l2SearchConfig),
+          const [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+            isUsdc
+              ? this.getUsdcDepositInitiatedEvents(l1Bridge, address, l1SearchConfig)
+              : this.getErc20DepositInitiatedEvents(l1Bridge, address, l1Token, l1SearchConfig),
+            isUsdc
+              ? this.getUsdcDepositFinalizedEvents(l2Bridge, address, l2SearchConfig)
+              : this.getErc20DepositFinalizedEvents(l2Bridge, address, l1Token, l2SearchConfig),
           ]);
-          // @dev BridgingInitiated and BridgingFinalized have a `recipient` prop.
-          const finalizedQueryResult = isUsdc
-            ? _finalizedQueryResult
-            : _finalizedQueryResult.filter(({ args }) => args.recipient === address);
-          const initiatedQueryResult = isUsdc
-            ? _initiatedQueryResult
-            : _initiatedQueryResult.filter(({ args }) => args.recipient === address);
-          initiatedQueryResult
-            .filter(
-              (initialEvent) =>
-                !isDefined(
-                  finalizedQueryResult.find((finalEvent) =>
-                    isUsdc
-                      ? finalEvent.args.amount.eq(initialEvent.args.amount) &&
-                        compareAddressesSimple(initialEvent.args.to, finalEvent.args.recipient)
-                      : finalEvent.args.amount.eq(initialEvent.args.amount) &&
-                        compareAddressesSimple(initialEvent.args.recipient, finalEvent.args.recipient) &&
-                        compareAddressesSimple(finalEvent.args.nativeToken, initialEvent.args.token)
-                  )
-                )
-            )
-            .forEach((initialEvent) => {
-              const txHash = initialEvent.transactionHash;
-              const amount = initialEvent.args.amount;
-              outstandingTransfers[address] ??= {};
-              outstandingTransfers[address][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
-              outstandingTransfers[address][l1Token] = {
-                totalAmount: outstandingTransfers[address][l1Token].totalAmount.add(amount),
-                depositTxHashes: [...outstandingTransfers[address][l1Token].depositTxHashes, txHash],
-              };
-            });
+          if (isUsdc) {
+            this.matchUsdcDepositEvents(
+              initiatedQueryResult,
+              finalizedQueryResult,
+              outstandingTransfers,
+              address,
+              l1Token
+            );
+          } else {
+            this.matchErc20DepositEvents(
+              initiatedQueryResult,
+              finalizedQueryResult,
+              outstandingTransfers,
+              address,
+              l1Token
+            );
+          }
         }
       });
     });
     return outstandingTransfers;
+  }
+
+  async getWethDepositInitiatedEvents(
+    l1MessageService: Contract,
+    l2RecipientAddress: string,
+    l1SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    const _initiatedQueryResult = await paginatedEventQuery(
+      l1MessageService,
+      l1MessageService.filters.MessageSent(null, l2RecipientAddress),
+      l1SearchConfig
+    );
+    // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
+    // those with 0 value.
+    return _initiatedQueryResult.filter(({ args }) => args._value.gt(0));
+  }
+
+  async getWethDepositFinalizedEvents(
+    l2MessageService: Contract,
+    internalMessageHashes: string[],
+    l2SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    return await paginatedEventQuery(
+      l2MessageService,
+      // Passing in an array of message hashes results in an OR filter
+      l2MessageService.filters.MessageClaimed(internalMessageHashes),
+      l2SearchConfig
+    );
+  }
+
+  matchWethDepositEvents(
+    initiatedQueryResult: Event[],
+    finalizedQueryResult: Event[],
+    outstandingTransfers: OutstandingTransfers,
+    monitoredAddress: string,
+    l1Token: string
+  ): void {
+    const transferEvents = initiatedQueryResult.filter(
+      ({ args }) =>
+        !finalizedQueryResult.some(
+          (finalizedEvent) => args._messageHash.toLowerCase() === finalizedEvent.args._messageHash.toLowerCase()
+        )
+    );
+    this.computeOutstandingTransfers(outstandingTransfers, monitoredAddress, l1Token, transferEvents);
+  }
+
+  computeOutstandingTransfers(
+    outstandingTransfers: OutstandingTransfers,
+    monitoredAddress: string,
+    l1Token: string,
+    transferEvents: Event[]
+  ): void {
+    transferEvents.forEach((event) => {
+      const txHash = event.transactionHash;
+      // @dev WETH events have a _value field, while ERC20 events have an amount field.
+      const amount = event.args._value ?? event.args.amount;
+      outstandingTransfers[monitoredAddress] ??= {};
+      outstandingTransfers[monitoredAddress][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
+      outstandingTransfers[monitoredAddress][l1Token] = {
+        totalAmount: outstandingTransfers[monitoredAddress][l1Token].totalAmount.add(amount),
+        depositTxHashes: [...outstandingTransfers[monitoredAddress][l1Token].depositTxHashes, txHash],
+      };
+    });
+  }
+
+  async getErc20DepositInitiatedEvents(
+    l1Bridge: Contract,
+    monitoredAddress: string,
+    l1Token: string,
+    l1SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    const initiatedQueryResult = await paginatedEventQuery(
+      l1Bridge,
+      l1Bridge.filters.BridgingInitiated(null /* sender */, null /* recipient, non-indexed must be null */, l1Token),
+      l1SearchConfig
+    );
+    return initiatedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
+  }
+
+  async getErc20DepositFinalizedEvents(
+    l2Bridge: Contract,
+    monitoredAddress: string,
+    l1Token: string,
+    l2SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    const finalizedQueryResult = await paginatedEventQuery(
+      l2Bridge,
+      l2Bridge.filters.BridgingFinalized(l1Token),
+      l2SearchConfig
+    );
+    return finalizedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
+  }
+
+  matchErc20DepositEvents(
+    initiatedQueryResult: Event[],
+    finalizedQueryResult: Event[],
+    outstandingTransfers: OutstandingTransfers,
+    monitoredAddress: string,
+    l1Token: string
+  ): void {
+    const transferEvents = initiatedQueryResult.filter(
+      (initialEvent) =>
+        !isDefined(
+          finalizedQueryResult.find(
+            (finalEvent) =>
+              finalEvent.args.amount.eq(initialEvent.args.amount) &&
+              compareAddressesSimple(initialEvent.args.recipient, finalEvent.args.recipient) &&
+              compareAddressesSimple(finalEvent.args.nativeToken, initialEvent.args.token)
+          )
+        )
+    );
+
+    this.computeOutstandingTransfers(outstandingTransfers, monitoredAddress, l1Token, transferEvents);
+  }
+
+  getUsdcDepositInitiatedEvents(
+    l1Bridge: Contract,
+    monitoredAddress: string,
+    l1SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    return paginatedEventQuery(
+      l1Bridge,
+      l1Bridge.filters.Deposited(null /* depositor */, null /* amount */, monitoredAddress /* to */),
+      l1SearchConfig
+    );
+  }
+
+  getUsdcDepositFinalizedEvents(
+    l2Bridge: Contract,
+    monitoredAddress: string,
+    l2SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    return paginatedEventQuery(
+      l2Bridge,
+      l2Bridge.filters.ReceivedFromOtherLayer(monitoredAddress /* recipient */),
+      l2SearchConfig
+    );
+  }
+
+  matchUsdcDepositEvents(
+    initiatedQueryResult: Event[],
+    finalizedQueryResult: Event[],
+    outstandingTransfers: OutstandingTransfers,
+    monitoredAddress: string,
+    l1Token: string
+  ): void {
+    const transferEvents = initiatedQueryResult.filter(
+      (initialEvent) =>
+        !isDefined(
+          finalizedQueryResult.find(
+            (finalEvent) =>
+              finalEvent.args.amount.eq(initialEvent.args.amount) &&
+              compareAddressesSimple(initialEvent.args.to, finalEvent.args.recipient)
+          )
+        )
+    );
+    this.computeOutstandingTransfers(outstandingTransfers, monitoredAddress, l1Token, transferEvents);
   }
 
   sendTokenToTargetChain(
