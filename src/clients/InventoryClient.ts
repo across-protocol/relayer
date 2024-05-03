@@ -26,7 +26,7 @@ import {
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { V3Deposit } from "../interfaces";
-import { InventoryConfig, isAliasConfig, TokenInventoryConfig } from "../interfaces/InventoryManagement";
+import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
@@ -79,7 +79,7 @@ export class InventoryClient {
    * @param chainId Chain ID to query on
    * @param l2Token Optional L2 token address when l1Token maps to multiple l2Token addresses.
    */
-  getTokenConfig(l1Token: string, chainId: number, l2Token?: string): TokenInventoryConfig | undefined {
+  getTokenConfig(l1Token: string, chainId: number, l2Token?: string): TokenBalanceConfig | undefined {
     const tokenConfig = this.inventoryConfig.tokenConfig[l1Token];
     assert(isDefined(tokenConfig), `getTokenConfig: No token config found for ${l1Token}.`);
 

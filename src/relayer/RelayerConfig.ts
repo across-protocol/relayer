@@ -13,7 +13,7 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig, TokenInventoryConfig, isAliasConfig } from "../interfaces/InventoryManagement";
+import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 
 export class RelayerConfig extends CommonConfig {
   readonly externalIndexer: boolean;
@@ -149,10 +149,10 @@ export class RelayerConfig extends CommonConfig {
       const parseTokenConfig = (
         l1Token: string,
         chainId: string,
-        rawTokenConfig: TokenInventoryConfig
-      ): TokenInventoryConfig => {
+        rawTokenConfig: TokenBalanceConfig
+      ): TokenBalanceConfig => {
         const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } = rawTokenConfig;
-        const tokenConfig: TokenInventoryConfig = { targetPct, thresholdPct, targetOverageBuffer };
+        const tokenConfig: TokenBalanceConfig = { targetPct, thresholdPct, targetOverageBuffer };
 
         assert(
           targetPct !== undefined && thresholdPct !== undefined,

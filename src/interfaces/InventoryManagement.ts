@@ -1,7 +1,7 @@
 import { BigNumber, utils as ethersUtils } from "ethers";
 import { TOKEN_SYMBOLS_MAP } from "../utils";
 
-export type TokenInventoryConfig = {
+export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.
   targetPct: BigNumber; // The desired amount of the given token on the L2 chainId.
   thresholdPct: BigNumber; // Threshold, below which, we will execute a rebalance.
@@ -10,7 +10,7 @@ export type TokenInventoryConfig = {
 };
 
 export type ChainTokenConfig = {
-  [chainId: string]: TokenInventoryConfig;
+  [chainId: string]: TokenBalanceConfig;
 };
 
 // AliasConfig permits a single HubPool token to map onto multiple tokens on a remote chain.
