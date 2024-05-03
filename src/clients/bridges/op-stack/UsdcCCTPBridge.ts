@@ -33,8 +33,8 @@ export class UsdcCCTPBridge implements OpStackBridge {
     return TOKEN_SYMBOLS_MAP._USDC.addresses[this.l2chainId];
   }
 
-  get l1Gateway(): string {
-    return this.l1CctpTokenBridge.address;
+  get l1Gateways(): string[] {
+    return [this.l1CctpTokenBridge.address];
   }
 
   constructL1ToL2Txn(
