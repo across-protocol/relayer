@@ -106,6 +106,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       await updateRelayerClients(relayerClients, config);
 
       if (!config.skipRelays) {
+        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
+        relayerClients.tokenClient.clearTokenData();
+        await relayerClients.tokenClient.update();
         const simulate = !config.sendingRelaysEnabled;
         await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
       }
@@ -115,6 +118,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       await relayerClients.inventoryClient.unwrapWeth();
 
       if (!config.skipRebalancing) {
+        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
+        relayerClients.tokenClient.clearTokenData();
+        await relayerClients.tokenClient.update();
         await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
       }
 

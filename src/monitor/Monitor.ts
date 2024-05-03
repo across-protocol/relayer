@@ -201,7 +201,7 @@ export class Monitor {
       const chainId = parseInt(chainIdStr);
       mrkdwn += `*Destination: ${getNetworkName(chainId)}*\n`;
       for (const tokenAddress of Object.keys(amountByToken)) {
-        const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
+        const tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
         // Convert to number of tokens for readability.
         const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), tokenInfo.decimals);
         mrkdwn += `${tokenInfo.symbol}: ${unfilledAmount}\n`;
@@ -525,11 +525,18 @@ export class Monitor {
       }
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
       for (const l1Token of allL1Tokens) {
-        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-          spokePoolAddress,
-          chainId,
-          l1Token.address
-        );
+        // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
+        // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
+        // HubPool, while others only allow us to index on the toAddress, the L2 recipient or the SpokePool.
+        const transferBalance = this.clients.crossChainTransferClient
+          .getOutstandingCrossChainTransferAmount(spokePoolAddress, chainId, l1Token.address)
+          .add(
+            this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+              this.clients.hubPoolClient.hubPool.address,
+              chainId,
+              l1Token.address
+            )
+          );
         const outstandingDepositTxs = blockExplorerLinks(
           this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
             spokePoolAddress,
@@ -537,6 +544,15 @@ export class Monitor {
             l1Token.address
           ),
           1
+        ).concat(
+          blockExplorerLinks(
+            this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
+              this.clients.hubPoolClient.hubPool.address,
+              chainId,
+              l1Token.address
+            ),
+            1
+          )
         );
 
         if (transferBalance.gt(0)) {
@@ -609,7 +625,7 @@ export class Monitor {
         const l2ToL1Tokens = Object.fromEntries(
           Object.keys(transfersPerToken).map((l2Token) => [
             l2Token,
-            hubPoolClient.getL1TokenForL2TokenAtBlock(l2Token, chainId, hubPoolClient.latestBlockSearched),
+            hubPoolClient.getTokenInfoForAddress(l2Token, chainId),
           ])
         );
 
@@ -617,7 +633,7 @@ export class Monitor {
         for (const l2Token of Object.keys(l2ToL1Tokens)) {
           let currentTokenMrkdwn = "";
 
-          const tokenInfo = hubPoolClient.getL1TokenInfoForL2Token(l2Token, chainId);
+          const tokenInfo = l2ToL1Tokens[l2Token];
           const transfers = transfersPerToken[l2Token];
           // Skip if there has been no transfers of this token.
           if (!transfers) {

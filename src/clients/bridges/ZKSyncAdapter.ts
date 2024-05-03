@@ -20,6 +20,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
+import { matchL2EthDepositAndWrapEvents } from "./utils";
 
 /**
  * Responsible for providing a common interface for interacting with the ZKSync Era
@@ -39,8 +40,9 @@ export class ZKSyncAdapter extends BaseAdapter {
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();
+    const l2WethContract = this.getL2Weth();
     const atomicWethDepositor = this.getAtomicDepositor();
-    const aliasedAtomicWethDepositor = zksync.utils.applyL1ToL2Alias(atomicWethDepositor.address);
+    const hubPool = this.getHubPool();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -51,6 +53,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
         _amount: BigNumberish;
         _to: string;
+        // WETH deposit events `ZkSyncEthDepositInitiated` (emitted by AtomicWethDepositor) don't have an l1Token param.
         l1Token?: string;
       };
       return {
@@ -63,28 +66,60 @@ export class ZKSyncAdapter extends BaseAdapter {
 
     await utils.mapAsync(this.monitoredAddresses, async (address) => {
       return await utils.mapAsync(supportedL1Tokens, async (l1TokenAddress) => {
+        const isL2Contract = await this.isL2ChainContract(address);
+        // This adapter will only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
+        // and any L2 contracts that are not the SpokePool.
+        if (address === this.getHubPool().address) {
+          return;
+        }
+        const isSpokePoolContract = isL2Contract;
+
+        let initiatedQueryResult: Event[], finalizedQueryResult: Event[], wrapQueryResult: Event[];
+
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
-
-        let initiatedQueryResult: Event[], finalizedQueryResult: Event[];
         if (isWeth) {
-          // If WETH, then the deposit initiated event will appear on AtomicDepositor and withdrawal finalized
-          // will appear in mailbox.
-          [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
-            // Filter on 'from' address and 'to' address
+          [initiatedQueryResult, finalizedQueryResult, wrapQueryResult] = await Promise.all([
+            // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
+            // AtomicDepositor. If sending WETH from a contract, then the only event we can track from a ZkSync contract
+            // is the NewPriorityRequest event which doesn't have any parameters about the 'to' or 'amount' sent.
+            // Therefore, we must track the HubPool and assume any transfers we are tracking from contracts are
+            // being sent by the HubPool.
             paginatedEventQuery(
-              atomicWethDepositor,
-              atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
+              isSpokePoolContract ? hubPool : atomicWethDepositor,
+              isSpokePoolContract
+                ? hubPool.filters.TokensRelayed()
+                : atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
               l1SearchConfig
             ),
-
-            // Filter on transfers between aliased AtomicDepositor address and l2Receiver
+            // L2 WETH transfer will come from aliased L1 contract that initiated the deposit.
             paginatedEventQuery(
               l2EthContract,
-              l2EthContract.filters.Transfer(aliasedAtomicWethDepositor, address),
+              l2EthContract.filters.Transfer(
+                zksync.utils.applyL1ToL2Alias(isSpokePoolContract ? hubPool.address : atomicWethDepositor.address),
+                address
+              ),
               l2SearchConfig
             ),
+            // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
+            isSpokePoolContract
+              ? Promise.resolve([])
+              : paginatedEventQuery(
+                  l2WethContract,
+                  l2WethContract.filters.Transfer(ZERO_ADDRESS, address),
+                  l2SearchConfig
+                ),
           ]);
+
+          if (isSpokePoolContract) {
+            // Filter here if monitoring SpokePool address since TokensRelayed does not have any indexed params.
+            initiatedQueryResult = initiatedQueryResult.filter(
+              (e) => e.args.to === address && e.args.l1Token === l1TokenAddress
+            );
+          } else {
+            // If EOA, additionally verify that the ETH deposit was followed by a WETH wrap event.
+            finalizedQueryResult = matchL2EthDepositAndWrapEvents(finalizedQueryResult, wrapQueryResult);
+          }
         } else {
           const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
@@ -107,7 +142,10 @@ export class ZKSyncAdapter extends BaseAdapter {
         assign(
           this.l1DepositInitiatedEvents,
           [address, l1TokenAddress],
-          initiatedQueryResult.map(processEvent).filter((e) => e?.l1Token && e.l1Token === l1TokenAddress)
+          // An initiatedQueryResult could be a zkSync DepositInitiated or an AtomicDepositor
+          // ZkSyncEthDepositInitiated event, subject to whether the deposit token was WETH or not.
+          // A ZkSyncEthDepositInitiated event doesn't have a token or l1Token param.
+          initiatedQueryResult.map(processEvent).filter((e) => isWeth || e.l1Token === l1TokenAddress)
         );
         assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
       });
@@ -277,9 +315,18 @@ export class ZKSyncAdapter extends BaseAdapter {
     const { chainId } = this;
     const ethContractData = CONTRACT_ADDRESSES[chainId]?.eth;
     if (!ethContractData) {
-      throw new Error(`contractData not found for chain ${chainId}`);
+      throw new Error(`ethContractData not found for chain ${chainId}`);
     }
     return new Contract(ethContractData.address, ethContractData.abi, this.getSigner(chainId));
+  }
+
+  private getL2Weth(): Contract {
+    const { chainId } = this;
+    const wethContractData = CONTRACT_ADDRESSES[chainId]?.weth;
+    if (!wethContractData) {
+      throw new Error(`wethContractData not found for chain ${chainId}`);
+    }
+    return new Contract(wethContractData.address, wethContractData.abi, this.getSigner(chainId));
   }
 
   private getL1ERC20BridgeContract(): Contract {
