@@ -475,8 +475,9 @@ export class InventoryClient {
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
       // Consider configured buffer for target to allow relayer to support slight overages.
-      const tokenConfig = this.getTokenConfig(l1Token, destinationChainId, outputToken);
-      assert(isDefined(tokenConfig), `No tokenConfig for ${l1Token} on ${_chain}.`);
+      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
+      const tokenConfig = this.getTokenConfig(l1Token, _chain, repaymentToken);
+      assert(isDefined(tokenConfig), `No ${outputToken} tokenConfig for ${l1Token} on ${_chain}.`);
       const thresholdPct = toBN(tokenConfig.targetPct)
         .mul(tokenConfig.targetOverageBuffer ?? toBNWei("1"))
         .div(fixedPointAdjustment);
