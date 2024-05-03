@@ -53,7 +53,6 @@ export abstract class BaseAdapter {
 
   readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
 
-  chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
@@ -66,12 +65,11 @@ export abstract class BaseAdapter {
 
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    _chainId: number,
+    readonly chainId: number,
     readonly monitoredAddresses: string[],
     readonly logger: winston.Logger,
     readonly supportedTokens: SupportedTokenSymbol[]
   ) {
-    this.chainId = _chainId;
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
     this.txnClient = new TransactionClient(logger);
