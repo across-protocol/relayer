@@ -141,7 +141,14 @@ export class PolygonAdapter extends CCTPAdapter {
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
-      for (const l1Token of availableTokens) {
+      // We can only filter on the recipient address for the L2 Transfer event, and we can match that with the
+      // depositReceiver for the L1 LockedERC20 event. So, querying the HubPool will not be useful here.
+      const isL2Contract = await this.isL2ChainContract(monitoredAddress);
+        // This adapter will only work to track EOA's or the SpokePool's transfers.
+        if (!isL2Contract || monitoredAddress !== this.spokePoolClients[this.chainId].spokePool.address) {
+          return;
+        }      
+        for (const l1Token of availableTokens) {
         if (this.isL1TokenUsdc(l1Token)) {
           cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
         }
@@ -152,13 +159,15 @@ export class PolygonAdapter extends CCTPAdapter {
         const l1Method = tokenToBridge[l1Token].l1Method;
         let l1SearchFilter: (string | undefined)[] = [];
         if (l1Method === "LockedERC20") {
-          l1SearchFilter = [monitoredAddress, undefined, l1Token];
+          l1SearchFilter = [undefined /* depositor */, monitoredAddress /* depositReceiver */, l1Token];
         }
         if (l1Method === "LockedEther") {
-          l1SearchFilter = [undefined, monitoredAddress];
+          l1SearchFilter = [undefined /* depositor */ , monitoredAddress /* depositReceiver */];
         }
         if (l1Method === "NewDepositBlock") {
-          l1SearchFilter = [monitoredAddress, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
+          // @dev This won't work for tracking Hub to Spoke transfers since the l1 "owner" will be different
+          // from the L2 "user". We leave it in here for future EOA relayer rebalancing of Matic.
+          l1SearchFilter = [monitoredAddress /* owner */, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
         }
 
         const l2Method =
@@ -168,7 +177,7 @@ export class PolygonAdapter extends CCTPAdapter {
           l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
         }
         if (l2Method === "TokenDeposited") {
-          l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress];
+          l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress /* user */];
         }
 
         promises.push(
