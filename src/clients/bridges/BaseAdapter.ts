@@ -115,6 +115,12 @@ export abstract class BaseAdapter {
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
+
+    if (l1Tokens.length !== associatedL1Bridges.length) {
+      this.log("Token and bridge arrays are not the same length", { l1Tokens, associatedL1Bridges }, "error");
+      assert(false, "Token and bridge arrays are not the same length");
+    }
+
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map(
       (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
