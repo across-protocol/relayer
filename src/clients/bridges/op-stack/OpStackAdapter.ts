@@ -37,7 +37,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
-    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
+    const wethAddress = this.wethAddress;
     if (wethAddress && !this.customBridges[wethAddress]) {
       this.customBridges[wethAddress] = new WethBridge(
         this.chainId,

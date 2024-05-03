@@ -35,7 +35,7 @@ import { CONTRACT_ADDRESSES, TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common"
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
-  to: string;
+  transactionHash: string;
 }
 
 interface Events {
@@ -56,7 +56,7 @@ export abstract class BaseAdapter {
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
-  readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor.address;
+  readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId]?.atomicDepositor.address;
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
@@ -264,6 +264,14 @@ export abstract class BaseAdapter {
     return compareAddressesSimple(l1Token, this.wethAddress);
   }
 
+  isHubChainContract(address: string): Promise<Boolean> {
+    return utils.isContractDeployedToAddress(address, this.getProvider(this.hubChainId));
+  }
+
+  isL2ChainContract(address: string): Promise<Boolean> {
+    return utils.isContractDeployedToAddress(address, this.getProvider(this.chainId));
+  }
+
   /**
    * Get L1 Atomic WETH depositor contract
    * @returns L1 Atomic WETH depositor contract
@@ -275,6 +283,14 @@ export abstract class BaseAdapter {
       CONTRACT_ADDRESSES[hubChainId].atomicDepositor.abi,
       this.getSigner(hubChainId)
     );
+  }
+
+  getHubPool(): Contract {
+    const hubPoolContractData = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool;
+    if (!hubPoolContractData) {
+      throw new Error(`hubPoolContractData not found for chain ${this.hubChainId}`);
+    }
+    return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.getSigner(this.hubChainId));
   }
 
   /**
@@ -335,7 +351,6 @@ export abstract class BaseAdapter {
         at: `${this.getName()}#_sendTokenToTargetChain`,
         message: "Simulation result",
         succeed,
-        ...txnRequest,
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     }

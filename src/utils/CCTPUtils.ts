@@ -125,13 +125,15 @@ export async function hasCCTPMessageBeenProcessed(
  * Note: due to the nature of testnet/mainnet chain ids mapping to the same CCTP domain, we
  *       actually have a mapping of CCTP Domain -> [chainId].
  */
-const cctpDomainsToChainIds = Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
-  if (!acc[cctpDomain]) {
-    acc[cctpDomain] = [];
-  }
-  acc[cctpDomain].push(Number(chainId));
-  return acc;
-}, {} as Record<number, number[]>);
+export function getCctpDomainsToChainIds() {
+  return Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
+    if (!acc[cctpDomain]) {
+      acc[cctpDomain] = [];
+    }
+    acc[cctpDomain].push(Number(chainId));
+    return acc;
+  }, {} as Record<number, number[]>);
+}
 
 /**
  * Resolves a list of TransactionReceipt objects into a list of DecodedCCTPMessage objects. Each transaction receipt
@@ -179,6 +181,8 @@ async function _resolveCCTPRelatedTxns(
       l.topics[0] === cctpEventTopic &&
       compareAddressesSimple(l.address, CONTRACT_ADDRESSES[sourceChainId].cctpMessageTransmitter.address)
   );
+
+  const cctpDomainsToChainIds = getCctpDomainsToChainIds();
 
   // We can resolve all of the logs in parallel and produce a flat list of DecodedCCTPMessage objects
   return (

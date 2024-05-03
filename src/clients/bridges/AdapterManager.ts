@@ -25,23 +25,35 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
+    const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+
+    // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
+    // spoke pool addresses from other chains.
+    const filterMonitoredAddresses = (chainId: number) => {
+      return monitoredAddresses.filter(
+        (address) =>
+          this.hubPoolClient.hubPool.address === address ||
+          this.spokePoolClients[chainId].spokePool.address === address ||
+          !spokePoolAddresses.includes(address)
+      );
+    };
     if (this.spokePoolClients[10] !== undefined) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, filterMonitoredAddresses(10));
     }
     if (this.spokePoolClients[137] !== undefined) {
-      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, filterMonitoredAddresses(137));
     }
     if (this.spokePoolClients[42161] !== undefined) {
-      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, filterMonitoredAddresses(42161));
     }
     if (this.spokePoolClients[324] !== undefined) {
-      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, filterMonitoredAddresses(324));
     }
     if (this.spokePoolClients[8453] !== undefined) {
-      this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, filterMonitoredAddresses(8453));
     }
     if (this.spokePoolClients[59144] !== undefined) {
-      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(59144));
     }
 
     logger.debug({
