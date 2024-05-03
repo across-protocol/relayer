@@ -446,7 +446,8 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
       // Destination chain:
       const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, outputToken);
-      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, outputToken);
+      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
+      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
@@ -475,7 +476,6 @@ export class InventoryClient {
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
       // Consider configured buffer for target to allow relayer to support slight overages.
-      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
       const tokenConfig = this.getTokenConfig(l1Token, _chain, repaymentToken);
       assert(isDefined(tokenConfig), `No ${outputToken} tokenConfig for ${l1Token} on ${_chain}.`);
       const thresholdPct = toBN(tokenConfig.targetPct)
