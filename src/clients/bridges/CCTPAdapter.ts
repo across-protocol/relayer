@@ -24,15 +24,6 @@ import { BaseAdapter } from "./BaseAdapter";
  */
 export abstract class CCTPAdapter extends BaseAdapter {
   /**
-   * Get the CCTP domain of the hub chain. This is used to determine the source
-   * domain of a CCTP message.
-   * @returns The CCTP domain of the hub chain
-   */
-  private get l1SourceDomain(): number {
-    return chainIdsToCctpDomains[this.hubChainId];
-  }
-
-  /**
    * Get the CCTP domain of the target chain. This is used to determine the destination
    * domain of a CCTP message.
    * @returns The CCTP domain of the target chain

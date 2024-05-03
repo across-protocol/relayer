@@ -98,16 +98,13 @@ export class OpStackAdapter extends BaseAdapter {
               bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, l2SearchConfig),
             ]);
 
-            assign(
-              this.l1DepositInitiatedEvents,
-              [monitoredAddress, l1Token],
-              depositInitiatedResults.map(processEvent)
-            );
-            assign(
-              this.l2DepositFinalizedEvents,
-              [monitoredAddress, l1Token],
-              depositFinalizedResults.map(processEvent)
-            );
+            Object.entries(depositInitiatedResults).forEach(([l2Token, events]) => {
+              assign(this.l1DepositInitiatedEvents, [monitoredAddress, l1Token, l2Token], events.map(processEvent));
+            });
+
+            Object.entries(depositFinalizedResults).forEach(([l2Token, events]) => {
+              assign(this.l2DepositFinalizedEvents, [monitoredAddress, l1Token, l2Token], events.map(processEvent));
+            });
           })
         )
       )

@@ -28,8 +28,7 @@ import {
   BigNumberish,
   TOKEN_SYMBOLS_MAP,
   getRedisCache,
-  getTokenAddress,
-  CHAIN_IDs,
+  getTokenAddressWithCCTP,
 } from "../../utils";
 import { utils } from "@across-protocol/sdk-v2";
 
@@ -116,11 +115,7 @@ export abstract class BaseAdapter {
   }
 
   resolveL2TokenAddress(l1Token: string, isNativeUsdc = false): string {
-    if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId])) {
-      const onBase = this.chainId === CHAIN_IDs.BASE || this.chainId === CHAIN_IDs.BASE_SEPOLIA;
-      return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "_USDC" : onBase ? "USDbC" : "USDC.e"].addresses[this.chainId];
-    }
-    return getTokenAddress(l1Token, this.hubChainId, this.chainId);
+    return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.chainId, isNativeUsdc);
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {

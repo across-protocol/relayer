@@ -1,31 +1,36 @@
 import {
   Contract,
   BigNumber,
-  Event,
   EventSearchConfig,
   paginatedEventQuery,
   Signer,
   Provider,
   ZERO_ADDRESS,
+  Event,
 } from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
-import { BridgeTransactionDetails, OpStackBridge } from "./OpStackBridgeInterface";
 import { matchL2EthDepositAndWrapEvents } from "../utils";
 import { utils } from "@across-protocol/sdk-v2";
+import { BridgeTransactionDetails, OpStackBridge, OpStackEvents } from "./OpStackBridgeInterface";
 
-export class WethBridge implements OpStackBridge {
+export class WethBridge extends OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
   private readonly hubPoolAddress: string;
 
-  constructor(
-    private l2chainId: number,
-    readonly hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider
-  ) {
+
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    super(
+      l2chainId,
+      hubChainId,
+      l1Signer,
+      l2SignerOrProvider,
+      // To keep existing logic, we should use ataomic depositor as the l1 bridge
+      [CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address]
+    );
+
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
@@ -39,10 +44,6 @@ export class WethBridge implements OpStackBridge {
     this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
 
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
-  }
-
-  get l1Gateways(): string[] {
-    return [this.atomicDepositor.address];
   }
 
   constructL1ToL2Txn(
@@ -64,7 +65,7 @@ export class WethBridge implements OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig,
     l1Bridge = this.l1Bridge
-  ): Promise<Event[]> {
+  ): Promise<OpStackEvents> {
     // We need to be smart about the filtering here because the ETHDepositInitiated event does not
     // index on the `toAddress` which is the `fromAddress` that we pass in here and the address we want
     // to actually filter on. So we make some simplifying assumptions:
@@ -98,7 +99,7 @@ export class WethBridge implements OpStackBridge {
     eventConfig: EventSearchConfig,
     l2Bridge = this.l2Bridge,
     l2Weth = this.l2Weth
-  ): Promise<Event[]> {
+  ): Promise<OpStackEvents> {
     // Check if the sender is a contract on the L1 network.
     const isContract = await this.isHubChainContract(fromAddress);
 
