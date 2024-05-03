@@ -69,7 +69,7 @@ export class UsdcTokenSplitterBridge implements OpStackBridge {
     return events.flat();
   }
 
-  get l1Gateway(): string[] {
-    return [this.cctpBridge.l1Gateway, this.canonicalBridge.l1Gateway];
+  get l1Gateways(): string[] {
+    return [...this.cctpBridge.l1Gateways, ...this.canonicalBridge.l1Gateways];
   }
 }

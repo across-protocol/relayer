@@ -27,8 +27,8 @@ export class WethBridge implements OpStackBridge {
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
   }
 
-  get l1Gateway(): string {
-    return this.atomicDepositor.address;
+  get l1Gateways(): string[] {
+    return [this.atomicDepositor.address];
   }
 
   constructL1ToL2Txn(

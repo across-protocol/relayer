@@ -7,7 +7,7 @@ export interface BridgeTransactionDetails {
 }
 
 export interface OpStackBridge {
-  readonly l1Gateway: string | string[];
+  readonly l1Gateways: string[];
   constructL1ToL2Txn(
     toAddress: string,
     l1Token: string,
