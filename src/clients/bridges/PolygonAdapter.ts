@@ -288,6 +288,7 @@ export class PolygonAdapter extends CCTPAdapter {
           return [];
         }
         if (this.isWeth(l1Token)) {
+          l1TokenListToApprove.push(l1Token);
           return [this.getL1TokenGateway(l1Token)?.address];
         }
         const bridgeAddresses: string[] = [];
