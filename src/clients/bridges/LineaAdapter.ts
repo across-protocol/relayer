@@ -125,19 +125,6 @@ export class LineaAdapter extends BaseAdapter {
     return this.isUsdc(l1Token) ? this.getL2UsdcBridge() : this.getL2TokenBridge();
   }
 
-  /**
-   * Get L1 Atomic WETH depositor contract
-   * @returns L1 Atomic WETH depositor contract
-   */
-  getAtomicDepositor(): Contract {
-    const { hubChainId } = this;
-    return new Contract(
-      this.atomicDepositorAddress,
-      CONTRACT_ADDRESSES[hubChainId].atomicDepositor.abi,
-      this.getSigner(hubChainId)
-    );
-  }
-
   isUsdc(l1Token: string): boolean {
     return compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
   }
@@ -170,11 +157,14 @@ export class LineaAdapter extends BaseAdapter {
           // 2. Pipe the resulting _messageHash argument from step 1 into the MessageClaimed event filter
           // 3. For each MessageSent, match the _messageHash to the _messageHash in the MessageClaimed event
           //    any unmatched MessageSent events are considered outstanding transfers.
-          const initiatedQueryResult = await paginatedEventQuery(
+          const _initiatedQueryResult = await paginatedEventQuery(
             l1MessageService,
             l1MessageService.filters.MessageSent(null, address),
             l1SearchConfig
           );
+          // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
+          // those with 0 value.
+          const initiatedQueryResult = _initiatedQueryResult.filter(({ args }) => args._value.gt(0));
           const internalMessageHashes = initiatedQueryResult.map(({ args }) => args._messageHash);
           const finalizedQueryResult = await paginatedEventQuery(
             l2MessageService,
@@ -204,15 +194,34 @@ export class LineaAdapter extends BaseAdapter {
           const l1Bridge = this.getL1Bridge(l1Token);
           const l2Bridge = this.getL2Bridge(l1Token);
 
-          // Define the initialized and finalized event filters for the L1 and L2 bridges
+          // Define the initialized and finalized event filters for the L1 and L2 bridges. We only filter
+          // on the recipient so that the filters work both to track Hub-->Spoke transfers and EOA transfers, and
+          // because some filters like ReceivedFromOtherLayer only index the recipient.
           const [filterL1, filterL2] = isUsdc
-            ? [l1Bridge.filters.Deposited(address, null, address), l2Bridge.filters.ReceivedFromOtherLayer(address)]
-            : [l1Bridge.filters.BridgingInitiated(address, null, l1Token), l2Bridge.filters.BridgingFinalized(l1Token)];
+            ? [
+                l1Bridge.filters.Deposited(null /* depositor */, null, address /* to */),
+                l2Bridge.filters.ReceivedFromOtherLayer(address /* recipient */),
+              ]
+            : [
+                l1Bridge.filters.BridgingInitiated(
+                  null /* sender */,
+                  null /* recipient, non-indexed must be null */,
+                  l1Token
+                ),
+                l2Bridge.filters.BridgingFinalized(l1Token),
+              ];
 
-          const [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
+          const [_initiatedQueryResult, _finalizedQueryResult] = await Promise.all([
             paginatedEventQuery(l1Bridge, filterL1, l1SearchConfig),
             paginatedEventQuery(l2Bridge, filterL2, l2SearchConfig),
           ]);
+          // @dev BridgingInitiated and BridgingFinalized have a `recipient` prop.
+          const finalizedQueryResult = isUsdc
+            ? _finalizedQueryResult
+            : _finalizedQueryResult.filter(({ args }) => args.recipient === address);
+          const initiatedQueryResult = isUsdc
+            ? _initiatedQueryResult
+            : _initiatedQueryResult.filter(({ args }) => args.recipient === address);
           initiatedQueryResult
             .filter(
               (initialEvent) =>
