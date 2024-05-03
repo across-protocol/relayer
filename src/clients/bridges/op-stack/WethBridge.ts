@@ -62,7 +62,8 @@ export class WethBridge implements OpStackBridge {
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
-    eventConfig: EventSearchConfig
+    eventConfig: EventSearchConfig,
+    l1Bridge = this.l1Bridge
   ): Promise<Event[]> {
     // We need to be smart about the filtering here because the ETHDepositInitiated event does not
     // index on the `toAddress` which is the `fromAddress` that we pass in here and the address we want
@@ -79,8 +80,8 @@ export class WethBridge implements OpStackBridge {
     }
 
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
+      l1Bridge,
+      l1Bridge.filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
       eventConfig
     );
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
@@ -94,7 +95,9 @@ export class WethBridge implements OpStackBridge {
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
-    eventConfig: EventSearchConfig
+    eventConfig: EventSearchConfig,
+    l2Bridge = this.l2Bridge,
+    l2Weth = this.l2Weth
   ): Promise<Event[]> {
     // Check if the sender is a contract on the L1 network.
     const isContract = await this.isHubChainContract(fromAddress);
@@ -113,8 +116,8 @@ export class WethBridge implements OpStackBridge {
       // signifying that the relayer has received WETH into their inventory.
       const l2EthDepositEvents = (
         await paginatedEventQuery(
-          this.l2Bridge,
-          this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, this.atomicDepositor.address),
+          l2Bridge,
+          l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, this.atomicDepositor.address),
           eventConfig
         )
       )
@@ -128,8 +131,7 @@ export class WethBridge implements OpStackBridge {
       // ETH transfers initiated by the AtomicWethDepositor. ETH is sent from the AtomicWethDepositor contract
       // on L1 and received as ETH on L2 by the recipient, which is finally wrapped into WETH on the L2 by the
       // recipient--the L2 signer in this class.
-      const l2EthWrapEvents = await this.queryL2WrapEthEvents(fromAddress, eventConfig);
-
+      const l2EthWrapEvents = await this.queryL2WrapEthEvents(fromAddress, eventConfig, l2Weth);
       return matchL2EthDepositAndWrapEvents(l2EthDepositEvents, l2EthWrapEvents);
     } else {
       // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
@@ -139,8 +141,8 @@ export class WethBridge implements OpStackBridge {
       }
 
       return await paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+        l2Bridge,
+        l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
         eventConfig
       );
     }
@@ -153,7 +155,11 @@ export class WethBridge implements OpStackBridge {
     return utils.isContractDeployedToAddress(address, this.l2Bridge.provider);
   }
 
-  private queryL2WrapEthEvents(fromAddress: string, eventConfig: EventSearchConfig): Promise<Event[]> {
-    return paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Deposit(fromAddress), eventConfig);
+  private queryL2WrapEthEvents(
+    fromAddress: string,
+    eventConfig: EventSearchConfig,
+    l2Weth = this.l2Weth
+  ): Promise<Event[]> {
+    return paginatedEventQuery(l2Weth, l2Weth.filters.Deposit(fromAddress), eventConfig);
   }
 }
