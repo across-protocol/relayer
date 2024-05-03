@@ -144,11 +144,11 @@ export class PolygonAdapter extends CCTPAdapter {
       // We can only filter on the recipient address for the L2 Transfer event, and we can match that with the
       // depositReceiver for the L1 LockedERC20 event. So, querying the HubPool will not be useful here.
       const isL2Contract = await this.isL2ChainContract(monitoredAddress);
-        // This adapter will only work to track EOA's or the SpokePool's transfers.
-        if (!isL2Contract || monitoredAddress !== this.spokePoolClients[this.chainId].spokePool.address) {
-          return;
-        }      
-        for (const l1Token of availableTokens) {
+      // This adapter will only work to track EOA's or the SpokePool's transfers.
+      if (!isL2Contract || monitoredAddress !== this.spokePoolClients[this.chainId].spokePool.address) {
+        return;
+      }
+      for (const l1Token of availableTokens) {
         if (this.isL1TokenUsdc(l1Token)) {
           cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
         }
@@ -162,7 +162,7 @@ export class PolygonAdapter extends CCTPAdapter {
           l1SearchFilter = [undefined /* depositor */, monitoredAddress /* depositReceiver */, l1Token];
         }
         if (l1Method === "LockedEther") {
-          l1SearchFilter = [undefined /* depositor */ , monitoredAddress /* depositReceiver */];
+          l1SearchFilter = [undefined /* depositor */, monitoredAddress /* depositReceiver */];
         }
         if (l1Method === "NewDepositBlock") {
           // @dev This won't work for tracking Hub to Spoke transfers since the l1 "owner" will be different
@@ -177,7 +177,11 @@ export class PolygonAdapter extends CCTPAdapter {
           l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
         }
         if (l2Method === "TokenDeposited") {
-          l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress /* user */];
+          l2SearchFilter = [
+            TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET],
+            ZERO_ADDRESS,
+            monitoredAddress /* user */,
+          ];
         }
 
         promises.push(
