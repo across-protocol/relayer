@@ -176,6 +176,8 @@ export class ArbitrumAdapter extends CCTPAdapter {
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+    const l1TokenListToApprove = [];
+
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
@@ -189,10 +191,15 @@ export class ArbitrumAdapter extends CCTPAdapter {
           bridgeAddresses.push(this.getL1CCTPTokenMessengerBridge().address);
         }
         bridgeAddresses.push(this.getL1Bridge(l1Token).address);
+
+        // Push the l1 token to the list of tokens to approve N times, where N is the number of bridges.
+        // I.e. the arrays have to be parallel.
+        l1TokenListToApprove.push(...Array(bridgeAddresses.length).fill(l1Token));
+
         return bridgeAddresses;
       })
       .filter(isDefined);
-    await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(address, l1TokenListToApprove, associatedL1Bridges);
   }
 
   sendTokenToTargetChain(
