@@ -28,6 +28,8 @@ import {
   BigNumberish,
   TOKEN_SYMBOLS_MAP,
   getRedisCache,
+  getTokenAddress,
+  CHAIN_IDs,
 } from "../../utils";
 import { utils } from "@across-protocol/sdk-v2";
 
@@ -40,7 +42,7 @@ export interface DepositEvent extends SortableEvent {
 
 interface Events {
   [address: string]: {
-    [l1Token: string]: DepositEvent[];
+    [l1Token: string]: { [l2Token: string]: DepositEvent[] };
   };
 }
 
@@ -111,6 +113,14 @@ export abstract class BaseAdapter {
     return `l1CanonicalTokenBridgeAllowance_${l1Token}_${await this.getSigner(
       this.hubChainId
     ).getAddress()}_targetContract:${targetContract}`;
+  }
+
+  resolveL2TokenAddress(l1Token: string, isNativeUsdc = false): string {
+    if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId])) {
+      const onBase = this.chainId === CHAIN_IDs.BASE || this.chainId === CHAIN_IDs.BASE_SEPOLIA;
+      return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "_USDC" : onBase ? "USDbC" : "USDC.e"].addresses[this.chainId];
+    }
+    return getTokenAddress(l1Token, this.hubChainId, this.chainId);
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
@@ -198,49 +208,55 @@ export abstract class BaseAdapter {
         continue;
       }
 
-      if (outstandingTransfers[monitoredAddress] === undefined) {
-        outstandingTransfers[monitoredAddress] = {};
-      }
+      outstandingTransfers[monitoredAddress] ??= {};
+
       if (this.l2DepositFinalizedEvents[monitoredAddress] === undefined) {
         this.l2DepositFinalizedEvents[monitoredAddress] = {};
       }
 
       for (const l1Token of l1Tokens) {
-        // Skip if there has been no deposits for this token.
-        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) {
-          continue;
-        }
-
-        // It's okay to not have any finalization events. In that case, all deposits are outstanding.
-        if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
-          this.l2DepositFinalizedEvents[monitoredAddress][l1Token] = [];
-        }
-        const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
-
-        // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
-        // should be unlikely.
-        const finalizedAmounts = l2FinalizationSet.map((finalization) => finalization.amount.toString());
-        const pendingDeposits = this.l1DepositInitiatedEvents[monitoredAddress][l1Token].filter((deposit) => {
-          // Remove the first match. This handles scenarios where are collisions by amount.
-          const index = finalizedAmounts.indexOf(deposit.amount.toString());
-          if (index > -1) {
-            finalizedAmounts.splice(index, 1);
-            return false;
+        // We want to iterate over the deposit events that have been initiated. We'll then match them with the
+        // finalization events to determine which deposits are still outstanding.
+        for (const l2Token of Object.keys(this.l1DepositInitiatedEvents[monitoredAddress][l1Token] ?? {})) {
+          // Skip if there has been no deposits for this token.
+          if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) {
+            continue;
           }
-          return true;
-        });
 
-        // Short circuit early if there are no pending deposits.
-        if (pendingDeposits.length === 0) {
-          continue;
+          // It's okay to not have any finalization events. In that case, all deposits are outstanding.
+          this.l2DepositFinalizedEvents[monitoredAddress][l1Token] ??= {};
+
+          const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token][l2Token] ?? [];
+
+          // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
+          // should be unlikely.
+          const finalizedAmounts = l2FinalizationSet.map((finalization) => finalization.amount.toString());
+          const pendingDeposits = this.l1DepositInitiatedEvents[monitoredAddress][l1Token][l2Token].filter(
+            (deposit) => {
+              // Remove the first match. This handles scenarios where are collisions by amount.
+              const index = finalizedAmounts.indexOf(deposit.amount.toString());
+              if (index > -1) {
+                finalizedAmounts.splice(index, 1);
+                return false;
+              }
+              return true;
+            }
+          );
+
+          // Short circuit early if there are no pending deposits.
+          if (pendingDeposits.length === 0) {
+            continue;
+          }
+
+          outstandingTransfers[monitoredAddress][l1Token] ??= {};
+
+          const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), bnZero);
+          const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
+          outstandingTransfers[monitoredAddress][l1Token][l2Token] = {
+            totalAmount,
+            depositTxHashes,
+          };
         }
-
-        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), bnZero);
-        const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
-        outstandingTransfers[monitoredAddress][l1Token] = {
-          totalAmount,
-          depositTxHashes,
-        };
       }
     }
 

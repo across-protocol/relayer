@@ -9,7 +9,6 @@ import {
   assign,
   Event,
   ZERO_ADDRESS,
-  getTokenAddress,
   TOKEN_SYMBOLS_MAP,
   bnZero,
 } from "../../utils";
@@ -78,6 +77,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
+        const l2Token = this.resolveL2TokenAddress(l1TokenAddress);
         if (isWeth) {
           [initiatedQueryResult, finalizedQueryResult, wrapQueryResult] = await Promise.all([
             // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
@@ -121,7 +121,6 @@ export class ZKSyncAdapter extends BaseAdapter {
             finalizedQueryResult = matchL2EthDepositAndWrapEvents(finalizedQueryResult, wrapQueryResult);
           }
         } else {
-          const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             // Filter on 'from' and 'to' address
             paginatedEventQuery(
@@ -141,13 +140,17 @@ export class ZKSyncAdapter extends BaseAdapter {
 
         assign(
           this.l1DepositInitiatedEvents,
-          [address, l1TokenAddress],
+          [address, l1TokenAddress, l2Token],
           // An initiatedQueryResult could be a zkSync DepositInitiated or an AtomicDepositor
           // ZkSyncEthDepositInitiated event, subject to whether the deposit token was WETH or not.
           // A ZkSyncEthDepositInitiated event doesn't have a token or l1Token param.
           initiatedQueryResult.map(processEvent).filter((e) => isWeth || e.l1Token === l1TokenAddress)
         );
-        assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
+        assign(
+          this.l2DepositFinalizedEvents,
+          [address, l1TokenAddress, l2Token],
+          finalizedQueryResult.map(processEvent)
+        );
       });
     });
 
