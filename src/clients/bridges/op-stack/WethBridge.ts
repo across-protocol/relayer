@@ -41,8 +41,8 @@ export class WethBridge implements OpStackBridge {
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
 
-  get l1Gateway(): string {
-    return this.atomicDepositor.address;
+  get l1Gateways(): string[] {
+    return [this.atomicDepositor.address];
   }
 
   constructL1ToL2Txn(
