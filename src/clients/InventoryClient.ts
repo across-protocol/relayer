@@ -689,7 +689,7 @@ export class InventoryClient {
     for (const l1Token of this.getL1Tokens()) {
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
       if (cumulativeBalance.eq(bnZero)) {
-        return;
+        continue;
       }
 
       chainIds.forEach((chainId) => {
