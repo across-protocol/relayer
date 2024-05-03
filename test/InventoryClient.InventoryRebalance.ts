@@ -130,9 +130,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const tokenDistribution = inventoryClient.getTokenDistributionPerL1Token();
     for (const chainId of enabledChainIds) {
       for (const l1Token of inventoryClient.getL1Tokens()) {
-        expect(inventoryClient.getBalanceOnChain(chainId, l1Token)).to.equal(
-          initialAllocation[chainId][l1Token]
-        );
+        expect(inventoryClient.getBalanceOnChain(chainId, l1Token)).to.equal(initialAllocation[chainId][l1Token]);
         expect(
           inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
             owner.address,
