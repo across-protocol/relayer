@@ -458,8 +458,8 @@ export class InventoryClient {
     for (const _chain of chainsToEvaluate) {
       assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
       // Destination chain:
-      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, outputToken);
       const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
+      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, repaymentToken);
       const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
