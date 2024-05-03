@@ -43,7 +43,6 @@ export class ZKSyncAdapter extends BaseAdapter {
     const l2WethContract = this.getL2Weth();
     const atomicWethDepositor = this.getAtomicDepositor();
     const hubPool = this.getHubPool();
-    const spokePoolAddress = this.spokePoolClients[this.chainId].spokePool.address;
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
@@ -67,11 +66,10 @@ export class ZKSyncAdapter extends BaseAdapter {
 
     await utils.mapAsync(this.monitoredAddresses, async (address) => {
       return await utils.mapAsync(supportedL1Tokens, async (l1TokenAddress) => {
-        const isHubChainContract = await this.isHubChainContract(address);
         const isL2Contract = await this.isL2ChainContract(address);
         // This adapter will only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
         // and any L2 contracts that are not the SpokePool.
-        if (isHubChainContract || (isL2Contract && address !== spokePoolAddress)) {
+        if (address === this.getHubPool().address) {
           return;
         }
         const isSpokePoolContract = isL2Contract;

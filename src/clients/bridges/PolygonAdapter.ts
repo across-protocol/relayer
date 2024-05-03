@@ -139,15 +139,10 @@ export class PolygonAdapter extends CCTPAdapter {
 
     const promises: Promise<Event[]>[] = [];
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
-    // Fetch bridge events for all monitored addresses.
-    for (const monitoredAddress of this.monitoredAddresses) {
-      // We can only filter on the recipient address for the L2 Transfer event, and we can match that with the
-      // depositReceiver for the L1 LockedERC20 event. So, querying the HubPool will not be useful here.
-      const isL2Contract = await this.isL2ChainContract(monitoredAddress);
-      // This adapter will only work to track EOA's or the SpokePool's transfers.
-      if (!isL2Contract || monitoredAddress !== this.spokePoolClients[this.chainId].spokePool.address) {
-        return;
-      }
+    // Fetch bridge events for all monitored addresses. This function will not work to monitor the hub pool contract,
+    // only the spoke pool address and EOA's.
+    const monitoredAddresses = this.monitoredAddresses.filter((address) => address !== this.getHubPool().address);
+    for (const monitoredAddress of monitoredAddresses) {
       for (const l1Token of availableTokens) {
         if (this.isL1TokenUsdc(l1Token)) {
           cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
@@ -193,10 +188,10 @@ export class PolygonAdapter extends CCTPAdapter {
 
     const [results, resolvedCCTPEvents] = await Promise.all([
       Promise.all(promises),
-      Promise.all(this.monitoredAddresses.map((monitoredAddress) => cctpOutstandingTransfersPromise[monitoredAddress])),
+      Promise.all(monitoredAddresses.map((monitoredAddress) => cctpOutstandingTransfersPromise[monitoredAddress])),
     ]);
     const resultingCCTPEvents: Record<string, SortableEvent[]> = Object.fromEntries(
-      this.monitoredAddresses.map((monitoredAddress, idx) => [monitoredAddress, resolvedCCTPEvents[idx]])
+      monitoredAddresses.map((monitoredAddress, idx) => [monitoredAddress, resolvedCCTPEvents[idx]])
     );
 
     // 2 events per token.
@@ -204,14 +199,14 @@ export class PolygonAdapter extends CCTPAdapter {
 
     // Segregate the events list by monitored address.
     const resultsByMonitoredAddress = Object.fromEntries(
-      this.monitoredAddresses.map((monitoredAddress, index) => {
+      monitoredAddresses.map((monitoredAddress, index) => {
         const start = index * numEventsPerMonitoredAddress;
         return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress)];
       })
     );
 
     // Process events for each monitored address.
-    for (const monitoredAddress of this.monitoredAddresses) {
+    for (const monitoredAddress of monitoredAddresses) {
       const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
       eventsToProcess.forEach((result, index) => {
         if (eventsToProcess.length === 0) {
