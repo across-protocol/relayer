@@ -21,6 +21,7 @@ import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { CCTPAdapter } from "./CCTPAdapter";
 
 // TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
@@ -55,7 +56,7 @@ type SupportedL1Token = string;
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
 // wont get stuck.
 
-export class ArbitrumAdapter extends BaseAdapter {
+export class ArbitrumAdapter extends CCTPAdapter {
   l2GasPrice: BigNumber = toBN(20e9);
   l2GasLimit: BigNumber = toBN(150000);
   // abi.encoding of the maxL2Submission cost. of 0.01e18
@@ -89,10 +90,15 @@ export class ArbitrumAdapter extends BaseAdapter {
     const availableL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
     const promises: Promise<Event[]>[] = [];
+    const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
     const validTokens: string[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableL1Tokens) {
+        if (this.isL1TokenUsdc(l1Token)) {
+          cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
+        }
+
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
 
@@ -111,7 +117,13 @@ export class ArbitrumAdapter extends BaseAdapter {
       }
     }
 
-    const results = await Promise.all(promises);
+    const [results, resolvedCCTPEvents] = await Promise.all([
+      Promise.all(promises),
+      Promise.all(this.monitoredAddresses.map((monitoredAddress) => cctpOutstandingTransfersPromise[monitoredAddress])),
+    ]);
+    const resultingCCTPEvents: Record<string, SortableEvent[]> = Object.fromEntries(
+      this.monitoredAddresses.map((monitoredAddress, idx) => [monitoredAddress, resolvedCCTPEvents[idx]])
+    );
 
     // 2 events per token.
     const numEventsPerMonitoredAddress = 2 * validTokens.length;
@@ -149,55 +161,79 @@ export class ArbitrumAdapter extends BaseAdapter {
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
         assign(eventsStorage, [monitoredAddress, l1Token], events);
       });
+      if (isDefined(resultingCCTPEvents[monitoredAddress])) {
+        assign(
+          this.l1DepositInitiatedEvents,
+          [monitoredAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]],
+          resultingCCTPEvents[monitoredAddress]
+        );
+      }
     }
 
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+    const l1TokenListToApprove = [];
+
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
     const associatedL1Bridges = l1Tokens
-      .map((l1Token) => {
+      .flatMap((l1Token) => {
         if (!this.isSupportedToken(l1Token)) {
-          return null;
+          return [];
         }
-        return this.getL1Bridge(l1Token).address;
+        const bridgeAddresses: string[] = [];
+        if (this.isL1TokenUsdc(l1Token)) {
+          bridgeAddresses.push(this.getL1CCTPTokenMessengerBridge().address);
+        }
+        bridgeAddresses.push(this.getL1Bridge(l1Token).address);
+
+        // Push the l1 token to the list of tokens to approve N times, where N is the number of bridges.
+        // I.e. the arrays have to be parallel.
+        l1TokenListToApprove.push(...Array(bridgeAddresses.length).fill(l1Token));
+
+        return bridgeAddresses;
       })
       .filter(isDefined);
-    await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(address, l1TokenListToApprove, associatedL1Bridges);
   }
 
-  async sendTokenToTargetChain(
+  sendTokenToTargetChain(
     address: string,
     l1Token: string,
     l2Token: string,
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    const args = [
-      l1Token, // token
-      address, // to
-      amount, // amount
-      this.l2GasLimit, // maxGas
-      this.l2GasPrice, // gasPriceBid
-      this.transactionSubmissionData, // data
-    ];
-    // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
-    // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
-    const gasMultiplier = 1.2;
-    return await this._sendTokenToTargetChain(
-      l1Token,
-      l2Token,
-      amount,
-      this.getL1GatewayRouter(),
-      "outboundTransfer",
-      args,
-      gasMultiplier,
-      this.l1SubmitValue,
-      simMode
-    );
+    // If both the L1 & L2 tokens are native USDC, we use the CCTP bridge.
+    if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
+      return this.sendCctpTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    } else {
+      const args = [
+        l1Token, // token
+        address, // to
+        amount, // amount
+        this.l2GasLimit, // maxGas
+        this.l2GasPrice, // gasPriceBid
+        this.transactionSubmissionData, // data
+      ];
+      // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
+      // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
+      const gasMultiplier = 1.2;
+      return this._sendTokenToTargetChain(
+        l1Token,
+        l2Token,
+        amount,
+        this.getL1GatewayRouter(),
+        "outboundTransfer",
+        args,
+        gasMultiplier,
+        this.l1SubmitValue,
+        simMode
+      );
+    }
   }
 
   // The arbitrum relayer expects to receive ETH steadily per HubPool bundle processed, since it is the L2 refund
