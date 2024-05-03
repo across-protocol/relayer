@@ -13,7 +13,7 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import { MockConfigStoreClient, MockInventoryClient, MockProfitClient } from "./mocks";
+import { MockConfigStoreClient, MockInventoryClient, MockProfitClient, SimpleMockHubPoolClient } from "./mocks";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
   BigNumber,
@@ -103,7 +103,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     ) as unknown as ConfigStoreClient;
     await configStoreClient.update();
 
-    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
@@ -166,6 +166,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await setupTokensForWallet(spokePool_2, depositor, [erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], weth, 10);
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol());
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);

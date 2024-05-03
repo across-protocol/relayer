@@ -25,6 +25,7 @@ import {
   assign,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
 } from "../utils";
 import {
@@ -204,8 +205,15 @@ export class ProfitClient {
    * @returns Address corresponding to token.
    */
   resolveTokenAddress(token: string): string {
-    const address = ethersUtils.isAddress(token) ? token : this.tokenSymbolMap[token];
-    assert(isDefined(address), `Unable to resolve address for token ${token}`);
+    if (ethersUtils.isAddress(token)) {
+      return token;
+    }
+    const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
+    const address = this.tokenSymbolMap[remappedTokenSymbol];
+    assert(
+      isDefined(address),
+      `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
+    );
     return address;
   }
 
@@ -338,7 +346,20 @@ export class ProfitClient {
     const scaledInputAmount = deposit.inputAmount.mul(inputTokenScalar);
     const inputAmountUsd = scaledInputAmount.mul(inputTokenPriceUsd).div(fixedPoint);
 
-    const outputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
+    // Unlike the input token, output token is not always resolvable via HubPoolClient since outputToken
+    // can be any arbitrary token.
+    let outputTokenInfo: L1Token;
+    // If the output token and the input token are equivalent, then we can look up the token info
+    // via the HubPoolClient since the output token is mapped via PoolRebalanceRoute to the HubPool.
+    // If not, then we should look up outputToken in the TOKEN_SYMBOLS_MAP for the destination chain.
+    const matchingTokens =
+      TOKEN_SYMBOLS_MAP[inputTokenInfo.symbol]?.addresses[deposit.destinationChainId] === deposit.outputToken;
+    if (matchingTokens) {
+      outputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
+    } else {
+      // This function will throw if the token is not found in the TOKEN_SYMBOLS_MAP for the destination chain.
+      outputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
+    }
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenInfo.symbol);
     const outputTokenScalar = toBNWei(1, 18 - outputTokenInfo.decimals);
     const effectiveOutputAmount = min(deposit.outputAmount, deposit.updatedOutputAmount ?? deposit.outputAmount);
@@ -367,14 +388,9 @@ export class ProfitClient {
       ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
       : bnZero;
 
-    // If either token prices are unknown, assume the relay is unprofitable. Force non-equivalent tokens
-    // to be unprofitable for now. The relayer may be updated in future to support in-protocol swaps.
-    const equivalentTokens = outputTokenInfo.address === inputTokenInfo.address;
+    // If either token prices are unknown, assume the relay is unprofitable.
     const profitable =
-      equivalentTokens &&
-      inputTokenPriceUsd.gt(bnZero) &&
-      outputTokenPriceUsd.gt(bnZero) &&
-      netRelayerFeePct.gte(minRelayerFeePct);
+      inputTokenPriceUsd.gt(bnZero) && outputTokenPriceUsd.gt(bnZero) && netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       totalFeePct,
