@@ -264,6 +264,14 @@ export abstract class BaseAdapter {
     return compareAddressesSimple(l1Token, this.wethAddress);
   }
 
+  isHubChainContract(address: string): Promise<Boolean> {
+    return utils.isContractDeployedToAddress(address, this.getProvider(this.hubChainId));
+  }
+
+  isL2ChainContract(address: string): Promise<Boolean> {
+    return utils.isContractDeployedToAddress(address, this.getProvider(this.chainId));
+  }
+
   /**
    * Get L1 Atomic WETH depositor contract
    * @returns L1 Atomic WETH depositor contract
@@ -275,6 +283,14 @@ export abstract class BaseAdapter {
       CONTRACT_ADDRESSES[hubChainId].atomicDepositor.abi,
       this.getSigner(hubChainId)
     );
+  }
+
+  getHubPool(): Contract {
+    const hubPoolContractData = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool;
+    if (!hubPoolContractData) {
+      throw new Error(`hubPoolContractData not found for chain ${this.hubChainId}`);
+    }
+    return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.getSigner(this.hubChainId));
   }
 
   /**

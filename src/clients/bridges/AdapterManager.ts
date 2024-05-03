@@ -26,10 +26,15 @@ export class AdapterManager {
       return;
     }
     const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+
+    // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
+    // spoke pool addresses from other chains.
     const filterMonitoredAddresses = (chainId: number) => {
       return monitoredAddresses.filter(
         (address) =>
-          this.spokePoolClients[chainId].spokePool.address === address || !spokePoolAddresses.includes(address)
+          this.hubPoolClient.hubPool.address === address ||
+          this.spokePoolClients[chainId].spokePool.address === address ||
+          !spokePoolAddresses.includes(address)
       );
     };
     if (this.spokePoolClients[10] !== undefined) {
