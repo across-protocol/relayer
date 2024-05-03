@@ -11,6 +11,7 @@ import {
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { BridgeTransactionDetails, OpStackBridge } from "./OpStackBridgeInterface";
 import { matchL2EthDepositAndWrapEvents } from "../utils";
+import { utils } from "@across-protocol/sdk-v2";
 
 export class WethBridge implements OpStackBridge {
   private readonly l1Bridge: Contract;
@@ -68,11 +69,12 @@ export class WethBridge implements OpStackBridge {
     // to actually filter on. So we make some simplifying assumptions:
     // - For our tracking purposes, the ETHDepositInitiated `fromAddress` will be the
     //   AtomicDepositor if the fromAddress is an EOA.
-    const isContract = (await this.l1Bridge.provider.getCode(fromAddress)) !== "0x";
+    const isContract = await this.isHubChainContract(fromAddress);
+    const isL2ChainContract = await this.isL2ChainContract(fromAddress);
 
     // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
     // monitoring the spoke pool address
-    if (isContract && fromAddress !== this.hubPoolAddress) {
+    if (isL2ChainContract || (isContract && fromAddress !== this.hubPoolAddress)) {
       return [];
     }
 
@@ -95,7 +97,14 @@ export class WethBridge implements OpStackBridge {
     eventConfig: EventSearchConfig
   ): Promise<Event[]> {
     // Check if the sender is a contract on the L1 network.
-    const isContract = (await this.l1Bridge.provider.getCode(fromAddress)) !== "0x";
+    const isContract = await this.isHubChainContract(fromAddress);
+
+    // See above for why we don't want to monitor the spoke pool contract.
+    const isL2ChainContract = await this.isL2ChainContract(fromAddress);
+    if (isL2ChainContract || (isContract && fromAddress !== this.hubPoolAddress)) {
+      return [];
+    }
+
     if (!isContract) {
       // When bridging WETH to OP stack chains from an EOA, ETH is bridged via the AtomicDepositor contract
       // and received as ETH on L2. The InventoryClient is built to abstract this subtlety and
@@ -135,6 +144,13 @@ export class WethBridge implements OpStackBridge {
         eventConfig
       );
     }
+  }
+
+  async isHubChainContract(address: string): Promise<boolean> {
+    return utils.isContractDeployedToAddress(address, this.l1Bridge.provider);
+  }
+  async isL2ChainContract(address: string): Promise<boolean> {
+    return utils.isContractDeployedToAddress(address, this.l2Bridge.provider);
   }
 
   private queryL2WrapEthEvents(fromAddress: string, eventConfig: EventSearchConfig): Promise<Event[]> {
