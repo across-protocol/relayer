@@ -72,22 +72,31 @@ export class InventoryClient {
     this.formatWei = createFormatFunction(2, 4, false, 18);
   }
 
-  getTokenConfig(hubPoolToken: string, chainId: number, spokePoolToken?: string): TokenInventoryConfig | undefined {
-    const tokenConfig = this.inventoryConfig.tokenConfig[hubPoolToken];
-    assert(isDefined(tokenConfig), `getTokenConfig: No token config found for ${hubPoolToken}.`);
+  /**
+   * Resolve the token balance configuration for `l1Token` on `chainId`. If `l1Token` maps to multiple tokens on
+   * `chainId` then `l2Token` must be supplied.
+   * @param l1Token L1 token address to query.
+   * @param chainId Chain ID to query on
+   * @param l2Token Optional L2 token address when l1Token maps to multiple l2Token addresses.
+   */
+  getTokenConfig(l1Token: string, chainId: number, l2Token?: string): TokenInventoryConfig | undefined {
+    const tokenConfig = this.inventoryConfig.tokenConfig[l1Token];
+    assert(isDefined(tokenConfig), `getTokenConfig: No token config found for ${l1Token}.`);
 
     if (isAliasConfig(tokenConfig)) {
-      assert(
-        isDefined(spokePoolToken),
-        `Cannot resolve ambiguous ${getNetworkName(chainId)} token config for ${hubPoolToken}`
-      );
-      return tokenConfig[spokePoolToken]?.[chainId];
+      assert(isDefined(l2Token), `Cannot resolve ambiguous ${getNetworkName(chainId)} token config for ${l1Token}`);
+      return tokenConfig[l2Token]?.[chainId];
     } else {
       return tokenConfig[chainId];
     }
   }
 
-  // Get the total balance across all chains, considering any outstanding cross chain transfers as a virtual balance on that chain.
+  /*
+   * Get the total balance for an L1 token across all chains, considering any outstanding cross chain transfers as a
+   * virtual balance on that chain.
+   * @param l1Token L1 token address to query.
+   * returns Cumulative balance of l1Token across all inventory-managed chains.
+   */
   getCumulativeBalance(l1Token: string): BigNumber {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChain(chainId, l1Token))
@@ -152,7 +161,11 @@ export class InventoryClient {
     return distribution;
   }
 
-  // Get the distribution of all tokens, spread over all chains.
+  /**
+   * Determine the allocation of an l1 token across all configured remote chain IDs.
+   * @param l1Token L1 token to query.
+   * @returns Distribution of l1Token by chain ID and l2Token.
+   */
   getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
     const distributionPerL1Token: TokenDistributionPerL1Token = {};
     this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
