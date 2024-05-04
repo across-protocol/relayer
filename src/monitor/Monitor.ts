@@ -510,15 +510,16 @@ export class Monitor {
     // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
     // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
+    const currentTime = await this.clients.hubPoolClient.hubPool.getCurrentTime()
     if (
       lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD >
-      this.clients.hubPoolClient.latestBlockSearched
+      currentTime
     ) {
       this.logger.debug({
         at: "Monitor#checkStuckRebalances",
         message: `Within ${REBALANCE_FINALIZE_GRACE_PERIOD / 60}min grace period of last bundle execution`,
         lastFullyExecutedBundleTime,
-        currentBlock: this.clients.hubPoolClient.latestBlockSearched,
+        currentTime,
       });
       return;
     }
