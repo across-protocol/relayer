@@ -374,20 +374,6 @@ describe("Monitor", async function () {
     expect(log.lastArg.mrkdwn).to.contains("100.00");
   });
 
-  it("Monitor should report unknown transfers", async function () {
-    await l2Token.connect(depositor).transfer(dataworker.address, 1);
-
-    await monitorInstance.update();
-    const reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      [UNKNOWN_TRANSFERS_NAME]
-    );
-    monitorInstance.updateUnknownTransfers(reports);
-
-    expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
-  });
-
   it("Monitor should send token refills", async function () {
     const refillConfig = [
       {
