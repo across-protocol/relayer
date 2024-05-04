@@ -11,12 +11,7 @@ import { CrossChainTransferClient } from "../src/clients/bridges";
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { BalanceType, V3DepositWithBlock } from "../src/interfaces";
-import {
-  ALL_CHAINS_NAME,
-  Monitor,
-  REBALANCE_FINALIZE_GRACE_PERIOD,
-  UNKNOWN_TRANSFERS_NAME,
-} from "../src/monitor/Monitor";
+import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { MAX_UINT_VAL, getNetworkName, toBN } from "../src/utils";
 import * as constants from "./constants";
