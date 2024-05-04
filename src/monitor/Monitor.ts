@@ -35,7 +35,8 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-export const REBALANCE_FINALIZE_GRACE_PERIOD = 60 * 60 * 4; // 4 hours.
+export const REBALANCE_FINALIZE_GRACE_PERIOD = 40 * 60; // 40 minutes, which is 50% of the way through an 80 minute
+// bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
 export const UNKNOWN_TRANSFERS_NAME = "Unknown transfers (incoming, outgoing, net)";
 const ALL_BALANCE_TYPES = [
@@ -511,8 +512,14 @@ export class Monitor {
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
     if (
       lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD >
-      this.clients.hubPoolClient.hubPool.getCurrentTime()
+      this.clients.hubPoolClient.latestBlockSearched
     ) {
+      this.logger.debug({
+        at: "Monitor#checkStuckRebalances",
+        message: `Within ${REBALANCE_FINALIZE_GRACE_PERIOD / 60}min grace period of last bundle execution`,
+        lastFullyExecutedBundleTime,
+        currentBlock: this.clients.hubPoolClient.latestBlockSearched,
+      });
       return;
     }
 
