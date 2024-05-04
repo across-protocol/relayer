@@ -201,10 +201,10 @@ export class Monitor {
       const chainId = parseInt(chainIdStr);
       mrkdwn += `*Destination: ${getNetworkName(chainId)}*\n`;
       for (const tokenAddress of Object.keys(amountByToken)) {
-        const tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
+        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
         // Convert to number of tokens for readability.
-        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), tokenInfo.decimals);
-        mrkdwn += `${tokenInfo.symbol}: ${unfilledAmount}\n`;
+        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
+        mrkdwn += `${symbol}: ${unfilledAmount}\n`;
       }
     }
 
@@ -633,7 +633,7 @@ export class Monitor {
         for (const l2Token of Object.keys(l2ToL1Tokens)) {
           let currentTokenMrkdwn = "";
 
-          const tokenInfo = l2ToL1Tokens[l2Token];
+          const { symbol, decimals } = l2ToL1Tokens[l2Token];
           const transfers = transfersPerToken[l2Token];
           // Skip if there has been no transfers of this token.
           if (!transfers) {
@@ -647,7 +647,7 @@ export class Monitor {
           if (outgoingTransfers.all.length > 0) {
             currentTokenMrkdwn += "Outgoing:\n";
             totalOutgoingAmount = totalOutgoingAmount.add(this.getTotalTransferAmount(outgoingTransfers.all));
-            currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, tokenInfo.decimals, chainId);
+            currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, decimals, chainId);
           }
 
           let totalIncomingAmount = bnZero;
@@ -659,38 +659,26 @@ export class Monitor {
           if (incomingTransfers.all.length > 0) {
             currentTokenMrkdwn += "Incoming:\n";
             totalIncomingAmount = totalIncomingAmount.add(this.getTotalTransferAmount(incomingTransfers.all));
-            currentTokenMrkdwn += this.formatCategorizedTransfers(incomingTransfers, tokenInfo.decimals, chainId);
+            currentTokenMrkdwn += this.formatCategorizedTransfers(incomingTransfers, decimals, chainId);
           }
 
           // Record if there are net outgoing transfers.
           const netTransfersAmount = totalIncomingAmount.sub(totalOutgoingAmount);
           if (!netTransfersAmount.eq(bnZero)) {
-            const netAmount = convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
-            currentTokenMrkdwn = `*${tokenInfo.symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
+            const netAmount = convertFromWei(netTransfersAmount.toString(), decimals);
+            currentTokenMrkdwn = `*${symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
             currentChainMrkdwn += currentTokenMrkdwn;
 
             // Report (incoming, outgoing, net) amounts.
+            this.incrementBalance(report, symbol, UNKNOWN_TRANSFERS_NAME, BalanceType.CURRENT, totalIncomingAmount);
             this.incrementBalance(
               report,
-              tokenInfo.symbol,
-              UNKNOWN_TRANSFERS_NAME,
-              BalanceType.CURRENT,
-              totalIncomingAmount
-            );
-            this.incrementBalance(
-              report,
-              tokenInfo.symbol,
+              symbol,
               UNKNOWN_TRANSFERS_NAME,
               BalanceType.PENDING,
               totalOutgoingAmount.mul(-1)
             );
-            this.incrementBalance(
-              report,
-              tokenInfo.symbol,
-              UNKNOWN_TRANSFERS_NAME,
-              BalanceType.NEXT,
-              netTransfersAmount
-            );
+            this.incrementBalance(report, symbol, UNKNOWN_TRANSFERS_NAME, BalanceType.NEXT, netTransfersAmount);
           }
         }
 
