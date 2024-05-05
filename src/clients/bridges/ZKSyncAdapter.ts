@@ -77,7 +77,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
-        const l2Token = this.resolveL2TokenAddress(l1TokenAddress);
+        const l2Token = this.resolveL2TokenAddress(l1TokenAddress, false); // There isn't a CCTP deployment so there will be no aliasing.
         if (isWeth) {
           [initiatedQueryResult, finalizedQueryResult, wrapQueryResult] = await Promise.all([
             // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
