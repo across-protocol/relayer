@@ -74,6 +74,7 @@ export class OpStackAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const availableL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
 
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
@@ -90,7 +91,7 @@ export class OpStackAdapter extends BaseAdapter {
     await Promise.all(
       this.monitoredAddresses.map((monitoredAddress) =>
         Promise.all(
-          l1Tokens.map(async (l1Token) => {
+          availableL1Tokens.map(async (l1Token) => {
             const bridge = this.getBridge(l1Token);
 
             const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
@@ -116,7 +117,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
     this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
-    return this.computeOutstandingCrossChainTransfers(l1Tokens);
+    return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
   }
 
   async sendTokenToTargetChain(
