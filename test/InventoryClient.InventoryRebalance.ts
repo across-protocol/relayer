@@ -21,7 +21,7 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
-import { bnZero, CHAIN_IDs, ERC20, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { bnZero, CHAIN_IDs, ERC20, fixedPointAdjustment as fixedPoint, TOKEN_SYMBOLS_MAP } from "../src/utils";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -352,28 +352,33 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     it("Correctly isolates 1:many token balances", async function () {
       [CHAIN_IDs.OPTIMISM, CHAIN_IDs.POLYGON, CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM].forEach(async (chainId) => {
-        let balance = inventoryClient.getCumulativeBalance(mainnetUsdc);
-        expect(balance).to.be.greaterThan(bnZero);
-        expect(balance).to.equal(initialUsdcTotal);
+        const bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
+        expect(bridgedBalance.eq(bnZero)).to.be.true;
 
-        tokenClient.setTokenData(chainId, nativeUSDC[chainId], initialUsdcTotal.mul(2), toBN(0));
+        // Non-zero bridged USDC balance, zero native balance.
+        let nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+        expect(nativeBalance.eq(bnZero)).to.be.true;
+
+        // Add native balance.
+        tokenClient.setTokenData(chainId, nativeUSDC[chainId], bridgedBalance, toBN(0));
         await tokenClient.update();
 
-        balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
-        expect(balance).to.equal(initialUsdcTotal.mul(2));
+        // Native balance should now match bridged balance.
+        nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+        expect(nativeBalance.eq(bridgedBalance)).to.be.true;
       });
     });
 
     it("Correctly sums 1:many token balances", async function () {
       [CHAIN_IDs.OPTIMISM, CHAIN_IDs.POLYGON, CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM].forEach(async (chainId) => {
         let balance = inventoryClient.getCumulativeBalance(mainnetUsdc);
-        expect(balance).to.equal(initialUsdcTotal);
+        expect(balance.eq(initialUsdcTotal)).to.be.true;
 
         tokenClient.setTokenData(chainId, nativeUSDC[chainId], initialUsdcTotal.mul(2), toBN(0));
         await tokenClient.update();
 
         const newBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
-        expect(newBalance).to.equal(initialUsdcTotal.add(balance));
+        expect(newBalance.eq(initialUsdcTotal.add(balance))).to.be.true;
       });
     });
   });
