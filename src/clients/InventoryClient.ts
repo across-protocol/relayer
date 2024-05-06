@@ -578,11 +578,7 @@ export class InventoryClient {
         // Approximate latest running balance as last known proposed running balance...
         // - minus total deposit amount on chain since the latest end block proposed
         // - plus total refund amount on chain since the latest end block proposed
-        const upcomingDeposits = this.bundleDataClient.getUpcomingDepositAmount(
-          chainId,
-          this.getRepaymentTokenForL1Token(l1Token, chainId),
-          blockRange[1]
-        );
+        const upcomingDeposits = this.bundleDataClient.getUpcomingDepositAmount(chainId, l2Token, blockRange[1]);
 
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
@@ -590,9 +586,10 @@ export class InventoryClient {
         const upcomingRefunds = allBundleRefunds.pop(); // @dev upcoming refunds are always pushed last into this list.
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
-        const upcomingRefundForChain = Object.values(
-          upcomingRefunds?.[chainId]?.[l2Token] ?? {}
-        ).reduce((acc, curr) => acc.add(curr), bnZero);
+        const upcomingRefundForChain = Object.values(upcomingRefunds?.[chainId]?.[l2Token] ?? {}).reduce(
+          (acc, curr) => acc.add(curr),
+          bnZero
+        );
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = runningBalanceForToken.sub(upcomingDeposits).add(upcomingRefundForChain);
