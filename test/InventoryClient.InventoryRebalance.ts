@@ -32,8 +32,8 @@ let crossChainTransferClient: CrossChainTransferClient;
 
 const { MAINNET, OPTIMISM, POLYGON, BASE, ARBITRUM } = CHAIN_IDs;
 const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, BASE, ARBITRUM];
-const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[1];
-const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[1];
+const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
+const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
 let mainnetWethContract: FakeContract;
 let mainnetUsdcContract: FakeContract;
