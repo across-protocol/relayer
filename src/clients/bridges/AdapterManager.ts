@@ -80,14 +80,17 @@ export class AdapterManager {
 
   getOutstandingCrossChainTokenTransferAmount(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
     const adapter = this.adapters[chainId];
+    // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
+    const adapterSupportedL1Tokens = l1Tokens.filter((token) =>
+      adapter.supportedTokens.includes(this.hubPoolClient.getTokenInfo(CHAIN_IDs.MAINNET, token).symbol)
+    );
     this.logger.debug({
       at: "AdapterManager",
-      message: "Getting outstandingCrossChainTransfers",
-      chainId,
-      l1Tokens,
+      message: `Getting outstandingCrossChainTransfers for ${chainId}`,
+      adapterSupportedL1Tokens,
       searchConfigs: adapter.getUpdatedSearchConfigs(),
     });
-    return this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
+    return await this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 
   sendTokenCrossChain(

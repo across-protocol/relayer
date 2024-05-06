@@ -135,7 +135,7 @@ export class PolygonAdapter extends CCTPAdapter {
     // Skip the tokens if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
-    const availableTokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const availableTokens = this.filterSupportedTokens(l1Tokens);
 
     const promises: Promise<Event[]>[] = [];
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};

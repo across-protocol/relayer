@@ -142,7 +142,7 @@ export class LineaAdapter extends BaseAdapter {
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const outstandingTransfers: OutstandingTransfers = {};
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const supportedL1Tokens = this.filterSupportedTokens(l1Tokens);
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
       // We can only support monitoring the spoke pool contract, not the hub pool.
       if (address === CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address) {

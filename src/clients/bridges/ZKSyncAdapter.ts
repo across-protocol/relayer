@@ -44,7 +44,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     const hubPool = this.getHubPool();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
-    const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const supportedL1Tokens = this.filterSupportedTokens(l1Tokens);
 
     // Predeclare this function for use below. It is used to process all events that are saved.
     const processEvent = (event: Event) => {

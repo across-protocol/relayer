@@ -84,6 +84,10 @@ export abstract class BaseAdapter {
     return this.spokePoolClients[chainId].spokePool.provider;
   }
 
+  filterSupportedTokens(l1Tokens: string[]): string[] {
+    return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
+  }
+
   // Note: this must be called after the SpokePoolClients are updated.
   getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
     const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
