@@ -777,26 +777,14 @@ export class InventoryClient {
           // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
           const tokenContract = new Contract(l1Token, ERC20.abi, this.hubPoolClient.hubPool.signer);
           const currentBalance = await tokenContract.balanceOf(this.relayer);
-          if (!balance.eq(currentBalance)) {
-            this.logger.warn({
-              at: "InventoryClient",
-              message: "🚧 Token balance on Ethereum changed before sending transaction, skipping rebalance",
-              l1Token,
-              l2Token,
-              l2ChainId: chainId,
-              balance,
-              currentBalance,
-            });
-            continue;
-          } else {
-            this.logger.debug({
-              at: "InventoryClient",
-              message: "Token balance in relayer on Ethereum is as expected, sending cross chain transfer",
-              l1Token,
-              l2Token,
-              l2ChainId: chainId,
-              balance,
-            });
+
+          const balanceChanged = !balance.eq(currentBalance);
+          const [message, log] = balanceChanged
+            ? ["🚧 Token balance on mainnet changed, skipping rebalance", this.logger.warn]
+            : ["Token balance in relayer on mainnet is as expected, sending cross chain transfer", this.logger.debug];
+          log({ at: "InventoryClient", message, l1Token, l2Token, l2ChainId: chainId, balance, currentBalance });
+
+          if (!balanceChanged) {
             possibleRebalances.push(rebalance);
             // Decrement token balance in client for this chain and increment cross chain counter.
             this.trackCrossChainTransfer(l1Token, amount, chainId);

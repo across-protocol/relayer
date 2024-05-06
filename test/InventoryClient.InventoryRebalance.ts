@@ -300,7 +300,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       .whenCalledWith(owner.address)
       .returns(initialAllocation[1][mainnetUsdc].sub(toMegaWei(1)));
     await inventoryClient.rebalanceInventoryIfNeeded();
-    expect(spyLogIncludes(spy, -2, "Token balance on Ethereum changed")).to.be.true;
+    expect(spyLogIncludes(spy, -2, "Token balance on mainnet changed")).to.be.true;
 
     // Reset and check again.
     mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetUsdc]);
