@@ -23,6 +23,7 @@ export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
   reason?: string;
+  data?: any;
 };
 
 const { isError, isEthersError } = typeguards;
@@ -182,8 +183,9 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // This is useful for surfacing custom error revert reasons like RelayFilled in the V3 SpokePool but
   // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
+  let result = undefined;
   try {
-    await contract.callStatic[method](...args);
+    result = await contract.callStatic[method](...args);
   } catch (err: any) {
     if (err.errorName) {
       return {
@@ -196,7 +198,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
 
   try {
     const gasLimit = await contract.estimateGas[method](...args);
-    return { transaction: { ...transaction, gasLimit }, succeed: true };
+    return { transaction: { ...transaction, gasLimit }, succeed: true, data: result };
   } catch (_error) {
     const error = _error as EthersError;
     return { transaction, succeed: false, reason: error.reason };
