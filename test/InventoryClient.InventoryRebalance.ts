@@ -21,7 +21,7 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
-import { ERC20 } from "../src/utils";
+import { bnZero, CHAIN_IDs, ERC20, TOKEN_SYMBOLS_MAP } from "../src/utils";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -31,10 +31,9 @@ let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let crossChainTransferClient: CrossChainTransferClient;
 
-const enabledChainIds = [1, 10, 137, 42161];
-
-const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-const mainnetUsdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const enabledChainIds = [CHAIN_IDs.MAINNET, CHAIN_IDs.OPTIMISM, CHAIN_IDs.POLYGON, CHAIN_IDs.ARBITRUM];
+const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[1];
+const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[1];
 
 let mainnetWethContract: FakeContract;
 let mainnetUsdcContract: FakeContract;
@@ -48,29 +47,32 @@ enabledChainIds.slice(1).forEach((chainId) => {
 });
 
 // Configure target percentages as 80% mainnet, 10% optimism, 5% polygon and 5% Arbitrum.
+const targetOverageBuffer = toWei(1);
 const inventoryConfig: InventoryConfig = {
+  wrapEtherTargetPerChain: {},
+  wrapEtherTarget: toWei(1),
+  wrapEtherThresholdPerChain: {},
+  wrapEtherThreshold: toWei(1),
   tokenConfig: {
     [mainnetWeth]: {
-      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
-      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
-      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
     },
-
     [mainnetUsdc]: {
-      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
-      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
-      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
     },
   },
-  wrapEtherThreshold: toWei(1),
 };
 
 // Construct an initial distribution that keeps these values within the above thresholds.
 const initialAllocation = {
-  1: { [mainnetWeth]: toWei(100), [mainnetUsdc]: toMegaWei(10000) }, // seed 100 WETH and 10000 USDC on Mainnet
-  10: { [mainnetWeth]: toWei(20), [mainnetUsdc]: toMegaWei(2000) }, // seed 20 WETH and 2000 USDC on Optimism
-  137: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Polygon
-  42161: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Arbitrum
+  [CHAIN_IDs.MAINNET]: { [mainnetWeth]: toWei(100), [mainnetUsdc]: toMegaWei(10000) }, // seed 100 WETH and 10000 USDC
+  [CHAIN_IDs.OPTIMISM]: { [mainnetWeth]: toWei(20), [mainnetUsdc]: toMegaWei(2000) }, // seed 20 WETH and 2000 USDC
+  [CHAIN_IDs.POLYGON]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC
+  [CHAIN_IDs.ARBITRUM]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC
 };
 
 const initialWethTotal = toWei(140); // Sum over all 4 chains is 140
@@ -297,6 +299,83 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetUsdc]);
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
+  });
+
+  describe("Remote chain token mappings", async function () {
+    const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
+    const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
+
+    beforeEach(async function () {
+      // Sub in a nested USDC config for the existing USDC config.
+      const usdcConfig = {
+        [nativeUSDC[CHAIN_IDs.OPTIMISM]]: {
+          [CHAIN_IDs.OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+        },
+        [nativeUSDC[CHAIN_IDs.POLYGON]]: {
+          [CHAIN_IDs.POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [nativeUSDC[CHAIN_IDs.BASE]]: {
+          [CHAIN_IDs.BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [nativeUSDC[CHAIN_IDs.ARBITRUM]]: {
+          [CHAIN_IDs.ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [bridgedUSDC[CHAIN_IDs.OPTIMISM]]: {
+          [CHAIN_IDs.OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+        },
+        [bridgedUSDC[CHAIN_IDs.POLYGON]]: {
+          [CHAIN_IDs.POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [bridgedUSDC[CHAIN_IDs.BASE]]: {
+          [CHAIN_IDs.BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [bridgedUSDC[CHAIN_IDs.ARBITRUM]]: {
+          [CHAIN_IDs.ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        }
+      };
+      inventoryConfig.tokenConfig[mainnetUsdc] = usdcConfig;
+    });
+
+    it("Correctly resolves 1:many token mappings", async function () {
+      // Caller must specify l2Token for 1:many mappings.
+      expect(() => inventoryClient.getTokenConfig(mainnetUsdc, CHAIN_IDs.BASE)).to.throw;
+
+      [CHAIN_IDs.OPTIMISM, CHAIN_IDs.POLYGON, CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM].forEach((chainId) => {
+        let config = inventoryClient.getTokenConfig(mainnetUsdc, chainId, bridgedUSDC[chainId]);
+        expect(config).to.exist;
+
+        let expectedConfig = inventoryConfig.tokenConfig[mainnetUsdc][bridgedUSDC[chainId]][chainId];
+        expect(expectedConfig).to.exist;
+        expect(expectedConfig).to.deep.equal(expectedConfig);
+      });
+    });
+
+    it("Correctly isolates 1:many token balances", async function () {
+      [CHAIN_IDs.OPTIMISM, CHAIN_IDs.POLYGON, CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM].forEach(async (chainId) => {
+        let balance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+        expect(balance).to.be.greaterThan(bnZero);
+        expect(balance).to.equal(initialUsdcTotal);
+
+        tokenClient.setTokenData(chainId, nativeUSDC[chainId], initialUsdcTotal.mul(2), toBN(0));
+        await tokenClient.update();
+
+        balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+        expect(balance).to.equal(initialUsdcTotal.mul(2));
+      });
+    });
+
+    it("Correctly sums 1:many token balances", async function () {
+      [CHAIN_IDs.OPTIMISM, CHAIN_IDs.POLYGON, CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM].forEach(async (chainId) => {
+        let balance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+        expect(balance).to.equal(initialUsdcTotal);
+
+        tokenClient.setTokenData(chainId, nativeUSDC[chainId], initialUsdcTotal.mul(2), toBN(0));
+        await tokenClient.update();
+
+        const newBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+        expect(newBalance).to.equal(initialUsdcTotal.add(balance));
+      });
+    });
   });
 });
 
