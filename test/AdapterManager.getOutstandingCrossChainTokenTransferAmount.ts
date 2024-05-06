@@ -21,14 +21,14 @@ class TestAdapter extends BaseAdapter {
     const deposits = amounts.map((amount) => {
       return { amount: toBN(amount) };
     });
-    this.l1DepositInitiatedEvents = { "0xmonitored": { token: deposits as unknown as DepositEvent[] } };
+    this.l1DepositInitiatedEvents = { "0xmonitored": { token: { token: deposits as unknown as DepositEvent[] } } };
   }
 
   public setFinalizationEvents(amounts: number[]) {
     const deposits = amounts.map((amount) => {
       return { amount: toBN(amount) };
     });
-    this.l2DepositFinalizedEvents = { "0xmonitored": { token: deposits as unknown as DepositEvent[] } };
+    this.l2DepositFinalizedEvents = { "0xmonitored": { token: { token: deposits as unknown as DepositEvent[] } } };
   }
 
   getOutstandingCrossChainTransfers(): Promise<OutstandingTransfers> {
@@ -80,6 +80,6 @@ describe("AdapterManager: Get outstanding cross chain token transfer amounts", a
 });
 
 const expectOutstandingTransfersAmount = (transfers: OutstandingTransfers, amount: number) => {
-  const actualAmount = transfers["0xmonitored"]?.["token"]?.totalAmount || toBN(0);
+  const actualAmount = transfers["0xmonitored"]?.["token"]?.["token"]?.totalAmount || toBN(0);
   expect(actualAmount).to.eq(toBN(amount));
 };
