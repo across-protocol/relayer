@@ -8,7 +8,6 @@ import {
   expect,
   hubPoolFixture,
   lastSpyLogIncludes,
-  randomAddress,
   sinon,
   smock,
   spyLogIncludes,
@@ -21,7 +20,7 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
-import { ERC20 } from "../src/utils";
+import { bnZero, CHAIN_IDs, ERC20, TOKEN_SYMBOLS_MAP } from "../src/utils";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -31,46 +30,51 @@ let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let crossChainTransferClient: CrossChainTransferClient;
 
-const enabledChainIds = [1, 10, 137, 42161];
-
-const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-const mainnetUsdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const { MAINNET, OPTIMISM, POLYGON, ARBITRUM } = CHAIN_IDs;
+const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM];
+const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
+const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
 let mainnetWethContract: FakeContract;
 let mainnetUsdcContract: FakeContract;
 
 // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
-const l2TokensForWeth = { 1: mainnetWeth };
-const l2TokensForUsdc = { 1: mainnetUsdc };
-enabledChainIds.slice(1).forEach((chainId) => {
-  l2TokensForWeth[chainId] = randomAddress();
-  l2TokensForUsdc[chainId] = randomAddress();
-});
+const l2TokensForWeth = { [MAINNET]: mainnetWeth };
+const l2TokensForUsdc = { [MAINNET]: mainnetUsdc };
+enabledChainIds
+  .filter((chainId) => chainId !== MAINNET)
+  .forEach((chainId) => {
+    l2TokensForWeth[chainId] = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
+    l2TokensForUsdc[chainId] = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
+  });
 
 // Configure target percentages as 80% mainnet, 10% optimism, 5% polygon and 5% Arbitrum.
+const targetOverageBuffer = toWei(1);
 const inventoryConfig: InventoryConfig = {
+  wrapEtherTargetPerChain: {},
+  wrapEtherTarget: toWei(1),
+  wrapEtherThresholdPerChain: {},
+  wrapEtherThreshold: toWei(1),
   tokenConfig: {
     [mainnetWeth]: {
-      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
-      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
-      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
     },
-
     [mainnetUsdc]: {
-      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
-      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
-      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
     },
   },
-  wrapEtherThreshold: toWei(1),
 };
 
 // Construct an initial distribution that keeps these values within the above thresholds.
 const initialAllocation = {
-  1: { [mainnetWeth]: toWei(100), [mainnetUsdc]: toMegaWei(10000) }, // seed 100 WETH and 10000 USDC on Mainnet
-  10: { [mainnetWeth]: toWei(20), [mainnetUsdc]: toMegaWei(2000) }, // seed 20 WETH and 2000 USDC on Optimism
-  137: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Polygon
-  42161: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Arbitrum
+  [MAINNET]: { [mainnetWeth]: toWei(100), [mainnetUsdc]: toMegaWei(10000) }, // seed 100 WETH and 10000 USDC
+  [OPTIMISM]: { [mainnetWeth]: toWei(20), [mainnetUsdc]: toMegaWei(2000) }, // seed 20 WETH and 2000 USDC
+  [POLYGON]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC
+  [ARBITRUM]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC
 };
 
 const initialWethTotal = toWei(140); // Sum over all 4 chains is 140
@@ -121,10 +125,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
   it("Accessors work as expected", async function () {
     expect(inventoryClient.getEnabledChains()).to.deep.equal(enabledChainIds);
     expect(inventoryClient.getL1Tokens()).to.deep.equal(Object.keys(inventoryConfig.tokenConfig));
-    expect(inventoryClient.getEnabledL2Chains()).to.deep.equal([10, 137, 42161]);
+    expect(inventoryClient.getEnabledL2Chains()).to.deep.equal([OPTIMISM, POLYGON, ARBITRUM]);
 
-    expect(inventoryClient.getCumulativeBalance(mainnetWeth)).to.equal(initialWethTotal);
-    expect(inventoryClient.getCumulativeBalance(mainnetUsdc)).to.equal(initialUsdcTotal);
+    expect(inventoryClient.getCumulativeBalance(mainnetWeth).eq(initialWethTotal)).to.be.true;
+    expect(inventoryClient.getCumulativeBalance(mainnetUsdc).eq(initialUsdcTotal)).to.be.true;
 
     // Check the allocation matches to what is expected in the seed state of the mock. Check more complex matchers.
     const tokenDistribution = inventoryClient.getTokenDistributionPerL1Token();
@@ -134,12 +138,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           initialAllocation[chainId][l1Token]
         );
         expect(
-          inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-            owner.address,
-            chainId,
-            l1Token
-          )
-        ).to.equal(toBN(0)); // For now no cross-chain transfers
+          inventoryClient.crossChainTransferClient
+            .getOutstandingCrossChainTransferAmount(owner.address, chainId, l1Token)
+            .eq(bnZero)
+        ).to.be.true; // For now no cross-chain transfers
 
         const expectedShare = initialAllocation[chainId][l1Token].mul(toWei(1)).div(initialTotals[l1Token]);
         const l2Token = (l1Token === mainnetWeth ? l2TokensForWeth : l2TokensForUsdc)[chainId];
@@ -158,15 +160,15 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Now, simulate the re-allocation of funds. Say that the USDC on arbitrum is half used up. This will leave arbitrum
     // with 500 USDC, giving a percentage of 500/14000 = 0.035. This is below the threshold of 0.5 so we should see
     // a re-balance executed in size of the target allocation + overshoot percentage.
-    const initialBalance = initialAllocation[42161][mainnetUsdc];
-    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(initialBalance);
+    const initialBalance = initialAllocation[ARBITRUM][mainnetUsdc];
+    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(initialBalance)).to.be.true;
     const withdrawAmount = toMegaWei(500);
-    tokenClient.decrementLocalBalance(42161, l2TokensForUsdc[42161], withdrawAmount);
-    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(withdrawAmount);
+    tokenClient.decrementLocalBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM], withdrawAmount);
+    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(withdrawAmount)).to.be.true;
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
     const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, 42161)).to.equal(expectedAlloc);
+    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM).eq(expectedAlloc)).to.be.true;
 
     // Execute rebalance. Check logs and enqueued transaction in Adapter manager. Given the total amount over all chains
     // and the amount still on arbitrum we would expect the module to instruct the relayer to send over:
@@ -181,10 +183,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
 
     // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[42161][mainnetUsdc].amount).to.equal(expectedBridgedAmount);
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount.eq(expectedBridgedAmount)).to.be.true;
 
     // Now, mock these funds having entered the canonical bridge.
-    adapterManager.setMockedOutstandingCrossChainTransfers(42161, owner.address, mainnetUsdc, expectedBridgedAmount);
+    adapterManager.setMockedOutstandingCrossChainTransfers(ARBITRUM, owner.address, mainnetUsdc, expectedBridgedAmount);
 
     // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions.
     await inventoryClient.update();
@@ -193,17 +195,17 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"445.00"')).to.be.true;
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
-    adapterManager.setMockedOutstandingCrossChainTransfers(42161, owner.address, mainnetUsdc, toBN(0)); // zero the transfer. mock conclusion.
+    adapterManager.setMockedOutstandingCrossChainTransfers(ARBITRUM, owner.address, mainnetUsdc, bnZero); // zero the transfer. mock conclusion.
     // Balance after the relay concludes should be initial - withdrawn + bridged as 1000-500+445=945
     const expectedPostRelayBalance = initialBalance.sub(withdrawAmount).add(expectedBridgedAmount);
-    tokenClient.setTokenData(42161, l2TokensForUsdc[42161], expectedPostRelayBalance, toBN(0));
+    tokenClient.setTokenData(ARBITRUM, l2TokensForUsdc[ARBITRUM], expectedPostRelayBalance, bnZero);
 
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
     // We should see a log for chain 42161 that shows the actual balance after the relay concluded and the share.
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    expect(spyLogIncludes(spy, -2, '"42161":{"actualBalanceOnChain":"945.00"')).to.be.true;
+    expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
@@ -212,11 +214,11 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
 
-    expect(tokenClient.getBalance(137, l2TokensForWeth[137])).to.equal(toWei(10)); // Starting balance.
+    expect(tokenClient.getBalance(POLYGON, l2TokensForWeth[POLYGON]).eq(toWei(10))).to.be.true; // Starting balance.
 
     // Construct a token shortfall of 18.
     const shortfallAmount = toWei(18);
-    tokenClient.setTokenShortFallData(137, l2TokensForWeth[137], [6969], shortfallAmount);
+    tokenClient.setTokenShortFallData(POLYGON, l2TokensForWeth[POLYGON], [6969], shortfallAmount);
     await inventoryClient.update();
 
     // If we now consider how much should be sent over the bridge. The spoke pool, considering the shortfall, has an
@@ -232,16 +234,20 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Note that there should be some additional state updates that we should check. In particular the token balance
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
     // the cross-chain transfers.
-    expect(tokenClient.getBalance(1, mainnetWeth)).to.equal(toWei(100).sub(expectedBridgedAmount));
+    expect(tokenClient.getBalance(MAINNET, mainnetWeth).eq(toWei(100).sub(expectedBridgedAmount))).to.be.true;
     expect(
-      inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(owner.address, 137, mainnetWeth)
+      inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+        owner.address,
+        POLYGON,
+        mainnetWeth
+      )
     ).to.equal(expectedBridgedAmount);
 
     // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[137][mainnetWeth].amount).to.equal(expectedBridgedAmount);
+    expect(adapterManager.tokensSentCrossChain[POLYGON][mainnetWeth].amount.eq(expectedBridgedAmount)).to.be.true;
 
     // Now, mock these funds having entered the canonical bridge.
-    adapterManager.setMockedOutstandingCrossChainTransfers(137, owner.address, mainnetWeth, expectedBridgedAmount);
+    adapterManager.setMockedOutstandingCrossChainTransfers(POLYGON, owner.address, mainnetWeth, expectedBridgedAmount);
 
     // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions as the util
     // should consider the funds in transit as part of the balance and therefore should not send more.
