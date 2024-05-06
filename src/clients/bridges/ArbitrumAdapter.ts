@@ -172,9 +172,11 @@ export class ArbitrumAdapter extends CCTPAdapter {
         );
       });
       if (isDefined(resultingCCTPEvents[monitoredAddress])) {
+        const usdcL1Token = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
+        const usdcL2Token = this.resolveL2TokenAddress(usdcL1Token, true); // Must specifically be native USDC
         assign(
           this.l1DepositInitiatedEvents,
-          [monitoredAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]], // Must be native USDC
+          [monitoredAddress, usdcL1Token, usdcL2Token],
           resultingCCTPEvents[monitoredAddress]
         );
       }

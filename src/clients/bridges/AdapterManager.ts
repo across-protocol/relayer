@@ -90,7 +90,7 @@ export class AdapterManager {
       adapterSupportedL1Tokens,
       searchConfigs: adapter.getUpdatedSearchConfigs(),
     });
-    return await this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
+    return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 
   sendTokenCrossChain(

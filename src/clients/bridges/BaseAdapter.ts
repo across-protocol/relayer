@@ -209,23 +209,22 @@ export abstract class BaseAdapter {
 
       outstandingTransfers[monitoredAddress] ??= {};
 
-      if (this.l2DepositFinalizedEvents[monitoredAddress] === undefined) {
-        this.l2DepositFinalizedEvents[monitoredAddress] = {};
-      }
+      this.l2DepositFinalizedEvents[monitoredAddress] ??= {};
 
       for (const l1Token of l1Tokens) {
+        // Skip if there has been no deposits for this token.
+        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) {
+          continue;
+        }
+
+        // It's okay to not have any finalization events. In that case, all deposits are outstanding.
+        this.l2DepositFinalizedEvents[monitoredAddress][l1Token] ??= {};
+
         // We want to iterate over the deposit events that have been initiated. We'll then match them with the
         // finalization events to determine which deposits are still outstanding.
         for (const l2Token of Object.keys(this.l1DepositInitiatedEvents[monitoredAddress][l1Token] ?? {})) {
-          // Skip if there has been no deposits for this token.
-          if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) {
-            continue;
-          }
-
-          // It's okay to not have any finalization events. In that case, all deposits are outstanding.
-          this.l2DepositFinalizedEvents[monitoredAddress][l1Token] ??= {};
-
-          const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token][l2Token] ?? [];
+          this.l2DepositFinalizedEvents[monitoredAddress][l1Token][l2Token] ??= [];
+          const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token][l2Token];
 
           // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
           // should be unlikely.
