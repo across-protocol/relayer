@@ -162,14 +162,14 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // with 500 USDC, giving a percentage of 500/15000 = 0.035. This is below the threshold of 0.5 so we should see
     // a re-balance executed in size of the target allocation + overshoot percentage.
     const initialBalance = initialAllocation[ARBITRUM][mainnetUsdc];
-    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM])).to.equal(initialBalance);
+    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(initialBalance)).to.be.true;
     const withdrawAmount = toMegaWei(500);
     tokenClient.decrementLocalBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM], withdrawAmount);
-    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM])).to.equal(withdrawAmount);
+    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(withdrawAmount)).to.be.true;
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
     const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM)).to.equal(expectedAlloc);
+    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM).eq(expectedAlloc)).to.be.true;
 
     // Execute rebalance. Check logs and enqueued transaction in Adapter manager. Given the total amount over all chains
     // and the amount still on arbitrum we would expect the module to instruct the relayer to send over:
@@ -184,7 +184,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
 
     // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount).to.equal(expectedBridgedAmount);
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount.eq(expectedBridgedAmount)).to.be.true;
 
     // Now, mock these funds having entered the canonical bridge.
     adapterManager.setMockedOutstandingCrossChainTransfers(ARBITRUM, owner.address, mainnetUsdc, expectedBridgedAmount);
@@ -215,7 +215,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
 
-    expect(tokenClient.getBalance(POLYGON, l2TokensForWeth[POLYGON])).to.equal(toWei(10)); // Starting balance.
+    expect(tokenClient.getBalance(POLYGON, l2TokensForWeth[POLYGON]).eq(toWei(10))).to.be.true; // Starting balance.
 
     // Construct a token shortfall of 18.
     const shortfallAmount = toWei(18);
@@ -235,7 +235,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Note that there should be some additional state updates that we should check. In particular the token balance
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
     // the cross-chain transfers.
-    expect(tokenClient.getBalance(MAINNET, mainnetWeth)).to.equal(toWei(100).sub(expectedBridgedAmount));
+    expect(tokenClient.getBalance(MAINNET, mainnetWeth).eq(toWei(100).sub(expectedBridgedAmount))).to.be.true;
     expect(
       inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
         owner.address,
@@ -245,7 +245,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     ).to.equal(expectedBridgedAmount);
 
     // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[POLYGON][mainnetWeth].amount).to.equal(expectedBridgedAmount);
+    expect(adapterManager.tokensSentCrossChain[POLYGON][mainnetWeth].amount.eq(expectedBridgedAmount)).to.be.true;
 
     // Now, mock these funds having entered the canonical bridge.
     adapterManager.setMockedOutstandingCrossChainTransfers(POLYGON, owner.address, mainnetWeth, expectedBridgedAmount);
