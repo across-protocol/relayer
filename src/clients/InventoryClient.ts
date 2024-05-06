@@ -197,6 +197,13 @@ export class InventoryClient {
   }
 
   getRepaymentTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    // TODO: Need to replace calling into the HubPoolClient with calling into TOKEN_SYMBOLS_MAP. For example,
+    // imagine there is a utility function getL2TokenInfo(l1Token: string, chainId: number): L1Token that
+    // looks into TOKEN_SYMBOLS_MAP and returns an L1Token object using a token entry that contains the l1Token address.
+    // We'd need to be able to tie-break between tokens that map to the same L1Token (USDC.e, USDC), so maybe
+    // this function would either return multiple L1Token objects or we'd need to pass in a symbol/l2TokenAddress.
+
+    // return getL2TokenInfo(l1Token, chainId).address
     try {
       return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
     } catch {
@@ -575,6 +582,8 @@ export class InventoryClient {
           this.getRepaymentTokenForL1Token(l1Token, chainId),
           blockRange[1]
         );
+        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
         const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
@@ -582,7 +591,7 @@ export class InventoryClient {
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
         const upcomingRefundForChain = Object.values(
-          upcomingRefunds?.[chainId]?.[this.getRepaymentTokenForL1Token(l1Token, chainId)] ?? {}
+          upcomingRefunds?.[chainId]?.[l2Token] ?? {}
         ).reduce((acc, curr) => acc.add(curr), bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.

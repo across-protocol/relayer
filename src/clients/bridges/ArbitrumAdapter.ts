@@ -87,11 +87,10 @@ export class ArbitrumAdapter extends CCTPAdapter {
     // Skip the token if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
-    const availableL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
 
     const promises: Promise<Event[]>[] = [];
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
-    const validTokens: string[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableL1Tokens) {
@@ -113,7 +112,6 @@ export class ArbitrumAdapter extends CCTPAdapter {
           paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...l1SearchFilter), l1SearchConfig),
           paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig)
         );
-        validTokens.push(l1Token);
       }
     }
 
@@ -126,13 +124,13 @@ export class ArbitrumAdapter extends CCTPAdapter {
     );
 
     // 2 events per token.
-    const numEventsPerMonitoredAddress = 2 * validTokens.length;
+    const numEventsPerMonitoredAddress = 2 * availableL1Tokens.length;
 
     // Segregate the events list by monitored address.
     const resultsByMonitoredAddress = Object.fromEntries(
       this.monitoredAddresses.map((monitoredAddress, index) => {
         const start = index * numEventsPerMonitoredAddress;
-        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress)];
       })
     );
 
@@ -142,7 +140,11 @@ export class ArbitrumAdapter extends CCTPAdapter {
       // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents and
       // l2DepositFinalizedEvents state from the BaseAdapter.
       eventsToProcess.forEach((result, index) => {
-        const l1Token = validTokens[Math.floor(index / 2)];
+        if (eventsToProcess.length === 0) {
+          return;
+        }
+        assert(eventsToProcess.length % 2 === 0, "Events list length should be even");
+        const l1Token = availableL1Tokens[Math.floor(index / 2)];
         // l1Token is not an indexed field on Aribtrum gateway's deposit events, so these events are for all tokens.
         // Therefore, we need to filter unrelated deposits of other tokens.
         const filteredEvents = result.filter((event) => spreadEvent(event.args)["l1Token"] === l1Token);
@@ -170,7 +172,7 @@ export class ArbitrumAdapter extends CCTPAdapter {
       }
     }
 
-    return this.computeOutstandingCrossChainTransfers(validTokens);
+    return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {

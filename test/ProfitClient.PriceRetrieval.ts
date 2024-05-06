@@ -63,4 +63,11 @@ describe("ProfitClient: Price Retrieval", async () => {
     await profitClient.update();
     ["ETH", "MATIC"].forEach((gasToken) => expect(profitClient.resolveTokenAddress(gasToken)).to.not.be.undefined);
   });
+
+  it("Remaps token symbols to equivalent token symbols", async () => {
+    await profitClient.update();
+    ["USDbC", "USDC.e"].forEach((unknownL1Token) =>
+      expect(profitClient.resolveTokenAddress(unknownL1Token)).to.equal(TOKEN_SYMBOLS_MAP["USDC"].addresses[1])
+    );
+  });
 });
