@@ -862,7 +862,7 @@ export class InventoryClient {
             `- ${symbol} transfer blocked. Required to send ` +
             `${formatter(amount.toString())} but relayer has ` +
             `${formatter(balance.toString())} on L1. There is currently ` +
-            `${formatter(this.getBalanceOnChain(chainId, l1Token).toString())} ${symbol} on ` +
+            `${formatter(this.getBalanceOnChain(chainId, l1Token, l2Token).toString())} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
             `${this.formatWei(distributionPct.toString())}% of the total ` +
             `${formatter(cumulativeBalance.toString())} ${symbol}.` +
