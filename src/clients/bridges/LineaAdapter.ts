@@ -266,15 +266,17 @@ export class LineaAdapter extends BaseAdapter {
     l1Token: string,
     transferEvents: Event[]
   ): void {
+    const l2Token = this.resolveL2TokenAddress(l1Token, false); // There's no native USDC on Linea
     transferEvents.forEach((event) => {
       const txHash = event.transactionHash;
       // @dev WETH events have a _value field, while ERC20 events have an amount field.
       const amount = event.args._value ?? event.args.amount;
       outstandingTransfers[monitoredAddress] ??= {};
-      outstandingTransfers[monitoredAddress][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
-      outstandingTransfers[monitoredAddress][l1Token] = {
-        totalAmount: outstandingTransfers[monitoredAddress][l1Token].totalAmount.add(amount),
-        depositTxHashes: [...outstandingTransfers[monitoredAddress][l1Token].depositTxHashes, txHash],
+      outstandingTransfers[monitoredAddress][l1Token] ??= {};
+      outstandingTransfers[monitoredAddress][l1Token][l2Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
+      outstandingTransfers[monitoredAddress][l1Token][l2Token] = {
+        totalAmount: outstandingTransfers[monitoredAddress][l1Token][l2Token].totalAmount.add(amount),
+        depositTxHashes: [...outstandingTransfers[monitoredAddress][l1Token][l2Token].depositTxHashes, txHash],
       };
     });
   }
