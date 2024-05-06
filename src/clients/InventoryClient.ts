@@ -183,7 +183,7 @@ export class InventoryClient {
     }
 
     const shortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
-    const currentBalance = this.getBalanceOnChain(chainId, l1Token).sub(shortfall);
+    const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token).sub(shortfall);
 
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -205,6 +205,10 @@ export class InventoryClient {
   }
 
   getDestinationTokensForL1Token(l1Token: string, chainId: number | string): string[] {
+    if (chainId === this.hubPoolClient.chainId) {
+      return [l1Token];
+    }
+
     const tokenConfig = this.inventoryConfig.tokenConfig[l1Token];
 
     if (isAliasConfig(tokenConfig)) {
