@@ -218,10 +218,7 @@ export class MultiCallerClient {
         const succeededTxnRequests: AugmentedTransaction[] = [];
         data.forEach(({ success }, subIdx) => {
           if (success) {
-            const txnIdx =
-              this.chunkSize == undefined
-                ? this.chunkSize[chainId] * idx + subIdx
-                : DEFAULT_MULTICALL_CHUNK_SIZE * idx + subIdx;
+            const txnIdx = (this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE) * idx + subIdx;
             succeededTxnRequests.push(txns[txnIdx]);
           }
         });

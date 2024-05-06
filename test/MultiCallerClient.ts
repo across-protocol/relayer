@@ -692,6 +692,7 @@ describe("MultiCallerClient - Contract Sim", async function () {
   it("Defaults to tryMulticall for simulation and rejects failed transactions", async function () {
     const nTxns = 10;
 
+    const successfulTransactions = [];
     for (let txn = 1; txn <= nTxns; ++txn) {
       const currentTime = Number(await spokePool_1.getCurrentTime());
       const exclusivityDeadline = txn % 2 == 1 ? currentTime - 50 : currentTime + 1000;
@@ -719,7 +720,17 @@ describe("MultiCallerClient - Contract Sim", async function () {
         mrkdwn: "",
       };
       multiCaller.enqueueTransaction(txnRequest);
+      if (txn % 2 == 1) {
+        successfulTransactions.push(
+          spokePool_1.interface.encodeFunctionData("fillV3Relay", [relayData, destinationChainId])
+        );
+      }
     }
-    await multiCaller.executeTransactionQueue();
+    const tx = await multiCaller.executeTransactionQueue();
+
+    // There is just one bundle
+    const receipt = await ethers.provider.getTransaction(tx[0]);
+    const expectedReceiptData = spokePool_1.interface.encodeFunctionData("tryMulticall", [successfulTransactions]);
+    expect(expectedReceiptData).to.eq(receipt.data);
   });
 });
