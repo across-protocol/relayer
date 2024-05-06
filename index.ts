@@ -1,5 +1,5 @@
 import minimist from "minimist";
-import { config, delay, exit, retrieveSignerFromCLIArgs, help, Logger, usage, winston, waitForLogger } from "./src/utils";
+import { config, delay, exit, retrieveSignerFromCLIArgs, help, Logger, usage, waitForLogger } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
