@@ -47,7 +47,7 @@ export class Relayer {
    * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
-    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, outputToken } = deposit;
+    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient } = this.clients;
     const { ignoredAddresses, relayerTokens, acceptInvalidFills } = this.config;
 
@@ -114,7 +114,7 @@ export class Relayer {
       return false;
     }
 
-    if (!hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)) {
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
@@ -699,11 +699,11 @@ export class Relayer {
       const chainId = Number(_chainId);
       mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
-        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
-        const formatter = createFormatFunction(2, 4, false, decimals);
+        const { symbol, formatter } = this.formatAmount(chainId, token);
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
-          const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
+          // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
+          const l1Token = this.clients.hubPoolClient.getTokenInfoForAddress(token, chainId);
           crossChainLog =
             "There is " +
             formatter(
@@ -729,14 +729,17 @@ export class Relayer {
     });
   }
 
-  private handleUnprofitableFill() {
-    const { hubPoolClient, profitClient } = this.clients;
-    const unprofitableDeposits = profitClient.getUnprofitableFills();
+  private formatAmount(
+    chainId: number,
+    tokenAddress: string
+  ): { symbol: string; decimals: number; formatter: (amount: string) => string } {
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
+    return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
+  }
 
-    const formatAmount = (chainId: number, token: string, amount: BigNumber): { symbol: string; amount: string } => {
-      const { symbol, decimals } = hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
-      return { symbol, amount: createFormatFunction(2, 4, false, decimals)(amount.toString()) };
-    };
+  private handleUnprofitableFill() {
+    const { profitClient } = this.clients;
+    const unprofitableDeposits = profitClient.getUnprofitableFills();
 
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
@@ -751,17 +754,10 @@ export class Relayer {
 
         const { originChainId, destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = deposit;
         const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, originChainId);
-
-        const { symbol: inputSymbol, amount: formattedInputAmount } = formatAmount(
-          originChainId,
-          inputToken,
-          inputAmount
-        );
-        const { symbol: outputSymbol, amount: formattedOutputAmount } = formatAmount(
-          destinationChainId,
-          outputToken,
-          outputAmount
-        );
+        const { symbol: inputSymbol, formatter: inputFormatter } = this.formatAmount(originChainId, inputToken);
+        const formattedInputAmount = inputFormatter(inputAmount.toString());
+        const { symbol: outputSymbol, formatter: outputFormatter } = this.formatAmount(destinationChainId, outputToken);
+        const formattedOutputAmount = outputFormatter(outputAmount.toString());
 
         const { symbol: gasTokenSymbol, decimals: gasTokenDecimals } = profitClient.resolveGasToken(destinationChainId);
         const formattedGasCost = createFormatFunction(2, 10, false, gasTokenDecimals)(gasCost.toString());

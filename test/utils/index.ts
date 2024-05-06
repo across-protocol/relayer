@@ -1,5 +1,5 @@
 export * as contracts from "@across-protocol/contracts-v2/dist/test-utils";
-export * as uma from "@uma/financial-templates-lib";
+export * as uma from "@uma/logger";
 
 export * from "./utils";
 export * from "./BlockchainUtils";

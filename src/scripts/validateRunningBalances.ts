@@ -44,7 +44,7 @@ import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalance
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { ProposedRootBundle, SpokePoolClientsByChain, V3SlowFillLeaf } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
-import { createConsoleTransport } from "@uma/financial-templates-lib";
+import { createConsoleTransport } from "@uma/logger";
 
 config();
 let logger: winston.Logger;
