@@ -7,6 +7,7 @@ import {
   Provider,
   ZERO_ADDRESS,
   Event,
+  TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { matchL2EthDepositAndWrapEvents } from "../utils";
@@ -19,7 +20,6 @@ export class WethBridge extends OpStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
   private readonly hubPoolAddress: string;
-
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(
@@ -60,6 +60,12 @@ export class WethBridge extends OpStackBridge {
     };
   }
 
+  private convertEventListToOpStackEvents(events: Event[]): OpStackEvents {
+    return {
+      [this.resolveL2TokenAddress(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId])]: events,
+    };
+  }
+
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
@@ -77,7 +83,7 @@ export class WethBridge extends OpStackBridge {
     // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
     // monitoring the spoke pool address
     if (isL2ChainContract || (isContract && fromAddress !== this.hubPoolAddress)) {
-      return [];
+      return this.convertEventListToOpStackEvents([]);
     }
 
     const events = await paginatedEventQuery(
@@ -88,9 +94,9 @@ export class WethBridge extends OpStackBridge {
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
     // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
     if (!isContract) {
-      return events.filter((event) => event.args._to === fromAddress);
+      return this.convertEventListToOpStackEvents(events.filter((event) => event.args._to === fromAddress));
     }
-    return events;
+    return this.convertEventListToOpStackEvents(events);
   }
 
   async queryL2BridgeFinalizationEvents(
@@ -106,7 +112,7 @@ export class WethBridge extends OpStackBridge {
     // See above for why we don't want to monitor the spoke pool contract.
     const isL2ChainContract = await this.isL2ChainContract(fromAddress);
     if (isL2ChainContract || (isContract && fromAddress !== this.hubPoolAddress)) {
-      return [];
+      return this.convertEventListToOpStackEvents([]);
     }
 
     if (!isContract) {
@@ -133,18 +139,20 @@ export class WethBridge extends OpStackBridge {
       // on L1 and received as ETH on L2 by the recipient, which is finally wrapped into WETH on the L2 by the
       // recipient--the L2 signer in this class.
       const l2EthWrapEvents = await this.queryL2WrapEthEvents(fromAddress, eventConfig, l2Weth);
-      return matchL2EthDepositAndWrapEvents(l2EthDepositEvents, l2EthWrapEvents);
+      return this.convertEventListToOpStackEvents(matchL2EthDepositAndWrapEvents(l2EthDepositEvents, l2EthWrapEvents));
     } else {
       // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
       // monitoring the spoke pool address
       if (fromAddress !== this.hubPoolAddress) {
-        return [];
+        return this.convertEventListToOpStackEvents([]);
       }
 
-      return await paginatedEventQuery(
-        l2Bridge,
-        l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
-        eventConfig
+      return this.convertEventListToOpStackEvents(
+        await paginatedEventQuery(
+          l2Bridge,
+          l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+          eventConfig
+        )
       );
     }
   }
