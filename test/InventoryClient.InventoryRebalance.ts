@@ -20,7 +20,7 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
-import { bnZero, CHAIN_IDs, ERC20, fixedPointAdjustment as fixedPoint, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { bnZero, CHAIN_IDs, ERC20, TOKEN_SYMBOLS_MAP } from "../src/utils";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
