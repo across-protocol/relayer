@@ -87,6 +87,10 @@ export function getTokenAddressWithCCTP(
   l2ChainId: number,
   isNativeUsdc = false
 ): string {
+  // Base Case
+  if (hubChainId === l2ChainId) {
+    return l1Token;
+  }
   if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP._USDC.addresses[hubChainId])) {
     const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
     return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "_USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];

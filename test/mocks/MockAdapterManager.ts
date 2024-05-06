@@ -1,5 +1,5 @@
 import { AdapterManager } from "../../src/clients/bridges";
-import { BigNumber, TransactionResponse } from "../../src/utils";
+import { BigNumber, TransactionResponse, getTokenAddressWithCCTP } from "../../src/utils";
 
 import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces";
@@ -41,13 +41,18 @@ export class MockAdapterManager extends AdapterManager {
   }
 
   setMockedOutstandingCrossChainTransfers(chainId: number, address: string, l1Token: string, amount: BigNumber): void {
-    if (!this.mockedOutstandingCrossChainTransfers[chainId]) {
-      this.mockedOutstandingCrossChainTransfers[chainId] = {};
-    }
+    this.mockedOutstandingCrossChainTransfers[chainId] ??= {};
+
     const transfers = this.mockedOutstandingCrossChainTransfers[chainId];
-    if (!transfers[address]) {
-      transfers[address] = {};
-    }
-    transfers[address][l1Token] = { totalAmount: amount, depositTxHashes: [] };
+
+    transfers[address] ??= {};
+    transfers[address][l1Token] ??= {};
+
+    const l2Token = getTokenAddressWithCCTP(l1Token, 1, chainId, false);
+
+    transfers[address][l1Token][l2Token] = {
+      totalAmount: amount,
+      depositTxHashes: [],
+    };
   }
 }

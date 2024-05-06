@@ -683,7 +683,7 @@ export class InventoryClient {
       // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
 
       for (const rebalance of rebalancesRequired) {
-        const { balance, amount, l1Token, chainId } = rebalance;
+        const { balance, amount, l1Token, l2Token, chainId } = rebalance;
 
         // This is the balance left after any assumed rebalances from earlier loop iterations.
         const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
@@ -717,7 +717,6 @@ export class InventoryClient {
             });
             possibleRebalances.push(rebalance);
             // Decrement token balance in client for this chain and increment cross chain counter.
-            const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
             this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
           }
         } else {
@@ -736,8 +735,8 @@ export class InventoryClient {
       // sends each transaction one after the other with incrementing nonce. this will be left for a follow on PR as this
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const rebalance of possibleRebalances) {
-        const { chainId, l1Token, amount } = rebalance;
-        const { hash } = await this.sendTokenCrossChain(chainId, l1Token, amount, this.simMode);
+        const { chainId, l1Token, l2Token, amount } = rebalance;
+        const { hash } = await this.sendTokenCrossChain(chainId, l1Token, amount, this.simMode, l2Token);
         executedTransactions.push({ ...rebalance, hash });
       }
 
@@ -986,20 +985,21 @@ export class InventoryClient {
     });
   }
 
-  async sendTokenCrossChain(
+  sendTokenCrossChain(
     chainId: number | string,
     l1Token: string,
     amount: BigNumber,
-    simMode = false
+    simMode = false,
+    l2Token?: string
   ): Promise<TransactionResponse> {
-    return await this.adapterManager.sendTokenCrossChain(this.relayer, Number(chainId), l1Token, amount, simMode);
+    return this.adapterManager.sendTokenCrossChain(this.relayer, Number(chainId), l1Token, amount, simMode, l2Token);
   }
 
-  async _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
+  _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
     const l2Weth = new Contract(_l2Weth, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
-    return await runTransaction(this.logger, l2Weth, "withdraw", [amount]);
+    return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
 
   async setL1TokenApprovals(): Promise<void> {

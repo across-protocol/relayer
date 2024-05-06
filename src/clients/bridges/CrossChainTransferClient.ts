@@ -1,4 +1,4 @@
-import { BigNumber, bnZero, winston, assign, DefaultLogLevels, AnyObject } from "../../utils";
+import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces";
 
@@ -89,14 +89,12 @@ export class CrossChainTransferClient {
     this.log("Updating cross chain transfers", { monitoredChains });
 
     const outstandingTransfersPerChain = await Promise.all(
-      monitoredChains.map((chainId) =>
-        this.adapterManager.getOutstandingCrossChainTokenTransferAmount(chainId, l1Tokens)
-      )
+      monitoredChains.map(async (chainId) => [
+        chainId,
+        await this.adapterManager.getOutstandingCrossChainTokenTransferAmount(chainId, l1Tokens),
+      ])
     );
-    outstandingTransfersPerChain.forEach((outstandingTransfers, index) => {
-      assign(this.outstandingCrossChainTransfers, [monitoredChains[index]], outstandingTransfers);
-    });
-
+    this.outstandingCrossChainTransfers = Object.fromEntries(outstandingTransfersPerChain);
     this.log("Updated cross chain transfers", { outstandingCrossChainTransfers: this.outstandingCrossChainTransfers });
   }
 
