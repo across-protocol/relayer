@@ -763,7 +763,7 @@ export class InventoryClient {
 
       // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
       for (const rebalance of rebalancesRequired) {
-        const { balance, amount, l1Token, chainId } = rebalance;
+        const { balance, amount, l1Token, l2Token, chainId } = rebalance;
 
         // This is the balance left after any assumed rebalances from earlier loop iterations.
         const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
@@ -782,6 +782,7 @@ export class InventoryClient {
               at: "InventoryClient",
               message: "🚧 Token balance on Ethereum changed before sending transaction, skipping rebalance",
               l1Token,
+              l2Token,
               l2ChainId: chainId,
               balance,
               currentBalance,
@@ -792,6 +793,7 @@ export class InventoryClient {
               at: "InventoryClient",
               message: "Token balance in relayer on Ethereum is as expected, sending cross chain transfer",
               l1Token,
+              l2Token,
               l2ChainId: chainId,
               balance,
             });
