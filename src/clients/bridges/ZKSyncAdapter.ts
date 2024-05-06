@@ -35,10 +35,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
   }
 
-  async getOutstandingCrossChainTransfers(_l1Tokens: string[]): Promise<OutstandingTransfers> {
-    // Only account for supported tokens.
-    const l1Tokens = this.filterSupportedTokens(_l1Tokens);
-
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
@@ -48,7 +45,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     const hubPool = this.getHubPool();
     const l1ERC20Bridge = this.getL1ERC20BridgeContract();
     const l2ERC20Bridge = this.getL2ERC20BridgeContract();
-    const supportedL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const supportedL1Tokens = this.filterSupportedTokens(l1Tokens);
 
     // Predeclare this function for use below. It is used to process all events that are saved.
     const processEvent = (event: Event) => {
