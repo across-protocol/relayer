@@ -129,7 +129,10 @@ export class PolygonAdapter extends CCTPAdapter {
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
+  async getOutstandingCrossChainTransfers(_l1Tokens: string[]): Promise<OutstandingTransfers> {
+    // Only account for supported tokens.
+    const l1Tokens = this.filterSupportedTokens(_l1Tokens);
+
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
 
     // Skip the tokens if we can't find the corresponding bridge.
