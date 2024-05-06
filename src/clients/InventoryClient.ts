@@ -573,6 +573,7 @@ export class InventoryClient {
         } else {
           runningBalanceForToken = leaf.runningBalances[l1TokenIndex];
         }
+        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
 
         // Approximate latest running balance as last known proposed running balance...
         // - minus total deposit amount on chain since the latest end block proposed
@@ -582,7 +583,6 @@ export class InventoryClient {
           this.getRepaymentTokenForL1Token(l1Token, chainId),
           blockRange[1]
         );
-        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
 
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
