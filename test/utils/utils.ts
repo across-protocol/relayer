@@ -18,7 +18,6 @@ import {
   sampleRateModel,
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
-import { CombinedRefunds } from "../../src/dataworker/DataworkerUtils";
 
 export {
   SpyTransport,
