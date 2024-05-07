@@ -118,7 +118,7 @@ export class InventoryClient {
     if (isDefined(l2Token)) {
       balance = this.tokenClient.getBalance(chainId, l2Token);
     } else {
-      const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
+      const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
       balance = l2Tokens
         .map((l2Token) => this.tokenClient.getBalance(chainId, l2Token))
         .reduce((acc, curr) => acc.add(curr), bnZero);
@@ -150,7 +150,7 @@ export class InventoryClient {
           return;
         }
 
-        const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
+        const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
           // The effective balance is the current balance + inbound bridge transfers.
           const effectiveBalance = this.getBalanceOnChain(chainId, l1Token, l2Token);
@@ -191,7 +191,7 @@ export class InventoryClient {
 
   // Find how short a given chain is for a desired L1Token.
   getTokenShortFall(l1Token: string, chainId: number): BigNumber {
-    return this.getDestinationTokensForL1Token(l1Token, chainId)
+    return this.getRemoteTokensForL1Token(l1Token, chainId)
       .map((token) => this.tokenClient.getShortfallTotalRequirement(chainId, token))
       .reduce((acc, curr) => acc.add(curr), bnZero);
   }
@@ -211,7 +211,15 @@ export class InventoryClient {
     }
   }
 
-  getDestinationTokensForL1Token(l1Token: string, chainId: number | string): string[] {
+  /**
+   * From an L1Token and remote chain ID, resolve all supported corresponding tokens.
+   * This should include at least the relevant repayment token on the relevant chain, but may also include other
+   * "equivalent" tokens (i.e. as with Bridged & Native USDC).
+   * @param l1Token Mainnet token to query.
+   * @param chainId Remove chain to query.
+   * @returns An array of supported tokens on chainId that map back to l1Token on mainnet.
+   */
+  getRemoteTokensForL1Token(l1Token: string, chainId: number | string): string[] {
     if (chainId === this.hubPoolClient.chainId) {
       return [l1Token];
     }
@@ -709,7 +717,7 @@ export class InventoryClient {
           return;
         }
 
-        const l2Tokens = this.getDestinationTokensForL1Token(l1Token, chainId);
+        const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
