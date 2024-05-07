@@ -79,13 +79,15 @@ export class Relayer {
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
     );
-    if (minConfirmations > spokePoolClients[originChainId].latestBlockSearched - deposit.blockNumber) {
+    const { latestBlockSearched } = spokePoolClients[originChainId];
+    if (latestBlockSearched - deposit.blockNumber < minConfirmations) {
       this.logger.debug({
         at: "Relayer::evaluateFill",
         message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
         depositId,
         blockNumber: deposit.blockNumber,
-        maxBlockNumber: deposit.blockNumber + minConfirmations,
+        confirmations: latestBlockSearched - deposit.blockNumber,
+        minConfirmations,
         transactionHash: deposit.transactionHash,
       });
       return false;
