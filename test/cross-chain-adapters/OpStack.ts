@@ -1,9 +1,9 @@
-import { CHAIN_IDs } from "@across-protocol/constants-v2";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../src/common";
 import { WethBridge } from "../../src/clients/bridges/op-stack/WethBridge";
-import { Signer } from "ethers";
+import { Event, Signer } from "ethers";
 
 describe("Cross Chain Adapter: OP Stack", async function () {
   let monitoredEoa: string;
@@ -39,12 +39,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await wethBridgeContract.emitDepositInitiated(randomAddress(), monitoredEoa, 1);
       await wethBridgeContract.emitDepositInitiated(atomicDepositorAddress, randomAddress(), 1);
       await wethBridgeContract.emitDepositInitiated(atomicDepositorAddress, monitoredEoa, 1);
-      const result = await wethBridge.queryL1BridgeInitiationEvents(
-        wethContract.address,
-        monitoredEoa,
-        searchConfig,
-        wethBridgeContract
-      );
+      const result = (
+        await wethBridge.queryL1BridgeInitiationEvents(
+          wethContract.address,
+          monitoredEoa,
+          searchConfig,
+          wethBridgeContract
+        )
+      )[TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.OPTIMISM]];
       expect(result.length).to.equal(1);
       expect(result[0].args._from).to.equal(atomicDepositorAddress);
       expect(result[0].args._to).to.equal(monitoredEoa);
@@ -56,23 +58,29 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       // Counts only finalized events preceding a WETH wrap event.
       // For EOA's, weth transfer from address should be atomic depositor address
       await wethBridgeContract.emitDepositFinalized(atomicDepositorAddress, monitoredEoa, 1);
-      const emptyResult = await wethBridge.queryL2BridgeFinalizationEvents(
-        wethContract.address,
-        monitoredEoa,
-        searchConfig,
-        wethBridgeContract,
-        wethContract
+      const convertResults = (result: Record<string, Event[]>) =>
+        result[TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.OPTIMISM]];
+      const emptyResult = convertResults(
+        await wethBridge.queryL2BridgeFinalizationEvents(
+          wethContract.address,
+          monitoredEoa,
+          searchConfig,
+          wethBridgeContract,
+          wethContract
+        )
       );
       expect(emptyResult.length).to.equal(0);
 
       // Mine Deposit event now.
       await wethContract.connect(monitoredEoaAccount).deposit({ value: 0 });
-      const result = await wethBridge.queryL2BridgeFinalizationEvents(
-        wethContract.address,
-        monitoredEoa,
-        searchConfig,
-        wethBridgeContract,
-        wethContract
+      const result = convertResults(
+        await wethBridge.queryL2BridgeFinalizationEvents(
+          wethContract.address,
+          monitoredEoa,
+          searchConfig,
+          wethBridgeContract,
+          wethContract
+        )
       );
       expect(result.length).to.equal(1);
       expect(result[0].args._from).to.equal(atomicDepositorAddress);
