@@ -20,7 +20,15 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
-import { bnZero, CHAIN_IDs, ERC20, fixedPointAdjustment as fixedPoint, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import {
+  bnZero,
+  CHAIN_IDs,
+  createFormatFunction,
+  ERC20,
+  fixedPointAdjustment as fixedPoint,
+  getNetworkName,
+  TOKEN_SYMBOLS_MAP,
+} from "../src/utils";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -119,8 +127,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     mainnetWethContract = await smock.fake(ERC20.abi, { address: mainnetWeth });
     mainnetUsdcContract = await smock.fake(ERC20.abi, { address: mainnetUsdc });
 
-    mainnetWethContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetWeth]);
-    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetUsdc]);
+    mainnetWethContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[MAINNET][mainnetWeth]);
+    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[MAINNET][mainnetUsdc]);
 
     seedMocks(initialAllocation);
   });
@@ -311,35 +319,35 @@ describe("InventoryClient: Rebalancing inventory", async function () {
   describe("Remote chain token mappings", async function () {
     const nativeUSDC = TOKEN_SYMBOLS_MAP._USDC.addresses;
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
+    const usdcConfig = {
+      [nativeUSDC[OPTIMISM]]: {
+        [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      },
+      [nativeUSDC[POLYGON]]: {
+        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [nativeUSDC[BASE]]: {
+        [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [nativeUSDC[ARBITRUM]]: {
+        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [bridgedUSDC[OPTIMISM]]: {
+        [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      },
+      [bridgedUSDC[POLYGON]]: {
+        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [bridgedUSDC[BASE]]: {
+        [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [bridgedUSDC[ARBITRUM]]: {
+        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+    };
 
     beforeEach(async function () {
-      // Sub in a nested USDC config for the existing USDC config.
-      const usdcConfig = {
-        [nativeUSDC[OPTIMISM]]: {
-          [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
-        },
-        [nativeUSDC[POLYGON]]: {
-          [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [nativeUSDC[BASE]]: {
-          [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [nativeUSDC[ARBITRUM]]: {
-          [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [bridgedUSDC[OPTIMISM]]: {
-          [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
-        },
-        [bridgedUSDC[POLYGON]]: {
-          [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [bridgedUSDC[BASE]]: {
-          [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [bridgedUSDC[ARBITRUM]]: {
-          [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-      };
+      // Sub in a nested USDC config for the existing USDC single-token config.
       inventoryConfig.tokenConfig[mainnetUsdc] = usdcConfig;
     });
 
@@ -440,6 +448,60 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           // Return native USDC balance to 0 for next loop.
           tokenClient.setTokenData(chainId, nativeUSDC[chainId], bnZero);
         });
+    });
+
+    it("Correctly rebalances mainnet USDC into non-repayment USDC", async function () {
+      // Unset all native USDC allocations.
+      for (const chainId of [OPTIMISM, POLYGON, BASE, ARBITRUM]) {
+        const l2Token = nativeUSDC[chainId];
+        delete inventoryConfig.tokenConfig[mainnetUsdc][l2Token];
+      }
+
+      await inventoryClient.update();
+      await inventoryClient.rebalanceInventoryIfNeeded();
+      expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
+
+      const cumulativeUSDC = inventoryClient.getCumulativeBalance(mainnetUsdc);
+      const targetPct = toWei(0.1);
+      const thresholdPct = toWei(0.05);
+      const expectedRebalance = cumulativeUSDC.mul(targetPct).div(fixedPoint);
+      const { decimals } = TOKEN_SYMBOLS_MAP.USDC;
+      const formatter = createFormatFunction(2, 4, false, decimals);
+      const formattedAmount = formatter(expectedRebalance.toString());
+
+      let virtualMainnetBalance = initialAllocation[MAINNET][mainnetUsdc];
+
+      for (const chainId of [OPTIMISM, POLYGON, BASE, ARBITRUM]) {
+        const chain = getNetworkName(chainId);
+        await inventoryClient.update();
+        const l2Token = nativeUSDC[chainId];
+
+        // Apply a new target balance for native USDC.
+        inventoryConfig.tokenConfig[mainnetUsdc][l2Token] = {
+          [chainId]: { targetPct, thresholdPct, targetOverageBuffer },
+        };
+
+        await inventoryClient.update();
+        await inventoryClient.rebalanceInventoryIfNeeded();
+        expect(lastSpyLogIncludes(spy, `Rebalances sent to ${chain}`)).to.be.true;
+        expect(lastSpyLogIncludes(spy, `${formattedAmount} USDC rebalanced`)).to.be.true;
+        expect(lastSpyLogIncludes(spy, "This meets target allocation of 10.00%")).to.be.true; // config from client.
+
+        // Decrement the mainnet USDC balance to simulate the rebalance.
+        virtualMainnetBalance = virtualMainnetBalance.sub(expectedRebalance);
+        mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(virtualMainnetBalance);
+
+        // The mock adapter manager should have been called with the expected transaction.
+        expect(adapterManager.tokensSentCrossChain[chainId][mainnetUsdc].amount.eq(expectedRebalance)).to.be.true;
+
+        // Now, mock these funds having entered the relevant bridge.
+        adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, expectedRebalance);
+
+        await inventoryClient.update();
+        await inventoryClient.rebalanceInventoryIfNeeded();
+        expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
+        expect(spyLogIncludes(spy, -2, `"outstandingTransfers":"${formattedAmount}"`)).to.be.true;
+      }
     });
   });
 });
