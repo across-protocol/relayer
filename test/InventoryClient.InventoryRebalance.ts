@@ -271,9 +271,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain ARBITRUM that shows the actual balance after the relay concluded and the share.
+    // We should see a log for chain Arbitrum that shows the actual balance after the relay concluded and the share.
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    // expect(spyLogIncludes(spy, -2, `"ARBITRUM":{"actualBalanceOnChain":"945.00"`)).to.be.true;
+    // expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
     // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
   });
 
