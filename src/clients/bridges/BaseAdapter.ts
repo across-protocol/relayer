@@ -219,6 +219,9 @@ export abstract class BaseAdapter {
         if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
           this.l2DepositFinalizedEvents[monitoredAddress][l1Token] = [];
         }
+
+        console.log(`[${this.chainId}-${monitoredAddress}-${l1Token}] deposit initiated events`, this.l1DepositInitiatedEvents[monitoredAddress][l1Token])
+        console.log(`[${this.chainId}-${monitoredAddress}-${l1Token}] deposit finalized events`, this.l2DepositFinalizedEvents[monitoredAddress][l1Token])
         const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
 
         // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
