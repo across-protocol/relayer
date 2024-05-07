@@ -484,6 +484,7 @@ export class InventoryClient {
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
           ? chainVirtualBalanceWithShortfall.sub(outputAmount)
           : chainVirtualBalanceWithShortfall;
+
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
         totalRefundsPerChain[_chain]
