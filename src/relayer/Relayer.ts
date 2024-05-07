@@ -5,6 +5,7 @@ import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interface
 import {
   BigNumber,
   bnZero,
+  bnUint256Max,
   RelayerUnfilledDeposit,
   blockExplorerLink,
   createFormatFunction,
@@ -35,6 +36,19 @@ export class Relayer {
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
   ) {
+    Object.values(clients.spokePoolClients).forEach(({ chainId }) => {
+      if (!isDefined(config.minDepositConfirmations[chainId])) {
+        const chain = getNetworkName(chainId);
+        logger.warn({
+          at: "Relayer::constructor",
+          message: `${chain} deposit confirmation configuration is missing.`,
+        });
+        config.minDepositConfirmations[chainId] = [
+          { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER },
+        ];
+      }
+    });
+
     this.relayerAddress = getAddress(relayerAddress);
   }
 
