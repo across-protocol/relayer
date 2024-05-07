@@ -216,13 +216,13 @@ export class MultiCallerClient {
       });
       if (transaction.method === "tryMulticall") {
         const succeededTxnRequests: AugmentedTransaction[] = [];
-        data.forEach(({ success }, subIdx) => {
+        data?.forEach(({ success }, subIdx) => {
           if (success) {
             const txnIdx = (this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE) * idx + subIdx;
             succeededTxnRequests.push(txns[txnIdx]);
           }
         });
-        if (succeededTxnRequests.length != data.length) {
+        if (succeededTxnRequests.length != (data?.length ?? 0)) {
           batchTxns.splice(idx, 1);
           txnRequestsToRebuild.push(...succeededTxnRequests);
         }
