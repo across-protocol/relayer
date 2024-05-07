@@ -588,9 +588,9 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     it("outputToken is not supported as a repaymentToken", async function () {
       // Verify that there is no native USDC anywhere. The relayer is responsible for ensuring that it can make the fill.
-      enabledChainIds.filter((chainId) => chainId !== MAINNET).forEach((chainId) =>
-        expect(tokenClient.getBalance(chainId, nativeUSDC[chainId]).eq(bnZero)).to.be.true
-      );
+      enabledChainIds
+        .filter((chainId) => chainId !== MAINNET)
+        .forEach((chainId) => expect(tokenClient.getBalance(chainId, nativeUSDC[chainId]).eq(bnZero)).to.be.true);
 
       // All chains are at target balance; cumulative balance will go down but repaymentToken balances on all chains are unaffected.
       expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(MAINNET);
