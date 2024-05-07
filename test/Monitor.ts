@@ -302,7 +302,7 @@ describe("Monitor", async function () {
     ).to.be.equal(toBN(5));
   });
 
-  it.only("Monitor should report stuck rebalances", async function () {
+  it("Monitor should report stuck rebalances", async function () {
     await updateAllClients();
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
