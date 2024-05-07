@@ -46,7 +46,7 @@ export class Relayer {
    * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
-    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
+    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
     const { ignoredAddresses, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
