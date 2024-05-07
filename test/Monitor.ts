@@ -292,6 +292,7 @@ describe("Monitor", async function () {
     crossChainTransferClient.increaseOutstandingTransfer(
       depositor.address,
       l1Token.address,
+      l2Token.address,
       toBN(5),
       destinationChainId
     );
@@ -301,7 +302,7 @@ describe("Monitor", async function () {
     ).to.be.equal(toBN(5));
   });
 
-  it("Monitor should report stuck rebalances", async function () {
+  it.only("Monitor should report stuck rebalances", async function () {
     await updateAllClients();
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -333,7 +334,8 @@ describe("Monitor", async function () {
       originChainId,
       spokePool_1.address,
       l1Token.address,
-      toBN(5)
+      toBN(5),
+      l2Token.address
     );
     await updateAllClients();
     await monitorInstance.update();

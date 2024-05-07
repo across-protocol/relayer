@@ -40,7 +40,13 @@ export class MockAdapterManager extends AdapterManager {
     return this.mockedOutstandingCrossChainTransfers[chainId];
   }
 
-  setMockedOutstandingCrossChainTransfers(chainId: number, address: string, l1Token: string, amount: BigNumber): void {
+  setMockedOutstandingCrossChainTransfers(
+    chainId: number,
+    address: string,
+    l1Token: string,
+    amount: BigNumber,
+    l2Token?: string
+  ): void {
     this.mockedOutstandingCrossChainTransfers[chainId] ??= {};
 
     const transfers = this.mockedOutstandingCrossChainTransfers[chainId];
@@ -48,7 +54,7 @@ export class MockAdapterManager extends AdapterManager {
     transfers[address] ??= {};
     transfers[address][l1Token] ??= {};
 
-    const l2Token = getTokenAddressWithCCTP(l1Token, 1, chainId, false);
+    l2Token ??= getTokenAddressWithCCTP(l1Token, 1, chainId, false);
 
     transfers[address][l1Token][l2Token] = {
       totalAmount: amount,
