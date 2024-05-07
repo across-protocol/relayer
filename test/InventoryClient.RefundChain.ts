@@ -160,7 +160,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // above the threshold of 12 and so the bot should choose to be refunded on L1.
       sampleDepositData.inputAmount = toWei(1);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(MAINNET);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014388"')).to.be.true; // (20-1)/(140-1)=0.136
 
       // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
@@ -168,7 +168,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // choose to refund on the L2.
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(OPTIMISM);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111111111111111111"')).to.be.true; // (20-5)/(140-5)=0.11
 
       // Now consider a bigger relay that should force refunds on the L2 chain. Set the relay size to 10 WETH. now post
@@ -176,7 +176,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // set the refund on L2.
       sampleDepositData.inputAmount = toWei(10);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(OPTIMISM);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"76923076923076923"')).to.be.true; // (20-10)/(140-10)=0.076
     });
 
