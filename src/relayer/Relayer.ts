@@ -13,7 +13,6 @@ import {
   getNetworkName,
   getUnfilledDeposits,
   isDefined,
-  toBNWei,
   winston,
   fixedPointAdjustment,
 } from "../utils";
@@ -47,15 +46,16 @@ export class Relayer {
    * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
-    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken } = deposit;
-    const { acrossApiClient, configStoreClient, hubPoolClient } = this.clients;
-    const { ignoredAddresses, relayerTokens, acceptInvalidFills } = this.config;
+    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
+    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
+    const { ignoredAddresses, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
     // If we don't have the latest code to support this deposit, skip it.
     if (depositVersion > configStoreClient.configStoreVersion) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
-        message: "Skipping deposit that is not supported by this relayer version.",
+        message: `Skipping ${srcChain} deposit that is not supported by this relayer version.`,
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
         deposit,
@@ -66,10 +66,27 @@ export class Relayer {
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: "Skipping deposit from or to disabled chains.",
+        message: `Skipping ${srcChain} deposit from or to disabled chain.`,
         deposit,
         enabledOriginChains: this.config.relayerOriginChains,
         enabledDestinationChains: this.config.relayerDestinationChains,
+      });
+      return false;
+    }
+
+    // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
+    const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+    const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
+      usdThreshold.gte(fillAmountUsd)
+    );
+    if (minConfirmations > spokePoolClients[originChainId].latestBlockSearched - deposit.blockNumber) {
+      this.logger.debug({
+        at: "Relayer::evaluateFill",
+        message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
+        depositId,
+        blockNumber: deposit.blockNumber,
+        maxBlockNumber: deposit.blockNumber + minConfirmations,
+        transactionHash: deposit.transactionHash,
       });
       return false;
     }
@@ -80,10 +97,9 @@ export class Relayer {
     }
 
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
-      const [origin, destination] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: `Ignoring ${origin} deposit destined for ${destination}.`,
+        message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
         depositor,
         recipient,
         transactionHash: deposit.transactionHash,
@@ -105,7 +121,7 @@ export class Relayer {
     }
 
     // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-    const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
+    const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
     if (deposit.fillDeadline <= currentTime) {
       return false;
     }
@@ -222,35 +238,28 @@ export class Relayer {
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
-        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
         agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
         return agg;
       }, {});
 
-    // Sort thresholds in ascending order.
-    const minimumDepositConfirmationThresholds = Object.keys(minDepositConfirmations)
-      .filter((x) => x !== "default")
-      .sort((x, y) => Number(x) - Number(y));
-
     // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
-    // If we can't find a threshold greater than the USD amount, then use the default.
     const mdcPerChain = Object.fromEntries(
       Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
-        const usdThreshold = minimumDepositConfirmationThresholds.find(
-          (usdThreshold) =>
-            toBNWei(usdThreshold).gte(unfilledAmount) && isDefined(minDepositConfirmations[usdThreshold][chainId])
+        const { minConfirmations } = minDepositConfirmations[chainId].find(({ usdThreshold }) =>
+          usdThreshold.gte(unfilledAmount)
         );
 
         // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
-        return [chainId, minDepositConfirmations[usdThreshold ?? "default"][chainId]];
+        return [chainId, minConfirmations];
       })
     );
+
     this.logger.debug({
       at: "Relayer::computeRequiredDepositConfirmations",
-      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
+      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount.",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
-      minDepositConfirmations,
     });
 
     return mdcPerChain;
