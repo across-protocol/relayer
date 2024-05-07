@@ -305,22 +305,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       routes.forEach(({ from, to, enabled }) => expect(relayerInstance.routeEnabled(from, to)).to.equal(enabled));
 
       // Deposit on originChainId, destined for destinationChainId => expect ignored.
-      await depositV3(
-        spokePool_1,
-        destinationChainId,
-        depositor,
-        inputToken,
-        inputAmount,
-        outputToken,
-        outputAmount
-      );
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(
-        spy
-          .getCalls()
-          .find(({ lastArg }) => lastArg.message.includes(`Skipping ${srcChain} deposit from or to disabled chain.`))
+        spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping deposit from or to disabled chains"))
       ).to.not.be.undefined;
     });
 
