@@ -116,8 +116,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     mainnetWethContract = await smock.fake(ERC20.abi, { address: mainnetWeth });
     mainnetUsdcContract = await smock.fake(ERC20.abi, { address: mainnetUsdc });
 
-    mainnetWethContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetWeth]);
-    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetUsdc]);
+    mainnetWethContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[MAINNET][mainnetWeth]);
+    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[MAINNET][mainnetUsdc]);
 
     seedMocks(initialAllocation);
   });
@@ -203,7 +203,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain 42161 that shows the actual balance after the relay concluded and the share.
+    // We should see a log for chain ARBITRUM that shows the actual balance after the relay concluded and the share.
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
     expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
@@ -260,20 +260,20 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     // Zero the transfer. mock conclusion.
-    adapterManager.setMockedOutstandingCrossChainTransfers(137, owner.address, mainnetWeth, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(POLYGON, owner.address, mainnetWeth, bnZero);
     // Balance after the relay concludes should be initial + bridged amount as 10+17.9=27.9
     const expectedPostRelayBalance = toWei(10).add(expectedBridgedAmount);
-    tokenClient.setTokenData(137, l2TokensForWeth[137], expectedPostRelayBalance, toBN(0));
+    tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], expectedPostRelayBalance, bnZero);
     // The token shortfall should now no longer be an issue. This means we can fill the relay of 18 size now.
-    tokenClient.setTokenShortFallData(137, l2TokensForWeth[137], [6969], toBN(0));
-    tokenClient.decrementLocalBalance(137, l2TokensForWeth[137], shortfallAmount); // mock the relay actually filling.
+    tokenClient.setTokenShortFallData(POLYGON, l2TokensForWeth[POLYGON], [6969], bnZero);
+    tokenClient.decrementLocalBalance(POLYGON, l2TokensForWeth[POLYGON], shortfallAmount); // mock the relay actually filling.
 
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain 42161 that shows the actual balance after the relay concluded and the share.
+    // We should see a log for chain ARBITRUM that shows the actual balance after the relay concluded and the share.
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    // expect(spyLogIncludes(spy, -2, `"42161":{"actualBalanceOnChain":"945.00"`)).to.be.true;
+    // expect(spyLogIncludes(spy, -2, `"ARBITRUM":{"actualBalanceOnChain":"945.00"`)).to.be.true;
     // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
   });
 
@@ -284,25 +284,25 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Now, simulate the re-allocation of funds. Say that the USDC on arbitrum is half used up. This will leave arbitrum
     // with 500 USDC, giving a percentage of 500/14000 = 0.035. This is below the threshold of 0.5 so we should see
     // a re-balance executed in size of the target allocation + overshoot percentage.
-    const initialBalance = initialAllocation[42161][mainnetUsdc];
-    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(initialBalance);
+    const initialBalance = initialAllocation[ARBITRUM][mainnetUsdc];
+    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM])).to.equal(initialBalance);
     const withdrawAmount = toMegaWei(500);
-    tokenClient.decrementLocalBalance(42161, l2TokensForUsdc[42161], withdrawAmount);
-    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(withdrawAmount);
+    tokenClient.decrementLocalBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM], withdrawAmount);
+    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM])).to.equal(withdrawAmount);
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
     const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, 42161)).to.equal(expectedAlloc);
+    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM)).to.equal(expectedAlloc);
 
     // Set USDC balance to be lower than expected.
     mainnetUsdcContract.balanceOf
       .whenCalledWith(owner.address)
-      .returns(initialAllocation[1][mainnetUsdc].sub(toMegaWei(1)));
+      .returns(initialAllocation[MAINNET][mainnetUsdc].sub(toMegaWei(1)));
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(spyLogIncludes(spy, -2, "Token balance on Ethereum changed")).to.be.true;
 
     // Reset and check again.
-    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[1][mainnetUsdc]);
+    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[MAINNET][mainnetUsdc]);
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
   });
@@ -312,10 +312,10 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
   hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
   hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
   enabledChainIds.forEach((chainId) => {
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, toBN(0));
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, toBN(0));
-    tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth], toBN(0));
-    tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc], toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, bnZero);
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, bnZero);
+    tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth], bnZero);
+    tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc], bnZero);
     hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
     hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
   });

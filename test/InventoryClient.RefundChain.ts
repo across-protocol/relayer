@@ -448,7 +448,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
 
       bundleDataClient.setReturnedPendingBundleRefunds({
-        137: createRefunds(owner.address, toWei(5), l2TokensForWeth[POLYGON]),
+        [POLYGON]: createRefunds(owner.address, toWei(5), l2TokensForWeth[POLYGON]),
       });
       // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
       // L1 token and destination chain ID, otherwise it won't be counted in upcoming
@@ -522,7 +522,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // the highest overage.
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(ARBITRUM);
 
-      // If we instead drop the excess on 42161 to 0, then we should take repayment on
+      // If we instead drop the excess on Arbitrum to 0, then we should take repayment on
       // the next slow withdrawal chain.
       excessRunningBalances[ARBITRUM] = toWei("0");
       (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
