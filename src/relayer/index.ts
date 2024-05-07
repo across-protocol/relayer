@@ -39,27 +39,16 @@ function startWorkers(config: RelayerConfig): { [chainId: number]: ChildProcess 
   const chainIds = sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains]);
   assert(chainIds.length > 0); // @todo: Fix to work with undefined chain IDs (default to the complete set).
 
-  // Identify the lowest configured deposit confirmation threshold.
-  // Configure the indexer to relay any events that meet that threshold.
-  const mdcs = config.minDepositConfirmations;
-  const [depositThreshold] = Object.keys(config.minDepositConfirmations)
-    .filter((n) => !Number.isNaN(n))
-    .sort((x, y) => Number(x) - Number(y));
-
   return Object.fromEntries(
     chainIds.map((chainId: number) => {
-      const opts = {
-        ...sampleOpts,
-        finality: mdcs[depositThreshold][chainId] ?? mdcs["default"][chainId] ?? 1024,
-        blockRange: config.maxRelayerLookBack[chainId] ?? 5_000,
-      };
+      // Identify the lowest configured deposit confirmation threshold for use as indexer finality.
+      const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
+      const blockRange = config.maxRelayerLookBack[chainId] ?? 5_000; // 5k is a safe default.
+
+      const opts = { ...sampleOpts, finality, blockRange };
       const chain = getNetworkName(chainId);
       const child = startWorker("node", config.indexerPath, chainId, opts);
-      logger.debug({
-        at: "Relayer#run",
-        message: `Spawned ${chain} SpokePool indexer.`,
-        args: child.spawnargs,
-      });
+      logger.debug({ at: "Relayer#run", message: `Spawned ${chain} SpokePool indexer.`, args: child.spawnargs });
       return [chainId, child];
     })
   );
