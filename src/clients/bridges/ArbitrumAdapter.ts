@@ -8,7 +8,6 @@ import {
   BigNumberish,
   isDefined,
   TransactionResponse,
-  resolveTokenSymbols,
   toBN,
   toWei,
   paginatedEventQuery,
@@ -18,7 +17,6 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
-import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { CCTPAdapter } from "./CCTPAdapter";
@@ -32,7 +30,6 @@ const l1Gateways = {
   [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
   [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // WBTC
   [TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // UMA
-  [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BADGER
   [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BAL
   [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // ACX
   [TOKEN_SYMBOLS_MAP.POOL.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // POOL
@@ -45,7 +42,6 @@ const l2Gateways = {
   [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65", // DAI
   [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // WBTC
   [TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // UMA
-  [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BADGER
   [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BAL
   [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // ACX
   [TOKEN_SYMBOLS_MAP.POOL.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // POOL
@@ -69,16 +65,17 @@ export class ArbitrumAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      42161,
-      monitoredAddresses,
-      logger,
-      resolveTokenSymbols(
-        Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
-        BaseAdapter.HUB_CHAIN_ID
-      )
-    );
+    super(spokePoolClients, 42161, monitoredAddresses, logger, [
+      "USDC",
+      "USDT",
+      "WETH",
+      "DAI",
+      "WBTC",
+      "UMA",
+      "BAL",
+      "ACX",
+      "POOL",
+    ]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
