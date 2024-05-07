@@ -8,7 +8,6 @@ import {
   BigNumberish,
   isDefined,
   TransactionResponse,
-  resolveTokenSymbols,
   toBN,
   toWei,
   paginatedEventQuery,
@@ -18,7 +17,6 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
-import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { CCTPAdapter } from "./CCTPAdapter";
@@ -69,16 +67,18 @@ export class ArbitrumAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      42161,
-      monitoredAddresses,
-      logger,
-      resolveTokenSymbols(
-        Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
-        BaseAdapter.HUB_CHAIN_ID
-      )
-    );
+    super(spokePoolClients, 42161, monitoredAddresses, logger, [
+      "USDC",
+      "USDT",
+      "WETH",
+      "DAI",
+      "WBTC",
+      "UMA",
+      "BADGER",
+      "BAL",
+      "ACX",
+      "POOL",
+    ]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
