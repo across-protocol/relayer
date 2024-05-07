@@ -65,6 +65,13 @@ const tokenToBridge = {
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // UMA
+  [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: {
+    l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.POLYGON],
+    l1Method: "LockedERC20",
+    l1AmountProp: "amount",
+    l2AmountProp: "value",
+  }, // BADGER
   [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
     l2TokenAddress: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.POLYGON],
@@ -119,6 +126,7 @@ export class PolygonAdapter extends CCTPAdapter {
       "UMA",
       "BAL",
       "ACX",
+      "BADGER",
       "POOL",
       "MATIC",
     ]);
