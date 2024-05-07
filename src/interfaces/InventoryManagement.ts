@@ -18,6 +18,38 @@ export type ChainTokenInventory = {
   [symbol: string]: ChainTokenConfig;
 };
 
+/**
+ * Example configuration:
+ * - DAI on chains 10 & 42161.
+ * - Bridged USDC (USDC.e, USDbC) on chains 10, 137, 324, 8453, 42161 & 59144.
+ * - Native USDC on Polygon.
+ *
+ * All token allocations are "global", so Polygon will be allocated a total of 8% of all USDC:
+ * - 4% of global USDC as Native USDC, and
+ * - 4% as Bridged USDC.
+ *
+ * "tokenConfig": {
+ *   "DAI": {
+ *     "10": { "targetPct": 8, "thresholdPct": 4 },
+ *     "42161": { "targetPct": 8, "thresholdPct": 4 },
+ *   },
+ *   "USDC": {
+ *     "USDC.e": {
+ *       "10": { "targetPct": 8, "thresholdPct": 4 },
+ *       "137": { "targetPct": 4, "thresholdPct": 2 },
+ *       "324": { "targetPct": 8, "thresholdPct": 4 },
+ *       "42161": { "targetPct": 8, "thresholdPct": 4 },
+ *       "59144": { "targetPct": 5, "thresholdPct": 2 }
+ *     },
+ *     "USDbC": {
+ *       "8453": { "targetPct": 5, "thresholdPct": 2 }
+ *     },
+ *     "USDC": {
+ *       "137": { "targetPct": 4, "thresholdPct": 2 }
+ *     }
+ *   }
+ * }
+ */
 export interface InventoryConfig {
   // tokenConfig can map to a single token allocation, or a set of allocations that all map to the same HubPool token.
   tokenConfig: { [l1Token: string]: ChainTokenConfig } | { [l1Token: string]: ChainTokenInventory };
