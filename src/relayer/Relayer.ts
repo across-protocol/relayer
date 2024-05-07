@@ -55,7 +55,7 @@ export class Relayer {
     if (depositVersion > configStoreClient.configStoreVersion) {
       this.logger.warn({
         at: "Relayer::filterDeposit",
-        message: `Skipping ${srcChain} deposit that is not supported by this relayer version.`,
+        message: "Skipping deposit that is not supported by this relayer version.",
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
         deposit,
@@ -66,7 +66,7 @@ export class Relayer {
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: `Skipping ${srcChain} deposit from or to disabled chain.`,
+        message: "Skipping deposit from or to disabled chains.",
         deposit,
         enabledOriginChains: this.config.relayerOriginChains,
         enabledDestinationChains: this.config.relayerDestinationChains,
