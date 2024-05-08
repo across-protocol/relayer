@@ -13,7 +13,6 @@ import {
 } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
-  CONTRACT_ADDRESSES,
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
@@ -147,10 +146,7 @@ export async function constructRelayerClients(
     config.relayerGasPadding
   );
 
-  // The relayer will originate cross chain rebalances from both its own EOA address and the atomic depositor address
-  // so we should track both for accurate cross-chain inventory management.
-  const atomicDepositor = CONTRACT_ADDRESSES[hubPoolClient.chainId]?.atomicDepositor;
-  const monitoredAddresses = [signerAddr, atomicDepositor?.address];
+  const monitoredAddresses = [signerAddr];
   const adapterManager = new AdapterManager(
     logger,
     spokePoolClients,
@@ -219,7 +215,5 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     inventoryClient.setL1TokenApprovals(), // Approve bridge contracts (if rebalancing enabled)
   ]);
 
-  // Refresh the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
-  clients.tokenClient.clearTokenData();
-  await Promise.all([profitClientUpdate, inputTokenApprovals, apiClientUpdate, tokenClient.update()]);
+  await Promise.all([profitClientUpdate, inputTokenApprovals, apiClientUpdate]);
 }

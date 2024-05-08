@@ -1,10 +1,12 @@
+import { utils } from "@across-protocol/sdk-v2";
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import axios, { AxiosError } from "axios";
-import { ethers, BigNumber } from "ethers";
+import { BigNumber, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
-import { isDefined } from "./TypeGuards";
-import { utils } from "@across-protocol/sdk-v2";
 import { compareAddressesSimple } from "./AddressUtils";
+import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
+import { bnZero } from "./SDKUtils";
+import { isDefined } from "./TypeGuards";
 
 export type DecodedCCTPMessage = {
   messageHash: string;
@@ -18,17 +20,120 @@ export type DecodedCCTPMessage = {
 };
 
 /**
+ * Used to convert an ETH Address string to a 32-byte hex string.
+ * @param address The address to convert.
+ * @returns The 32-byte hex string representation of the address - required for CCTP messages.
+ */
+export function cctpAddressToBytes32(address: string): string {
+  return ethers.utils.hexZeroPad(address, 32);
+}
+
+/**
+ * Used to convert a 32-byte hex string with padding to a standard ETH address.
+ * @param bytes32 The 32-byte hex string to convert.
+ * @returns The ETH address representation of the 32-byte hex string.
+ */
+export function cctpBytes32ToAddress(bytes32: string): string {
+  // Grab the last 20 bytes of the 32-byte hex string
+  return ethers.utils.getAddress(ethers.utils.hexDataSlice(bytes32, 12));
+}
+
+/**
+ * The CCTP Message Transmitter contract updates a local dictionary for each source domain / nonce it receives. It won't
+ * attempt to process a message if the nonce has been seen before. If the nonce has been used before, the message has
+ * been received and processed already. This function replicates the `function _hashSourceAndNonce(uint32 _source, uint64 _nonce)` function
+ * in the MessageTransmitter contract.
+ * @link https://github.com/circlefin/evm-cctp-contracts/blob/817397db0a12963accc08ff86065491577bbc0e5/src/MessageTransmitter.sol#L279-L308
+ * @link https://github.com/circlefin/evm-cctp-contracts/blob/817397db0a12963accc08ff86065491577bbc0e5/src/MessageTransmitter.sol#L369-L381
+ * @param source The source domain
+ * @param nonce The nonce provided by the destination transaction (DepositForBurn event)
+ * @returns The hash of the source and nonce following the hashing algorithm of the MessageTransmitter contract.
+ */
+export function hashCCTPSourceAndNonce(source: number, nonce: number): string {
+  // Encode and hash the values directly
+  return ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [source, nonce]));
+}
+
+/**
+ * Retrieves all outstanding CCTP bridge transfers for a given target -> destination chain, a source token address, and a from address.
+ * @param sourceTokenMessenger The CCTP TokenMessenger contract on the source chain. The "Bridge Contract" of CCTP
+ * @param destinationMessageTransmitter The CCTP MessageTransmitter contract on the destination chain. The "Message Handler Contract" of CCTP
+ * @param sourceSearchConfig The search configuration to use when querying the sourceTokenMessenger contract via `paginatedEventQuery`.
+ * @param sourceToken The token address of the token being transferred.
+ * @param sourceChainId The chainId of the source chain.
+ * @param destinationChainId The chainId of the destination chain.
+ * @param fromAddress The address that initiated the transfer.
+ * @returns A list of outstanding CCTP bridge transfers. These are transfers that have been initiated but not yet finalized on the destination chain.
+ * @dev Reference `hasCCTPMessageBeenProcessed` for more information on how the message is determined to be processed.
+ */
+export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
+  sourceTokenMessenger: ethers.Contract,
+  destinationMessageTransmitter: ethers.Contract,
+  sourceSearchConfig: EventSearchConfig,
+  sourceToken: string,
+  sourceChainId: number,
+  destinationChainId: number,
+  fromAddress: string
+): Promise<ethers.Event[]> {
+  const sourceDomain = chainIdsToCctpDomains[sourceChainId];
+  const targetDestinationDomain = chainIdsToCctpDomains[destinationChainId];
+
+  const sourceFilter = sourceTokenMessenger.filters.DepositForBurn(undefined, sourceToken, undefined, fromAddress);
+  const initializationTransactions = await paginatedEventQuery(sourceTokenMessenger, sourceFilter, sourceSearchConfig);
+
+  const outstandingTransactions = await Promise.all(
+    initializationTransactions.map(async (event) => {
+      const { nonce, destinationDomain } = event.args;
+      // Ensure that the destination domain matches the target destination domain so that we don't
+      // have any double counting of messages.
+      if (destinationDomain !== targetDestinationDomain) {
+        return undefined;
+      }
+      // Call into the destinationMessageTransmitter contract to determine if the message has been processed
+      // on the destionation chain. We want to make sure the message **hasn't** been processed.
+      const isMessageProcessed = await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter);
+      if (isMessageProcessed) {
+        return undefined;
+      }
+      return event;
+    })
+  );
+
+  return outstandingTransactions.filter(isDefined);
+}
+
+/**
+ * Calls into the CCTP MessageTransmitter contract and determines whether or not a message has been processed.
+ * @param sourceDomain The source domain of the message.
+ * @param nonce The nonce of the message.
+ * @param contract The CCTP MessageTransmitter contract to call.
+ * @returns Whether or not the message has been processed.
+ */
+export async function hasCCTPMessageBeenProcessed(
+  sourceDomain: number,
+  nonce: number,
+  contract: ethers.Contract
+): Promise<boolean> {
+  const nonceHash = hashCCTPSourceAndNonce(sourceDomain, nonce);
+  const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
+  // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
+  return (resultingCall ?? bnZero).toNumber() === 1;
+}
+
+/**
  * Used to map a CCTP domain to a chain id. This is the inverse of chainIdsToCctpDomains.
  * Note: due to the nature of testnet/mainnet chain ids mapping to the same CCTP domain, we
  *       actually have a mapping of CCTP Domain -> [chainId].
  */
-const cctpDomainsToChainIds = Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
-  if (!acc[cctpDomain]) {
-    acc[cctpDomain] = [];
-  }
-  acc[cctpDomain].push(Number(chainId));
-  return acc;
-}, {} as Record<number, number[]>);
+export function getCctpDomainsToChainIds() {
+  return Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
+    if (!acc[cctpDomain]) {
+      acc[cctpDomain] = [];
+    }
+    acc[cctpDomain].push(Number(chainId));
+    return acc;
+  }, {} as Record<number, number[]>);
+}
 
 /**
  * Resolves a list of TransactionReceipt objects into a list of DecodedCCTPMessage objects. Each transaction receipt
@@ -76,6 +181,8 @@ async function _resolveCCTPRelatedTxns(
       l.topics[0] === cctpEventTopic &&
       compareAddressesSimple(l.address, CONTRACT_ADDRESSES[sourceChainId].cctpMessageTransmitter.address)
   );
+
+  const cctpDomainsToChainIds = getCctpDomainsToChainIds();
 
   // We can resolve all of the logs in parallel and produce a flat list of DecodedCCTPMessage objects
   return (

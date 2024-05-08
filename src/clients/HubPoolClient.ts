@@ -1,8 +1,9 @@
 import { clients, interfaces } from "@across-protocol/sdk-v2";
 import { Contract } from "ethers";
 import winston from "winston";
-import { MakeOptional, EventSearchConfig } from "../utils";
+import { MakeOptional, EventSearchConfig, getTokenInfo } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
+import { L1Token } from "../interfaces";
 
 export type LpFeeRequest = clients.LpFeeRequest;
 
@@ -31,6 +32,10 @@ export class HubPoolClient extends clients.HubPoolClient {
       },
       cachingMechanism
     );
+  }
+
+  getTokenInfoForAddress(tokenAddress: string, chain: number): L1Token {
+    return getTokenInfo(tokenAddress, chain);
   }
 
   async computeRealizedLpFeePct(deposit: LpFeeRequest): Promise<interfaces.RealizedLpFee> {

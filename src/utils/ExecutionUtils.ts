@@ -12,7 +12,6 @@ export async function processEndPollingLoop(
 ): Promise<boolean> {
   if (pollingDelay === 0) {
     logger.debug({ at: `${fileName}#index`, message: "End of serverless execution loop - terminating process" });
-    await delay(5); // Add a small delay to ensure the transports have fully flushed upstream.
     return true;
   }
 

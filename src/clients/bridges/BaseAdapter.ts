@@ -35,7 +35,7 @@ import { CONTRACT_ADDRESSES, TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common"
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
-  to: string;
+  transactionHash: string;
 }
 
 interface Events {
@@ -53,11 +53,10 @@ export abstract class BaseAdapter {
 
   readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
 
-  chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
-  readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor.address;
+  readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId]?.atomicDepositor.address;
 
   l1DepositInitiatedEvents: Events = {};
   l2DepositFinalizedEvents: Events = {};
@@ -66,12 +65,11 @@ export abstract class BaseAdapter {
 
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    _chainId: number,
+    readonly chainId: number,
     readonly monitoredAddresses: string[],
     readonly logger: winston.Logger,
     readonly supportedTokens: SupportedTokenSymbol[]
   ) {
-    this.chainId = _chainId;
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
     this.txnClient = new TransactionClient(logger);
@@ -83,6 +81,10 @@ export abstract class BaseAdapter {
 
   getProvider(chainId: number): Provider {
     return this.spokePoolClients[chainId].spokePool.provider;
+  }
+
+  filterSupportedTokens(l1Tokens: string[]): string[] {
+    return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
   }
 
   // Note: this must be called after the SpokePoolClients are updated.
@@ -117,6 +119,9 @@ export abstract class BaseAdapter {
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
+
+    assert(l1Tokens.length === associatedL1Bridges.length, "Token and bridge arrays are not the same length");
+
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map(
       (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
@@ -263,6 +268,14 @@ export abstract class BaseAdapter {
     return compareAddressesSimple(l1Token, this.wethAddress);
   }
 
+  isHubChainContract(address: string): Promise<Boolean> {
+    return utils.isContractDeployedToAddress(address, this.getProvider(this.hubChainId));
+  }
+
+  isL2ChainContract(address: string): Promise<Boolean> {
+    return utils.isContractDeployedToAddress(address, this.getProvider(this.chainId));
+  }
+
   /**
    * Get L1 Atomic WETH depositor contract
    * @returns L1 Atomic WETH depositor contract
@@ -274,6 +287,14 @@ export abstract class BaseAdapter {
       CONTRACT_ADDRESSES[hubChainId].atomicDepositor.abi,
       this.getSigner(hubChainId)
     );
+  }
+
+  getHubPool(): Contract {
+    const hubPoolContractData = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool;
+    if (!hubPoolContractData) {
+      throw new Error(`hubPoolContractData not found for chain ${this.hubChainId}`);
+    }
+    return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.getSigner(this.hubChainId));
   }
 
   /**
@@ -334,7 +355,6 @@ export abstract class BaseAdapter {
         at: `${this.getName()}#_sendTokenToTargetChain`,
         message: "Simulation result",
         succeed,
-        ...txnRequest,
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     }

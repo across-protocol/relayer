@@ -14,8 +14,8 @@ export class DefaultERC20Bridge implements OpStackBridge {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  get l1Gateway(): string {
-    return this.l1Bridge.address;
+  get l1Gateways(): string[] {
+    return [this.l1Bridge.address];
   }
 
   constructL1ToL2Txn(

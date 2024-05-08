@@ -1,6 +1,6 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
-import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
+import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts-v2";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber, Contract, providers } from "ethers";
@@ -18,7 +18,6 @@ import {
   sampleRateModel,
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
-import { CombinedRefunds } from "../../src/dataworker/DataworkerUtils";
 
 export {
   SpyTransport,
@@ -27,7 +26,7 @@ export {
   lastSpyLogLevel,
   spyLogIncludes,
   spyLogLevel,
-} from "@uma/financial-templates-lib";
+} from "@uma/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 export const {
   ethers,
@@ -476,10 +475,14 @@ export function getDefaultBlockRange(toBlockOffset: number): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
 }
 
-export function createRefunds(address: string, refundAmount: BigNumber, token: string): CombinedRefunds {
+export function createRefunds(
+  outputToken: string,
+  refundAmount: BigNumber,
+  repaymentToken: string
+): { [repaymentToken: string]: { [outputToken: string]: BigNumber } } {
   return {
-    [token]: {
-      [address]: refundAmount,
+    [repaymentToken]: {
+      [outputToken]: refundAmount,
     },
   };
 }
