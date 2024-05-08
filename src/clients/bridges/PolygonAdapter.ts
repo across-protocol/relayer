@@ -8,16 +8,15 @@ import {
   isDefined,
   BigNumberish,
   TransactionResponse,
-  resolveTokenSymbols,
   ZERO_ADDRESS,
   spreadEventWithBlockNumber,
   paginatedEventQuery,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   bnZero,
+  assert,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
-import { BaseAdapter } from "./";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { CCTPAdapter } from "./CCTPAdapter";
@@ -118,13 +117,19 @@ export class PolygonAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      137,
-      monitoredAddresses,
-      logger,
-      resolveTokenSymbols(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
-    );
+    super(spokePoolClients, 137, monitoredAddresses, logger, [
+      "USDC",
+      "USDT",
+      "WETH",
+      "DAI",
+      "WBTC",
+      "UMA",
+      "BAL",
+      "ACX",
+      "BADGER",
+      "POOL",
+      "MATIC",
+    ]);
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
@@ -134,13 +139,14 @@ export class PolygonAdapter extends CCTPAdapter {
     // Skip the tokens if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
-    const availableTokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const availableTokens = this.filterSupportedTokens(l1Tokens);
 
     const promises: Promise<Event[]>[] = [];
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
-    const validTokens: SupportedL1Token[] = [];
-    // Fetch bridge events for all monitored addresses.
-    for (const monitoredAddress of this.monitoredAddresses) {
+    // Fetch bridge events for all monitored addresses. This function will not work to monitor the hub pool contract,
+    // only the spoke pool address and EOA's.
+    const monitoredAddresses = this.monitoredAddresses.filter((address) => address !== this.getHubPool().address);
+    for (const monitoredAddress of monitoredAddresses) {
       for (const l1Token of availableTokens) {
         if (this.isL1TokenUsdc(l1Token)) {
           cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
@@ -152,13 +158,15 @@ export class PolygonAdapter extends CCTPAdapter {
         const l1Method = tokenToBridge[l1Token].l1Method;
         let l1SearchFilter: (string | undefined)[] = [];
         if (l1Method === "LockedERC20") {
-          l1SearchFilter = [monitoredAddress, undefined, l1Token];
+          l1SearchFilter = [undefined /* depositor */, monitoredAddress /* depositReceiver */, l1Token];
         }
         if (l1Method === "LockedEther") {
-          l1SearchFilter = [undefined, monitoredAddress];
+          l1SearchFilter = [undefined /* depositor */, monitoredAddress /* depositReceiver */];
         }
         if (l1Method === "NewDepositBlock") {
-          l1SearchFilter = [monitoredAddress, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
+          // @dev This won't work for tracking Hub to Spoke transfers since the l1 "owner" will be different
+          // from the L2 "user". We leave it in here for future EOA relayer rebalancing of Matic.
+          l1SearchFilter = [monitoredAddress /* owner */, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
         }
 
         const l2Method =
@@ -168,41 +176,48 @@ export class PolygonAdapter extends CCTPAdapter {
           l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
         }
         if (l2Method === "TokenDeposited") {
-          l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress];
+          l2SearchFilter = [
+            TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET],
+            ZERO_ADDRESS,
+            monitoredAddress /* user */,
+          ];
         }
 
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
           paginatedEventQuery(l2Token, l2Token.filters[l2Method](...l2SearchFilter), l2SearchConfig)
         );
-        validTokens.push(l1Token);
       }
     }
 
     const [results, resolvedCCTPEvents] = await Promise.all([
       Promise.all(promises),
-      Promise.all(this.monitoredAddresses.map((monitoredAddress) => cctpOutstandingTransfersPromise[monitoredAddress])),
+      Promise.all(monitoredAddresses.map((monitoredAddress) => cctpOutstandingTransfersPromise[monitoredAddress])),
     ]);
     const resultingCCTPEvents: Record<string, SortableEvent[]> = Object.fromEntries(
-      this.monitoredAddresses.map((monitoredAddress, idx) => [monitoredAddress, resolvedCCTPEvents[idx]])
+      monitoredAddresses.map((monitoredAddress, idx) => [monitoredAddress, resolvedCCTPEvents[idx]])
     );
 
     // 2 events per token.
-    const numEventsPerMonitoredAddress = 2 * validTokens.length;
+    const numEventsPerMonitoredAddress = 2 * availableTokens.length;
 
     // Segregate the events list by monitored address.
     const resultsByMonitoredAddress = Object.fromEntries(
-      this.monitoredAddresses.map((monitoredAddress, index) => {
+      monitoredAddresses.map((monitoredAddress, index) => {
         const start = index * numEventsPerMonitoredAddress;
-        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress)];
       })
     );
 
     // Process events for each monitored address.
-    for (const monitoredAddress of this.monitoredAddresses) {
+    for (const monitoredAddress of monitoredAddresses) {
       const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
       eventsToProcess.forEach((result, index) => {
-        const l1Token = validTokens[Math.floor(index / 2)];
+        if (eventsToProcess.length === 0) {
+          return;
+        }
+        assert(eventsToProcess.length % 2 === 0, "Events list length should be even");
+        const l1Token = availableTokens[Math.floor(index / 2)];
         const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
         const events = result.map((event) => {
           // Hacky typing here. We should probably rework the structure of this function to improve.
@@ -231,7 +246,7 @@ export class PolygonAdapter extends CCTPAdapter {
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
     this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
-    return this.computeOutstandingCrossChainTransfers(validTokens);
+    return this.computeOutstandingCrossChainTransfers(availableTokens);
   }
 
   sendTokenToTargetChain(
@@ -277,6 +292,7 @@ export class PolygonAdapter extends CCTPAdapter {
           return [];
         }
         if (this.isWeth(l1Token)) {
+          l1TokenListToApprove.push(l1Token);
           return [this.getL1TokenGateway(l1Token)?.address];
         }
         const bridgeAddresses: string[] = [];

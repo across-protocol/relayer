@@ -9,9 +9,7 @@ import {
   expect,
   hubPoolFixture,
   lastSpyLogIncludes,
-  randomAddress,
   sinon,
-  toBN,
   toBNWei,
   toWei,
   winston,
@@ -20,7 +18,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { V3Deposit, InventoryConfig } from "../src/interfaces";
-import { ZERO_ADDRESS, bnZero, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { CHAIN_IDs, ZERO_ADDRESS, bnZero, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import {
   MockAdapterManager,
   MockBundleDataClient,
@@ -30,9 +28,10 @@ import {
 } from "./mocks";
 
 describe("InventoryClient: Refund chain selection", async function () {
-  const enabledChainIds = [1, 10, 137, 42161];
-  const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[1];
-  const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[1];
+  const { MAINNET, OPTIMISM, POLYGON, ARBITRUM } = CHAIN_IDs;
+  const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM];
+  const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
+  const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
   let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
   let bundleDataClient: MockBundleDataClient;
@@ -42,46 +41,52 @@ describe("InventoryClient: Refund chain selection", async function () {
   let crossChainTransferClient: CrossChainTransferClient;
 
   // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
-  const l2TokensForWeth = { 1: mainnetWeth };
-  const l2TokensForUsdc = { 1: mainnetUsdc };
-  enabledChainIds.slice(1).forEach((chainId) => {
-    l2TokensForWeth[chainId] = randomAddress();
-    l2TokensForUsdc[chainId] = randomAddress();
-  });
+  const l2TokensForWeth = { [MAINNET]: mainnetWeth };
+  const l2TokensForUsdc = { [MAINNET]: mainnetUsdc };
+  enabledChainIds
+    .filter((chainId) => chainId !== MAINNET)
+    .forEach((chainId) => {
+      l2TokensForWeth[chainId] = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
+      l2TokensForUsdc[chainId] = TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId];
+    });
 
   const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
   // Configure thresholds percentages as 10% optimism, 5% polygon and 5% Arbitrum with a target being threshold +2%.
+  const targetOverageBuffer = toWei(1);
   const inventoryConfig: InventoryConfig = {
+    wrapEtherTargetPerChain: {},
+    wrapEtherTarget: toWei(1),
+    wrapEtherThresholdPerChain: {},
+    wrapEtherThreshold: toWei(1),
     tokenConfig: {
       [mainnetWeth]: {
-        10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
-        137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
-        42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+        [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
 
       [mainnetUsdc]: {
-        10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
-        137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
-        42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+        [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
     },
-    wrapEtherThreshold: toWei(1),
   };
 
   // Construct an initial distribution that keeps these values within the above thresholds.
   const initialAllocation = {
-    1: { [mainnetWeth]: toWei(100), [mainnetUsdc]: toMegaWei(10000) }, // seed 100 WETH and 10000 USDC on Mainnet
-    10: { [mainnetWeth]: toWei(20), [mainnetUsdc]: toMegaWei(2000) }, // seed 20 WETH and 2000 USDC on Optimism
-    137: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Polygon
-    42161: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Arbitrum
+    [MAINNET]: { [mainnetWeth]: toWei(100), [mainnetUsdc]: toMegaWei(10000) }, // seed 100 WETH and 10000 USDC on Mainnet
+    [OPTIMISM]: { [mainnetWeth]: toWei(20), [mainnetUsdc]: toMegaWei(2000) }, // seed 20 WETH and 2000 USDC on Optimism
+    [POLYGON]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Polygon
+    [ARBITRUM]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Arbitrum
   };
 
   const seedMocks = (seedBalances: { [chainId: string]: { [token: string]: BigNumber } }) => {
     hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
     hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
     enabledChainIds.forEach((chainId) => {
-      adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, toBN(0));
-      adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, toBN(0));
+      adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, bnZero);
+      adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, bnZero);
       tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth]);
       tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc]);
       hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
@@ -134,13 +139,13 @@ describe("InventoryClient: Refund chain selection", async function () {
       const inputAmount = toBNWei(1);
       sampleDepositData = {
         depositId: 0,
-        originChainId: 1,
-        destinationChainId: 10,
+        originChainId: MAINNET,
+        destinationChainId: OPTIMISM,
         depositor: owner.address,
         recipient: owner.address,
         inputToken: mainnetWeth,
         inputAmount,
-        outputToken: l2TokensForWeth[10],
+        outputToken: l2TokensForWeth[OPTIMISM],
         outputAmount: inputAmount,
         message: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
@@ -156,7 +161,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // above the threshold of 12 and so the bot should choose to be refunded on L1.
       sampleDepositData.inputAmount = toWei(1);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(MAINNET);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014388"')).to.be.true; // (20-1)/(140-1)=0.136
 
       // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
@@ -164,7 +169,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // choose to refund on the L2.
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(OPTIMISM);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111111111111111111"')).to.be.true; // (20-5)/(140-5)=0.11
 
       // Now consider a bigger relay that should force refunds on the L2 chain. Set the relay size to 10 WETH. now post
@@ -172,7 +177,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // set the refund on L2.
       sampleDepositData.inputAmount = toWei(10);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(OPTIMISM);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"76923076923076923"')).to.be.true; // (20-10)/(140-10)=0.076
     });
 
@@ -181,13 +186,13 @@ describe("InventoryClient: Refund chain selection", async function () {
       // fictitious relay that exceeds all outstanding liquidity on the target chain(Arbitrum) of 15 Weth (target only)
       // has 10 WETH in it.
       const largeRelayAmount = toWei(15);
-      tokenClient.setTokenShortFallData(42161, l2TokensForWeth[42161], [6969], largeRelayAmount); // Mock the shortfall.
+      tokenClient.setTokenShortFallData(ARBITRUM, l2TokensForWeth[ARBITRUM], [6969], largeRelayAmount); // Mock the shortfall.
       // The expected cross chain transfer amount is (0.05+0.02-(10-15)/140)*140=14.8 // Mock the cross-chain transfer
       // leaving L1 to go to arbitrum by adding it to the mock cross chain transfers and removing from l1 balance.
       const bridgedAmount = toWei(14.8);
-      adapterManager.setMockedOutstandingCrossChainTransfers(42161, owner.address, mainnetWeth, bridgedAmount);
+      adapterManager.setMockedOutstandingCrossChainTransfers(ARBITRUM, owner.address, mainnetWeth, bridgedAmount);
       await inventoryClient.update();
-      tokenClient.setTokenData(1, mainnetWeth, initialAllocation[1][mainnetWeth].sub(bridgedAmount));
+      tokenClient.setTokenData(MAINNET, mainnetWeth, initialAllocation[MAINNET][mainnetWeth].sub(bridgedAmount));
 
       // Now, consider that the bot is run while these funds for the above deposit are in the canonical bridge and cant
       // be filled yet. When it runs it picks up a relay that it can do, of size 1.69 WETH. Each part of the computation
@@ -207,11 +212,11 @@ describe("InventoryClient: Refund chain selection", async function () {
       // the buffer then refund on L1. if it is below the threshold then refund on the target chain. As this number is
       // is below the buffer plus the threshold then the bot should refund on L2.
 
-      sampleDepositData.destinationChainId = 42161;
-      sampleDepositData.outputToken = l2TokensForWeth[42161];
+      sampleDepositData.destinationChainId = ARBITRUM;
+      sampleDepositData.outputToken = l2TokensForWeth[ARBITRUM];
       sampleDepositData.inputAmount = toWei(1.69);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(ARBITRUM);
 
       expect(lastSpyLogIncludes(spy, 'chainShortfall":"15000000000000000000"')).to.be.true;
       expect(lastSpyLogIncludes(spy, 'chainVirtualBalance":"24800000000000000000"')).to.be.true; // (10+14.8)=24.8
@@ -229,7 +234,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // relay allocation is 4.8/120 = 0.04. This is below the threshold of 0.05 so the bot should refund on the target.
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(ARBITRUM);
       // Check only the final step in the computation.
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"40000000000000000"')).to.be.true; // 4.8/120 = 0.04
 
@@ -239,8 +244,12 @@ describe("InventoryClient: Refund chain selection", async function () {
       // chain virtual balance with shortfall post relay is 9.8 - 5 + 10 = 14.8. cumulative virtual balance with shortfall
       // post relay is 125 - 5 + 10 = 130. Expected post relay allocation is 14.8/130 = 0.11. This is above the threshold
       // of 0.05 so the bot should refund on L1.
-      tokenClient.setTokenData(42161, l2TokensForWeth[42161], initialAllocation[42161][mainnetWeth].add(toWei(10)));
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+      tokenClient.setTokenData(
+        ARBITRUM,
+        l2TokensForWeth[ARBITRUM],
+        initialAllocation[ARBITRUM][mainnetWeth].add(toWei(10))
+      );
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(MAINNET);
     });
 
     it("Correctly decides where to refund based on upcoming refunds", async function () {
@@ -252,23 +261,23 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       bundleDataClient.setReturnedPendingBundleRefunds({
-        1: createRefunds(owner.address, toWei(5), mainnetWeth),
-        10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
+        [MAINNET]: createRefunds(owner.address, toWei(5), mainnetWeth),
+        [OPTIMISM]: createRefunds(owner.address, toWei(5), l2TokensForWeth[OPTIMISM]),
       });
       bundleDataClient.setReturnedNextBundleRefunds({
-        10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
+        [OPTIMISM]: createRefunds(owner.address, toWei(5), l2TokensForWeth[OPTIMISM]),
       });
       // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
       // L1 token and destination chain ID, otherwise it won't be counted in upcoming
       // refunds.
       hubPoolClient.setEnableAllL2Tokens(true);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(MAINNET);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true; // (20-5)/(140-5)=0.11
 
       // If we set this to false in this test, the destination chain will be default used since the refund data
       // will be ignored.
       hubPoolClient.setEnableAllL2Tokens(false);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(OPTIMISM);
     });
 
     it("Correctly throws when Deposit tokens are not equivalent", async function () {
@@ -323,13 +332,13 @@ describe("InventoryClient: Refund chain selection", async function () {
       const inputAmount = toBNWei(1);
       sampleDepositData = {
         depositId: 0,
-        originChainId: 137,
-        destinationChainId: 10,
+        originChainId: POLYGON,
+        destinationChainId: OPTIMISM,
         depositor: owner.address,
         recipient: owner.address,
-        inputToken: l2TokensForWeth[137],
+        inputToken: l2TokensForWeth[POLYGON],
         inputAmount,
-        outputToken: l2TokensForWeth[10],
+        outputToken: l2TokensForWeth[OPTIMISM],
         outputAmount: inputAmount,
         message: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
@@ -340,7 +349,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
     it("Both origin and destination chain allocations are below target", async function () {
       // Set Polygon allocation lower than target:
-      tokenClient.setTokenData(137, l2TokensForWeth[137], toWei(9));
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(9));
 
       // Post relay allocations:
       // Optimism (destination chain): (20-5)/(139-5)=11.1% < 12%
@@ -348,7 +357,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Relayer should choose to refund on destination over origin if both are under allocated
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(OPTIMISM);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111940298507462686"')).to.be.true;
     });
     it("Origin chain allocation does not depend on subtracting from numerator", async function () {
@@ -357,8 +366,8 @@ describe("InventoryClient: Refund chain selection", async function () {
 
       // Set Polygon allocation just higher than target. This is set so that any subtractions
       // from the numerator would break this test.
-      tokenClient.setTokenData(137, l2TokensForWeth[137], toWei(10));
-      tokenClient.setTokenData(10, l2TokensForWeth[10], toWei(30));
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(10));
+      tokenClient.setTokenData(OPTIMISM, l2TokensForWeth[OPTIMISM], toWei(30));
 
       // Post relay allocations:
       // Optimism (destination chain): (30-10)/(150-10)=14.3% > 12%
@@ -366,14 +375,14 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Relayer should default to hub chain.
       sampleDepositData.inputAmount = toWei(10);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(MAINNET);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"71428571428571428"')).to.be.true;
     });
     it("Origin allocation is below target", async function () {
       // Set Polygon allocation lower than target:
-      tokenClient.setTokenData(137, l2TokensForWeth[137], toWei(5));
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(5));
       // Set Optimism allocation higher than target:
-      tokenClient.setTokenData(10, l2TokensForWeth[10], toWei(30));
+      tokenClient.setTokenData(OPTIMISM, l2TokensForWeth[OPTIMISM], toWei(30));
 
       // Post relay allocations:
       // Optimism (destination chain): (30-5)/(150-5)=17.2% > 12%
@@ -381,14 +390,14 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Relayer should choose to refund origin since destination isn't an option.
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(POLYGON);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"35714285714285714"')).to.be.true;
     });
     it("Origin allocation depends on outstanding transfers", async function () {
       // Set Polygon allocation lower than target:
-      tokenClient.setTokenData(137, l2TokensForWeth[137], toWei(5));
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(5));
       // Set Optimism allocation higher than target:
-      tokenClient.setTokenData(10, l2TokensForWeth[10], toWei(30));
+      tokenClient.setTokenData(OPTIMISM, l2TokensForWeth[OPTIMISM], toWei(30));
 
       // Post relay allocations:
       // Optimism (destination chain): (30-5)/(150-5)=17.2% > 12%
@@ -396,40 +405,40 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Relayer should choose to refund origin since destination isn't an option.
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(POLYGON);
 
       // Now add outstanding transfers to Polygon that make the allocation above the target. Note that this
       // increases cumulative balance a bit.
-      adapterManager.setMockedOutstandingCrossChainTransfers(137, owner.address, mainnetWeth, toWei(10));
+      adapterManager.setMockedOutstandingCrossChainTransfers(POLYGON, owner.address, mainnetWeth, toWei(10));
       await inventoryClient.update();
 
       // Post relay allocations:
       // Optimism (destination chain): (30-5)/(160-5)=16.1% > 12%
       // Polygon (origin chain): (15)/(160-5)=9.6% > 7%
       // Relayer should now default to hub chain.
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(MAINNET);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"100000000000000000"')).to.be.true;
     });
     it("Origin allocation depends on short falls", async function () {
       // Set Polygon allocation lower than target:
-      tokenClient.setTokenData(137, l2TokensForWeth[137], toWei(5));
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(5));
       // Set Optimism allocation higher than target:
-      tokenClient.setTokenData(10, l2TokensForWeth[10], toWei(30));
+      tokenClient.setTokenData(OPTIMISM, l2TokensForWeth[OPTIMISM], toWei(30));
 
       // Shortfalls are subtracted from both numerator and denominator.
-      tokenClient.setTokenShortFallData(137, l2TokensForWeth[137], [6969], toWei(5)); // Mock the shortfall.
+      tokenClient.setTokenShortFallData(POLYGON, l2TokensForWeth[POLYGON], [6969], toWei(5)); // Mock the shortfall.
       // Post relay allocations:
       // Optimism (destination chain): (25-5)/(145-5)=14.3% > 12%
       // Polygon (origin chain): (0)/(145-5)=0% < 7%
       // Relayer should still use origin chain
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(POLYGON);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"0"')).to.be.true; // (20-5)/(140-5)=0.11
     });
     it("Origin allocation depends on upcoming refunds", async function () {
       // Set Polygon allocation lower than target:
-      tokenClient.setTokenData(137, l2TokensForWeth[137], toWei(5));
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(5));
       // Set Optimism allocation higher than target:
-      tokenClient.setTokenData(10, l2TokensForWeth[10], toWei(30));
+      tokenClient.setTokenData(OPTIMISM, l2TokensForWeth[OPTIMISM], toWei(30));
 
       // Post relay allocations:
       // Optimism (destination chain): (30-5)/(150-5)=17.2% > 12%
@@ -439,7 +448,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
 
       bundleDataClient.setReturnedPendingBundleRefunds({
-        137: createRefunds(owner.address, toWei(5), l2TokensForWeth[137]),
+        [POLYGON]: createRefunds(owner.address, toWei(5), l2TokensForWeth[POLYGON]),
       });
       // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
       // L1 token and destination chain ID, otherwise it won't be counted in upcoming
@@ -450,12 +459,12 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Optimism (destination chain): (30-5)/(155-5)=16.7% > 12%
       // Polygon (origin chain): (10)/(155-5)=6.7% > 7%
       // Relayer should still pick origin chain but compute a different allocation.
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(137);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(POLYGON);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"68965517241379310"')).to.be.true;
     });
     it("includes origin, destination and hub chain in repayment chain list", async function () {
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
-      [sampleDepositData.originChainId, sampleDepositData.destinationChainId, 1].forEach((chainId) => {
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId, MAINNET].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
       expect(possibleRepaymentChains.length).to.equal(3);
@@ -469,8 +478,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       // as possible repayment chains.
       hubPoolClient.setEnableAllL2Tokens(true);
       excessRunningBalances = {
-        [10]: toWei("0.1"),
-        [42161]: toWei("0.2"),
+        [OPTIMISM]: toWei("0.1"),
+        [ARBITRUM]: toWei("0.2"),
       };
       // Fill in rest of slow withdrawal chains with 0 excess since we won't test them.
       inventoryClient.getSlowWithdrawalRepaymentChains(mainnetWeth).forEach((chainId) => {
@@ -493,13 +502,13 @@ describe("InventoryClient: Refund chain selection", async function () {
       const inputAmount = toBNWei(1);
       sampleDepositData = {
         depositId: 0,
-        originChainId: 137,
-        destinationChainId: 1,
+        originChainId: POLYGON,
+        destinationChainId: MAINNET,
         depositor: owner.address,
         recipient: owner.address,
-        inputToken: l2TokensForWeth[137],
+        inputToken: l2TokensForWeth[POLYGON],
         inputAmount,
-        outputToken: l2TokensForWeth[1],
+        outputToken: l2TokensForWeth[MAINNET],
         outputAmount: inputAmount,
         message: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
@@ -511,13 +520,13 @@ describe("InventoryClient: Refund chain selection", async function () {
     it("selects slow withdrawal chain with excess running balance and under relayer allocation", async function () {
       // Initial allocations are all under allocated so the first slow withdrawal chain should be selected since it has
       // the highest overage.
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(ARBITRUM);
 
-      // If we instead drop the excess on 42161 to 0, then we should take repayment on
+      // If we instead drop the excess on Arbitrum to 0, then we should take repayment on
       // the next slow withdrawal chain.
-      excessRunningBalances[42161] = toWei("0");
+      excessRunningBalances[ARBITRUM] = toWei("0");
       (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(OPTIMISM);
     });
     it("includes slow withdrawal chains in possible repayment chain list", async function () {
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);

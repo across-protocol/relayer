@@ -29,9 +29,9 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 export { config } from "dotenv";
 
 export { replaceAddressCase } from "@uma/common";
-export { Logger } from "@uma/logger";
+export { Logger, waitForLogger } from "@uma/logger";
 
-export { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
+export { CHAIN_IDs, TOKEN_SYMBOLS_MAP, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants-v2";
 
 // TypeChain exports used in the bot.
 export {

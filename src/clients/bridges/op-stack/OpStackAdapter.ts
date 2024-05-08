@@ -37,7 +37,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
-    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
+    const wethAddress = this.wethAddress;
     if (wethAddress && !this.customBridges[wethAddress]) {
       this.customBridges[wethAddress] = new WethBridge(
         this.chainId,
@@ -74,6 +74,7 @@ export class OpStackAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
 
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
@@ -90,7 +91,7 @@ export class OpStackAdapter extends BaseAdapter {
     await Promise.all(
       this.monitoredAddresses.map((monitoredAddress) =>
         Promise.all(
-          l1Tokens.map(async (l1Token) => {
+          availableL1Tokens.map(async (l1Token) => {
             const bridge = this.getBridge(l1Token);
 
             const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
@@ -116,7 +117,7 @@ export class OpStackAdapter extends BaseAdapter {
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
     this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
-    return this.computeOutstandingCrossChainTransfers(l1Tokens);
+    return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
   }
 
   async sendTokenToTargetChain(
@@ -178,7 +179,7 @@ export class OpStackAdapter extends BaseAdapter {
     const l1TokenListToApprove = [];
     // We need to approve the Atomic depositor to bridge WETH to optimism via the ETH route.
     const associatedL1Bridges = l1Tokens.flatMap((l1Token) => {
-      const bridges = this.getBridge(l1Token).l1Gateway;
+      const bridges = this.getBridge(l1Token).l1Gateways;
       // Push the l1 token to the list of tokens to approve N times, where N is the number of bridges.
       // I.e. the arrays have to be parallel.
       l1TokenListToApprove.push(...Array(bridges.length).fill(l1Token));
