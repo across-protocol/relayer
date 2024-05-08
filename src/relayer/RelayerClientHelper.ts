@@ -1,5 +1,4 @@
 import { ChildProcess } from "child_process";
-import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import winston from "winston";
 import {
@@ -16,18 +15,12 @@ import {
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
+  resolveSpokePoolActivationBlock,
   updateClients,
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import {
-  getBlockForTimestamp,
-  getDeploymentBlockNumber,
-  getProvider,
-  getRedisCache,
-  Signer,
-  SpokePool,
-} from "../utils";
+import { getProvider, Signer, SpokePool } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
@@ -48,25 +41,14 @@ async function indexedSpokePoolClient(
 
   // Set up Spoke signers and connect them to spoke pool contract objects.
   const signer = baseSigner.connect(await getProvider(chainId));
-
-  const blockFinder = undefined;
-  const redis = await getRedisCache(hubPoolClient.logger);
-
-  const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, hubPoolClient.latestBlockSearched);
-  const spokePool = new Contract(spokePoolAddr, SpokePool.abi, signer);
-  const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
-  const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
-
-  // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
-  const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
-  const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
+  const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId);
 
   const spokePoolClient = new IndexedSpokePoolClient(
     logger,
-    spokePool,
+    SpokePool.connect(spokePoolAddr, signer),
     hubPoolClient,
     chainId,
-    registrationBlock,
+    await resolveSpokePoolActivationBlock(chainId, hubPoolClient),
     worker
   );
   spokePoolClient.init();
