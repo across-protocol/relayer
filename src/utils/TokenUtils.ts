@@ -33,6 +33,21 @@ export function getTokenInfo(l2TokenAddress: string, chainId: number): L1Token {
   };
 }
 
+export function getL1TokenInfo(l2TokenAddress: string, chainId: number): L1Token {
+  const tokenObject = Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === l2TokenAddress);
+  const l1TokenAddress = tokenObject?.addresses[CHAIN_IDs.MAINNET];
+  if (!l1TokenAddress) {
+    throw new Error(
+      `TokenUtils#getL1TokenInfo: Unable to resolve l1 token address in TOKEN_SYMBOLS_MAP for L2 token ${l2TokenAddress} on chain ${chainId}`
+    );
+  }
+  return {
+    address: l1TokenAddress,
+    symbol: tokenObject.symbol,
+    decimals: tokenObject.decimals,
+  };
+}
+
 /**
  * Format the given amount of tokens to the correct number of decimals for the given token symbol.
  * @param symbol The token symbol to format the amount for.
