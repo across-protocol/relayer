@@ -232,15 +232,8 @@ export class PolygonAdapter extends CCTPAdapter {
           };
         });
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
-        assign(
-          eventsStorage,
-          [
-            monitoredAddress,
-            l1Token,
-            this.resolveL2TokenAddress(l1Token, false), // these are all either normal L2 tokens or bridged USDC
-          ],
-          events
-        );
+        const l2Token = this.resolveL2TokenAddress(l1Token, false); // these are all either normal L2 tokens or bridged USDC
+        assign(eventsStorage, [monitoredAddress, l1Token, l2Token], events);
       });
       if (isDefined(resultingCCTPEvents[monitoredAddress])) {
         assign(
