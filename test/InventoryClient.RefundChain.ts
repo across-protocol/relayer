@@ -161,7 +161,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // above the threshold of 12 and so the bot should choose to be refunded on L1.
       sampleDepositData.inputAmount = toWei(1);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal([MAINNET]);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014388"')).to.be.true; // (20-1)/(140-1)=0.136
 
       // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
