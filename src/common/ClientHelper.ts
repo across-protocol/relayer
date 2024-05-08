@@ -60,7 +60,7 @@ export async function resolveSpokePoolActivationBlock(
     const activationBlock = await redis.get(key);
     const numericActivationBlock = Number(activationBlock);
     if (Number.isInteger(numericActivationBlock) && numericActivationBlock > 0) {
-      return Number(activationBlock);
+      return numericActivationBlock;
     }
   }
 
