@@ -173,9 +173,7 @@ export class InventoryClient {
   }
 
   // Get the balance of a given token on a given chain, including shortfalls and any pending cross chain transfers.
-  getCurrentAllocationPct(l1Token: string, chainId: number, l2Token?: string): BigNumber {
-    l2Token ??= this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
-
+  getCurrentAllocationPct(l1Token: string, chainId: number, l2Token: string): BigNumber {
     // If there is nothing over all chains, return early.
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     if (cumulativeBalance.eq(bnZero)) {
