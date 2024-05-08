@@ -6,6 +6,7 @@ import {
   isDefined,
   winston,
   BigNumber,
+  getCurrentTime,
   getL2TokenAddresses,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
@@ -40,7 +41,7 @@ export class AcrossApiClient {
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
-    const now = Math.round(Date.now() / 1000);
+    const now = getCurrentTime();
     const updateAge = now - this.updatedAt;
     if (ignoreLimits || updateAge < API_UPDATE_RETENTION_TIME) {
       this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits", updateAge });
