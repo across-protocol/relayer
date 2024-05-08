@@ -16,6 +16,7 @@ import {
   runTransaction,
   toBN,
   winston,
+  getMultisender,
   getRedisCache,
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
@@ -242,39 +243,55 @@ export class TokenClient {
       })
       .flat();
 
-    const tokenData = Object.fromEntries(
-      await Promise.all(
-        tokens.map(async (token) => {
-          const balance: BigNumber = await token.balanceOf(this.relayerAddress);
-          const allowance = await this._getAllowance(this.spokePoolClients[chainId], token);
-          return [token.address, { balance, allowance }];
+    const multicall3 = async (multicall: Contract) => {
+      const { spokePool } = this.spokePoolClients[chainId];
+      const { relayerAddress } = this;
+      const _balanceOf = "balanceOf";
+      const _allowance = "allowance";
+
+      const balances: { target: string; callData: string }[] = [];
+      const allowances: { target: string; callData: string }[] = [];
+      tokens.forEach((token) => {
+        const {
+          address: target,
+          interface: { encodeFunctionData },
+        } = token;
+        balances.push({ target, callData: encodeFunctionData(_balanceOf, [relayerAddress]) });
+        allowances.push({ target, callData: encodeFunctionData(_allowance, [relayerAddress, spokePool.address]) });
+      });
+
+      const [, results] = await multicall.callStatic.aggregate([...balances, ...allowances]);
+      const allowanceOffset = tokens.length;
+      const tokenData = Object.fromEntries(
+        tokens.map((token, idx) => {
+          const { address } = token;
+          const balance = token.interface.decodeFunctionResult(_balanceOf, results[idx])[0];
+          const allowance = token.interface.decodeFunctionResult(_allowance, results[allowanceOffset + idx])[0];
+          return [address, { balance, allowance }];
         })
-      )
-    );
+      );
+
+      return tokenData;
+    };
+
+    const multicall = await getMultisender(chainId, signer);
+    const tokenData = isDefined(multicall)
+      ? multicall3(multicall)
+      : Object.fromEntries(
+          await Promise.all(
+            tokens.map(async (token) => {
+              const balance: BigNumber = await token.balanceOf(this.relayerAddress);
+              const allowance = await this._getAllowance(this.spokePoolClients[chainId], token);
+              return [token.address, { balance, allowance }];
+            })
+          )
+        );
 
     return tokenData;
   }
 
-  private _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): string {
-    const { chainId, spokePool } = spokePoolClient;
-    return `l2TokenAllowance_${chainId}_${originToken}_${this.relayerAddress}_targetContract:${spokePool.address}`;
-  }
-
-  private async _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
-    const key = this._getAllowanceCacheKey(spokePoolClient, token.address);
-    const redis = await this.getRedis();
-    if (redis) {
-      const result = await redis.get<string>(key);
-      if (result !== null) {
-        return toBN(result);
-      }
-    }
-    const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
-    if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
-      // Save allowance in cache with no TTL as these should be exhausted.
-      await redis.set(key, MAX_SAFE_ALLOWANCE);
-    }
-    return allowance;
+  private _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
+    return token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
   }
 
   _getBondTokenCacheKey(): string {
