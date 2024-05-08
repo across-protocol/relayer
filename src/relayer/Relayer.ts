@@ -5,6 +5,7 @@ import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interface
 import {
   BigNumber,
   bnZero,
+  bnUint256Max,
   RelayerUnfilledDeposit,
   blockExplorerLink,
   createFormatFunction,
@@ -13,7 +14,6 @@ import {
   getNetworkName,
   getUnfilledDeposits,
   isDefined,
-  toBNWei,
   winston,
   fixedPointAdjustment,
 } from "../utils";
@@ -42,6 +42,19 @@ export class Relayer {
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
   ) {
+    Object.values(clients.spokePoolClients).forEach(({ chainId }) => {
+      if (!isDefined(config.minDepositConfirmations[chainId])) {
+        const chain = getNetworkName(chainId);
+        logger.warn({
+          at: "Relayer::constructor",
+          message: `${chain} deposit confirmation configuration is missing.`,
+        });
+        config.minDepositConfirmations[chainId] = [
+          { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER },
+        ];
+      }
+    });
+
     this.relayerAddress = getAddress(relayerAddress);
   }
 
@@ -54,8 +67,9 @@ export class Relayer {
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken } = deposit;
-    const { acrossApiClient, configStoreClient, hubPoolClient } = this.clients;
-    const { ignoredAddresses, relayerTokens, acceptInvalidFills } = this.config;
+    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
+    const { ignoredAddresses, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
     // If we don't have the latest code to support this deposit, skip it.
     if (depositVersion > configStoreClient.configStoreVersion) {
@@ -80,16 +94,34 @@ export class Relayer {
       return false;
     }
 
+    // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
+    const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+    const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
+      usdThreshold.gte(fillAmountUsd)
+    );
+    const { latestBlockSearched } = spokePoolClients[originChainId];
+    if (latestBlockSearched - deposit.blockNumber < minConfirmations) {
+      this.logger.debug({
+        at: "Relayer::evaluateFill",
+        message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
+        depositId,
+        blockNumber: deposit.blockNumber,
+        confirmations: latestBlockSearched - deposit.blockNumber,
+        minConfirmations,
+        transactionHash: deposit.transactionHash,
+      });
+      return false;
+    }
+
     // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
     if (deposit.quoteTimestamp > hubPoolClient.currentTime) {
       return false;
     }
 
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
-      const [origin, destination] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: `Ignoring ${origin} deposit destined for ${destination}.`,
+        message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
         depositor,
         recipient,
         transactionHash: deposit.transactionHash,
@@ -111,7 +143,7 @@ export class Relayer {
     }
 
     // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-    const currentTime = this.clients.spokePoolClients[destinationChainId].getCurrentTime();
+    const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
     if (deposit.fillDeadline <= currentTime) {
       return false;
     }
@@ -228,35 +260,28 @@ export class Relayer {
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
-        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit, deposit.outputAmount);
+        const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
         agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
         return agg;
       }, {});
 
-    // Sort thresholds in ascending order.
-    const minimumDepositConfirmationThresholds = Object.keys(minDepositConfirmations)
-      .filter((x) => x !== "default")
-      .sort((x, y) => Number(x) - Number(y));
-
     // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
-    // If we can't find a threshold greater than the USD amount, then use the default.
     const mdcPerChain = Object.fromEntries(
       Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
-        const usdThreshold = minimumDepositConfirmationThresholds.find(
-          (usdThreshold) =>
-            toBNWei(usdThreshold).gte(unfilledAmount) && isDefined(minDepositConfirmations[usdThreshold][chainId])
+        const { minConfirmations } = minDepositConfirmations[chainId].find(({ usdThreshold }) =>
+          usdThreshold.gte(unfilledAmount)
         );
 
         // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
-        return [chainId, minDepositConfirmations[usdThreshold ?? "default"][chainId]];
+        return [chainId, minConfirmations];
       })
     );
+
     this.logger.debug({
       at: "Relayer::computeRequiredDepositConfirmations",
-      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
+      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount.",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
-      minDepositConfirmations,
     });
 
     return mdcPerChain;
@@ -761,12 +786,13 @@ export class Relayer {
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = this.clients.hubPoolClient.getTokenInfoForAddress(token, chainId);
+          const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
           crossChainLog =
             "There is " +
             formatter(
               this.clients.inventoryClient.crossChainTransferClient
                 .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address)
+                // TODO: Add in additional l2Token param here once we can specify it
                 .toString()
             ) +
             ` inbound L1->L2 ${symbol} transfers. `;

@@ -7,8 +7,6 @@ import {
   RelayerBalanceReport,
   RelayerBalanceTable,
   TokenTransfer,
-  TransfersByChain,
-  TransfersByTokens,
 } from "../interfaces";
 import {
   BigNumber,
@@ -35,9 +33,9 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-export const REBALANCE_FINALIZE_GRACE_PERIOD = 60 * 60 * 4; // 4 hours.
+export const REBALANCE_FINALIZE_GRACE_PERIOD = 40 * 60; // 40 minutes, which is 50% of the way through an 80 minute
+// bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
-export const UNKNOWN_TRANSFERS_NAME = "Unknown transfers (incoming, outgoing, net)";
 const ALL_BALANCE_TYPES = [
   BalanceType.CURRENT,
   BalanceType.PENDING,
@@ -45,13 +43,6 @@ const ALL_BALANCE_TYPES = [
   BalanceType.PENDING_TRANSFERS,
   BalanceType.TOTAL,
 ];
-
-interface CategorizedTransfers {
-  all: TokenTransfer[];
-  bond: TokenTransfer[];
-  v1: TokenTransfer[];
-  other: TokenTransfer[];
-}
 
 type BalanceRequest = { chainId: number; token: string; account: string };
 
@@ -201,10 +192,10 @@ export class Monitor {
       const chainId = parseInt(chainIdStr);
       mrkdwn += `*Destination: ${getNetworkName(chainId)}*\n`;
       for (const tokenAddress of Object.keys(amountByToken)) {
-        const tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
+        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
         // Convert to number of tokens for readability.
-        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), tokenInfo.decimals);
-        mrkdwn += `${tokenInfo.symbol}: ${unfilledAmount}\n`;
+        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
+        mrkdwn += `${symbol}: ${unfilledAmount}\n`;
       }
     }
 
@@ -217,12 +208,11 @@ export class Monitor {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const chainIds = this.monitorChains;
-    const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME]);
+    const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
 
     await this.updateCurrentRelayerBalances(reports);
     await this.updateLatestAndFutureRelayerRefunds(reports);
-    this.updateUnknownTransfers(reports);
 
     for (const relayer of relayers) {
       const report = reports[relayer];
@@ -509,10 +499,14 @@ export class Monitor {
     // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
     // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
-    if (
-      lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD >
-      this.clients.hubPoolClient.hubPool.getCurrentTime()
-    ) {
+    const currentTime = Number(await this.clients.hubPoolClient.hubPool.getCurrentTime());
+    if (lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD > currentTime) {
+      this.logger.debug({
+        at: "Monitor#checkStuckRebalances",
+        message: `Within ${REBALANCE_FINALIZE_GRACE_PERIOD / 60}min grace period of last bundle execution`,
+        lastFullyExecutedBundleTime,
+        currentTime,
+      });
       return;
     }
 
@@ -609,157 +603,6 @@ export class Monitor {
         }
       }
     }
-  }
-
-  updateUnknownTransfers(relayerBalanceReport: RelayerBalanceReport): void {
-    const { hubPoolClient, spokePoolClients } = this.clients;
-
-    for (const relayer of this.monitorConfig.monitoredRelayers) {
-      const report = relayerBalanceReport[relayer];
-      const transfersPerChain: TransfersByChain = this.clients.tokenTransferClient.getTokenTransfers(relayer);
-
-      let mrkdwn = "";
-      for (const chainId of this.monitorChains) {
-        const spokePoolClient = spokePoolClients[chainId];
-        const transfersPerToken: TransfersByTokens = transfersPerChain[chainId];
-        const l2ToL1Tokens = Object.fromEntries(
-          Object.keys(transfersPerToken).map((l2Token) => [
-            l2Token,
-            hubPoolClient.getTokenInfoForAddress(l2Token, chainId),
-          ])
-        );
-
-        let currentChainMrkdwn = "";
-        for (const l2Token of Object.keys(l2ToL1Tokens)) {
-          let currentTokenMrkdwn = "";
-
-          const tokenInfo = l2ToL1Tokens[l2Token];
-          const transfers = transfersPerToken[l2Token];
-          // Skip if there has been no transfers of this token.
-          if (!transfers) {
-            continue;
-          }
-
-          let totalOutgoingAmount = bnZero;
-          // Filter v2 fills and bond payments from outgoing transfers.
-          const fillTransactionHashes = spokePoolClient.getFillsForRelayer(relayer).map((fill) => fill.transactionHash);
-          const outgoingTransfers = this.categorizeUnknownTransfers(transfers.outgoing, fillTransactionHashes);
-          if (outgoingTransfers.all.length > 0) {
-            currentTokenMrkdwn += "Outgoing:\n";
-            totalOutgoingAmount = totalOutgoingAmount.add(this.getTotalTransferAmount(outgoingTransfers.all));
-            currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, tokenInfo.decimals, chainId);
-          }
-
-          let totalIncomingAmount = bnZero;
-          // Filter v2 refunds and bond repayments from incoming transfers.
-          const refundTransactionHashes = spokePoolClient
-            .getRelayerRefundExecutions()
-            .map((refund) => refund.transactionHash);
-          const incomingTransfers = this.categorizeUnknownTransfers(transfers.incoming, refundTransactionHashes);
-          if (incomingTransfers.all.length > 0) {
-            currentTokenMrkdwn += "Incoming:\n";
-            totalIncomingAmount = totalIncomingAmount.add(this.getTotalTransferAmount(incomingTransfers.all));
-            currentTokenMrkdwn += this.formatCategorizedTransfers(incomingTransfers, tokenInfo.decimals, chainId);
-          }
-
-          // Record if there are net outgoing transfers.
-          const netTransfersAmount = totalIncomingAmount.sub(totalOutgoingAmount);
-          if (!netTransfersAmount.eq(bnZero)) {
-            const netAmount = convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
-            currentTokenMrkdwn = `*${tokenInfo.symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
-            currentChainMrkdwn += currentTokenMrkdwn;
-
-            // Report (incoming, outgoing, net) amounts.
-            this.incrementBalance(
-              report,
-              tokenInfo.symbol,
-              UNKNOWN_TRANSFERS_NAME,
-              BalanceType.CURRENT,
-              totalIncomingAmount
-            );
-            this.incrementBalance(
-              report,
-              tokenInfo.symbol,
-              UNKNOWN_TRANSFERS_NAME,
-              BalanceType.PENDING,
-              totalOutgoingAmount.mul(-1)
-            );
-            this.incrementBalance(
-              report,
-              tokenInfo.symbol,
-              UNKNOWN_TRANSFERS_NAME,
-              BalanceType.NEXT,
-              netTransfersAmount
-            );
-          }
-        }
-
-        // We only add to the markdown message if there was any unknown transfer for any token on this current chain.
-        if (currentChainMrkdwn) {
-          currentChainMrkdwn = `*[${getNetworkName(chainId)}]*\n` + currentChainMrkdwn;
-          mrkdwn += currentChainMrkdwn + "\n\n";
-        }
-      }
-
-      if (mrkdwn) {
-        this.logger.info({
-          at: "Monitor#updateUnknownTransfers",
-          message: `Transfers that are not fills for relayer ${relayer} 🦨`,
-          mrkdwn,
-        });
-      }
-    }
-  }
-
-  categorizeUnknownTransfers(transfers: TokenTransfer[], excludeTransactionHashes: string[]): CategorizedTransfers {
-    // Exclude specified transaction hashes.
-    const allUnknownOutgoingTransfers = transfers.filter((transfer) => {
-      return !excludeTransactionHashes.includes(transfer.transactionHash);
-    });
-
-    const hubPoolAddress = this.clients.hubPoolClient.hubPool.address;
-    const v1 = [];
-    const other = [];
-    const bond = [];
-    const v1Addresses = this.monitorConfig.knownV1Addresses;
-    for (const transfer of allUnknownOutgoingTransfers) {
-      if (transfer.from === hubPoolAddress || transfer.to === hubPoolAddress) {
-        bond.push(transfer);
-      } else if (v1Addresses.includes(transfer.from) || v1Addresses.includes(transfer.to)) {
-        v1.push(transfer);
-      } else {
-        other.push(transfer);
-      }
-    }
-    return { bond, v1, other, all: allUnknownOutgoingTransfers };
-  }
-
-  formatCategorizedTransfers(transfers: CategorizedTransfers, decimals: number, chainId: number): string {
-    let mrkdwn = this.formatKnownTransfers(transfers.bond, decimals, "bond");
-    mrkdwn += this.formatKnownTransfers(transfers.v1, decimals, "v1");
-    mrkdwn += this.formatOtherTransfers(transfers.other, decimals, chainId);
-    return mrkdwn + "\n";
-  }
-
-  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string): string {
-    if (transfers.length === 0) {
-      return "";
-    }
-
-    const totalAmount = this.getTotalTransferAmount(transfers);
-    return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
-  }
-
-  formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number): string {
-    if (transfers.length === 0) {
-      return "";
-    }
-
-    const totalAmount = this.getTotalTransferAmount(transfers);
-    let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
-    const transactionHashes = [...new Set(transfers.map((transfer) => transfer.transactionHash))];
-    mrkdwn += blockExplorerLinks(transactionHashes, chainId);
-    return mrkdwn;
   }
 
   getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {

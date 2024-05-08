@@ -2,8 +2,10 @@ import { utils as ethersUtils } from "ethers";
 import { typeguards } from "@across-protocol/sdk-v2";
 import {
   BigNumber,
+  bnUint256Max,
   toBNWei,
   assert,
+  getNetworkName,
   isDefined,
   readFileSync,
   toBN,
@@ -14,6 +16,11 @@ import {
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
+
+type DepositConfirmationConfig = {
+  usdThreshold: BigNumber;
+  minConfirmations: number;
+};
 
 export class RelayerConfig extends CommonConfig {
   readonly externalIndexer: boolean;
@@ -40,7 +47,7 @@ export class RelayerConfig extends CommonConfig {
   readonly slowDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
-    [threshold: number]: { [chainId: number]: number };
+    [chainId: number]: DepositConfirmationConfig[];
   };
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
@@ -203,20 +210,45 @@ export class RelayerConfig extends CommonConfig {
     this.skipRebalancing = SKIP_REBALANCING === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
-    (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
+
+    const minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
-      : Constants.MIN_DEPOSIT_CONFIRMATIONS),
-      Object.keys(this.minDepositConfirmations).forEach((threshold) => {
-        Object.keys(this.minDepositConfirmations[threshold]).forEach((chainId) => {
-          const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
+      : Constants.MIN_DEPOSIT_CONFIRMATIONS;
+
+    // Transform deposit confirmation requirements into an array of ascending
+    // deposit confirmations, sorted by the corresponding threshold in USD.
+    this.minDepositConfirmations = {};
+    Object.keys(minDepositConfirmations)
+      .map((_threshold) => {
+        const threshold = Number(_threshold);
+        assert(!isNaN(threshold) && threshold >= 0, `Invalid deposit confirmation threshold (${_threshold})`);
+        return Number(threshold);
+      })
+      .sort((x, y) => x - y)
+      .forEach((usdThreshold) => {
+        const config = minDepositConfirmations[usdThreshold];
+
+        Object.entries(config).forEach(([chainId, _minConfirmations]) => {
+          const minConfirmations = Number(_minConfirmations);
           assert(
-            !isNaN(nBlocks) && nBlocks >= 0,
-            `Chain ${chainId} minimum deposit confirmations for "${threshold}" threshold missing or invalid (${nBlocks}).`
+            !isNaN(minConfirmations) && minConfirmations >= 0,
+            `${getNetworkName(chainId)} deposit confirmations for` +
+              ` ${usdThreshold} threshold missing or invalid (${_minConfirmations}).`
           );
+
+          this.minDepositConfirmations[chainId] ??= [];
+          this.minDepositConfirmations[chainId].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
         });
       });
-    // Force default thresholds in MDC config.
-    this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
+
+    // Append default thresholds as a safe upper-bound.
+    Object.keys(this.minDepositConfirmations).forEach((chainId) =>
+      this.minDepositConfirmations[chainId].push({
+        usdThreshold: bnUint256Max,
+        minConfirmations: Number.MAX_SAFE_INTEGER,
+      })
+    );
+
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
   }
 }

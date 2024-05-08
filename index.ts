@@ -1,12 +1,12 @@
 import minimist from "minimist";
-import { config, delay, exit, retrieveSignerFromCLIArgs, help, Logger, usage, winston } from "./src/utils";
+import { config, delay, exit, retrieveSignerFromCLIArgs, help, Logger, usage, waitForLogger } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 
-let logger: winston.Logger;
+let logger: typeof Logger;
 let cmd: string;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
@@ -70,7 +70,10 @@ if (require.main === module) {
         args,
         notificationPath: "across-error",
       });
-      await delay(5); // Wait for transports to flush. May or may not be necessary.
     })
-    .finally(() => exit(exitCode));
+    .finally(async () => {
+      await waitForLogger(logger);
+      await delay(5); // Wait 5s for logger to flush.
+      exit(exitCode);
+    });
 }
