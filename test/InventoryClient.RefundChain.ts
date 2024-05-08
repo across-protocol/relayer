@@ -13,6 +13,7 @@ import {
   toBNWei,
   toWei,
   winston,
+  spyLogIncludes,
 } from "./utils";
 
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
@@ -363,7 +364,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         POLYGON,
         MAINNET,
       ]);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111940298507462686"')).to.be.true;
+      expect(spyLogIncludes(spy, -2, 'expectedPostRelayAllocation":"111940298507462686"')).to.be.true;
     });
     it("Origin chain allocation does not depend on subtracting from numerator", async function () {
       // Post relay allocation does not subtract anything from chain virtual balance, unlike
