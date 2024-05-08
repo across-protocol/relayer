@@ -144,12 +144,12 @@ export class InventoryClient {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
       // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
       if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
-        distribution[chainId] ??= {};
 
         if (cumulativeBalance.eq(bnZero)) {
           return;
         }
 
+        distribution[chainId] ??= {};
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
           // The effective balance is the current balance + inbound bridge transfers.
