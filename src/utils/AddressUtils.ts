@@ -16,6 +16,9 @@ export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0
 }
 
 export function compareAddressesSimple(addressA: string, addressB: string): boolean {
+  if (addressA === undefined || addressB === undefined) {
+    return false;
+  }
   return addressA.toLowerCase() === addressB.toLowerCase();
 }
 
@@ -48,6 +51,8 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
 
 /**
  * Resolves a list of token symbols for a list of token addresses and a chain ID.
+ * @dev This function is dangerous because multiple token addresses can map to the same token symbol
+ * so the output can be unexpected.
  * @param tokenAddresses The token addresses to resolve the symbols for.
  * @param chainId The chain ID to resolve the symbols for.
  * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.

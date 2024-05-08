@@ -13,7 +13,6 @@ import {
 } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
-  CONTRACT_ADDRESSES,
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
@@ -119,18 +118,13 @@ export async function constructRelayerClients(
     );
   }
 
-  // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
-  // destination chain list.
-  const destinationSpokePoolClients =
-    config.relayerDestinationChains.length === 0
-      ? spokePoolClients
-      : Object.fromEntries(
-          Object.keys(spokePoolClients)
-            .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
-            .map((chainId) => [chainId, spokePoolClients[chainId]])
-        );
+  // Determine which origin chains to query limits for.
+  const srcChainIds =
+    config.relayerOriginChains.length > 0
+      ? config.relayerOriginChains
+      : Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, srcChainIds, config.relayerTokens);
 
-  const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, destinationSpokePoolClients, config.relayerTokens);
   const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
@@ -153,10 +147,7 @@ export async function constructRelayerClients(
   );
   await profitClient.update();
 
-  // The relayer will originate cross chain rebalances from both its own EOA address and the atomic depositor address
-  // so we should track both for accurate cross-chain inventory management.
-  const atomicDepositor = CONTRACT_ADDRESSES[hubPoolClient.chainId]?.atomicDepositor;
-  const monitoredAddresses = [signerAddr, atomicDepositor?.address];
+  const monitoredAddresses = [signerAddr];
   const adapterManager = new AdapterManager(
     logger,
     spokePoolClients,
@@ -207,7 +198,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
     "FilledV3Relay",
-    "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
   ]);
@@ -221,13 +211,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),
+    config.sendingRelaysEnabled ? clients.tokenClient.setOriginTokenApprovals() : Promise.resolve(),
   ]);
-
-  // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
-  // The token client needs route data, so wait for update before checking approvals.
-  clients.tokenClient.clearTokenData();
-  await clients.tokenClient.update();
-  if (config.sendingRelaysEnabled) {
-    await clients.tokenClient.setOriginTokenApprovals();
-  }
 }

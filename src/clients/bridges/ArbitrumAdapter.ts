@@ -8,7 +8,6 @@ import {
   BigNumberish,
   isDefined,
   TransactionResponse,
-  resolveTokenSymbols,
   toBN,
   toWei,
   paginatedEventQuery,
@@ -18,9 +17,9 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
-import { BaseAdapter } from "./BaseAdapter";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { CCTPAdapter } from "./CCTPAdapter";
 
 // TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
@@ -34,6 +33,7 @@ const l1Gateways = {
   [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BADGER
   [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BAL
   [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // ACX
+  [TOKEN_SYMBOLS_MAP.POOL.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // POOL
 } as const;
 
 const l2Gateways = {
@@ -46,6 +46,7 @@ const l2Gateways = {
   [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BADGER
   [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BAL
   [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // ACX
+  [TOKEN_SYMBOLS_MAP.POOL.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // POOL
 } as const;
 
 type SupportedL1Token = string;
@@ -53,7 +54,7 @@ type SupportedL1Token = string;
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
 // wont get stuck.
 
-export class ArbitrumAdapter extends BaseAdapter {
+export class ArbitrumAdapter extends CCTPAdapter {
   l2GasPrice: BigNumber = toBN(20e9);
   l2GasLimit: BigNumber = toBN(150000);
   // abi.encoding of the maxL2Submission cost. of 0.01e18
@@ -66,16 +67,18 @@ export class ArbitrumAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      42161,
-      monitoredAddresses,
-      logger,
-      resolveTokenSymbols(
-        Array.from(new Set([...Object.keys(l1Gateways), ...Object.keys(l2Gateways)])),
-        BaseAdapter.HUB_CHAIN_ID
-      )
-    );
+    super(spokePoolClients, 42161, monitoredAddresses, logger, [
+      "USDC",
+      "USDT",
+      "WETH",
+      "DAI",
+      "WBTC",
+      "UMA",
+      "BADGER",
+      "BAL",
+      "ACX",
+      "POOL",
+    ]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -84,13 +87,17 @@ export class ArbitrumAdapter extends BaseAdapter {
     // Skip the token if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
-    const availableL1Tokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
 
     const promises: Promise<Event[]>[] = [];
-    const validTokens: string[] = [];
+    const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of availableL1Tokens) {
+        if (this.isL1TokenUsdc(l1Token)) {
+          cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
+        }
+
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
 
@@ -105,20 +112,25 @@ export class ArbitrumAdapter extends BaseAdapter {
           paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...l1SearchFilter), l1SearchConfig),
           paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig)
         );
-        validTokens.push(l1Token);
       }
     }
 
-    const results = await Promise.all(promises);
+    const [results, resolvedCCTPEvents] = await Promise.all([
+      Promise.all(promises),
+      Promise.all(this.monitoredAddresses.map((monitoredAddress) => cctpOutstandingTransfersPromise[monitoredAddress])),
+    ]);
+    const resultingCCTPEvents: Record<string, SortableEvent[]> = Object.fromEntries(
+      this.monitoredAddresses.map((monitoredAddress, idx) => [monitoredAddress, resolvedCCTPEvents[idx]])
+    );
 
     // 2 events per token.
-    const numEventsPerMonitoredAddress = 2 * validTokens.length;
+    const numEventsPerMonitoredAddress = 2 * availableL1Tokens.length;
 
     // Segregate the events list by monitored address.
     const resultsByMonitoredAddress = Object.fromEntries(
       this.monitoredAddresses.map((monitoredAddress, index) => {
         const start = index * numEventsPerMonitoredAddress;
-        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress)];
       })
     );
 
@@ -128,7 +140,11 @@ export class ArbitrumAdapter extends BaseAdapter {
       // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents and
       // l2DepositFinalizedEvents state from the BaseAdapter.
       eventsToProcess.forEach((result, index) => {
-        const l1Token = validTokens[Math.floor(index / 2)];
+        if (eventsToProcess.length === 0) {
+          return;
+        }
+        assert(eventsToProcess.length % 2 === 0, "Events list length should be even");
+        const l1Token = availableL1Tokens[Math.floor(index / 2)];
         // l1Token is not an indexed field on Aribtrum gateway's deposit events, so these events are for all tokens.
         // Therefore, we need to filter unrelated deposits of other tokens.
         const filteredEvents = result.filter((event) => spreadEvent(event.args)["l1Token"] === l1Token);
@@ -147,55 +163,79 @@ export class ArbitrumAdapter extends BaseAdapter {
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
         assign(eventsStorage, [monitoredAddress, l1Token], events);
       });
+      if (isDefined(resultingCCTPEvents[monitoredAddress])) {
+        assign(
+          this.l1DepositInitiatedEvents,
+          [monitoredAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]],
+          resultingCCTPEvents[monitoredAddress]
+        );
+      }
     }
 
-    return this.computeOutstandingCrossChainTransfers(validTokens);
+    return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+    const l1TokenListToApprove = [];
+
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
     const associatedL1Bridges = l1Tokens
-      .map((l1Token) => {
+      .flatMap((l1Token) => {
         if (!this.isSupportedToken(l1Token)) {
-          return null;
+          return [];
         }
-        return this.getL1Bridge(l1Token).address;
+        const bridgeAddresses: string[] = [];
+        if (this.isL1TokenUsdc(l1Token)) {
+          bridgeAddresses.push(this.getL1CCTPTokenMessengerBridge().address);
+        }
+        bridgeAddresses.push(this.getL1Bridge(l1Token).address);
+
+        // Push the l1 token to the list of tokens to approve N times, where N is the number of bridges.
+        // I.e. the arrays have to be parallel.
+        l1TokenListToApprove.push(...Array(bridgeAddresses.length).fill(l1Token));
+
+        return bridgeAddresses;
       })
       .filter(isDefined);
-    await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(address, l1TokenListToApprove, associatedL1Bridges);
   }
 
-  async sendTokenToTargetChain(
+  sendTokenToTargetChain(
     address: string,
     l1Token: string,
     l2Token: string,
     amount: BigNumber,
     simMode = false
   ): Promise<TransactionResponse> {
-    const args = [
-      l1Token, // token
-      address, // to
-      amount, // amount
-      this.l2GasLimit, // maxGas
-      this.l2GasPrice, // gasPriceBid
-      this.transactionSubmissionData, // data
-    ];
-    // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
-    // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
-    const gasMultiplier = 1.2;
-    return await this._sendTokenToTargetChain(
-      l1Token,
-      l2Token,
-      amount,
-      this.getL1GatewayRouter(),
-      "outboundTransfer",
-      args,
-      gasMultiplier,
-      this.l1SubmitValue,
-      simMode
-    );
+    // If both the L1 & L2 tokens are native USDC, we use the CCTP bridge.
+    if (this.isL1TokenUsdc(l1Token) && this.isL2TokenUsdc(l2Token)) {
+      return this.sendCctpTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    } else {
+      const args = [
+        l1Token, // token
+        address, // to
+        amount, // amount
+        this.l2GasLimit, // maxGas
+        this.l2GasPrice, // gasPriceBid
+        this.transactionSubmissionData, // data
+      ];
+      // Pad gas for deposits to Arbitrum to account for under-estimation in Geth. Offchain Labs confirm that this is
+      // due to their use of BASEFEE to trigger conditional logic. https://github.com/ethereum/go-ethereum/pull/28470.
+      const gasMultiplier = 1.2;
+      return this._sendTokenToTargetChain(
+        l1Token,
+        l2Token,
+        amount,
+        this.getL1GatewayRouter(),
+        "outboundTransfer",
+        args,
+        gasMultiplier,
+        this.l1SubmitValue,
+        simMode
+      );
+    }
   }
 
   // The arbitrum relayer expects to receive ETH steadily per HubPool bundle processed, since it is the L2 refund

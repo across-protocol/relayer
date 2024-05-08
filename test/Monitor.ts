@@ -11,18 +11,13 @@ import { CrossChainTransferClient } from "../src/clients/bridges";
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { BalanceType, V3DepositWithBlock } from "../src/interfaces";
-import {
-  ALL_CHAINS_NAME,
-  Monitor,
-  REBALANCE_FINALIZE_GRACE_PERIOD,
-  UNKNOWN_TRANSFERS_NAME,
-} from "../src/monitor/Monitor";
+import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { MAX_UINT_VAL, getNetworkName, toBN } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { MockAdapterManager } from "./mocks";
+import { MockAdapterManager, SimpleMockHubPoolClient } from "./mocks";
 import {
   BigNumber,
   Contract,
@@ -79,6 +74,8 @@ describe("Monitor", async function () {
   };
 
   beforeEach(async function () {
+    let _hubPoolClient: HubPoolClient;
+    let _updateAllClients: () => Promise<void>;
     ({
       configStoreClient,
       hubPool,
@@ -90,16 +87,33 @@ describe("Monitor", async function () {
       l1Token_1: l1Token,
       spokePool_1,
       spokePool_2,
-      hubPoolClient,
+      hubPoolClient: _hubPoolClient,
       spokePoolClients,
       multiCallerClient,
-      updateAllClients,
+      updateAllClients: _updateAllClients,
     } = await setupDataworker(
       ethers,
       constants.MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       0
     ));
+
+    // Use a mock hub pool client for these tests so we can hardcode the L1TokenInfo for arbitrary tokens.
+    hubPoolClient = new SimpleMockHubPoolClient(
+      spyLogger,
+      hubPool,
+      configStoreClient,
+      _hubPoolClient.deploymentBlock,
+      _hubPoolClient.chainId
+    );
+    updateAllClients = async () => {
+      await _updateAllClients();
+      await hubPoolClient.update();
+    };
+
+    [l2Token.address, erc20_2.address, l1Token.address].forEach((token) =>
+      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(token, "L1Token1")
+    );
 
     defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
@@ -353,20 +367,6 @@ describe("Monitor", async function () {
     expect(lastSpyLogIncludes(spy, "Unfilled deposits ⏱")).to.be.true;
     const log = spy.lastCall;
     expect(log.lastArg.mrkdwn).to.contains("100.00");
-  });
-
-  it("Monitor should report unknown transfers", async function () {
-    await l2Token.connect(depositor).transfer(dataworker.address, 1);
-
-    await monitorInstance.update();
-    const reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      [UNKNOWN_TRANSFERS_NAME]
-    );
-    monitorInstance.updateUnknownTransfers(reports);
-
-    expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
 
   it("Monitor should send token refills", async function () {

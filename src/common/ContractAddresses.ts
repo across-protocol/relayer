@@ -37,6 +37,25 @@ const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  {
+    inputs: [
+      {
+        internalType: "bytes32",
+        name: "",
+        type: "bytes32",
+      },
+    ],
+    name: "usedNonces",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
 ];
 
 export const CCTP_TOKEN_MESSENGER_CONTRACT_ABI = [
@@ -964,6 +983,22 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    hubPool: {
+      address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: false, internalType: "address", name: "l1Token", type: "address" },
+            { indexed: false, internalType: "address", name: "l2Token", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+            { indexed: false, internalType: "address", name: "to", type: "address" },
+          ],
+          name: "TokensRelayed",
+          type: "event",
+        },
+      ],
+    },
   },
   10: {
     daiOptimismBridge: {
@@ -1045,6 +1080,25 @@ export const CONTRACT_ADDRESSES: {
           payable: false,
           stateMutability: "view",
           type: "function",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "dst",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "wad",
+              type: "uint256",
+            },
+          ],
+          name: "Deposit",
+          type: "event",
         },
       ],
     },
@@ -1130,6 +1184,18 @@ export const CONTRACT_ADDRESSES: {
     },
     weth: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "_to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+          ],
+          name: "Transfer",
+          type: "event",
+        },
+      ],
     },
   },
   8453: {
@@ -1180,6 +1246,25 @@ export const CONTRACT_ADDRESSES: {
           payable: false,
           stateMutability: "view",
           type: "function",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "dst",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "wad",
+              type: "uint256",
+            },
+          ],
+          name: "Deposit",
+          type: "event",
         },
       ],
     },

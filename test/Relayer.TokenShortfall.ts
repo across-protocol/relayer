@@ -18,7 +18,7 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import { MockInventoryClient, MockProfitClient } from "./mocks";
+import { MockInventoryClient, MockProfitClient, SimpleMockHubPoolClient } from "./mocks";
 import { MockCrossChainTransferClient } from "./mocks/MockCrossChainTransferClient";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
@@ -108,7 +108,8 @@ describe("Relayer: Token balance shortfall", async function () {
     configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
+
     await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
@@ -133,6 +134,7 @@ describe("Relayer: Token balance shortfall", async function () {
       await profitClient.initToken(erc20);
     }
 
+    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -154,7 +156,7 @@ describe("Relayer: Token balance shortfall", async function () {
           null,
           new MockCrossChainTransferClient()
         ),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
       },
       {
         relayerTokens: [],
@@ -181,6 +183,8 @@ describe("Relayer: Token balance shortfall", async function () {
 
     inputToken = erc20_1.address;
     outputToken = erc20_2.address;
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol());
     inputTokenDecimals = await erc20_1.decimals();
 
     // Standard deposit outputAmount is 100 tokens. Work backwards to inputAmount to simplify the shortfall math.
