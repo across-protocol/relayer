@@ -222,7 +222,7 @@ export abstract class BaseAdapter {
 
         // We want to iterate over the deposit events that have been initiated. We'll then match them with the
         // finalization events to determine which deposits are still outstanding.
-        for (const l2Token of Object.keys(this.l1DepositInitiatedEvents[monitoredAddress][l1Token] ?? {})) {
+        for (const l2Token of Object.keys(this.l1DepositInitiatedEvents[monitoredAddress][l1Token])) {
           this.l2DepositFinalizedEvents[monitoredAddress][l1Token][l2Token] ??= [];
           const l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token][l2Token];
 
