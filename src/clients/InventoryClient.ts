@@ -124,20 +124,6 @@ export class InventoryClient {
     return distributionPerL1Token;
   }
 
-  // Get the balance of a given token on a given chain, including shortfalls and any pending cross chain transfers.
-  getCurrentAllocationPct(l1Token: string, chainId: number): BigNumber {
-    // If there is nothing over all chains, return early.
-    const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    if (cumulativeBalance.eq(bnZero)) {
-      return bnZero;
-    }
-
-    const shortfall = this.getTokenShortFall(l1Token, chainId);
-    const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
-    // Multiply by scalar to avoid rounding errors.
-    return currentBalance.mul(this.scalar).div(cumulativeBalance);
-  }
-
   // Find how short a given chain is for a desired L1Token.
   getTokenShortFall(l1Token: string, chainId: number): BigNumber {
     return this.tokenClient.getShortfallTotalRequirement(chainId, this.getDestinationTokenForL1Token(l1Token, chainId));
@@ -628,7 +614,33 @@ export class InventoryClient {
           continue;
         }
 
-        const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId);
+        // Unlike the computation performed when determining which chain to take repayment for a fill on, when
+        // deciding when to rebalance inventory we do not account for upcoming refunds. This is for a couple reasons:
+        // 1) Inventory rebalances act quickly on shifting L1 inventory to L2s. Relayer repayments act slowly;
+        //    getting repaid on a chain will not move the relayer's balance around until the next bundle proposed
+        //    containing the repayment is executed, which can take several hours. Therefore, choosing repayment chain
+        //    choice affects future balance and to get a better picture of future balance we need to consider
+        //    other upcoming refunds. Conversely, rebalancing inventory is designed to meet a current dislocation.
+        // 2) Related to the above point on short-term versus long-term dislocations, one of the rebalancer's goals
+        //    is to make sure that all token "shortfalls" are covered quickly. Shortfalls are created when there is a
+        //    a deposit to a chain where the relayer doesn't have enough inventory to fill the deposit. If we blindly
+        //    added upcoming refunds to a relayer's balance, then we might inadvertently dissuade the relayer from
+        //    rebalancing to the chain where the shortfall is. Therefore, accounting for upcoming refunds in the
+        //    rebalancer needs to be done in such a way that all shortfalls are addressed first before considering
+        //    future relayer refunds. This is definitely feasible to implement and is not a major obstacle, it is just
+        //    a consideration.
+        //
+        // The downside of not accounting for upcoming refunds is that there is always the possibility that a
+        // large refund is executed very shortly after a rebalance to the L2 is executed,causing the relayer's
+        // inventory allocation to that chain to get much larger than it was supposed to.
+        // However, even these dislocations will get addressed by the relayer choosing where to take repayments. So,
+        // as long as the relayer is accounting for upcoming refunds when selecting repayment chains, the inventory
+        // dislocations will correct themselves over time.
+        const shortfall = this.getTokenShortFall(l1Token, chainId);
+        const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
+        // @dev multiply by scalar to avoid rounding errors.
+        // @dev cumulativeBalance can't be 0 here because we exit above.
+        const currentAllocPct = currentBalance.mul(this.scalar).div(cumulativeBalance);
         const { thresholdPct, targetPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
         if (currentAllocPct.lt(thresholdPct)) {
           const deltaPct = targetPct.sub(currentAllocPct);

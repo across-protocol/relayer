@@ -167,9 +167,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(withdrawAmount)).to.be.true;
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
-    const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM).eq(expectedAlloc)).to.be.true;
-
     // Execute rebalance. Check logs and enqueued transaction in Adapter manager. Given the total amount over all chains
     // and the amount still on arbitrum we would expect the module to instruct the relayer to send over:
     // (0.05 + 0.02) * (14000 - 500) - 500 = 445. Note the -500 component is there as arbitrum already has 500. our left
@@ -291,9 +288,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM])).to.equal(withdrawAmount);
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
-    const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM)).to.equal(expectedAlloc);
-
     // Set USDC balance to be lower than expected.
     mainnetUsdcContract.balanceOf
       .whenCalledWith(owner.address)
