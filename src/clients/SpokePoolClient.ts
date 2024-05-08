@@ -220,6 +220,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       searchEndBlock: this.pendingBlockNumber,
       events,
       hasCCTPBridgingEnabled: false, // @todo: Update indexer to query this.
+
     };
   }
 }
