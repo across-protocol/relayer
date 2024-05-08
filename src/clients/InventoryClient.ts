@@ -144,7 +144,6 @@ export class InventoryClient {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
       // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
       if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
-
         if (cumulativeBalance.eq(bnZero)) {
           return;
         }
