@@ -348,20 +348,26 @@ export class ProfitClient {
 
     // Unlike the input token, output token is not always resolvable via HubPoolClient since outputToken
     // can be any arbitrary token.
-    let outputTokenInfo: L1Token;
+    let outputTokenSymbol: string, outputTokenDecimals: number;
     // If the output token and the input token are equivalent, then we can look up the token info
     // via the HubPoolClient since the output token is mapped via PoolRebalanceRoute to the HubPool.
     // If not, then we should look up outputToken in the TOKEN_SYMBOLS_MAP for the destination chain.
     const matchingTokens =
       TOKEN_SYMBOLS_MAP[inputTokenInfo.symbol]?.addresses[deposit.destinationChainId] === deposit.outputToken;
     if (matchingTokens) {
-      outputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
+      ({ symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getL1TokenInfoForL2Token(
+        deposit.outputToken,
+        deposit.destinationChainId
+      ));
     } else {
       // This function will throw if the token is not found in the TOKEN_SYMBOLS_MAP for the destination chain.
-      outputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
+      ({ symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getTokenInfoForAddress(
+        deposit.outputToken,
+        deposit.destinationChainId
+      ));
     }
-    const outputTokenPriceUsd = this.getPriceOfToken(outputTokenInfo.symbol);
-    const outputTokenScalar = toBNWei(1, 18 - outputTokenInfo.decimals);
+    const outputTokenPriceUsd = this.getPriceOfToken(outputTokenSymbol);
+    const outputTokenScalar = toBNWei(1, 18 - outputTokenDecimals);
     const effectiveOutputAmount = min(deposit.outputAmount, deposit.updatedOutputAmount ?? deposit.outputAmount);
     const scaledOutputAmount = effectiveOutputAmount.mul(outputTokenScalar);
     const outputAmountUsd = scaledOutputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
