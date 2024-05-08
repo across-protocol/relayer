@@ -419,7 +419,7 @@ export class ProfitClient {
   }
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
-  getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
+  getFillAmountInUsd(deposit: Deposit, fillAmount = deposit.outputAmount): BigNumber {
     const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     if (!l1TokenInfo) {
       const { inputToken } = deposit;

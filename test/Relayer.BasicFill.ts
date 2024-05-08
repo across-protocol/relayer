@@ -1,7 +1,7 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnOne, getNetworkName, getUnfilledDeposits } from "../src/utils";
+import { bnOne, bnUint256Max, getNetworkName, getUnfilledDeposits } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -40,6 +40,7 @@ import {
 } from "./utils";
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
+  const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
   const { EMPTY_MESSAGE } = constants;
   const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 
@@ -409,7 +410,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         {
           relayerTokens: [],
           minDepositConfirmations: {
-            default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
+            [originChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 3 }],
           },
           sendingRelaysEnabled: true,
         } as unknown as RelayerConfig
@@ -418,7 +419,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await updateAllClients();
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
-      expect(lastSpyLogIncludes(spy, "due to insufficient deposit confirmations")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "due to insufficient deposit confirmations.")).to.be.true;
+      expect(lastSpyLogIncludes(spy, "0 unfilled deposits found.")).to.be.true;
     });
 
     it("Ignores deposits with quote times in future", async function () {
@@ -485,11 +487,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
-      const [origin, destination] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       expect(
         spy
           .getCalls()
-          .find(({ lastArg }) => lastArg.message.includes(`Ignoring ${origin} deposit destined for ${destination}.`))
+          .find(({ lastArg }) => lastArg.message.includes(`Ignoring ${srcChain} deposit destined for ${dstChain}.`))
       ).to.not.be.undefined;
     });
 

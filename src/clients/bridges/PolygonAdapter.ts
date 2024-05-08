@@ -8,7 +8,6 @@ import {
   isDefined,
   BigNumberish,
   TransactionResponse,
-  resolveTokenSymbols,
   ZERO_ADDRESS,
   spreadEventWithBlockNumber,
   paginatedEventQuery,
@@ -18,7 +17,6 @@ import {
   assert,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
-import { BaseAdapter } from "./";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { CCTPAdapter } from "./CCTPAdapter";
@@ -119,13 +117,19 @@ export class PolygonAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(
-      spokePoolClients,
-      137,
-      monitoredAddresses,
-      logger,
-      resolveTokenSymbols(Object.keys(tokenToBridge), BaseAdapter.HUB_CHAIN_ID)
-    );
+    super(spokePoolClients, 137, monitoredAddresses, logger, [
+      "USDC",
+      "USDT",
+      "WETH",
+      "DAI",
+      "WBTC",
+      "UMA",
+      "BAL",
+      "ACX",
+      "BADGER",
+      "POOL",
+      "MATIC",
+    ]);
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
@@ -135,7 +139,7 @@ export class PolygonAdapter extends CCTPAdapter {
     // Skip the tokens if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
-    const availableTokens = l1Tokens.filter(this.isSupportedToken.bind(this));
+    const availableTokens = this.filterSupportedTokens(l1Tokens);
 
     const promises: Promise<Event[]>[] = [];
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
