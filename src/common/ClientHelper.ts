@@ -72,11 +72,9 @@ export async function resolveSpokePoolActivationBlock(
   const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
   const activationBlock = await getBlockForTimestamp(chainId, timestamp, blockFinder, redis, hints);
 
-  const day = 24 * 3600;
-  const minAge = 7 * day;
-  if (isDefined(redis) && getCurrentTime() - timestamp > minAge) {
-    const ttl = Math.round(30 * day - Math.random() * day); // ttl 29 - 30 days.
-    await redis.set(key, activationBlock.toString(), ttl);
+  const cacheAfter = 5 * 24 * 3600; // 5 days
+  if (isDefined(redis) && getCurrentTime() - timestamp > cacheAfter) {
+    await redis.set(key, activationBlock.toString());
   }
 
   return activationBlock;
