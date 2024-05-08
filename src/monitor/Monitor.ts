@@ -192,10 +192,10 @@ export class Monitor {
       const chainId = parseInt(chainIdStr);
       mrkdwn += `*Destination: ${getNetworkName(chainId)}*\n`;
       for (const tokenAddress of Object.keys(amountByToken)) {
-        const tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
+        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
         // Convert to number of tokens for readability.
-        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), tokenInfo.decimals);
-        mrkdwn += `${tokenInfo.symbol}: ${unfilledAmount}\n`;
+        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
+        mrkdwn += `${symbol}: ${unfilledAmount}\n`;
       }
     }
 
