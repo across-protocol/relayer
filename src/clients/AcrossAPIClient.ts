@@ -5,6 +5,7 @@ import {
   isDefined,
   winston,
   BigNumber,
+  getCurrentTime,
   getL2TokenAddresses,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
@@ -17,10 +18,13 @@ export interface DepositLimits {
   maxDeposit: BigNumber;
 }
 
+const API_UPDATE_RETENTION_TIME = 60; // seconds
+
 export class AcrossApiClient {
   private endpoint = "https://app.across.to/api";
   private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
+  private updatedAt = 0;
 
   public updatedLimits = false;
 
@@ -40,9 +44,11 @@ export class AcrossApiClient {
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
+    const now = getCurrentTime();
+    const updateAge = now - this.updatedAt;
     // If no chainIds are specified, the origin chain is assumed to be the HubPool chain, so skip update.
-    if (ignoreLimits || this.chainIds.length === 0) {
-      this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits" });
+    if (updateAge < API_UPDATE_RETENTION_TIME || ignoreLimits || this.chainIds.length === 0) {
+      this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits", updateAge });
       return;
     }
 
@@ -109,6 +115,7 @@ export class AcrossApiClient {
       limits: this.limits,
     });
     this.updatedLimits = true;
+    this.updatedAt = now;
   }
 
   getLimit(originChainId: number, l1Token: string): BigNumber {
