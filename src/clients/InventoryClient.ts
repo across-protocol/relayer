@@ -964,7 +964,7 @@ export class InventoryClient {
             this.relayer,
             chainId,
             l1Token,
-            l2Token,
+            l2Token
           );
           const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
 
