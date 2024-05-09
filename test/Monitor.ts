@@ -292,6 +292,7 @@ describe("Monitor", async function () {
     crossChainTransferClient.increaseOutstandingTransfer(
       depositor.address,
       l1Token.address,
+      l2Token.address,
       toBN(5),
       destinationChainId
     );
@@ -333,7 +334,8 @@ describe("Monitor", async function () {
       originChainId,
       spokePool_1.address,
       l1Token.address,
-      toBN(5)
+      toBN(5),
+      l2Token.address
     );
     await updateAllClients();
     await monitorInstance.update();

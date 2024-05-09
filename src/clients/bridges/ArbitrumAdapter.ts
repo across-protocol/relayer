@@ -161,12 +161,15 @@ export class ArbitrumAdapter extends CCTPAdapter {
           };
         });
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
-        assign(eventsStorage, [monitoredAddress, l1Token], events);
+        const l2Token = this.resolveL2TokenAddress(l1Token, false); // This codepath will never have native USDC - therefore we should pass `false`.
+        assign(eventsStorage, [monitoredAddress, l1Token, l2Token], events);
       });
       if (isDefined(resultingCCTPEvents[monitoredAddress])) {
+        const usdcL1Token = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
+        const usdcL2Token = this.resolveL2TokenAddress(usdcL1Token, true); // Must specifically be native USDC
         assign(
           this.l1DepositInitiatedEvents,
-          [monitoredAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]],
+          [monitoredAddress, usdcL1Token, usdcL2Token],
           resultingCCTPEvents[monitoredAddress]
         );
       }
