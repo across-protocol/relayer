@@ -30,9 +30,6 @@ import lodash from "lodash";
 import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-type TokenDistribution = { [l2Token: string]: BigNumber };
-type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
-
 export type Rebalance = {
   chainId: number;
   l1Token: string;
@@ -43,6 +40,14 @@ export type Rebalance = {
   balance: BigNumber;
   cumulativeBalance: BigNumber;
   amount: BigNumber;
+};
+
+type VirtualBalance = {
+  balance: BigNumber;
+  shortfall: BigNumber;
+  spotBalance: BigNumber;
+  outstandingTransferAmount: BigNumber;
+  upcomingRefunds: BigNumber;
 };
 
 const { CHAIN_IDs } = constants;
@@ -70,58 +75,66 @@ export class InventoryClient {
     this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
   }
+  /**
+   * @notice Get the total balance across all chains, considering any outstanding cross chain transfers, token
+   * shortfalls, optionally upcoming relayer refunds or other delta amounts.
+   * @dev Accounting for upcoming refunds makes this function run slower since it requires making
+   * async calls to other services to compute refunds.
+   * @return A virtual cumulative balance across all chains for an L1 token.
+   **/
+  async getVirtualBalancesForL1Token(
+    l1Token: string,
+    includeUpcomingRefunds: boolean
+  ): Promise<{ [chainId: number]: VirtualBalance }> {
+    let totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
+    if (includeUpcomingRefunds) {
+      totalRefundsPerChain = await this.getBundleRefunds(l1Token);
+    }
 
-  // Get the total balance across all chains, considering any outstanding cross chain transfers as a virtual balance on that chain.
-  getCumulativeBalance(l1Token: string): BigNumber {
-    return this.getEnabledChains()
-      .map((chainId) => this.getBalanceOnChainForL1Token(chainId, l1Token))
-      .reduce((acc, curr) => acc.add(curr), bnZero);
+    return Object.fromEntries(
+      this.getEnabledChains().map((chainId) => {
+        const virtualBalance = this.getBalanceOnChainForL1Token(chainId, l1Token, totalRefundsPerChain[chainId]);
+        return [chainId, virtualBalance];
+      })
+    );
   }
 
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
-  getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
+  getBalanceOnChainForL1Token(
+    chainId: number | string,
+    l1Token: string,
+    upcomingRefundsForChain: BigNumber = bnZero
+  ): VirtualBalance {
     // We want to skip any l2 token that is not present in the inventory config.
     chainId = Number(chainId);
     if (chainId !== this.hubPoolClient.chainId && !this._l1TokenEnabledForChain(l1Token, chainId)) {
       return bnZero;
     }
 
-    // If the chain does not have this token (EG BOBA on Optimism) then 0.
-    const balance =
+    // Start with current spot balance held on-chain.
+    const spotBalance =
       this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || bnZero;
 
-    // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
-    return balance.add(
-      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+    // Add any L1->L2 transfers that are currently pending in the canonical bridge.
+    const outstandingTransferAmount = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+      this.relayer,
+      chainId,
+      l1Token
     );
-  }
 
-  // Get the fraction of funds allocated on each chain.
-  getChainDistribution(l1Token: string): { [chainId: number]: TokenDistribution } {
-    const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    const distribution: { [chainId: number]: TokenDistribution } = {};
+    // Subtract token short fall.
+    const shortfall = this.getTokenShortFall(l1Token, chainId);
 
-    this.getEnabledChains().forEach((chainId) => {
-      // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
-      // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
-      if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
-        const l2Token = this.getDestinationTokenForL1Token(l1Token, chainId);
-        if (cumulativeBalance.gt(bnZero)) {
-          distribution[chainId] ??= {};
-          distribution[chainId][l2Token] = this.getBalanceOnChainForL1Token(chainId, l1Token)
-            .mul(this.scalar)
-            .div(cumulativeBalance);
-        }
-      }
-    });
-    return distribution;
-  }
+    // Add upcoming refunds.
+    const upcomingRefunds = upcomingRefundsForChain;
 
-  // Get the distribution of all tokens, spread over all chains.
-  getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
-    const distributionPerL1Token: TokenDistributionPerL1Token = {};
-    this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
-    return distributionPerL1Token;
+    return {
+      spotBalance,
+      outstandingTransferAmount,
+      shortfall,
+      upcomingRefunds,
+      balance: spotBalance.add(outstandingTransferAmount).sub(shortfall).add(upcomingRefunds),
+    };
   }
 
   // Find how short a given chain is for a desired L1Token.
@@ -196,7 +209,7 @@ export class InventoryClient {
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
-  async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
+  async getBundleRefunds(l1Token: string): Promise<{ [chainId: number]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
 
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
@@ -210,7 +223,7 @@ export class InventoryClient {
     }
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     const totalRefundsPerChain = this.getEnabledChains().reduce(
-      (refunds: { [chainId: string]: BigNumber }, chainId) => {
+      (refunds: { [chainId: number]: BigNumber }, chainId) => {
         if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           refunds[chainId] = toBN(0);
         } else {
@@ -325,11 +338,15 @@ export class InventoryClient {
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
     const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
 
-    // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
-    // time, return an object with zero refunds for all chains.
-    const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
-    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
-    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
+    // Accept the slowdown of accounting for upcoming refunds because repayments will not affect inventory
+    // until they are executed in the future so its important we are aware of other refunds that will perturb
+    // the inventory in the near-term future.
+    const considerUpcomingRefunds = true;
+    const virtualTokenBalances = await this.getVirtualBalancesForL1Token(l1Token, considerUpcomingRefunds);
+    const cumulativeVirtualBalance = Object.values(virtualTokenBalances).reduce(
+      (acc, { balance }) => acc.add(balance),
+      bnZero
+    );
 
     // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
     // getBundleRefunds async call. Therefore, we choose not to compute them in parallel.
@@ -378,33 +395,22 @@ export class InventoryClient {
     // highest priority to take repayment on, assuming the chain is under-allocated.
     for (const _chain of chainsToEvaluate) {
       assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
-      // Destination chain:
-      const chainShortfall = this.getTokenShortFall(l1Token, _chain);
-      const chainVirtualBalance = this.getBalanceOnChainForL1Token(_chain, l1Token);
-      const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-      let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+      const chainVirtualBalance = virtualTokenBalances[_chain].balance;
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
       // on destination chain
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
-      let chainVirtualBalanceWithShortfallPostRelay =
+      const chainVirtualBalancePostRelay =
         _chain === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
-          ? chainVirtualBalanceWithShortfall.sub(outputAmount)
-          : chainVirtualBalanceWithShortfall;
-      // Add upcoming refunds:
-      chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[_chain]
-      );
-      // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
-      // equivalents of l1Token on all chains.
-      cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
-      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
+          ? chainVirtualBalance.sub(outputAmount)
+          : chainVirtualBalance;
+      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalance.sub(outputAmount);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
-      const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
+      const expectedPostRelayAllocation = chainVirtualBalancePostRelay
         .mul(this.scalar)
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
@@ -423,12 +429,8 @@ export class InventoryClient {
           outputAmount,
           originChainId,
           destinationChainId,
-          chainShortfall,
           chainVirtualBalance,
-          chainVirtualBalanceWithShortfall,
-          chainVirtualBalanceWithShortfallPostRelay,
           cumulativeVirtualBalance,
-          cumulativeVirtualBalanceWithShortfall,
           cumulativeVirtualBalanceWithShortfallPostRelay,
           thresholdPct,
           expectedPostRelayAllocation,
@@ -597,12 +599,49 @@ export class InventoryClient {
     return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmount);
   }
 
-  getPossibleRebalances(): Rebalance[] {
+  async getPossibleRebalances(): Promise<Rebalance[]> {
     const rebalancesRequired: Rebalance[] = [];
+
+    // Unlike the computation performed when determining which chain to take repayment for a fill on, when
+    // deciding when to rebalance inventory we do not account for upcoming refunds. This is for a couple reasons:
+    // 1) Inventory rebalances act quickly on shifting L1 inventory to L2s. Relayer repayments act slowly;
+    //    getting repaid on a chain will not move the relayer's balance around until the next bundle proposed
+    //    containing the repayment is executed, which can take several hours. Therefore, choosing repayment chain
+    //    choice affects future balance and to get a better picture of future balance we need to consider
+    //    other upcoming refunds. Conversely, rebalancing inventory is designed to meet a current dislocation.
+    // 2) Related to the above point on short-term versus long-term dislocations, one of the rebalancer's goals
+    //    is to make sure that all token "shortfalls" are covered quickly. Shortfalls are created when there is a
+    //    a deposit to a chain where the relayer doesn't have enough inventory to fill the deposit. If we blindly
+    //    added upcoming refunds to a relayer's balance, then we might inadvertently dissuade the relayer from
+    //    rebalancing to the chain where the shortfall is. Therefore, accounting for upcoming refunds in the
+    //    rebalancer needs to be done in such a way that all shortfalls are addressed first before considering
+    //    future relayer refunds. This is definitely feasible to implement and is not a major obstacle, it is just
+    //    a consideration.
+    //
+    // The downside of not accounting for upcoming refunds is that there is always the possibility that a
+    // large refund is executed very shortly after a rebalance to the L2 is executed,causing the relayer's
+    // inventory allocation to that chain to get much larger than it was supposed to.
+    // However, even these dislocations will get addressed by the relayer choosing where to take repayments. So,
+    // as long as the relayer is accounting for upcoming refunds when selecting repayment chains, the inventory
+    // dislocations will correct themselves over time.
+    const computeUpcomingRefunds = false;
+    const virtualBalances: { [l1Token: string]: { [chainId: number]: VirtualBalance } } = Object.fromEntries(
+      await sdkUtils.mapAsync(this.getL1Tokens(), async (l1Token) => [
+        l1Token,
+        await this.getVirtualBalancesForL1Token(l1Token, computeUpcomingRefunds),
+      ])
+    );
+    this.log("Virtual balances for all L1 tokens not including upcoming refunds", {
+      virtualBalances,
+    });
 
     // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
     for (const l1Token of this.getL1Tokens()) {
-      const cumulativeBalance = this.getCumulativeBalance(l1Token);
+      const virtualBalanceForL1Token = virtualBalances[l1Token];
+      const cumulativeBalance = Object.values(virtualBalanceForL1Token).reduce(
+        (acc, { balance }) => acc.add(balance),
+        bnZero
+      );
       if (cumulativeBalance.eq(bnZero)) {
         continue;
       }
@@ -614,33 +653,10 @@ export class InventoryClient {
           continue;
         }
 
-        // Unlike the computation performed when determining which chain to take repayment for a fill on, when
-        // deciding when to rebalance inventory we do not account for upcoming refunds. This is for a couple reasons:
-        // 1) Inventory rebalances act quickly on shifting L1 inventory to L2s. Relayer repayments act slowly;
-        //    getting repaid on a chain will not move the relayer's balance around until the next bundle proposed
-        //    containing the repayment is executed, which can take several hours. Therefore, choosing repayment chain
-        //    choice affects future balance and to get a better picture of future balance we need to consider
-        //    other upcoming refunds. Conversely, rebalancing inventory is designed to meet a current dislocation.
-        // 2) Related to the above point on short-term versus long-term dislocations, one of the rebalancer's goals
-        //    is to make sure that all token "shortfalls" are covered quickly. Shortfalls are created when there is a
-        //    a deposit to a chain where the relayer doesn't have enough inventory to fill the deposit. If we blindly
-        //    added upcoming refunds to a relayer's balance, then we might inadvertently dissuade the relayer from
-        //    rebalancing to the chain where the shortfall is. Therefore, accounting for upcoming refunds in the
-        //    rebalancer needs to be done in such a way that all shortfalls are addressed first before considering
-        //    future relayer refunds. This is definitely feasible to implement and is not a major obstacle, it is just
-        //    a consideration.
-        //
-        // The downside of not accounting for upcoming refunds is that there is always the possibility that a
-        // large refund is executed very shortly after a rebalance to the L2 is executed,causing the relayer's
-        // inventory allocation to that chain to get much larger than it was supposed to.
-        // However, even these dislocations will get addressed by the relayer choosing where to take repayments. So,
-        // as long as the relayer is accounting for upcoming refunds when selecting repayment chains, the inventory
-        // dislocations will correct themselves over time.
-        const shortfall = this.getTokenShortFall(l1Token, chainId);
-        const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
+        const chainVirtualBalance = virtualBalanceForL1Token[chainId].balance;
         // @dev multiply by scalar to avoid rounding errors.
         // @dev cumulativeBalance can't be 0 here because we exit above.
-        const currentAllocPct = currentBalance.mul(this.scalar).div(cumulativeBalance);
+        const currentAllocPct = chainVirtualBalance.mul(this.scalar).div(cumulativeBalance);
         const { thresholdPct, targetPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
         if (currentAllocPct.lt(thresholdPct)) {
           const deltaPct = targetPct.sub(currentAllocPct);
@@ -677,10 +693,8 @@ export class InventoryClient {
       if (!this.isInventoryManagementEnabled()) {
         return;
       }
-      const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
-      this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
-      const rebalancesRequired = this.getPossibleRebalances();
+      const rebalancesRequired = await this.getPossibleRebalances();
       if (rebalancesRequired.length === 0) {
         this.log("No rebalances required");
         return;
@@ -776,21 +790,19 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances) {
+        for (const { l1Token, balance, cumulativeBalance, amount } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
           if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
           }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
-          const distributionPct = tokenDistributionPerL1Token[l1Token][chainId][l2Token].mul(100);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
             `${formatter(amount.toString())} but relayer has ` +
             `${formatter(balance.toString())} on L1. There is currently ` +
-            `${formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString())} ${symbol} on ` +
-            `${getNetworkName(chainId)} which is ` +
-            `${this.formatWei(distributionPct.toString())}% of the total ` +
+            `${formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).balance.toString())} ${symbol} on ` +
+            `${getNetworkName(chainId)} out of a total of ` +
             `${formatter(cumulativeBalance.toString())} ${symbol}.` +
             " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
@@ -934,61 +946,6 @@ export class InventoryClient {
         "error"
       );
     }
-  }
-
-  constructConsideringRebalanceDebugLog(distribution: TokenDistributionPerL1Token): void {
-    const logData: {
-      [symbol: string]: {
-        [chainId: number]: {
-          actualBalanceOnChain: string;
-          virtualBalanceOnChain: string;
-          outstandingTransfers: string;
-          tokenShortFalls: string;
-          proRataShare: string;
-        };
-      };
-    } = {};
-    const cumulativeBalances: { [symbol: string]: string } = {};
-    Object.entries(distribution).forEach(([l1Token, distributionForToken]) => {
-      const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
-      if (tokenInfo === undefined) {
-        throw new Error(
-          `InventoryClient::constructConsideringRebalanceDebugLog info not found for L1 token ${l1Token}`
-        );
-      }
-      const { symbol, decimals } = tokenInfo;
-      const formatter = createFormatFunction(2, 4, false, decimals);
-      cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(l1Token).toString());
-      logData[symbol] ??= {};
-
-      Object.keys(distributionForToken).forEach((_chainId) => {
-        const chainId = Number(_chainId);
-
-        Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
-          const balanceOnChain = this.getBalanceOnChainForL1Token(chainId, l1Token);
-          const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-            this.relayer,
-            chainId,
-            l1Token
-          );
-          const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
-
-          logData[symbol][chainId] = {
-            actualBalanceOnChain: formatter(actualBalanceOnChain.toString()),
-            virtualBalanceOnChain: formatter(balanceOnChain.toString()),
-            outstandingTransfers: formatter(transfers.toString()),
-            tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
-            proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
-          };
-        });
-      });
-    });
-
-    this.log("Considering rebalance", {
-      tokenDistribution: logData,
-      cumulativeBalances,
-      inventoryConfig: this.inventoryConfig,
-    });
   }
 
   async sendTokenCrossChain(
