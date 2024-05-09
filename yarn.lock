@@ -11,15 +11,20 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/constants-v2@1.0.22":
-  version "1.0.22"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants-v2/-/constants-v2-1.0.22.tgz#b3ca8c6a6276fa36c9ac5fbf17b9f57e4730fa63"
-  integrity sha512-j559oRNY5xNOo2YYb94cPS1sR6dSxKa2YE2rY8SAdagW11tc7aDflV3AAxmCRPyuI7WpB6w5IklBx0JvwNAO0w==
+"@across-protocol/constants-v2@1.0.24":
+  version "1.0.24"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants-v2/-/constants-v2-1.0.24.tgz#30b7dd898ff6d4848717fd6cf393a10f1f2f40b0"
+  integrity sha512-lDu6rMoTMUolGHwUnX/YkeMcIKB1avd6MnBcyfa4z5DkuF0HCo+7Mbviri2LXW0SOTg/pE26Dvfr1P+HmBUD9A==
 
 "@across-protocol/constants-v2@^1.0.19":
   version "1.0.20"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants-v2/-/constants-v2-1.0.20.tgz#d28fb3d3be8514db51c214d92bee954d15e5f06a"
   integrity sha512-DYb48kaAzv7t4/FVi4a5KYGNxJSG2rOY2mSznuWDI4n4mezM1wTTtQzK3un15tcwkTlIeO13CaDeABgR6jIVvg==
+
+"@across-protocol/constants-v2@^1.0.20":
+  version "1.0.23"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants-v2/-/constants-v2-1.0.23.tgz#271fca7e93104c4a7591615da08d920ccab43df1"
+  integrity sha512-46G5pftiGqdl6W2YFQDaRxv7hYx/GMW0EvMOgbVwyjUUEJbf4s5+NbUUl0QBdlIfR5gvrsS2Vbts94UkSwrmAA==
 
 "@across-protocol/contracts-v2@2.5.6":
   version "2.5.6"
@@ -50,13 +55,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.23.8":
-  version "0.23.8"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.23.8.tgz#55fcadda3fc1d2ccbe5d76b75a88cd1acf44921e"
-  integrity sha512-IN+nVmneclHDuyMnnBGA33JHjbq+oPfGNopiAl8ngs9rfCMHH0I3rDU2r4vXA0G08wwwjSiU+usfGVCRJKJY8A==
+"@across-protocol/sdk-v2@0.23.10":
+  version "0.23.10"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.23.10.tgz#1cd3a9afdc209e465e9e1e7cbeec6810c3bfb79d"
+  integrity sha512-d2a5QVf12+K5RmeHU7L6UZy482Z0lln5vNs/iuZizUb565v7LSaeq/xNVIJr4M8wEw+bJPxLY2AaT6H2tFtFrw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants-v2" "^1.0.19"
+    "@across-protocol/constants-v2" "^1.0.20"
     "@across-protocol/contracts-v2" "2.5.6"
     "@eth-optimism/sdk" "^3.2.2"
     "@pinata/sdk" "^2.1.0"

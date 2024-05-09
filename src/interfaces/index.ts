@@ -1,3 +1,4 @@
+import { BigNumber } from "ethers";
 import { interfaces } from "@across-protocol/sdk-v2";
 
 export * from "./InventoryManagement";
@@ -8,7 +9,16 @@ export * from "./Report";
 export * from "./Arweave";
 
 // Bridge interfaces
-export type OutstandingTransfers = interfaces.OutstandingTransfers;
+export interface OutstandingTransfers {
+  [address: string]: {
+    [l1Token: string]: {
+      [l2Token: string]: {
+        totalAmount: BigNumber;
+        depositTxHashes: string[];
+      };
+    };
+  };
+}
 
 // Common interfaces
 export type SortableEvent = interfaces.SortableEvent;

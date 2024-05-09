@@ -3,11 +3,10 @@ import winston from "winston";
 import { Result } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import * as utils from "../scripts/utils";
 import { IndexedSpokePoolClient } from "../src/clients";
 import { mangleEventArgs, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
 import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
-import { assertPromiseError, createSpyLogger, expect, randomAddress } from "./utils";
+import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
 type Block = providers.Block;
 type TransactionReceipt = providers.TransactionReceipt;
@@ -122,7 +121,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   beforeEach(async function () {
     ({ spyLogger: logger } = createSpyLogger());
-    spokePool = await utils.getSpokePoolContract(chainId);
+    ({ spokePool } = await deploySpokePoolWithToken(chainId, Number.MAX_SAFE_INTEGER.toString()));
     spokePoolClient = new MockIndexedSpokePoolClient(logger, spokePool, null, chainId, 0);
     depositId = 1;
     currentTime = Math.round(Date.now() / 1000);

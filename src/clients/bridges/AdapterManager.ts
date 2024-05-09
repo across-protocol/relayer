@@ -1,12 +1,19 @@
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter, BaseAdapter, ZKSyncAdapter } from "./";
+import {
+  OptimismAdapter,
+  ArbitrumAdapter,
+  PolygonAdapter,
+  BaseAdapter,
+  ZKSyncAdapter,
+  BaseChainAdapter,
+  LineaAdapter,
+} from "./";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { utils } from "@across-protocol/sdk-v2";
 import { CHAIN_IDs } from "@across-protocol/constants-v2";
-import { BaseChainAdapter } from "./op-stack/base/BaseChainAdapter";
 import { spokesThatHoldEthAndWeth } from "../../common/Constants";
-import { LineaAdapter } from "./LineaAdapter";
+
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
 
@@ -71,10 +78,7 @@ export class AdapterManager {
     return Object.keys(this.adapters).map((chainId) => Number(chainId));
   }
 
-  async getOutstandingCrossChainTokenTransferAmount(
-    chainId: number,
-    l1Tokens: string[]
-  ): Promise<OutstandingTransfers> {
+  getOutstandingCrossChainTokenTransferAmount(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
     const adapterSupportedL1Tokens = l1Tokens.filter((token) =>
@@ -86,10 +90,10 @@ export class AdapterManager {
       adapterSupportedL1Tokens,
       searchConfigs: adapter.getUpdatedSearchConfigs(),
     });
-    return await this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
+    return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 
-  async sendTokenCrossChain(
+  sendTokenCrossChain(
     address: string,
     chainId: number | string,
     l1Token: string,
@@ -100,7 +104,7 @@ export class AdapterManager {
     chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     l2Token ??= this.l2TokenForL1Token(l1Token, Number(chainId));
-    return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
