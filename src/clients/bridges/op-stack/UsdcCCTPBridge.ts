@@ -1,19 +1,18 @@
-import { BigNumber, Contract, Event, Signer } from "ethers";
+import { BigNumber, Contract, Signer } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../../common";
-import { BridgeTransactionDetails, OpStackBridge } from "./OpStackBridgeInterface";
+import { BridgeTransactionDetails, OpStackBridge, OpStackEvents } from "./OpStackBridgeInterface";
 import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP } from "../../../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../../utils/CCTPUtils";
 
-export class UsdcCCTPBridge implements OpStackBridge {
+export class UsdcCCTPBridge extends OpStackBridge {
   private readonly l1CctpTokenBridge: Contract;
   private readonly l2CctpMessageTransmitter: Contract;
 
-  constructor(
-    private l2chainId: number,
-    private hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider
-  ) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
+      CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address,
+    ]);
+
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger;
     this.l1CctpTokenBridge = new Contract(l1Address, l1Abi, l1Signer);
 
@@ -29,12 +28,9 @@ export class UsdcCCTPBridge implements OpStackBridge {
     return TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
   }
 
-  private get l2UsdcTokenAddress(): string {
+  protected resolveL2TokenAddress(l1Token: string): string {
+    l1Token;
     return TOKEN_SYMBOLS_MAP._USDC.addresses[this.l2chainId];
-  }
-
-  get l1Gateways(): string[] {
-    return [this.l1CctpTokenBridge.address];
   }
 
   constructL1ToL2Txn(
@@ -53,25 +49,27 @@ export class UsdcCCTPBridge implements OpStackBridge {
   }
 
   async queryL1BridgeInitiationEvents(
-    _l1Token: string,
+    l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<Event[]> {
-    return retrieveOutstandingCCTPBridgeUSDCTransfers(
-      this.l1CctpTokenBridge,
-      this.l2CctpMessageTransmitter,
-      eventConfig,
-      this.l1UsdcTokenAddress,
-      this.hubChainId,
-      this.l2chainId,
-      fromAddress
-    );
+  ): Promise<OpStackEvents> {
+    return {
+      [this.resolveL2TokenAddress(l1Token)]: await retrieveOutstandingCCTPBridgeUSDCTransfers(
+        this.l1CctpTokenBridge,
+        this.l2CctpMessageTransmitter,
+        eventConfig,
+        this.l1UsdcTokenAddress,
+        this.hubChainId,
+        this.l2chainId,
+        fromAddress
+      ),
+    };
   }
   queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<Event[]> {
+  ): Promise<OpStackEvents> {
     // Lint Appeasement
     l1Token;
     fromAddress;
@@ -80,6 +78,6 @@ export class UsdcCCTPBridge implements OpStackBridge {
     // Per the documentation of the BaseAdapter's computeOutstandingCrossChainTransfers method, we can return an empty array here
     // and only return the relevant outstanding events from queryL1BridgeInitiationEvents.
     // Relevant link: https://github.com/across-protocol/relayer-v2/blob/master/src/clients/bridges/BaseAdapter.ts#L189
-    return Promise.resolve([]);
+    return Promise.resolve({});
   }
 }
