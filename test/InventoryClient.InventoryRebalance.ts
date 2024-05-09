@@ -494,9 +494,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         // The mock adapter manager should have been called with the expected transaction.
         expect(adapterManager.tokensSentCrossChain[chainId][mainnetUsdc].amount.eq(expectedRebalance)).to.be.true;
 
-        // Now, mock these funds having entered the relevant bridge.
-        adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, expectedRebalance);
-
         await inventoryClient.update();
         await inventoryClient.rebalanceInventoryIfNeeded();
         expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
