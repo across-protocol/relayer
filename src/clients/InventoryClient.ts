@@ -130,9 +130,7 @@ export class InventoryClient {
       .map((l2Token) => tokenClient.getBalance(chainId, l2Token))
       .reduce((acc, curr) => acc.add(curr), bnZero);
 
-    return balance.add(
-      crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
-    );
+    return balance.add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token));
   }
 
   /**
