@@ -28,10 +28,7 @@ export class CrossChainTransferClient {
     }
 
     // No specific l2Token specified; return the sum of all l1Token transfers to chainId.
-    return Object.values(transfers)
-      .map(({ totalAmount }) => totalAmount)
-      .flat()
-      .reduce((acc, curr) => acc.add(curr), bnZero);
+    return Object.values(transfers).reduce((acc, { totalAmount }) => acc.add(totalAmount), bnZero);
   }
 
   getOutstandingCrossChainTransferTxs(
@@ -50,9 +47,7 @@ export class CrossChainTransferClient {
     }
 
     // No specific l2Token specified; return the set of all l1Token transfers to chainId.
-    return Object.values(transfers)
-      .map(({ depositTxHashes }) => depositTxHashes)
-      .flat();
+    return Object.values(transfers).flatMap(({ depositTxHashes }) => depositTxHashes);
   }
 
   getEnabledChains(): number[] {
