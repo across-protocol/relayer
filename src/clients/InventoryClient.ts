@@ -114,20 +114,24 @@ export class InventoryClient {
    * @returns Balance of l1Token on chainId.
    */
   getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
+    const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance: BigNumber;
+
+    // Return the balance for a specific l2 token on the remote chain.
     if (isDefined(l2Token)) {
-      balance = this.tokenClient.getBalance(chainId, l2Token);
-    } else {
-      const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
-      balance = l2Tokens
-        .map((l2Token) => this.tokenClient.getBalance(chainId, l2Token))
-        .reduce((acc, curr) => acc.add(curr), bnZero);
+      balance = tokenClient.getBalance(chainId, l2Token);
+      return balance.add(
+        crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
+      );
     }
 
-    // @todo: This will resolve all outstanding transfers for the L1 token, but it should be filtered for _only_
-    // transfers that apply to the specific L2 token. This needs to be fixed in the crossChainTransferClient
+    const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
+    balance = l2Tokens
+      .map((l2Token) => tokenClient.getBalance(chainId, l2Token))
+      .reduce((acc, curr) => acc.add(curr), bnZero);
+
     return balance.add(
-      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+      crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
     );
   }
 
