@@ -1,8 +1,16 @@
 import { Deposit, InventoryConfig } from "../../src/interfaces";
-import { BundleDataClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
+import {
+  BundleDataClient,
+  HubPoolClient,
+  InventoryClient,
+  Rebalance,
+  TokenClient,
+  VirtualBalance,
+} from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
 import { BigNumber } from "ethers";
 import winston from "winston";
+import { bnZero } from "../../src/utils";
 export class MockInventoryClient extends InventoryClient {
   possibleRebalances: Rebalance[] = [];
   balanceOnChain: BigNumber = BigNumber.from(0);
@@ -61,7 +69,19 @@ export class MockInventoryClient extends InventoryClient {
     this.balanceOnChain = newBalance;
   }
 
-  getBalanceOnChainForL1Token(): BigNumber {
-    return this.balanceOnChain;
+  getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): VirtualBalance {
+    const shortfall = this.getTokenShortFall(l1Token, chainId);
+    const outstandingTransferAmount = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+      this.relayer,
+      chainId,
+      l1Token
+    );
+    return {
+      balance: this.balanceOnChain.add(outstandingTransferAmount).sub(shortfall),
+      shortfall: shortfall,
+      spotBalance: this.balanceOnChain,
+      outstandingTransferAmount: outstandingTransferAmount,
+      upcomingRefunds: bnZero,
+    };
   }
 }

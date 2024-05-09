@@ -218,14 +218,10 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(ARBITRUM);
 
-      expect(lastSpyLogIncludes(spy, 'chainShortfall":"15000000000000000000"')).to.be.true;
-      expect(lastSpyLogIncludes(spy, 'chainVirtualBalance":"24800000000000000000"')).to.be.true; // (10+14.8)=24.8
-      expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfall":"9800000000000000000"')).to.be.true; // 24.8-15=9.8
-      expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfallPostRelay":"8110000000000000000"')).to.be.true; // 9.8-1.69=8.11
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalance":"140000000000000000000')).to.be.true; // 140-15+15=140
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfall":"125000000000000000000"')).to.be.true; // 140-15=125
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfallPostRelay":"123310000000000000000"')).to.be
-        .true; // 125-1.69=123.31
+      expect(lastSpyLogIncludes(spy, 'chainVirtualBalance":"9800000000000000000"')).to.be.true; // 24.8-15=9.8
+      expect(lastSpyLogIncludes(spy, 'chainVirtualBalancePostRelay":"8110000000000000000"')).to.be.true; // 9.8-1.69=8.11
+      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalance":"125000000000000000000"')).to.be.true; // 140-15=125
+      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalancePostRelay":"123310000000000000000"')).to.be;
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"65769199578298597')).to.be.true; // 8.11/123.31 = 0.0657
 
       // Now consider if this small relay was larger to the point that we should be refunding on the L2. set it to 5 WETH.

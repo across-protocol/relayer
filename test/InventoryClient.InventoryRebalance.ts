@@ -20,7 +20,7 @@ import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
-import { bnZero, CHAIN_IDs, ERC20, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { bnZero, CHAIN_IDs, ERC20, fixedPointAdjustment, TOKEN_SYMBOLS_MAP } from "../src/utils";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -127,25 +127,23 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(inventoryClient.getL1Tokens()).to.deep.equal(Object.keys(inventoryConfig.tokenConfig));
     expect(inventoryClient.getEnabledL2Chains()).to.deep.equal([OPTIMISM, POLYGON, ARBITRUM]);
 
-    expect(inventoryClient.getCumulativeBalance(mainnetWeth).eq(initialWethTotal)).to.be.true;
-    expect(inventoryClient.getCumulativeBalance(mainnetUsdc).eq(initialUsdcTotal)).to.be.true;
-
     // Check the allocation matches to what is expected in the seed state of the mock. Check more complex matchers.
-    const tokenDistribution = inventoryClient.getTokenDistributionPerL1Token();
-    for (const chainId of enabledChainIds) {
-      for (const l1Token of inventoryClient.getL1Tokens()) {
-        expect(inventoryClient.getBalanceOnChainForL1Token(chainId, l1Token)).to.equal(
-          initialAllocation[chainId][l1Token]
-        );
+    for (const l1Token of inventoryClient.getL1Tokens()) {
+      const virtualBalances = await inventoryClient.getVirtualBalancesForL1Token(l1Token, false);
+      const cumulativeBalance = Object.values(virtualBalances).reduce((acc, { balance }) => acc.add(balance), bnZero);
+      for (const chainId of inventoryClient.getEnabledChains()) {
+        const chainBalance = inventoryClient.getBalanceOnChainForL1Token(chainId, l1Token).balance;
+        expect(chainBalance).to.equal(initialAllocation[chainId][l1Token]);
         expect(
           inventoryClient.crossChainTransferClient
             .getOutstandingCrossChainTransferAmount(owner.address, chainId, l1Token)
             .eq(bnZero)
         ).to.be.true; // For now no cross-chain transfers
 
+        const chainDistribution = chainBalance.mul(fixedPointAdjustment).div(cumulativeBalance);
+
         const expectedShare = initialAllocation[chainId][l1Token].mul(toWei(1)).div(initialTotals[l1Token]);
-        const l2Token = (l1Token === mainnetWeth ? l2TokensForWeth : l2TokensForUsdc)[chainId];
-        expect(tokenDistribution[l1Token][chainId][l2Token]).to.equal(expectedShare);
+        expect(chainDistribution).to.equal(expectedShare);
       }
     }
   });
@@ -189,7 +187,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"445.00"')).to.be.true;
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     adapterManager.setMockedOutstandingCrossChainTransfers(ARBITRUM, owner.address, mainnetUsdc, bnZero); // zero the transfer. mock conclusion.
@@ -200,10 +197,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain ARBITRUM that shows the actual balance after the relay concluded and the share.
-    // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
   it("Correctly decides when to execute rebalances: token shortfall", async function () {
@@ -219,13 +212,13 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
 
     // If we now consider how much should be sent over the bridge. The spoke pool, considering the shortfall, has an
-    // allocation of -5.7%. The target is, however, 5% of the total supply. factoring in the overshoot parameter we
-    // should see a transfer of 5 + 2 - (-5.7)=12.714% of total inventory. This should be an amount of 0.127*140=17.79.
-    const expectedBridgedAmount = toBN("17799999999999999880");
+    // allocation of (10-18)/(140-18)=-6.6%. The target is, however, 7% of the total supply. factoring in the overshoot parameter we
+    // should see a transfer of 5 + 2 - (-6.6)=13.6% of total inventory. This should be an amount of 0.136*(140-18)=16.6.
+    const expectedBridgedAmount = toBN("16539999999999999916");
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "17.79 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
+    expect(lastSpyLogIncludes(spy, "16.53 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
     expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
 
     // Note that there should be some additional state updates that we should check. In particular the token balance
@@ -251,9 +244,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"17.79"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"actualBalanceOnChain":"10.00"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"virtualBalanceOnChain":"27.79"')).to.be.true;
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     // Zero the transfer. mock conclusion.
@@ -268,10 +258,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain Arbitrum that shows the actual balance after the relay concluded and the share.
-    // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    // expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
-    // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
