@@ -16,6 +16,8 @@ import {
   isDefined,
   winston,
   fixedPointAdjustment,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -729,15 +731,32 @@ export class Relayer {
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
-          crossChainLog =
-            "There is " +
-            formatter(
-              this.clients.inventoryClient.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address)
-                // TODO: Add in additional l2Token param here once we can specify it
-                .toString()
-            ) +
-            ` inbound L1->L2 ${symbol} transfers. `;
+          for (const l2Token of this.clients.inventoryClient.crossChainTransferClient.getOutstandingL2AddressesForL1Token(
+            l1Token.address,
+            chainId,
+            l1Token.address
+          )) {
+            const usdcMrkdwn =
+              l1Token.symbol.toLowerCase() === "usdc"
+                ? `[${
+                    compareAddressesSimple(TOKEN_SYMBOLS_MAP._USDC.addresses[chainId], l2Token)
+                      ? "Native"
+                      : chainId === 8453
+                      ? "USDbC"
+                      : "USDC.e"
+                  }]`
+                : "";
+
+            crossChainLog =
+              "There is " +
+              formatter(
+                this.clients.inventoryClient.crossChainTransferClient
+                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, l2Token)
+                  // TODO: Add in additional l2Token param here once we can specify it
+                  .toString()
+              ) +
+              ` inbound L1->L2 ${symbol} ${usdcMrkdwn} transfers. `;
+          }
         }
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +

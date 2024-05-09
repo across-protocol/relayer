@@ -91,9 +91,20 @@ export class InventoryClient {
       this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || bnZero;
 
     // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
-    return balance.add(
-      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
-    );
+    return this.crossChainTransferClient
+      .getOutstandingL2AddressesForL1Token(this.relayer, chainId, l1Token)
+      .reduce(
+        (acc, l2Token) =>
+          acc.add(
+            this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+              this.relayer,
+              chainId,
+              l1Token,
+              l2Token
+            )
+          ),
+        balance
+      );
   }
 
   // Get the fraction of funds allocated on each chain.

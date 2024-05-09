@@ -27,6 +27,8 @@ import {
   toBN,
   toBNWei,
   winston,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -519,45 +521,65 @@ export class Monitor {
       }
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
       for (const l1Token of allL1Tokens) {
-        // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
-        // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
-        // HubPool, while others only allow us to index on the toAddress, the L2 recipient or the SpokePool.
-        const transferBalance = this.clients.crossChainTransferClient
-          .getOutstandingCrossChainTransferAmount(spokePoolAddress, chainId, l1Token.address)
-          .add(
-            this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-              this.clients.hubPoolClient.hubPool.address,
-              chainId,
-              l1Token.address
-            )
-          );
-        const outstandingDepositTxs = blockExplorerLinks(
-          this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-            spokePoolAddress,
-            chainId,
-            l1Token.address
-          ),
-          1
-        ).concat(
-          blockExplorerLinks(
+        for (const l2Token of this.clients.crossChainTransferClient.getOutstandingL2AddressesForL1Token(
+          spokePoolAddress,
+          chainId,
+          l1Token.address
+        )) {
+          // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
+          // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
+          // HubPool, while others only allow us to index on the toAddress, the L2 recipient or the SpokePool.
+          const transferBalance = this.clients.crossChainTransferClient
+            .getOutstandingCrossChainTransferAmount(spokePoolAddress, chainId, l1Token.address, l2Token)
+            .add(
+              this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+                this.clients.hubPoolClient.hubPool.address,
+                chainId,
+                l1Token.address,
+                l2Token
+              )
+            );
+          const outstandingDepositTxs = blockExplorerLinks(
             this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-              this.clients.hubPoolClient.hubPool.address,
+              spokePoolAddress,
               chainId,
-              l1Token.address
+              l1Token.address,
+              l2Token
             ),
             1
-          )
-        );
+          ).concat(
+            blockExplorerLinks(
+              this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
+                this.clients.hubPoolClient.hubPool.address,
+                chainId,
+                l1Token.address,
+                l2Token
+              ),
+              1
+            )
+          );
 
-        if (transferBalance.gt(0)) {
-          const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
-          this.logger.warn({
-            at: "Monitor#checkStuckRebalances",
-            message: "HubPool -> SpokePool rebalances stuck 🦴",
-            mrkdwn,
-            transferBalance: transferBalance.toString(),
-            outstandingDepositTxs,
-          });
+          if (transferBalance.gt(0)) {
+            const usdcMrkdwn =
+              l1Token.symbol.toLowerCase() === "usdc"
+                ? `[${
+                    compareAddressesSimple(TOKEN_SYMBOLS_MAP._USDC.addresses[chainId], l2Token)
+                      ? "Native"
+                      : chainId === 8453
+                      ? "USDbC"
+                      : "USDC.e"
+                  }]`
+                : "";
+
+            const mrkdwn = `Rebalances of ${l1Token.symbol} ${usdcMrkdwn} to ${getNetworkName(chainId)} is stuck`;
+            this.logger.warn({
+              at: "Monitor#checkStuckRebalances",
+              message: "HubPool -> SpokePool rebalances stuck 🦴",
+              mrkdwn,
+              transferBalance: transferBalance.toString(),
+              outstandingDepositTxs,
+            });
+          }
         }
       }
     }
@@ -586,20 +608,27 @@ export class Monitor {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.crossChainAdapterSupportedChains) {
       for (const l1Token of allL1Tokens) {
-        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+        for (const l2Token of this.clients.crossChainTransferClient.getOutstandingL2AddressesForL1Token(
           relayer,
           chainId,
           l1Token.address
-        );
-
-        if (transferBalance.gt(bnZero)) {
-          this.updateRelayerBalanceTable(
-            relayerBalanceTable,
-            l1Token.symbol,
-            getNetworkName(chainId),
-            BalanceType.PENDING_TRANSFERS,
-            transferBalance
+        )) {
+          const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+            relayer,
+            chainId,
+            l1Token.address,
+            l2Token
           );
+
+          if (transferBalance.gt(bnZero)) {
+            this.updateRelayerBalanceTable(
+              relayerBalanceTable,
+              l1Token.symbol,
+              getNetworkName(chainId),
+              BalanceType.PENDING_TRANSFERS,
+              transferBalance
+            );
+          }
         }
       }
     }
