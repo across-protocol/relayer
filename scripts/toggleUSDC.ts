@@ -23,11 +23,8 @@ const args = minimist(process.argv.slice(2), {
 });
 
 export function getTokenAddressForChain(l2ChainId: number, isNativeUsdc = false): string {
-  if (isNativeUsdc) {
-    const hasL2TokenEntry = TOKEN_SYMBOLS_MAP["_USDC"].addresses[l2ChainId] !== undefined;
-    if (!hasL2TokenEntry) {
-      throw new Error(`No token entry for _USDC on chain ${l2ChainId}`);
-    }
+  const hasL2TokenEntry = TOKEN_SYMBOLS_MAP["_USDC"].addresses[l2ChainId] !== undefined;
+  if (isNativeUsdc && hasL2TokenEntry) {
     return TOKEN_SYMBOLS_MAP["_USDC"].addresses[l2ChainId];
   } else {
     const _tokenSymbol = l2ChainId === 8453 ? "USDbC" : "USDC.e";
@@ -99,8 +96,8 @@ export async function run(logger: winston.Logger): Promise<void> {
     // If disabling routes, then assume we are disabling all USDC.e routes.
     // If enabling routes, then enable _USDC as an `outputToken` on the target chain and USDC.e as an `inputToken`.
     // These should not throw, otherwise it means there is a missing USDC.e/USDbC entry for the chain.
-    const originTokenSymbol = getTokenSymbol(_chainId, false);
-    const originTokenAddress = getTokenAddressForChain(_chainId, false);
+    const originTokenSymbol = getTokenSymbol(_chainId, enable || _chainId === 137);
+    const originTokenAddress = getTokenAddressForChain(_chainId, enable || _chainId === 137);
 
     // Deposit route to target
     routesToDisable.push({
