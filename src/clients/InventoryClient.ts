@@ -789,7 +789,7 @@ export class InventoryClient {
             " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
               this.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+                .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
                 .toString()
             )}.\n`;
         }
@@ -963,7 +963,8 @@ export class InventoryClient {
           const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
             this.relayer,
             chainId,
-            l1Token
+            l1Token,
+            l2Token,
           );
           const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
 
