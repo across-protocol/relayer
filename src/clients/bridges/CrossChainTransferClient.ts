@@ -2,6 +2,13 @@ import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject } from "../../u
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces";
 
+type OutstandingCrossChainResponse<Result> = {
+  total: Result;
+  breakdown: {
+    [l2Token: string]: Result;
+  };
+};
+
 export class CrossChainTransferClient {
   private outstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
 
@@ -11,48 +18,94 @@ export class CrossChainTransferClient {
     readonly adapterManager: AdapterManager
   ) {}
 
-  // Get any funds currently in the canonical bridge.
+  /**
+   * Retrieves the total amount of outstanding cross-chain transfers for a given address.
+   * @param address The address to check for outstanding transfers.
+   * @param chainId The chainId to check for outstanding transfers.
+   * @param l1Token The L1 token to check for outstanding transfers.
+   * @param l2Token The L2 token to check for outstanding transfers - If not provided, the sum of all l2Tokens will be returned.
+   * @returns The total amount of outstanding cross-chain transfers for the given address.
+   */
   getOutstandingCrossChainTransferAmount(
     address: string,
     chainId: number | string,
     l1Token: string,
     l2Token?: string
-  ): BigNumber {
+  ): OutstandingCrossChainResponse<BigNumber> {
     const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
     if (!transfers) {
-      return bnZero;
+      return { total: bnZero, breakdown: {} };
     }
 
     if (l2Token) {
-      return transfers[l2Token]?.totalAmount ?? bnZero;
+      const totalAmount = transfers[l2Token]?.totalAmount ?? bnZero;
+      return {
+        total: totalAmount,
+        breakdown: {
+          [l2Token]: totalAmount,
+        },
+      };
     }
 
     // No specific l2Token specified; return the sum of all l1Token transfers to chainId.
-    return Object.values(transfers)
-      .map(({ totalAmount }) => totalAmount)
-      .flat()
-      .reduce((acc, curr) => acc.add(curr), bnZero);
+    return Object.entries(transfers).reduce(
+      (acc, [l2Token, { totalAmount }]) => ({
+        total: acc.total.add(totalAmount),
+        breakdown: {
+          ...acc.breakdown,
+          [l2Token]: totalAmount,
+        },
+      }),
+      {
+        total: bnZero,
+        breakdown: {},
+      }
+    );
   }
 
+  /**
+   * Retrieves the tx hashes of outstanding cross-chain transfers for a given address.
+   * @param address The address to check for outstanding transfers.
+   * @param chainId The chainId to check for outstanding transfers.
+   * @param l1Token The L1 token to check for outstanding transfers.
+   * @param l2Token The L2 token to check for outstanding transfers - If not provided, the sum of all l2Tokens will be returned.
+   * @returns The tx hashes of outstanding cross-chain transfers for the given address.
+   */
   getOutstandingCrossChainTransferTxs(
     address: string,
     chainId: number | string,
     l1Token: string,
     l2Token?: string
-  ): string[] {
+  ): OutstandingCrossChainResponse<string[]> {
     const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
     if (!transfers) {
-      return [];
+      return { total: [], breakdown: {} };
     }
 
     if (l2Token) {
-      return transfers[l2Token]?.depositTxHashes ?? [];
+      const depositTxHashes = transfers[l2Token]?.depositTxHashes ?? [];
+      return {
+        total: depositTxHashes,
+        breakdown: {
+          [l2Token]: depositTxHashes,
+        },
+      };
     }
 
     // No specific l2Token specified; return the set of all l1Token transfers to chainId.
-    return Object.values(transfers)
-      .map(({ depositTxHashes }) => depositTxHashes)
-      .flat();
+    return Object.entries(transfers).reduce(
+      (acc, [l2Token, { depositTxHashes }]) => ({
+        total: [...acc.total, ...depositTxHashes],
+        breakdown: {
+          ...acc.breakdown,
+          [l2Token]: depositTxHashes,
+        },
+      }),
+      {
+        total: [],
+        breakdown: {},
+      }
+    );
   }
 
   getEnabledChains(): number[] {
@@ -81,7 +134,7 @@ export class CrossChainTransferClient {
       chainId,
       l1Token,
       l2Token
-    ).add(rebalance);
+    ).total.add(rebalance);
   }
 
   async update(l1Tokens: string[]): Promise<void> {
