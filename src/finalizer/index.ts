@@ -17,7 +17,6 @@ import {
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
-  CHAIN_IDs,
   Signer,
   blockExplorerLink,
   config,
@@ -129,10 +128,8 @@ export async function finalize(
         hubPoolClient.hubPool.address,
         CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
       ];
-      // For linea specifically, we want to include the Linea Spokepool as well.
-      if (sdkUtils.chainIsLinea(chainId)) {
-        addressesToEnsure.push(spokePoolClients[CHAIN_IDs.LINEA].spokePool.address);
-      }
+      // Add the spoke pool address to the list of addresses to ensure.
+      addressesToEnsure.push(spokePoolClients[chainId].spokePool.address);
       l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, addressesToEnsure);
     }
 
