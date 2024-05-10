@@ -1007,11 +1007,13 @@ export class InventoryClient {
     const logData: {
       [symbol: string]: {
         [chainId: number]: {
-          actualBalanceOnChain: string;
-          virtualBalanceOnChain: string;
-          outstandingTransfers: string;
-          tokenShortFalls: string;
-          proRataShare: string;
+          [l2TokenAddress: string]: {
+            actualBalanceOnChain: string;
+            virtualBalanceOnChain: string;
+            outstandingTransfers: string;
+            tokenShortFalls: string;
+            proRataShare: string;
+          };
         };
       };
     } = {};
@@ -1030,6 +1032,7 @@ export class InventoryClient {
 
       Object.keys(distributionForToken).forEach((_chainId) => {
         const chainId = Number(_chainId);
+        logData[symbol][chainId] ??= {};
 
         Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
           const balanceOnChain = this.getBalanceOnChain(chainId, l1Token, l2Token);
@@ -1040,8 +1043,7 @@ export class InventoryClient {
             l2Token
           );
           const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
-
-          logData[symbol][chainId] = {
+          logData[symbol][chainId][l2Token] = {
             actualBalanceOnChain: formatter(actualBalanceOnChain.toString()),
             virtualBalanceOnChain: formatter(balanceOnChain.toString()),
             outstandingTransfers: formatter(transfers.toString()),
