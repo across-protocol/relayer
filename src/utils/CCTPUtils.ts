@@ -17,6 +17,7 @@ export type DecodedCCTPMessage = {
   destinationDomain: number;
   attestation: string;
   sender: string;
+  nonce: number;
 };
 
 /**
