@@ -15,7 +15,7 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig } from "../interfaces";
+import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
@@ -153,47 +153,73 @@ export class RelayerConfig extends CommonConfig {
         }
       });
 
+      const parseTokenConfig = (
+        l1Token: string,
+        chainId: string,
+        rawTokenConfig: TokenBalanceConfig
+      ): TokenBalanceConfig => {
+        const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } = rawTokenConfig;
+        const tokenConfig: TokenBalanceConfig = { targetPct, thresholdPct, targetOverageBuffer };
+
+        assert(
+          targetPct !== undefined && thresholdPct !== undefined,
+          `Bad config. Must specify targetPct, thresholdPct for ${l1Token} on ${chainId}`
+        );
+        assert(
+          toBN(thresholdPct).lte(toBN(targetPct)),
+          `Bad config. thresholdPct<=targetPct for ${l1Token} on ${chainId}`
+        );
+        tokenConfig.targetPct = toBNWei(targetPct).div(100);
+        tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
+
+        // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
+        // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
+        // holding more tokens than the targetPct, but perhaps a better default is 100%
+        tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
+
+        // For WETH, also consider any unwrap target/threshold.
+        if (l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
+          if (unwrapWethThreshold !== undefined) {
+            tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
+          }
+          tokenConfig.unwrapWethTarget = toBNWei(unwrapWethTarget ?? 2);
+        }
+
+        return tokenConfig;
+      };
+
       const rawTokenConfigs = inventoryConfig?.tokenConfig ?? {};
       const tokenConfigs = (inventoryConfig.tokenConfig = {});
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
           ? l1Token
-          : TOKEN_SYMBOLS_MAP[l1Token]?.addresses[this.hubPoolChainId];
+          : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
         assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
 
-        Object.keys(rawTokenConfigs[l1Token]).forEach((chainId) => {
-          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } =
-            rawTokenConfigs[l1Token][chainId];
+        tokenConfigs[effectiveL1Token] ??= {};
+        const hubTokenConfig = rawTokenConfigs[l1Token];
 
-          tokenConfigs[effectiveL1Token] ??= {};
-          tokenConfigs[effectiveL1Token][chainId] ??= { targetPct, thresholdPct, targetOverageBuffer };
-          const tokenConfig = tokenConfigs[effectiveL1Token][chainId];
+        if (isAliasConfig(hubTokenConfig)) {
+          Object.keys(hubTokenConfig).forEach((symbol) => {
+            Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
+              const rawTokenConfig = hubTokenConfig[symbol][chainId];
+              const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
 
-          assert(
-            targetPct !== undefined && thresholdPct !== undefined,
-            `Bad config. Must specify targetPct, thresholdPct for ${l1Token} on ${chainId}`
-          );
-          assert(
-            toBN(thresholdPct).lte(toBN(targetPct)),
-            `Bad config. thresholdPct<=targetPct for ${l1Token} on ${chainId}`
-          );
-          tokenConfig.targetPct = toBNWei(targetPct).div(100);
-          tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
-
-          // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
-          // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
-          // holding more tokens than the targetPct, but perhaps a better default is 100%
-          tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
-
-          // For WETH, also consider any unwrap target/threshold.
-          if (effectiveL1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
-            if (unwrapWethThreshold !== undefined) {
-              tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
-            }
-            tokenConfig.unwrapWethTarget = toBNWei(unwrapWethTarget ?? 2);
-          }
-        });
+              tokenConfigs[effectiveL1Token][effectiveSpokeToken] ??= {};
+              tokenConfigs[effectiveL1Token][effectiveSpokeToken][chainId] = parseTokenConfig(
+                l1Token,
+                chainId,
+                rawTokenConfig
+              );
+            });
+          });
+        } else {
+          Object.keys(hubTokenConfig).forEach((chainId) => {
+            const rawTokenConfig = hubTokenConfig[chainId];
+            tokenConfigs[effectiveL1Token][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
+          });
+        }
       });
     }
 
