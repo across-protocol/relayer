@@ -1,7 +1,7 @@
 import { clients, interfaces } from "@across-protocol/sdk-v2";
 import { Contract } from "ethers";
 import winston from "winston";
-import { MakeOptional, EventSearchConfig, getTokenInfo, getL1TokenInfo } from "../utils";
+import { MakeOptional, EventSearchConfig, getTokenInfo, getL1TokenInfo, getUsdcSymbol } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { L1Token } from "../interfaces";
 
@@ -41,7 +41,13 @@ export class HubPoolClient extends clients.HubPoolClient {
    * @returns Token info for the given token address on the L2 chain including symbol and decimal.
    */
   getTokenInfoForAddress(tokenAddress: string, chain: number): L1Token {
-    return getTokenInfo(tokenAddress, chain);
+    const tokenInfo = getTokenInfo(tokenAddress, chain);
+    // @dev Temporarily handle case where an L2 token for chain ID can map to more than one TOKEN_SYMBOLS_MAP
+    // entry. For example, L2 Bridged USDC maps to both the USDC and USDC.e/USDbC entries in TOKEN_SYMBOLS_MAP.
+    if (tokenInfo.symbol.toLowerCase() === "usdc" && chain !== this.chainId) {
+      tokenInfo.symbol = getUsdcSymbol(tokenAddress, chain);
+    }
+    return tokenInfo;
   }
 
   /**

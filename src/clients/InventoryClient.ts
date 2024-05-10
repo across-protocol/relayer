@@ -818,10 +818,10 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, l2Token, amount, targetPct, thresholdPct, cumulativeBalance, hash } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+        for (const { l2Token, amount, targetPct, thresholdPct, cumulativeBalance, hash, chainId } of rebalances) {
+          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
-            throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
+            `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
           }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
@@ -842,9 +842,11 @@ export class InventoryClient {
         const chainId = Number(_chainId);
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
         for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
-            throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
+            throw new Error(
+              `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
+            );
           }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);

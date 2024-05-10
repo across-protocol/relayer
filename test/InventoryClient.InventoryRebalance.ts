@@ -104,6 +104,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await configStoreClient.update();
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
+    enabledChainIds.forEach((chainId) => {
+      hubPoolClient.mapTokenInfo(l2TokensForWeth[chainId], "WETH", 18);
+      hubPoolClient.mapTokenInfo(l2TokensForUsdc[chainId], "USDC", 6);
+    });
     await hubPoolClient.update();
 
     adapterManager = new MockAdapterManager(null, null, null, null);
@@ -349,6 +353,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     beforeEach(async function () {
       // Sub in a nested USDC config for the existing USDC single-token config.
       inventoryConfig.tokenConfig[mainnetUsdc] = usdcConfig;
+
+      enabledChainIds.forEach((chainId) => {
+        hubPoolClient.mapTokenInfo(nativeUSDC[chainId], "USDC", 6);
+      });
     });
 
     it("Correctly resolves 1:many token mappings", async function () {
