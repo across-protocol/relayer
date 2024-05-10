@@ -108,7 +108,7 @@ export function getTokenAddressWithCCTP(
  */
 export function getUsdcSymbol(l2Token: string, chainId: number): string | undefined {
   const compareToken = (token?: string) => isDefined(token) && compareAddressesSimple(l2Token, token);
-  return ["_USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token].addresses[chainId]));
+  return ["_USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token]?.addresses?.[chainId]));
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {

@@ -45,7 +45,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     // @dev Temporarily handle case where an L2 token for chain ID can map to more than one TOKEN_SYMBOLS_MAP
     // entry. For example, L2 Bridged USDC maps to both the USDC and USDC.e/USDbC entries in TOKEN_SYMBOLS_MAP.
     if (tokenInfo.symbol.toLowerCase() === "usdc" && chain !== this.chainId) {
-      tokenInfo.symbol = getUsdcSymbol(tokenAddress, chain);
+      tokenInfo.symbol = getUsdcSymbol(tokenAddress, chain) ?? "UNKNOWN";
     }
     return tokenInfo;
   }
