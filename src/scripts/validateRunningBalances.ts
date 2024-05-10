@@ -51,6 +51,10 @@ let logger: winston.Logger;
 
 const slowRootCache = {};
 
+const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
+  [10]: { ["USDC"]: 15.336508 }, // On May 4th, USDC was sent to the SpokePool here: https://optimistic.etherscan.io/tx/0x5f53293fe6a27ff9897d4dde445fd6aab46f841ca641befea48beef62014a549
+};
+
 export async function runScript(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
 
@@ -367,14 +371,17 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
   logger.debug({
     at: "validateRunningBalances#index",
     message: "Historical excesses",
+    expectedExcesses,
     excesses,
   });
-  const unexpectedExcess = Object.entries(excesses).some(([, tokenExcesses]) => {
-    return Object.entries(tokenExcesses).some(([, excesses]) => {
+  const unexpectedExcess = Object.entries(excesses).some(([chainId, tokenExcesses]) => {
+    return Object.entries(tokenExcesses).some(([l1Token, excesses]) => {
       // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
       const excess = Number(excesses[0]);
-      return excess > 0.05 || excess < -0.05;
+      // Subtract any expected excesses
+      const excessForChain = excess - (expectedExcesses[chainId]?.[l1Token] ?? 0);
+      return excessForChain > 0.05 || excessForChain < -0.05;
     });
   });
   if (unexpectedExcess) {
