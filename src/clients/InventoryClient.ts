@@ -108,7 +108,13 @@ export class InventoryClient {
     // We want to skip any l2 token that is not present in the inventory config.
     chainId = Number(chainId);
     if (chainId !== this.hubPoolClient.chainId && !this._l1TokenEnabledForChain(l1Token, chainId)) {
-      return bnZero;
+      return {
+        spotBalance: bnZero,
+        outstandingTransferAmount: bnZero,
+        shortfall: bnZero,
+        upcomingRefunds: bnZero,
+        balance: bnZero,
+      };
     }
 
     // Start with current spot balance held on-chain.
@@ -774,7 +780,7 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, amount, targetPct, thresholdPct, cumulativeBalance, hash } of rebalances) {
+        for (const { l1Token, l2Token, amount, targetPct, thresholdPct, cumulativeBalance, hash } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
           if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
