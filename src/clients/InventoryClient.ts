@@ -188,13 +188,6 @@ export class InventoryClient {
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
   }
 
-  // Find how short a given chain is for a desired L1Token.
-  getTokenShortFall(l1Token: string, chainId: number): BigNumber {
-    return this.getRemoteTokensForL1Token(l1Token, chainId)
-      .map((token) => this.tokenClient.getShortfallTotalRequirement(chainId, token))
-      .reduce((acc, curr) => acc.add(curr), bnZero);
-  }
-
   getRepaymentTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     // @todo: Update HubPoolClient.getL2TokenForL1TokenAtBlock() such that it returns `undefined` instead of throwing.
     try {
@@ -825,7 +818,7 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, amount, targetPct, thresholdPct, cumulativeBalance, hash } of rebalances) {
+        for (const { l1Token, l2Token, amount, targetPct, thresholdPct, cumulativeBalance, hash } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
           if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
@@ -839,7 +832,7 @@ export class InventoryClient {
             `${formatter(
               cumulativeBalance.toString()
             )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
-            `${formatter(this.getTokenShortFall(l1Token, chainId).toString())} ${symbol} ` +
+            `${formatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString())} ${symbol} ` +
             `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
         }
       }
@@ -1052,7 +1045,7 @@ export class InventoryClient {
             actualBalanceOnChain: formatter(actualBalanceOnChain.toString()),
             virtualBalanceOnChain: formatter(balanceOnChain.toString()),
             outstandingTransfers: formatter(transfers.toString()),
-            tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
+            tokenShortFalls: formatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()),
             proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
           };
         });
