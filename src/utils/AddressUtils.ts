@@ -83,6 +83,12 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
+/**
+ * Get the USDC symbol for the given token address and chain ID.
+ * @param l2Token A Web3 token address (not case sensitive)
+ * @param chainId A chain Id to reference
+ * @returns Either USDC (if native) or USDbC/USDC.e (if bridged) or undefined if the token address is not recognized.
+ */
 export function getUsdcSymbol(l2Token: string, chainId: number): string | undefined {
   const compareToken = (token?: string) => isDefined(token) && compareAddressesSimple(l2Token, token);
   return ["_USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token].addresses[chainId]));
