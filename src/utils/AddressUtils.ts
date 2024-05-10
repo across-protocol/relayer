@@ -83,6 +83,11 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
+export function getUsdcSymbol(l2Token: string, chainId: number): string | undefined {
+  const compareToken = (token?: string) => isDefined(token) && compareAddressesSimple(l2Token, token);
+  return ["_USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token].addresses[chainId]));
+}
+
 export function getTokenAddressWithCCTP(
   l1Token: string,
   hubChainId: number,

@@ -22,6 +22,7 @@ import {
   toBNWei,
   assert,
   compareAddressesSimple,
+  getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -823,7 +824,8 @@ export class InventoryClient {
           if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
           }
-          const { symbol, decimals } = tokenInfo;
+          const { symbol: _symbol, decimals } = tokenInfo;
+          const symbol = _symbol.toLowerCase() === "usdc" ? getUsdcSymbol(l2Token, chainId) : _symbol;
           const formatter = createFormatFunction(2, 4, false, decimals);
           mrkdwn +=
             ` - ${formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
@@ -846,7 +848,8 @@ export class InventoryClient {
           if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
           }
-          const { symbol, decimals } = tokenInfo;
+          const { symbol: _symbol, decimals } = tokenInfo;
+          const symbol = _symbol.toLowerCase() === "usdc" ? getUsdcSymbol(l2Token, chainId) : _symbol;
           const formatter = createFormatFunction(2, 4, false, decimals);
           const distributionPct = tokenDistributionPerL1Token[l1Token][chainId][l2Token].mul(100);
           mrkdwn +=

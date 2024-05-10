@@ -11,7 +11,14 @@ export class CrossChainTransferClient {
     readonly adapterManager: AdapterManager
   ) {}
 
-  // Get any funds currently in the canonical bridge.
+  /**
+   * Retrieves the total amount of outstanding cross-chain transfers for a given address.
+   * @param address The address to check for outstanding transfers.
+   * @param chainId The chainId to check for outstanding transfers.
+   * @param l1Token The L1 token to check for outstanding transfers.
+   * @param l2Token The L2 token to check for outstanding transfers - If not provided, the sum of all l2Tokens will be returned.
+   * @returns The total amount of outstanding cross-chain transfers for the given address.
+   */
   getOutstandingCrossChainTransferAmount(
     address: string,
     chainId: number | string,
@@ -31,6 +38,14 @@ export class CrossChainTransferClient {
     return Object.values(transfers).reduce((acc, { totalAmount }) => acc.add(totalAmount), bnZero);
   }
 
+  /**
+   * Retrieves the tx hashes of outstanding cross-chain transfers for a given address.
+   * @param address The address to check for outstanding transfers.
+   * @param chainId The chainId to check for outstanding transfers.
+   * @param l1Token The L1 token to check for outstanding transfers.
+   * @param l2Token The L2 token to check for outstanding transfers - If not provided, the sum of all l2Tokens will be returned.
+   * @returns The tx hashes of outstanding cross-chain transfers for the given address.
+   */
   getOutstandingCrossChainTransferTxs(
     address: string,
     chainId: number | string,
@@ -48,6 +63,17 @@ export class CrossChainTransferClient {
 
     // No specific l2Token specified; return the set of all l1Token transfers to chainId.
     return Object.values(transfers).flatMap(({ depositTxHashes }) => depositTxHashes);
+  }
+
+  /**
+   * Retrieves a list of outstanding L2 addresses for a given L1 token, address, and chainId.
+   * @param address The monitored address to check for outstanding transfers.
+   * @param chainId The chainId to check for outstanding transfers.
+   * @param l1Token The L1 token to check for outstanding transfers.
+   * @returns A list of outstanding L2 addresses for the given L1 token, address, and chainId.
+   */
+  getOutstandingL2AddressesForL1Token(address: string, chainId: number | string, l1Token: string): string[] {
+    return Object.keys(this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token] ?? {});
   }
 
   getEnabledChains(): number[] {
