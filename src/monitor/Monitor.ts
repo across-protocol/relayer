@@ -199,7 +199,7 @@ export class Monitor {
           ({ symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId));
           unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
         } catch {
-          symbol = "unknown";
+          symbol = tokenAddress; // Using the address helps investigation.
           unfilledAmount = amountByToken[tokenAddress].toString();
         }
 
