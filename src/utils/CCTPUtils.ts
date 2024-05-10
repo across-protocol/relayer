@@ -232,7 +232,6 @@ async function _resolveCCTPRelatedTxns(
             sourceDomain: Number(sourceDomain),
             destinationDomain: Number(destinationDomain),
             attestation,
-            nonce: BigNumber.from(nonce).toNumber(),
           };
         })
       )
