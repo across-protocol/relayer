@@ -2,7 +2,7 @@
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
+import { CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../../common";
 import {
   Contract,
   Signer,
@@ -12,7 +12,7 @@ import {
   getRedisCache,
   winston,
 } from "../../../utils";
-import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import { DecodedCCTPMessage, hasCCTPMessageBeenProcessed, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
 export async function cctpL2toL1Finalizer(
@@ -27,24 +27,41 @@ export async function cctpL2toL1Finalizer(
   const redis = await getRedisCache(logger);
   const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
   logger.debug({
-    at: "Finalizer#CCTPL2ToL1Finalizer",
+    at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
     message: `MessageSent event filter for ${getNetworkName(spokePoolClient.chainId)} to L1`,
     fromBlock,
   });
-  const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId, fromBlock);
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
-  const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
+  const contract = new ethers.Contract(
+    cctpMessageReceiverDetails.address,
+    cctpMessageReceiverDetails.abi,
+    hubPoolClient.hubPool.provider
+  );
+  const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId, fromBlock, contract);
+  const unprocessedMessages = decodedMessages.filter((message) => !message.processed);
+  logger.debug({
+    at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
+    message: `Detected ${unprocessedMessages.length} unprocessed messages`,
+    processed: decodedMessages.filter((message) => message.processed).length,
+    unprocessed: unprocessedMessages.length,
+  });
+
   return {
-    crossChainMessages: await generateWithdrawalData(decodedMessages, spokePoolClient.chainId, hubPoolClient.chainId),
-    callData: await generateMultiCallData(contract, decodedMessages),
+    crossChainMessages: await generateWithdrawalData(
+      unprocessedMessages,
+      spokePoolClient.chainId,
+      hubPoolClient.chainId
+    ),
+    callData: await generateMultiCallData(contract, unprocessedMessages),
   };
 }
 
 async function resolveRelatedTxnReceipts(
   client: SpokePoolClient,
   targetDestinationChainId: number,
-  latestBlockToFinalize: number
-): Promise<DecodedCCTPMessage[]> {
+  latestBlockToFinalize: number,
+  destinationMessageTransmitter: Contract
+): Promise<(DecodedCCTPMessage & { processed: boolean })[]> {
   // Resolve the receipts to all collected txns
   const txnReceipts = await Promise.all(
     client
@@ -52,7 +69,12 @@ async function resolveRelatedTxnReceipts(
       .filter((bridgeEvent) => bridgeEvent.blockNumber >= latestBlockToFinalize)
       .map((bridgeEvent) => client.spokePool.provider.getTransactionReceipt(bridgeEvent.transactionHash))
   );
-  return resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);
+  const decodedMessages = await resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);
+  const statusPromises = decodedMessages.map((message) =>
+    hasCCTPMessageBeenProcessed(chainIdsToCctpDomains[client.chainId], message.nonce, destinationMessageTransmitter)
+  );
+  const processed = await Promise.all(statusPromises);
+  return decodedMessages.map((message, index) => ({ ...message, processed: processed[index] }));
 }
 
 /**
