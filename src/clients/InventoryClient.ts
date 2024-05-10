@@ -701,7 +701,7 @@ export class InventoryClient {
   }
 
   getPossibleRebalances(): Rebalance[] {
-    const chainIds = this.getEnabledChains();
+    const chainIds = this.getEnabledL2Chains();
     const rebalancesRequired: Rebalance[] = [];
 
     for (const l1Token of this.getL1Tokens()) {
