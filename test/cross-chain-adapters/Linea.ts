@@ -9,7 +9,7 @@ import { CONTRACT_ADDRESSES } from "../../src/common";
 describe("Cross Chain Adapter: Linea", async function () {
   let adapter: LineaAdapter;
   let monitoredEoa: string;
-  let l1Token: string;
+  let l1Token, l1USDCToken, l1WETHToken: string;
 
   let wethBridgeContract: Contract;
   let usdcBridgeContract: Contract;
@@ -24,7 +24,9 @@ describe("Cross Chain Adapter: Linea", async function () {
     const [deployer] = await ethers.getSigners();
 
     monitoredEoa = randomAddress();
-    l1Token = randomAddress();
+    l1Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
+    l1USDCToken = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
+    l1WETHToken = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
 
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
@@ -85,13 +87,15 @@ describe("Cross Chain Adapter: Linea", async function () {
       let outstandingTransfers = {};
 
       // 1. If l1 and l2 events pair off, outstanding transfers will be empty
-      adapter.matchWethDepositEvents(l1Events, l2Events, outstandingTransfers, monitoredEoa, l1Token);
+      adapter.matchWethDepositEvents(l1Events, l2Events, outstandingTransfers, monitoredEoa, l1WETHToken);
       expect(outstandingTransfers).to.deep.equal({});
 
       // 2. If finalized event is missing, there will be an outstanding transfer.
       outstandingTransfers = {};
-      adapter.matchWethDepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1Token);
-      expect(outstandingTransfers[monitoredEoa][l1Token]).to.deep.equal({
+      adapter.matchWethDepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1WETHToken);
+      expect(
+        outstandingTransfers[monitoredEoa][l1WETHToken][TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.LINEA]]
+      ).to.deep.equal({
         totalAmount: toBN(1),
         depositTxHashes: l1Events.map((e) => e.transactionHash),
       });
@@ -121,13 +125,15 @@ describe("Cross Chain Adapter: Linea", async function () {
       let outstandingTransfers = {};
 
       // 1. If l1 and l2 events pair off, outstanding transfers will be empty
-      adapter.matchUsdcDepositEvents(l1Events, l2Events, outstandingTransfers, monitoredEoa, l1Token);
+      adapter.matchUsdcDepositEvents(l1Events, l2Events, outstandingTransfers, monitoredEoa, l1USDCToken);
       expect(outstandingTransfers).to.deep.equal({});
 
       // 2. If finalized event is missing, there will be an outstanding transfer.
       outstandingTransfers = {};
-      adapter.matchUsdcDepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1Token);
-      expect(outstandingTransfers[monitoredEoa][l1Token]).to.deep.equal({
+      adapter.matchUsdcDepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1USDCToken);
+      expect(
+        outstandingTransfers[monitoredEoa][l1USDCToken][TOKEN_SYMBOLS_MAP["USDC.e"].addresses[CHAIN_IDs.LINEA]]
+      ).to.deep.equal({
         totalAmount: toBN(0),
         depositTxHashes: l1Events.map((e) => e.transactionHash),
       });
@@ -164,7 +170,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       expect(result[0].args.nativeToken).to.equal(l1Token);
     });
     it("Matches L1 and L2 events", async function () {
-      const l1Token = randomAddress();
       await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);
       await erc20BridgeContract.emitBridgingFinalized(l1Token, monitoredEoa);
       const l1Events = await adapter.getErc20DepositInitiatedEvents(
@@ -189,7 +194,9 @@ describe("Cross Chain Adapter: Linea", async function () {
       // 2. If finalized event is missing, there will be an outstanding transfer.
       outstandingTransfers = {};
       adapter.matchErc20DepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1Token);
-      expect(outstandingTransfers[monitoredEoa][l1Token]).to.deep.equal({
+      expect(
+        outstandingTransfers[monitoredEoa][l1Token][TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.LINEA]]
+      ).to.deep.equal({
         totalAmount: toBN(0),
         depositTxHashes: l1Events.map((e) => e.transactionHash),
       });
