@@ -2,7 +2,7 @@
 import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
@@ -17,7 +17,7 @@ import {
   paginatedEventQuery,
   winston,
 } from "../../../utils";
-import { DecodedCCTPMessage, hasCCTPMessageBeenProcessed, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { getBlockRangeByHoursOffsets } from "../linea/common";
 import { uniqWith } from "lodash";
@@ -35,34 +35,21 @@ export async function cctpL1toL2Finalizer(
   const redis = await getRedisCache(logger);
   const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
   logger.debug({
-    at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
+    at: "Finalizer#CCTPL1ToL2Finalizer",
     message: `MessageSent event filter for L1 to ${getNetworkName(spokePoolClient.chainId)}`,
     fromBlock,
   });
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[spokePoolClient.chainId].cctpMessageTransmitter;
-  const contract = new ethers.Contract(
-    cctpMessageReceiverDetails.address,
-    cctpMessageReceiverDetails.abi,
-    spokePoolClient.spokePool.provider
-  );
   const decodedMessages = await resolveRelatedTxnReceipts(
     l1ToL2AddressesToFinalize,
     hubPoolClient.chainId,
     spokePoolClient.chainId,
-    fromBlock,
-    contract
+    fromBlock
   );
-  const unprocessedMessages = decodedMessages.filter((message) => !message.processed);
-  logger.debug({
-    at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
-    message: `Detected ${unprocessedMessages.length} unprocessed messages`,
-    processed: decodedMessages.filter((message) => message.processed).length,
-    unprocessed: unprocessedMessages.length,
-  });
-
+  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[spokePoolClient.chainId].cctpMessageTransmitter;
+  const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
   return {
-    crossChainMessages: await generateDepositData(unprocessedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
-    callData: await generateMultiCallData(contract, unprocessedMessages),
+    crossChainMessages: await generateDepositData(decodedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
+    callData: await generateMultiCallData(contract, decodedMessages),
   };
 }
 
@@ -98,17 +85,11 @@ async function resolveRelatedTxnReceipts(
   addressesToSearch: string[],
   currentChainId: number,
   targetDestinationChainId: number,
-  latestBlockToFinalize: number,
-  destinationMessageTransmitter: Contract
-): Promise<(DecodedCCTPMessage & { processed: boolean })[]> {
+  latestBlockToFinalize: number
+): Promise<DecodedCCTPMessage[]> {
   const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch);
   const filteredReceipts = allReceipts.filter((receipt) => receipt.blockNumber >= latestBlockToFinalize);
-  const decodedMessages = await resolveCCTPRelatedTxns(filteredReceipts, currentChainId, targetDestinationChainId);
-  const statusPromises = decodedMessages.map((message) =>
-    hasCCTPMessageBeenProcessed(chainIdsToCctpDomains[currentChainId], message.nonce, destinationMessageTransmitter)
-  );
-  const processed = await Promise.all(statusPromises);
-  return decodedMessages.map((message, index) => ({ ...message, processed: processed[index] }));
+  return resolveCCTPRelatedTxns(filteredReceipts, currentChainId, targetDestinationChainId);
 }
 
 /**
