@@ -70,11 +70,16 @@ async function resolveRelatedTxnReceipts(
       .map((bridgeEvent) => client.spokePool.provider.getTransactionReceipt(bridgeEvent.transactionHash))
   );
   const decodedMessages = await resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);
-  const statusPromises = decodedMessages.map((message) =>
-    hasCCTPMessageBeenProcessed(chainIdsToCctpDomains[client.chainId], message.nonce, destinationMessageTransmitter)
+  return Promise.all(
+    decodedMessages.map(async (message) => {
+      const processed = await hasCCTPMessageBeenProcessed(
+        chainIdsToCctpDomains[client.chainId],
+        message.nonce,
+        destinationMessageTransmitter
+      );
+      return { ...message, processed };
+    })
   );
-  const processed = await Promise.all(statusPromises);
-  return decodedMessages.map((message, index) => ({ ...message, processed: processed[index] }));
 }
 
 /**

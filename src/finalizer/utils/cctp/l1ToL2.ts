@@ -104,11 +104,16 @@ async function resolveRelatedTxnReceipts(
   const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch);
   const filteredReceipts = allReceipts.filter((receipt) => receipt.blockNumber >= latestBlockToFinalize);
   const decodedMessages = await resolveCCTPRelatedTxns(filteredReceipts, currentChainId, targetDestinationChainId);
-  const statusPromises = decodedMessages.map((message) =>
-    hasCCTPMessageBeenProcessed(chainIdsToCctpDomains[currentChainId], message.nonce, destinationMessageTransmitter)
+  return Promise.all(
+    decodedMessages.map(async (message) => {
+      const processed = await hasCCTPMessageBeenProcessed(
+        chainIdsToCctpDomains[currentChainId],
+        message.nonce,
+        destinationMessageTransmitter
+      );
+      return { ...message, processed };
+    })
   );
-  const processed = await Promise.all(statusPromises);
-  return decodedMessages.map((message, index) => ({ ...message, processed: processed[index] }));
 }
 
 /**
