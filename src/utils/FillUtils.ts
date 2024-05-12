@@ -80,7 +80,7 @@ export async function getUnfilledDeposits(
       const chain = getNetworkName(destinationClient.chainId);
       logger?.warn({
         at: "getUnfilledDeposits",
-        message: `Failed to resolve status of ${deposits.length} fills on on ${chain}, reverting to iterative pairing.`,
+        message: `Failed to resolve status of ${deposits.length} fills on ${chain}, reverting to iterative pairing.`,
         reason: getNetworkError(err),
       });
 
