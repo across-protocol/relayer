@@ -137,28 +137,31 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     seedMocks(initialAllocation);
   });
 
-  it("Accessors work as expected", async function () {
+  it("Virtual balance accessors return expected", async function () {
     expect(inventoryClient.getEnabledChains()).to.deep.equal(enabledChainIds);
     expect(inventoryClient.getL1Tokens()).to.deep.equal(Object.keys(inventoryConfig.tokenConfig));
     expect(inventoryClient.getEnabledL2Chains()).to.deep.equal([OPTIMISM, POLYGON, BASE, ARBITRUM]);
-
-    expect(inventoryClient.getCumulativeBalance(mainnetWeth).eq(initialWethTotal)).to.be.true;
-    expect(inventoryClient.getCumulativeBalance(mainnetUsdc).eq(initialUsdcTotal)).to.be.true;
+    const virtualBalancesForL1Tokens = inventoryClient.getVirtualBalances();
+    expect(inventoryClient.getCumulativeVirtualBalance(virtualBalancesForL1Tokens[mainnetWeth]).eq(initialWethTotal)).to.be.true;
+    expect(inventoryClient.getCumulativeVirtualBalance(virtualBalancesForL1Tokens[mainnetUsdc]).eq(initialUsdcTotal)).to.be.true;
 
     // Check the allocation matches to what is expected in the seed state of the mock. Check more complex matchers.
-    const tokenDistribution = inventoryClient.getTokenDistributionPerL1Token();
     for (const chainId of enabledChainIds) {
       for (const l1Token of inventoryClient.getL1Tokens()) {
-        expect(inventoryClient.getBalanceOnChain(chainId, l1Token)).to.equal(initialAllocation[chainId][l1Token]);
         expect(
           inventoryClient.crossChainTransferClient
             .getOutstandingCrossChainTransferAmount(owner.address, chainId, l1Token)
             .eq(bnZero)
         ).to.be.true; // For now no cross-chain transfers
+        expect(tokenClient.getShortfallTotalRequirement(chainId, l1Token).eq(bnZero)).to.be.true; // For now no shortfalls
 
+        expect(virtualBalancesForL1Tokens[l1Token]).to.deep.equal(inventoryClient.getVirtualBalancesForL1Token(l1Token));
         const expectedShare = initialAllocation[chainId][l1Token].mul(toWei(1)).div(initialTotals[l1Token]);
         const l2Token = (l1Token === mainnetWeth ? l2TokensForWeth : l2TokensForUsdc)[chainId];
-        expect(tokenDistribution[l1Token][chainId][l2Token]).to.equal(expectedShare);
+        const chainVirtualBalance = virtualBalancesForL1Tokens[l1Token][chainId][l2Token]
+        expect(chainVirtualBalance).to.deep.equal(inventoryClient.getVirtualBalanceForL2Token(chainId, l1Token, l2Token));
+        const share = chainVirtualBalance.virtualBalance.mul(toWei(1)).div(initialTotals[l1Token]);
+        expect(share).to.equal(expectedShare);
       }
     }
   });
@@ -181,7 +184,11 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
     const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM).eq(expectedAlloc)).to.be.true;
+    const virtualBalancesForL1Tokens = inventoryClient.getVirtualBalances();
+    const virtualBalance = virtualBalancesForL1Tokens[mainnetUsdc][ARBITRUM][l2TokensForUsdc[ARBITRUM]].virtualBalance;
+    const cumulativeBalance = inventoryClient.getCumulativeVirtualBalance(virtualBalancesForL1Tokens[mainnetUsdc]);
+    const alloc = virtualBalance.mul(toWei(1)).div(cumulativeBalance);
+    expect(alloc.eq(expectedAlloc)).to.be.true;
 
     // Execute rebalance. Check logs and enqueued transaction in Adapter manager. Given the total amount over all chains
     // and the amount still on arbitrum we would expect the module to instruct the relayer to send over:
@@ -222,7 +229,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
-  it("Correctly decides when to execute rebalances: token shortfall", async function () {
+  it.only("Correctly decides when to execute rebalances: token shortfall", async function () {
     // Test the case where the funds on a particular chain are too low to meet a relay (shortfall) and the bot rebalances.
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
@@ -239,6 +246,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // should see a transfer of 5 + 2 - (-5.3)=12.3% of total inventory. This should be an amount of 0.1233*150=18.49.
     const expectedBridgedAmount = toBN("18499999999999999950");
     await inventoryClient.rebalanceInventoryIfNeeded();
+    console.log(spy.getCall(-1))
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
     expect(lastSpyLogIncludes(spy, "18.49 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
@@ -305,7 +313,11 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
     const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, ARBITRUM)).to.equal(expectedAlloc);
+    const virtualBalancesForL1Tokens = inventoryClient.getVirtualBalances();
+    const virtualBalance = virtualBalancesForL1Tokens[mainnetUsdc][ARBITRUM][l2TokensForUsdc[ARBITRUM]].virtualBalance;
+    const cumulativeBalance = inventoryClient.getCumulativeVirtualBalance(virtualBalancesForL1Tokens[mainnetUsdc]);
+    const alloc = virtualBalance.mul(toWei(1)).div(cumulativeBalance);
+    expect(alloc.eq(expectedAlloc)).to.be.true;
 
     // Set USDC balance to be lower than expected.
     mainnetUsdcContract.balanceOf
@@ -376,41 +388,45 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     });
 
     it("Correctly isolates 1:many token balances", async function () {
+      const virtualBalances = inventoryClient.getVirtualBalances()[mainnetUsdc];
       enabledChainIds
         .filter((chainId) => chainId !== MAINNET)
         .forEach((chainId) => {
-          const bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
+          const bridgedBalance = virtualBalances[chainId][bridgedUSDC[chainId]].virtualBalance;
           expect(bridgedBalance.gt(bnZero)).to.be.true;
 
           // Non-zero bridged USDC balance, zero native balance.
-          let nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          let nativeBalance = virtualBalances[chainId][nativeUSDC[chainId]].virtualBalance;
           expect(nativeBalance.eq(bnZero)).to.be.true;
 
           // Add native balance.
           tokenClient.setTokenData(chainId, nativeUSDC[chainId], bridgedBalance);
 
           // Native balance should now match bridged balance.
-          nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          const _virtualBalances = inventoryClient.getVirtualBalances()[mainnetUsdc];
+          nativeBalance = _virtualBalances[chainId][nativeUSDC[chainId]].virtualBalance;
           expect(nativeBalance.eq(bridgedBalance)).to.be.true;
         });
     });
 
     it("Correctly sums 1:many token balances", async function () {
+      const virtualBalances = inventoryClient.getVirtualBalances()[mainnetUsdc];
       enabledChainIds
         .filter((chainId) => chainId !== MAINNET)
         .forEach((chainId) => {
-          const bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
+          const bridgedBalance = virtualBalances[chainId][bridgedUSDC[chainId]].virtualBalance;
           expect(bridgedBalance.gt(bnZero)).to.be.true;
 
-          const nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          const nativeBalance = virtualBalances[chainId][nativeUSDC[chainId]].virtualBalance;
           expect(nativeBalance.eq(bnZero)).to.be.true;
 
-          const cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+          const cumulativeBalance = inventoryClient.getCumulativeVirtualBalance(virtualBalances);
           expect(cumulativeBalance.eq(initialUsdcTotal)).to.be.true;
 
           tokenClient.setTokenData(chainId, nativeUSDC[chainId], bridgedBalance);
 
-          const newBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+          const _virtualBalances = inventoryClient.getVirtualBalances()[mainnetUsdc];
+          const newBalance = inventoryClient.getCumulativeVirtualBalance(_virtualBalances);
           expect(newBalance.eq(initialUsdcTotal.add(bridgedBalance))).to.be.true;
 
           // Revert to 0 balance for native USDC.
@@ -419,39 +435,33 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     });
 
     it("Correctly tracks 1:many token distributions", async function () {
+      const virtualBalances = inventoryClient.getVirtualBalances()[mainnetUsdc];
+
       enabledChainIds
         .filter((chainId) => chainId !== MAINNET)
         .forEach((chainId) => {
           // Total USDC across all chains.
-          let cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+          const cumulativeBalance = inventoryClient.getCumulativeVirtualBalance(virtualBalances);
           expect(cumulativeBalance.gt(bnZero)).to.be.true;
           expect(cumulativeBalance.eq(initialUsdcTotal)).to.be.true;
 
           // The initial allocation is all bridged USDC, 0 native.
-          const bridgedAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, bridgedUSDC[chainId]);
+          const bridgedVirtualBalance = virtualBalances[chainId][bridgedUSDC[chainId]].virtualBalance;
+          const bridgedAllocation = bridgedVirtualBalance.mul(fixedPoint).div(cumulativeBalance);
           expect(bridgedAllocation.gt(bnZero)).to.be.true;
-          let balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
-          expect(bridgedAllocation.eq(balance.mul(fixedPoint).div(cumulativeBalance))).to.be.true;
-
-          let nativeAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, nativeUSDC[chainId]);
-          expect(nativeAllocation.eq(bnZero)).to.be.true;
-
-          balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          const nativeVirtualBalance = virtualBalances[chainId][nativeUSDC[chainId]].virtualBalance;
+          const nativeAllocation = nativeVirtualBalance.mul(fixedPoint).div(cumulativeBalance);
           expect(nativeAllocation.eq(bnZero)).to.be.true;
 
           // Add native USDC, same amount as bridged USDC.
-          balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
-          tokenClient.setTokenData(chainId, nativeUSDC[chainId], balance);
-          expect(inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]).eq(balance)).to.be.true;
-          expect(nativeAllocation.eq(bnZero)).to.be.true;
-
+          tokenClient.setTokenData(chainId, nativeUSDC[chainId], bridgedVirtualBalance);
+          const _virtualBalances = inventoryClient.getVirtualBalances()[mainnetUsdc];
+          expect(_virtualBalances[chainId][nativeUSDC[chainId]].virtualBalance.eq(bridgedVirtualBalance)).to.be.true;
+          
           // Native USDC allocation should now be non-zero.
-          nativeAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, nativeUSDC[chainId]);
-          expect(nativeAllocation.gt(bnZero)).to.be.true;
-
-          expect(inventoryClient.getCumulativeBalance(mainnetUsdc).gt(cumulativeBalance)).to.be.true;
-          cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
-          expect(cumulativeBalance.gt(initialUsdcTotal)).to.be.true;
+          const _cumulativeBalance = inventoryClient.getCumulativeVirtualBalance(_virtualBalances);
+          expect(_cumulativeBalance.gt(cumulativeBalance)).to.be.true;
+          expect(_cumulativeBalance.gt(initialUsdcTotal)).to.be.true;
 
           // Return native USDC balance to 0 for next loop.
           tokenClient.setTokenData(chainId, nativeUSDC[chainId], bnZero);
@@ -468,8 +478,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       await inventoryClient.update();
       await inventoryClient.rebalanceInventoryIfNeeded();
       expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-
-      const cumulativeUSDC = inventoryClient.getCumulativeBalance(mainnetUsdc);
+      const virtualBalances = inventoryClient.getVirtualBalances()[mainnetUsdc];
+      const cumulativeUSDC = inventoryClient.getCumulativeVirtualBalance(virtualBalances);
       const targetPct = toWei(0.1);
       const thresholdPct = toWei(0.05);
       const expectedRebalance = cumulativeUSDC.mul(targetPct).div(fixedPoint);

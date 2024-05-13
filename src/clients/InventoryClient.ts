@@ -31,8 +31,15 @@ import lodash from "lodash";
 import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-type TokenDistribution = { [l2Token: string]: BigNumber };
-type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
+// Virtual balance = current balance + inbound bridge transfers - shortfalls
+type VirtualBalance = {
+  virtualBalance: BigNumber;
+  spotBalance: BigNumber;
+  outstandingTransferAmount: BigNumber;
+  shortFallRequirement: BigNumber;
+};
+type TokenVirtualBalance = { [chainId: number]: { [l2Token: string]: VirtualBalance } };
+type TokenVirtualPerL1Token = { [l1Token: string]: TokenVirtualBalance };
 
 export type Rebalance = {
   chainId: number;
@@ -91,104 +98,97 @@ export class InventoryClient {
     }
   }
 
-  /*
-   * Get the total balance for an L1 token across all chains, considering any outstanding cross chain transfers as a
-   * virtual balance on that chain.
-   * @param l1Token L1 token address to query.
-   * returns Cumulative balance of l1Token across all inventory-managed chains.
-   */
-  getCumulativeBalance(l1Token: string): BigNumber {
-    return this.getEnabledChains()
-      .map((chainId) => this.getBalanceOnChain(chainId, l1Token))
-      .reduce((acc, curr) => acc.add(curr), bnZero);
-  }
-
   /**
    * Determine the effective/virtual balance of an l1 token that has been deployed to another chain.
-   * Includes both the actual balance on the chain and any pending inbound transfers to the target chain.
-   * If l2Token is supplied, return its balance on the specified chain. Otherwise, return the total allocation
-   * of l1Token on the specified chain.
+   * Includes both the actual balance on the chain and any pending inbound transfers to the target chain, minus
+   * any shortfalls from pending deposits that this relayer will need to fill.
    * @param chainId Chain to query token balance on.
    * @param l1Token L1 token to query on chainId (after mapping).
-   * @param l2Token Optional l2 token address to narrow the balance reporting.
-   * @returns Balance of l1Token on chainId.
+   * @param l2Token L2 token address mapped to L1 token in inventory token config that we want to query
+   * virtual balance of.
+   * @returns Balance of L1 token on chainId for L2 token.
    */
-  getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
+  getVirtualBalanceForL2Token(chainId: number, l1Token: string, l2Token: string): VirtualBalance {
     const { crossChainTransferClient, relayer, tokenClient } = this;
-    let balance: BigNumber;
 
     // Return the balance for a specific l2 token on the remote chain.
-    if (isDefined(l2Token)) {
-      balance = tokenClient.getBalance(chainId, l2Token);
-      return balance.add(
-        crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
-      );
-    }
-
-    const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
-    balance = l2Tokens
-      .map((l2Token) => tokenClient.getBalance(chainId, l2Token))
-      .reduce((acc, curr) => acc.add(curr), bnZero);
-
-    return balance.add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token));
+    const spotBalance = tokenClient.getBalance(chainId, l2Token);
+    const shortFallRequirement = tokenClient.getShortfallTotalRequirement(chainId, l2Token);
+    const outstandingTransferAmount = crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+      relayer,
+      chainId,
+      l1Token,
+      l2Token
+    );
+    const virtualBalance = spotBalance
+      .add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token))
+      .sub(shortFallRequirement);
+    return {
+      virtualBalance,
+      spotBalance,
+      outstandingTransferAmount,
+      shortFallRequirement,
+    };
   }
 
   /**
-   * Determine the allocation of an l1 token across all configured remote chain IDs.
-   * @param l1Token L1 token to query.
-   * @returns Distribution of l1Token by chain ID and l2Token.
+   * Get the virtual balance for an L1 token across all chains, considering any outstanding cross chain transfers as a
+   * virtual balance on that chain as well as short fall requirements.
+   * @dev L2 tokens associated with L1 token are configured in token config.
+   * @dev If a chain or L2 token isn't configured in the token config for an L1 token then the
+   * returned object entry will be empty.
+   * @param l1Token L1 token address to query.
+   * returns Virtual Balance object for L1 token on each chain for each associated L2 token.
    */
-  getChainDistribution(l1Token: string): { [chainId: number]: TokenDistribution } {
-    const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    const distribution: { [chainId: number]: TokenDistribution } = {};
+  getVirtualBalancesForL1Token(l1Token: string): TokenVirtualBalance {
+    const balances: TokenVirtualBalance = {};
 
     this.getEnabledChains().forEach((chainId) => {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
       // later trying to grab the chain equivalent of the L1 token via the HubPoolClient.
       if (chainId === this.hubPoolClient.chainId || this._l1TokenEnabledForChain(l1Token, chainId)) {
-        if (cumulativeBalance.eq(bnZero)) {
-          return;
-        }
-
-        distribution[chainId] ??= {};
+        balances[chainId] ??= {};
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
-          // The effective balance is the current balance + inbound bridge transfers.
-          const effectiveBalance = this.getBalanceOnChain(chainId, l1Token, l2Token);
-          distribution[chainId][l2Token] = effectiveBalance.mul(this.scalar).div(cumulativeBalance);
+          // The virtual balance is the current balance + inbound bridge transfers minus any shortfalls
+          // from fills that must be sent out.
+          const chainVirtualBalance = this.getVirtualBalanceForL2Token(chainId, l1Token, l2Token);
+          balances[chainId][l2Token] = chainVirtualBalance;
         });
       }
     });
-    return distribution;
+    return balances;
   }
 
   /**
-   * Determine the allocation of an l1 token across all configured remote chain IDs.
-   * @param l1Token L1 token to query.
-   * @returns Distribution of l1Token by chain ID and l2Token.
+   * Sum the virtual balances for an L1 token across all chains.
+   * @param tokenVirtualBalances Return type of `getVirtualBalancesForL1Token`.
+   * @returns Single cumulative virtual balance for the L1 token across all chains.
    */
-  getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
-    const distributionPerL1Token: TokenDistributionPerL1Token = {};
-    this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
-    return distributionPerL1Token;
+  getCumulativeVirtualBalance(tokenVirtualBalances: TokenVirtualBalance): BigNumber {
+    return Object.values(tokenVirtualBalances).reduce((cumulativeBalance, l2TokenVirtualBalances) => {
+      return Object.values(l2TokenVirtualBalances).reduce(
+        (chainBalances, { virtualBalance }) => chainBalances.add(virtualBalance),
+        cumulativeBalance
+      );
+    }, bnZero);
   }
 
-  // Get the balance of a given token on a given chain, including shortfalls and any pending cross chain transfers.
-  getCurrentAllocationPct(l1Token: string, chainId: number, l2Token: string): BigNumber {
-    // If there is nothing over all chains, return early.
-    const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    if (cumulativeBalance.eq(bnZero)) {
-      return bnZero;
-    }
+  /**
+   * Get virtual balance for all enabled L1 tokens in token config.
+   * @returns A TokenVirtualBalance for each enabled L1 token address.
+   */
+  getVirtualBalances(): TokenVirtualPerL1Token {
+    const balances: TokenVirtualPerL1Token = {};
 
-    const shortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
-    const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token).sub(shortfall);
+    this.getL1Tokens().forEach((l1Token) => {
+      balances[l1Token] = this.getVirtualBalancesForL1Token(l1Token);
+    });
 
-    // Multiply by scalar to avoid rounding errors.
-    return currentBalance.mul(this.scalar).div(cumulativeBalance);
+    return balances;
   }
 
-  getRepaymentTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+  private getRepaymentTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     // @todo: Update HubPoolClient.getL2TokenForL1TokenAtBlock() such that it returns `undefined` instead of throwing.
     try {
       return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
@@ -205,7 +205,7 @@ export class InventoryClient {
    * @param chainId Remove chain to query.
    * @returns An array of supported tokens on chainId that map back to l1Token on mainnet.
    */
-  getRemoteTokensForL1Token(l1Token: string, chainId: number | string): string[] {
+  private getRemoteTokensForL1Token(l1Token: string, chainId: number | string): string[] {
     if (chainId === this.hubPoolClient.chainId) {
       return [l1Token];
     }
@@ -240,8 +240,14 @@ export class InventoryClient {
     );
   }
 
-  // Decrement Tokens Balance And Increment Cross Chain Transfer
-  trackCrossChainTransfer(l1Token: string, l2Token: string, rebalance: BigNumber, chainId: number | string): void {
+  // Reserves token balance for an upcoming cross chain transfer by decrementing token client balance
+  // and incrementing cross chain transfer pending balance.
+  private trackCrossChainTransfer(
+    l1Token: string,
+    l2Token: string,
+    rebalance: BigNumber,
+    chainId: number | string
+  ): void {
     this.tokenClient.decrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
     this.crossChainTransferClient.increaseOutstandingTransfer(
       this.relayer,
@@ -252,7 +258,7 @@ export class InventoryClient {
     );
   }
 
-  async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
+  private async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
     const refunds: CombinedRefunds[] = [];
     const [pendingRefunds, nextBundleRefunds] = await Promise.all([
       this.bundleDataClient.getPendingRefundsFromValidBundles(),
@@ -286,7 +292,7 @@ export class InventoryClient {
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
-  async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
+  private async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
 
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
@@ -419,7 +425,8 @@ export class InventoryClient {
     // time, return an object with zero refunds for all chains.
     const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
-    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
+    const chainVirtualBalances = this.getVirtualBalancesForL1Token(l1Token);
+    const cumulativeVirtualBalance = this.getCumulativeVirtualBalance(chainVirtualBalances);
 
     // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
     // getBundleRefunds async call. Therefore, we choose not to compute them in parallel.
@@ -470,10 +477,9 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
       // Destination chain:
       const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
-      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, repaymentToken);
-      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken);
-      const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-      let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+      assert(isDefined(chainVirtualBalances[_chain][repaymentToken]));
+      const { virtualBalance, shortFallRequirement, outstandingTransferAmount, spotBalance } =
+        chainVirtualBalances[_chain][repaymentToken];
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
       // on destination chain
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
@@ -482,8 +488,8 @@ export class InventoryClient {
       let chainVirtualBalanceWithShortfallPostRelay =
         _chain === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
-          ? chainVirtualBalanceWithShortfall.sub(outputAmount)
-          : chainVirtualBalanceWithShortfall;
+          ? virtualBalance.sub(outputAmount)
+          : virtualBalance;
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
@@ -491,8 +497,8 @@ export class InventoryClient {
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
-      cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
-      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
+      const cumulativeVirtualBalanceWithRefunds = cumulativeVirtualBalance.add(cumulativeRefunds);
+      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithRefunds.sub(outputAmount);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
@@ -517,12 +523,12 @@ export class InventoryClient {
           outputAmount,
           originChainId,
           destinationChainId,
-          chainShortfall,
-          chainVirtualBalance,
-          chainVirtualBalanceWithShortfall,
+          outstandingTransferAmount,
+          spotBalance,
+          shortFallRequirement,
+          chainVirtualBalance: virtualBalance,
           chainVirtualBalanceWithShortfallPostRelay,
           cumulativeVirtualBalance,
-          cumulativeVirtualBalanceWithShortfall,
           cumulativeVirtualBalanceWithShortfallPostRelay,
           thresholdPct,
           expectedPostRelayAllocation,
@@ -693,25 +699,29 @@ export class InventoryClient {
     return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmount);
   }
 
-  getPossibleRebalances(): Rebalance[] {
-    const chainIds = this.getEnabledL2Chains();
+  getPossibleRebalances(tokenVirtualBalances: TokenVirtualPerL1Token): Rebalance[] {
     const rebalancesRequired: Rebalance[] = [];
-
-    for (const l1Token of this.getL1Tokens()) {
-      const cumulativeBalance = this.getCumulativeBalance(l1Token);
+    const l1Tokens = Object.keys(tokenVirtualBalances);
+    for (const l1Token of l1Tokens) {
+      const virtualBalances = this.getVirtualBalancesForL1Token(l1Token);
+      const cumulativeBalance = this.getCumulativeVirtualBalance(virtualBalances);
       if (cumulativeBalance.eq(bnZero)) {
         continue;
       }
+      const chainIds = Object.keys(virtualBalances).map(Number);
 
       chainIds.forEach((chainId) => {
         // Skip if there's no configuration for l1Token on chainId.
         if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
           return;
         }
-
-        const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
+        assert(virtualBalances[chainId]);
+        const l2Tokens = Object.keys(virtualBalances[chainId]);
         l2Tokens.forEach((l2Token) => {
-          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
+          assert(virtualBalances[chainId][l2Token]);
+          const currentAllocPct = virtualBalances[chainId][l2Token].virtualBalance
+            .mul(this.scalar)
+            .div(cumulativeBalance);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
           const { thresholdPct, targetPct } = tokenConfig;
 
@@ -721,7 +731,7 @@ export class InventoryClient {
 
           const deltaPct = targetPct.sub(currentAllocPct);
           const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
-          const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
+          const balance = virtualBalances[chainId][l2Token].spotBalance
           rebalancesRequired.push({
             chainId,
             l1Token,
@@ -753,10 +763,10 @@ export class InventoryClient {
       if (!this.isInventoryManagementEnabled()) {
         return;
       }
-      const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
+      const tokenDistributionPerL1Token = this.getVirtualBalances();
       this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
-      const rebalancesRequired = this.getPossibleRebalances();
+      const rebalancesRequired = this.getPossibleRebalances(tokenDistributionPerL1Token);
       if (rebalancesRequired.length === 0) {
         this.log("No rebalances required");
         return;
@@ -1005,7 +1015,7 @@ export class InventoryClient {
     }
   }
 
-  constructConsideringRebalanceDebugLog(distribution: TokenDistributionPerL1Token): void {
+  constructConsideringRebalanceDebugLog(virtualBalances: TokenVirtualPerL1Token): void {
     const logData: {
       [symbol: string]: {
         [chainId: number]: {
@@ -1020,7 +1030,7 @@ export class InventoryClient {
       };
     } = {};
     const cumulativeBalances: { [symbol: string]: string } = {};
-    Object.entries(distribution).forEach(([l1Token, distributionForToken]) => {
+    Object.entries(virtualBalances).forEach(([l1Token, virtualBalancesForL1Token]) => {
       const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
       if (tokenInfo === undefined) {
         throw new Error(
@@ -1029,30 +1039,26 @@ export class InventoryClient {
       }
       const { symbol, decimals } = tokenInfo;
       const formatter = createFormatFunction(2, 4, false, decimals);
-      cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(l1Token).toString());
+      const cumulativeVirtualBalance = this.getCumulativeVirtualBalance(virtualBalancesForL1Token);
+      cumulativeBalances[symbol] = formatter(cumulativeVirtualBalance.toString());
       logData[symbol] ??= {};
 
-      Object.keys(distributionForToken).forEach((_chainId) => {
+      Object.keys(virtualBalancesForL1Token).forEach((_chainId) => {
         const chainId = Number(_chainId);
         logData[symbol][chainId] ??= {};
 
-        Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
-          const balanceOnChain = this.getBalanceOnChain(chainId, l1Token, l2Token);
-          const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-            this.relayer,
-            chainId,
-            l1Token,
-            l2Token
-          );
-          const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
-          logData[symbol][chainId][l2Token] = {
-            actualBalanceOnChain: formatter(actualBalanceOnChain.toString()),
-            virtualBalanceOnChain: formatter(balanceOnChain.toString()),
-            outstandingTransfers: formatter(transfers.toString()),
-            tokenShortFalls: formatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()),
-            proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
-          };
-        });
+        Object.entries(virtualBalancesForL1Token[chainId]).forEach(
+          ([l2Token, { virtualBalance, spotBalance, shortFallRequirement, outstandingTransferAmount }]) => {
+            const allocation = virtualBalance.mul(this.scalar).div(cumulativeVirtualBalance);
+            logData[symbol][chainId][l2Token] = {
+              actualBalanceOnChain: formatter(spotBalance.toString()),
+              outstandingTransfers: formatter(outstandingTransferAmount.toString()),
+              tokenShortFalls: formatter(shortFallRequirement.toString()),
+              virtualBalanceOnChain: formatter(virtualBalance.toString()),
+              proRataShare: this.formatWei(allocation.mul(100).toString()) + "%",
+            };
+          }
+        );
       });
     });
 
