@@ -17,6 +17,7 @@ export type DecodedCCTPMessage = {
   destinationDomain: number;
   attestation: string;
   sender: string;
+  nonce: number;
 };
 
 /**
@@ -232,6 +233,7 @@ async function _resolveCCTPRelatedTxns(
             sourceDomain: Number(sourceDomain),
             destinationDomain: Number(destinationDomain),
             attestation,
+            nonce: BigNumber.from(nonce).toNumber(),
           };
         })
       )
