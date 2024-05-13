@@ -52,12 +52,15 @@ export async function cctpL1toL2Finalizer(
     fromBlock,
     contract
   );
-  const unprocessedMessages = decodedMessages.filter((message) => !message.processed);
+  const unprocessedMessages = decodedMessages.filter(
+    (message) => !message.processed && message.status == "ready-to-execute"
+  );
   logger.debug({
     at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
     message: `Detected ${unprocessedMessages.length} unprocessed messages`,
     processed: decodedMessages.filter((message) => message.processed).length,
     unprocessed: unprocessedMessages.length,
+    pending: decodedMessages.filter((message) => message.status == "pending").length,
   });
 
   return {

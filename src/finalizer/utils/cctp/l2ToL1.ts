@@ -38,12 +38,15 @@ export async function cctpL2toL1Finalizer(
     hubPoolClient.hubPool.provider
   );
   const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId, fromBlock, contract);
-  const unprocessedMessages = decodedMessages.filter((message) => !message.processed);
+  const unprocessedMessages = decodedMessages.filter(
+    (message) => !message.processed && message.status == "ready-to-execute"
+  );
   logger.debug({
     at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
     message: `Detected ${unprocessedMessages.length} unprocessed messages`,
     processed: decodedMessages.filter((message) => message.processed).length,
     unprocessed: unprocessedMessages.length,
+    pending: decodedMessages.filter((message) => message.status == "pending").length,
   });
 
   return {
