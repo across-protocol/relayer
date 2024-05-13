@@ -39,37 +39,67 @@ import {
   scrollFinalizer,
   zkSyncFinalizer,
 } from "./utils";
+import { assert as ssAssert, enums } from "superstruct";
 const { isDefined } = sdkUtils;
 
 config();
 let logger: winston.Logger;
 
-const chainFinalizers: { [chainId: number]: ChainFinalizer } = {
-  10: opStackFinalizer,
-  137: polygonFinalizer,
-  280: zkSyncFinalizer,
-  324: zkSyncFinalizer,
-  8453: opStackFinalizer,
-  42161: arbitrumOneFinalizer,
-  59144: lineaL2ToL1Finalizer,
-  534352: scrollFinalizer,
-};
+/**
+ * The finalization type is used to determine the direction of the finalization.
+ */
+type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2";
 
 /**
- * A list of finalizers that should be run for each chain. Note: we do this
- * because some chains have multiple finalizers that need to be run.
- * Mainly related to CCTP and Linea
+ * A list of finalizers that can be used to finalize messages on a chain. These are
+ * broken down into two categories: finalizers that finalize messages on L1 and finalizers
+ * that finalize messages on L2.
+ * @note: finalizeOnL1 is used to finalize L2 -> L1 messages (from the spoke chain to mainnet)
+ * @note: finalizeOnL2 is used to finalize L1 -> L2 messages (from mainnet to the spoke chain)
  */
-const chainFinalizerOverrides: { [chainId: number]: ChainFinalizer[] } = {
+const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; finalizeOnL1: ChainFinalizer[] } } = {
   // Mainnets
-  10: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  137: [polygonFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  8453: [opStackFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  42161: [arbitrumOneFinalizer, cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  59144: [lineaL1ToL2Finalizer, lineaL2ToL1Finalizer],
+  10: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  137: {
+    finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  324: {
+    finalizeOnL1: [zkSyncFinalizer],
+    finalizeOnL2: [],
+  },
+  8453: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  42161: {
+    finalizeOnL1: [arbitrumOneFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  59144: {
+    finalizeOnL1: [lineaL2ToL1Finalizer],
+    finalizeOnL2: [lineaL1ToL2Finalizer],
+  },
+  280: {
+    finalizeOnL1: [zkSyncFinalizer],
+    finalizeOnL2: [],
+  },
+  534352: {
+    finalizeOnL1: [scrollFinalizer],
+    finalizeOnL2: [],
+  },
   // Testnets
-  84532: [cctpL1toL2Finalizer, cctpL2toL1Finalizer],
-  59140: [lineaL1ToL2Finalizer, lineaL2ToL1Finalizer],
+  84532: {
+    finalizeOnL1: [cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  59140: {
+    finalizeOnL1: [lineaL2ToL1Finalizer],
+    finalizeOnL2: [lineaL1ToL2Finalizer],
+  },
 };
 
 function enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize: string[], addressesToEnsure: string[]): string[] {
@@ -90,7 +120,8 @@ export async function finalize(
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
   l1ToL2AddressesToFinalize: string[],
-  submitFinalizationTransactions: boolean
+  submitFinalizationTransactions: boolean,
+  finalizationStrategy: FinalizationType
 ): Promise<void> {
   const hubChainId = hubPoolClient.chainId;
 
@@ -113,9 +144,23 @@ export async function finalize(
       return;
     }
 
-    // We want to first resolve a possible override for the finalizer, and
-    // then fallback to the default finalizer.
-    const chainSpecificFinalizers = (chainFinalizerOverrides[chainId] ?? [chainFinalizers[chainId]]).filter(isDefined);
+    // We should only finalize the direction that has been specified in
+    // the finalization strategy.
+    const chainSpecificFinalizers: ChainFinalizer[] = [];
+    switch (finalizationStrategy) {
+      case "l1->l2":
+        chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnL2);
+        break;
+      case "l2->l1":
+        chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnL1);
+        break;
+      case "l1<->l2":
+        chainSpecificFinalizers.push(
+          ...chainFinalizers[chainId].finalizeOnL1,
+          ...chainFinalizers[chainId].finalizeOnL2
+        );
+        break;
+    }
     assert(chainSpecificFinalizers?.length > 0, `No finalizer available for chain ${chainId}`);
 
     const network = getNetworkName(chainId);
@@ -355,6 +400,7 @@ export class FinalizerConfig extends DataworkerConfig {
   readonly maxFinalizerLookback: number;
   readonly chainsToFinalize: number[];
   readonly addressesToMonitorForL1L2Finalizer: string[];
+  readonly finalizationStrategy: FinalizationType;
 
   constructor(env: ProcessEnv) {
     const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS, L1_L2_FINALIZER_MONITOR_ADDRESS } = env;
@@ -369,6 +415,10 @@ export class FinalizerConfig extends DataworkerConfig {
       Number.isInteger(this.maxFinalizerLookback),
       `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
     );
+
+    const _finalizationStategy = (env.FINALIZATION_STRATEGY ?? "l1<->l2").toLowerCase();
+    ssAssert(_finalizationStategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
+    this.finalizationStrategy = _finalizationStategy;
   }
 }
 
@@ -398,7 +448,8 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
           spokePoolClients,
           config.chainsToFinalize.length === 0 ? availableChains : config.chainsToFinalize,
           config.addressesToMonitorForL1L2Finalizer,
-          config.sendingFinalizationsEnabled
+          config.sendingFinalizationsEnabled,
+          config.finalizationStrategy
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
