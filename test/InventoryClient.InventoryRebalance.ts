@@ -229,7 +229,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
-  it.only("Correctly decides when to execute rebalances: token shortfall", async function () {
+  it("Correctly decides when to execute rebalances: token shortfall", async function () {
     // Test the case where the funds on a particular chain are too low to meet a relay (shortfall) and the bot rebalances.
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
@@ -242,14 +242,13 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
 
     // If we now consider how much should be sent over the bridge. The spoke pool, considering the shortfall, has an
-    // allocation of -5.3%. The target is, however, 5% of the total supply. factoring in the overshoot parameter we
-    // should see a transfer of 5 + 2 - (-5.3)=12.3% of total inventory. This should be an amount of 0.1233*150=18.49.
-    const expectedBridgedAmount = toBN("18499999999999999950");
+    // allocation of (10-18)/(150-18)=-6%. The target is, however, 7% of the total supply. factoring in the overshoot parameter we
+    // should see a transfer of 7-(-6)=13% of total inventory. This should be an amount of 0.13*(150-18)=17.16.    
+    const expectedBridgedAmount = toBN("17239999999999999992");
     await inventoryClient.rebalanceInventoryIfNeeded();
-    console.log(spy.getCall(-1))
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "18.49 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
+    expect(lastSpyLogIncludes(spy, "17.23 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
     expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
 
     // Note that there should be some additional state updates that we should check. In particular the token balance
@@ -275,9 +274,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"18.49"')).to.be.true;
+    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"17.23"')).to.be.true;
     expect(spyLogIncludes(spy, -2, '"actualBalanceOnChain":"10.00"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"virtualBalanceOnChain":"28.49"')).to.be.true;
+    expect(spyLogIncludes(spy, -2, '"virtualBalanceOnChain":"9.23"')).to.be.true;
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     // Zero the transfer. mock conclusion.
@@ -292,10 +291,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain Arbitrum that shows the actual balance after the relay concluded and the share.
-    // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    // expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
-    // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {

@@ -161,14 +161,15 @@ export class InventoryClient {
   }
 
   /**
-   * Sum the virtual balances for an L1 token across all chains.
+   * Sum the real balances for an L1 token across all chains. This does not count short falls
+   * as they are virtual and may not be acted upon.
    * @param tokenVirtualBalances Return type of `getVirtualBalancesForL1Token`.
    * @returns Single cumulative virtual balance for the L1 token across all chains.
    */
   getCumulativeVirtualBalance(tokenVirtualBalances: TokenVirtualBalance): BigNumber {
     return Object.values(tokenVirtualBalances).reduce((cumulativeBalance, l2TokenVirtualBalances) => {
       return Object.values(l2TokenVirtualBalances).reduce(
-        (chainBalances, { virtualBalance }) => chainBalances.add(virtualBalance),
+        (chainBalances, { spotBalance, outstandingTransferAmount }) => chainBalances.add(spotBalance).add(outstandingTransferAmount),
         cumulativeBalance
       );
     }, bnZero);
@@ -426,6 +427,7 @@ export class InventoryClient {
     const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     const chainVirtualBalances = this.getVirtualBalancesForL1Token(l1Token);
+    console.log(l1Token, chainVirtualBalances)
     const cumulativeVirtualBalance = this.getCumulativeVirtualBalance(chainVirtualBalances);
 
     // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
@@ -473,6 +475,7 @@ export class InventoryClient {
 
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
+    console.log(chainsToEvaluate)
     for (const _chain of chainsToEvaluate) {
       assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
       // Destination chain:
@@ -512,6 +515,17 @@ export class InventoryClient {
       const thresholdPct = toBN(tokenConfig.targetPct)
         .mul(tokenConfig.targetOverageBuffer ?? toBNWei("1"))
         .div(fixedPointAdjustment);
+      console.log(
+        expectedPostRelayAllocation.toString(),
+        thresholdPct.toString(),
+        spotBalance.toString(),
+        shortFallRequirement.toString(),
+        outstandingTransferAmount.toString(),
+        virtualBalance.toString(),
+        cumulativeVirtualBalanceWithShortfallPostRelay.toString(),
+        outputAmount.toString()
+      );
+
       this.log(
         `Evaluated taking repayment on ${
           _chain === originChainId ? "origin" : _chain === destinationChainId ? "destination" : "slow withdrawal"
@@ -731,7 +745,7 @@ export class InventoryClient {
 
           const deltaPct = targetPct.sub(currentAllocPct);
           const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
-          const balance = virtualBalances[chainId][l2Token].spotBalance
+          const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
           rebalancesRequired.push({
             chainId,
             l1Token,
