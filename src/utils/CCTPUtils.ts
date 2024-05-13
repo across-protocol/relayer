@@ -1,6 +1,6 @@
 import { utils } from "@across-protocol/sdk-v2";
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 import { BigNumber, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { compareAddressesSimple } from "./AddressUtils";
@@ -248,25 +248,14 @@ async function _resolveCCTPRelatedTxns(
  * @returns The attestation proof for the given message hash. This is a string of the form "0x<attestation proof>". Undefined if the attestation proof could not be generated.
  */
 async function generateCCTPAttestationProof(messageHash: string, isMainnet: boolean): Promise<string | undefined> {
-  try {
-    const httpResponse = await axios.get<{ status: string; attestation: string }>(
-      `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
-    );
-    const attestationResponse = httpResponse.data;
-    // Attetestation was not able to be generated. We should throw an error
-    if (attestationResponse.status !== "complete") {
-      return undefined;
-    }
-    // Return the attestation proof since it was generated
-    return attestationResponse.attestation;
-  } catch (e) {
-    if (e instanceof AxiosError && e.response?.status === 404) {
-      // Not enough time has passed for the attestation to be generated
-      // We should return and try again later
-      return undefined;
-    } else {
-      // An unknown error occurred. We should throw it up the stack
-      throw e;
-    }
+  const httpResponse = await axios.get<{ status: string; attestation: string }>(
+    `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
+  );
+  const attestationResponse = httpResponse.data;
+  // Attetestation was not able to be generated.
+  if (httpResponse.status !== 200 && attestationResponse.status !== "complete") {
+    return undefined;
   }
+  // Return the attestation proof since it was generated
+  return attestationResponse?.attestation;
 }
