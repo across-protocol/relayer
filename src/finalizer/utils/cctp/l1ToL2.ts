@@ -61,7 +61,7 @@ export async function cctpL1toL2Finalizer(
   );
   logger.debug({
     at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
-    message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP L1 to ${spokePoolClient.chainId}`,
+    message: `Detected ${unprocessedMessages.length} ready to finalize messages`,
     statusesGrouped,
   });
 
