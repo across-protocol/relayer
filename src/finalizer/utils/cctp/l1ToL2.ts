@@ -8,19 +8,22 @@ import {
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
+  assert,
   formatUnitsForToken,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
   getNetworkName,
   getRedisCache,
+  groupObjectCountsByProp,
+  isDefined,
   paginatedEventQuery,
   winston,
 } from "../../../utils";
-import { DecodedCCTPMessage, hasCCTPMessageBeenProcessed, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { getBlockRangeByHoursOffsets } from "../linea/common";
-import { uniqWith } from "lodash";
+import { groupBy, uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -49,15 +52,17 @@ export async function cctpL1toL2Finalizer(
     l1ToL2AddressesToFinalize,
     hubPoolClient.chainId,
     spokePoolClient.chainId,
-    fromBlock,
-    contract
+    fromBlock
   );
-  const unprocessedMessages = decodedMessages.filter((message) => !message.processed);
+  const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
+  const statusesGrouped = groupObjectCountsByProp(
+    decodedMessages,
+    (message: { status: CCTPMessageStatus }) => message.status
+  );
   logger.debug({
     at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
-    message: `Detected ${unprocessedMessages.length} unprocessed messages`,
-    processed: decodedMessages.filter((message) => message.processed).length,
-    unprocessed: unprocessedMessages.length,
+    message: `Detected ${unprocessedMessages.length} ready to finalize messages`,
+    statusesGrouped,
   });
 
   return {
@@ -98,22 +103,11 @@ async function resolveRelatedTxnReceipts(
   addressesToSearch: string[],
   currentChainId: number,
   targetDestinationChainId: number,
-  latestBlockToFinalize: number,
-  destinationMessageTransmitter: Contract
-): Promise<(DecodedCCTPMessage & { processed: boolean })[]> {
+  latestBlockToFinalize: number
+): Promise<DecodedCCTPMessage[]> {
   const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch);
   const filteredReceipts = allReceipts.filter((receipt) => receipt.blockNumber >= latestBlockToFinalize);
-  const decodedMessages = await resolveCCTPRelatedTxns(filteredReceipts, currentChainId, targetDestinationChainId);
-  return Promise.all(
-    decodedMessages.map(async (message) => {
-      const processed = await hasCCTPMessageBeenProcessed(
-        chainIdsToCctpDomains[currentChainId],
-        message.nonce,
-        destinationMessageTransmitter
-      );
-      return { ...message, processed };
-    })
-  );
+  return resolveCCTPRelatedTxns(filteredReceipts, currentChainId, targetDestinationChainId);
 }
 
 /**
@@ -126,6 +120,7 @@ async function generateMultiCallData(
   messageTransmitter: Contract,
   messages: DecodedCCTPMessage[]
 ): Promise<Multicall2Call[]> {
+  assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
     messages.map(async (message) => {
       const txn = (await messageTransmitter.populateTransaction.receiveMessage(
