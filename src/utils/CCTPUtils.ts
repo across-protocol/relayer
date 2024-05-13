@@ -1,12 +1,13 @@
 import { utils } from "@across-protocol/sdk-v2";
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 import { BigNumber, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { compareAddressesSimple } from "./AddressUtils";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { bnZero } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
+import { getProvider } from "./ProviderUtils";
 
 export type DecodedCCTPMessage = {
   messageHash: string;
@@ -18,7 +19,11 @@ export type DecodedCCTPMessage = {
   attestation: string;
   sender: string;
   nonce: number;
+  status: CCTPMessageStatus;
 };
+
+export type Attestation = { status: string; attestation: string };
+export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 
 /**
  * Used to convert an ETH Address string to a 32-byte hex string.
@@ -126,14 +131,14 @@ export async function hasCCTPMessageBeenProcessed(
  * Note: due to the nature of testnet/mainnet chain ids mapping to the same CCTP domain, we
  *       actually have a mapping of CCTP Domain -> [chainId].
  */
-export function getCctpDomainsToChainIds() {
+export function getCctpDomainsToChainIds(): Record<number, number[]> {
   return Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
     if (!acc[cctpDomain]) {
       acc[cctpDomain] = [];
     }
     acc[cctpDomain].push(Number(chainId));
     return acc;
-  }, {} as Record<number, number[]>);
+  }, {});
 }
 
 /**
@@ -196,17 +201,17 @@ async function _resolveCCTPRelatedTxns(
 
           const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], log.data)[0];
           const messageBytesArray = ethers.utils.arrayify(messageBytes);
-          const sourceDomain = ethers.utils.hexlify(messageBytesArray.slice(4, 8)); // sourceDomain 4 bytes starting index 4
-          const destinationDomain = ethers.utils.hexlify(messageBytesArray.slice(8, 12)); // destinationDomain 4 bytes starting index 8
-          const nonce = ethers.utils.hexlify(messageBytesArray.slice(12, 20)); // nonce 8 bytes starting index 12
+          const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
+          const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
+          const nonce = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // nonce 8 bytes starting index 12
           const sender = ethers.utils.hexlify(messageBytesArray.slice(32, 52)); // sender 32 bytes starting index 20, but we only need the last 20 bytes so we can start our index at 32
           const nonceHash = ethers.utils.solidityKeccak256(["uint32", "uint64"], [sourceDomain, nonce]);
           const messageHash = ethers.utils.keccak256(messageBytes);
           const amountSent = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 216 (idx 68 of body after idx 116 which ends the header)
 
           // Perform some extra steps to get the source and destination chain ids
-          const resolvedPossibleSourceChainIds = cctpDomainsToChainIds[Number(sourceDomain)];
-          const resolvedPossibleDestinationChainIds = cctpDomainsToChainIds[Number(destinationDomain)];
+          const resolvedPossibleSourceChainIds = cctpDomainsToChainIds[sourceDomain];
+          const resolvedPossibleDestinationChainIds = cctpDomainsToChainIds[destinationDomain];
 
           // Ensure that we're only processing CCTP messages that are both from the source chain and destined for the target destination chain
           if (
@@ -219,9 +224,20 @@ async function _resolveCCTPRelatedTxns(
           // Generate the attestation proof for the message. This is required to finalize the message.
           const attestation = await generateCCTPAttestationProof(messageHash, utils.chainIsProd(destinationChainId));
 
-          // If we can't generate an attestation proof, we should return undefined
-          if (!attestation) {
-            return undefined;
+          let status: CCTPMessageStatus;
+          if (attestation.status === "pending_confirmations") {
+            status = "pending";
+          } else {
+            // attestation proof is available so now check if its already been processed
+            const destinationProvider = await getProvider(destinationChainId);
+            const destinationMessageTransmitterContract = CONTRACT_ADDRESSES[destinationChainId].cctpMessageTransmitter;
+            const destinationMessageTransmitter = new ethers.Contract(
+              destinationMessageTransmitterContract.address,
+              destinationMessageTransmitterContract.abi,
+              destinationProvider
+            );
+            const processed = await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter);
+            status = processed ? "finalized" : "ready";
           }
 
           return {
@@ -230,10 +246,11 @@ async function _resolveCCTPRelatedTxns(
             messageBytes,
             nonceHash,
             amount: BigNumber.from(amountSent).toString(),
-            sourceDomain: Number(sourceDomain),
-            destinationDomain: Number(destinationDomain),
-            attestation,
-            nonce: BigNumber.from(nonce).toNumber(),
+            sourceDomain: sourceDomain,
+            destinationDomain: destinationDomain,
+            attestation: attestation?.attestation,
+            status,
+            nonce,
           };
         })
       )
@@ -247,37 +264,14 @@ async function _resolveCCTPRelatedTxns(
  * Generates an attestation proof for a given message hash. This is required to finalize a CCTP message.
  * @param messageHash The message hash to generate an attestation proof for. This is generated by taking the keccak256 hash of the message bytes of the initial transaction log.
  * @param isMainnet Whether or not the attestation proof should be generated on mainnet. If this is false, the attestation proof will be generated on the sandbox environment.
- * @returns The attestation proof for the given message hash. This is a string of the form "0x<attestation proof>".
- * @throws An error if the attestation proof cannot be generated. We wait a maximum of 10 seconds for the attestation to be generated. If it is not generated in that time, we throw an error.
+ * @returns The attestation status and proof for the given message hash. This is a string of the form "0x<attestation proof>". If the status is pending_confirmation
+ * then the proof will be null according to the CCTP dev docs.
+ * @link https://developers.circle.com/stablecoins/reference/getattestation
  */
-async function generateCCTPAttestationProof(messageHash: string, isMainnet: boolean) {
-  let maxTries = 5;
-  let attestationResponse: { status: string; attestation: string } = { status: "pending", attestation: "" };
-  while (attestationResponse.status !== "complete" && maxTries-- > 0) {
-    try {
-      const httpResponse = await axios.get<{ status: string; attestation: string }>(
-        `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
-      );
-      attestationResponse = httpResponse.data;
-      if (attestationResponse.status === "complete") {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-    } catch (e) {
-      if (e instanceof AxiosError && e.response?.status === 404) {
-        // Not enough time has passed for the attestation to be generated
-        // We should return and try again later
-        return undefined;
-      } else {
-        // An unknown error occurred. We should throw it up the stack
-        throw e;
-      }
-    }
-  }
-  // Attetestation was not able to be generated. We should throw an error
-  if (attestationResponse.status !== "complete") {
-    throw new Error("Failed to generate attestation proof");
-  }
-  // Return the attestation proof since it was generated
-  return attestationResponse.attestation;
+async function generateCCTPAttestationProof(messageHash: string, isMainnet: boolean): Promise<Attestation> {
+  const httpResponse = await axios.get<Attestation>(
+    `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
+  );
+  const attestationResponse = httpResponse.data;
+  return attestationResponse;
 }
