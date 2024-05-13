@@ -461,6 +461,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
         message: `Time to loop: ${Math.round((loopEndPostFinalizations - loopStart) / 1000)}s`,
         timeToUpdateSpokeClients: Math.round((loopStartPostSpokePoolUpdates - loopStart) / 1000),
         timeToFinalize: Math.round((loopEndPostFinalizations - loopStartPostSpokePoolUpdates) / 1000),
+        strategy: config.finalizationStrategy,
       });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
