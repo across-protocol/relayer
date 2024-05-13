@@ -131,14 +131,14 @@ export async function hasCCTPMessageBeenProcessed(
  * Note: due to the nature of testnet/mainnet chain ids mapping to the same CCTP domain, we
  *       actually have a mapping of CCTP Domain -> [chainId].
  */
-export function getCctpDomainsToChainIds() {
+export function getCctpDomainsToChainIds(): Record<number, number[]> {
   return Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
     if (!acc[cctpDomain]) {
       acc[cctpDomain] = [];
     }
     acc[cctpDomain].push(Number(chainId));
     return acc;
-  }, {} as Record<number, number[]>);
+  }, {});
 }
 
 /**

@@ -17,7 +17,6 @@ import {
 } from "../../../utils";
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import { groupBy } from "lodash";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,

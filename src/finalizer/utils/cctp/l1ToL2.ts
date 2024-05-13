@@ -23,7 +23,7 @@ import {
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { getBlockRangeByHoursOffsets } from "../linea/common";
-import { groupBy, uniqWith } from "lodash";
+import { uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
