@@ -22,6 +22,7 @@ import {
   toBNWei,
   assert,
   compareAddressesSimple,
+  getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -369,8 +370,12 @@ export class InventoryClient {
       return true;
     }
 
-    // Return true if input token is USDC and output token is Bridged USDC.
-    const isInputTokenUSDC = compareAddressesSimple(inputToken, TOKEN_SYMBOLS_MAP["_USDC"].addresses?.[originChainId]);
+    // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
+    // is Bridged USDC and the output token is Native USDC.
+    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either _USDC, USDC.e or USDbC.
+    // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
+    // check specifically handles the case where the input token is Bridged/Native and the output token Native/Bridged.
+    const isInputTokenUSDC = isDefined(getUsdcSymbol(inputToken, originChainId));
     const isOutputTokenBridgedUSDC = compareAddressesSimple(
       outputToken,
       TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses?.[destinationChainId]

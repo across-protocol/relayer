@@ -1,6 +1,6 @@
-import { Signer } from "ethers";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { HubPoolClient, SpokePoolClient } from ".";
-import { CachingMechanismInterface, V3Deposit } from "../interfaces";
+import { CachingMechanismInterface, L1Token, V3Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -12,6 +12,7 @@ import {
   MAX_UINT_VAL,
   assign,
   blockExplorerLink,
+  getCurrentTime,
   getNetworkName,
   runTransaction,
   toBN,
@@ -28,7 +29,6 @@ type TokenShortfallType = {
 export class TokenClient {
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
-  bondToken: Contract | undefined;
 
   constructor(
     readonly logger: winston.Logger,
@@ -152,41 +152,102 @@ export class TokenClient {
   }
 
   async setBondTokenAllowance(): Promise<void> {
-    if (!this.bondToken) {
-      throw new Error("TokenClient::setBondTokenAllowance bond token not initialized");
-    }
-    const ownerAddress = await this.hubPoolClient.hubPool.signer.getAddress();
-    const currentCollateralAllowance: BigNumber = await this.bondToken.allowance(
-      ownerAddress,
-      this.hubPoolClient.hubPool.address
-    );
+    const { hubPool } = this.hubPoolClient;
+    const { signer } = hubPool;
+    const [_bondToken, ownerAddress] = await Promise.all([this._getBondToken(), signer.getAddress()]);
+    const bondToken = new Contract(_bondToken, ERC20.abi, signer);
+
+    const currentCollateralAllowance: BigNumber = await bondToken.allowance(ownerAddress, hubPool.address);
     if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
-      const tx = await runTransaction(this.logger, this.bondToken, "approve", [
-        this.hubPoolClient.hubPool.address,
-        MAX_UINT_VAL,
-      ]);
+      const tx = await runTransaction(this.logger, bondToken, "approve", [hubPool.address, MAX_UINT_VAL]);
+      const { chainId } = this.hubPoolClient;
       const mrkdwn =
-        ` - Approved HubPool ${blockExplorerLink(this.hubPoolClient.hubPool.address, 1)} ` +
-        `to spend ${await this.bondToken.symbol()} ${blockExplorerLink(this.bondToken.address, 1)}. ` +
-        `tx ${blockExplorerLink(tx.hash, 1)}\n`;
+        ` - Approved HubPool ${blockExplorerLink(hubPool.address, chainId)} ` +
+        `to spend ${await bondToken.symbol()} ${blockExplorerLink(bondToken.address, chainId)}. ` +
+        `tx ${blockExplorerLink(tx.hash, chainId)}\n`;
       this.logger.info({ at: "hubPoolClient", message: "Approved bond tokens! 💰", mrkdwn });
     } else {
       this.logger.debug({ at: "hubPoolClient", message: "Bond token approval set" });
     }
   }
 
+  resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
+    const { signer } = this.hubPoolClient.hubPool;
+
+    const tokens = hubPoolTokens
+      .map(({ symbol, address }) => {
+        let tokenAddrs: string[] = [];
+        try {
+          const spokePoolToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(address, chainId);
+          tokenAddrs.push(spokePoolToken);
+        } catch {
+          // No known deployment for this token on the SpokePool.
+          // note: To be overhauled subject to https://github.com/across-protocol/sdk-v3/pull/643
+        }
+
+        // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
+        if (symbol === "USDC") {
+          // At the moment, constants-v3 defines native usdc as _USDC.
+          const usdcAliases = ["_USDC", "USDC.e", "USDbC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
+          usdcAliases
+            .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
+            .filter(isDefined)
+            .forEach((address) => tokenAddrs.push(address));
+          tokenAddrs = dedupArray(tokenAddrs);
+        }
+
+        return tokenAddrs.filter(isDefined).map((address) => new Contract(address, ERC20.abi, signer));
+      })
+      .flat();
+
+    return tokens;
+  }
+
+  async updateChain(
+    chainId: number,
+    hubPoolTokens: L1Token[]
+  ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
+    const { spokePool } = this.spokePoolClients[chainId];
+
+    const multicall3 = await sdkUtils.getMulticall3(chainId, spokePool.provider);
+    if (!isDefined(multicall3)) {
+      return this.fetchTokenData(chainId, hubPoolTokens);
+    }
+
+    const { relayerAddress } = this;
+    const balances: sdkUtils.Call3[] = [];
+    const allowances: sdkUtils.Call3[] = [];
+    this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
+      balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
+      allowances.push({ contract: token, method: "allowance", args: [relayerAddress, spokePool.address] });
+    });
+
+    const calls = [...balances, ...allowances];
+    const results = await sdkUtils.aggregate(multicall3, calls);
+
+    const allowanceOffset = balances.length;
+    const balanceInfo = Object.fromEntries(
+      balances.map(({ contract: { address } }, idx) => {
+        return [address, { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] }];
+      })
+    );
+
+    return balanceInfo;
+  }
+
   async update(): Promise<void> {
+    const start = getCurrentTime();
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
     const { hubPoolClient } = this;
 
-    const hubPoolTokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
+    const hubPoolTokens = hubPoolClient.getL1Tokens();
     const chainIds = Object.values(this.spokePoolClients).map(({ chainId }) => chainId);
-    const balanceQueries = chainIds.map((chainId) =>
-      this.fetchTokenData(chainId, hubPoolTokens, this.spokePoolClients[chainId].spokePool.signer)
-    );
 
-    const [bondToken, ...balanceInfo] = await Promise.all([this._getBondToken(), ...balanceQueries]);
-    this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
+    const balanceInfo = await Promise.all(
+      chainIds
+        .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
+        .map((chainId) => this.updateChain(chainId, hubPoolTokens))
+    );
 
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
@@ -208,45 +269,23 @@ export class TokenClient {
         ];
       })
     );
-    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData });
+
+    const time = getCurrentTime() - start;
+    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData, time });
   }
 
   async fetchTokenData(
     chainId: number,
-    hubPoolTokens: string[],
-    signer: Signer
+    hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
-    const { hubPoolClient } = this;
-    const tokens = hubPoolTokens
-      .map((address) => {
-        let tokenAddrs: string[] = [];
-        try {
-          const spokePoolToken = hubPoolClient.getL2TokenForL1TokenAtBlock(address, chainId);
-          tokenAddrs.push(spokePoolToken);
-        } catch {
-          // No known deployment for this token on the SpokePool.
-        }
+    const spokePoolClient = this.spokePoolClients[chainId];
 
-        // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
-        const { symbol } = hubPoolClient.getL1Tokens().find((hubPoolToken) => hubPoolToken.address === address);
-        if (symbol === "USDC") {
-          // At the moment, constants-v3 defines native usdc as _USDC.
-          const usdcAliases = ["_USDC", "USDC.e", "USDbC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
-          usdcAliases
-            .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
-            .filter(isDefined)
-            .forEach((address) => tokenAddrs.push(address));
-          tokenAddrs = dedupArray(tokenAddrs);
-        }
-        return tokenAddrs.filter(isDefined).map((address) => new Contract(address, ERC20.abi, signer));
-      })
-      .flat();
-
+    const { relayerAddress } = this;
     const tokenData = Object.fromEntries(
       await Promise.all(
-        tokens.map(async (token) => {
-          const balance: BigNumber = await token.balanceOf(this.relayerAddress);
-          const allowance = await this._getAllowance(this.spokePoolClients[chainId], token);
+        await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
+          const balance: BigNumber = await token.balanceOf(relayerAddress);
+          const allowance = await this._getAllowance(spokePoolClient, token);
           return [token.address, { balance, allowance }];
         })
       )
