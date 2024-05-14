@@ -160,10 +160,11 @@ export class TokenClient {
     const currentCollateralAllowance: BigNumber = await bondToken.allowance(ownerAddress, hubPool.address);
     if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
       const tx = await runTransaction(this.logger, bondToken, "approve", [hubPool.address, MAX_UINT_VAL]);
+      const { chainId } = this.hubPoolClient;
       const mrkdwn =
-        ` - Approved HubPool ${blockExplorerLink(hubPool.address, 1)} ` +
-        `to spend ${await bondToken.symbol()} ${blockExplorerLink(bondToken.address, 1)}. ` +
-        `tx ${blockExplorerLink(tx.hash, 1)}\n`;
+        ` - Approved HubPool ${blockExplorerLink(hubPool.address, chainId)} ` +
+        `to spend ${await bondToken.symbol()} ${blockExplorerLink(bondToken.address, chainId)}. ` +
+        `tx ${blockExplorerLink(tx.hash, chainId)}\n`;
       this.logger.info({ at: "hubPoolClient", message: "Approved bond tokens! 💰", mrkdwn });
     } else {
       this.logger.debug({ at: "hubPoolClient", message: "Bond token approval set" });
