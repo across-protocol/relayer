@@ -608,25 +608,25 @@ describe("InventoryClient: Refund chain selection", async function () {
         .forEach((chainId) => expect(tokenClient.getBalance(chainId, nativeUSDC[chainId]).eq(bnZero)).to.be.true);
 
       // All chains are at target balance; cumulative balance will go down but repaymentToken balances on all chains are unaffected.
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(MAINNET);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"71942446043165467"')).to.be.true; // (10000-0)/(14000-100)=0.71942
 
       // Even when the output amount is equal to the destination's entire balance, take repayment on mainnet.
       sampleDepositData.outputAmount = inventoryClient.getBalanceOnChain(OPTIMISM, mainnetUsdc);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(MAINNET);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"83333333333333333"')).to.be.true; // (10000-0)/(14000-2000)=0.8333
 
       // Drop the relayer's repaymentToken balance on Optimism. Repayment chain should now be Optimism.
       let balance = tokenClient.getBalance(OPTIMISM, bridgedUSDC[OPTIMISM]);
       tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], bnZero);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(OPTIMISM);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([OPTIMISM]);
 
       // Restore the Optimism balance and drop the Arbitrum balance. Repayment chain should now be Arbitrum.
       tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], balance);
 
       balance = tokenClient.getBalance(ARBITRUM, bridgedUSDC[ARBITRUM]);
       tokenClient.setTokenData(ARBITRUM, bridgedUSDC[ARBITRUM], bnZero);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(ARBITRUM);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([ARBITRUM]);
     });
   });
 });
