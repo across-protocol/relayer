@@ -2,22 +2,25 @@
 import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
+  assert,
   formatUnitsForToken,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
   getNetworkName,
   getRedisCache,
+  groupObjectCountsByProp,
+  isDefined,
   paginatedEventQuery,
   winston,
 } from "../../../utils";
-import { DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { getBlockRangeByHoursOffsets } from "../linea/common";
 import { uniqWith } from "lodash";
@@ -35,21 +38,36 @@ export async function cctpL1toL2Finalizer(
   const redis = await getRedisCache(logger);
   const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
   logger.debug({
-    at: "Finalizer#CCTPL1ToL2Finalizer",
+    at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
     message: `MessageSent event filter for L1 to ${getNetworkName(spokePoolClient.chainId)}`,
     fromBlock,
   });
+  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[spokePoolClient.chainId].cctpMessageTransmitter;
+  const contract = new ethers.Contract(
+    cctpMessageReceiverDetails.address,
+    cctpMessageReceiverDetails.abi,
+    spokePoolClient.spokePool.provider
+  );
   const decodedMessages = await resolveRelatedTxnReceipts(
     l1ToL2AddressesToFinalize,
     hubPoolClient.chainId,
     spokePoolClient.chainId,
     fromBlock
   );
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[spokePoolClient.chainId].cctpMessageTransmitter;
-  const contract = new ethers.Contract(cctpMessageReceiverDetails.address, cctpMessageReceiverDetails.abi, signer);
+  const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
+  const statusesGrouped = groupObjectCountsByProp(
+    decodedMessages,
+    (message: { status: CCTPMessageStatus }) => message.status
+  );
+  logger.debug({
+    at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
+    message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP L1 to ${spokePoolClient.chainId}`,
+    statusesGrouped,
+  });
+
   return {
-    crossChainMessages: await generateDepositData(decodedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
-    callData: await generateMultiCallData(contract, decodedMessages),
+    crossChainMessages: await generateDepositData(unprocessedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
+    callData: await generateMultiCallData(contract, unprocessedMessages),
   };
 }
 
@@ -102,6 +120,7 @@ async function generateMultiCallData(
   messageTransmitter: Contract,
   messages: DecodedCCTPMessage[]
 ): Promise<Multicall2Call[]> {
+  assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
     messages.map(async (message) => {
       const txn = (await messageTransmitter.populateTransaction.receiveMessage(
