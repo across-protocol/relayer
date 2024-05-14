@@ -216,11 +216,11 @@ export class TokenClient {
     const { relayerAddress } = this;
     const balances: sdkUtils.Call3[] = [];
     const allowances: sdkUtils.Call3[] = [];
-
     this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
       balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
       allowances.push({ contract: token, method: "allowance", args: [relayerAddress, spokePool.address] });
     });
+
     const calls = [...balances, ...allowances];
     const results = await sdkUtils.aggregate(multicall3, calls);
 
@@ -278,9 +278,6 @@ export class TokenClient {
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const spokePoolClient = this.spokePoolClients[chainId];
-    if (!isDefined(spokePoolClient)) {
-      return {};
-    }
 
     const { relayerAddress } = this;
     const tokenData = Object.fromEntries(
