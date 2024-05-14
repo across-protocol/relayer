@@ -65,7 +65,6 @@ describe("InventoryClient: Refund chain selection", async function () {
         [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
         [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
-
       [mainnetUsdc]: {
         [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
         [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
@@ -552,6 +551,82 @@ describe("InventoryClient: Refund chain selection", async function () {
         expect(possibleRepaymentChains).to.include(chainId);
       });
       expect(possibleRepaymentChains.length).to.equal(4);
+    });
+  });
+
+  describe("In-protocol swap", async function () {
+    const nativeUSDC = TOKEN_SYMBOLS_MAP._USDC.addresses;
+    const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
+
+    beforeEach(async function () {
+      // Sub in a nested USDC config for the existing USDC config.
+      const usdcConfig = {
+        [nativeUSDC[OPTIMISM]]: {
+          [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+        },
+        [nativeUSDC[POLYGON]]: {
+          [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [nativeUSDC[ARBITRUM]]: {
+          [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [bridgedUSDC[OPTIMISM]]: {
+          [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+        },
+        [bridgedUSDC[POLYGON]]: {
+          [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [bridgedUSDC[ARBITRUM]]: {
+          [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+      };
+      inventoryConfig.tokenConfig[mainnetUsdc] = usdcConfig;
+
+      const inputAmount = toMegaWei(100);
+      sampleDepositData = {
+        depositId: 0,
+        originChainId: ARBITRUM,
+        destinationChainId: OPTIMISM,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: nativeUSDC[ARBITRUM],
+        inputAmount,
+        outputToken: bridgedUSDC[OPTIMISM],
+        outputAmount: inputAmount,
+        message: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+    });
+
+    it("outputToken is not supported as a repaymentToken", async function () {
+      // Verify that there is no native USDC anywhere. The relayer is responsible for ensuring that it can make the fill.
+      enabledChainIds
+        .filter((chainId) => chainId !== MAINNET)
+        .forEach((chainId) => expect(tokenClient.getBalance(chainId, nativeUSDC[chainId]).eq(bnZero)).to.be.true);
+
+      // All chains are at target balance; cumulative balance will go down but repaymentToken balances on all chains are unaffected.
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(MAINNET);
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"71942446043165467"')).to.be.true; // (10000-0)/(14000-100)=0.71942
+
+      // Even when the output amount is equal to the destination's entire balance, take repayment on mainnet.
+      sampleDepositData.outputAmount = inventoryClient.getBalanceOnChain(OPTIMISM, mainnetUsdc);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(MAINNET);
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"83333333333333333"')).to.be.true; // (10000-0)/(14000-2000)=0.8333
+
+      // Drop the relayer's repaymentToken balance on Optimism. Repayment chain should now be Optimism.
+      let balance = tokenClient.getBalance(OPTIMISM, bridgedUSDC[OPTIMISM]);
+      tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], bnZero);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(OPTIMISM);
+
+      // Restore the Optimism balance and drop the Arbitrum balance. Repayment chain should now be Arbitrum.
+      tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], balance);
+
+      balance = tokenClient.getBalance(ARBITRUM, bridgedUSDC[ARBITRUM]);
+      tokenClient.setTokenData(ARBITRUM, bridgedUSDC[ARBITRUM], bnZero);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.equal(ARBITRUM);
     });
   });
 });
