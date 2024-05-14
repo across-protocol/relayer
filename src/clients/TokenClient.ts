@@ -29,7 +29,6 @@ type TokenShortfallType = {
 export class TokenClient {
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
-  bondToken: Contract | undefined;
 
   constructor(
     readonly logger: winston.Logger,
@@ -153,22 +152,17 @@ export class TokenClient {
   }
 
   async setBondTokenAllowance(): Promise<void> {
-    if (!this.bondToken) {
-      throw new Error("TokenClient::setBondTokenAllowance bond token not initialized");
-    }
-    const ownerAddress = await this.hubPoolClient.hubPool.signer.getAddress();
-    const currentCollateralAllowance: BigNumber = await this.bondToken.allowance(
-      ownerAddress,
-      this.hubPoolClient.hubPool.address
-    );
+    const { hubPool } = this.hubPoolClient;
+    const { signer } = hubPool;
+    const [_bondToken, ownerAddress] = await Promise.all([this._getBondToken(), signer.getAddress()]);
+    const bondToken = new Contract(_bondToken, ERC20.abi, signer);
+
+    const currentCollateralAllowance: BigNumber = await bondToken.allowance(ownerAddress, hubPool.address);
     if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
-      const tx = await runTransaction(this.logger, this.bondToken, "approve", [
-        this.hubPoolClient.hubPool.address,
-        MAX_UINT_VAL,
-      ]);
+      const tx = await runTransaction(this.logger, bondToken, "approve", [hubPool.address, MAX_UINT_VAL]);
       const mrkdwn =
-        ` - Approved HubPool ${blockExplorerLink(this.hubPoolClient.hubPool.address, 1)} ` +
-        `to spend ${await this.bondToken.symbol()} ${blockExplorerLink(this.bondToken.address, 1)}. ` +
+        ` - Approved HubPool ${blockExplorerLink(hubPool.address, 1)} ` +
+        `to spend ${await bondToken.symbol()} ${blockExplorerLink(bondToken.address, 1)}. ` +
         `tx ${blockExplorerLink(tx.hash, 1)}\n`;
       this.logger.info({ at: "hubPoolClient", message: "Approved bond tokens! 💰", mrkdwn });
     } else {
@@ -213,21 +207,13 @@ export class TokenClient {
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const { spokePool } = this.spokePoolClients[chainId];
-    const { hubPool } = this.hubPoolClient;
 
     const multicall3 = await sdkUtils.getMulticall3(chainId, spokePool.provider);
     if (!isDefined(multicall3)) {
-      // No multicall3 available; issue parallel RPC queries.
-      const [bondToken, balanceInfo] = await Promise.all([
-        this._getBondToken(),
-        this.fetchTokenData(chainId, hubPoolTokens),
-      ]);
-      this.bondToken = new Contract(bondToken, ERC20.abi, hubPool.signer);
-
-      return balanceInfo;
+      return this.fetchTokenData(chainId, hubPoolTokens);
     }
 
-    const { hubPoolClient, relayerAddress } = this;
+    const { relayerAddress } = this;
     const balances: sdkUtils.Call3[] = [];
     const allowances: sdkUtils.Call3[] = [];
 
@@ -236,19 +222,7 @@ export class TokenClient {
       allowances.push({ contract: token, method: "allowance", args: [relayerAddress, spokePool.address] });
     });
     const calls = [...balances, ...allowances];
-
-    // If querying on the HubPool chain, smuggle a bondToken() call.
-    const updateBondToken = chainId === hubPoolClient.chainId;
-    if (updateBondToken) {
-      calls.push({ contract: hubPool, method: "bondToken" });
-    }
-
     const results = await sdkUtils.aggregate(multicall3, calls);
-
-    if (updateBondToken) {
-      this.bondToken = new Contract(results.pop()[0], ERC20.abi, hubPool.signer);
-      calls.splice(-1); // Discard the input calldata as well.
-    }
 
     const allowanceOffset = balances.length;
     const balanceInfo = Object.fromEntries(
@@ -268,7 +242,12 @@ export class TokenClient {
     const hubPoolTokens = hubPoolClient.getL1Tokens();
     const chainIds = Object.values(this.spokePoolClients).map(({ chainId }) => chainId);
 
-    const balanceInfo = await Promise.all(chainIds.map((chainId) => this.updateChain(chainId, hubPoolTokens)));
+    const balanceInfo = await Promise.all(
+      chainIds
+        .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
+        .map((chainId) => this.updateChain(chainId, hubPoolTokens))
+    );
+
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
       for (const token of Object.keys(tokenData)) {
@@ -299,6 +278,10 @@ export class TokenClient {
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const spokePoolClient = this.spokePoolClients[chainId];
+    if (!isDefined(spokePoolClient)) {
+      return {};
+    }
+
     const { relayerAddress } = this;
     const tokenData = Object.fromEntries(
       await Promise.all(
@@ -313,12 +296,47 @@ export class TokenClient {
     return tokenData;
   }
 
-  private _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
-    return token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
+  private _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): string {
+    const { chainId, spokePool } = spokePoolClient;
+    return `l2TokenAllowance_${chainId}_${originToken}_${this.relayerAddress}_targetContract:${spokePool.address}`;
+  }
+
+  private async _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
+    const key = this._getAllowanceCacheKey(spokePoolClient, token.address);
+    const redis = await this.getRedis();
+    if (redis) {
+      const result = await redis.get<string>(key);
+      if (result !== null) {
+        return toBN(result);
+      }
+    }
+    const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
+    if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
+      // Save allowance in cache with no TTL as these should be exhausted.
+      await redis.set(key, MAX_SAFE_ALLOWANCE);
+    }
+    return allowance;
+  }
+
+  _getBondTokenCacheKey(): string {
+    return `bondToken_${this.hubPoolClient.hubPool.address}`;
   }
 
   private async _getBondToken(): Promise<string> {
-    return await this.hubPoolClient.hubPool.bondToken();
+    const redis = await this.getRedis();
+    if (redis) {
+      const cachedBondToken = await redis.get<string>(this._getBondTokenCacheKey());
+      if (cachedBondToken !== null) {
+        return cachedBondToken;
+      }
+    }
+    const bondToken: string = await this.hubPoolClient.hubPool.bondToken();
+    if (redis) {
+      // The bond token should not change, and using the wrong bond token will be immediately obvious, so cache with
+      // infinite TTL.
+      await redis.set(this._getBondTokenCacheKey(), bondToken);
+    }
+    return bondToken;
   }
 
   private _hasTokenPairData(chainId: number, token: string) {
