@@ -619,14 +619,20 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Drop the relayer's repaymentToken balance on Optimism. Repayment chain should now be Optimism.
       let balance = tokenClient.getBalance(OPTIMISM, bridgedUSDC[OPTIMISM]);
       tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], bnZero);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([OPTIMISM]);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([
+        OPTIMISM,
+        MAINNET,
+      ]);
 
       // Restore the Optimism balance and drop the Arbitrum balance. Repayment chain should now be Arbitrum.
       tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], balance);
 
       balance = tokenClient.getBalance(ARBITRUM, bridgedUSDC[ARBITRUM]);
       tokenClient.setTokenData(ARBITRUM, bridgedUSDC[ARBITRUM], bnZero);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([ARBITRUM]);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([
+        ARBITRUM,
+        MAINNET,
+      ]);
     });
   });
 });
