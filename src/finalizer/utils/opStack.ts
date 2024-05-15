@@ -2,7 +2,7 @@ import assert from "assert";
 import { groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { L1Token, TokensBridged } from "../../interfaces";
+import { TokensBridged } from "../../interfaces";
 import {
   BigNumber,
   chainIsOPStack,
