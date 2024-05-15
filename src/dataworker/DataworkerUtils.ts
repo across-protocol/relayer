@@ -343,7 +343,7 @@ export function _buildRelayerRefundRoot(
         return;
       }
 
-      const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(leaf.l1Tokens[index], leaf.chainId);
+      const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(leaf.l1Tokens[index], leaf.chainId, endBlockForMainnet);
       // If we've already seen this leaf, then skip.
       const existingLeaf = relayerRefundLeaves.find(
         (relayerRefundLeaf) =>
