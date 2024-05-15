@@ -30,7 +30,7 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   logIndex: number;
 }
 
-type OVM_CHAIN_ID = 10 | 8453;
+type OVM_CHAIN_ID = 10 | 8453 | 34443;
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export async function opStackFinalizer(
