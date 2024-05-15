@@ -10,6 +10,7 @@ import {
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
+  getL1TokenInfo,
   getNetworkName,
   getRedisCache,
   getUniqueLogIndex,
@@ -217,13 +218,6 @@ async function getOptimismFinalizableMessages(
   );
 }
 
-function getL1TokenInfoForOptimismToken(chainId: OVM_CHAIN_ID, hubPoolClient: HubPoolClient, l2Token: string): L1Token {
-  return hubPoolClient.getL1TokenInfoForL2Token(
-    SpokePoolClient.getExecutedRefundLeafL2Token(chainId, l2Token),
-    chainId
-  );
-}
-
 async function finalizeOptimismMessage(
   _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
@@ -274,7 +268,7 @@ async function multicallOptimismFinalizations(
     )
   );
   const withdrawals = finalizableMessages.map((message) => {
-    const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
+    const l1TokenInfo = getL1TokenInfo(message.event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
@@ -306,7 +300,7 @@ async function multicallOptimismL1Proofs(
     provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message, message.logIndex))
   );
   const withdrawals = provableMessages.map((message) => {
-    const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
+    const l1TokenInfo = getL1TokenInfo(message.event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
     const proof: CrossChainMessage = {
       originationChainId: chainId,
