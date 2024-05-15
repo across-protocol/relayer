@@ -9,6 +9,7 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   getEthAddressForChain,
+  getL1TokenInfo,
   getRedisCache,
   getUniqueLogIndex,
   winston,
@@ -65,12 +66,7 @@ export async function zkSyncFinalizer(
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
 
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      l2TokenAddress,
-      l2ChainId,
-      hubPoolClient.latestBlockSearched
-    );
-    const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
+    const { decimals, symbol: l1TokenSymbol } = getL1TokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: l2ChainId,
