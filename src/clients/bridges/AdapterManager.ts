@@ -64,7 +64,7 @@ export class AdapterManager {
       this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(59144));
     }
     if (this.spokePoolClients[34443] !== undefined) {
-      this.adapters[8453] = new ModeAdapter(logger, spokePoolClients, filterMonitoredAddresses(34443));
+      this.adapters[34443] = new ModeAdapter(logger, spokePoolClients, filterMonitoredAddresses(34443));
     }
 
     logger.debug({
