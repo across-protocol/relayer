@@ -414,6 +414,55 @@ export const LINEA_USDC_BRIDGE_CONTRACT_ABI = [
   },
 ];
 
+const OP_WETH_ABI = [
+  {
+    constant: false,
+    inputs: [{ name: "wad", type: "uint256" }],
+    name: "withdraw",
+    outputs: [],
+    payable: false,
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    constant: false,
+    inputs: [],
+    name: "deposit",
+    outputs: [],
+    payable: true,
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    constant: true,
+    inputs: [{ name: "", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ name: "", type: "uint256" }],
+    payable: false,
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "dst",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "wad",
+        type: "uint256",
+      },
+    ],
+    name: "Deposit",
+    type: "event",
+  },
+];
+
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -1053,54 +1102,7 @@ export const CONTRACT_ADDRESSES: {
     },
     weth: {
       address: "0x4200000000000000000000000000000000000006",
-      abi: [
-        {
-          constant: false,
-          inputs: [{ name: "wad", type: "uint256" }],
-          name: "withdraw",
-          outputs: [],
-          payable: false,
-          stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          constant: false,
-          inputs: [],
-          name: "deposit",
-          outputs: [],
-          payable: true,
-          stateMutability: "payable",
-          type: "function",
-        },
-        {
-          constant: true,
-          inputs: [{ name: "", type: "address" }],
-          name: "balanceOf",
-          outputs: [{ name: "", type: "uint256" }],
-          payable: false,
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            {
-              indexed: true,
-              internalType: "address",
-              name: "dst",
-              type: "address",
-            },
-            {
-              indexed: false,
-              internalType: "uint256",
-              name: "wad",
-              type: "uint256",
-            },
-          ],
-          name: "Deposit",
-          type: "event",
-        },
-      ],
+      abi: OP_WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -1219,54 +1221,7 @@ export const CONTRACT_ADDRESSES: {
     },
     weth: {
       address: "0x4200000000000000000000000000000000000006",
-      abi: [
-        {
-          constant: false,
-          inputs: [{ name: "wad", type: "uint256" }],
-          name: "withdraw",
-          outputs: [],
-          payable: false,
-          stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          constant: false,
-          inputs: [],
-          name: "deposit",
-          outputs: [],
-          payable: true,
-          stateMutability: "payable",
-          type: "function",
-        },
-        {
-          constant: true,
-          inputs: [{ name: "", type: "address" }],
-          name: "balanceOf",
-          outputs: [{ name: "", type: "uint256" }],
-          payable: false,
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            {
-              indexed: true,
-              internalType: "address",
-              name: "dst",
-              type: "address",
-            },
-            {
-              indexed: false,
-              internalType: "uint256",
-              name: "wad",
-              type: "uint256",
-            },
-          ],
-          name: "Deposit",
-          type: "event",
-        },
-      ],
+      abi: OP_WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -1301,54 +1256,7 @@ export const CONTRACT_ADDRESSES: {
     },
     weth: {
       address: "0x4200000000000000000000000000000000000006",
-      abi: [
-        {
-          constant: false,
-          inputs: [{ name: "wad", type: "uint256" }],
-          name: "withdraw",
-          outputs: [],
-          payable: false,
-          stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          constant: false,
-          inputs: [],
-          name: "deposit",
-          outputs: [],
-          payable: true,
-          stateMutability: "payable",
-          type: "function",
-        },
-        {
-          constant: true,
-          inputs: [{ name: "", type: "address" }],
-          name: "balanceOf",
-          outputs: [{ name: "", type: "uint256" }],
-          payable: false,
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            {
-              indexed: true,
-              internalType: "address",
-              name: "dst",
-              type: "address",
-            },
-            {
-              indexed: false,
-              internalType: "uint256",
-              name: "wad",
-              type: "uint256",
-            },
-          ],
-          name: "Deposit",
-          type: "event",
-        },
-      ],
+      abi: OP_WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
