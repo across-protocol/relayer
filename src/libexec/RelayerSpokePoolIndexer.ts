@@ -248,12 +248,12 @@ async function run(argv: string[]): Promise<void> {
   const spokePool = await utils.getSpokePoolContract(chainId);
 
   process.on("SIGHUP", () => {
-    logger.debug({ at: "Relayer#run", message: "Received SIGHUP, stopping..." });
+    logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
     stop = true;
   });
 
   process.on("disconnect", () => {
-    logger.debug({ at: "Relayer::run", message: "Parent disconnected, stopping..." });
+    logger.debug({ at: "Relayer::run", message: `${chain} parent disconnected, stopping...` });
     stop = true;
   });
 
@@ -310,11 +310,12 @@ if (require.main === module) {
       process.exitCode = NODE_SUCCESS;
     })
     .catch((error) => {
-      logger.error({ at: "RelayerSpokePoolIndexer", message: "Process exited with error.", error });
+      logger.error({ at: "RelayerSpokePoolIndexer", message: `${chain} listener exited with error.`, error });
       process.exitCode = NODE_APP_ERR;
     })
     .finally(async () => {
       await disconnectRedisClients();
+      logger.error({ at: "RelayerSpokePoolIndexer", message: `Exiting ${chain} listener.` });
       exit(process.exitCode);
     });
 }
