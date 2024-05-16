@@ -10,6 +10,7 @@ import {
   getCurrentTime,
   getRedisCache,
   getBlockForTimestamp,
+  getL1TokenInfo,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -55,12 +56,7 @@ async function multicallArbitrumFinalizations(
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      l2TokenAddress,
-      CHAIN_ID,
-      hubPoolClient.latestBlockSearched
-    );
-    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, CHAIN_ID);
     const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: CHAIN_ID,

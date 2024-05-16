@@ -12,6 +12,7 @@ import {
   getCurrentTime,
   getRedisCache,
   getBlockForTimestamp,
+  getL1TokenInfo,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -204,9 +205,7 @@ async function resolvePolygonRetrievalFinalizations(
     })
   );
   const callData = await Promise.all(
-    tokensInFinalizableMessages.map((l2Token) =>
-      retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
-    )
+    tokensInFinalizableMessages.map((l2Token) => retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner))
   );
   const crossChainMessages = finalizableMessages.map((finalizableMessage) =>
     resolveCrossChainTransferStructure(finalizableMessage, "misc", hubPoolClient)
@@ -223,12 +222,7 @@ function resolveCrossChainTransferStructure(
   hubPoolClient: HubPoolClient
 ): CrossChainMessage {
   const { l2TokenAddress, amountToReturn } = finalizableMessage;
-  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    l2TokenAddress,
-    CHAIN_ID,
-    hubPoolClient.latestBlockSearched
-  );
-  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+  const l1TokenInfo = getL1TokenInfo(l2TokenAddress, CHAIN_ID);
   const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
   const transferBase = {
     originationChainId: CHAIN_ID,
@@ -246,12 +240,8 @@ function getMainnetTokenBridger(mainnetSigner: Signer): Contract {
   return getDeployedContract("PolygonTokenBridger", 1, mainnetSigner);
 }
 
-async function retrieveTokenFromMainnetTokenBridger(
-  l2Token: string,
-  mainnetSigner: Signer,
-  hubPoolClient: HubPoolClient
-): Promise<Multicall2Call> {
-  const l1Token = hubPoolClient.getL1TokenForL2TokenAtBlock(l2Token, CHAIN_ID, hubPoolClient.latestBlockSearched);
+async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSigner: Signer): Promise<Multicall2Call> {
+  const l1Token = getL1TokenInfo(l2Token, CHAIN_ID).address;
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
   return {

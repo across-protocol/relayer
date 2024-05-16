@@ -22,6 +22,7 @@ import {
   toBNWei,
   assert,
   compareAddressesSimple,
+  getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
@@ -369,8 +370,12 @@ export class InventoryClient {
       return true;
     }
 
-    // Return true if input token is USDC and output token is Bridged USDC.
-    const isInputTokenUSDC = compareAddressesSimple(inputToken, TOKEN_SYMBOLS_MAP["_USDC"].addresses?.[originChainId]);
+    // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
+    // is Bridged USDC and the output token is Native USDC.
+    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either _USDC, USDC.e or USDbC.
+    // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
+    // check specifically handles the case where the input token is Bridged/Native and the output token Native/Bridged.
+    const isInputTokenUSDC = isDefined(getUsdcSymbol(inputToken, originChainId));
     const isOutputTokenBridgedUSDC = compareAddressesSimple(
       outputToken,
       TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses?.[destinationChainId]
@@ -818,10 +823,10 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, l2Token, amount, targetPct, thresholdPct, cumulativeBalance, hash } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+        for (const { l2Token, amount, targetPct, thresholdPct, cumulativeBalance, hash, chainId } of rebalances) {
+          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
-            throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
+            `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
           }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
@@ -842,9 +847,11 @@ export class InventoryClient {
         const chainId = Number(_chainId);
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
         for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
-            throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
+            throw new Error(
+              `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
+            );
           }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
@@ -1007,11 +1014,13 @@ export class InventoryClient {
     const logData: {
       [symbol: string]: {
         [chainId: number]: {
-          actualBalanceOnChain: string;
-          virtualBalanceOnChain: string;
-          outstandingTransfers: string;
-          tokenShortFalls: string;
-          proRataShare: string;
+          [l2TokenAddress: string]: {
+            actualBalanceOnChain: string;
+            virtualBalanceOnChain: string;
+            outstandingTransfers: string;
+            tokenShortFalls: string;
+            proRataShare: string;
+          };
         };
       };
     } = {};
@@ -1030,6 +1039,7 @@ export class InventoryClient {
 
       Object.keys(distributionForToken).forEach((_chainId) => {
         const chainId = Number(_chainId);
+        logData[symbol][chainId] ??= {};
 
         Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
           const balanceOnChain = this.getBalanceOnChain(chainId, l1Token, l2Token);
@@ -1040,8 +1050,7 @@ export class InventoryClient {
             l2Token
           );
           const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
-
-          logData[symbol][chainId] = {
+          logData[symbol][chainId][l2Token] = {
             actualBalanceOnChain: formatter(actualBalanceOnChain.toString()),
             virtualBalanceOnChain: formatter(balanceOnChain.toString()),
             outstandingTransfers: formatter(transfers.toString()),

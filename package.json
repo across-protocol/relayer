@@ -10,9 +10,9 @@
     "node": ">=16.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants-v2": "1.0.24",
+    "@across-protocol/constants-v2": "1.0.25",
     "@across-protocol/contracts-v2": "2.5.6",
-    "@across-protocol/sdk-v2": "0.23.10",
+    "@across-protocol/sdk-v2": "0.23.11",
     "@arbitrum/sdk": "^3.1.3",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
