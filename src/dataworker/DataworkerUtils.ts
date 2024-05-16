@@ -343,7 +343,11 @@ export function _buildRelayerRefundRoot(
         return;
       }
 
-      const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(leaf.l1Tokens[index], leaf.chainId);
+      const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(
+        leaf.l1Tokens[index],
+        leaf.chainId,
+        endBlockForMainnet
+      );
       // If we've already seen this leaf, then skip.
       const existingLeaf = relayerRefundLeaves.find(
         (relayerRefundLeaf) =>
@@ -420,7 +424,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           l2TokenAddress,
           repaymentChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
 
         updateRunningBalance(runningBalances, repaymentChainId, l1TokenCounterpart, totalRefundAmount);
@@ -443,7 +447,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           outputToken,
           destinationChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
         const lpFee = deposit.lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
         updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, deposit.inputAmount.sub(lpFee));
@@ -467,7 +471,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           outputToken,
           destinationChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
         const lpFee = deposit.lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
         updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, lpFee.sub(deposit.inputAmount));
@@ -503,7 +507,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           inputToken,
           originChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
         updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, deposit.inputAmount);
       });

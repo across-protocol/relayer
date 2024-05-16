@@ -3,7 +3,7 @@ import { Wallet } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { Signer, winston, convertFromWei } from "../../../utils";
+import { Signer, winston, convertFromWei, getL1TokenInfo } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
 import {
@@ -103,12 +103,7 @@ export async function lineaL2ToL1Finalizer(
   // Populate cross chain transfers for claimed messages
   const transfers = claimable.map(({ tokensBridged }) => {
     const { l2TokenAddress, amountToReturn } = tokensBridged;
-    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      l2TokenAddress,
-      l2ChainId,
-      hubPoolClient.latestBlockSearched
-    );
-    const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
+    const { decimals, symbol: l1TokenSymbol } = getL1TokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const transfer: CrossChainMessage = {
       originationChainId: l2ChainId,
