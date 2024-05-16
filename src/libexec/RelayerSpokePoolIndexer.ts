@@ -315,7 +315,7 @@ if (require.main === module) {
     })
     .finally(async () => {
       await disconnectRedisClients();
-      logger.error({ at: "RelayerSpokePoolIndexer", message: `Exiting ${chain} listener.` });
+      logger.debug({ at: "RelayerSpokePoolIndexer", message: `Exiting ${chain} listener.` });
       exit(process.exitCode);
     });
 }
