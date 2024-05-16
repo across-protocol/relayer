@@ -172,7 +172,7 @@ export class TokenClient {
   }
 
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
-    const { signer } = this.hubPoolClient.hubPool;
+    const { signer } = this.spokePoolClients[chainId].spokePool;
 
     if (chainId === this.hubPoolClient.chainId) {
       return hubPoolTokens.map(({ address }) => new Contract(address, ERC20.abi, signer));
