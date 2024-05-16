@@ -174,6 +174,10 @@ export class TokenClient {
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
     const { signer } = this.hubPoolClient.hubPool;
 
+    if (chainId === this.hubPoolClient.chainId) {
+      return hubPoolTokens.map(({ address }) => new Contract(address, ERC20.abi, signer));
+    }
+
     const tokens = hubPoolTokens
       .map(({ symbol, address }) => {
         let tokenAddrs: string[] = [];
@@ -282,13 +286,11 @@ export class TokenClient {
 
     const { relayerAddress } = this;
     const tokenData = Object.fromEntries(
-      await Promise.all(
-        await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
-          const balance: BigNumber = await token.balanceOf(relayerAddress);
-          const allowance = await this._getAllowance(spokePoolClient, token);
-          return [token.address, { balance, allowance }];
-        })
-      )
+      await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
+        const balance: BigNumber = await token.balanceOf(relayerAddress);
+        const allowance = await this._getAllowance(spokePoolClient, token);
+        return [token.address, { balance, allowance }];
+      })
     );
 
     return tokenData;
