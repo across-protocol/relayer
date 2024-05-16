@@ -463,6 +463,22 @@ const OP_WETH_ABI = [
   },
 ];
 
+const OP_STANDARD_BRIDGE_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
+      { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
+      { indexed: true, internalType: "address", name: "_from", type: "address" },
+      { indexed: false, internalType: "address", name: "_to", type: "address" },
+      { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+      { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
+    ],
+    name: "DepositFinalized",
+    type: "event",
+  },
+];
+
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -1084,21 +1100,7 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
-      abi: [
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
-            { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
-            { indexed: true, internalType: "address", name: "_from", type: "address" },
-            { indexed: false, internalType: "address", name: "_to", type: "address" },
-            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
-            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
-          ],
-          name: "DepositFinalized",
-          type: "event",
-        },
-      ],
+      abi: OP_STANDARD_BRIDGE_ABI,
     },
     weth: {
       address: "0x4200000000000000000000000000000000000006",
@@ -1203,21 +1205,7 @@ export const CONTRACT_ADDRESSES: {
   8453: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
-      abi: [
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
-            { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
-            { indexed: true, internalType: "address", name: "_from", type: "address" },
-            { indexed: false, internalType: "address", name: "_to", type: "address" },
-            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
-            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
-          ],
-          name: "DepositFinalized",
-          type: "event",
-        },
-      ],
+      abi: OP_STANDARD_BRIDGE_ABI,
     },
     weth: {
       address: "0x4200000000000000000000000000000000000006",
@@ -1238,21 +1226,7 @@ export const CONTRACT_ADDRESSES: {
   34443: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
-      abi: [
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
-            { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
-            { indexed: true, internalType: "address", name: "_from", type: "address" },
-            { indexed: false, internalType: "address", name: "_to", type: "address" },
-            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
-            { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
-          ],
-          name: "DepositFinalized",
-          type: "event",
-        },
-      ],
+      abi: OP_STANDARD_BRIDGE_ABI,
     },
     weth: {
       address: "0x4200000000000000000000000000000000000006",
@@ -1260,7 +1234,7 @@ export const CONTRACT_ADDRESSES: {
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
-    },  
+    },
   },
   42161: {
     erc20Gateway: {
