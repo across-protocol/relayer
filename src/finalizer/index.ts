@@ -275,6 +275,34 @@ export async function finalize(
     return false;
   });
 
+  // Ensure that all transactions would succeed in a batch.
+  const failedChainFinalizations = await sdkUtils.filterAsync(
+    uniq(finalizations.map(({ crossChainMessage }) => crossChainMessage.destinationChainId)),
+    async (chainId) => {
+      const finalizationsForChain = finalizations.filter(
+        ({ crossChainMessage }) => crossChainMessage.destinationChainId === chainId
+      );
+      const txnToSubmit: AugmentedTransaction = {
+        contract: multicall2Lookup[chainId],
+        chainId,
+        method: "aggregate",
+        // aggregate() takes an array of tuples: [calldata: bytes, target: address].
+        args: finalizationsForChain.map(({ txn }) => [txn]),
+      };
+      const [{ succeed }] = await txnClient.simulate([txnToSubmit]);
+      return !succeed;
+    }
+  );
+
+  if (failedChainFinalizations.length > 0) {
+    logger.warn({
+      at: "Finalizer",
+      message: "Finalization batch failed simulation",
+      failedChainFinalizations,
+    });
+    return;
+  }
+
   if (finalizations.length > 0) {
     // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
     // safety features
