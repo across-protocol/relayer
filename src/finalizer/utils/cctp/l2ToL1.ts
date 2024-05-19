@@ -25,8 +25,6 @@ export async function cctpL2toL1Finalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
-  // Let's just assume for now CCTP transfers don't take longer than 1 day and can
-  // happen very quickly.
   const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
   const redis = await getRedisCache(logger);
   const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
