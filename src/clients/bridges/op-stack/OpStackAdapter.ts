@@ -48,7 +48,7 @@ export class OpStackAdapter extends BaseAdapter {
     }
 
     // We should manually override the bridge for USDC to use CCTP.
-    const usdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
+    const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
     if (usdcAddress) {
       this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(
         this.chainId,

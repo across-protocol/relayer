@@ -540,7 +540,7 @@ describe("InventoryClient: Refund chain selection", async function () {
   });
 
   describe("In-protocol swap", async function () {
-    const nativeUSDC = TOKEN_SYMBOLS_MAP._USDC.addresses;
+    const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
 
     beforeEach(async function () {

@@ -321,7 +321,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
   });
 
   describe("Remote chain token mappings", async function () {
-    const nativeUSDC = TOKEN_SYMBOLS_MAP._USDC.addresses;
+    const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
     const usdcConfig = {
       [nativeUSDC[OPTIMISM]]: {
