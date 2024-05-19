@@ -6,6 +6,7 @@ import { CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../..
 import {
   Contract,
   Signer,
+  TOKEN_SYMBOLS_MAP,
   assert,
   getBlockForTimestamp,
   getCurrentTime,
@@ -67,14 +68,25 @@ async function resolveRelatedTxnReceipts(
   targetDestinationChainId: number,
   latestBlockToFinalize: number
 ): Promise<DecodedCCTPMessage[]> {
+  const sourceChainId = client.chainId;
+  // Dedup the txnReceipt list because there might be multiple tokens bridged events in the same txn hash.
+
+  const uniqueTxnHashes = new Set<string>();
+  client
+    .getTokensBridged()
+    .filter(
+      (bridgeEvent) =>
+        bridgeEvent.blockNumber >= latestBlockToFinalize &&
+        bridgeEvent.l2TokenAddress === TOKEN_SYMBOLS_MAP._USDC.addresses[sourceChainId]
+    )
+    .forEach((bridgeEvent) => uniqueTxnHashes.add(bridgeEvent.transactionHash));
+
   // Resolve the receipts to all collected txns
   const txnReceipts = await Promise.all(
-    client
-      .getTokensBridged()
-      .filter((bridgeEvent) => bridgeEvent.blockNumber >= latestBlockToFinalize)
-      .map((bridgeEvent) => client.spokePool.provider.getTransactionReceipt(bridgeEvent.transactionHash))
+    Array.from(uniqueTxnHashes).map((hash) => client.spokePool.provider.getTransactionReceipt(hash))
   );
-  return resolveCCTPRelatedTxns(txnReceipts, client.chainId, targetDestinationChainId);
+
+  return resolveCCTPRelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId);
 }
 
 /**
