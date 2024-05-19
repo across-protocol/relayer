@@ -27,6 +27,7 @@ import {
   toBN,
   toBNWei,
   winston,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -266,15 +267,25 @@ export class Monitor {
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const { hubPoolClient } = this.clients;
     const l1Tokens = hubPoolClient.getL1Tokens();
+    const l2TokenSymbols = Object.fromEntries(
+      l1Tokens.map((l1Token) => [l1Token.address, this.getL2TokenSymbolsForL1Token(l1Token.address)])
+    );
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
+        // @dev l2ToL1Tokens is a dictionary of L2 token addresses to asociated L1 token info, so that all
+        // relayer L2 token balances are mapped and acumulated to the associated L1 token info.
         const l2ToL1Tokens = Object.fromEntries(
           l1Tokens
             .filter(({ address: l1Token }) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
             .map((l1Token) => {
-              const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token.address, chainId);
-              return [l2Token, l1Token];
+              // If L1Token has an enabled PoolRebalanceRoute to this chain, then create an entry for all
+              // L2 tokens that share a symbol with the L1 token. This includes tokens like USDC which has multiple
+              // L2 tokens mapped to the same L1 token for a given chain ID.
+              return l2TokenSymbols[l1Token.address]
+                .filter((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[chainId] !== undefined)
+                .map((symbol) => [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], l1Token]);
             })
+            .flat()
         );
 
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
@@ -298,6 +309,15 @@ export class Monitor {
         }
       }
     }
+  }
+
+  private getL2TokenSymbolsForL1Token(l1TokenAddress: string): string[] {
+    return Object.entries(TOKEN_SYMBOLS_MAP)
+      .filter(
+        ([, { addresses }]) =>
+          addresses[this.clients.hubPoolClient.chainId]?.toLowerCase() === l1TokenAddress.toLowerCase()
+      )
+      .map(([symbol]) => symbol);
   }
 
   async checkBalances(): Promise<void> {
