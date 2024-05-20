@@ -28,6 +28,7 @@ import {
   toBNWei,
   winston,
   TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -217,6 +218,14 @@ export class Monitor {
   async reportRelayerBalances(): Promise<void> {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
+    // see L2 Bridged USDC balance versus Native USDC. Add USDC.e right after the USDC element.
+    const indexOfUsdc = allL1Tokens.findIndex(({ symbol }) => symbol === "USDC");
+    allL1Tokens.splice(indexOfUsdc, 0, {
+      symbol: "USDC.e",
+      address: TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
+      decimals: 6,
+    });
     const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
@@ -284,9 +293,23 @@ export class Monitor {
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
           const tokenInfo = l2ToL1Tokens[l2TokenAddresses[i]];
+          let l1TokenSymbol = tokenInfo.symbol;
+
+          // @dev Handle special case for USDC so we can see Bridged USDC and Native USDC balances split out.
+          // HubChain USDC balance will be grouped with Native USDC balance arbitrarily.
+          const l2TokenAddress = l2TokenAddresses[i];
+          if (
+            (l1TokenSymbol === "USDC" &&
+              chainId !== hubPoolClient.chainId &&
+              compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], l2TokenAddress)) ||
+            compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], l2TokenAddress)
+          ) {
+            l1TokenSymbol = "USDC.e";
+          }
+
           this.updateRelayerBalanceTable(
             relayerBalanceReport[relayer],
-            tokenInfo.symbol,
+            l1TokenSymbol,
             getNetworkName(chainId),
             BalanceType.CURRENT,
             tokenBalances[i]
