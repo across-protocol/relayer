@@ -46,7 +46,7 @@ export async function polygonFinalizer(
   const { chainId } = spokePoolClient;
 
   const posClient = await getPosClient(signer);
-  const lookback = getCurrentTime() - 60 * 60 * 24;
+  const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
   const redis = await getRedisCache(logger);
   const fromBlock = await getBlockForTimestamp(chainId, lookback, undefined, redis);
 

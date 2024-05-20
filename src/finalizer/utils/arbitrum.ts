@@ -30,7 +30,7 @@ export async function arbitrumOneFinalizer(
   // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
   const [fromBlock, toBlock] = await Promise.all([
-    getBlockForTimestamp(chainId, getCurrentTime() - 9 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(chainId, getCurrentTime() - 14 * 60 * 60 * 24, undefined, redis),
     getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
   ]);
   logger.debug({
