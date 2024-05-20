@@ -359,7 +359,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(deposit, lpFeePct, token);
+            const { profitable } = await profitClient.isFillProfitable(deposit, lpFeePct, token, destinationChainId);
             expect(profitable).to.equal(expected.profitable);
           }
         }
@@ -429,7 +429,12 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(deposit, effectiveLpFeePct, token);
+            const { profitable } = await profitClient.isFillProfitable(
+              deposit,
+              effectiveLpFeePct,
+              token,
+              destinationChainId
+            );
             expect(profitable).to.equal(expected.profitable);
           }
         }
