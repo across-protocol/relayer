@@ -8,6 +8,7 @@ import {
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
+  compareAddressesSimple,
   getBlockForTimestamp,
   getCurrentTime,
   getNetworkName,
