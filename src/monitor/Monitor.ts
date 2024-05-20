@@ -217,7 +217,8 @@ export class Monitor {
 
   async reportRelayerBalances(): Promise<void> {
     const relayers = this.monitorConfig.monitoredRelayers;
-    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    const allL1Tokens = [...this.clients.hubPoolClient.getL1Tokens()]; // @dev deep clone since we modify the
+    // array below and we don't want to modify the HubPoolClient's version
     // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
     // see L2 Bridged USDC balance versus Native USDC. Add USDC.e right after the USDC element.
     const indexOfUsdc = allL1Tokens.findIndex(({ symbol }) => symbol === "USDC");
@@ -299,10 +300,10 @@ export class Monitor {
           // HubChain USDC balance will be grouped with Native USDC balance arbitrarily.
           const l2TokenAddress = l2TokenAddresses[i];
           if (
-            (l1TokenSymbol === "USDC" &&
-              chainId !== hubPoolClient.chainId &&
-              compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], l2TokenAddress)) ||
-            compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], l2TokenAddress)
+            l1TokenSymbol === "USDC" &&
+            chainId !== hubPoolClient.chainId &&
+            (compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], l2TokenAddress) ||
+              compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], l2TokenAddress))
           ) {
             l1TokenSymbol = "USDC.e";
           }
