@@ -47,7 +47,7 @@ export async function zkSyncFinalizer(
   // older than 2 days and earlier than 1 day.
   const redis = await getRedisCache(logger);
   const [fromBlock, toBlock] = await Promise.all([
-    getBlockForTimestamp(l2ChainId, getCurrentTime() - 2 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(l2ChainId, getCurrentTime() - 8 * 60 * 60 * 24, undefined, redis),
     getBlockForTimestamp(l2ChainId, getCurrentTime() - 1 * 60 * 60 * 24, undefined, redis),
   ]);
   logger.debug({
