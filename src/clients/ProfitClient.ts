@@ -431,17 +431,22 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
   }
 
-  async getFillProfitability(deposit: V3Deposit, lpFeePct: BigNumber, l1Token: L1Token): Promise<FillProfit> {
+  async getFillProfitability(
+    deposit: V3Deposit,
+    lpFeePct: BigNumber,
+    l1Token: L1Token,
+    repaymentChainId: number
+  ): Promise<FillProfit> {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
-      const { depositId, originChainId } = deposit;
+      const { depositId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${l1Token.symbol} v3 deposit ${depositId} on chain ${originChainId} is ${profitable}`,
+        message: `${l1Token.symbol} v3 deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit,
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
@@ -470,17 +475,19 @@ export class ProfitClient {
   async isFillProfitable(
     deposit: V3Deposit,
     lpFeePct: BigNumber,
-    l1Token: L1Token
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "grossRelayerFeePct">> {
+    l1Token: L1Token,
+    repaymentChainId: number
+  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "netRelayerFeePct">> {
     let profitable = false;
-    let grossRelayerFeePct = bnZero;
+    let netRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
     let tokenGasCost = uint256Max;
     try {
-      ({ profitable, grossRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
+      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
         deposit,
         lpFeePct,
-        l1Token
+        l1Token,
+        repaymentChainId
       ));
     } catch (err) {
       this.logger.debug({
@@ -495,7 +502,7 @@ export class ProfitClient {
       profitable: profitable || (this.isTestnet && nativeGasCost.lt(uint256Max)),
       nativeGasCost,
       tokenGasCost,
-      grossRelayerFeePct,
+      netRelayerFeePct,
     };
   }
 
