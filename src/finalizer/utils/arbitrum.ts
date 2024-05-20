@@ -11,6 +11,8 @@ import {
   getRedisCache,
   getBlockForTimestamp,
   getL1TokenInfo,
+  compareAddressesSimple,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -138,10 +140,8 @@ async function getAllMessageStatuses(
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
-  return (
-    await Promise.all(
-      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
-    )
+  return await Promise.all(
+    tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
   )
     .map((result, i) => {
       return {
@@ -149,7 +149,12 @@ async function getAllMessageStatuses(
         info: tokensBridged[i],
       };
     })
-    .filter((result) => result.message !== undefined);
+    // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
+    .filter(
+      (result) =>
+        result.message !== undefined &&
+        !compareAddressesSimple(result.info.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
+    );
 }
 
 async function getMessageOutboxStatusAndProof(
