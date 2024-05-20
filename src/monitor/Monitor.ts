@@ -27,6 +27,7 @@ import {
   toBN,
   toBNWei,
   winston,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -265,18 +266,13 @@ export class Monitor {
   // Update current balances of all tokens on each supported chain for each relayer.
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const { hubPoolClient } = this.clients;
-    const l1Tokens = hubPoolClient.getL1Tokens();
+    const _l1Tokens = hubPoolClient.getL1Tokens();
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
-        const l2ToL1Tokens = Object.fromEntries(
-          l1Tokens
-            .filter(({ address: l1Token }) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
-            .map((l1Token) => {
-              const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token.address, chainId);
-              return [l2Token, l1Token];
-            })
+        const l1Tokens = _l1Tokens.filter(({ address: l1Token }) =>
+          hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
         );
-
+        const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
         const tokenBalances = await this._getBalances(
           l2TokenAddresses.map((address) => ({
@@ -298,6 +294,32 @@ export class Monitor {
         }
       }
     }
+  }
+
+  // Returns a dictionary of L2 token addresses on this chain to their mapped L1 token info. For example, this
+  // will return a dictionary for Optimism including WETH, WBTC, USDC, USDC.e, USDT entries where the key is
+  // the token's Optimism address and the value is the equivalent L1 token info.
+  protected getL2ToL1TokenMap(l1Tokens: L1Token[], chainId: number): { [l2TokenAddress: string]: L1Token } {
+    return Object.fromEntries(
+      l1Tokens
+        .map((l1Token) => {
+          // @dev l2TokenSymbols is a list of all keys in TOKEN_SYMBOLS_MAP where the hub chain address is equal to the
+          // l1 token address.
+          const l2TokenSymbols = Object.entries(TOKEN_SYMBOLS_MAP)
+            .filter(
+              ([, { addresses }]) =>
+                addresses[this.clients.hubPoolClient.chainId]?.toLowerCase() === l1Token.address.toLowerCase()
+            )
+            .map(([symbol]) => symbol);
+
+          // Create an entry for all L2 tokens that share a symbol with the L1 token. This includes tokens
+          // like USDC which has multiple L2 tokens mapped to the same L1 token for a given chain ID.
+          return l2TokenSymbols
+            .filter((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[chainId] !== undefined)
+            .map((symbol) => [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], l1Token]);
+        })
+        .flat()
+    );
   }
 
   async checkBalances(): Promise<void> {
