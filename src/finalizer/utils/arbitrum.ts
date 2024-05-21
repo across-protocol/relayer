@@ -11,6 +11,8 @@ import {
   getRedisCache,
   getBlockForTimestamp,
   getL1TokenInfo,
+  compareAddressesSimple,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -30,7 +32,7 @@ export async function arbitrumOneFinalizer(
   // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
   const [fromBlock, toBlock] = await Promise.all([
-    getBlockForTimestamp(chainId, getCurrentTime() - 9 * 60 * 60 * 24, undefined, redis),
+    getBlockForTimestamp(chainId, getCurrentTime() - 14 * 60 * 60 * 24, undefined, redis),
     getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
   ]);
   logger.debug({
@@ -139,17 +141,24 @@ async function getAllMessageStatuses(
   // This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   return (
-    await Promise.all(
-      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
+    (
+      await Promise.all(
+        tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
+      )
     )
-  )
-    .map((result, i) => {
-      return {
-        ...result,
-        info: tokensBridged[i],
-      };
-    })
-    .filter((result) => result.message !== undefined);
+      .map((result, i) => {
+        return {
+          ...result,
+          info: tokensBridged[i],
+        };
+      })
+      // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
+      .filter(
+        (result) =>
+          result.message !== undefined &&
+          !compareAddressesSimple(result.info.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
+      )
+  );
 }
 
 async function getMessageOutboxStatusAndProof(

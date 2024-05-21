@@ -13,6 +13,8 @@ import {
   getRedisCache,
   getBlockForTimestamp,
   getL1TokenInfo,
+  compareAddressesSimple,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -46,7 +48,7 @@ export async function polygonFinalizer(
   const { chainId } = spokePoolClient;
 
   const posClient = await getPosClient(signer);
-  const lookback = getCurrentTime() - 60 * 60 * 24;
+  const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
   const redis = await getRedisCache(logger);
   const fromBlock = await getBlockForTimestamp(chainId, lookback, undefined, redis);
 
@@ -110,6 +112,12 @@ async function getFinalizableTransactions(
   const exitStatus = await Promise.all(
     checkpointedTokensBridged.map(async (_, i) => {
       const payload = payloads[i];
+      const { chainId, l2TokenAddress } = tokensBridged[i];
+
+      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[chainId])) {
+        return { status: "NON_CANONICAL_BRIDGE" };
+      }
+
       try {
         // If we can estimate gas for exit transaction call, then we can exit the burn tx, otherwise its likely
         // been processed. Note this will capture mislabel some exit txns that fail for other reasons as "exit
