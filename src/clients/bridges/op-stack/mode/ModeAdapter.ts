@@ -13,7 +13,7 @@ export class ModeAdapter extends OpStackAdapter {
       // Custom Bridges
       {},
       logger,
-      ["ETH", "WETH", "USDC", "USDT"],
+      ["ETH", "WETH", "USDC", "USDT", "WBTC"],
       spokePoolClients,
       monitoredAddresses
     );
