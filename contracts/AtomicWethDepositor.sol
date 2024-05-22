@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+///////////////////////////////
+//   Interfaces for Bridges  //
+///////////////////////////////
+
 interface Weth {
     function withdraw(uint256 _wad) external;
-
     function transferFrom(address _from, address _to, uint256 _wad) external;
 }
 
@@ -41,50 +46,176 @@ interface LineaL1MessageService {
  * @notice Contract deployed on Ethereum helps relay bots atomically unwrap and bridge WETH over the canonical chain
  * bridges for Optimism, Base, Boba, ZkSync, Linea, and Polygon. Needed as these chains only support bridging of ETH,
  * not WETH.
+ * @dev This contract is ownable so that the owner can update the OvmL1Bridge contracts for new chains.
  */
+contract AtomicWethDepositor is Ownable {
+    ///////////////////////////////
+    //   Hardcoded Addresses     //
+    ///////////////////////////////
 
-contract AtomicWethDepositor {
+    /**
+     * @notice A hardcoded address for WETH on Ethereum mainnet.
+     */
     Weth public immutable weth = Weth(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
-    OvmL1Bridge public immutable optimismL1Bridge = OvmL1Bridge(0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1);
-    OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
-    OvmL1Bridge public immutable baseL1Bridge = OvmL1Bridge(0x3154Cf16ccdb4C6d922629664174b904d80F2C35);
+    /**
+     * @notice A hardcoded address for the Polygon L1 bridge on Ethereum mainnet.
+     */
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
+    /**
+     * @notice A hardcoded address for the ZKSync L1 bridge on Ethereum mainnet.
+     */
     ZkSyncL1Bridge public immutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
+    /**
+     * @notice A hardcoded address for the Optimism L1 bridge on Ethereum mainnet.
+     */
     LineaL1MessageService public immutable lineaL1MessageService =
         LineaL1MessageService(0xd19d4B5d358258f05D7B411E21A1460D11B0876F);
 
+    ///////////////////////////////
+    //     Dynamic Variables     //
+    ///////////////////////////////
+
+    /**
+     * @notice All OVM Chains have an OvmL1Bridge contract that can be called to deposit ETH.
+     * @notice This mapping is a convenience to allow for easy lookup of the OvmL1Bridge contract for a given chainId.
+     */
+    mapping(uint256 => OvmL1Bridge) public ovmChainIdToBridge;
+
+    ///////////////////////////////
+    //          Events           //
+    ///////////////////////////////
+
+    /**
+     * @notice An event to track ETH deposits to ZkSync. This event is emitted when a deposit to ZkSync is initiated.
+     */
     event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
+    /**
+     * @notice An event to track ETH deposits to Linea. This event is emitted when a deposit to Linea is initiated.
+     */
     event LineaEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
+    /**
+     * @notice An event to track ETH deposits to OVM chains. This event is emitted when a deposit to an OVM chain is initiated.
+     */
+    event OVMEthDepositInitiated(uint256 indexed chainId, address indexed from, address indexed to, uint256 amount);
+    /**
+     * @notice An event to track ETH deposits to Polygon. This event is emitted when a deposit to Polygon is initiated.
+     */
+    event PolygonEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
+    /**
+     * @notice An event to track when the mapping of an OVM L1 bridge contract is modified.
+     */
+    event OVML1BridgeModified(uint256 indexed chainId, address indexed newBridge, address oldBridge);
 
+    ///////////////////////////////
+    //          Errors           //
+    ///////////////////////////////
+
+    /**
+     * @notice An error message to be used when an invalid OVM chainId is provided.
+     */
+    error InvalidOvmChainId();
+
+    ///////////////////////////////
+    //     Internal Functions    //
+    ///////////////////////////////
+
+    /**
+     * @notice Transfers WETH to this contract and withdraws it to ETH.
+     * @param amount The amount of WETH to withdraw.
+     */
+    function _withdrawWeth(uint256 amount) internal {
+        weth.transferFrom(msg.sender, address(this), amount);
+        weth.withdraw(amount);
+    }
+
+    ///////////////////////////////
+    //     Admin Functions       //
+    ///////////////////////////////
+
+    /**
+     * @notice Sets the OvmL1Bridge contract for a given chainId.
+     * @param chainId The chainId of the OVM chain.
+     * @param newBridge The address of the OvmL1Bridge contract for the given chainId.
+     */
+    function setOvmL1Bridge(uint256 chainId, OvmL1Bridge newBridge) public onlyOwner {
+        OvmL1Bridge oldBridge = ovmChainIdToBridge[chainId];
+        ovmChainIdToBridge[chainId] = newBridge;
+        emit OVML1BridgeModified(chainId, address(newBridge), address(oldBridge));
+    }
+
+    /**
+     * @notice A helper function to disable the OvmL1Bridge contract for a given chainId.
+     * @dev This simply sets the OvmL1Bridge contract to the zero address.
+     * @param chainId The chainId of the OVM chain.
+     */
+    function disableOvmL1Bridge(uint256 chainId) public onlyOwner {
+        OvmL1Bridge oldBridge = ovmChainIdToBridge[chainId];
+        ovmChainIdToBridge[chainId] = OvmL1Bridge(address(0));
+        emit OVML1BridgeModified(chainId, address(0), address(oldBridge));
+    }
+
+    ///////////////////////////////
+    //     Public Functions      //
+    ///////////////////////////////
+
+    /**
+     * @notice Initiates a WETH deposit to an OVM chain.
+     * @param to The address on the OVM chain to receive the WETH.
+     * @param amount The amount of WETH to deposit.
+     * @param l2Gas The amount of gas to send with the deposit transaction.
+     * @param chainId The chainId of the OVM chain to deposit to.
+     * @dev throws InvalidOvmChainId if the chainId provided is not a valid OVM chainId.
+     */
     function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {
-        weth.transferFrom(msg.sender, address(this), amount);
-        weth.withdraw(amount);
-
-        if (chainId == 10) {
-            optimismL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
-        } else if (chainId == 8453) {
-            baseL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
-        } else if (chainId == 288) {
-            bobaL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
-        } else {
-            revert("Invalid OVM chainId");
+        // Get the OvmL1Bridge contract for the given chainId - if it doesn't exist, throw an error.
+        OvmL1Bridge ovmL1Bridge = ovmChainIdToBridge[chainId];
+        if (address(ovmL1Bridge) == address(0)) {
+            revert InvalidOvmChainId();
         }
+        // Transfer the WETH to this contract and withdraw it to ETH.
+        _withdrawWeth(amount);
+        // Deposit the ETH to the OVM chain.
+        ovmL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        // Emit an event that we can easily track in the OVM-related adapters/finalizers
+        emit OVMEthDepositInitiated(chainId, msg.sender, to, amount);
     }
 
+    /**
+     * @notice Initiates a WETH deposit to Polygon.
+     * @param to The address on Polygon to receive the WETH.
+     * @param amount The amount of WETH to deposit.
+     */
     function bridgeWethToPolygon(address to, uint256 amount) public {
-        weth.transferFrom(msg.sender, address(this), amount);
-        weth.withdraw(amount);
+        // Transfer the WETH to this contract and withdraw it to ETH.
+        _withdrawWeth(amount);
+        // Deposit the ETH to Polygon.
         polygonL1Bridge.depositEtherFor{ value: amount }(to);
+        // Emit an event that we can easily track in the Polygon-related adapters/finalizers
+        emit PolygonEthDepositInitiated(msg.sender, to, amount);
     }
 
+    /**
+     * @notice Initiates a WETH deposit to Linea.
+     * @param to The address on Linea to receive the WETH.
+     * @param amount The amount of WETH to deposit.
+     */
     function bridgeWethToLinea(address to, uint256 amount) public payable {
-        weth.transferFrom(msg.sender, address(this), amount);
-        weth.withdraw(amount);
+        // Transfer the WETH to this contract and withdraw it to ETH.
+        _withdrawWeth(amount);
+        // Deposit the ETH to Linea.
         lineaL1MessageService.sendMessage{ value: amount + msg.value }(to, msg.value, "");
         // Emit an event that we can easily track in the Linea-related adapters/finalizers
         emit LineaEthDepositInitiated(msg.sender, to, amount);
     }
 
+    /**
+     * @notice Initiates a WETH deposit to ZkSync.
+     * @param to The address on ZkSync to receive the WETH.
+     * @param amount The amount of WETH to deposit.
+     * @param l2GasLimit The amount of gas to send with the deposit transaction.
+     * @param l2GasPerPubdataByteLimit The amount of gas per pubdata byte to send with the deposit transaction.
+     * @param refundRecipient The address to refund any excess gas to.
+     */
     function bridgeWethToZkSync(
         address to,
         uint256 amount,
@@ -103,8 +234,9 @@ contract AtomicWethDepositor {
             l2GasPerPubdataByteLimit
         );
         uint256 valueToSubmitXChainMessage = l2TransactionBaseCost + amount;
-        weth.transferFrom(msg.sender, address(this), valueToSubmitXChainMessage);
-        weth.withdraw(valueToSubmitXChainMessage);
+        // Transfer the WETH to this contract and withdraw it to ETH.
+        _withdrawWeth(valueToSubmitXChainMessage);
+        // Deposit the ETH to ZkSync.
         zkSyncL1Bridge.requestL2Transaction{ value: valueToSubmitXChainMessage }(
             to,
             amount,
@@ -119,6 +251,10 @@ contract AtomicWethDepositor {
         // track ETH deposit initiations.
         emit ZkSyncEthDepositInitiated(msg.sender, to, amount);
     }
+
+    ///////////////////////////////
+    //          Fallback         //
+    ///////////////////////////////
 
     fallback() external payable {}
 
