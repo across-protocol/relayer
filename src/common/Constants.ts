@@ -32,79 +32,57 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // block. This would cause the relayer to unintentionally send an invalid fill and not refunded. The tradeoff is that
 // the larger the follow distance, the slower the relayer will be to fulfill deposits. Therefore, the following
 // configuration allows the user to set higher follow distances for higher deposit amounts.
-// The Key of the following dictionary is used as the USD threshold to determine the MDC:
+// The key of the following dictionary is used as the USD threshold to determine the MDC:
 // - Searching from highest USD threshold to lowest
-// - If the key value is >= deposited USD amount, then use the MDC associated with the key for the origin chain
-// - If no key values are >= depostied USD amount, use the "default" value for the origin chain
-// - For example, a deposit on Polygon worth $90 would use the MDC associated with the 100 key and chain
-// 137, so it would use a follow distance of 80 blocks, while a deposit on Polygon for $110 would use 1000
-// key. A deposit of $1100 would use the "default" key
-
+// - If the key is >= deposited USD amount, then use the MDC associated with the key for the origin chain
+// - If no keys are >= depostied USD amount, ignore the deposit.
 // To see the latest block reorg events go to:
 // - Ethereum: https://etherscan.io/blocks_forked
 // - Polygon: https://polygonscan.com/blocks_forked
-
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
 // anything under 7 days.
-export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
-  1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-  10: 120,
-  137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
-  288: 0,
-  324: 120,
-  8453: 120,
-  42161: 0,
-  59144: 30,
-  // Testnets:
-  5: 0,
-  280: 0,
-  420: 0,
-  59140: 0,
-  80001: 0,
-  84531: 0,
-  84532: 0,
-  421613: 0,
-  421614: 0,
-  11155111: 0,
-  11155420: 0,
-};
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
+  // Defaults for testnets.
+  [Number.MAX_SAFE_INTEGER]: {
+    300: 0,
+    919: 0,
+    59140: 0,
+    80002: 0,
+    84532: 0,
+    421614: 0,
+    11155111: 0,
+    11155420: 0,
+  },
+  10000: {
+    1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
+    10: 120,
+    137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
+    324: 120,
+    8453: 120,
+    34443: 120,
+    42161: 0,
+    59144: 30,
+  },
   1000: {
     1: 32, // Justified block
     10: 60,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
-    288: 0,
     324: 0,
     8453: 60,
+    34443: 60,
     42161: 0,
     59144: 1,
-    // Testnets:
-    5: 0,
-    280: 0,
-    420: 0,
-    59140: 0,
-    80001: 0,
-    84531: 0,
-    421613: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
     10: 60,
     137: 80,
-    288: 0,
     324: 0,
     8453: 60,
+    34433: 60,
     42161: 0,
     59144: 1,
-    // Testnets:
-    5: 0,
-    280: 0,
-    420: 0,
-    59140: 0,
-    80001: 0,
-    84531: 0,
-    421613: 0,
   },
 };
 
