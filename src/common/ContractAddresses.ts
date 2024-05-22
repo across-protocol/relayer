@@ -667,7 +667,7 @@ export const CONTRACT_ADDRESSES: {
     // OVM, ZkSync, Linea, and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0x6e41f79772c3CF7D6d15d17d899e129d5aAAA740",
+      address: "0x24d8b91aB9c461d7c0D6fB9F5a294CEA61D11710",
       abi: [
         { stateMutability: "payable", type: "fallback" },
         {
