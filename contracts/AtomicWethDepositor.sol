@@ -116,6 +116,14 @@ contract AtomicWethDepositor is Ownable {
     error InvalidOvmChainId();
 
     ///////////////////////////////
+    //        Constructor        //
+    ///////////////////////////////
+    /**
+     * @notice Constructs the AtomicWethDepositor contract. Sets the owner to the deployer.
+     */
+    constructor() Ownable() {}
+
+    ///////////////////////////////
     //     Internal Functions    //
     ///////////////////////////////
 
