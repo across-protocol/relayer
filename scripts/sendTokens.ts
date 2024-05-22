@@ -62,8 +62,15 @@ export async function run(): Promise<void> {
       return;
     }
     console.log("sending...");
-    const tx = await erc20.transfer(recipient, args.amount, { maxFeePerGas: 150000000000, maxPriorityFeePerGas: 40000000000 });
-    console.log(`submitted with max fee per gas ${tx.maxFeePerGas.toString()} and priority fee ${tx.maxPriorityFeePerGas.toString()} at nonce ${tx.nonce}`)
+    const tx = await erc20.transfer(recipient, args.amount, {
+      maxFeePerGas: 150000000000,
+      maxPriorityFeePerGas: 40000000000,
+    });
+    console.log(
+      `submitted with max fee per gas ${tx.maxFeePerGas.toString()} and priority fee ${tx.maxPriorityFeePerGas.toString()} at nonce ${
+        tx.nonce
+      }`
+    );
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }
