@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface Weth {
     function withdraw(uint256 _wad) external;
+
     function transferFrom(address _from, address _to, uint256 _wad) external;
 }
 
@@ -121,7 +122,9 @@ contract AtomicWethDepositor is Ownable {
     /**
      * @notice Constructs the AtomicWethDepositor contract. Sets the owner to the deployer.
      */
-    constructor() Ownable() {}
+    constructor() Ownable() {
+        // The deployer address is automatically set as the owner by the Ownable constructor.
+    }
 
     ///////////////////////////////
     //     Internal Functions    //
