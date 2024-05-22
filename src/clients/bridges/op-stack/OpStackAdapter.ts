@@ -47,9 +47,10 @@ export class OpStackAdapter extends BaseAdapter {
       );
     }
 
-    // We should manually override the bridge for USDC to use CCTP.
+    // We should manually override the bridge for USDC to use CCTP if this chain has a Native USDC entry.
     const usdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
-    if (usdcAddress) {
+    const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.chainId];
+    if (usdcAddress && l2NativeUsdcAddress) {
       this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(
         this.chainId,
         this.hubChainId,
