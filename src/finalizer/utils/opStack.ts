@@ -153,7 +153,7 @@ async function getCrossChainMessages(
       // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
       .filter(
         (e) =>
-          !compareAddressesSimple(e.event.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[_chainId]) ||
+          !compareAddressesSimple(e.event.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[_chainId]) ||
           !(_chainId === CHAIN_IDs.BASE || _chainId === CHAIN_IDs.OPTIMISM)
       )
   );

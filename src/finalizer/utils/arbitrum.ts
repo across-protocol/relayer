@@ -156,7 +156,7 @@ async function getAllMessageStatuses(
       .filter(
         (result) =>
           result.message !== undefined &&
-          !compareAddressesSimple(result.info.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
+          !compareAddressesSimple(result.info.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[CHAIN_ID])
       )
   );
 }

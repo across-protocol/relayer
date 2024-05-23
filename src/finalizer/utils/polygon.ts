@@ -114,7 +114,7 @@ async function getFinalizableTransactions(
       const payload = payloads[i];
       const { chainId, l2TokenAddress } = tokensBridged[i];
 
-      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[chainId])) {
+      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])) {
         return { status: "NON_CANONICAL_BRIDGE" };
       }
 
