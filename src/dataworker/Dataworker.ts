@@ -1057,7 +1057,11 @@ export class Dataworker {
             continue;
           }
 
-          const leavesForChain = leaves.filter((leaf) => leaf.chainId === chainId);
+          // Filter out slow fill leaves for other chains and also expired deposits.
+          const currentTime = client.getCurrentTime();
+          const leavesForChain = leaves.filter(
+            (leaf) => leaf.chainId === chainId && leaf.relayData.fillDeadline >= currentTime
+          );
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) =>
