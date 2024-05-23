@@ -29,6 +29,7 @@ import {
   winston,
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
+  CHAIN_IDs,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -632,8 +633,10 @@ export class Monitor {
     for (const refunds of nextBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
         this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
-        this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
       }
+    }
+    for (const relayer of this.monitorConfig.monitoredRelayers) {
+      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
     }
   }
 
@@ -641,13 +644,40 @@ export class Monitor {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.crossChainAdapterSupportedChains) {
       for (const l1Token of allL1Tokens) {
-        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-          relayer,
-          chainId,
-          l1Token.address
-        );
+        // Handle special case for USDC which has multiple L2 tokens we might hold in inventory mapped to a single
+        // L1 token.
+        if (l1Token.symbol === "USDC" && chainId !== this.clients.hubPoolClient.chainId) {
+          const bridgedUsdcAddress =
+            TOKEN_SYMBOLS_MAP[chainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses[chainId];
+          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["_USDC"].addresses[chainId];
+          for (const [l2Address, symbol] of [
+            [bridgedUsdcAddress, "USDC.e"],
+            [nativeUsdcAddress, "USDC"],
+          ]) {
+            if (l2Address !== undefined) {
+              const bridgedTransferBalance =
+                this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+                  relayer,
+                  chainId,
+                  l1Token.address,
+                  l2Address
+                );
+              this.updateRelayerBalanceTable(
+                relayerBalanceTable,
+                symbol,
+                getNetworkName(chainId),
+                BalanceType.PENDING_TRANSFERS,
+                bridgedTransferBalance
+              );
+            }
+          }
+        } else {
+          const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+            relayer,
+            chainId,
+            l1Token.address
+          );
 
-        if (transferBalance.gt(bnZero)) {
           this.updateRelayerBalanceTable(
             relayerBalanceTable,
             l1Token.symbol,
@@ -703,14 +733,18 @@ export class Monitor {
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
+
+        let tokenSymbol = tokenInfo.symbol;
+        if (
+          tokenSymbol === "USDC" &&
+          chainId !== this.clients.hubPoolClient.chainId &&
+          (compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], tokenAddress) ||
+            compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], tokenAddress))
+        ) {
+          tokenSymbol = "USDC.e";
+        }
         const amount = totalRefundAmount ?? bnZero;
-        this.updateRelayerBalanceTable(
-          relayerBalanceTable,
-          tokenInfo.symbol,
-          getNetworkName(chainId),
-          balanceType,
-          amount
-        );
+        this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
       }
     }
   }

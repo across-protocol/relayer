@@ -414,7 +414,10 @@ export class BundleDataClient {
     // If a chain is disabled or doesn't have a spoke pool client, return a range of 0
     function getBlockRangeDelta(_pendingBlockRanges: number[][]): number[][] {
       return widestBundleBlockRanges.map((blockRange, index) => {
-        const initialBlockRange = _pendingBlockRanges[index];
+        // If pending block range doesn't have an entry for the widest range, which is possible when a new chain
+        // is added to the CHAIN_ID_INDICES list, then simply set the initial block range to the widest block range.
+        // This will produce a block range delta of 0 where the returned range for this chain is [widest[1], widest[1]].
+        const initialBlockRange = _pendingBlockRanges[index] ?? blockRange;
         // If chain is disabled, return disabled range
         if (initialBlockRange[0] === initialBlockRange[1]) {
           return initialBlockRange;
