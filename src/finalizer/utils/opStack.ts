@@ -55,21 +55,18 @@ export async function opStackFinalizer(
   // - Don't submit proofs for finalizations older than 1 day
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const redis = await getRedisCache(logger);
-  const [earliestBlockToFinalize, latestBlockToProve] = await Promise.all([
-    getBlockForTimestamp(chainId, getCurrentTime() - 14 * 60 * 60 * 24, undefined, redis),
-    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
-  ]);
+  const latestBlockToProve = await 
+    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged(),
     (e) => {
       if (e.blockNumber >= latestBlockToProve) {
         return "recentTokensBridgedEvents";
-      } else if (e.blockNumber <= earliestBlockToFinalize) {
+      } else if (e.blockNumber <= latestBlockToProve) {
         return "olderTokensBridgedEvents";
       }
     }
   );
-
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
@@ -91,7 +88,7 @@ export async function opStackFinalizer(
   logger.debug({
     at: "Finalizer",
     message: `Earliest TokensBridged block to attempt to finalize for ${networkName}`,
-    earliestBlockToFinalize,
+    earliestBlockToFinalize: latestBlockToProve,
   });
 
   const finalizations = await multicallOptimismFinalizations(
