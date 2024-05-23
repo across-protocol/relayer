@@ -18,6 +18,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   288: 11520,
   324: 4 * 24 * 60 * 60,
   8453: 172800, // Same as Optimism.
+  34443: 172800, // Same as Optimism.
   42161: 1382400,
   59144: 115200, // 1 block every 3 seconds
 };
@@ -54,12 +55,14 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   288: 0,
   324: 120,
   8453: 120,
+  34443: 120,
   42161: 0,
   59144: 30,
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  919: 0,
   59140: 0,
   80001: 0,
   84531: 0,
@@ -77,12 +80,14 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     288: 0,
     324: 0,
     8453: 60,
+    34443: 60,
     42161: 0,
     59144: 1,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    919: 0,
     59140: 0,
     80001: 0,
     84531: 0,
@@ -95,12 +100,14 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     288: 0,
     324: 0,
     8453: 60,
+    34443: 60,
     42161: 0,
     59144: 1,
     // Testnets:
     5: 0,
     280: 0,
     420: 0,
+    919: 0,
     59140: 0,
     80001: 0,
     84531: 0,
@@ -122,12 +129,14 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   288: 4990,
   324: 10000,
   8453: 1500,
+  34443: 1500,
   42161: 10000,
   59144: 5000,
   // Testnets:
   5: 10000,
   280: 10000,
   420: 10000,
+  919: 10000,
   59140: 10000,
   80001: 10000,
   84531: 10000,
@@ -149,12 +158,14 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   8453: 60, // 2s/block. Same finality profile as Optimism
+  34443: 60, // 2s/block. Same finality profile as Optimism
   42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   59144: 40, // At 3s/block, 2 mins = 40 blocks.
   // Testnets:
   5: 0,
   280: 0,
   420: 0,
+  919: 0,
   59140: 0,
   80001: 0,
   84531: 0,
@@ -194,6 +205,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   288: 0,
   324: 512,
   8453: 120,
+  34443: 120,
   42161: 32,
   59144: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
   534352: 0,
@@ -201,6 +213,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   5: 0,
   280: 0,
   420: 0,
+  919: 0,
   59140: 0,
   80001: 0,
   84531: 0,
@@ -222,6 +235,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   288: 86400,
   324: 172800,
   8453: 86400,
+  34443: 86400,
   59144: 57600,
   42161: 691200,
   534352: 57600,
@@ -234,6 +248,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   8453: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  34443: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -251,6 +266,7 @@ export const multicall3Addresses = {
   288: "0xcA11bde05977b3631167028862bE2a173976CA11",
   324: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   8453: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  34443: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
   59144: "0xcA11bde05977b3631167028862bE2a173976CA11",
   534352: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -273,7 +289,7 @@ export type Multicall2Call = {
 
 // These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
 // a bundle execution is possible with the funds in the pool.
-export const spokesThatHoldEthAndWeth = [10, 324, 8453, 59144];
+export const spokesThatHoldEthAndWeth = [10, 324, 8453, 34443, 59144];
 
 /**
  * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
@@ -317,5 +333,6 @@ export const RELAYER_DEFAULT_SPOKEPOOL_INDEXER = "./dist/src/libexec/RelayerSpok
 
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
 
-// Chains with slow (> 2 day liveness) canonical L2-->L1 bridges.
+// Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
+// This does not include all  7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM];
