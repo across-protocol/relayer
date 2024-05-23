@@ -61,7 +61,7 @@ export async function opStackFinalizer(
     (e) => {
       if (e.blockNumber >= latestBlockToProve) {
         return "recentTokensBridgedEvents";
-      } else if (e.blockNumber <= latestBlockToProve) {
+      } else {
         return "olderTokensBridgedEvents";
       }
     }
