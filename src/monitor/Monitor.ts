@@ -649,7 +649,7 @@ export class Monitor {
         if (l1Token.symbol === "USDC" && chainId !== this.clients.hubPoolClient.chainId) {
           const bridgedUsdcAddress =
             TOKEN_SYMBOLS_MAP[chainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses[chainId];
-          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["_USDC"].addresses[chainId];
+          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId];
           for (const [l2Address, symbol] of [
             [bridgedUsdcAddress, "USDC.e"],
             [nativeUsdcAddress, "USDC"],
