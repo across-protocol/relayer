@@ -153,7 +153,7 @@ export class Relayer {
     }
 
     if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger.warn({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
         deposit,

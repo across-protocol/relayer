@@ -91,6 +91,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [scrollFinalizer],
     finalizeOnL2: [],
   },
+  34443: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+  },
   // Testnets
   84532: {
     finalizeOnL1: [cctpL2toL1Finalizer],
@@ -99,6 +103,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   59140: {
     finalizeOnL1: [lineaL2ToL1Finalizer],
     finalizeOnL2: [lineaL1ToL2Finalizer],
+  },
+  919: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
   },
 };
 
