@@ -5,7 +5,9 @@ import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
 import {
   BigNumber,
+  CHAIN_IDs,
   chainIsOPStack,
+  compareAddressesSimple,
   convertFromWei,
   getBlockForTimestamp,
   getCachedProvider,
@@ -16,6 +18,7 @@ import {
   getUniqueLogIndex,
   groupObjectCountsByProp,
   Signer,
+  TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
 import { Multicall2Call } from "../../common";
@@ -31,7 +34,7 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   logIndex: number;
 }
 
-type OVM_CHAIN_ID = 10 | 8453;
+type OVM_CHAIN_ID = 10 | 8453 | 34443;
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export async function opStackFinalizer(
@@ -53,8 +56,8 @@ export async function opStackFinalizer(
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const redis = await getRedisCache(logger);
   const [earliestBlockToFinalize, latestBlockToProve] = await Promise.all([
+    getBlockForTimestamp(chainId, getCurrentTime() - 14 * 60 * 60 * 24, undefined, redis),
     getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
-    getBlockForTimestamp(chainId, getCurrentTime() - 60 * 60 * 24, undefined, redis),
   ]);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged(),
@@ -129,22 +132,31 @@ async function getCrossChainMessages(
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
 
   return (
-    await Promise.all(
-      tokensBridged.map(
-        async (l2Event, i) =>
-          (
-            await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
-              direction: optimismSDK.MessageDirection.L2_TO_L1,
-            })
-          )[logIndexesForMessage[i]]
+    (
+      await Promise.all(
+        tokensBridged.map(
+          async (l2Event, i) =>
+            (
+              await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
+                direction: optimismSDK.MessageDirection.L2_TO_L1,
+              })
+            )[logIndexesForMessage[i]]
+        )
       )
     )
-  ).map((message, i) => {
-    return {
-      message,
-      event: tokensBridged[i],
-    };
-  });
+      .map((message, i) => {
+        return {
+          message,
+          event: tokensBridged[i],
+        };
+      })
+      // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
+      .filter(
+        (e) =>
+          !compareAddressesSimple(e.event.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[_chainId]) ||
+          !(_chainId === CHAIN_IDs.BASE || _chainId === CHAIN_IDs.OPTIMISM)
+      )
+  );
 }
 
 async function getMessageStatuses(

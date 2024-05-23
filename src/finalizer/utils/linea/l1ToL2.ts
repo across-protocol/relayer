@@ -40,9 +40,7 @@ export async function lineaL1ToL2Finalizer(
   );
 
   // Optimize block range for querying Linea's MessageSent events on L1.
-  // We want to conservatively query for events that are between 0 and 24 hours old
-  // because Linea L1->L2 messages are claimable after ~20 mins.
-  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24, 0);
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24 * 7, 0);
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
     message: "Linea MessageSent event filter",

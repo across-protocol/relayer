@@ -11,7 +11,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   await deploy("AtomicWethDepositor", {
     from: deployer,
     log: true,
-    skipIfAlreadyDeployed: true,
+    skipIfAlreadyDeployed: false,
   });
 };
 module.exports = func;

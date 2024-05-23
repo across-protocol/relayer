@@ -27,6 +27,9 @@ import {
   toBN,
   toBNWei,
   winston,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
+  CHAIN_IDs,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -215,7 +218,16 @@ export class Monitor {
 
   async reportRelayerBalances(): Promise<void> {
     const relayers = this.monitorConfig.monitoredRelayers;
-    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    const allL1Tokens = [...this.clients.hubPoolClient.getL1Tokens()]; // @dev deep clone since we modify the
+    // array below and we don't want to modify the HubPoolClient's version
+    // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
+    // see L2 Bridged USDC balance versus Native USDC. Add USDC.e right after the USDC element.
+    const indexOfUsdc = allL1Tokens.findIndex(({ symbol }) => symbol === "USDC");
+    allL1Tokens.splice(indexOfUsdc, 0, {
+      symbol: "USDC.e",
+      address: TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
+      decimals: 6,
+    });
     const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
@@ -265,18 +277,13 @@ export class Monitor {
   // Update current balances of all tokens on each supported chain for each relayer.
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const { hubPoolClient } = this.clients;
-    const l1Tokens = hubPoolClient.getL1Tokens();
+    const _l1Tokens = hubPoolClient.getL1Tokens();
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
-        const l2ToL1Tokens = Object.fromEntries(
-          l1Tokens
-            .filter(({ address: l1Token }) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
-            .map((l1Token) => {
-              const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token.address, chainId);
-              return [l2Token, l1Token];
-            })
+        const l1Tokens = _l1Tokens.filter(({ address: l1Token }) =>
+          hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
         );
-
+        const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
         const tokenBalances = await this._getBalances(
           l2TokenAddresses.map((address) => ({
@@ -288,9 +295,23 @@ export class Monitor {
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
           const tokenInfo = l2ToL1Tokens[l2TokenAddresses[i]];
+          let l1TokenSymbol = tokenInfo.symbol;
+
+          // @dev Handle special case for USDC so we can see Bridged USDC and Native USDC balances split out.
+          // HubChain USDC balance will be grouped with Native USDC balance arbitrarily.
+          const l2TokenAddress = l2TokenAddresses[i];
+          if (
+            l1TokenSymbol === "USDC" &&
+            chainId !== hubPoolClient.chainId &&
+            (compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], l2TokenAddress) ||
+              compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], l2TokenAddress))
+          ) {
+            l1TokenSymbol = "USDC.e";
+          }
+
           this.updateRelayerBalanceTable(
             relayerBalanceReport[relayer],
-            tokenInfo.symbol,
+            l1TokenSymbol,
             getNetworkName(chainId),
             BalanceType.CURRENT,
             tokenBalances[i]
@@ -298,6 +319,32 @@ export class Monitor {
         }
       }
     }
+  }
+
+  // Returns a dictionary of L2 token addresses on this chain to their mapped L1 token info. For example, this
+  // will return a dictionary for Optimism including WETH, WBTC, USDC, USDC.e, USDT entries where the key is
+  // the token's Optimism address and the value is the equivalent L1 token info.
+  protected getL2ToL1TokenMap(l1Tokens: L1Token[], chainId: number): { [l2TokenAddress: string]: L1Token } {
+    return Object.fromEntries(
+      l1Tokens
+        .map((l1Token) => {
+          // @dev l2TokenSymbols is a list of all keys in TOKEN_SYMBOLS_MAP where the hub chain address is equal to the
+          // l1 token address.
+          const l2TokenSymbols = Object.entries(TOKEN_SYMBOLS_MAP)
+            .filter(
+              ([, { addresses }]) =>
+                addresses[this.clients.hubPoolClient.chainId]?.toLowerCase() === l1Token.address.toLowerCase()
+            )
+            .map(([symbol]) => symbol);
+
+          // Create an entry for all L2 tokens that share a symbol with the L1 token. This includes tokens
+          // like USDC which has multiple L2 tokens mapped to the same L1 token for a given chain ID.
+          return l2TokenSymbols
+            .filter((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[chainId] !== undefined)
+            .map((symbol) => [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], l1Token]);
+        })
+        .flat()
+    );
   }
 
   async checkBalances(): Promise<void> {
@@ -586,8 +633,10 @@ export class Monitor {
     for (const refunds of nextBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
         this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
-        this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
       }
+    }
+    for (const relayer of this.monitorConfig.monitoredRelayers) {
+      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
     }
   }
 
@@ -595,13 +644,40 @@ export class Monitor {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.crossChainAdapterSupportedChains) {
       for (const l1Token of allL1Tokens) {
-        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-          relayer,
-          chainId,
-          l1Token.address
-        );
+        // Handle special case for USDC which has multiple L2 tokens we might hold in inventory mapped to a single
+        // L1 token.
+        if (l1Token.symbol === "USDC" && chainId !== this.clients.hubPoolClient.chainId) {
+          const bridgedUsdcAddress =
+            TOKEN_SYMBOLS_MAP[chainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses[chainId];
+          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["_USDC"].addresses[chainId];
+          for (const [l2Address, symbol] of [
+            [bridgedUsdcAddress, "USDC.e"],
+            [nativeUsdcAddress, "USDC"],
+          ]) {
+            if (l2Address !== undefined) {
+              const bridgedTransferBalance =
+                this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+                  relayer,
+                  chainId,
+                  l1Token.address,
+                  l2Address
+                );
+              this.updateRelayerBalanceTable(
+                relayerBalanceTable,
+                symbol,
+                getNetworkName(chainId),
+                BalanceType.PENDING_TRANSFERS,
+                bridgedTransferBalance
+              );
+            }
+          }
+        } else {
+          const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+            relayer,
+            chainId,
+            l1Token.address
+          );
 
-        if (transferBalance.gt(bnZero)) {
           this.updateRelayerBalanceTable(
             relayerBalanceTable,
             l1Token.symbol,
@@ -657,14 +733,18 @@ export class Monitor {
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
+
+        let tokenSymbol = tokenInfo.symbol;
+        if (
+          tokenSymbol === "USDC" &&
+          chainId !== this.clients.hubPoolClient.chainId &&
+          (compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], tokenAddress) ||
+            compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], tokenAddress))
+        ) {
+          tokenSymbol = "USDC.e";
+        }
         const amount = totalRefundAmount ?? bnZero;
-        this.updateRelayerBalanceTable(
-          relayerBalanceTable,
-          tokenInfo.symbol,
-          getNetworkName(chainId),
-          balanceType,
-          amount
-        );
+        this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
       }
     }
   }

@@ -286,6 +286,20 @@ async function run(argv: string[]): Promise<void> {
     try {
       providers = getWSProviders(chainId, quorum);
       assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
+      providers.forEach((provider) => {
+        provider.on("error", (err) =>
+          logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Caught ${chain} provider error.`, err })
+        );
+
+        provider.on("close", () => {
+          logger.debug({
+            at: "RelayerSpokePoolIndexer::run",
+            message: `${chain} provider connection closed.`,
+            provider: getOriginFromURL(provider.connection.url),
+          });
+        });
+      });
+
       logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} listener.`, events, opts });
       await listen(eventMgr, spokePool, events, providers, opts);
     } catch (err) {
@@ -315,7 +329,7 @@ if (require.main === module) {
     })
     .finally(async () => {
       await disconnectRedisClients();
-      logger.error({ at: "RelayerSpokePoolIndexer", message: `Exiting ${chain} listener.` });
+      logger.debug({ at: "RelayerSpokePoolIndexer", message: `Exiting ${chain} listener.` });
       exit(process.exitCode);
     });
 }
