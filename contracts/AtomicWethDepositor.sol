@@ -157,12 +157,11 @@ contract AtomicWethDepositor is Ownable {
     /**
      * @notice A helper function to disable the OvmL1Bridge contract for a given chainId.
      * @dev This simply sets the OvmL1Bridge contract to the zero address.
+     * @dev A convenience for `setOvmL1Bridge(chainId, address(0))`
      * @param chainId The chainId of the OVM chain.
      */
     function disableOvmL1Bridge(uint256 chainId) public onlyOwner {
-        OvmL1Bridge oldBridge = ovmChainIdToBridge[chainId];
-        ovmChainIdToBridge[chainId] = OvmL1Bridge(address(0));
-        emit OVML1BridgeModified(chainId, address(0), address(oldBridge));
+        setOvmL1Bridge(chainId, address(0));
     }
 
     ///////////////////////////////
