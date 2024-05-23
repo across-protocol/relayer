@@ -164,4 +164,58 @@ describe("Dataworker: Execute slow relays", async function () {
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
+  it("Ignores expired deposits", async function () {
+    await updateAllClients();
+
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await requestSlowFill(spokePool_2, depositor, deposit);
+
+    await updateAllClients();
+
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
+    // Execute queue and check that root bundle is pending:
+    expect(multiCallerClient.transactionCount()).to.equal(1);
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+    await multiCallerClient.executeTransactionQueue();
+
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+    };
+    // Advance time and execute rebalance leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
+    await multiCallerClient.executeTransactionQueue();
+
+    // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
+    await updateAllClients();
+    const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
+    for (const rootBundle of validatedRootBundles) {
+      await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+    }
+    await updateAllClients();
+
+    // Note: we need to manually supply the tokens since the L1 tokens won't be recognized in the spoke pool.
+    // It should only require ~1/2 of the amount because there was a prev fill that provided the other half.
+    await erc20_2.mint(spokePool_2.address, amountToDeposit);
+
+    await updateAllClients();
+
+    // Check that dataworker skips the slow fill once we're past the deadline.
+    await spokePool_2.setCurrentTime(deposit.fillDeadline + 1);
+    await updateAllClients();
+    await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+  });
 });
