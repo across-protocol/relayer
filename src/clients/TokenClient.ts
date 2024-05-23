@@ -21,7 +21,7 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
 
-type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
+export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {
   [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
 };

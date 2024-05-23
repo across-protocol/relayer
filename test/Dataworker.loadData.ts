@@ -21,10 +21,21 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBN, Event, bnZero, toBNWei, fixedPointAdjustment, assert, ZERO_ADDRESS } from "../src/utils";
+import {
+  getCurrentTime,
+  toBN,
+  Event,
+  bnZero,
+  toBNWei,
+  fixedPointAdjustment,
+  assert,
+  ZERO_ADDRESS,
+  BigNumber,
+} from "../src/utils";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { cloneDeep } from "lodash";
+import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -1188,30 +1199,55 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Approximate refunds should count both fills
       await updateAllClients();
-      const refunds = await bundleDataClient.getApproximateRefundsForBlockRange(
+      const refunds = bundleDataClient.getApproximateRefundsForBlockRange(
         [originChainId, destinationChainId],
         getDefaultBlockRange(5)
       );
-      expect(refunds).to.deep.equal({
+      const expectedRefunds = {
         [originChainId]: {
           [erc20_1.address]: {
-            [relayer.address]: amountToDeposit.mul(2),
+            [relayer.address]: BigNumber.from(amountToDeposit.mul(2)).toString(),
           },
         },
-      });
+      };
+
+      // Convert refunds to have a nested string instead of BigNumber. It's three levels deep
+      // which is a bit ugly but it's the easiest way to compare the two objects that are having
+      // these BN issues.
+      const convertToNumericStrings = (data: CombinedRefunds) =>
+        Object.entries(data).reduce(
+          (acc, [chainId, refunds]) => ({
+            ...acc,
+            [chainId]: Object.entries(refunds).reduce(
+              (acc, [token, refunds]) => ({
+                ...acc,
+                [token]: Object.entries(refunds).reduce(
+                  (acc, [address, amount]) => ({ ...acc, [address]: amount.toString() }),
+                  {}
+                ),
+              }),
+              {}
+            ),
+          }),
+          {}
+        );
+
+      expect(convertToNumericStrings(refunds)).to.deep.equal(expectedRefunds);
 
       // Send an invalid fill and check it is not included.
       await fillV3(spokePool_1, relayer, { ...deposit1, depositId: deposit1.depositId + 1 }, originChainId);
       await updateAllClients();
       expect(
-        await bundleDataClient.getApproximateRefundsForBlockRange(
-          [originChainId, destinationChainId],
-          getDefaultBlockRange(5)
+        convertToNumericStrings(
+          bundleDataClient.getApproximateRefundsForBlockRange(
+            [originChainId, destinationChainId],
+            getDefaultBlockRange(5)
+          )
         )
       ).to.deep.equal({
         [originChainId]: {
           [erc20_1.address]: {
-            [relayer.address]: amountToDeposit.mul(2),
+            [relayer.address]: amountToDeposit.mul(2).toString(),
           },
         },
       });
