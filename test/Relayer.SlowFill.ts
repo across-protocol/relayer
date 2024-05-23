@@ -206,9 +206,14 @@ describe("Relayer: Initiates slow fill requests", async function () {
     expect(deposit).to.exist;
 
     await updateAllClients();
-    await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(spyLogIncludes(spy, -2, "Requested slow fill for deposit.")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+    const _txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+    const txnHashes = await _txnReceipts[destinationChainId];
+    expect(txnHashes.length).to.equal(1);
+    const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
+    const { name: method } = spokePool_1.interface.parseTransaction(txn);
+    expect(method).to.equal("requestV3SlowFill");
+    expect(spyLogIncludes(spy, -5, "Insufficient balance to fill all deposits")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;
 
     // Verify that the slowFill request was received by the destination SpokePoolClient.
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
@@ -220,7 +225,10 @@ describe("Relayer: Initiates slow fill requests", async function () {
       getRelayDataHash(deposit, deposit.destinationChainId)
     );
 
-    await relayerInstance.checkForUnfilledDepositsAndFill();
+    const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+    for (const receipts of Object.values(txnReceipts)) {
+      expect((await receipts).length).to.equal(0);
+    }
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
   });
 });
