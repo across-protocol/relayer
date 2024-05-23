@@ -791,7 +791,7 @@ export class Relayer {
             "There is " +
             formatter(
               this.clients.inventoryClient.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address)
+                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
                 // TODO: Add in additional l2Token param here once we can specify it
                 .toString()
             ) +
