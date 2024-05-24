@@ -96,7 +96,7 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
@@ -162,7 +162,7 @@ describe("Dataworker: Propose root bundle", async function () {
     expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(expectedSlowRelayRefundRoot4.tree.getHexRoot());
 
     // Execute queue and check that root bundle is pending:
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 

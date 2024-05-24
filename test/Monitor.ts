@@ -262,7 +262,7 @@ describe("Monitor", async function () {
     // Have the data worker propose a new bundle.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // While the new bundle is still pending, refunds are in the "next" category
     await updateAllClients();
@@ -309,7 +309,7 @@ describe("Monitor", async function () {
     };
     await monitorInstance.update();
     await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Now, pending refunds should be 0.
     await monitorInstance.update();
@@ -355,7 +355,7 @@ describe("Monitor", async function () {
     // Have the data worker propose a new bundle.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Execute pool rebalance leaves.
     await executeBundle(hubPool);
@@ -443,7 +443,7 @@ describe("Monitor", async function () {
     await _monitor.refillBalances();
 
     expect(multiCallerClient.transactionCount()).to.equal(1);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(toBNWei("2"));
   });
