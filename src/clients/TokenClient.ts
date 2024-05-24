@@ -276,7 +276,8 @@ export class TokenClient {
 
     this.logger.debug({
       at: "TokenBalanceClient",
-      message: `Updated TokenBalance client in ${getCurrentTime() - start} seconds.`, balanceData
+      message: `Updated TokenBalance client in ${getCurrentTime() - start} seconds.`,
+      balanceData,
     });
   }
 
