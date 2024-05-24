@@ -46,7 +46,7 @@ export async function zkSyncFinalizer(
   // Zksync takes 1 day to finalize so ignore any events
   // earlier than 1 day.
   const redis = await getRedisCache(logger);
-  const earliestBlockToFinalize = await getBlockForTimestamp(
+  const latestBlockToFinalize = await getBlockForTimestamp(
     l2ChainId,
     getCurrentTime() - 1 * 60 * 60 * 24,
     undefined,
@@ -56,11 +56,11 @@ export async function zkSyncFinalizer(
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
     message: "ZkSync TokensBridged event filter",
-    toBlock: earliestBlockToFinalize,
+    toBlock: latestBlockToFinalize,
   });
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber <= earliestBlockToFinalize);
+    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l2Finalized);
