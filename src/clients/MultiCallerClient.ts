@@ -113,13 +113,6 @@ export class MultiCallerClient {
     }
   }
 
-  async executeTransactionQueue(simulate = false): Promise<string[]> {
-    // For compatibility with the existing implementation, flatten all txn hashes into a single array.
-    // To be resolved once the legacy implementation is removed and the callers have been updated.
-    const txnHashes: { [chainId: number]: string[] } = await this.executeTxnQueues(simulate);
-    return Object.values(txnHashes).flat();
-  }
-
   // For each chain, collate the enqueued transactions and process them in parallel.
   async executeTxnQueues(simulate = false, chainIds: number[] = []): Promise<Record<number, string[]>> {
     if (chainIds.length === 0) {
@@ -129,25 +122,16 @@ export class MultiCallerClient {
       ]);
     }
 
-    // One promise per chain for parallel execution.
-    const resultsByChain = await Promise.allSettled(
-      chainIds.map((chainId) => {
-        const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
-        const valueTxns: AugmentedTransaction[] | undefined = this.valueTxns[chainId];
-
-        this.clearTransactionQueue(chainId);
-        return this.executeChainTxnQueue(chainId, txns, valueTxns, simulate);
-      })
-    );
+    const results = await Promise.allSettled(chainIds.map((chainId) => this.executeTxnQueue(chainId, simulate)));
 
     // Collate the results for each chain.
     const txnHashes: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
-      resultsByChain.map((chainResult, idx) => {
+      results.map((result, idx) => {
         const chainId = chainIds[idx];
-        if (isPromiseFulfilled(chainResult)) {
-          return [chainId, { result: chainResult.value.map((txnResponse) => txnResponse.hash), isError: false }];
+        if (isPromiseFulfilled(result)) {
+          return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
         } else {
-          return [chainId, { result: chainResult.reason, isError: true }];
+          return [chainId, { result: result.reason, isError: true }];
         }
       })
     );
@@ -175,10 +159,18 @@ export class MultiCallerClient {
     return Object.fromEntries(Object.entries(txnHashes).map(([chainId, { result }]) => [chainId, result]));
   }
 
+  // For a single chain, take any enqueued transactions and attempt to execute them.
+  async executeTxnQueue(chainId: number, simulate = false): Promise<TransactionResponse[]> {
+    const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
+    const valueTxns: AugmentedTransaction[] | undefined = this.valueTxns[chainId];
+    this.clearTransactionQueue(chainId);
+    return this._executeTxnQueue(chainId, txns, valueTxns, simulate);
+  }
+
   // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
   // Then, submit a concatenated list of value txns + multicall bundles. If simulation was requested, log the results
   // and return early.
-  async executeChainTxnQueue(
+  protected async _executeTxnQueue(
     chainId: number,
     txns: AugmentedTransaction[] = [],
     valueTxns: AugmentedTransaction[] = [],
