@@ -153,7 +153,7 @@ export class Relayer {
     }
 
     if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger.warn({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
         deposit,
@@ -791,7 +791,7 @@ export class Relayer {
             "There is " +
             formatter(
               this.clients.inventoryClient.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address)
+                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
                 // TODO: Add in additional l2Token param here once we can specify it
                 .toString()
             ) +
