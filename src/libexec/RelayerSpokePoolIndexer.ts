@@ -209,17 +209,16 @@ async function listen(
  */
 async function run(argv: string[]): Promise<void> {
   const minimistOpts = {
-    string: ["relayer"],
+    string: ["lookback", "relayer"],
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, quorum = 1, lookback = 7200, relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainId, finality = 32, quorum = 1, lookback = "5400", relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(finality), "finality must be numeric ");
   assert(Number.isInteger(quorum), "quorum must be numeric ");
-  assert(Number.isInteger(lookback), "lookback must be numeric");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), "relayer address is invalid");
+  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   chain = getNetworkName(chainId);
 
@@ -229,17 +228,24 @@ async function run(argv: string[]): Promise<void> {
   const latestBlock = await quorumProvider.getBlock("latest");
 
   const deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
-  const startBlock = Math.max(
-    deploymentBlock,
-    await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
-  );
-  const nBlocks = latestBlock.number - startBlock;
+  let startBlock: number;
+  if (/^@[0-9]+$/.test(lookback)) {
+    // Lookback to a specific block (lookback = @<block-number>).
+    startBlock = Number(lookback.slice(1));
+  } else {
+    // Resolve `lookback` seconds from head to a specific block.
+    assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
+    startBlock = Math.max(
+      deploymentBlock,
+      await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
+    );
+  }
 
   const opts = {
     finality,
     quorum,
     deploymentBlock,
-    lookback: nBlocks,
+    lookback: latestBlock.number - startBlock,
     maxBlockRange,
     filterArgs: getEventFilterArgs(relayer),
   };
