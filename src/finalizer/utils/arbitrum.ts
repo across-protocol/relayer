@@ -31,20 +31,21 @@ export async function arbitrumOneFinalizer(
 
   // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
-  const [fromBlock, toBlock] = await Promise.all([
-    getBlockForTimestamp(chainId, getCurrentTime() - 14 * 60 * 60 * 24, undefined, redis),
-    getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis),
-  ]);
+  const earliestBlockToFinalize = await getBlockForTimestamp(
+    chainId,
+    getCurrentTime() - 7 * 60 * 60 * 24,
+    undefined,
+    redis
+  );
   logger.debug({
     at: "Finalizer#ArbitrumFinalizer",
     message: "Arbitrum TokensBridged event filter",
-    fromBlock,
-    toBlock,
+    toBlock: earliestBlockToFinalize,
   });
   // Skip events that are likely not past the seven day challenge period.
   const olderTokensBridgedEvents = spokePoolClient
     .getTokensBridged()
-    .filter((e) => e.blockNumber <= toBlock && e.blockNumber >= fromBlock);
+    .filter((e) => e.blockNumber <= earliestBlockToFinalize);
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
