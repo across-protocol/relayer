@@ -77,8 +77,14 @@ export class OpStackAdapter extends BaseAdapter {
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
-    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const { l1SearchConfig, l2SearchConfig } = await this.getUpdatedSearchConfigs();
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
+
+    for (const searchConfig of [l1SearchConfig, l2SearchConfig]) {
+      if (searchConfig.fromBlock >= searchConfig.toBlock) {
+        return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
+      }
+    }
 
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {

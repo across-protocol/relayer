@@ -35,7 +35,12 @@ export class ZKSyncAdapter extends BaseAdapter {
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
-    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const { l1SearchConfig, l2SearchConfig } = await this.getUpdatedSearchConfigs();
+    for (const searchConfig of [l1SearchConfig, l2SearchConfig]) {
+      if (searchConfig.fromBlock >= searchConfig.toBlock) {
+        return this.computeOutstandingCrossChainTransfers(l1Tokens);
+      }
+    }
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
     const l2EthContract = this.getL2Eth();

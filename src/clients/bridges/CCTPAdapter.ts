@@ -86,7 +86,11 @@ export abstract class CCTPAdapter extends BaseAdapter {
    * @returns The outstanding transfers for the given address
    */
   protected async getOutstandingCctpTransfers(address: string): Promise<SortableEvent[]> {
-    const { l1SearchConfig } = this.getUpdatedSearchConfigs();
+    const { l1SearchConfig } = await this.getUpdatedSearchConfigs();
+    if (l1SearchConfig.fromBlock >= l1SearchConfig.toBlock) {
+      // This should return the set of in-flight events, but they aren't available within the adapter. @todo: Fix!
+      return [];
+    }
 
     const l1TokenMessenger = this.getL1CCTPTokenMessengerBridge();
     const l2MessageTransmitter = this.getL2CCTPMessageTransmitter();
@@ -100,6 +104,8 @@ export abstract class CCTPAdapter extends BaseAdapter {
       this.chainId,
       address
     );
+
+    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
 
     return events.map((event) => ({
       ...spreadEventWithBlockNumber(event),

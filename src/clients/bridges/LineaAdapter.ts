@@ -141,8 +141,16 @@ export class LineaAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const outstandingTransfers: OutstandingTransfers = {};
-    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const { l1SearchConfig, l2SearchConfig } = await this.getUpdatedSearchConfigs();
+
     const supportedL1Tokens = this.filterSupportedTokens(l1Tokens);
+    for (const searchConfig of [l1SearchConfig, l2SearchConfig]) {
+      if (searchConfig.fromBlock >= searchConfig.toBlock) {
+        // Wrong! @todo: Why doesn't this adapter return `this.computeOutstandingTransfers()` as the others do??
+        return outstandingTransfers;
+      }
+    }
+
     await sdk.utils.mapAsync(this.monitoredAddresses, async (address) => {
       // We can only support monitoring the spoke pool contract, not the hub pool.
       if (address === CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address) {
@@ -213,6 +221,10 @@ export class LineaAdapter extends BaseAdapter {
         }
       });
     });
+
+    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
+    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
+
     return outstandingTransfers;
   }
 

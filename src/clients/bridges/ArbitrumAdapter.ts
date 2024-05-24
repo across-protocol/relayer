@@ -82,12 +82,18 @@ export class ArbitrumAdapter extends CCTPAdapter {
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
-    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const { l1SearchConfig, l2SearchConfig } = await this.getUpdatedSearchConfigs();
 
     // Skip the token if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
+
+    for (const searchConfig of [l1SearchConfig, l2SearchConfig]) {
+      if (searchConfig.fromBlock >= searchConfig.toBlock) {
+        return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
+      }
+    }
 
     const promises: Promise<Event[]>[] = [];
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
@@ -174,6 +180,9 @@ export class ArbitrumAdapter extends CCTPAdapter {
         );
       }
     }
+
+    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
+    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
   }

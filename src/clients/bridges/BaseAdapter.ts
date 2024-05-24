@@ -39,6 +39,12 @@ export interface DepositEvent extends SortableEvent {
   transactionHash: string;
 }
 
+export enum UpdateFailureReason {
+  AlreadyUpdated,
+  BadRequest,
+  RPCError,
+}
+
 interface Events {
   [address: string]: {
     [l1Token: string]: { [l2Token: string]: DepositEvent[] };
@@ -53,6 +59,9 @@ export abstract class BaseAdapter {
   static readonly HUB_CHAIN_ID = 1; // @todo: Make dynamic
 
   readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
+
+  protected nextHubBlock: number;
+  protected nextSpokeBlock: number;
 
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
@@ -72,7 +81,11 @@ export abstract class BaseAdapter {
     readonly supportedTokens: SupportedTokenSymbol[]
   ) {
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
+    this.nextHubBlock = spokePoolClients[this.hubChainId].deploymentBlock + 1;
+
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
+    this.nextSpokeBlock = spokePoolClients[this.chainId].deploymentBlock + 1;
+
     this.txnClient = new TransactionClient(logger);
   }
 
@@ -88,24 +101,35 @@ export abstract class BaseAdapter {
     return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
   }
 
-  // Note: this must be called after the SpokePoolClients are updated.
-  getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
-    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
-    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockSearched;
-    if (l1LatestBlock === 0 || l2LatestBlock === 0) {
-      throw new Error("One or more SpokePoolClients have not been updated");
-    }
+  /**
+   * Validates and updates the stored EventSearchConfig in advance of an update() call.
+   * Use isEventSearchConfig() to discriminate the result.
+   * @provider Ethers RPC provider instance.
+   * @returns An EventSearchConfig instance if valid, otherwise an UpdateFailureReason.
+   */
+  public async updateSearchConfig(provider: Provider, fromBlock: number): Promise<EventSearchConfig> {
+    const toBlock = await provider.getBlockNumber();
 
-    return {
-      l1SearchConfig: {
-        ...this.baseL1SearchConfig,
-        toBlock: this.baseL1SearchConfig?.toBlock ?? l1LatestBlock,
-      },
-      l2SearchConfig: {
-        ...this.baseL2SearchConfig,
-        toBlock: this.baseL2SearchConfig?.toBlock ?? l2LatestBlock,
-      },
-    };
+    const { chainId } = await provider.getNetwork();
+    const { maxBlockLookBack } = chainId === this.hubChainId ? this.baseL1SearchConfig : this.baseL2SearchConfig;
+
+    return { fromBlock, toBlock, maxBlockLookBack };
+  }
+
+  async getUpdatedSearchConfigs(): Promise<{ l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig }> {
+    const l1SearchConfig = await this.updateSearchConfig(
+      this.spokePoolClients[this.hubChainId].spokePool.provider,
+      this.nextHubBlock
+    );
+    const l2SearchConfig = await this.updateSearchConfig(
+      this.spokePoolClients[this.hubChainId].spokePool.provider,
+      this.nextSpokeBlock
+    );
+
+    this.nextHubBlock = l1SearchConfig.toBlock + 1;
+    this.nextSpokeBlock = l2SearchConfig.toBlock + 1;
+
+    return { l1SearchConfig, l2SearchConfig };
   }
 
   getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {

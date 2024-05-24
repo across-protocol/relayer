@@ -134,12 +134,18 @@ export class PolygonAdapter extends CCTPAdapter {
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
-    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const { l1SearchConfig, l2SearchConfig } = await this.getUpdatedSearchConfigs();
 
     // Skip the tokens if we can't find the corresponding bridge.
     // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
     // rather than maintaining a list of native bridge-supported tokens.
     const availableTokens = this.filterSupportedTokens(l1Tokens);
+
+    for (const searchConfig of [l1SearchConfig, l2SearchConfig]) {
+      if (searchConfig.fromBlock >= searchConfig.toBlock) {
+        return this.computeOutstandingCrossChainTransfers(availableTokens);
+      }
+    }
 
     const promises: Promise<Event[]>[] = [];
     const cctpOutstandingTransfersPromise: Record<string, Promise<SortableEvent[]>> = {};
