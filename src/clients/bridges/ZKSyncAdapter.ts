@@ -155,7 +155,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     });
 
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
-    this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
+    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
