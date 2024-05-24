@@ -68,7 +68,7 @@ describe("Dataworker: Execute slow relays", async function () {
     // Execute queue and check that root bundle is pending:
     expect(multiCallerClient.transactionCount()).to.equal(1);
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),
@@ -79,7 +79,7 @@ describe("Dataworker: Execute slow relays", async function () {
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
     await updateAllClients();
@@ -97,7 +97,7 @@ describe("Dataworker: Execute slow relays", async function () {
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     expect(multiCallerClient.transactionCount()).to.equal(1);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     await updateAllClients();
     const fills = spokePoolClients[destinationChainId].getFills();
@@ -126,7 +126,7 @@ describe("Dataworker: Execute slow relays", async function () {
     // Execute queue and check that root bundle is pending:
     expect(multiCallerClient.transactionCount()).to.equal(1);
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),
@@ -137,7 +137,7 @@ describe("Dataworker: Execute slow relays", async function () {
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
     await updateAllClients();
@@ -186,7 +186,7 @@ describe("Dataworker: Execute slow relays", async function () {
     // Execute queue and check that root bundle is pending:
     expect(multiCallerClient.transactionCount()).to.equal(1);
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),
@@ -196,7 +196,7 @@ describe("Dataworker: Execute slow relays", async function () {
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
     await updateAllClients();
