@@ -58,7 +58,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         logger.debug({ at: "Monitor#index", message: "CheckBalances monitor disabled" });
       }
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      await clients.multiCallerClient.executeTxnQueues();
 
       logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
