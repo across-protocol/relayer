@@ -125,10 +125,10 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
   1: 10000,
   10: 10000, // Quick
-  137: 3490,
+  137: 10000,
   288: 4990,
   324: 10000,
-  8453: 1500,
+  8453: 10000,
   34443: 1500,
   42161: 10000,
   59144: 5000,
