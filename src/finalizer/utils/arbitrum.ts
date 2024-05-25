@@ -178,13 +178,15 @@ async function getMessageOutboxStatusAndProof(
   try {
     const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
-      const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
+      const error = new Error(
+        `No outgoing messages found in transaction:${event.transactionHash} for l2 token ${event.l2TokenAddress}`
+      );
       logger.warn({
         at: "ArbitrumFinalizer",
         message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
         logIndex,
         l2ToL1Messages: l2ToL1Messages.length,
-        txnHash: event.transactionHash,
+        event,
         reason: error.stack || error.message || error.toString(),
         notificationPath: "across-error",
       });
