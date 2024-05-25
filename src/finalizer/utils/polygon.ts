@@ -60,7 +60,13 @@ export async function polygonFinalizer(
 
   // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
   // that are older than 1 day old:
-  const recentTokensBridgedEvents = spokePoolClient.getTokensBridged().filter((e) => e.blockNumber >= fromBlock);
+  const recentTokensBridgedEvents = spokePoolClient
+    .getTokensBridged()
+    .filter(
+      (e) =>
+        e.blockNumber >= fromBlock &&
+        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[chainId])
+    );
 
   return multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
 }
@@ -112,12 +118,6 @@ async function getFinalizableTransactions(
   const exitStatus = await Promise.all(
     checkpointedTokensBridged.map(async (_, i) => {
       const payload = payloads[i];
-      const { chainId, l2TokenAddress } = tokensBridged[i];
-
-      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[chainId])) {
-        return { status: "NON_CANONICAL_BRIDGE" };
-      }
-
       try {
         // If we can estimate gas for exit transaction call, then we can exit the burn tx, otherwise its likely
         // been processed. Note this will capture mislabel some exit txns that fail for other reasons as "exit
