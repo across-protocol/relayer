@@ -45,7 +45,11 @@ export async function arbitrumOneFinalizer(
   // Skip events that are likely not past the seven day challenge period.
   const olderTokensBridgedEvents = spokePoolClient
     .getTokensBridged()
-    .filter((e) => e.blockNumber <= latestBlockToFinalize);
+    .filter(
+      (e) =>
+        e.blockNumber <= latestBlockToFinalize &&
+        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
+    );
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
@@ -154,11 +158,7 @@ async function getAllMessageStatuses(
         };
       })
       // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      .filter(
-        (result) =>
-          result.message !== undefined &&
-          !compareAddressesSimple(result.info.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
-      )
+      .filter((result) => result.message !== undefined)
   );
 }
 
