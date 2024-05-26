@@ -121,7 +121,7 @@ async function getFinalizableTransactions(
       // will be 0 and the non-USDC 'logIndex' will be 1. This is why we can't filter out USDC CCTP withdrawals
       // until after we've computed payloads.
       if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[chainId])) {
-        return { status: "NON_CANONICAL_BRIDGE" };
+        return { status: "USDC_CCTP_L2_WITHDRAWAL" };
       }
 
       try {
