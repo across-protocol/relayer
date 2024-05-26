@@ -197,7 +197,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             pendingProposal,
           });
         } else {
-          await clients.multiCallerClient.executeTransactionQueue();
+          await clients.multiCallerClient.executeTxnQueues();
         }
       };
 
