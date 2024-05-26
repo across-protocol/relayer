@@ -134,14 +134,14 @@ async function getCrossChainMessages(
 
   return (
     await Promise.all(
-      tokensBridged.map(
-        async (l2Event, i) =>
-          (
-            await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
-              direction: optimismSDK.MessageDirection.L2_TO_L1,
-            })
-          )[logIndexesForMessage[i]]
-      )
+      tokensBridged.map(async (l2Event, i) => {
+        const withdrawals = await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
+          direction: optimismSDK.MessageDirection.L2_TO_L1,
+        });
+        const logIndexOfEvent = logIndexesForMessage[i];
+        assert(logIndexOfEvent < withdrawals.length);
+        return withdrawals[logIndexOfEvent];
+      })
     )
   ).map((message, i) => {
     return {

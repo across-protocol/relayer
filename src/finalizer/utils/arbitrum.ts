@@ -43,13 +43,12 @@ export async function arbitrumOneFinalizer(
     toBlock: latestBlockToFinalize,
   });
   // Skip events that are likely not past the seven day challenge period.
-  const olderTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter(
-      (e) =>
-        e.blockNumber <= latestBlockToFinalize &&
-        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
-    );
+  const olderTokensBridgedEvents = spokePoolClient.getTokensBridged().filter(
+    (e) =>
+      e.blockNumber <= latestBlockToFinalize &&
+      // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
+      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
+  );
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
@@ -146,20 +145,17 @@ async function getAllMessageStatuses(
   // This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   return (
-    (
-      await Promise.all(
-        tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
-      )
+    await Promise.all(
+      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
     )
-      .map((result, i) => {
-        return {
-          ...result,
-          info: tokensBridged[i],
-        };
-      })
-      // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      .filter((result) => result.message !== undefined)
-  );
+  )
+    .map((result, i) => {
+      return {
+        ...result,
+        info: tokensBridged[i],
+      };
+    })
+    .filter((result) => result.message !== undefined);
 }
 
 async function getMessageOutboxStatusAndProof(
