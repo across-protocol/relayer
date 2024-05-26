@@ -238,31 +238,22 @@ export class Monitor {
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
+      let mrkdwn = "Token amounts: Current | Pending Execution | Future | Cross-Chain Transfers | Total\n";
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(bnZero))) {
-            // Human-readable balances
-            const balances = balancesBN.map((balance) =>
-              balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
-            );
-            tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
-          } else {
-            // Shorten balances in the report if everything is 0.
-            tokenMrkdwn += `${chainName}: 0\n`;
-          }
+          // Human-readable balances
+          const balances = balancesBN.map((balance) =>
+            balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
+          );
+          tokenMrkdwn += `${chainName} | ${balances.join(" | ")} |\n`;
         }
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        if (totalBalance.gt(bnZero)) {
-          mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
-          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
-        } else {
-          summaryMrkdwn += `${token.symbol}: 0\n`;
-        }
+        mrkdwn += "-".repeat(30) + "\n" + `*[${token.symbol}]*\n` + "-".repeat(30) + "\n" + tokenMrkdwn;
+        summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
       }
 
       mrkdwn += summaryMrkdwn;
