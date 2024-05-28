@@ -273,8 +273,11 @@ export class TokenClient {
       })
     );
 
-    const time = getCurrentTime() - start;
-    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData, time });
+    this.logger.debug({
+      at: "TokenBalanceClient",
+      message: `Updated TokenBalance client in ${getCurrentTime() - start} seconds.`,
+      balanceData,
+    });
   }
 
   async fetchTokenData(

@@ -266,8 +266,8 @@ describe("MultiCallerClient", async function () {
       expect(multiCaller.transactionCount()).to.equal(nTxns * 2 * chainIds.length);
 
       // Note: Half of the txns should be consolidated into a single multicall txn.
-      const results: string[] = await multiCaller.executeTransactionQueue();
-      expect(results.length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
+      const results = await multiCaller.executeTxnQueues();
+      expect(Object.values(results).flat().length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
     }
   });
 

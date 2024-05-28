@@ -511,7 +511,10 @@ export class InventoryClient {
 
       // Consider configured buffer for target to allow relayer to support slight overages.
       const tokenConfig = this.getTokenConfig(l1Token, _chain, repaymentToken);
-      assert(isDefined(tokenConfig), `No ${outputToken} tokenConfig for ${l1Token} on ${_chain}.`);
+      assert(
+        isDefined(tokenConfig),
+        `No ${outputToken} tokenConfig in the Inventory Config for ${l1Token} on ${_chain} with a repaymentToken of ${repaymentToken}.`
+      );
       const thresholdPct = toBN(tokenConfig.targetPct)
         .mul(tokenConfig.targetOverageBuffer ?? toBNWei("1"))
         .div(fixedPointAdjustment);

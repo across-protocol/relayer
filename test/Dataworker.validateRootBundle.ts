@@ -98,7 +98,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Exit early if no pending bundle. There shouldn't be a bundle seen yet because we haven't passed enough blocks
     // beyond the block buffer.
@@ -138,7 +138,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     }
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Constructs same roots as proposed root bundle
     await updateAllClients();
@@ -191,7 +191,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     expect(spy.getCall(-2).lastArg.message).to.equal(
       "A bundle end block is < expected start block, submitting dispute"
     );
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Bundle range end blocks are above latest block but within buffer, should skip.
     await updateAllClients();
@@ -231,7 +231,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     expect(spy.getCall(-2).lastArg.message).to.equal(
       "A bundle end block is > latest block + buffer for its chain, submitting dispute"
     );
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Bundle range length doesn't match expected chain ID list.
     await updateAllClients();
@@ -246,7 +246,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected bundle block range length, disputing");
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // PoolRebalance root is empty
     await updateAllClients();
@@ -260,7 +260,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Empty pool rebalance root, submitting dispute");
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // PoolRebalance leaf count is too high
     await updateAllClients();
@@ -275,7 +275,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // PoolRebalance root is off
     await updateAllClients();
@@ -289,7 +289,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // RelayerRefund root is off
     await updateAllClients();
@@ -303,7 +303,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected relayer refund root, submitting dispute");
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // SlowRelay root is off
     await updateAllClients();
@@ -317,7 +317,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected slow relay root, submitting dispute");
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
   });
   it("Validates root bundle with large bundleEvaluationBlockNumbers", async function () {
     await updateAllClients();
