@@ -40,7 +40,8 @@
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
     "winston": "^3.10.0",
-    "zksync-web3": "^0.14.3"
+    "zksync-web3": "^0.14.3",
+    "ascii-table3": "0.9.0"
   },
   "files": [
     "/dist/**/*"

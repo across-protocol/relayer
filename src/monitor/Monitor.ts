@@ -1,3 +1,4 @@
+import { AsciiTable3 } from "ascii-table3";
 import { BalanceAllocator } from "../clients";
 import { spokePoolClientsToProviders } from "../common";
 import {
@@ -238,21 +239,24 @@ export class Monitor {
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: Current | Pending Execution | Future | Cross-Chain Transfers | Total\n";
+      let mrkdwn = "";
       for (const token of allL1Tokens) {
-        let tokenMrkdwn = "";
+        const table = new AsciiTable3(token.symbol);
+        table.setStyle("compact");
+        table.setWidths(Array(6).fill(12));
+        table.setHeading("Chain", "Current", "Pending", "Future", "X/C Trans.", "Total");
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
           // Human-readable balances
           const balances = balancesBN.map((balance) =>
             balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
           );
-          tokenMrkdwn += `${chainName} | ${balances.join(" | ")} |\n`;
+          table.addRow(chainName, ...balances);
         }
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        mrkdwn += "-".repeat(30) + "\n" + `*[${token.symbol}]*\n` + "-".repeat(30) + "\n" + tokenMrkdwn;
+        mrkdwn += table.toString().replace(/- -/g, "---") + "\n";
         summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
       }
 
