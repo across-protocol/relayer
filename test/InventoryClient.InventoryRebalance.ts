@@ -177,7 +177,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(initialBalance)).to.be.true;
     const withdrawAmount = toMegaWei(500);
     tokenClient.decrementLocalBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM], withdrawAmount);
-    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(withdrawAmount)).to.be.true;
+    expect(tokenClient.getBalance(ARBITRUM, l2TokensForUsdc[ARBITRUM]).eq(initialBalance.sub(withdrawAmount))).to.be
+      .true;
 
     // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
     const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
@@ -209,16 +210,14 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     adapterManager.setMockedOutstandingCrossChainTransfers(ARBITRUM, owner.address, mainnetUsdc, bnZero); // zero the transfer. mock conclusion.
-    // Balance after the relay concludes should be initial - withdrawn + bridged as 1000-500+445=945
-    const expectedPostRelayBalance = initialBalance.sub(withdrawAmount).add(expectedBridgedAmount);
-    tokenClient.setTokenData(ARBITRUM, l2TokensForUsdc[ARBITRUM], expectedPostRelayBalance, bnZero);
 
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
     // We should see a log for Arbitrum that shows the actual balance after the relay concluded and the share. The
     // actual balance should be listed above at 1015. share should be 1015/(14500) = 0.7 (initial total - withdrawAmount).
-    expect(spyLogIncludes(spy, -2, '"actualBalanceOnChain":"1,015.00"')).to.be.true;
+    expect(spyLogIncludes(spy, -2, '"actualBalanceOnChain":"500.00"')).to.be.true;
+    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"515.00"')).to.be.true;
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
@@ -379,18 +378,18 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       enabledChainIds
         .filter((chainId) => chainId !== MAINNET)
         .forEach((chainId) => {
-          const bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
-          expect(bridgedBalance.gt(bnZero)).to.be.true;
+          // Non-zero native USDC balance, zero bridged balance.
+          const nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          expect(nativeBalance.gt(bnZero)).to.be.true;
 
-          // Non-zero bridged USDC balance, zero native balance.
-          let nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
-          expect(nativeBalance.eq(bnZero)).to.be.true;
+          let bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
+          expect(bridgedBalance.eq(bnZero)).to.be.true;
 
-          // Add native balance.
-          tokenClient.setTokenData(chainId, nativeUSDC[chainId], bridgedBalance);
+          // Add bridged balance.
+          tokenClient.setTokenData(chainId, bridgedUSDC[chainId], nativeBalance);
 
           // Native balance should now match bridged balance.
-          nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
           expect(nativeBalance.eq(bridgedBalance)).to.be.true;
         });
     });
@@ -400,21 +399,21 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         .filter((chainId) => chainId !== MAINNET)
         .forEach((chainId) => {
           const bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
-          expect(bridgedBalance.gt(bnZero)).to.be.true;
+          expect(bridgedBalance.eq(bnZero)).to.be.true;
 
           const nativeBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
-          expect(nativeBalance.eq(bnZero)).to.be.true;
+          expect(nativeBalance.gt(bnZero)).to.be.true;
 
           const cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
           expect(cumulativeBalance.eq(initialUsdcTotal)).to.be.true;
 
-          tokenClient.setTokenData(chainId, nativeUSDC[chainId], bridgedBalance);
+          tokenClient.setTokenData(chainId, bridgedUSDC[chainId], nativeBalance);
 
           const newBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
-          expect(newBalance.eq(initialUsdcTotal.add(bridgedBalance))).to.be.true;
+          expect(newBalance.eq(initialUsdcTotal.add(nativeBalance))).to.be.true;
 
-          // Revert to 0 balance for native USDC.
-          tokenClient.setTokenData(chainId, nativeUSDC[chainId], bnZero);
+          // Revert to 0 balance for bridged USDC.
+          tokenClient.setTokenData(chainId, bridgedUSDC[chainId], bnZero);
         });
     });
 
@@ -427,41 +426,42 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           expect(cumulativeBalance.gt(bnZero)).to.be.true;
           expect(cumulativeBalance.eq(initialUsdcTotal)).to.be.true;
 
-          // The initial allocation is all bridged USDC, 0 native.
-          const bridgedAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, bridgedUSDC[chainId]);
-          expect(bridgedAllocation.gt(bnZero)).to.be.true;
-          let balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
-          expect(bridgedAllocation.eq(balance.mul(fixedPoint).div(cumulativeBalance))).to.be.true;
+          // The initial allocation is all native USDC, 0 bridged.
+          const nativeAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, nativeUSDC[chainId]);
+          expect(nativeAllocation.gt(bnZero)).to.be.true;
+          let balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          expect(nativeAllocation.eq(balance.mul(fixedPoint).div(cumulativeBalance))).to.be.true;
 
-          let nativeAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, nativeUSDC[chainId]);
-          expect(nativeAllocation.eq(bnZero)).to.be.true;
+          let bridgedAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, bridgedUSDC[chainId]);
+          expect(bridgedAllocation.eq(bnZero)).to.be.true;
 
-          balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
-          expect(nativeAllocation.eq(bnZero)).to.be.true;
-
-          // Add native USDC, same amount as bridged USDC.
           balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
-          tokenClient.setTokenData(chainId, nativeUSDC[chainId], balance);
-          expect(inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]).eq(balance)).to.be.true;
-          expect(nativeAllocation.eq(bnZero)).to.be.true;
+          expect(bridgedAllocation.eq(bnZero)).to.be.true;
+
+          // Add bridged USDC, same amount as native USDC.
+          balance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, nativeUSDC[chainId]);
+          tokenClient.setTokenData(chainId, bridgedUSDC[chainId], balance);
+          expect(inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]).eq(balance)).to.be.true;
+          expect(bridgedAllocation.eq(bnZero)).to.be.true;
 
           // Native USDC allocation should now be non-zero.
-          nativeAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, nativeUSDC[chainId]);
-          expect(nativeAllocation.gt(bnZero)).to.be.true;
+          bridgedAllocation = inventoryClient.getCurrentAllocationPct(mainnetUsdc, chainId, bridgedUSDC[chainId]);
+          expect(bridgedAllocation.gt(bnZero)).to.be.true;
 
           expect(inventoryClient.getCumulativeBalance(mainnetUsdc).gt(cumulativeBalance)).to.be.true;
           cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
           expect(cumulativeBalance.gt(initialUsdcTotal)).to.be.true;
 
-          // Return native USDC balance to 0 for next loop.
-          tokenClient.setTokenData(chainId, nativeUSDC[chainId], bnZero);
+          // Return bridged USDC balance to 0 for next loop.
+          tokenClient.setTokenData(chainId, bridgedUSDC[chainId], bnZero);
         });
     });
 
     it("Correctly rebalances mainnet USDC into non-repayment USDC", async function () {
-      // Unset all native USDC allocations.
+      // Unset all bridged USDC allocations.
       for (const chainId of [OPTIMISM, POLYGON, BASE, ARBITRUM]) {
-        const l2Token = nativeUSDC[chainId];
+        const l2Token = bridgedUSDC[chainId];
+        hubPoolClient.mapTokenInfo(l2Token, "USDC.e", 6);
         delete inventoryConfig.tokenConfig[mainnetUsdc][l2Token];
       }
 
@@ -482,9 +482,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       for (const chainId of [OPTIMISM, POLYGON, BASE, ARBITRUM]) {
         const chain = getNetworkName(chainId);
         await inventoryClient.update();
-        const l2Token = nativeUSDC[chainId];
+        const l2Token = bridgedUSDC[chainId];
 
-        // Apply a new target balance for native USDC.
+        // Apply a new target balance for bridged USDC.
         inventoryConfig.tokenConfig[mainnetUsdc][l2Token] = {
           [chainId]: { targetPct, thresholdPct, targetOverageBuffer },
         };
@@ -492,7 +492,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         await inventoryClient.update();
         await inventoryClient.rebalanceInventoryIfNeeded();
         expect(lastSpyLogIncludes(spy, `Rebalances sent to ${chain}`)).to.be.true;
-        expect(lastSpyLogIncludes(spy, `${formattedAmount} USDC rebalanced`)).to.be.true;
+        expect(lastSpyLogIncludes(spy, `${formattedAmount} USDC.e rebalanced`)).to.be.true;
         expect(lastSpyLogIncludes(spy, "This meets target allocation of 10.00%")).to.be.true; // config from client.
 
         // Decrement the mainnet USDC balance to simulate the rebalance.
