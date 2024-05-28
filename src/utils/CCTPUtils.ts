@@ -138,7 +138,7 @@ export function getCctpDomainsToChainIds(): Record<number, number[]> {
     }
     acc[cctpDomain].push(Number(chainId));
     return acc;
-  }, {});
+  }, {} as Record<number, number[]>);
 }
 
 /**

@@ -616,7 +616,7 @@ export class ProfitClient {
   private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
-    const coingeckoProApiKey = undefined;
+    const coingeckoProApiKey: string | undefined = undefined;
     // TODO: Set this once we figure out gas markup on the API side.
     const gasMarkup = 0;
     // Call the factory to create a new QueryBase instance.

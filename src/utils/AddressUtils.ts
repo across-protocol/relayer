@@ -1,5 +1,5 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
-import { BigNumber, ethers, isDefined } from ".";
+import { CHAIN_IDs } from "@across-protocol/constants-v2";
+import { BigNumber, ethers, isDefined, TOKEN_SYMBOLS_MAP } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
   // Convert address strings to BigNumbers and then sort numerical value of the BigNumber, which sorts the addresses

@@ -179,7 +179,7 @@ export class ArbitrumAdapter extends CCTPAdapter {
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
-    const l1TokenListToApprove = [];
+    const l1TokenListToApprove: string[] = [];
 
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)

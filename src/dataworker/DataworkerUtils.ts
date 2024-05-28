@@ -88,7 +88,7 @@ export async function blockRangesAreInvalidForSpokeClients(
       chainIdListForBundleEvaluationBlockNumbers
     );
     // There should be a spoke pool client instantiated for every bundle timestamp.
-    assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
+    assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[Number(chainId)])));
   }
   return utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
@@ -239,7 +239,8 @@ export function getRefundsFromBundle(
       [repaymentToken: string]: interfaces.Refund;
     };
   } = {};
-  Object.entries(bundleFillsV3).forEach(([repaymentChainId, fillsForChain]) => {
+  Object.entries(bundleFillsV3).forEach(([_repaymentChainId, fillsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
     combinedRefunds[repaymentChainId] ??= {};
     Object.entries(fillsForChain).forEach(([l2TokenAddress, { refunds }]) => {
       // refunds can be undefined if these fills were all slow fill executions.
@@ -258,7 +259,8 @@ export function getRefundsFromBundle(
       }
     });
   });
-  Object.entries(expiredDepositsToRefundV3).forEach(([originChainId, depositsForChain]) => {
+  Object.entries(expiredDepositsToRefundV3).forEach(([_originChainId, depositsForChain]) => {
+    const originChainId = Number(_originChainId);
     combinedRefunds[originChainId] ??= {};
     Object.entries(depositsForChain).forEach(([l2TokenAddress, deposits]) => {
       deposits.forEach((deposit) => {
@@ -540,7 +542,7 @@ export async function _buildPoolRebalanceRoot(
  * @param chainId chain to check for WETH and ETH addresses
  * @returns WETH and ETH addresses.
  */
-function getWethAndEth(chainId): string[] {
+function getWethAndEth(chainId: number): string[] {
   const wethAndEth = [CONTRACT_ADDRESSES[chainId].weth.address, CONTRACT_ADDRESSES[chainId].eth.address];
   if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
     throw new Error(`WETH or ETH address not defined for chain ${chainId}`);

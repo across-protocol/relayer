@@ -15,7 +15,13 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
+import {
+  ChainTokenConfig,
+  ChainTokenInventory,
+  InventoryConfig,
+  TokenBalanceConfig,
+  isAliasConfig,
+} from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
@@ -90,10 +96,10 @@ export class RelayerConfig extends CommonConfig {
 
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS
-      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
+      ? JSON.parse(RELAYER_TOKENS).map((token: string) => ethers.utils.getAddress(token))
       : [];
     this.slowDepositors = SLOW_DEPOSITORS
-      ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
+      ? JSON.parse(SLOW_DEPOSITORS).map((depositor: string) => ethers.utils.getAddress(depositor))
       : [];
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
@@ -133,13 +139,15 @@ export class RelayerConfig extends CommonConfig {
       // Validate the per chain target and thresholds for wrapping ETH:
       const wrapThresholds = inventoryConfig.wrapEtherThresholdPerChain;
       const wrapTargets = inventoryConfig.wrapEtherTargetPerChain;
-      Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
+      Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((_chainId) => {
+        const chainId = Number(_chainId);
         if (wrapThresholds[chainId] !== undefined) {
           wrapThresholds[chainId] = toBNWei(wrapThresholds[chainId]); // Promote to 18 decimals.
         }
       });
 
-      Object.keys(inventoryConfig.wrapEtherTargetPerChain).forEach((chainId) => {
+      Object.keys(inventoryConfig.wrapEtherTargetPerChain).forEach((_chainId) => {
+        const chainId = Number(_chainId);
         if (wrapTargets[chainId] !== undefined) {
           wrapTargets[chainId] = toBNWei(wrapTargets[chainId]); // Promote to 18 decimals.
 
@@ -189,7 +197,9 @@ export class RelayerConfig extends CommonConfig {
       };
 
       const rawTokenConfigs = inventoryConfig?.tokenConfig ?? {};
-      const tokenConfigs = (inventoryConfig.tokenConfig = {});
+      const tokenConfigs: {
+        [l1Token: string]: ChainTokenInventory;
+      } = (inventoryConfig.tokenConfig = {});
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
@@ -204,10 +214,10 @@ export class RelayerConfig extends CommonConfig {
           Object.keys(hubTokenConfig).forEach((symbol) => {
             Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
               const rawTokenConfig = hubTokenConfig[symbol][chainId];
-              const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
+              const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[Number(chainId)];
 
               tokenConfigs[effectiveL1Token][effectiveSpokeToken] ??= {};
-              tokenConfigs[effectiveL1Token][effectiveSpokeToken][chainId] = parseTokenConfig(
+              tokenConfigs[effectiveL1Token][effectiveSpokeToken][Number(chainId)] = parseTokenConfig(
                 l1Token,
                 chainId,
                 rawTokenConfig
@@ -217,7 +227,8 @@ export class RelayerConfig extends CommonConfig {
         } else {
           Object.keys(hubTokenConfig).forEach((chainId) => {
             const rawTokenConfig = hubTokenConfig[chainId];
-            tokenConfigs[effectiveL1Token][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
+            (tokenConfigs as unknown as Record<string, ChainTokenConfig>)[effectiveL1Token][Number(chainId)] =
+              parseTokenConfig(l1Token, chainId, rawTokenConfig);
           });
         }
       });
@@ -262,14 +273,14 @@ export class RelayerConfig extends CommonConfig {
               ` ${usdThreshold} threshold missing or invalid (${_minConfirmations}).`
           );
 
-          this.minDepositConfirmations[chainId] ??= [];
-          this.minDepositConfirmations[chainId].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
+          this.minDepositConfirmations[Number(chainId)] ??= [];
+          this.minDepositConfirmations[Number(chainId)].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
         });
       });
 
     // Append default thresholds as a safe upper-bound.
     Object.keys(this.minDepositConfirmations).forEach((chainId) =>
-      this.minDepositConfirmations[chainId].push({
+      this.minDepositConfirmations[Number(chainId)].push({
         usdThreshold: bnUint256Max,
         minConfirmations: Number.MAX_SAFE_INTEGER,
       })

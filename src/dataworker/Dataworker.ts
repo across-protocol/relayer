@@ -1116,9 +1116,7 @@ export class Dataworker {
         return false;
       }
 
-      const ignoredAddresses = JSON.parse(process.env.IGNORED_ADDRESSES ?? "[]").map((address) =>
-        ethersUtils.getAddress(address)
-      );
+      const ignoredAddresses = JSON.parse(process.env.IGNORED_ADDRESSES ?? "[]").map(ethersUtils.getAddress);
       if (
         ignoredAddresses?.includes(ethersUtils.getAddress(depositor)) ||
         ignoredAddresses?.includes(ethersUtils.getAddress(recipient))
@@ -1560,7 +1558,7 @@ export class Dataworker {
       )
     ).filter(isDefined);
 
-    let hubPoolBalance;
+    let hubPoolBalance: BigNumber | undefined = undefined;
     if (fundedLeaves.some((leaf) => sdkUtils.chainIsArbitrum(leaf.chainId))) {
       hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
         this.clients.hubPoolClient.hubPool.address

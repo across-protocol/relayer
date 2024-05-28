@@ -87,7 +87,7 @@ export async function runTransaction(
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
     // ethers will determine the correct values to use.
     const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce(
-      (a, [k, v]) => (v ? ((a[k] = v), a) : a),
+      (a: Record<string, unknown>, [k, v]) => (v ? ((a[k] = v), a) : a),
       {}
     );
     return await contract[method](...(args as Array<unknown>), txConfig);
@@ -184,7 +184,8 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   try {
     await contract.callStatic[method](...args);
-  } catch (err: any) {
+  } catch (_err: unknown) {
+    const err = _err as { errorName?: string };
     if (err.errorName) {
       return {
         transaction,

@@ -1,6 +1,7 @@
 // Utils from other packages.
 import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 import { constants as ethersConstants } from "ethers";
+import { TOKEN_SYMBOLS_MAP as TOKEN_SYMBOLS_MAP_FIXED_SYMBOLS } from "@across-protocol/constants-v2";
 
 import winston from "winston";
 import assert from "assert";
@@ -31,7 +32,20 @@ export { config } from "dotenv";
 export { replaceAddressCase } from "@uma/common";
 export { Logger, waitForLogger } from "@uma/logger";
 
-export { CHAIN_IDs, TOKEN_SYMBOLS_MAP, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants-v2";
+export { CHAIN_IDs, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants-v2";
+
+const TOKEN_SYMBOLS_MAP = TOKEN_SYMBOLS_MAP_FIXED_SYMBOLS as Record<
+  string,
+  {
+    name: string;
+    symbol: string;
+    decimals: number;
+    addresses: {
+      [x: number]: string;
+    };
+  }
+>;
+export { TOKEN_SYMBOLS_MAP };
 
 // TypeChain exports used in the bot.
 export {

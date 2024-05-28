@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, interfaces as sdkInterfaces } from "@across-protocol/sdk-v2";
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import { Clients } from "../common";
 import * as interfaces from "../interfaces";
@@ -51,7 +51,7 @@ export function addLastRunningBalance(
   hubPoolClient: HubPoolClient
 ): void {
   Object.keys(runningBalances).forEach((repaymentChainId) => {
-    Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
+    Object.keys(runningBalances[Number(repaymentChainId)]).forEach((l1TokenAddress) => {
       const { runningBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
         latestMainnetBlock,
         Number(repaymentChainId),
@@ -448,21 +448,26 @@ export function prettyPrintLeaves(
 ): void {
   leaves.forEach((leaf, index) => {
     const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
+      const entry = (leaf as unknown as Record<string, unknown>)[key];
       // Check if leaf value is list of BN's or single BN.
-      if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0])) {
-        result[key] = leaf[key].map((val) => val.toString());
-      } else if (BigNumber.isBigNumber(leaf[key])) {
-        result[key] = leaf[key].toString();
+      if (Array.isArray(entry) && BigNumber.isBigNumber(entry[0])) {
+        result[key] = entry.map((val) => val.toString());
+      } else if (BigNumber.isBigNumber(entry)) {
+        result[key] = entry.toString();
       } else {
-        result[key] = leaf[key];
+        result[key] = entry;
       }
       return result;
-    }, {});
+    }, {} as Record<string, unknown>);
     logger.debug({
       at: "Dataworker#propose",
       message: `${logType} leaf #${index}`,
       leaf: prettyLeaf,
-      proof: tree.getHexProof(leaf),
+      proof: tree.getHexProof(
+        leaf as unknown as sdkInterfaces.SlowFillLeaf &
+          sdkInterfaces.RelayerRefundLeaf &
+          sdkInterfaces.PoolRebalanceLeaf
+      ),
     });
   });
 }

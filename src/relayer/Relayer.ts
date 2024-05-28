@@ -257,17 +257,18 @@ export class Relayer {
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
     // Filter out deposits where the relayer doesn't have the balance to make the fill.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
+    const unfilledDepositAmountsPerChain = deposits
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
         agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
         return agg;
-      }, {});
+      }, {} as { [chainId: number]: BigNumber });
 
     // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
     const mdcPerChain = Object.fromEntries(
-      Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
+      Object.entries(unfilledDepositAmountsPerChain).map(([_chainId, unfilledAmount]) => {
+        const chainId = Number(_chainId);
         const { minConfirmations } = minDepositConfirmations[chainId].find(({ usdThreshold }) =>
           usdThreshold.gte(unfilledAmount)
         );
@@ -431,7 +432,7 @@ export class Relayer {
       acc[key] ??= [];
       acc[key].push({ paymentChainId, lpFeePct });
       return acc;
-    }, {});
+    }, {} as BatchLPFees);
 
     return lpFees;
   }
@@ -826,9 +827,11 @@ export class Relayer {
     const unprofitableDeposits = profitClient.getUnprofitableFills();
 
     let mrkdwn = "";
-    Object.keys(unprofitableDeposits).forEach((chainId) => {
+    Object.keys(unprofitableDeposits).forEach((_chainId) => {
+      const chainId = Number(_chainId);
       let depositMrkdwn = "";
-      Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
+      Object.keys(unprofitableDeposits[chainId]).forEach((_depositId) => {
+        const depositId = Number(_depositId);
         const { deposit, lpFeePct, relayerFeePct, gasCost } = unprofitableDeposits[chainId][depositId];
 
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.

@@ -13,6 +13,7 @@ import {
   isDefined,
   getRedisCache,
   getArweaveJWKSigner,
+  BlockFinder,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -66,7 +67,7 @@ export async function resolveSpokePoolActivationBlock(
 
   // Get the timestamp of the block where the SpokePool was activated on mainnet, and resolve that
   // to a block number on the SpokePool chain. Use this block as the lower bound for the search.
-  const blockFinder = undefined;
+  const blockFinder: BlockFinder = undefined;
   const mainnetActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
   const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
@@ -113,7 +114,7 @@ export async function constructSpokePoolClientsWithLookback(
   // Use the first block that we'll query on mainnet to figure out which chains were enabled between then and the latest
   // mainnet block. These chains were enabled via the ConfigStore. These lookbacks should typically be fairly short, so
   // BlockFinder estimates are likely to be OK - avoid overriding them with hints.
-  const blockFinder = undefined;
+  const blockFinder: BlockFinder = undefined;
   const redis = await getRedisCache(logger);
   const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
   enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
@@ -196,7 +197,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
     enabledChains,
   });
 
-  const blockFinder = undefined;
+  const blockFinder: BlockFinder = undefined;
   const redis = await getRedisCache(logger);
 
   // Set up Spoke signers and connect them to spoke pool contract objects:

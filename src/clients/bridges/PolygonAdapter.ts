@@ -289,7 +289,7 @@ export class PolygonAdapter extends CCTPAdapter {
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
-    const l1TokenListToApprove = [];
+    const l1TokenListToApprove: string[] = [];
 
     const associatedL1Bridges = l1Tokens
       .flatMap((l1Token) => {

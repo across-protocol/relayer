@@ -122,7 +122,7 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 // Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
 // if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
 // Quicknode for example.
-export const CHAIN_MAX_BLOCK_LOOKBACK = {
+export const CHAIN_MAX_BLOCK_LOOKBACK: { [chainId: number]: number } = {
   1: 10000,
   10: 10000, // Quick
   137: 3490,
@@ -259,7 +259,7 @@ export const PROVIDER_CACHE_TTL = 3600;
 export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // Multicall3 Constants:
-export const multicall3Addresses = {
+export const multicall3Addresses: Record<string, string> = {
   1: "0xcA11bde05977b3631167028862bE2a173976CA11",
   10: "0xcA11bde05977b3631167028862bE2a173976CA11",
   137: "0xcA11bde05977b3631167028862bE2a173976CA11",

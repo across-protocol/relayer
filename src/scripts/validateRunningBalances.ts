@@ -49,7 +49,8 @@ import { createConsoleTransport } from "@uma/logger";
 config();
 let logger: winston.Logger;
 
-const slowRootCache = {};
+const slowRootCache: Record<string, { slowFills: V3SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> =
+  {};
 
 const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
   [10]: { ["USDC"]: 15.336508 }, // On May 4th, USDC was sent to the SpokePool here: https://optimistic.etherscan.io/tx/0x5f53293fe6a27ff9897d4dde445fd6aab46f841ca641befea48beef62014a549
@@ -381,7 +382,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
       const excess = Number(excesses[0]);
       // Subtract any expected excesses
-      const excessForChain = excess - (expectedExcesses[chainId]?.[l1Token] ?? 0);
+      const excessForChain = excess - (expectedExcesses[Number(chainId)]?.[l1Token] ?? 0);
       return excessForChain > 0.05 || excessForChain < -0.05;
     });
   });

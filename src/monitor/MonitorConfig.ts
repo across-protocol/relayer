@@ -79,30 +79,36 @@ export class MonitorConfig extends CommonConfig {
 
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
-      this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger }) => {
-          if (Number.isNaN(target) || target <= 0) {
-            throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
-          }
-          if (Number.isNaN(trigger) || trigger <= 0) {
-            throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
-          }
-          if (trigger >= target) {
-            throw new Error("trigger must be < target");
-          }
-          return {
-            // Required fields:
-            chainId,
-            account,
-            target,
-            trigger,
-            // Optional fields that will set to defaults:
-            isHubPool: Boolean(isHubPool),
-            // Fields that are always set to defaults:
-            token: getEthAddressForChain(chainId),
-          };
+      this.refillEnabledBalances = (
+        JSON.parse(REFILL_BALANCES) as {
+          chainId: number;
+          account: string;
+          isHubPool: boolean;
+          trigger: number;
+          target: number;
+        }[]
+      ).map(({ chainId, account, isHubPool, target, trigger }) => {
+        if (Number.isNaN(target) || target <= 0) {
+          throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
         }
-      );
+        if (Number.isNaN(trigger) || trigger <= 0) {
+          throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
+        }
+        if (trigger >= target) {
+          throw new Error("trigger must be < target");
+        }
+        return {
+          // Required fields:
+          chainId,
+          account,
+          target,
+          trigger,
+          // Optional fields that will set to defaults:
+          isHubPool: Boolean(isHubPool),
+          // Fields that are always set to defaults:
+          token: getEthAddressForChain(chainId),
+        };
+      });
     }
 
     // Should only have 1 HubPool.
@@ -125,38 +131,44 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
     if (MONITORED_BALANCES) {
-      this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
-        ({ errorThreshold, warnThreshold, account, token, chainId }) => {
-          if (!errorThreshold && !warnThreshold) {
-            throw new Error("Must provide either an errorThreshold or a warnThreshold");
-          }
-
-          let parsedErrorThreshold: number | null = null;
-          if (errorThreshold) {
-            if (Number.isNaN(Number(errorThreshold))) {
-              throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
-            }
-            parsedErrorThreshold = Number(errorThreshold);
-          }
-
-          let parsedWarnThreshold: number | null = null;
-          if (warnThreshold) {
-            if (Number.isNaN(Number(errorThreshold))) {
-              throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
-            }
-            parsedWarnThreshold = Number(warnThreshold);
-          }
-
-          const isNativeToken = !token || token === "0x0" || token === getEthAddressForChain(chainId);
-          return {
-            token: isNativeToken ? getEthAddressForChain(chainId) : token,
-            errorThreshold: parsedErrorThreshold,
-            warnThreshold: parsedWarnThreshold,
-            account: ethers.utils.getAddress(account),
-            chainId: parseInt(chainId),
-          };
+      this.monitoredBalances = (
+        JSON.parse(MONITORED_BALANCES) as {
+          errorThreshold: number;
+          warnThreshold: number;
+          token?: string;
+          chainId: number;
+          account: string;
+        }[]
+      ).map(({ errorThreshold, warnThreshold, account, token, chainId }) => {
+        if (!errorThreshold && !warnThreshold) {
+          throw new Error("Must provide either an errorThreshold or a warnThreshold");
         }
-      );
+
+        let parsedErrorThreshold: number | null = null;
+        if (errorThreshold) {
+          if (Number.isNaN(Number(errorThreshold))) {
+            throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
+          }
+          parsedErrorThreshold = Number(errorThreshold);
+        }
+
+        let parsedWarnThreshold: number | null = null;
+        if (warnThreshold) {
+          if (Number.isNaN(Number(errorThreshold))) {
+            throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
+          }
+          parsedWarnThreshold = Number(warnThreshold);
+        }
+
+        const isNativeToken = !token || token === "0x0" || token === getEthAddressForChain(chainId);
+        return {
+          token: isNativeToken ? getEthAddressForChain(chainId) : token,
+          errorThreshold: parsedErrorThreshold,
+          warnThreshold: parsedWarnThreshold,
+          account: ethers.utils.getAddress(account),
+          chainId: parseInt(String(chainId)),
+        };
+      });
     }
   }
 

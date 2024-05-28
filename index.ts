@@ -1,5 +1,16 @@
 import minimist from "minimist";
-import { config, delay, exit, retrieveSignerFromCLIArgs, help, Logger, usage, waitForLogger } from "./src/utils";
+import {
+  config,
+  delay,
+  exit,
+  retrieveSignerFromCLIArgs,
+  help,
+  Logger,
+  usage,
+  waitForLogger,
+  winston,
+  Signer,
+} from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -12,10 +23,9 @@ let cmd: string;
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
 
-  const cmds = {
+  const cmds: Record<string, (_logger: winston.Logger, baseSigner: Signer) => Promise<void>> = {
     dataworker: runDataworker,
     finalizer: runFinalizer,
-    help: help,
     monitor: runMonitor,
     relayer: runRelayer,
   };
@@ -23,10 +33,10 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   // todo Make the mode of operation an operand, rather than an option.
   // i.e. ts-node ./index.ts [options] <relayer|...>
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
-  cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
+  cmd = args["help"] ? "help" : Object.keys(cmds).find((_cmd) => !!args[_cmd]);
 
   if (cmd === "help") {
-    cmds[cmd]();
+    help();
   } // no return
   else if (cmd === undefined) {
     usage("");

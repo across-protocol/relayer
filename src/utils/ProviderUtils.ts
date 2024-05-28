@@ -3,6 +3,9 @@ import { ethers } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
 import { isDefined, isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
 import createQueue, { QueueObject } from "async/queue";
 import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
 import {
@@ -499,7 +502,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     return quorumResult;
   }
 
-  _validateResponse(method: string, params: Array<any>, response: any): boolean {
+  _validateResponse(method: string, params: Array<any>, response: unknown): boolean {
     // Basic validation logic to start.
     // Note: eth_getTransactionReceipt is ignored here because null responses are expected in the case that ethers is
     // polling for the transaction receipt and receiving null until it does.
@@ -559,9 +562,10 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 }
 
 // Global provider cache to avoid creating multiple providers for the same chain.
-const providerCache: { [chainId: number]: RetryProvider } = {};
+// Make sure to reference with `getProviderCacheKey` to avoid collisions.
+const providerCache: { [key: string]: RetryProvider } = {};
 
-function getProviderCacheKey(chainId: number, redisEnabled) {
+function getProviderCacheKey(chainId: number, redisEnabled?: boolean): string {
   return `${chainId}_${redisEnabled ? "cache" : "nocache"}`;
 }
 
@@ -659,7 +663,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   // Custom delay + logging for RPC rate-limiting.
   let rateLimitLogCounter = 0;
   const rpcRateLimited =
-    ({ nodeMaxConcurrency, logger }) =>
+    ({ nodeMaxConcurrency, logger }: { nodeMaxConcurrency: number; logger: winston.Logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
       // Implement a slightly aggressive expontential backoff to account for fierce paralellism.
       // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.

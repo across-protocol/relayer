@@ -268,6 +268,6 @@ function getL2TokensToFinalize(events: TokensBridged[]): string[] {
   const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
     l2TokenDictionary[event.l2TokenAddress] = true;
     return l2TokenDictionary;
-  }, {});
+  }, {} as Record<string, boolean>);
   return Object.keys(l2TokenCountInBridgeEvents).filter((token) => l2TokenCountInBridgeEvents[token] === true);
 }

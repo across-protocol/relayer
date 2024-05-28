@@ -1,3 +1,5 @@
+import { JsonFragment } from "@ethersproject/abi";
+
 // ABI definition for CCTP contracts
 const CCTP_MESSAGE_TRANSMITTER_CONTRACT_ABI = [
   {
@@ -175,7 +177,7 @@ export const CCTP_TOKEN_MESSENGER_CONTRACT_ABI = [
   },
 ];
 
-export const LINEA_MESSAGE_SERVICE_CONTRACT_ABI = [
+export const LINEA_MESSAGE_SERVICE_CONTRACT_ABI: JsonFragment[] = [
   {
     inputs: [],
     name: "minimumFeeInWei",
@@ -239,7 +241,7 @@ export const LINEA_MESSAGE_SERVICE_CONTRACT_ABI = [
   },
 ];
 
-export const LINEA_TOKEN_BRIDGE_CONTRACT_ABI = [
+export const LINEA_TOKEN_BRIDGE_CONTRACT_ABI: JsonFragment[] = [
   {
     inputs: [
       { internalType: "address", name: "_token", type: "address" },
@@ -347,7 +349,7 @@ export const LINEA_TOKEN_BRIDGE_CONTRACT_ABI = [
   },
 ];
 
-export const LINEA_USDC_BRIDGE_CONTRACT_ABI = [
+export const LINEA_USDC_BRIDGE_CONTRACT_ABI: JsonFragment[] = [
   {
     inputs: [
       { internalType: "uint256", name: "amount", type: "uint256" },
@@ -479,7 +481,7 @@ const OP_STANDARD_BRIDGE_ABI = [
   },
 ];
 
-const OVM_STANDARD_BRIDGE_ABI = [
+const OVM_STANDARD_BRIDGE_ABI: JsonFragment[] = [
   {
     anonymous: false,
     inputs: [

@@ -32,7 +32,7 @@ import {
   _buildPoolRebalanceRoot,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils, interfaces } from "@across-protocol/sdk-v2";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,
@@ -1090,43 +1090,49 @@ export class BundleDataClient {
     });
 
     // Batch compute V3 lp fees.
-    const promises = [
-      validatedBundleV3Fills.length > 0
-        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
-            validatedBundleV3Fills.map((fill) => {
-              const { chainToSendRefundTo: paymentChainId } = getRefundInformationFromFill(
-                fill,
-                this.clients.hubPoolClient,
-                blockRangesForChains,
-                chainIds
-              );
-              return {
-                ...fill,
-                paymentChainId,
-              };
-            })
-          )
-        : [],
-      validatedBundleSlowFills.length > 0
-        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
-            validatedBundleSlowFills.map((deposit) => {
-              return {
-                ...deposit,
-                paymentChainId: deposit.destinationChainId,
-              };
-            })
-          )
-        : [],
-      validatedBundleUnexecutableSlowFills.length > 0
-        ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
-            validatedBundleUnexecutableSlowFills.map((deposit) => {
-              return {
-                ...deposit,
-                paymentChainId: deposit.destinationChainId,
-              };
-            })
-          )
-        : [],
+    const promises: Promise<interfaces.RealizedLpFee[]>[] = [
+      ...(validatedBundleV3Fills.length > 0
+        ? [
+            this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+              validatedBundleV3Fills.map((fill) => {
+                const { chainToSendRefundTo: paymentChainId } = getRefundInformationFromFill(
+                  fill,
+                  this.clients.hubPoolClient,
+                  blockRangesForChains,
+                  chainIds
+                );
+                return {
+                  ...fill,
+                  paymentChainId,
+                };
+              })
+            ),
+          ]
+        : []),
+      ...(validatedBundleSlowFills.length > 0
+        ? [
+            this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+              validatedBundleSlowFills.map((deposit) => {
+                return {
+                  ...deposit,
+                  paymentChainId: deposit.destinationChainId,
+                };
+              })
+            ),
+          ]
+        : []),
+      ...(validatedBundleUnexecutableSlowFills.length > 0
+        ? [
+            this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
+              validatedBundleUnexecutableSlowFills.map((deposit) => {
+                return {
+                  ...deposit,
+                  paymentChainId: deposit.destinationChainId,
+                };
+              })
+            ),
+          ]
+        : []),
     ];
     const [v3FillLpFees, v3SlowFillLpFees, v3UnexecutableSlowFillLpFees] = await Promise.all(promises);
     v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {

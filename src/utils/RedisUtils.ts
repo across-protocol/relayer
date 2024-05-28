@@ -148,7 +148,7 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
   // todo understand why redisClients arent't GCed automagically.
   const clients = Object.entries(redisClients);
   for (const [url, client] of clients) {
-    const logParams = {
+    const logParams: Record<string, unknown> = {
       at: "RedisUtils#disconnectRedisClient",
       message: "Disconnecting from redis server.",
       url,

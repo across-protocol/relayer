@@ -27,7 +27,12 @@ import {
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { V3Deposit } from "../interfaces";
-import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
+import {
+  ChainTokenInventory,
+  InventoryConfig,
+  isAliasConfig,
+  TokenBalanceConfig,
+} from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
@@ -1132,7 +1137,7 @@ export class InventoryClient {
   }
 
   _l1TokenEnabledForChain(l1Token: string, chainId: number): boolean {
-    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token];
+    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token] as ChainTokenInventory;
     if (!isDefined(tokenConfig)) {
       return false;
     }

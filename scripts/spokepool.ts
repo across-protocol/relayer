@@ -189,7 +189,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   );
   const { hash: transactionHash } = deposit;
   console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}.`);
-  const receipt = await deposit.wait();
+  const receipt = (await deposit.wait()) as ethers.providers.TransactionReceipt;
 
   receipt.logs
     .filter((log) => log.address === spokePool.address)

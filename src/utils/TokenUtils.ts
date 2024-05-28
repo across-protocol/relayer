@@ -1,8 +1,9 @@
 import { constants, utils } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, utils as ethersUtils } from "ethers";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
+import { CHAIN_IDs } from "@across-protocol/constants-v2";
 import { L1Token } from "../interfaces";
+import { TOKEN_SYMBOLS_MAP } from ".";
 const { ZERO_ADDRESS } = constants;
 
 export const { fetchTokenInfo } = utils;
@@ -55,6 +56,6 @@ export function getL1TokenInfo(l2TokenAddress: string, chainId: number): L1Token
  * @returns The formatted amount as a decimal-inclusive string.
  */
 export function formatUnitsForToken(symbol: string, amount: BigNumberish): string {
-  const decimals = (TOKEN_SYMBOLS_MAP[symbol]?.decimals as number) ?? 18;
+  const decimals = TOKEN_SYMBOLS_MAP[symbol]?.decimals ?? 18;
   return ethersUtils.formatUnits(amount, decimals);
 }

@@ -43,7 +43,7 @@ function startWorkers(config: RelayerConfig): { [chainId: number]: ChildProcess 
     chainIds.map((chainId: number) => {
       // Identify the lowest configured deposit confirmation threshold for use as indexer finality.
       const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
-      const blockRange = config.maxRelayerLookBack[chainId] ?? 5_000; // 5k is a safe default.
+      const blockRange = config.maxRelayerLookBack ?? 5_000; // 5k is a safe default.
 
       const opts = { ...sampleOpts, finality, blockRange };
       const chain = getNetworkName(chainId);

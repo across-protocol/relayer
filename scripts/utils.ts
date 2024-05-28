@@ -3,7 +3,7 @@ import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
 import * as contracts from "@across-protocol/contracts-v2";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
+import { getDeployedContract, getNodeUrlList, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../src/utils";
 
 // https://nodejs.org/api/process.html#exit-codes
 export const NODE_SUCCESS = 0;
@@ -57,7 +57,7 @@ export function resolveToken(token: string, chainId: number): ERC20 {
     ? token.toUpperCase()
     : Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
 
-  const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
+  const _token = TOKEN_SYMBOLS_MAP[symbol];
   if (_token === undefined) {
     throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
   }

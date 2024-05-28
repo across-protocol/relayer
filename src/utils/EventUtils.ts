@@ -42,7 +42,7 @@ export function mangleEventArgs(event: Event): Event {
  * input events is preserved in the output array.
  */
 export function getUniqueLogIndex(events: { transactionHash: string }[]): number[] {
-  const uniqueTokenhashes = {};
+  const uniqueTokenhashes: Record<string, number> = {};
   const logIndexesForMessage = [];
   for (const event of events) {
     const logIndex = uniqueTokenhashes[event.transactionHash] ?? 0;

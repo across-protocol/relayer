@@ -22,6 +22,7 @@ import {
   paginatedEventQuery,
   sortEventsAscending,
   winston,
+  BlockFinder,
 } from "../utils";
 
 type WebSocketProvider = ethersProviders.WebSocketProvider;
@@ -224,7 +225,7 @@ async function run(argv: string[]): Promise<void> {
   chain = getNetworkName(chainId);
 
   const quorumProvider = await getProvider(chainId);
-  const blockFinder = undefined;
+  const blockFinder: BlockFinder = undefined;
   const cache = await getRedisCache();
   const latestBlock = await quorumProvider.getBlock("latest");
 
