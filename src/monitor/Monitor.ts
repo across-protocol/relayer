@@ -177,16 +177,13 @@ export class Monitor {
   async reportUnfilledDeposits(): Promise<void> {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
-      await mapAsync(
-        Object.values(spokePoolClients),
-        async ({ chaniId: destinationChainId }) => {
-          const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
-            ({ deposit }) => deposit
-          );
-          const fillStatus = await fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
-          return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
-        }
-      )
+      await mapAsync(Object.values(spokePoolClients), async ({ chaniId: destinationChainId }) => {
+        const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
+          ({ deposit }) => deposit
+        );
+        const fillStatus = await fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+        return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
+      })
     );
 
     // Group unfilled amounts by chain id and token id.
