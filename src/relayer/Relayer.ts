@@ -275,9 +275,10 @@ export class Relayer {
       })
     );
 
+    const dstChain = getNetworkName(deposits[0].destinationChainId);
     this.logger.debug({
       at: "Relayer::computeRequiredDepositConfirmations",
-      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount.",
+      message: `Setting minimum ${dstChain} deposit confirmation based on origin chain aggregate deposit amount.`,
       unfilledDepositAmountsPerChain,
       mdcPerChain,
     });
