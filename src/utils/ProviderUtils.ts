@@ -579,6 +579,10 @@ export function getCachedProvider(chainId: number, redisEnabled = true): RetryPr
   return providerCache[getProviderCacheKey(chainId, redisEnabled)];
 }
 
+export function getChainQuorum(chainId: number): number {
+  return Number(process.env[`NODE_QUORUM_${chainId}`] || process.env.NODE_QUORUM || "1");
+}
+
 /**
  * @notice Returns retry provider for specified chain ID. Optimistically tries to instantiate the provider
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
@@ -595,7 +599,6 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   const {
     NODE_RETRIES,
     NODE_RETRY_DELAY,
-    NODE_QUORUM,
     NODE_TIMEOUT,
     NODE_MAX_CONCURRENCY,
     NODE_DISABLE_PROVIDER_CACHING,
@@ -614,7 +617,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   const retryDelay = Number(process.env[`NODE_RETRY_DELAY_${chainId}`] || NODE_RETRY_DELAY || "1");
 
   // Default to a node quorum of 1 node.
-  const nodeQuorumThreshold = Number(process.env[`NODE_QUORUM_${chainId}`] || NODE_QUORUM || "1");
+  const nodeQuorumThreshold = getChainQuorum(chainId);
 
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "25");
 
