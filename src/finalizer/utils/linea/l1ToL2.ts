@@ -4,7 +4,7 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, delay, retryAsync, winston } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
