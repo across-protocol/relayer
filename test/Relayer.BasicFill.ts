@@ -276,15 +276,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Verify that the relayer now sees that the deposit has been filled.
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-<<<<<<< pxrl/deferredWait
       for (const receipts of Object.values(txnReceipts)) {
         expect((await receipts).length).to.equal(0);
       }
-      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
-=======
-      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(spyLogIncludes(spy, -2, "1 unfilled deposits found")).to.be.true;
->>>>>>> master
     });
 
     it("Respects configured relayer routes", async function () {
@@ -395,13 +390,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-<<<<<<< pxrl/deferredWait
       expect((await txnReceipts[destinationChainId]).length).to.equal(0);
-      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
-=======
-      expect(txnReceipts[destinationChainId].length).to.equal(0);
       expect(spyLogIncludes(spy, -2, "1 unfilled deposits found")).to.be.true;
->>>>>>> master
 
       await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
       await updateAllClients();
