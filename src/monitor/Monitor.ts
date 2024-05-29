@@ -178,8 +178,8 @@ export class Monitor {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
       await mapAsync(
-        Object.values(spokePoolClients).map(({ chainId }) => chainId),
-        async (destinationChainId) => {
+        Object.values(spokePoolClients),
+        async ({ chaniId: destinationChainId }) => {
           const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
             ({ deposit }) => deposit
           );
