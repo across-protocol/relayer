@@ -239,7 +239,7 @@ export class Monitor {
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "\n *[Summary]*\n";
-      let tables = [];
+      const tables = [];
       for (const token of allL1Tokens) {
         const table = new AsciiTable3(token.symbol);
         table.setWidths(Array(6).fill(12));
