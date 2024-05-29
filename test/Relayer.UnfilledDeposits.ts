@@ -131,7 +131,6 @@ describe("Relayer: Unfilled Deposits", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
       } as unknown as RelayerConfig
