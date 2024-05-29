@@ -50,7 +50,6 @@ export type RelayerUnfilledDeposit = {
 // @param destinationChainId  Chain ID to query outstanding deposits on.
 // @param spokePoolClients  Mapping of chainIds to SpokePoolClient objects.
 // @param hubPoolClient HubPoolClient instance.
-// @param logger  Logger instance
 // @returns Array of unfilled deposits.
 export function getUnfilledDeposits(
   destinationChainId: number,
@@ -60,13 +59,9 @@ export function getUnfilledDeposits(
   const destinationClient = spokePoolClients[destinationChainId];
 
   // Iterate over each chainId and check for unfilled deposits.
-  const chainIds = Object.values(spokePoolClients)
+  const deposits = Object.values(spokePoolClients)
     .filter(({ chainId, isUpdated }) => isUpdated && chainId !== destinationChainId)
-    .map(({ chainId }) => chainId);
-
-  // Query each _other_ SpokePool for deposits within the lookback.
-  const deposits = chainIds
-    .map((originChainId) => spokePoolClients[originChainId].getDepositsForDestinationChain(destinationChainId))
+    .map((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
     .flat();
 
   return deposits
