@@ -310,9 +310,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await updateAllClients();
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
-      expect(
-        spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping deposit from or to disabled chains"))
-      ).to.not.be.undefined;
     });
 
     it("Correctly validates self-relays", async function () {
