@@ -69,40 +69,25 @@ export async function lineaL1ToL2Finalizer(
     } = event;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
-    try {
-      // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we try-catch
-      // it in order to catch any one-off failures.
-      const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
-      return {
-        messageSender: _from,
-        destination: _to,
-        fee: _fee,
-        value: _value,
-        messageNonce: _nonce,
-        calldata: _calldata,
-        messageHash: _messageHash,
-        txHash,
-        logIndex,
-        status: messageStatus,
-        messageType: determineMessageType(event, hubPoolClient),
-      };
-    } catch (e) {
-      logger.debug({
-        at: "Finalizer#LineaL1ToL2Finalizer",
-        message: "LineaSDK.getMessageStatus failed",
-        error: e,
-        event,
-      });
-      return {
-        status: "sdkError",
-      };
-    }
+    const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
+    return {
+      messageSender: _from,
+      destination: _to,
+      fee: _fee,
+      value: _value,
+      messageNonce: _nonce,
+      calldata: _calldata,
+      messageHash: _messageHash,
+      txHash,
+      logIndex,
+      status: messageStatus,
+      messageType: determineMessageType(event, hubPoolClient),
+    };
   });
   // Group messages by status
   const {
     claimed = [],
     claimable = [],
-    failed = [],
     unknown = [],
   } = groupBy(enrichedMessageSentEvents, (message) => {
     switch (message.status) {
@@ -110,8 +95,6 @@ export async function lineaL1ToL2Finalizer(
         return "claimed";
       case OnChainMessageStatus.CLAIMABLE:
         return "claimable";
-      case "sdkError":
-        return "failed";
       default:
         return "unknown";
     }
@@ -166,7 +149,6 @@ export async function lineaL1ToL2Finalizer(
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
-      sdkError: failed.length,
       notReceived: unknown.length,
     },
   });
