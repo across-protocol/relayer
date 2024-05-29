@@ -57,7 +57,12 @@ export async function opStackFinalizer(
   const redis = await getRedisCache(logger);
   const latestBlockToProve = await getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
-    spokePoolClient.getTokensBridged(),
+    spokePoolClient.getTokensBridged().filter(
+      (e) =>
+        // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
+        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[chainId]) ||
+        !(chainId === CHAIN_IDs.BASE || chainId === CHAIN_IDs.OPTIMISM)
+    ),
     (e) => {
       if (e.blockNumber >= latestBlockToProve) {
         return "recentTokensBridgedEvents";
@@ -128,31 +133,22 @@ async function getCrossChainMessages(
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
 
   return (
-    (
-      await Promise.all(
-        tokensBridged.map(
-          async (l2Event, i) =>
-            (
-              await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
-                direction: optimismSDK.MessageDirection.L2_TO_L1,
-              })
-            )[logIndexesForMessage[i]]
-        )
-      )
-    )
-      .map((message, i) => {
-        return {
-          message,
-          event: tokensBridged[i],
-        };
+    await Promise.all(
+      tokensBridged.map(async (l2Event, i) => {
+        const withdrawals = await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
+          direction: optimismSDK.MessageDirection.L2_TO_L1,
+        });
+        const logIndexOfEvent = logIndexesForMessage[i];
+        assert(logIndexOfEvent < withdrawals.length);
+        return withdrawals[logIndexOfEvent];
       })
-      // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
-      .filter(
-        (e) =>
-          !compareAddressesSimple(e.event.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[_chainId]) ||
-          !(_chainId === CHAIN_IDs.BASE || _chainId === CHAIN_IDs.OPTIMISM)
-      )
-  );
+    )
+  ).map((message, i) => {
+    return {
+      message,
+      event: tokensBridged[i],
+    };
+  });
 }
 
 async function getMessageStatuses(
