@@ -249,7 +249,10 @@ export class Relayer {
     return true;
   }
 
-  computeRequiredDepositConfirmations(deposits: V3Deposit[], destinationChainId: number): { [chainId: number]: number } {
+  computeRequiredDepositConfirmations(
+    deposits: V3Deposit[],
+    destinationChainId: number
+  ): { [chainId: number]: number } {
     const { profitClient, tokenClient } = this.clients;
     const { minDepositConfirmations } = this.config;
 
