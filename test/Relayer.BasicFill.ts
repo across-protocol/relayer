@@ -1,7 +1,7 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnOne, bnUint256Max, getNetworkName, getUnfilledDeposits } from "../src/utils";
+import { bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -249,7 +249,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         outputAmount
       );
       await updateAllClients();
-      let unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
+      let unfilledDeposits = getAllUnfilledDeposits(spokePoolClients, hubPoolClient);
       expect(Object.values(unfilledDeposits).flat().length).to.equal(1);
 
       // Run the relayer in simulation mode so it doesn't fill the relay.
@@ -259,18 +259,19 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(spyLogIncludes(spy, -2, "Filled v3 deposit")).is.true;
 
       // Verify that the deposit is still unfilled (relayer didn't execute it).
-      unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
+      unfilledDeposits = getAllUnfilledDeposits(spokePoolClients, hubPoolClient);
       expect(Object.values(unfilledDeposits).flat().length).to.equal(1);
 
       // Fill the deposit and immediately check for unfilled deposits (without SpokePoolClient update).
+      // There will still be 1 unfilled deposit because the SpokePoolClient has not been updated.
       await fillV3Relay(spokePool_2, deposit, relayer);
-      unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient);
-      expect(Object.values(unfilledDeposits).flat().length).to.equal(0);
+      unfilledDeposits = getAllUnfilledDeposits(spokePoolClients, hubPoolClient);
+      expect(Object.values(unfilledDeposits).flat().length).to.equal(1);
 
       // Verify that the relayer now sees that the deposit has been filled.
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
-      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "1 unfilled deposits found")).to.be.true;
     });
 
     it("Respects configured relayer routes", async function () {
@@ -378,7 +379,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       expect(txnReceipts[destinationChainId].length).to.equal(0);
-      expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "1 unfilled deposits found")).to.be.true;
 
       await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
       await updateAllClients();

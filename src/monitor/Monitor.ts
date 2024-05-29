@@ -3,6 +3,8 @@ import { spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
+  DepositWithBlock,
+  FillStatus,
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
@@ -16,6 +18,7 @@ import {
   createFormatFunction,
   ERC20,
   ethers,
+  fillStatusArray,
   blockExplorerLink,
   blockExplorerLinks,
   getEthAddressForChain,
@@ -23,6 +26,7 @@ import {
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
+  mapAsync,
   providers,
   toBN,
   toBNWei,
@@ -171,7 +175,16 @@ export class Monitor {
   }
 
   async reportUnfilledDeposits(): Promise<void> {
-    const unfilledDeposits = await getUnfilledDeposits(this.clients.spokePoolClients, this.clients.hubPoolClient);
+    const { hubPoolClient, spokePoolClients } = this.clients;
+    const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
+      await mapAsync(Object.values(spokePoolClients), async ({ chainId: destinationChainId }) => {
+        const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
+          ({ deposit }) => deposit
+        );
+        const fillStatus = await fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+        return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
+      })
+    );
 
     // Group unfilled amounts by chain id and token id.
     const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};
@@ -179,7 +192,7 @@ export class Monitor {
       const chainId = Number(_destinationChainId);
       unfilledAmountByChainAndToken[chainId] ??= {};
 
-      deposits.forEach(({ deposit: { outputToken, outputAmount } }) => {
+      deposits.forEach(({ outputToken, outputAmount }) => {
         const unfilledAmount = unfilledAmountByChainAndToken[chainId][outputToken] ?? bnZero;
         unfilledAmountByChainAndToken[chainId][outputToken] = unfilledAmount.add(outputAmount);
       });
