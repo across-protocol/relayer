@@ -177,7 +177,7 @@ export class Monitor {
   async reportUnfilledDeposits(): Promise<void> {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
-      await mapAsync(Object.values(spokePoolClients), async ({ chaniId: destinationChainId }) => {
+      await mapAsync(Object.values(spokePoolClients), async ({ chainId: destinationChainId }) => {
         const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
           ({ deposit }) => deposit
         );
