@@ -249,7 +249,7 @@ export class Relayer {
     return true;
   }
 
-  computeRequiredDepositConfirmations(deposits: V3Deposit[]): { [chainId: number]: number } {
+  computeRequiredDepositConfirmations(deposits: V3Deposit[], destinationChainId: number): { [chainId: number]: number } {
     const { profitClient, tokenClient } = this.clients;
     const { minDepositConfirmations } = this.config;
 
@@ -275,7 +275,7 @@ export class Relayer {
       })
     );
 
-    const dstChain = getNetworkName(deposits[0].destinationChainId);
+    const dstChain = getNetworkName(destinationChainId);
     this.logger.debug({
       at: "Relayer::computeRequiredDepositConfirmations",
       message: `Setting minimum ${dstChain} deposit confirmation based on origin chain aggregate deposit amount.`,
@@ -476,7 +476,7 @@ export class Relayer {
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
         .filter(({ fillStatus }) => fillStatus !== FillStatus.Filled);
 
-      const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits);
+      const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(
         Object.values(spokePoolClients).map(({ chainId, latestBlockSearched }) => [
           chainId,
