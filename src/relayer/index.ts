@@ -119,9 +119,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       relayerClients.profitClient.clearUnprofitableFills();
       relayerClients.tokenClient.clearTokenShortfall();
 
-      const tLoopStop = performance.now();
-      const runTime = Math.round((tLoopStop - tLoopStart) / 1000);
       if (loop) {
+        const runTime = Math.round((performance.now() - tLoopStart) / 1000);
         logger.debug({
           at: "Relayer#run",
           message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
