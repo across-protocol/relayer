@@ -238,11 +238,10 @@ export class Monitor {
 
     for (const relayer of relayers) {
       const report = reports[relayer];
-      let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "";
+      let summaryMrkdwn = "\n *[Summary]*\n";
+      let tables = [];
       for (const token of allL1Tokens) {
         const table = new AsciiTable3(token.symbol);
-        table.setStyle("compact");
         table.setWidths(Array(6).fill(12));
         table.setHeading("Chain", "Current", "Pending", "Future", "X/C Trans.", "Total");
         for (const chainName of allChainNames) {
@@ -256,15 +255,14 @@ export class Monitor {
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        mrkdwn += table.toString().replace(/- -/g, "---") + "\n";
+        tables.push("\n```" + table.toString() + "``` \n");
         summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
       }
 
-      mrkdwn += summaryMrkdwn;
       this.logger.info({
         at: "Monitor#reportRelayerBalances",
         message: `Balance report for ${relayer} 📖`,
-        mrkdwn,
+        blocks: [...tables, summaryMrkdwn],
       });
     }
   }
