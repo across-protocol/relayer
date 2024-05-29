@@ -8,14 +8,11 @@ let logger: winston.Logger;
 export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const config = new MonitorConfig(process.env);
-  let clients;
+  const clients = await constructMonitorClients(config, logger, baseSigner);
+  const acrossMonitor = new Monitor(logger, config, clients);
 
   try {
     logger[startupLogLevel(config)]({ at: "Monitor#index", message: "Monitor started 🔭", config });
-
-    clients = await constructMonitorClients(config, logger, baseSigner);
-    const acrossMonitor = new Monitor(logger, config, clients);
-
     for (;;) {
       const loopStart = Date.now();
 
@@ -58,7 +55,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         logger.debug({ at: "Monitor#index", message: "CheckBalances monitor disabled" });
       }
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      await clients.multiCallerClient.executeTxnQueues();
 
       logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
