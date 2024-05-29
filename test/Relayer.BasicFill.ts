@@ -320,9 +320,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       for (const receipts of Object.values(txnReceipts)) {
         expect((await receipts).length).to.equal(0);
       }
-      expect(
-        spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping deposit from or to disabled chains"))
-      ).to.not.be.undefined;
     });
 
     it("Correctly validates self-relays", async function () {

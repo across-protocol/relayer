@@ -219,15 +219,18 @@ export class Relayer {
    */
   private _getUnfilledDeposits(): Record<number, RelayerUnfilledDeposit[]> {
     const { hubPoolClient, spokePoolClients } = this.clients;
+    const { relayerDestinationChains } = this.config;
 
     // Filter the resulting deposits according to relayer configuration.
     return Object.fromEntries(
-      Object.values(spokePoolClients).map(({ chainId: destinationChainId }) => [
-        destinationChainId,
-        getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).filter((deposit) =>
-          this.filterDeposit(deposit)
-        ),
-      ])
+      Object.values(spokePoolClients)
+        .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
+        .map(({ chainId: destinationChainId }) => [
+          destinationChainId,
+          getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).filter((deposit) =>
+            this.filterDeposit(deposit)
+          ),
+        ])
     );
   }
 

@@ -158,7 +158,6 @@ describe("Relayer: Initiates slow fill requests", async function () {
       {
         relayerTokens: [],
         slowDepositors: [],
-        relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig
     );
