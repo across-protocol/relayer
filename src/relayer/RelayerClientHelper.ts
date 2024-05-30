@@ -175,7 +175,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
   // having a "first run" update and then a "normal" update that considers this. see previous implementation here
-  // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
+  // https://github.com/across-protocol/relayer-v3/pull/37/files#r883371256 as a reference.
   await updateSpokePoolClients(spokePoolClients, [
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",

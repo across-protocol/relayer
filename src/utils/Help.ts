@@ -18,7 +18,7 @@ export function usage(badInput: string | undefined = undefined): boolean {
 }
 
 export function help(): void {
-  const botRepoUrl = "https://github.com/across-protocol/relayer-v2";
+  const botRepoUrl = "https://github.com/across-protocol/relayer-v3";
   const relayerDocsUrl = "https://docs.across.to/v2/developers/running-a-relayer";
   const helpStr = `
     Across v2 Bot
