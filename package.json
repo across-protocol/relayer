@@ -1,8 +1,8 @@
 {
-  "name": "relayer-v2",
+  "name": "@across-protocol/relayer",
   "version": "0.2.0",
-  "description": "Across Protocol V3 Relayer Bot",
-  "repository": "git@github.com:across-protocol/relayer-v3.git",
+  "description": "Across Protocol Relayer Bot",
+  "repository": "git@github.com:across-protocol/relayer.git",
   "author": "UMA Team",
   "license": "AGPL-3.0-only",
   "private": true,
