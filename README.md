@@ -9,7 +9,7 @@
 
 # Across V3 Relayer
 
-This code implements [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157.md) and interacts with these [smart contracts](https://github.com/across-protocol/contracts-v3). The contracts were audited [by OpenZeppelin](https://blog.openzeppelin.com/across-v3-incremental-audit).
+This code implements [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157.md) and interacts with these [smart contracts](https://github.com/across-protocol/contracts). The contracts were audited [by OpenZeppelin](https://blog.openzeppelin.com/across-v3-incremental-audit).
 
 # How to run a Relayer
 
@@ -38,7 +38,7 @@ REDIS_URL=redis://localhost:6379
 
 ```sh
 # install dependencies
-cd relayer-v3
+cd relayer
 yarn install
 
 # build relayer bot
@@ -87,7 +87,7 @@ LOG_IN_TEST=true yarn hardhat integration-tests --wallet mnemonic
 
 | Branch                                                              | Status           |
 | ------------------------------------------------------------------- | ---------------- |
-| [master](https://github.com/across-protocol/relayer-v3/tree/master) | Accepts all PRs. |
+| [master](https://github.com/across-protocol/relayer/tree/master) | Accepts all PRs. |
 
 ### Overview
 
