@@ -497,7 +497,7 @@ export class Relayer {
       }
     });
 
-    // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
+    // If during the execution run we had shortfalls or unprofitable fills then handle it by producing associated logs.
     if (tokenClient.anyCapturedShortFallFills()) {
       this.handleTokenShortfall();
     }
