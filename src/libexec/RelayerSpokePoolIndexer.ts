@@ -11,7 +11,6 @@ import {
   exit,
   isDefined,
   getBlockForTimestamp,
-  getChainQuorum,
   getDeploymentBlockNumber,
   getNetworkName,
   getOriginFromURL,
@@ -30,6 +29,7 @@ type EventSearchConfig = sdkUtils.EventSearchConfig;
 type ScraperOpts = {
   lookback?: number; // Event lookback (in seconds).
   finality?: number; // Event finality (in blocks).
+  quorum?: number; // Provider quorum to apply.
   deploymentBlock: number; // SpokePool deployment block
   maxBlockRange?: number; // Maximum block range for paginated getLogs queries.
   filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
@@ -213,9 +213,10 @@ async function run(argv: string[]): Promise<void> {
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, lookback = "5400", relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainId, finality = 32, quorum = 1, lookback = "5400", relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(finality), "finality must be numeric ");
+  assert(Number.isInteger(quorum), "quorum must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
@@ -240,7 +241,6 @@ async function run(argv: string[]): Promise<void> {
     );
   }
 
-  const quorum = getChainQuorum(chainId);
   const opts = {
     finality,
     quorum,

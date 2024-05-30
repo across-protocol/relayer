@@ -718,8 +718,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   return provider;
 }
 
-export function getWSProviders(chainId: number, quorum?: number): ethers.providers.WebSocketProvider[] {
-  quorum ??= getChainQuorum(chainId);
+export function getWSProviders(chainId: number, quorum = 1): ethers.providers.WebSocketProvider[] {
   const urls = getNodeUrlList(chainId, quorum, "wss");
   return urls.map((url) => new ethers.providers.WebSocketProvider(url));
 }
