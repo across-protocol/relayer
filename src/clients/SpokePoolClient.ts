@@ -11,7 +11,6 @@ export type SpokePoolClient = clients.SpokePoolClient;
 export type IndexerOpts = {
   path?: string;
   finality?: number;
-  quorum: number;
 };
 
 type SpokePoolEventRemoved = {
