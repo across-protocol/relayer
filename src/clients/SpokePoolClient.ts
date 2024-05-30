@@ -1,18 +1,11 @@
 import assert from "assert";
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
-import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
+import { getNetworkName, isDefined, winston } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
-
-export type IndexerOpts = {
-  path?: string;
-  finality?: number;
-  quorum: number;
-};
 
 type SpokePoolEventRemoved = {
   event: string;
@@ -37,11 +30,8 @@ export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolE
 }
 
 export class IndexedSpokePoolClient extends clients.SpokePoolClient {
-  public readonly chain: string;
-  public readonly finality: number;
-  public readonly indexerPath: string;
+  public chain: string;
 
-  private worker: ChildProcess;
   private pendingBlockNumber: number;
   private pendingCurrentTime: number;
   private pendingOldestTime: number;
@@ -55,50 +45,28 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     readonly hubPoolClient: clients.HubPoolClient | null,
     readonly chainId: number,
     public deploymentBlock: number,
-    eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = {
-      fromBlock: deploymentBlock,
-      maxBlockLookBack: 5_000,
-    },
-    readonly opts: IndexerOpts
+    readonly worker?: ChildProcess
   ) {
+    // EventSearchConfig isn't required for this SpokePoolClient specialisation, so sub in safe defaults.
+    const eventSearchConfig = { fromBlock: deploymentBlock, maxBlockLookBack: 5_000 };
     super(logger, spokePool, hubPoolClient, chainId, deploymentBlock, eventSearchConfig);
 
     this.chain = getNetworkName(chainId);
-    this.finality = opts.finality ?? 1024;
-    this.indexerPath = opts.path ?? RELAYER_DEFAULT_SPOKEPOOL_INDEXER;
-
     this.pendingBlockNumber = deploymentBlock;
     this.pendingCurrentTime = 0;
     this.pendingEvents = this.queryableEventNames.map(() => []);
     this.pendingEventsRemoved = [];
-
-    this.startWorker();
   }
 
   /**
-   * Fork a child process to independently scrape events.
+   * Listen for indexer updates.
    * @returns void
    */
-  protected startWorker(): void {
-    const {
-      finality,
-      eventSearchConfig: { fromBlock, maxBlockLookBack: blockRange },
-    } = this;
-    const opts = { finality, blockRange, lookback: `@${fromBlock}` };
-
-    const args = Object.entries(opts)
-      .map(([k, v]) => [`--${k}`, `${v}`])
-      .flat();
-    this.worker = spawn("node", [this.indexerPath, "--chainId", this.chainId.toString(), ...args], {
-      stdio: ["ignore", "inherit", "inherit", "ipc"],
-    });
-
-    this.worker.on("message", (message) => this.indexerUpdate(message));
-    this.logger.debug({
-      at: "SpokePoolClient#startWorker",
-      message: `Spawned ${this.chain} SpokePool indexer.`,
-      args: this.worker.spawnargs,
-    });
+  init(): void {
+    if (isDefined(this.worker)) {
+      this.worker.on("message", (message) => this.indexerUpdate(message));
+      this.logger.debug({ at: "SpokePoolClient#init", message: `Listening for ${this.chain} events.` });
+    }
   }
 
   /**
