@@ -38,7 +38,7 @@ REDIS_URL=redis://localhost:6379
 
 ```sh
 # install dependencies
-cd relayer-v3
+cd relayer
 yarn install
 
 # build relayer bot
@@ -87,7 +87,7 @@ LOG_IN_TEST=true yarn hardhat integration-tests --wallet mnemonic
 
 | Branch                                                              | Status           |
 | ------------------------------------------------------------------- | ---------------- |
-| [master](https://github.com/across-protocol/relayer-v3/tree/master) | Accepts all PRs. |
+| [master](https://github.com/across-protocol/relayer/tree/master) | Accepts all PRs. |
 
 ### Overview
 

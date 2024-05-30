@@ -89,7 +89,7 @@ The implied block range for a chain is simply:
 
 ### `bundleEvaluationBlockNumbers` is an array of numbers, how do you know which chain each block references?
 
-This is why Across must define a canonical "chain ID index" as shown [here](https://github.com/across-protocol/relayer-v3/blob/master/src/common/Constants.ts#L9) which contains an append-only list of chain ID's. This index list is used by an example Dataworker implementation and matches identically the same canonical list defined in the [Across UMIP](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157.md#global-constants).
+This is why Across must define a canonical "chain ID index" as shown [here](https://github.com/across-protocol/relayer/blob/master/src/common/Constants.ts#L9) which contains an append-only list of chain ID's. This index list is used by an example Dataworker implementation and matches identically the same canonical list defined in the [Across UMIP](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157.md#global-constants).
 
 When evaluating a `bundleEvaluationBlockNumbers`, the index of the block number must be matched with the index in the "chain ID index" list to figure out which chain the block number refers to. For example, if the `bundleEvaluationBlockNumbers=[1,2,3,4,5]` and the chain ID index list is `[1,10,137,288,42161]`, then the end block of `2` must be used as the end block in a block range for chain ID `10` (i.e. Optimism).
 
