@@ -85,8 +85,8 @@ LOG_IN_TEST=true yarn hardhat integration-tests --wallet mnemonic
 
 ### Active Branches
 
-| Branch                                                              | Status           |
-| ------------------------------------------------------------------- | ---------------- |
+| Branch                                                           | Status           |
+| ---------------------------------------------------------------- | ---------------- |
 | [master](https://github.com/across-protocol/relayer/tree/master) | Accepts all PRs. |
 
 ### Overview
