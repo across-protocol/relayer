@@ -21,7 +21,6 @@ import {
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
   getBlockForTimestamp,
-  getChainQuorum,
   getCurrentTime,
   getProvider,
   getRedisCache,
@@ -100,7 +99,6 @@ export async function constructRelayerClients(
         const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
         const opts = {
           finality,
-          quorum: getChainQuorum(chainId),
           lookback: config.maxRelayerLookBack,
           blockRange: config.maxBlockLookBack[chainId] ?? 5_000,
         };
