@@ -66,7 +66,7 @@ export class Relayer {
    * @returns A boolean indicator determining whether the relayer configuration permits the deposit to be filled.
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
-    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken } = deposit;
+    const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
     const { ignoredAddresses, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -100,13 +100,13 @@ export class Relayer {
       usdThreshold.gte(fillAmountUsd)
     );
     const { latestBlockSearched } = spokePoolClients[originChainId];
-    if (latestBlockSearched - deposit.blockNumber < minConfirmations) {
+    if (latestBlockSearched - blockNumber < minConfirmations) {
       this.logger.debug({
         at: "Relayer::evaluateFill",
         message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
         depositId,
-        blockNumber: deposit.blockNumber,
-        confirmations: latestBlockSearched - deposit.blockNumber,
+        blockNumber,
+        confirmations: latestBlockSearched - blockNumber,
         minConfirmations,
         transactionHash: deposit.transactionHash,
       });
@@ -215,20 +215,21 @@ export class Relayer {
    * not to support.
    * @returns An array of filtered RelayerUnfilledDeposit objects.
    */
-  private async _getUnfilledDeposits(): Promise<Record<number, RelayerUnfilledDeposit[]>> {
+  private _getUnfilledDeposits(): Record<number, RelayerUnfilledDeposit[]> {
     const { hubPoolClient, spokePoolClients } = this.clients;
+    const { relayerDestinationChains } = this.config;
 
-    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.logger);
-
-    // Filter the resulting unfilled deposits according to relayer configuration.
-    Object.keys(unfilledDeposits).forEach((_destinationChainId) => {
-      const destinationChainId = Number(_destinationChainId);
-      unfilledDeposits[destinationChainId] = unfilledDeposits[destinationChainId].filter((deposit) =>
-        this.filterDeposit(deposit)
-      );
-    });
-
-    return unfilledDeposits;
+    // Filter the resulting deposits according to relayer configuration.
+    return Object.fromEntries(
+      Object.values(spokePoolClients)
+        .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
+        .map(({ chainId: destinationChainId }) => [
+          destinationChainId,
+          getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).filter((deposit) =>
+            this.filterDeposit(deposit)
+          ),
+        ])
+    );
   }
 
   /**
@@ -251,7 +252,10 @@ export class Relayer {
     return true;
   }
 
-  computeRequiredDepositConfirmations(deposits: V3Deposit[]): { [chainId: number]: number } {
+  computeRequiredDepositConfirmations(
+    deposits: V3Deposit[],
+    destinationChainId: number
+  ): { [chainId: number]: number } {
     const { profitClient, tokenClient } = this.clients;
     const { minDepositConfirmations } = this.config;
 
@@ -277,9 +281,10 @@ export class Relayer {
       })
     );
 
+    const dstChain = getNetworkName(destinationChainId);
     this.logger.debug({
       at: "Relayer::computeRequiredDepositConfirmations",
-      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount.",
+      message: `Setting minimum ${dstChain} deposit confirmation based on origin chain aggregate deposit amount.`,
       unfilledDepositAmountsPerChain,
       mdcPerChain,
     });
@@ -450,7 +455,7 @@ export class Relayer {
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
     // per chain, which is based on the deposit volume we could fill.
-    const unfilledDeposits = await this._getUnfilledDeposits();
+    const unfilledDeposits = this._getUnfilledDeposits();
     const allUnfilledDeposits = Object.values(unfilledDeposits)
       .flat()
       .map(({ deposit }) => deposit);
@@ -463,28 +468,29 @@ export class Relayer {
       return txnReceipts;
     }
 
-    const mdcPerChain = this.computeRequiredDepositConfirmations(allUnfilledDeposits);
-    const maxBlockNumbers = Object.fromEntries(
-      Object.values(spokePoolClients).map(({ chainId, latestBlockSearched }) => [
-        chainId,
-        latestBlockSearched - mdcPerChain[chainId],
-      ])
-    );
-
     const lpFees = await this.batchComputeLpFees(allUnfilledDeposits);
-    await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, unfilledDeposits]) => {
-      if (unfilledDeposits.length === 0) {
+    await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, _deposits]) => {
+      if (_deposits.length === 0) {
         return;
       }
 
-      await this.evaluateFills(
-        unfilledDeposits.map(({ deposit, fillStatus }) => ({ ...deposit, fillStatus })),
-        lpFees,
-        maxBlockNumbers,
-        sendSlowRelays
-      );
-
       const destinationChainId = Number(chainId);
+      const deposits = _deposits.map(({ deposit }) => deposit);
+      const fillStatus = await sdkUtils.fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+
+      const unfilledDeposits = deposits
+        .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
+        .filter(({ fillStatus }) => fillStatus !== FillStatus.Filled);
+
+      const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
+      const maxBlockNumbers = Object.fromEntries(
+        Object.values(spokePoolClients).map(({ chainId, latestBlockSearched }) => [
+          chainId,
+          latestBlockSearched - mdcPerChain[chainId],
+        ])
+      );
+      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
+
       if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
         const receipts = await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
         txnReceipts[destinationChainId] = receipts[destinationChainId];

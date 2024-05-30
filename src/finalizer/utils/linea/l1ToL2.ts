@@ -4,7 +4,7 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -69,7 +69,10 @@ export async function lineaL1ToL2Finalizer(
     } = event;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
-    const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
+
+    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
+    // twice with a 1 second delay between in case of intermittent RPC failures.
+    const messageStatus = await retryAsync(() => l2MessageServiceContract.getMessageStatus(_messageHash), 2, 1);
     return {
       messageSender: _from,
       destination: _to,
