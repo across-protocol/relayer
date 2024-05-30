@@ -2,7 +2,6 @@ import { assertPromiseError, expect } from "./utils";
 
 // Tested
 import { delay, retryAsync } from "../src/utils";
-import { reject } from "lodash";
 
 const expectedErrorMsg = "async error";
 const expectedReturnValue = 1;
@@ -15,6 +14,7 @@ let ERROR_COUNTER = 0;
 async function incrementCounterThrowError(errorIndex: number, returnValue = expectedReturnValue): Promise<number> {
   const oldCounter = ERROR_COUNTER;
   ERROR_COUNTER++;
+  await delay(0);
   if (errorIndex > oldCounter) {
     throw new Error(expectedErrorMsg);
   } else {
