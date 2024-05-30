@@ -579,6 +579,11 @@ export function getCachedProvider(chainId: number, redisEnabled = true): RetryPr
   return providerCache[getProviderCacheKey(chainId, redisEnabled)];
 }
 
+/**
+ * Return the env-defined quorum configured for `chainId`, or 1 if no quorum has been defined.
+ * @param chainId Chain ID to query for quorum.
+ * @returns Applicable quorum.
+ */
 export function getChainQuorum(chainId: number): number {
   return Number(process.env[`NODE_QUORUM_${chainId}`] || process.env.NODE_QUORUM || "1");
 }
@@ -616,7 +621,6 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   // Default to a delay of 1 second between retries.
   const retryDelay = Number(process.env[`NODE_RETRY_DELAY_${chainId}`] || NODE_RETRY_DELAY || "1");
 
-  // Default to a node quorum of 1 node.
   const nodeQuorumThreshold = getChainQuorum(chainId);
 
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "25");
