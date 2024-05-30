@@ -1,7 +1,8 @@
 import { assertPromiseError, expect } from "./utils";
 
 // Tested
-import { retryAsync } from "../src/utils";
+import { delay, retryAsync } from "../src/utils";
+import { reject } from "lodash";
 
 const expectedErrorMsg = "async error";
 const expectedReturnValue = 1;
@@ -11,7 +12,7 @@ let ERROR_COUNTER = 0;
 // This function will throw based on the value of an external counter variable, this way
 // we can use it to test a function that fails intermittently. If `errorIndex` is >
 // to ERROR_COUNTER, then `expectedErrorMsg` will be thrown.
-function incrementCounterThrowError(errorIndex: number, returnValue = expectedReturnValue): Promise<number> {
+async function incrementCounterThrowError(errorIndex: number, returnValue = expectedReturnValue): Promise<number> {
   const oldCounter = ERROR_COUNTER;
   ERROR_COUNTER++;
   if (errorIndex > oldCounter) {
@@ -20,6 +21,7 @@ function incrementCounterThrowError(errorIndex: number, returnValue = expectedRe
     return Promise.resolve(returnValue);
   }
 }
+
 describe("RetryUtils", async function () {
   beforeEach(async function () {
     ERROR_COUNTER = 0;
