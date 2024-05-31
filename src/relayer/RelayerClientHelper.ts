@@ -19,14 +19,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import {
-  getBlockForTimestamp,
-  getCurrentTime,
-  getProvider,
-  getRedisCache,
-  Signer,
-  SpokePool,
-} from "../utils";
+import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
