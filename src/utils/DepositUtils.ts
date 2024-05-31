@@ -1,4 +1,4 @@
-import { utils } from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk";
 import { Fill, SlowFillRequest } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { getRedisCache } from "./";

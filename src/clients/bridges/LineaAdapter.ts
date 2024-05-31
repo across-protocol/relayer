@@ -1,4 +1,4 @@
-import * as sdk from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { OutstandingTransfers } from "../../interfaces";
 import {
