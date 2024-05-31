@@ -11,8 +11,8 @@ import {
   ModeAdapter,
 } from "./";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
-import { utils } from "@across-protocol/sdk-v2";
-import { CHAIN_IDs } from "@across-protocol/constants-v2";
+import { utils } from "@across-protocol/sdk";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { spokesThatHoldEthAndWeth } from "../../common/Constants";
 
 export class AdapterManager {

@@ -40,7 +40,12 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-export const REBALANCE_FINALIZE_GRACE_PERIOD = 40 * 60; // 40 minutes, which is 50% of the way through an 80 minute
+export const REBALANCE_FINALIZE_GRACE_PERIOD = process.env.REBALANCE_FINALIZE_GRACE_PERIOD
+  ? Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD)
+  : 60 * 60;
+// 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
+// then its finalizing after the subsequent challenge period has started, which is sub-optimal.
+
 // bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
 const ALL_BALANCE_TYPES = [
@@ -662,7 +667,7 @@ export class Monitor {
         if (l1Token.symbol === "USDC" && chainId !== this.clients.hubPoolClient.chainId) {
           const bridgedUsdcAddress =
             TOKEN_SYMBOLS_MAP[chainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses[chainId];
-          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["_USDC"].addresses[chainId];
+          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId];
           for (const [l2Address, symbol] of [
             [bridgedUsdcAddress, "USDC.e"],
             [nativeUsdcAddress, "USDC"],

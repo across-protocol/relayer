@@ -1,4 +1,4 @@
-import { interfaces } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { RelayerRefundLeaf, RunningBalances } from "../src/interfaces";
 import { assert, bnZero, fixedPointAdjustment } from "../src/utils";

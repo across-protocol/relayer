@@ -1,7 +1,7 @@
 import assert from "assert";
 import { ChildProcess } from "child_process";
 import { Contract, Event } from "ethers";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { getNetworkName, isDefined, winston } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 

@@ -1,4 +1,4 @@
-import { clients, constants, utils } from "@across-protocol/sdk-v2";
+import { clients, constants, utils } from "@across-protocol/sdk";
 import { Contract, EventSearchConfig, MakeOptional, isDefined, sortEventsDescending, winston } from "../utils";
 import { CONFIG_STORE_VERSION } from "../common";
 export const GLOBAL_CONFIG_STORE_KEYS = clients.GLOBAL_CONFIG_STORE_KEYS;

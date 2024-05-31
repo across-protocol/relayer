@@ -47,7 +47,7 @@ export abstract class CCTPAdapter extends BaseAdapter {
    * @returns Whether or not this token is USDC on the target chain
    */
   protected isL2TokenUsdc(l2Token: string): boolean {
-    return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP._USDC.addresses[this.chainId]);
+    return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId]);
   }
 
   /**

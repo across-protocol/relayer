@@ -1,4 +1,4 @@
-import * as sdk from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk";
 
 export class BlockFinder extends sdk.utils.BlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;

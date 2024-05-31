@@ -17,7 +17,7 @@ import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
-import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, utils } from "@across-protocol/sdk";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 import { matchL2EthDepositAndWrapEvents } from "./utils";
 
