@@ -2221,7 +2221,8 @@ export class Dataworker {
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
-    if (!(await this.rootCache[key]) || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
       this.rootCache[key] = _buildPoolRebalanceRoot(
         latestMainnetBlock,
         mainnetBundleEndBlock,
