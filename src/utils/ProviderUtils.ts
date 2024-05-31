@@ -14,7 +14,7 @@ import {
 } from "../common";
 import { delay, getOriginFromURL, Logger } from "./";
 import { compareArrayResultsWithIgnoredKeys, compareResultsAndFilterIgnoredKeys } from "./ObjectUtils";
-import { MAINNET_CHAIN_IDs } from "@across-protocol/constants-v2";
+import { MAINNET_CHAIN_IDs } from "@across-protocol/constants";
 
 const logger = Logger;
 

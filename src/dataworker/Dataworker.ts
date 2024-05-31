@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils } from "ethers";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   winston,
@@ -42,7 +42,7 @@ import {
 } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
-import * as sdk from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,
@@ -834,7 +834,7 @@ export class Dataworker {
     // @dev only throw this error if the hub chain ID is 1, suggesting we're running on production.
     if (versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION && hubPoolChainId === 1) {
       throw new Error(
-        "Must use relayer-v2 code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
+        "Must use relayer code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
       );
     }
 

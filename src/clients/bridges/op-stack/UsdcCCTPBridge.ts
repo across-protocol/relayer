@@ -77,7 +77,7 @@ export class UsdcCCTPBridge extends OpStackBridge {
 
     // Per the documentation of the BaseAdapter's computeOutstandingCrossChainTransfers method, we can return an empty array here
     // and only return the relevant outstanding events from queryL1BridgeInitiationEvents.
-    // Relevant link: https://github.com/across-protocol/relayer-v2/blob/master/src/clients/bridges/BaseAdapter.ts#L189
+    // Relevant link: https://github.com/across-protocol/relayer/blob/master/src/clients/bridges/BaseAdapter.ts#L189
     return Promise.resolve({});
   }
 }

@@ -1,5 +1,5 @@
 import { utils as ethersUtils } from "ethers";
-import { typeguards } from "@across-protocol/sdk-v2";
+import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
   bnUint256Max,

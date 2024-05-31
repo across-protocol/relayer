@@ -2,7 +2,7 @@ import assert from "assert";
 import minimist from "minimist";
 import { setTimeout } from "node:timers/promises";
 import { Contract, Event, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import { SpokePoolClientMessage } from "../clients";
 import {

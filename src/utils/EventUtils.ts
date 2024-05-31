@@ -4,7 +4,7 @@ import { Event, utils as ethersUtils } from "ethers";
 import { getNetworkName } from "./NetworkUtils";
 import { dedupArray } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export type EventSearchConfig = sdkUtils.EventSearchConfig;
 
