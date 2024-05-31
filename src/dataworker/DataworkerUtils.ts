@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils, interfaces, caching } from "@across-protocol/sdk-v2";
+import { utils, interfaces, caching } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -69,7 +69,7 @@ export function getEndBlockBuffers(
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => blockRangeEndBlockBuffer[chainId] ?? 0);
 }
 
-// TODO: Move to SDK-v2 since this implements UMIP logic about validating block ranges.
+// TODO: Move to SDK since this implements UMIP logic about validating block ranges.
 // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
 // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
 export async function blockRangesAreInvalidForSpokeClients(

@@ -1,4 +1,4 @@
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   BigNumber,

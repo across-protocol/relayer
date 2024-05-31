@@ -1,6 +1,6 @@
-import * as contracts from "@across-protocol/contracts-v2/dist/test-utils";
-import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import * as contracts from "@across-protocol/contracts/dist/test-utils";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { DepositWithBlock } from "../src/interfaces";
 import {

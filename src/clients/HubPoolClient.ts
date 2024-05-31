@@ -1,4 +1,4 @@
-import { clients, interfaces } from "@across-protocol/sdk-v2";
+import { clients, interfaces } from "@across-protocol/sdk";
 import { Contract } from "ethers";
 import winston from "winston";
 import { MakeOptional, EventSearchConfig, getTokenInfo, getL1TokenInfo, getUsdcSymbol } from "../utils";

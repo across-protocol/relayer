@@ -1,4 +1,4 @@
-import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";

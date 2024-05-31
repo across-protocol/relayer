@@ -1,7 +1,7 @@
 import assert from "assert";
 import { ChildProcess, spawn } from "child_process";
 import { Contract, Event } from "ethers";
-import { clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
 import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
