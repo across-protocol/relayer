@@ -35,6 +35,7 @@ type RepaymentChainProfitability = {
 
 export class Relayer {
   public readonly relayerAddress: string;
+  public readonly fillStatus: { [depositHash: string]: number } = {};
 
   constructor(
     relayerAddress: string,
@@ -225,7 +226,7 @@ export class Relayer {
         .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
         .map(({ chainId: destinationChainId }) => [
           destinationChainId,
-          getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).filter((deposit) =>
+          getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, this.fillStatus).filter((deposit) =>
             this.filterDeposit(deposit)
           ),
         ])
@@ -480,7 +481,12 @@ export class Relayer {
 
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
-        .filter(({ fillStatus }) => fillStatus !== FillStatus.Filled);
+        .filter(({ fillStatus, ...deposit }) => {
+          // Track the fill status for faster filtering on subsequent loops.
+          const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+          this.fillStatus[depositHash] = fillStatus;
+          return fillStatus !== FillStatus.Filled;
+        });
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(
