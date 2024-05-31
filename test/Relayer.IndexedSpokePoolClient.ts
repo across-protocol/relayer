@@ -128,7 +128,15 @@ describe("IndexedSpokePoolClient: Update", async function () {
     ({ spyLogger: logger } = createSpyLogger());
     ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId, 1_000_000));
     const eventSearchConfig: EventSearchConfig | undefined = undefined;
-    spokePoolClient = new MockIndexedSpokePoolClient(logger, spokePool, null, chainId, deploymentBlock, eventSearchConfig, {});
+    spokePoolClient = new MockIndexedSpokePoolClient(
+      logger,
+      spokePool,
+      null,
+      chainId,
+      deploymentBlock,
+      eventSearchConfig,
+      {}
+    );
     depositId = 1;
     currentTime = Math.round(Date.now() / 1000);
     oldestTime = currentTime - 7200;
