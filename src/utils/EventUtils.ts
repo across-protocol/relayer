@@ -60,17 +60,19 @@ export function getUniqueLogIndex(events: { transactionHash: string }[]): number
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [blockNumber: number]: (Event & { providers: string[] })[] } = {};
+  public readonly finality: number;
 
   private blockNumber: number;
 
   constructor(
     private readonly logger: winston.Logger,
     public readonly chainId: number,
-    public readonly finality: number,
+    finality: number,
     public readonly quorum: number
   ) {
     this.chain = getNetworkName(chainId);
     this.blockNumber = 0;
+    this.finality = Math.min(finality, 1);
   }
 
   /**

@@ -16,6 +16,7 @@ import {
   getNodeUrlList,
   getRedisCache,
   paginatedEventQuery,
+  retryAsync,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
@@ -82,8 +83,10 @@ export function makeGetMessagesWithStatusByTxHash(
         };
       });
 
+    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
+    // twice with a 1 second delay between in case of intermittent RPC failures.
     const messageStatus = await Promise.all(
-      messages.map((message) => dstClaimingService.getMessageStatus(message.messageHash))
+      messages.map((message) => retryAsync(() => dstClaimingService.getMessageStatus(message.messageHash), 2, 1))
     );
     return messages.map((message, index) => ({
       ...message,
