@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils } from "ethers";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   winston,
@@ -42,7 +42,7 @@ import {
 } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
-import * as sdk from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,

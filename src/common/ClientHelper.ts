@@ -17,7 +17,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;

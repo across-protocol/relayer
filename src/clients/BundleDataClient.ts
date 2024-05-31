@@ -32,7 +32,7 @@ import {
   _buildPoolRebalanceRoot,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,

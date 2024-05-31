@@ -74,7 +74,7 @@ These instructions can very easily be modified to conduct an "attack" on Across:
 
 On the other hand, the longer the challenge period, the slower that Across can respond to capital requirements. Across essentially can only move capital around as often as the challenge period, so every two hours currently.
 
-Every two hours, the Dataworker will propose capital reallocation instructions to Across based on the previous two hours' worth of token flows. This is where the concept of "bundle block ranges" comes into play. Each proposed root bundle includes something called the ["bundle evaluation block numbers"](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L149). These are included by the Dataworker [at proposal time](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L567) and are used by everyone else to validate their proposed Merkle roots.
+Every two hours, the Dataworker will propose capital reallocation instructions to Across based on the previous two hours' worth of token flows. This is where the concept of "bundle block ranges" comes into play. Each proposed root bundle includes something called the ["bundle evaluation block numbers"](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L149). These are included by the Dataworker [at proposal time](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L567) and are used by everyone else to validate their proposed Merkle roots.
 
 These end blocks inform all actors which block ranges, per chain, they included Bridge deposit and fill information for to construct their Merkle roots containing instructions for how Across should move capital around.
 
@@ -97,7 +97,7 @@ One assumption in Across, is that each chain that Across supports must have an e
 
 ## Determining bundle start blocks when evaluating a pending root bundle proposal
 
-`B` is trivially known since it is emitted in the [`ProposedRootBundle`](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L152) event during the creation of each new pending bundle proposal. We therefore need to find `A`, the bundle start block `<= B` to evaluating the root bundle.
+`B` is trivially known since it is emitted in the [`ProposedRootBundle`](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L152) event during the creation of each new pending bundle proposal. We therefore need to find `A`, the bundle start block `<= B` to evaluating the root bundle.
 
 ```mermaid
 flowchart LR
@@ -123,7 +123,7 @@ flowchart TD
 
 ### Validating fills
 
-A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L139)'s:
+A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L139)'s:
 
 ```solidity
 event FilledRelay(
@@ -145,7 +145,7 @@ event FilledRelay(
 );
 ```
 
-A [deposit](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L119) contains:
+A [deposit](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L119) contains:
 
 ```solidity
 event FundsDeposited(
@@ -198,13 +198,13 @@ Excesses from slow fills are only created when a partial fill completes a deposi
 
 At this point we have a running balance for the token for each chain. We also know all of the refund and slow fill payments that we need to instruct each SpokePool to reserve payments for. We can finally figure out how many LP funds to send out of the HubPool to each SpokePool.
 
-This is where we'll incorporate the section on [SpokePool targets and thresholds](#spokepool-targets-and-thresholds) to determine how much of the running balances to move over to the `netSendAmount` value in a [PoolRebalanceLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/HubPoolInterface.sol#L22). Inside the HubPool's code, only the positive `netSendAmounts` are [sent out of the HubPool](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L893) to the SpokePools via the canonical bridges. Conversely, the `runningBalances` are simply accounting values to keep track of the running count of SpokePool balances. Whenever a portion of the `runningBalances` are included in the `netSendAmounts`, the running balances should be decremented accordingly to account for the tokens being sent out of the Hub or SpokePool.
+This is where we'll incorporate the section on [SpokePool targets and thresholds](#spokepool-targets-and-thresholds) to determine how much of the running balances to move over to the `netSendAmount` value in a [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L22). Inside the HubPool's code, only the positive `netSendAmounts` are [sent out of the HubPool](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L893) to the SpokePools via the canonical bridges. Conversely, the `runningBalances` are simply accounting values to keep track of the running count of SpokePool balances. Whenever a portion of the `runningBalances` are included in the `netSendAmounts`, the running balances should be decremented accordingly to account for the tokens being sent out of the Hub or SpokePool.
 
 ## Completing the `RelayerRefundLeaf`
 
 If a `runningBalance` is below its target for a particular chain, the Dataworker might include a positive `netSendAmount` for that chain to instruct the HubPool to send tokens to the SpokePool.
 
-However, if a `runningBalance` is above its target, the Dataworker might want to send tokens from the SpokePool to the Hub. This is achieved by setting a negative `netSendAmount`. At the HubPool level, negative `netSendAmounts` do nothing. However, the `RelayerRefundLeaf` has a property called [`amountToReturn`](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/SpokePoolInterface.sol#L12) which is supposed to be set equal the negative of any negative `netSendAmounts`. Any positive `amountToReturn` values result in [tokens being sent from the SpokePool](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L923) back to the Hub via the canonical bridge.
+However, if a `runningBalance` is above its target, the Dataworker might want to send tokens from the SpokePool to the Hub. This is achieved by setting a negative `netSendAmount`. At the HubPool level, negative `netSendAmounts` do nothing. However, the `RelayerRefundLeaf` has a property called [`amountToReturn`](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L12) which is supposed to be set equal the negative of any negative `netSendAmounts`. Any positive `amountToReturn` values result in [tokens being sent from the SpokePool](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L923) back to the Hub via the canonical bridge.
 
 ## Conclusion
 
@@ -231,7 +231,7 @@ This is everything that the Dataworker needs to construct a root bundle! All tha
 
 Root bundle merkle leaf formats
 
-- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
-- [RelayerRefundLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
-- [SlowFillLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/SpokePoolInterface.sol#L29) One per unfilled deposit
-- [RootBundle](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window
+- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
+- [RelayerRefundLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
+- [SlowFillLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L29) One per unfilled deposit
+- [RootBundle](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window

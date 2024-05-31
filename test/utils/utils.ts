@@ -1,8 +1,8 @@
-import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
+import * as utils from "@across-protocol/contracts/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/logger";
-import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts-v2";
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { BigNumber, Contract, providers } from "ethers";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";

@@ -1,8 +1,8 @@
 import { Contract, Event, providers, utils as ethersUtils } from "ethers";
 import winston from "winston";
 import { Result } from "@ethersproject/abi";
-import { CHAIN_IDs } from "@across-protocol/constants-v2";
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { CHAIN_IDs } from "@across-protocol/constants";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { IndexedSpokePoolClient } from "../src/clients";
 import { mangleEventArgs, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
 import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
