@@ -7,7 +7,7 @@ export function retryAsync<T, U extends unknown[]>(
   ...args: U
 ): Promise<T> {
   let ret = fn(...args);
-  for (let i = numRetries; i < numRetries; i++) {
+  for (let i = 0; i < numRetries; i++) {
     ret = ret.catch(async () => {
       await delay(delayS);
       return fn(...args);
