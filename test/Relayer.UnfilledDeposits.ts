@@ -9,7 +9,7 @@ import {
   SpokePoolClient,
   TokenClient,
 } from "../src/clients";
-import { DepositWithBlock } from "../src/interfaces";
+import { DepositWithBlock, FillStatus } from "../src/interfaces";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
@@ -41,7 +41,7 @@ import {
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { RelayerUnfilledDeposit, getAllUnfilledDeposits, utf8ToHex } from "../src/utils";
+import { RelayerUnfilledDeposit, getAllUnfilledDeposits, getUnfilledDeposits, utf8ToHex } from "../src/utils";
 
 describe("Relayer: Unfilled Deposits", async function () {
   const { bnOne } = sdkUtils;
@@ -52,6 +52,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
+  let spokePoolClients: Record<number, SpokePoolClient>;
   let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
   let profitClient: MockProfitClient;
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
@@ -116,7 +117,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       { fromBlock: 0, toBlock: undefined, maxBlockLookBack: 0 }
     );
 
-    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
@@ -191,6 +192,46 @@ describe("Relayer: Unfilled Deposits", async function () {
       .to.deep.equal(
         [...deposits]
           .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
+          .map((deposit) => ({
+            deposit,
+            unfilledAmount: deposit.outputAmount,
+            invalidFills: [],
+            version: configStoreClient.configStoreVersion,
+          }))
+      );
+  });
+
+  it("Correctly uses input fill status", async function () {
+    const deposits: DepositWithBlock[] = [];
+    for (let i = 0; i < 5; ++i) {
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        inputAmount,
+        erc20_2.address,
+        outputAmount
+      );
+      deposits.push(deposit);
+    }
+    await updateAllClients();
+
+    // Take the 2nd last deposit and mark it filled.
+    expect(deposits.length > 2).to.be.true;
+    const filledDeposit = deposits.at(-2);
+    expect(filledDeposit).to.exist;
+
+    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit!);
+    const { fillStatus } = relayerInstance;
+    fillStatus[depositHash] = FillStatus.Filled;
+
+    unfilledDeposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, fillStatus);
+    expect(unfilledDeposits)
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .to.deep.equal(
+        deposits
+          .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
           .map((deposit) => ({
             deposit,
             unfilledAmount: deposit.outputAmount,
