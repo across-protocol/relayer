@@ -319,7 +319,6 @@ export async function depositV3(
 
   return {
     originChainId: Number(originChainId),
-    depositor,
     blockNumber,
     transactionHash,
     transactionIndex,
