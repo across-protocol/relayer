@@ -569,7 +569,7 @@ export class BundleDataClient {
 
   private async loadArweaveData(blockRangesForChains: number[][]): Promise<LoadDataReturnValue> {
     const arweaveKey = this.getArweaveClientKey(blockRangesForChains);
-    if (!this.arweaveDataCache[arweaveKey]) {
+    if (!(await this.arweaveDataCache[arweaveKey])) {
       this.arweaveDataCache[arweaveKey] = this.loadPersistedDataFromArweave(blockRangesForChains);
     }
     const arweaveData = _.cloneDeep(await this.arweaveDataCache[arweaveKey]);
@@ -585,7 +585,7 @@ export class BundleDataClient {
     attemptArweaveLoad = false
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
-    if (!this.loadDataCache[key]) {
+    if (!(await this.loadDataCache[key])) {
       let arweaveData;
       if (attemptArweaveLoad) {
         arweaveData = await this.loadArweaveData(blockRangesForChains);
