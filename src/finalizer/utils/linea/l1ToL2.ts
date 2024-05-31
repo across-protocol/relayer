@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";

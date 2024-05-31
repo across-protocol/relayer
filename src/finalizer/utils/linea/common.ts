@@ -2,7 +2,7 @@ import { LineaSDK, Message, OnChainMessageStatus } from "@consensys/linea-sdk";
 import { L1MessageServiceContract, L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
 import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
 import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/L2MessageService";
-import { Linea_Adapter__factory } from "@across-protocol/contracts-v2";
+import { Linea_Adapter__factory } from "@across-protocol/contracts";
 import {
   BigNumber,
   Contract,

@@ -1,6 +1,6 @@
 import { getNetworkName, Contract, Signer, getDeployedAddress, getDeployedBlockNumber } from ".";
 
-import * as typechain from "@across-protocol/contracts-v2"; // TODO: refactor once we've fixed export from contract repo
+import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {

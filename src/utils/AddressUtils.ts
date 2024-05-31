@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BigNumber, ethers, isDefined } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {

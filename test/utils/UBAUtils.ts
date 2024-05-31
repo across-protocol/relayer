@@ -1,4 +1,4 @@
-import { clients, constants } from "@across-protocol/sdk-v2";
+import { clients, constants } from "@across-protocol/sdk";
 
 /**
  * This is a helper function to generate an array of empty objects that are typed as SpokePoolClients.

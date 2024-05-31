@@ -33,7 +33,7 @@ import {
   BigNumber,
 } from "../src/utils";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
 
