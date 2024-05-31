@@ -1,8 +1,8 @@
 {
-  "name": "relayer-v2",
-  "version": "0.2.0",
-  "description": "Across Protocol V3 Relayer Bot",
-  "repository": "git@github.com:across-protocol/relayer-v2.git",
+  "name": "@across-protocol/relayer",
+  "version": "3.0.0",
+  "description": "Across Protocol Relayer Bot",
+  "repository": "git@github.com:across-protocol/relayer.git",
   "author": "UMA Team",
   "license": "AGPL-3.0-only",
   "private": true,
@@ -10,9 +10,9 @@
     "node": ">=16.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants-v2": "1.1.0",
-    "@across-protocol/contracts-v2": "2.5.9",
-    "@across-protocol/sdk-v2": "0.24.2",
+    "@across-protocol/constants": "^3.0.0",
+    "@across-protocol/contracts": "^3.0.0",
+    "@across-protocol/sdk": "^3.0.0",
     "@arbitrum/sdk": "^3.1.3",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",

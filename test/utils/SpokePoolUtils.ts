@@ -1,5 +1,5 @@
 import { Contract, bnZero } from "../../src/utils";
-import { interfaces } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk";
 import { repaymentChainId } from "../constants";
 import { SlowFillRequestWithBlock } from "../../src/interfaces";
 import { SignerWithAddress } from "./utils";

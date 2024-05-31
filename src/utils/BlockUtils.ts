@@ -1,4 +1,4 @@
-import { interfaces, utils } from "@across-protocol/sdk-v2";
+import { interfaces, utils } from "@across-protocol/sdk";
 import { isDefined } from "./";
 import { BlockFinder, BlockFinderHints } from "./SDKUtils";
 import { getProvider } from "./ProviderUtils";

@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient } from "../clients";
 import { Fill, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
 import { bnZero } from "../utils";
