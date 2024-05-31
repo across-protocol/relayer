@@ -10,7 +10,7 @@ import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { V3Deposit, V3DepositWithBlock, V3FillWithBlock, V3SlowFillLeaf } from "../../src/interfaces";
-import { isDefined, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
+import { isDefined, spreadEvent, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -289,55 +289,41 @@ export async function depositV3(
   const exclusivityDeadline = opts.exclusivityDeadline ?? 0;
   const exclusiveRelayer = opts.exclusiveRelayer ?? ZERO_ADDRESS;
 
-  await spokePool
-    .connect(signer)
-    .depositV3(
-      depositor,
-      recipient,
-      inputToken,
-      outputToken,
-      inputAmount,
-      outputAmount,
-      destinationChainId,
-      exclusiveRelayer,
-      quoteTimestamp,
-      fillDeadline,
-      exclusivityDeadline,
-      message
-    );
-
-  const [events, originChainId] = await Promise.all([
-    spokePool.queryFilter(spokePool.filters.V3FundsDeposited()),
+  const [originChainId, txnResponse] = await Promise.all([
     spokePool.chainId(),
+    spokePool
+      .connect(signer)
+      .depositV3(
+        depositor,
+        recipient,
+        inputToken,
+        outputToken,
+        inputAmount,
+        outputAmount,
+        destinationChainId,
+        exclusiveRelayer,
+        quoteTimestamp,
+        fillDeadline,
+        exclusivityDeadline,
+        message
+      ),
   ]);
+  const txnReceipt = await txnResponse.wait();
 
-  const lastEvent = events.at(-1);
-  let args = lastEvent?.args;
-  assert.exists(args);
-  args = args!; // tsc coersion
-
-  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
+  const _topic = "V3FundsDeposited";
+  const topic = spokePool.interface.getEventTopic(_topic);
+  const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
+  const { args } = spokePool.interface.parseLog(eventLog);
+  const { blockNumber, transactionHash, transactionIndex } = txnReceipt;
+  const { logIndex } = eventLog;
 
   return {
-    depositId: args.depositId,
     originChainId: Number(originChainId),
-    destinationChainId: Number(args.destinationChainId),
-    depositor: args.depositor,
-    recipient: args.recipient,
-    inputToken: args.inputToken,
-    inputAmount: args.inputAmount,
-    outputToken: args.outputToken,
-    outputAmount: args.outputAmount,
-    quoteTimestamp: args.quoteTimestamp,
-    message: args.message,
-    fillDeadline: args.fillDeadline,
-    exclusivityDeadline: args.exclusivityDeadline,
-    exclusiveRelayer: args.exclusiveRelayer,
-    quoteBlockNumber: 0, // @todo
     blockNumber,
     transactionHash,
     transactionIndex,
     logIndex,
+    ...spreadEvent(args),
   };
 }
 
