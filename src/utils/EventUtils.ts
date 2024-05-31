@@ -72,7 +72,7 @@ export class EventManager {
   ) {
     this.chain = getNetworkName(chainId);
     this.blockNumber = 0;
-    this.finality = Math.min(finality, 1);
+    this.finality = Math.max(finality, 1);
   }
 
   /**
