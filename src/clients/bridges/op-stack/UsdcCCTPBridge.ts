@@ -25,12 +25,12 @@ export class UsdcCCTPBridge extends OpStackBridge {
   }
 
   private get l1UsdcTokenAddress(): string {
-    return TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
+    return TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
   }
 
   protected resolveL2TokenAddress(l1Token: string): string {
     l1Token;
-    return TOKEN_SYMBOLS_MAP._USDC.addresses[this.l2chainId];
+    return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
   }
 
   constructL1ToL2Txn(

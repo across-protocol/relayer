@@ -240,8 +240,8 @@ export class PolygonAdapter extends CCTPAdapter {
           this.l1DepositInitiatedEvents,
           [
             monitoredAddress,
-            TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId],
-            TOKEN_SYMBOLS_MAP._USDC.addresses[this.chainId], // Must map to the USDC Native L2 token address
+            TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId],
+            TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId], // Must map to the USDC Native L2 token address
           ],
           resultingCCTPEvents[monitoredAddress]
         );

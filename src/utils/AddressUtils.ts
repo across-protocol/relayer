@@ -93,9 +93,9 @@ export function getTokenAddressWithCCTP(
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
-  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP._USDC.addresses[hubChainId])) {
+  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
-    return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "_USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];
+    return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];
   }
   return getTokenAddress(l1Token, hubChainId, l2ChainId);
 }
@@ -108,7 +108,7 @@ export function getTokenAddressWithCCTP(
  */
 export function getUsdcSymbol(l2Token: string, chainId: number): string | undefined {
   const compareToken = (token?: string) => isDefined(token) && compareAddressesSimple(l2Token, token);
-  return ["_USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token]?.addresses?.[chainId]));
+  return ["USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token]?.addresses?.[chainId]));
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {

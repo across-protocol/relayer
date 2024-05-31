@@ -267,7 +267,7 @@ export class LineaAdapter extends BaseAdapter {
     transferEvents: Event[]
   ): void {
     const l2Token = this.resolveL2TokenAddress(l1Token, false); // There's no native USDC on Linea
-    assert(!isDefined(TOKEN_SYMBOLS_MAP._USDC.addresses[this.chainId])); // We can blow up if this eventually stops being true
+    assert(!isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId])); // We can blow up if this eventually stops being true
     transferEvents.forEach((event) => {
       const txHash = event.transactionHash;
       // @dev WETH events have a _value field, while ERC20 events have an amount field.
