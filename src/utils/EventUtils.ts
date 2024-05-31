@@ -176,9 +176,20 @@ export class EventManager {
     // This is configurable and will almost always be less than chain finality guarantees.
     const finalised = blockNumber - this.finality;
 
-    // Collect the events that met quorum, stripping out the provider information.
+    // Collect the events that met quorum, stripping out the provider information; drop any that didn't.
+    // This can be brittle when finality is low (i.e. 1). @todo: Support querying back over multiple blocks
+    // to account for RPC notification delays.
     const events = (this.events[finalised] ?? [])
-      .filter((event) => this.getEventQuorum(event) >= this.quorum)
+      .filter((event) => {
+        const eventQuorum = this.getEventQuorum(event);
+        if (this.quorum > eventQuorum) {
+          this.logger.debug({
+            at: "EventManager::tick",
+            message: `Dropped ${this.chain} ${event.event} event due to insufficient quorum.`,
+          });
+        }
+        return eventQuorum >= this.quorum;
+      })
       .map(({ providers, ...event }) => event);
 
     // Flush the events that were just submitted.
