@@ -1,4 +1,4 @@
-import { interfaces } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk";
 import { BigNumber } from "../utils";
 export type ExpiredDepositsToRefundV3 = {
   [originChainId: number]: {

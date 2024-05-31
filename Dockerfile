@@ -1,6 +1,6 @@
 FROM node:16
 
-WORKDIR /relayer-v2
+WORKDIR /relayer
 
 COPY . ./
 

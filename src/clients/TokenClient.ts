@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { CachingMechanismInterface, L1Token, V3Deposit } from "../interfaces";
 import {
@@ -186,13 +186,12 @@ export class TokenClient {
           tokenAddrs.push(spokePoolToken);
         } catch {
           // No known deployment for this token on the SpokePool.
-          // note: To be overhauled subject to https://github.com/across-protocol/sdk-v3/pull/643
+          // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
         }
 
         // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
         if (symbol === "USDC") {
-          // At the moment, constants-v3 defines native usdc as _USDC.
-          const usdcAliases = ["_USDC", "USDC.e", "USDbC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
+          const usdcAliases = ["USDC", "USDC.e", "USDbC"];
           usdcAliases
             .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
             .filter(isDefined)
