@@ -10,7 +10,8 @@ export class DataworkerConfig extends CommonConfig {
   // These variables can be toggled to choose whether the bot will go through the dataworker logic.
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
-  readonly executorEnabled: boolean;
+  readonly l2ExecutorEnabled: boolean;
+  readonly l1ExecutorEnabled: boolean;
   readonly finalizerEnabled: boolean;
 
   // This variable can be toggled to bypass the proposer logic and always attempt to propose
@@ -49,7 +50,8 @@ export class DataworkerConfig extends CommonConfig {
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
-      EXECUTOR_ENABLED,
+      L2_EXECUTOR_ENABLED,
+      L1_EXECUTOR_ENABLED,
       SPOKE_ROOTS_LOOKBACK_COUNT,
       SEND_DISPUTES,
       SEND_PROPOSALS,
@@ -85,8 +87,9 @@ export class DataworkerConfig extends CommonConfig {
       : toBNWei("500000");
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
-    this.executorEnabled = EXECUTOR_ENABLED === "true";
-    if (this.executorEnabled) {
+    this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
+    this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
+    if (this.l2ExecutorEnabled || this.l1ExecutorEnabled) {
       assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if executor enabled");
     } else if (this.disputerEnabled || this.proposerEnabled) {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
