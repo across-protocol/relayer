@@ -1378,7 +1378,7 @@ export class Dataworker {
 
     // At this point, check again that there are still unexecuted pool rebalance leaves. This is done because the above
     // logic, to reconstruct this pool rebalance root and the prerequisite spoke pool client updates, can take a while.
-    const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
+    const pendingProposal: PendingRootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
     if (pendingProposal.unclaimedPoolRebalanceLeafCount === 0) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",
