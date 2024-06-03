@@ -1376,6 +1376,17 @@ export class Dataworker {
       return leafCount;
     }
 
+    // At this point, check again that there are still unexecuted pool rebalance leaves. This is done because the above
+    // logic, to reconstruct this pool rebalance root and the prerequisite spoke pool client updates, can take a while.
+    const pendingProposal: PendingRootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
+    if (pendingProposal.unclaimedPoolRebalanceLeafCount === 0) {
+      this.logger.debug({
+        at: "Dataworker#executePoolRebalanceLeaves",
+        message: "Exiting early due to dataworker function collision",
+      });
+      return leafCount;
+    }
+
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       this.clients.hubPoolClient.getLatestProposedRootBundle(),
       this.clients.hubPoolClient.latestBlockSearched
@@ -1534,7 +1545,6 @@ export class Dataworker {
               root: tree.getHexRoot(),
               leafId: leaf.leafId,
               rebalanceChain: leaf.chainId,
-              chainId: hubPoolChainId,
               token: leaf.l1Tokens,
               netSendAmounts: leaf.netSendAmounts,
             });
