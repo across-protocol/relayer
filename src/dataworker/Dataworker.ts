@@ -383,6 +383,7 @@ export class Dataworker {
       blockRangesForProposal,
       spokePoolClients,
       latestBlockSearched,
+      false, // Don't load data from arweave when proposing.
       logData
     );
 
@@ -470,11 +471,12 @@ export class Dataworker {
     blockRangesForProposal: number[][],
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBundleEndBlock: number,
+    loadDataFromArweave = false,
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
-      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients);
+      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
     // Prepare information about what we need to store to
     // Arweave for the bundle. We will be doing this at a
     // later point so that we can confirm that this data is
@@ -627,7 +629,8 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
+    loadDataFromArweave = false
   ): Promise<
     // If valid is false, we get a reason and we might get expected trees.
     | {
@@ -843,6 +846,7 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients,
       rootBundle.proposalBlockNumber,
+      loadDataFromArweave,
       logData
     );
 
@@ -1039,7 +1043,8 @@ export class Dataworker {
           const rootBundleData = await this._proposeRootBundle(
             blockNumberRanges,
             spokePoolClients,
-            matchingRootBundle.blockNumber
+            matchingRootBundle.blockNumber,
+            true, // Load data from arweave when executing for speed.
           );
 
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
@@ -1331,7 +1336,8 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients
+      earliestBlocksInSpokePoolClients,
+      true, // Load data from arweave when executing leaves for speed.
     );
 
     if (!valid) {
@@ -1972,7 +1978,8 @@ export class Dataworker {
         const { relayerRefundLeaves: leaves, relayerRefundTree: tree } = await this._proposeRootBundle(
           blockNumberRanges,
           spokePoolClients,
-          matchingRootBundle.blockNumber
+          matchingRootBundle.blockNumber,
+          true, // load data from Arweave for speed purposes
         );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
