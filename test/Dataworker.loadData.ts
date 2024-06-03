@@ -377,7 +377,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         [originChainId]: spokePoolClient_1,
         [destinationChainId]: spokePoolClient_2,
       });
-      expect(spyLogIncludes(spy, -2, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+      expect(spyLogIncludes(spy, -3, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
