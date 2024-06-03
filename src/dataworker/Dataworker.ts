@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils } from "ethers";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   winston,
@@ -42,7 +42,7 @@ import {
 } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
-import * as sdk from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,
@@ -834,7 +834,7 @@ export class Dataworker {
     // @dev only throw this error if the hub chain ID is 1, suggesting we're running on production.
     if (versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION && hubPoolChainId === 1) {
       throw new Error(
-        "Must use relayer-v2 code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
+        "Must use relayer code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
       );
     }
 
@@ -1376,6 +1376,17 @@ export class Dataworker {
       return leafCount;
     }
 
+    // At this point, check again that there are still unexecuted pool rebalance leaves. This is done because the above
+    // logic, to reconstruct this pool rebalance root and the prerequisite spoke pool client updates, can take a while.
+    const pendingProposal: PendingRootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
+    if (pendingProposal.unclaimedPoolRebalanceLeafCount === 0) {
+      this.logger.debug({
+        at: "Dataworker#executePoolRebalanceLeaves",
+        message: "Exiting early due to dataworker function collision",
+      });
+      return leafCount;
+    }
+
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       this.clients.hubPoolClient.getLatestProposedRootBundle(),
       this.clients.hubPoolClient.latestBlockSearched
@@ -1534,7 +1545,6 @@ export class Dataworker {
               root: tree.getHexRoot(),
               leafId: leaf.leafId,
               rebalanceChain: leaf.chainId,
-              chainId: hubPoolChainId,
               token: leaf.l1Tokens,
               netSendAmounts: leaf.netSendAmounts,
             });

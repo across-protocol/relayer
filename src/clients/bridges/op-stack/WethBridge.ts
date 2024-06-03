@@ -11,7 +11,7 @@ import {
 } from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { matchL2EthDepositAndWrapEvents } from "../utils";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, OpStackBridge, OpStackEvents } from "./OpStackBridgeInterface";
 
 export class WethBridge extends OpStackBridge {

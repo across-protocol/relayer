@@ -1,10 +1,10 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -69,40 +69,28 @@ export async function lineaL1ToL2Finalizer(
     } = event;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
-    try {
-      // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we try-catch
-      // it in order to catch any one-off failures.
-      const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
-      return {
-        messageSender: _from,
-        destination: _to,
-        fee: _fee,
-        value: _value,
-        messageNonce: _nonce,
-        calldata: _calldata,
-        messageHash: _messageHash,
-        txHash,
-        logIndex,
-        status: messageStatus,
-        messageType: determineMessageType(event, hubPoolClient),
-      };
-    } catch (e) {
-      logger.debug({
-        at: "Finalizer#LineaL1ToL2Finalizer",
-        message: "LineaSDK.getMessageStatus failed",
-        error: e,
-        event,
-      });
-      return {
-        status: "sdkError",
-      };
-    }
+
+    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
+    // twice with a 1 second delay between in case of intermittent RPC failures.
+    const messageStatus = await retryAsync(() => l2MessageServiceContract.getMessageStatus(_messageHash), 2, 1);
+    return {
+      messageSender: _from,
+      destination: _to,
+      fee: _fee,
+      value: _value,
+      messageNonce: _nonce,
+      calldata: _calldata,
+      messageHash: _messageHash,
+      txHash,
+      logIndex,
+      status: messageStatus,
+      messageType: determineMessageType(event, hubPoolClient),
+    };
   });
   // Group messages by status
   const {
     claimed = [],
     claimable = [],
-    failed = [],
     unknown = [],
   } = groupBy(enrichedMessageSentEvents, (message) => {
     switch (message.status) {
@@ -110,8 +98,6 @@ export async function lineaL1ToL2Finalizer(
         return "claimed";
       case OnChainMessageStatus.CLAIMABLE:
         return "claimable";
-      case "sdkError":
-        return "failed";
       default:
         return "unknown";
     }
@@ -166,7 +152,6 @@ export async function lineaL1ToL2Finalizer(
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
-      sdkError: failed.length,
       notReceived: unknown.length,
     },
   });

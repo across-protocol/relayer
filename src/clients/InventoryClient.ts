@@ -1,4 +1,4 @@
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   BigNumber,
@@ -372,7 +372,7 @@ export class InventoryClient {
 
     // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
     // is Bridged USDC and the output token is Native USDC.
-    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either _USDC, USDC.e or USDbC.
+    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either USDC, USDC.e or USDbC.
     // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
     // check specifically handles the case where the input token is Bridged/Native and the output token Native/Bridged.
     const isInputTokenUSDC = isDefined(getUsdcSymbol(inputToken, originChainId));

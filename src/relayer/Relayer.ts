@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
 import {
@@ -713,7 +713,7 @@ export class Relayer {
     // If none of the preferred chains are profitable and they also don't include the destination chain,
     // then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
-    // in the frontend-v2 repo which assumes that repayment is the destination chain. If this is profitable, then
+    // in the frontend repo which assumes that repayment is the destination chain. If this is profitable, then
     // go ahead and use the preferred chain as repayment and log the lp fee delta. This is a temporary solution
     // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
     // we come up with a smarter fee quoting algorithm that takes into account relayer inventory management more

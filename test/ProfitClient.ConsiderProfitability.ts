@@ -1,6 +1,6 @@
 import { assert } from "chai";
 import { random } from "lodash";
-import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
 import { V3Deposit } from "../src/interfaces";
 import {
