@@ -1386,7 +1386,7 @@ export class Dataworker {
       });
       return leafCount;
     }
-    
+
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       this.clients.hubPoolClient.getLatestProposedRootBundle(),
       this.clients.hubPoolClient.latestBlockSearched
