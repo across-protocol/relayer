@@ -89,8 +89,8 @@ export class DataworkerConfig extends CommonConfig {
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
     this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
-    if (this.l2ExecutorEnabled || this.l1ExecutorEnabled) {
-      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if executor enabled");
+    if (this.l2ExecutorEnabled) {
+      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if L2 executor enabled");
     } else if (this.disputerEnabled || this.proposerEnabled) {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
