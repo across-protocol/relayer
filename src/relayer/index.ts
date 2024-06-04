@@ -81,6 +81,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
   let run = 1;
+  let txnReceipts: { [chainId: number]: Promise<string[]> };
   try {
     do {
       if (loop) {
@@ -99,7 +100,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         relayerClients.tokenClient.clearTokenData();
         await relayerClients.tokenClient.update();
         const simulate = !config.sendingRelaysEnabled;
-        await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
       }
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
@@ -135,6 +136,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
     } while (!stop);
   } finally {
+    await Promise.all(Object.values(txnReceipts));
+
     if (config.externalIndexer) {
       Object.entries(workers).forEach(([_chainId, worker]) => {
         logger.debug({ at: "Relayer::runRelayer", message: `Cleaning up indexer for chainId ${_chainId}.` });
