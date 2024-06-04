@@ -443,7 +443,7 @@ export class Relayer {
     return lpFees;
   }
 
-  async executeFills(chainId: number, simulate = false): Promise<string[]> {
+  protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
     const {
       pendingTxnReceipts,
       clients: { multiCallerClient },
