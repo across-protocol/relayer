@@ -62,8 +62,7 @@ export function getUnfilledDeposits(
   // Iterate over each chainId and check for unfilled deposits.
   const deposits = Object.values(spokePoolClients)
     .filter(({ chainId, isUpdated }) => isUpdated && chainId !== destinationChainId)
-    .map((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
-    .flat()
+    .flatMap((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
     .filter((deposit) => {
       const depositHash = spokePoolClients[deposit.originChainId].getDepositHash(deposit);
       return (fillStatus[depositHash] ?? FillStatus.Unfilled) !== FillStatus.Filled;
