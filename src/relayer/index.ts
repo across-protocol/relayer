@@ -136,7 +136,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
     } while (!stop);
   } finally {
-    await Promise.all(Object.values(txnReceipts));
+    await Promise.allSettled(Object.values(txnReceipts));
 
     if (config.externalIndexer) {
       Object.entries(workers).forEach(([_chainId, worker]) => {
