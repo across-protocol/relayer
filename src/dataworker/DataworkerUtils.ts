@@ -247,7 +247,7 @@ export function getRefundsFromBundle(
         return;
       }
       if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
-        combinedRefunds[repaymentChainId][l2TokenAddress] = refunds;
+        combinedRefunds[repaymentChainId][l2TokenAddress] = { ...refunds };
       } else {
         // Each refunds object should have a unique refund address so we can add new ones to the
         // existing dictionary.

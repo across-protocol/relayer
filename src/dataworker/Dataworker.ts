@@ -481,13 +481,16 @@ export class Dataworker {
     // Arweave for the bundle. We will be doing this at a
     // later point so that we can confirm that this data is
     // worth storing.
+    // @dev Deep clone all objects to avoid any potential
+    // reference issues when we pass the loadData return values to
+    // the following root-building functions.
     const dataToPersistToDALayer = {
-      bundleBlockRanges: blockRangesForProposal,
-      bundleDepositsV3,
-      expiredDepositsToRefundV3,
-      bundleFillsV3,
-      unexecutableSlowFills,
-      bundleSlowFillsV3,
+      bundleBlockRanges: [...blockRangesForProposal],
+      bundleDepositsV3: { ...bundleDepositsV3 },
+      expiredDepositsToRefundV3: { ...expiredDepositsToRefundV3 },
+      bundleFillsV3: { ...bundleFillsV3 },
+      unexecutableSlowFills: { ...unexecutableSlowFills },
+      bundleSlowFillsV3: { ...bundleSlowFillsV3 },
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
