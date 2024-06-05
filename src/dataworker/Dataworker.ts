@@ -485,12 +485,12 @@ export class Dataworker {
     // reference issues when we pass the loadData return values to
     // the following root-building functions.
     const dataToPersistToDALayer = {
-      bundleBlockRanges: [...blockRangesForProposal],
-      bundleDepositsV3: { ...bundleDepositsV3 },
-      expiredDepositsToRefundV3: { ...expiredDepositsToRefundV3 },
-      bundleFillsV3: { ...bundleFillsV3 },
-      unexecutableSlowFills: { ...unexecutableSlowFills },
-      bundleSlowFillsV3: { ...bundleSlowFillsV3 },
+      bundleBlockRanges: _.cloneDeep(blockRangesForProposal),
+      bundleDepositsV3: _.cloneDeep(bundleDepositsV3),
+      expiredDepositsToRefundV3: _.cloneDeep(expiredDepositsToRefundV3),
+      bundleFillsV3: _.cloneDeep(bundleFillsV3),
+      unexecutableSlowFills: _.cloneDeep(unexecutableSlowFills),
+      bundleSlowFillsV3: _.cloneDeep(bundleSlowFillsV3),
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
