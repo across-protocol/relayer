@@ -255,7 +255,7 @@ export function getRefundsFromBundle(
         // existing dictionary.
         combinedRefunds[repaymentChainId][l2TokenAddress] = {
           ...combinedRefunds[repaymentChainId][l2TokenAddress],
-          ...refundsClone,
+          ...refundsShallowCopy,
         };
       }
     });
