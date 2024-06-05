@@ -205,7 +205,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(txnReceipts[destinationChainId].length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
@@ -220,9 +220,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Re-run the execution loop and validate that no additional relays are sent.
       multiCallerClient.clearTransactionQueue();
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
     });
 
@@ -231,15 +229,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(txnReceipts[destinationChainId].length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       // The first fill is still pending but if we rerun the relayer loop, it shouldn't try to fill a second time.
       await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
     });
 
     it("Queries the latest onchain fill status for all deposits", async function () {
@@ -259,9 +255,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Run the relayer in simulation mode so it doesn't fill the relay.
       const simulate = true;
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill(false, simulate);
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(spyLogIncludes(spy, -2, "Filled v3 deposit")).is.true;
 
       // Verify that the deposit is still unfilled (relayer didn't execute it).
@@ -276,9 +270,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Verify that the relayer now sees that the deposit has been filled.
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(spyLogIncludes(spy, -2, "1 unfilled deposits found")).to.be.true;
     });
 
@@ -317,9 +309,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
     });
 
     it("Correctly validates self-relays", async function () {
@@ -341,7 +331,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         const [expectedLog, expectedReceipts] = selfRelay
           ? ["Filled v3 deposit", 1]
           : ["Not relaying unprofitable deposit", 0];
-        expect((await txnReceipts[destinationChainId]).length).to.equal(expectedReceipts);
+        expect(txnReceipts[destinationChainId].length).to.equal(expectedReceipts);
         expect(lastSpyLogIncludes(spy, expectedLog)).to.be.true;
       }
     });
@@ -356,9 +346,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       });
       await spokePool_2.setCurrentTime(fillDeadline);
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(multiCallerClient.transactionCount()).to.equal(0);
     });
 
@@ -383,11 +371,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(txnReceipts[destinationChainId].length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+      expect(txnReceipts[destinationChainId].length).to.equal(0);
       expect(spyLogIncludes(spy, -2, "1 unfilled deposits found")).to.be.true;
 
       await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
@@ -395,7 +383,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Relayer can unconditionally fill after the exclusivityDeadline.
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(txnReceipts[destinationChainId].length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
     });
 
@@ -428,9 +416,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(spyLogIncludes(spy, -2, "due to insufficient deposit confirmations.")).to.be.true;
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found.")).to.be.true;
     });
@@ -450,15 +436,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await updateAllClients();
       hubPoolClient.currentTime = quoteTimestamp - 1;
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
 
       // If we reset the timestamp, the relayer will fill the deposit:
       hubPoolClient.currentTime = quoteTimestamp;
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(txnReceipts[destinationChainId].length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
     });
 
@@ -483,9 +467,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
         await updateAllClients();
         const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-        for (const receipts of Object.values(txnReceipts)) {
-          expect((await receipts).length).to.equal(0);
-        }
+        Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
 
         // Dynamic fill simulation fails in test, so the deposit will
         // appear as unprofitable when message filling is enabled.
@@ -502,10 +484,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await updateAllClients();
 
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
-
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(
         spy
           .getCalls()
@@ -548,16 +527,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         await updateAllClients();
         const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
         if (update.ignored) {
-          for (const receipts of Object.values(txnReceipts)) {
-            expect((await receipts).length).to.equal(0);
-          }
-
+          Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
           expect(
             spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))
           ).to.not.be.undefined;
         } else {
           // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
-          expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+          expect(txnReceipts[destinationChainId].length).to.equal(1);
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
@@ -584,9 +560,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       multiCallerClient.clearTransactionQueue();
       await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
     });
 
@@ -614,9 +588,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      for (const receipts of Object.values(txnReceipts)) {
-        expect((await receipts).length).to.equal(0);
-      }
+      Object.values(txnReceipts).forEach((receipts) => expect(receipts.length).to.equal(0));
       expect(spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message")))
         .to.not.be.undefined;
 
@@ -631,7 +603,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       await updateAllClients();
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(txnReceipts[destinationChainId].length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
     });
   });
