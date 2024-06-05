@@ -16,7 +16,6 @@ import {
   isDefined,
   winston,
   fixedPointAdjustment,
-  TransactionResponse,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -37,7 +36,6 @@ type RepaymentChainProfitability = {
 export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
-  private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
 
   constructor(
     relayerAddress: string,
@@ -444,36 +442,15 @@ export class Relayer {
     return lpFees;
   }
 
-  protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
-    const {
-      pendingTxnReceipts,
-      clients: { multiCallerClient },
-    } = this;
-
-    if (isDefined(pendingTxnReceipts[chainId])) {
-      this.logger.info({
-        at: "Relayer::executeFills",
-        message: `${getNetworkName(chainId)} transaction queue has pending fills; skipping...`,
-      });
-      multiCallerClient.clearTransactionQueue(chainId);
-      return [];
-    }
-    pendingTxnReceipts[chainId] = multiCallerClient.executeTxnQueue(chainId, simulate);
-    const txnReceipts = await pendingTxnReceipts[chainId];
-    delete pendingTxnReceipts[chainId];
-
-    return txnReceipts.map(({ hash }) => hash);
-  }
-
   async checkForUnfilledDepositsAndFill(
     sendSlowRelays = true,
     simulate = false
-  ): Promise<{ [chainId: number]: Promise<string[]> }> {
+  ): Promise<{ [chainId: number]: string[] }> {
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
-    const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
+    const txnReceipts: { [chainId: number]: string[] } = Object.fromEntries(
       Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
     );
 
@@ -521,7 +498,8 @@ export class Relayer {
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
       if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
-        txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
+        const receipts = await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
+        txnReceipts[destinationChainId] = receipts[destinationChainId];
       }
     });
 
