@@ -49,7 +49,6 @@ import {
 } from "../interfaces/BundleData";
 export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
 import { any } from "superstruct";
-import _ from "lodash";
 
 export function getEndBlockBuffers(
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -247,9 +246,10 @@ export function getRefundsFromBundle(
       if (refunds === undefined) {
         return;
       }
-      const refundsClone = _.cloneDeep(refunds);
+      // @dev use shallow copy so that modifying combinedRefunds doesn't modify the original refunds object.
+      const refundsShallowCopy = { ...refunds };
       if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
-        combinedRefunds[repaymentChainId][l2TokenAddress] = refundsClone;
+        combinedRefunds[repaymentChainId][l2TokenAddress] = refundsShallowCopy;
       } else {
         // Each refunds object should have a unique refund address so we can add new ones to the
         // existing dictionary.
