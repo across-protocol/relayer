@@ -36,7 +36,6 @@ module.exports = {
     "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
     "chai-expect/missing-assertion": 2,
     "no-duplicate-imports": "error",
-    // "require-await": "error",
     "@typescript-eslint/no-floating-promises": ["error"],
     "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: false }],
   },
