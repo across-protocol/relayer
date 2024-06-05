@@ -569,6 +569,7 @@ export class BundleDataClient {
 
   private async loadArweaveData(blockRangesForChains: number[][]): Promise<LoadDataReturnValue> {
     const arweaveKey = this.getArweaveClientKey(blockRangesForChains);
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.arweaveDataCache[arweaveKey]) {
       this.arweaveDataCache[arweaveKey] = this.loadPersistedDataFromArweave(blockRangesForChains);
     }
@@ -585,6 +586,7 @@ export class BundleDataClient {
     attemptArweaveLoad = false
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.loadDataCache[key]) {
       let arweaveData;
       if (attemptArweaveLoad) {
