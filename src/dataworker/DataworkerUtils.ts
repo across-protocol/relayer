@@ -247,14 +247,15 @@ export function getRefundsFromBundle(
       if (refunds === undefined) {
         return;
       }
+      const refundsClone = _.cloneDeep(refunds);
       if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
-        combinedRefunds[repaymentChainId][l2TokenAddress] = _.cloneDeep(refunds);
+        combinedRefunds[repaymentChainId][l2TokenAddress] = refundsClone;
       } else {
         // Each refunds object should have a unique refund address so we can add new ones to the
         // existing dictionary.
         combinedRefunds[repaymentChainId][l2TokenAddress] = {
           ...combinedRefunds[repaymentChainId][l2TokenAddress],
-          ...refunds,
+          ...refundsClone,
         };
       }
     });
