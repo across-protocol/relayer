@@ -135,9 +135,20 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         }
       }
     } while (!stop);
-  } finally {
-    await Promise.allSettled(Object.values(txnReceipts));
 
+    // Before exiting, wait for transaction submission to complete.
+    for (const [chainId, submission] of Object.entries(txnReceipts)) {
+      const [result] = await Promise.allSettled([submission]);
+      if (sdkUtils.isPromiseRejected(result)) {
+        logger.warn({
+          at: "Relayer#runRelayer",
+          message: `Failed transaction submission on ${getNetworkName(Number(chainId))}.`,
+          reason: result.reason,
+        });
+      }
+    }
+
+  } finally {
     if (config.externalIndexer) {
       Object.entries(workers).forEach(([_chainId, worker]) => {
         logger.debug({ at: "Relayer::runRelayer", message: `Cleaning up indexer for chainId ${_chainId}.` });
