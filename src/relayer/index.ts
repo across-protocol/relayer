@@ -147,7 +147,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         });
       }
     }
-
   } finally {
     if (config.externalIndexer) {
       Object.entries(workers).forEach(([_chainId, worker]) => {
