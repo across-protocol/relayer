@@ -223,6 +223,9 @@ async function run(argv: string[]): Promise<void> {
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
 
+  const { quorum = getChainQuorum(chainId) } = args;
+  assert(Number.isInteger(quorum), "quorum must be numeric ");
+
   chain = getNetworkName(chainId);
 
   const quorumProvider = await getProvider(chainId);
@@ -296,11 +299,11 @@ async function run(argv: string[]): Promise<void> {
       providers = getWSProviders(chainId, quorum);
       assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
       providers.forEach((provider) => {
-        provider.on("error", (err) =>
+        provider._websocket.on("error", (err) =>
           logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Caught ${chain} provider error.`, err })
         );
 
-        provider.on("close", () => {
+        provider._websocket.on("close", () => {
           logger.debug({
             at: "RelayerSpokePoolIndexer::run",
             message: `${chain} provider connection closed.`,
