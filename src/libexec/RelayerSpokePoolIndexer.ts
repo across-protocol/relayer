@@ -223,9 +223,6 @@ async function run(argv: string[]): Promise<void> {
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
 
-  const { quorum = getChainQuorum(chainId) } = args;
-  assert(Number.isInteger(quorum), "quorum must be numeric ");
-
   chain = getNetworkName(chainId);
 
   const quorumProvider = await getProvider(chainId);
