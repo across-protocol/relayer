@@ -29,6 +29,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
   let run = 1;
+  let txnReceipts: { [chainId: number]: Promise<string[]> };
   try {
     do {
       if (loop) {
@@ -47,7 +48,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         relayerClients.tokenClient.clearTokenData();
         await relayerClients.tokenClient.update();
         const simulate = !config.sendingRelaysEnabled;
-        await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
       }
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
@@ -82,6 +83,18 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         }
       }
     } while (!stop);
+
+    // Before exiting, wait for transaction submission to complete.
+    for (const [chainId, submission] of Object.entries(txnReceipts)) {
+      const [result] = await Promise.allSettled([submission]);
+      if (sdkUtils.isPromiseRejected(result)) {
+        logger.warn({
+          at: "Relayer#runRelayer",
+          message: `Failed transaction submission on ${getNetworkName(Number(chainId))}.`,
+          reason: result.reason,
+        });
+      }
+    }
   } finally {
     await disconnectRedisClients(logger);
   }
