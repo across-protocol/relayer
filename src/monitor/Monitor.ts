@@ -257,7 +257,6 @@ export class Monitor {
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "\n *[Summary]*\n";
-      const tables = [];
       for (const token of allL1Tokens) {
         const table = new AsciiTable3(token.symbol);
         table.setWidths(Array(6).fill(12));
@@ -265,22 +264,31 @@ export class Monitor {
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
           // Human-readable balances
-          const balances = balancesBN.map((balance) =>
-            balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
-          );
-          table.addRow(chainName, ...balances);
+          if (balancesBN.find((b) => b.gt(bnZero))) {
+            const balances = balancesBN.map((balance) =>
+              balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
+            );
+            table.addRow(chainName, ...balances);
+          }
+        }
+
+        if (table.getRows().length !== 0) {
+          this.logger.info({
+            at: "Monitor#reportRelayerBalances",
+            message: `Balance report for ${relayer} and token ${token.symbol} 📖`,
+            mrkdwn: "```" + table.toString() + "```\n",
+          });
         }
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        tables.push("\n```" + table.toString() + "``` \n");
         summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
       }
 
       this.logger.info({
         at: "Monitor#reportRelayerBalances",
-        message: `Balance report for ${relayer} 📖`,
-        blocks: [...tables, summaryMrkdwn],
+        message: `Balance report summary for ${relayer} 📖`,
+        mrkdwn: summaryMrkdwn,
       });
     }
   }
