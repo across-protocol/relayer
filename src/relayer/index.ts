@@ -5,6 +5,7 @@ import {
   config,
   delay,
   disconnectRedisClients,
+  getChainQuorum,
   getCurrentTime,
   getNetworkName,
   Signer,
@@ -44,8 +45,9 @@ function startWorkers(config: RelayerConfig): { [chainId: number]: ChildProcess 
       // Identify the lowest configured deposit confirmation threshold for use as indexer finality.
       const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
       const blockRange = config.maxRelayerLookBack[chainId] ?? 5_000; // 5k is a safe default.
+      const quorum = getChainQuorum(chainId);
 
-      const opts = { ...sampleOpts, finality, blockRange };
+      const opts = { ...sampleOpts, finality, blockRange, quorum };
       const chain = getNetworkName(chainId);
       const child = startWorker("node", config.indexerPath, chainId, opts);
       logger.debug({ at: "Relayer#run", message: `Spawned ${chain} SpokePool indexer.`, args: child.spawnargs });
