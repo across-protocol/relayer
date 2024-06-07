@@ -9,8 +9,8 @@ import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUti
 export type SpokePoolClient = clients.SpokePoolClient;
 
 export type IndexerOpts = {
+  finality: number;
   path?: string;
-  finality?: number;
 };
 
 type SpokePoolEventRemoved = {
@@ -63,7 +63,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     super(logger, spokePool, hubPoolClient, chainId, deploymentBlock, eventSearchConfig);
 
     this.chain = getNetworkName(chainId);
-    this.finality = opts.finality ?? 1024;
+    this.finality = opts.finality;
     this.indexerPath = opts.path ?? RELAYER_DEFAULT_SPOKEPOOL_INDEXER;
 
     this.pendingBlockNumber = deploymentBlock;
