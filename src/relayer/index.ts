@@ -5,6 +5,7 @@ import {
   config,
   delay,
   disconnectRedisClients,
+  getChainQuorum,
   getCurrentTime,
   getNetworkName,
   Signer,
@@ -44,8 +45,9 @@ function startWorkers(config: RelayerConfig): { [chainId: number]: ChildProcess 
       // Identify the lowest configured deposit confirmation threshold for use as indexer finality.
       const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
       const blockRange = config.maxRelayerLookBack[chainId] ?? 5_000; // 5k is a safe default.
+      const quorum = getChainQuorum(chainId);
 
-      const opts = { ...sampleOpts, finality, blockRange };
+      const opts = { ...sampleOpts, finality, blockRange, quorum };
       const chain = getNetworkName(chainId);
       const child = startWorker("node", config.indexerPath, chainId, opts);
       logger.debug({ at: "Relayer#run", message: `Spawned ${chain} SpokePool indexer.`, args: child.spawnargs });
@@ -81,6 +83,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
   let run = 1;
+  let txnReceipts: { [chainId: number]: Promise<string[]> };
   try {
     do {
       if (loop) {
@@ -99,7 +102,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         relayerClients.tokenClient.clearTokenData();
         await relayerClients.tokenClient.update();
         const simulate = !config.sendingRelaysEnabled;
-        await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
       }
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
@@ -134,6 +137,18 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         }
       }
     } while (!stop);
+
+    // Before exiting, wait for transaction submission to complete.
+    for (const [chainId, submission] of Object.entries(txnReceipts)) {
+      const [result] = await Promise.allSettled([submission]);
+      if (sdkUtils.isPromiseRejected(result)) {
+        logger.warn({
+          at: "Relayer#runRelayer",
+          message: `Failed transaction submission on ${getNetworkName(Number(chainId))}.`,
+          reason: result.reason,
+        });
+      }
+    }
   } finally {
     if (config.externalIndexer) {
       Object.entries(workers).forEach(([_chainId, worker]) => {

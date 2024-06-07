@@ -220,10 +220,16 @@ describe("Relayer: Token balance shortfall", async function () {
     // Other relays should not be filled.
     await erc20_2.mint(relayer.address, toBN(60).mul(bn10.pow(inputTokenDecimals)));
     await updateAllClients();
-    await relayerInstance.checkForUnfilledDepositsAndFill(noSlowRelays);
-    expect(spyLogIncludes(spy, -2, "Relayed depositId 0")).to.be.true;
-    expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 190.00`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, "blocking deposits: 1,2")).to.be.true;
+    const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill(noSlowRelays);
+    const txnHashes = await txnReceipts[destinationChainId];
+    expect(txnHashes.length).to.equal(1);
+    const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
+    const { name: method, args } = spokePool_1.interface.parseTransaction(txn);
+    expect(method).to.equal("fillV3Relay");
+    expect(args[0].depositId).to.equal(0); // depositId 0
+
+    expect(spyLogIncludes(spy, -5, `${await l1Token.symbol()} cumulative shortfall of 190.00`)).to.be.true;
+    expect(spyLogIncludes(spy, -5, "blocking deposits: 1,2")).to.be.true;
   });
 
   it("Produces expected logs based on insufficient multiple token balance", async function () {

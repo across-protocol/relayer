@@ -23,7 +23,7 @@ export class CommonConfig {
   readonly arweaveGateway: ArweaveGatewayInterface;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
-  public multiCallChunkSize: { [chainId: number]: number };
+  public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
 
   constructor(env: ProcessEnv) {
@@ -91,8 +91,6 @@ export class CommonConfig {
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
   loadAndValidateConfigForChains(chainIdIndices: number[]): void {
-    const multiCallChunkSize: { [chainId: number]: number } = {};
-
     for (const chainId of chainIdIndices) {
       // Validate that there is a block range end block buffer for each chain.
       if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
@@ -116,9 +114,9 @@ export class CommonConfig {
       process.env[`MULTICALL_CHUNK_SIZE_CHAIN_${chainId}`]
         ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
         ?? DEFAULT_MULTICALL_CHUNK_SIZE
-    );
+      );
       assert(chunkSize > 0, `Chain ${chainId} multicall chunk size (${chunkSize}) must be greater than 0`);
-      multiCallChunkSize[chainId] = chunkSize;
+      this.multiCallChunkSize[chainId] = chunkSize;
 
       // Load any toBlock overrides.
       if (process.env[`TO_BLOCK_OVERRIDE_${chainId}`] !== undefined) {
@@ -127,7 +125,5 @@ export class CommonConfig {
         this.toBlockOverride[chainId] = toBlock;
       }
     }
-
-    this.multiCallChunkSize = multiCallChunkSize;
   }
 }
