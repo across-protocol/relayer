@@ -2,7 +2,7 @@ import assert from "assert";
 import { ChildProcess, spawn } from "child_process";
 import { Contract, Event } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
-import { RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
+import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
 import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
@@ -56,7 +56,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     public deploymentBlock: number,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = {
       fromBlock: deploymentBlock,
-      maxBlockLookBack: 5_000,
+      maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
     },
     readonly opts: IndexerOpts
   ) {
