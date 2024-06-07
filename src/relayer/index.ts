@@ -1,11 +1,8 @@
-import assert from "assert";
-import { ChildProcess, spawn } from "child_process";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   config,
   delay,
   disconnectRedisClients,
-  getChainQuorum,
   getCurrentTime,
   getNetworkName,
   Signer,
@@ -20,53 +17,12 @@ let logger: winston.Logger;
 
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
-type IndexerOpts = {
-  lookback?: number;
-  blockRange?: number;
-};
-
-function startWorker(cmd: string, path: string, chainId: number, opts: IndexerOpts): ChildProcess {
-  const args = Object.entries(opts)
-    .map(([k, v]) => [`--${k}`, `${v}`])
-    .flat();
-  return spawn(cmd, [path, "--chainId", chainId.toString(), ...args], {
-    stdio: ["ignore", "inherit", "inherit", "ipc"],
-  });
-}
-
-function startWorkers(config: RelayerConfig): { [chainId: number]: ChildProcess } {
-  const sampleOpts = { lookback: config.maxRelayerLookBack };
-
-  const chainIds = sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains]);
-  assert(chainIds.length > 0); // @todo: Fix to work with undefined chain IDs (default to the complete set).
-
-  return Object.fromEntries(
-    chainIds.map((chainId: number) => {
-      // Identify the lowest configured deposit confirmation threshold for use as indexer finality.
-      const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
-      const blockRange = config.maxRelayerLookBack[chainId] ?? 5_000; // 5k is a safe default.
-      const quorum = getChainQuorum(chainId);
-
-      const opts = { ...sampleOpts, finality, blockRange, quorum };
-      const chain = getNetworkName(chainId);
-      const child = startWorker("node", config.indexerPath, chainId, opts);
-      logger.debug({ at: "Relayer#run", message: `Spawned ${chain} SpokePool indexer.`, args: child.spawnargs });
-      return [chainId, child];
-    })
-  );
-}
-
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const relayerRun = randomNumber();
   const startTime = getCurrentTime();
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-
-  let workers: { [chainId: number]: ChildProcess };
-  if (config.externalIndexer) {
-    workers = startWorkers(config);
-  }
 
   const loop = config.pollingDelay > 0;
   let stop = !loop;
@@ -79,7 +35,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   });
 
   logger[startupLogLevel(config)]({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", config, relayerRun });
-  const relayerClients = await constructRelayerClients(logger, config, baseSigner, workers);
+  const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
   let run = 1;
@@ -150,12 +106,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
     }
   } finally {
-    if (config.externalIndexer) {
-      Object.entries(workers).forEach(([_chainId, worker]) => {
-        logger.debug({ at: "Relayer::runRelayer", message: `Cleaning up indexer for chainId ${_chainId}.` });
-        worker.kill("SIGHUP");
-      });
-    }
     await disconnectRedisClients(logger);
   }
 
