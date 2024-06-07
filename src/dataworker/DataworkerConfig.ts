@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { BigNumber, assert, toBNWei } from "../utils";
+import { BigNumber, assert, getArweaveJWKSigner, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly maxPoolRebalanceLeafSizeOverride: number;
@@ -10,7 +10,8 @@ export class DataworkerConfig extends CommonConfig {
   // These variables can be toggled to choose whether the bot will go through the dataworker logic.
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
-  readonly executorEnabled: boolean;
+  readonly l2ExecutorEnabled: boolean;
+  readonly l1ExecutorEnabled: boolean;
   readonly finalizerEnabled: boolean;
 
   // This variable can be toggled to bypass the proposer logic and always attempt to propose
@@ -30,6 +31,10 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingDisputesEnabled: boolean;
   readonly sendingProposalsEnabled: boolean;
   readonly sendingExecutionsEnabled: boolean;
+  readonly sendingFinalizationsEnabled: boolean;
+
+  // This variable should be set if the user wants to persist bundle data to Arweave.
+  readonly persistingBundleData: boolean;
 
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
   // historical events it needs to fetch and parse.
@@ -45,10 +50,12 @@ export class DataworkerConfig extends CommonConfig {
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
-      EXECUTOR_ENABLED,
+      L2_EXECUTOR_ENABLED,
+      L1_EXECUTOR_ENABLED,
       SPOKE_ROOTS_LOOKBACK_COUNT,
       SEND_DISPUTES,
       SEND_PROPOSALS,
+      SEND_FINALIZATIONS,
       SEND_EXECUTIONS,
       FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
@@ -56,6 +63,7 @@ export class DataworkerConfig extends CommonConfig {
       DATAWORKER_FAST_START_BUNDLE,
       FORCE_PROPOSAL,
       FORCE_PROPOSAL_BUNDLE_RANGE,
+      PERSIST_BUNDLES_TO_ARWEAVE,
     } = env;
     super(env);
 
@@ -79,9 +87,10 @@ export class DataworkerConfig extends CommonConfig {
       : toBNWei("500000");
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
-    this.executorEnabled = EXECUTOR_ENABLED === "true";
-    if (this.executorEnabled) {
-      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if executor enabled");
+    this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
+    this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
+    if (this.l2ExecutorEnabled) {
+      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if L2 executor enabled");
     } else if (this.disputerEnabled || this.proposerEnabled) {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
@@ -89,6 +98,7 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
+    this.sendingFinalizationsEnabled = SEND_FINALIZATIONS === "true";
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
 
     this.forcePropose = FORCE_PROPOSAL === "true";
@@ -105,10 +115,16 @@ export class DataworkerConfig extends CommonConfig {
         assert(Array.isArray(bundleRange), `forceProposalBundleRange[${index}] is not an array`);
         assert(bundleRange.length === 2, `forceProposalBundleRange[${index}] does not have length 2`);
         const [start, end] = bundleRange;
-        assert(typeof start === "number", `forceProposalBundleRange[${index}][start] is not a number`);
-        assert(typeof end === "number", `forceProposalBundleRange[${index}][end] is not a number`);
-        assert(start > 0, `forceProposalBundleRange[${index}][start] is not positive`);
-        assert(end > 0, `forceProposalBundleRange[${index}][end] is not positive`);
+        assert(
+          typeof start === "number" && Number.isInteger(start),
+          `forceProposalBundleRange[${index}][start] is not a number`
+        );
+        assert(
+          typeof end === "number" && Number.isInteger(end),
+          `forceProposalBundleRange[${index}][end] is not a number`
+        );
+        assert(start >= 0, `forceProposalBundleRange[${index}][start] is not non-negative`);
+        assert(end >= 0, `forceProposalBundleRange[${index}][end] is not non-negative`);
         assert(start <= end, `forceProposalBundleRange[${index}][start] >= forceProposalBundleRange[${index}][end]`);
       });
     } else {
@@ -146,6 +162,11 @@ export class DataworkerConfig extends CommonConfig {
         this.dataworkerFastStartBundle >= this.dataworkerFastLookbackCount,
         `dataworkerFastStartBundle=${this.dataworkerFastStartBundle} should be >= dataworkerFastLookbackCount=${this.dataworkerFastLookbackCount}`
       );
+    }
+    this.persistingBundleData = PERSIST_BUNDLES_TO_ARWEAVE === "true";
+    if (this.persistingBundleData) {
+      // Call the getArweaveSigner function and allow it to throw if the ARWEAVE_WALLET_JWK is not set.
+      getArweaveJWKSigner({ keyType: "read-write" });
     }
   }
 }

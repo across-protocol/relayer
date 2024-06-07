@@ -1,4 +1,4 @@
-import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
@@ -25,15 +25,21 @@ export type TransactionSimulationResult = {
   reason?: string;
 };
 
+const { isError, isEthersError } = typeguards;
+
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const expectedRpcErrorMessages = new Set(["nonce has already been used", "intrinsic gas too low"]);
 const txnRetryable = (error?: unknown): boolean => {
-  if (typeguards.isEthersError(error)) {
+  if (isEthersError(error)) {
     return txnRetryErrors.has(error.code);
   }
 
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
+
+export function getNetworkError(err: unknown): string {
+  return isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+}
 
 export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
   if (!multicall3Addresses[chainId] || !baseSigner) {
@@ -114,10 +120,10 @@ export async function runTransaction(
         nonce,
         notificationPath: "across-error",
       };
-      if (typeguards.isEthersError(error)) {
+      if (isEthersError(error)) {
         const ethersErrors: { reason: string; err: EthersError }[] = [];
         let topError = error;
-        while (typeguards.isEthersError(topError)) {
+        while (isEthersError(topError)) {
           ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
           topError = topError.error as EthersError;
         }
@@ -152,13 +158,13 @@ export async function getGasPrice(
   }
 
   // Handle chains with legacy pricing.
-  if (feeData.maxPriorityFeePerGas.eq(0)) {
+  if (feeData.maxPriorityFeePerGas.eq(bnZero)) {
     return { gasPrice: scaleByNumber(feeData.maxFeePerGas, priorityScaler) };
   }
 
   // Default to EIP-1559 (type 2) pricing.
   return {
-    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, priorityScaler * maxFeePerGasScaler),
+    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, Math.max(priorityScaler * maxFeePerGasScaler, 1)),
     maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
   };
 }
@@ -169,9 +175,26 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
     return { transaction, succeed: true };
   }
 
+  const { contract, method } = transaction;
+  const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+
+  // First callStatic, which will surface a custom error if the transaction would fail.
+  // This is useful for surfacing custom error revert reasons like RelayFilled in the V3 SpokePool but
+  // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
+  // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   try {
-    const { contract, method } = transaction;
-    const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+    await contract.callStatic[method](...args);
+  } catch (err: any) {
+    if (err.errorName) {
+      return {
+        transaction,
+        succeed: false,
+        reason: err.errorName,
+      };
+    }
+  }
+
+  try {
     const gasLimit = await contract.estimateGas[method](...args);
     return { transaction: { ...transaction, gasLimit }, succeed: true };
   } catch (_error) {

@@ -1,5 +1,6 @@
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
-import { assert, ethers } from "../utils";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
+import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
+import { assert, ethers, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -14,15 +15,15 @@ export class CommonConfig {
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
   readonly sendingTransactionsEnabled: boolean;
-  readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: number;
   readonly version: string;
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
+  readonly arweaveGateway: ArweaveGatewayInterface;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
-  public multiCallChunkSize: { [chainId: number]: number };
+  public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
 
   constructor(env: ProcessEnv) {
@@ -35,11 +36,11 @@ export class CommonConfig {
       MAX_BLOCK_LOOK_BACK,
       MAX_TX_WAIT_DURATION,
       SEND_TRANSACTIONS,
-      BUNDLE_REFUND_LOOKBACK,
       SPOKE_POOL_CHAINS_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
+      ARWEAVE_GATEWAY,
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
@@ -72,7 +73,11 @@ export class CommonConfig {
     }
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
-    this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
+
+    // Load the Arweave gateway from the environment.
+    const _arweaveGateway = isDefined(ARWEAVE_GATEWAY) ? JSON.parse(ARWEAVE_GATEWAY ?? "{}") : DEFAULT_ARWEAVE_GATEWAY;
+    assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
+    this.arweaveGateway = _arweaveGateway;
   }
 
   /**
@@ -86,8 +91,6 @@ export class CommonConfig {
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
   loadAndValidateConfigForChains(chainIdIndices: number[]): void {
-    const multiCallChunkSize: { [chainId: number]: number } = {};
-
     for (const chainId of chainIdIndices) {
       // Validate that there is a block range end block buffer for each chain.
       if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
@@ -101,7 +104,7 @@ export class CommonConfig {
       if (Object.keys(this.maxBlockLookBack).length > 0) {
         assert(
           Object.keys(this.maxBlockLookBack).includes(chainId.toString()),
-          "MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}"
+          `MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}`
         );
       }
 
@@ -111,9 +114,9 @@ export class CommonConfig {
       process.env[`MULTICALL_CHUNK_SIZE_CHAIN_${chainId}`]
         ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
         ?? DEFAULT_MULTICALL_CHUNK_SIZE
-    );
+      );
       assert(chunkSize > 0, `Chain ${chainId} multicall chunk size (${chunkSize}) must be greater than 0`);
-      multiCallChunkSize[chainId] = chunkSize;
+      this.multiCallChunkSize[chainId] = chunkSize;
 
       // Load any toBlock overrides.
       if (process.env[`TO_BLOCK_OVERRIDE_${chainId}`] !== undefined) {
@@ -122,7 +125,5 @@ export class CommonConfig {
         this.toBlockOverride[chainId] = toBlock;
       }
     }
-
-    this.multiCallChunkSize = multiCallChunkSize;
   }
 }

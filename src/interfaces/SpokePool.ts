@@ -1,5 +1,4 @@
-import { interfaces } from "@across-protocol/sdk-v2";
-import { SpokePoolClient } from "../clients";
+import { FillWithBlock, SpokePoolClient } from "../clients";
 import * as utils from "../utils/SDKUtils";
 
 export interface SpokePoolClientsByChain {
@@ -9,7 +8,7 @@ export interface SpokePoolClientsByChain {
 export const { InvalidFill } = utils;
 
 export type InvalidFill = {
-  fill: interfaces.FillWithBlock;
+  fill: FillWithBlock;
   code: utils.InvalidFillEnum;
   reason: string;
 };

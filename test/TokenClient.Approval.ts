@@ -1,32 +1,44 @@
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { ConfigStoreClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
   MAX_UINT_VAL,
   SignerWithAddress,
   createSpyLogger,
+  deployConfigStore,
   deployAndConfigureHubPool,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
   getContractFactory,
   lastSpyLogIncludes,
-  originChainId,
   sinon,
   toBNWei,
   utf8ToHex,
   winston,
-  zeroAddress,
 } from "./utils";
-
-let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
-let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract, l1Token_1: Contract;
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
-let tokenClient: TokenClient; // tested
-let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+import { MockHubPoolClient } from "./mocks";
 
 describe("TokenClient: Origin token approval", async function () {
+  let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
+  let erc20_1: Contract,
+    weth_1: Contract,
+    erc20_2: Contract,
+    weth_2: Contract,
+    l1Token_1: Contract,
+    l1Token_2: Contract;
+  let hubPoolClient: MockHubPoolClient, spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+  let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
+  let tokenClient: TokenClient; // tested
+  let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+
+  const updateAllClients = async () => {
+    await hubPoolClient.update();
+    await spokePoolClient_1.update();
+    await spokePoolClient_2.update();
+    await tokenClient.update();
+  };
+
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
@@ -47,10 +59,10 @@ describe("TokenClient: Origin token approval", async function () {
     const collateralWhitelist = await (await getContractFactory("AddressWhitelist", owner)).deploy();
     const store = await (
       await getContractFactory("Store", owner)
-    ).deploy({ rawValue: "0" }, { rawValue: "0" }, zeroAddress);
+    ).deploy({ rawValue: "0" }, { rawValue: "0" }, ZERO_ADDRESS);
     await finder.changeImplementationAddress(utf8ToHex("CollateralWhitelist"), collateralWhitelist.address);
     await finder.changeImplementationAddress(utf8ToHex("Store"), store.address);
-    ({ hubPool, l1Token_1 } = await deployAndConfigureHubPool(owner, [], finder.address, zeroAddress));
+    ({ hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(owner, [], finder.address, ZERO_ADDRESS));
     await collateralWhitelist.addToWhitelist(l1Token_1.address);
     await hubPool.setBond(l1Token_1.address, toBNWei("5"));
     spokePoolClient_1 = new SpokePoolClient(
@@ -70,7 +82,23 @@ describe("TokenClient: Origin token approval", async function () {
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
+    const { configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, 0);
+    await configStoreClient.update();
+    hubPoolClient = new MockHubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
+
+    for (const token of [l1Token_1, l1Token_2]) {
+      hubPoolClient.addL1Token({
+        address: token.address,
+        symbol: await token.symbol(),
+        decimals: await token.decimals(),
+      });
+    }
+    hubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
+    hubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
+    hubPoolClient.setTokenMapping(l1Token_2.address, originChainId, weth_1.address);
+    hubPoolClient.setTokenMapping(l1Token_2.address, destinationChainId, weth_2.address);
+
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
@@ -115,9 +143,3 @@ describe("TokenClient: Origin token approval", async function () {
     expect(await l1Token_1.allowance(owner.address, hubPool.address)).to.equal(MAX_UINT_VAL);
   });
 });
-
-async function updateAllClients() {
-  await spokePoolClient_1.update();
-  await spokePoolClient_2.update();
-  await tokenClient.update();
-}

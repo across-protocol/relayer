@@ -1,4 +1,9 @@
-import { AnyObject, delay, winston } from "./";
+import { delay, winston } from "./";
+
+export function exit(code: number): void {
+  // eslint-disable-next-line no-process-exit
+  process.exit(code);
+}
 
 export async function processEndPollingLoop(
   logger: winston.Logger,
@@ -7,34 +12,11 @@ export async function processEndPollingLoop(
 ): Promise<boolean> {
   if (pollingDelay === 0) {
     logger.debug({ at: `${fileName}#index`, message: "End of serverless execution loop - terminating process" });
-    await delay(5); // Add a small delay to ensure the transports have fully flushed upstream.
     return true;
   }
 
   logger.debug({ at: `${fileName}#index`, message: `End of execution loop - waiting polling delay ${pollingDelay}s` });
   await delay(pollingDelay);
-  return false;
-}
-
-export async function processCrash(
-  logger: winston.Logger,
-  fileName: string,
-  pollingDelay: number,
-  error: AnyObject
-): Promise<boolean> {
-  logger.error({
-    at: `${fileName}#index`,
-    message: `There was an execution error! ${pollingDelay != 0 ? "Re-running loop" : ""}`,
-    reason: error,
-    e: error,
-    error,
-    notificationPath: "across-error",
-  });
-  await delay(5);
-  if (pollingDelay === 0) {
-    return true;
-  }
-
   return false;
 }
 

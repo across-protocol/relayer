@@ -1,8 +1,15 @@
 import * as zksync from "zksync-web3";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
-import { CONTRACT_ADDRESSES } from "../src/common";
-import { bnToHex, getL2TokenAddresses, toBNWei, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../src/common";
+import {
+  bnToHex,
+  getL2TokenAddresses,
+  toBNWei,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
+  cctpAddressToBytes32,
+} from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import {
   BigNumber,
@@ -44,6 +51,9 @@ let l1ZkSyncBridge: FakeContract;
 // Base contracts
 let l1BaseBridge: FakeContract;
 
+// CCTP L1 Contracts
+let l1CCTPTokenMessager: FakeContract;
+
 const enabledChainIds = [1, 10, 137, 288, 42161, 324, 8453];
 
 const mainnetTokens = {
@@ -52,6 +62,7 @@ const mainnetTokens = {
   dai: TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET],
   wbtc: TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET],
   snx: TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET],
+  bal: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET],
 } as const;
 
 const addAttrib = (obj: unknown) =>
@@ -108,14 +119,47 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
   it("Correctly sends tokens to chain: Optimism", async function () {
     const chainId = CHAIN_IDs.OPTIMISM;
+
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.bal, amountToSend);
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens.usdc, // l1 token
-      getL2TokenAddresses(mainnetTokens.usdc)[chainId], // l2 token
+      mainnetTokens.bal, // l1 token
+      getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
       amountToSend, // amount
       addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data
+    );
+
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      undefined,
+      TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId]
+    );
+    expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
+      mainnetTokens.usdc, // l1 token
+      TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], // l2 token
+      amountToSend, // amount
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      "0x" // data
+    );
+
+    //  CCTP tokens:
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      undefined,
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
+    );
+    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
+      amountToSend, // amount
+      chainIdsToCctpDomains[chainId], // destinationDomain
+      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      mainnetTokens.usdc // token
     );
 
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.snx, amountToSend);
@@ -147,14 +191,24 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
   it("Correctly sends tokens to chain: Polygon", async function () {
     const chainId = CHAIN_IDs.POLYGON;
-    //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
-    expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
-      relayer.address, // user
-      mainnetTokens.usdc, // root token
-      bnToHex(amountToSend) // deposit data. bytes encoding of the amount to send.
+
+    //  CCTP tokens:
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      false,
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
+    );
+    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
+      amountToSend, // amount
+      chainIdsToCctpDomains[chainId], // destinationDomain
+      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      mainnetTokens.usdc // token
     );
 
+    //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.dai, amountToSend);
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
       relayer.address, // user
@@ -179,16 +233,24 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
   it("Correctly sends tokens to chain: Arbitrum", async function () {
     const chainId = CHAIN_IDs.ARBITRUM;
-    //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
-    expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
-      mainnetTokens.usdc, // token
-      relayer.address, // to
-      amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+
+    //  CCTP tokens:
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      false,
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
     );
+    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
+      amountToSend, // amount
+      chainIdsToCctpDomains[chainId], // destinationDomain
+      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      mainnetTokens.usdc // token
+    );
+
+    //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.wbtc, amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens.wbtc, // token
@@ -223,7 +285,14 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.ZK_SYNC;
     l1MailboxContract.l2TransactionBaseCost.returns(toBNWei("0.2"));
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      false,
+      TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId]
+    );
     expect(l1ZkSyncBridge.deposit).to.have.been.calledWith(
       relayer.address, // user
       mainnetTokens.usdc, // root token
@@ -256,11 +325,43 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
   it("Correctly sends tokens to chain: Base", async function () {
     const chainId = CHAIN_IDs.BASE;
+    //  CCTP tokens:
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      undefined,
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
+    );
+    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
+      amountToSend, // amount
+      chainIdsToCctpDomains[chainId], // destinationDomain
+      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      mainnetTokens.usdc // token
+    );
+
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      undefined,
+      TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId]
+    );
     expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens.usdc, // l1 token
-      getL2TokenAddresses(mainnetTokens.usdc)[chainId], // l2 token
+      TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId], // l2 token
+      amountToSend, // amount
+      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      "0x" // data
+    );
+
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.bal, amountToSend);
+    expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
+      mainnetTokens.bal, // l1 token
+      getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
       amountToSend, // amount
       addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data
@@ -336,6 +437,9 @@ async function constructChainSpecificFakes() {
 
   // Base contracts
   l1BaseBridge = await makeFake("ovmStandardBridge_8453", CONTRACT_ADDRESSES[1].ovmStandardBridge_8453.address);
+
+  // CCTP contracts
+  l1CCTPTokenMessager = await makeFake("cctpTokenMessenger", CONTRACT_ADDRESSES[1].cctpTokenMessenger.address);
 }
 
 async function makeFake(contractName: string, address: string) {

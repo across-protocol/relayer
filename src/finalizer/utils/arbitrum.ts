@@ -2,17 +2,22 @@ import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "
 import {
   winston,
   convertFromWei,
-  getNetworkName,
   groupObjectCountsByProp,
   Contract,
   getCachedProvider,
   getUniqueLogIndex,
   Signer,
+  getCurrentTime,
+  getRedisCache,
+  getBlockForTimestamp,
+  getL1TokenInfo,
+  compareAddressesSimple,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { FinalizerPromise, Withdrawal } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 const CHAIN_ID = 42161;
 
@@ -20,20 +25,30 @@ export async function arbitrumOneFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
 
+  // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
+  const redis = await getRedisCache(logger);
+  const latestBlockToFinalize = await getBlockForTimestamp(
+    chainId,
+    getCurrentTime() - 7 * 60 * 60 * 24,
+    undefined,
+    redis
+  );
   logger.debug({
-    at: "Finalizer#arbitrumOneFinalizer",
-    message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
+    at: "Finalizer#ArbitrumFinalizer",
+    message: "Arbitrum TokensBridged event filter",
+    toBlock: latestBlockToFinalize,
   });
   // Skip events that are likely not past the seven day challenge period.
-  const olderTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter((e) => e.blockNumber < latestBlockToFinalize);
+  const olderTokensBridgedEvents = spokePoolClient.getTokensBridged().filter(
+    (e) =>
+      e.blockNumber <= latestBlockToFinalize &&
+      // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
+      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[CHAIN_ID])
+  );
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
@@ -43,29 +58,25 @@ async function multicallArbitrumFinalizations(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
-  const withdrawals = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      l2TokenAddress,
-      CHAIN_ID,
-      hubPoolClient.latestBlockSearched
-    );
-    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+  const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
+    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, CHAIN_ID);
     const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
-    const withdrawal: Withdrawal = {
-      l2ChainId: CHAIN_ID,
+    const withdrawal: CrossChainMessage = {
+      originationChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
+      destinationChainId: hubPoolClient.chainId,
     };
 
     return withdrawal;
   });
   return {
     callData,
-    withdrawals,
+    crossChainMessages: crossChainTransfers,
   };
 }
 
@@ -163,13 +174,15 @@ async function getMessageOutboxStatusAndProof(
   try {
     const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
-      const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
+      const error = new Error(
+        `No outgoing messages found in transaction:${event.transactionHash} for l2 token ${event.l2TokenAddress}`
+      );
       logger.warn({
         at: "ArbitrumFinalizer",
         message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
         logIndex,
         l2ToL1Messages: l2ToL1Messages.length,
-        txnHash: event.transactionHash,
+        event,
         reason: error.stack || error.message || error.toString(),
         notificationPath: "across-error",
       });

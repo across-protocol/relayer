@@ -1,6 +1,31 @@
-import { randomAddress, toWei, originChainId, destinationChainId, repaymentChainId } from "./utils";
+import {
+  amountToDeposit,
+  amountToLp,
+  amountToRelay,
+  depositRelayerFeePct,
+  originChainId,
+  destinationChainId,
+  mockTreeRoot,
+  repaymentChainId,
+  refundProposalLiveness,
+  randomAddress,
+} from "@across-protocol/contracts/dist/test-utils";
+import { bnUint256Max, toWei, ZERO_ADDRESS } from "../src/utils";
 
+export {
+  amountToDeposit,
+  amountToLp,
+  amountToRelay,
+  depositRelayerFeePct,
+  originChainId,
+  destinationChainId,
+  mockTreeRoot,
+  repaymentChainId,
+  refundProposalLiveness,
+  ZERO_ADDRESS,
+};
 export { CONFIG_STORE_VERSION } from "../src/common";
+
 export const randomL1Token = randomAddress();
 export const randomOriginToken = randomAddress();
 export const randomDestinationToken = randomAddress();
@@ -46,7 +71,6 @@ export const IMPOSSIBLE_BLOCK_RANGE = DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) 
 export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 
 export const defaultMinDepositConfirmations = {
-  default: { [originChainId]: 0, [destinationChainId]: 0 },
+  [originChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 0 }],
+  [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 0 }],
 };
-
-export * from "@across-protocol/contracts-v2/dist/test-utils"; // Contains all the Across contract constants.

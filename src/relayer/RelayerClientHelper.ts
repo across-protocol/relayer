@@ -1,27 +1,65 @@
-import assert from "assert";
-import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
-import { AcrossApiClient, BundleDataClient, InventoryClient, ProfitClient, TokenClient, UBAClient } from "../clients";
+import {
+  AcrossApiClient,
+  BundleDataClient,
+  HubPoolClient,
+  InventoryClient,
+  ProfitClient,
+  TokenClient,
+} from "../clients";
+import { IndexedSpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
-  CONTRACT_ADDRESSES,
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
+  resolveSpokePoolActivationBlock,
   updateClients,
   updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { isDefined, Signer, getRedisCache } from "../utils";
+import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
-  ubaClient?: UBAClient;
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
   acrossApiClient: AcrossApiClient;
+}
+
+async function indexedSpokePoolClient(
+  baseSigner: Signer,
+  hubPoolClient: HubPoolClient,
+  chainId: number,
+  opts: IndexerOpts & { lookback: number; blockRange: number }
+): Promise<IndexedSpokePoolClient> {
+  const { logger } = hubPoolClient;
+
+  // Set up Spoke signers and connect them to spoke pool contract objects.
+  const signer = baseSigner.connect(await getProvider(chainId));
+  const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId);
+
+  const blockFinder = undefined;
+  const redis = await getRedisCache(hubPoolClient.logger);
+  const [activationBlock, fromBlock] = await Promise.all([
+    resolveSpokePoolActivationBlock(chainId, hubPoolClient),
+    getBlockForTimestamp(chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
+  ]);
+
+  const spokePoolClient = new IndexedSpokePoolClient(
+    logger,
+    SpokePool.connect(spokePoolAddr, signer),
+    hubPoolClient,
+    chainId,
+    activationBlock,
+    { fromBlock, maxBlockLookBack: opts.blockRange },
+    opts
+  );
+
+  return spokePoolClient;
 }
 
 export async function constructRelayerClients(
@@ -30,9 +68,14 @@ export async function constructRelayerClients(
   baseSigner: Signer
 ): Promise<RelayerClients> {
   const signerAddr = await baseSigner.getAddress();
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
+  // bundle and the pending bundle. 8 hours should cover the latest two bundles on production in
+  // almost all cases. Look back to genesis on testnets.
+  const hubPoolLookBack = sdkUtils.chainIsProd(config.hubPoolChainId) ? 3600 * 8 : Number.POSITIVE_INFINITY;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
   const { configStoreClient, hubPoolClient } = commonClients;
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
   // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
@@ -42,38 +85,38 @@ export async function constructRelayerClients(
       ? sdkUtils.dedupArray([...config.relayerOriginChains, ...config.relayerDestinationChains])
       : undefined;
 
-  const spokePoolClients = await constructSpokePoolClientsWithLookback(
-    logger,
-    hubPoolClient,
-    configStoreClient,
-    config,
-    baseSigner,
-    config.maxRelayerLookBack,
-    enabledChains
-  );
+  let spokePoolClients: SpokePoolClientsByChain;
+  if (config.externalIndexer) {
+    spokePoolClients = Object.fromEntries(
+      await sdkUtils.mapAsync(enabledChains ?? configStoreClient.getEnabledChains(), async (chainId) => {
+        const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
+        const opts = {
+          finality,
+          lookback: config.maxRelayerLookBack,
+          blockRange: config.maxBlockLookBack[chainId],
+        };
+        return [chainId, await indexedSpokePoolClient(baseSigner, hubPoolClient, chainId, opts)];
+      })
+    );
+  } else {
+    spokePoolClients = await constructSpokePoolClientsWithLookback(
+      logger,
+      hubPoolClient,
+      configStoreClient,
+      config,
+      baseSigner,
+      config.maxRelayerLookBack,
+      enabledChains
+    );
+  }
 
-  const ubaClient = !sdkUtils.isUBA(commonClients.configStoreClient.configStoreVersion)
-    ? undefined
-    : new UBAClient(
-        new sdkClients.UBAClientConfig(),
-        commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        commonClients.hubPoolClient,
-        spokePoolClients,
-        await getRedisCache(logger)
-      );
+  // Determine which origin chains to query limits for.
+  const srcChainIds =
+    config.relayerOriginChains.length > 0
+      ? config.relayerOriginChains
+      : Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, srcChainIds, config.relayerTokens);
 
-  // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
-  // destination chain list.
-  const destinationSpokePoolClients =
-    config.relayerDestinationChains.length === 0
-      ? spokePoolClients
-      : Object.fromEntries(
-          Object.keys(spokePoolClients)
-            .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
-            .map((chainId) => [chainId, spokePoolClients[chainId]])
-        );
-
-  const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, destinationSpokePoolClients, config.relayerTokens);
   const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
@@ -91,14 +134,12 @@ export async function constructRelayerClients(
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
+    config.relayerMessageGasMultiplier,
     config.relayerGasPadding
   );
   await profitClient.update();
 
-  // The relayer will originate cross chain rebalances from both its own EOA address and the atomic depositor address
-  // so we should track both for accurate cross-chain inventory management.
-  const atomicDepositor = CONTRACT_ADDRESSES[hubPoolClient.chainId]?.atomicDepositor;
-  const monitoredAddresses = [signerAddr, atomicDepositor?.address];
+  const monitoredAddresses = [signerAddr];
   const adapterManager = new AdapterManager(
     logger,
     spokePoolClients,
@@ -113,7 +154,14 @@ export async function constructRelayerClients(
     configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
-  const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
+
+  const crossChainAdapterSupportedChains = adapterManager.supportedChains();
+  const crossChainTransferClient = new CrossChainTransferClient(
+    logger,
+    enabledChainIds.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
+    adapterManager
+  );
+
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,
@@ -124,39 +172,29 @@ export async function constructRelayerClients(
     bundleDataClient,
     adapterManager,
     crossChainTransferClient,
-    config.bundleRefundLookback,
     !config.sendingRebalancesEnabled
   );
 
-  return { ...commonClients, spokePoolClients, ubaClient, tokenClient, profitClient, inventoryClient, acrossApiClient };
+  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-  const { configStoreClient, spokePoolClients } = clients;
+  const { spokePoolClients } = clients;
 
-  const version = configStoreClient.getConfigStoreVersionForTimestamp();
-  if (sdkUtils.isUBA(version)) {
-    const { ubaClient } = clients;
-    assert(isDefined(ubaClient), "No ubaClient");
-    await ubaClient.update();
-  } else {
-    // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
-    // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
-    // having a "first run" update and then a "normal" update that considers this. see previous implementation here
-    // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
-    await updateSpokePoolClients(spokePoolClients, [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "EnabledDepositRoute",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]);
-  }
+  // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
+  // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
+  // having a "first run" update and then a "normal" update that considers this. see previous implementation here
+  // https://github.com/across-protocol/relayer/pull/37/files#r883371256 as a reference.
+  await updateSpokePoolClients(spokePoolClients, [
+    "V3FundsDeposited",
+    "RequestedSpeedUpV3Deposit",
+    "FilledV3Relay",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot",
+  ]);
 
   // Update the token client first so that inventory client has latest balances.
-
   await clients.tokenClient.update();
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
@@ -165,13 +203,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),
+    config.sendingRelaysEnabled ? clients.tokenClient.setOriginTokenApprovals() : Promise.resolve(),
   ]);
-
-  // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
-  // The token client needs route data, so wait for update before checking approvals.
-  clients.tokenClient.clearTokenData();
-  await clients.tokenClient.update();
-  if (config.sendingRelaysEnabled) {
-    await clients.tokenClient.setOriginTokenApprovals();
-  }
 }

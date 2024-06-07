@@ -3,18 +3,23 @@ import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
   convertFromWei,
   getDeployedContract,
-  getNetworkName,
   groupObjectCountsByProp,
   Signer,
   winston,
   Contract,
   getCachedProvider,
   getUniqueLogIndex,
+  getCurrentTime,
+  getRedisCache,
+  getBlockForTimestamp,
+  getL1TokenInfo,
+  compareAddressesSimple,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Multicall2Call } from "../../common";
-import { FinalizerPromise, Withdrawal } from "../types";
+import { FinalizerPromise, CrossChainMessage } from "../types";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -38,25 +43,26 @@ export async function polygonFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
-  latestBlockToFinalize: number
+  spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
 
   const posClient = await getPosClient(signer);
+  const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
+  const redis = await getRedisCache(logger);
+  const fromBlock = await getBlockForTimestamp(chainId, lookback, undefined, redis);
+
   logger.debug({
-    at: "Finalizer#polygonFinalizer",
-    message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-    latestBlockToFinalize,
+    at: "Finalizer#PolygonFinalizer",
+    message: "Polygon TokensBridged event filter",
+    fromBlock,
   });
 
   // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
   // that are older than 1 day old:
-  const recentTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter((e) => e.blockNumber >= latestBlockToFinalize);
+  const recentTokensBridgedEvents = spokePoolClient.getTokensBridged().filter((e) => e.blockNumber >= fromBlock);
 
-  return await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
+  return multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
 }
 
 async function getPosClient(mainnetSigner: Signer): Promise<POSClient> {
@@ -106,6 +112,18 @@ async function getFinalizableTransactions(
   const exitStatus = await Promise.all(
     checkpointedTokensBridged.map(async (_, i) => {
       const payload = payloads[i];
+      const { chainId, l2TokenAddress } = tokensBridged[i];
+
+      // @dev we can't filter out USDC CCTP withdrawals until after we build the payloads for exit
+      // because those functions take in a third 'logIndex' parameter which does assume that USDC CCTP
+      // withdrawals are accounted for. For example, if an L2 withdrawal transaction contains two withdrawals: one USDC
+      // one followed by a non-USDC one, the USDC 'logIndex' as far as building the payload is concerned
+      // will be 0 and the non-USDC 'logIndex' will be 1. This is why we can't filter out USDC CCTP withdrawals
+      // until after we've computed payloads.
+      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])) {
+        return { status: "USDC_CCTP_L2_WITHDRAWAL" };
+      }
+
       try {
         // If we can estimate gas for exit transaction call, then we can exit the burn tx, otherwise its likely
         // been processed. Note this will capture mislabel some exit txns that fail for other reasons as "exit
@@ -161,9 +179,38 @@ async function multicallPolygonFinalizations(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
+
+  const finalizedBridges = await resolvePolygonBridgeFinalizations(finalizableMessages, posClient, hubPoolClient);
+  const finalizedRetrievals = await resolvePolygonRetrievalFinalizations(finalizableMessages, hubSigner, hubPoolClient);
+
+  return {
+    callData: [...finalizedBridges.callData, ...finalizedRetrievals.callData],
+    crossChainMessages: [...finalizedBridges.crossChainMessages, ...finalizedRetrievals.crossChainMessages],
+  };
+}
+
+async function resolvePolygonBridgeFinalizations(
+  finalizableMessages: PolygonTokensBridged[],
+  posClient: POSClient,
+  hubPoolClient: HubPoolClient
+): Promise<FinalizerPromise> {
   const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
+  const crossChainMessages = finalizableMessages.map((finalizableMessage) =>
+    resolveCrossChainTransferStructure(finalizableMessage, "withdrawal", hubPoolClient)
+  );
+  return {
+    callData,
+    crossChainMessages,
+  };
+}
+
+async function resolvePolygonRetrievalFinalizations(
+  finalizableMessages: PolygonTokensBridged[],
+  hubSigner: Signer,
+  hubPoolClient: HubPoolClient
+): Promise<FinalizerPromise> {
   const tokensInFinalizableMessages = getL2TokensToFinalize(
     finalizableMessages.map((polygonTokensBridged) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -171,44 +218,44 @@ async function multicallPolygonFinalizations(
       return tokensBridged;
     })
   );
-  const callDataRetrievals = await Promise.all(
-    tokensInFinalizableMessages.map((l2Token) =>
-      retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
-    )
+  const callData = await Promise.all(
+    tokensInFinalizableMessages.map((l2Token) => retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner))
   );
-  callData.push(...callDataRetrievals);
-  const withdrawals = finalizableMessages.map(({ l2TokenAddress, amountToReturn }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      l2TokenAddress,
-      CHAIN_ID,
-      hubPoolClient.latestBlockSearched
-    );
-    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-    const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
-    const withdrawal: Withdrawal = {
-      l2ChainId: CHAIN_ID,
-      l1TokenSymbol: l1TokenInfo.symbol,
-      amount: amountFromWei,
-      type: "withdrawal",
-    };
-    return withdrawal;
-  });
+  const crossChainMessages = finalizableMessages.map((finalizableMessage) =>
+    resolveCrossChainTransferStructure(finalizableMessage, "misc", hubPoolClient)
+  );
   return {
     callData,
-    withdrawals,
+    crossChainMessages,
   };
+}
+
+function resolveCrossChainTransferStructure(
+  finalizableMessage: PolygonTokensBridged,
+  type: "misc" | "withdrawal",
+  hubPoolClient: HubPoolClient
+): CrossChainMessage {
+  const { l2TokenAddress, amountToReturn } = finalizableMessage;
+  const l1TokenInfo = getL1TokenInfo(l2TokenAddress, CHAIN_ID);
+  const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
+  const transferBase = {
+    originationChainId: CHAIN_ID,
+    destinationChainId: hubPoolClient.chainId,
+    l1TokenSymbol: l1TokenInfo.symbol,
+    amount: amountFromWei,
+  };
+
+  const crossChainTransfers: CrossChainMessage =
+    type === "misc" ? { ...transferBase, type, miscReason: "retrieval" } : { ...transferBase, type };
+  return crossChainTransfers;
 }
 
 function getMainnetTokenBridger(mainnetSigner: Signer): Contract {
   return getDeployedContract("PolygonTokenBridger", 1, mainnetSigner);
 }
 
-async function retrieveTokenFromMainnetTokenBridger(
-  l2Token: string,
-  mainnetSigner: Signer,
-  hubPoolClient: HubPoolClient
-): Promise<Multicall2Call> {
-  const l1Token = hubPoolClient.getL1TokenForL2TokenAtBlock(l2Token, CHAIN_ID, hubPoolClient.latestBlockSearched);
+async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSigner: Signer): Promise<Multicall2Call> {
+  const l1Token = getL1TokenInfo(l2Token, CHAIN_ID).address;
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
   return {

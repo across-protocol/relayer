@@ -1,6 +1,6 @@
 import minimist from "minimist";
-import { WETH9__factory as WETH9 } from "@across-protocol/contracts-v2";
-import { constants as sdkConsts } from "@across-protocol/sdk-v2";
+import { WETH9__factory as WETH9 } from "@across-protocol/contracts";
+import { constants as sdkConsts } from "@across-protocol/sdk";
 import { BigNumber, ethers, Signer } from "ethers";
 import { config } from "dotenv";
 import { getNetworkName, getSigner } from "../src/utils";
@@ -231,7 +231,7 @@ async function run(argv: string[]): Promise<number> {
     default: {
       chainId: 1,
       event: "ProposeRootBundle",
-      wallet: "mnemonic",
+      wallet: "secret",
       force: false,
     },
     alias: {

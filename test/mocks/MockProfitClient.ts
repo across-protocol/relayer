@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
 import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
@@ -20,6 +20,7 @@ export class MockProfitClient extends ProfitClient {
     defaultMinRelayerFeePct?: BigNumber,
     debugProfitability?: boolean,
     gasMultiplier = toBNWei("1"),
+    gasMessageMultiplier = toBNWei("1"),
     gasPadding = toBNWei("0")
   ) {
     super(
@@ -31,6 +32,7 @@ export class MockProfitClient extends ProfitClient {
       defaultMinRelayerFeePct,
       debugProfitability,
       gasMultiplier,
+      gasMessageMultiplier,
       gasPadding
     );
 

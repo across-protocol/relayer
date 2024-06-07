@@ -5,7 +5,7 @@ import winston from "winston";
 import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
 import { RedisCache } from "../caching/RedisCache";
-import { constants } from "@across-protocol/sdk-v2";
+import { constants } from "@across-protocol/sdk";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -41,7 +41,10 @@ export class RedisClient {
   async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
     // Apply namespace to key.
     key = this.getNamespacedKey(key);
-    if (expirySeconds > 0) {
+    if (expirySeconds === Number.POSITIVE_INFINITY) {
+      // No TTL
+      await this.client.set(key, val);
+    } else if (expirySeconds > 0) {
       // EX: Expire key after expirySeconds.
       await this.client.set(key, val, { EX: expirySeconds });
     } else {
@@ -99,6 +102,11 @@ export async function getRedisCache(
   logger?: winston.Logger,
   url?: string
 ): Promise<CachingMechanismInterface | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
+  }
+
   const client = await getRedis(logger, url);
   if (client) {
     return new RedisCache(client);

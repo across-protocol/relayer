@@ -1,40 +1,64 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { utils as sdkUtils } from "@across-protocol/sdk";
+import {
+  config,
+  delay,
+  disconnectRedisClients,
+  getCurrentTime,
+  getNetworkName,
+  Signer,
+  startupLogLevel,
+  winston,
+} from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
+const randomNumber = () => Math.floor(Math.random() * 1_000_000);
+
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const relayerRun = randomNumber();
+  const startTime = getCurrentTime();
+
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  let relayerClients: RelayerClients;
 
+  const loop = config.pollingDelay > 0;
+  let stop = !loop;
+  process.on("SIGHUP", () => {
+    logger.debug({
+      at: "Relayer#run",
+      message: "Received SIGHUP, stopping at end of current loop.",
+    });
+    stop = true;
+  });
+
+  logger[startupLogLevel(config)]({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", config, relayerRun });
+  const relayerClients = await constructRelayerClients(logger, config, baseSigner);
+  const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
+
+  let run = 1;
+  let txnReceipts: { [chainId: number]: Promise<string[]> };
   try {
-    logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
+    do {
+      if (loop) {
+        logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
+      }
 
-    relayerClients = await constructRelayerClients(logger, config, baseSigner);
-    const { configStoreClient } = relayerClients;
-
-    const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
-
-    logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
-
-    for (;;) {
+      const tLoopStart = performance.now();
+      if (run !== 1) {
+        await relayerClients.configStoreClient.update();
+        await relayerClients.hubPoolClient.update();
+      }
       await updateRelayerClients(relayerClients, config);
 
       if (!config.skipRelays) {
-        // @note: For fills with a different repaymentChainId, refunds are requested on the _subsequent_ relayer run.
-        // Refunds requests are enqueued before new fills, so fillRelay simulation occurs closest to txn submission.
-        const version = configStoreClient.getConfigStoreVersionForTimestamp();
-        if (sdkUtils.isUBA(version) && version <= configStoreClient.configStoreVersion) {
-          await relayer.requestRefunds(config.sendingSlowRelaysEnabled);
-        }
-
-        await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
-
-        await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
+        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
+        relayerClients.tokenClient.clearTokenData();
+        await relayerClients.tokenClient.update();
+        const simulate = !config.sendingRelaysEnabled;
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
       }
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
@@ -42,6 +66,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       await relayerClients.inventoryClient.unwrapWeth();
 
       if (!config.skipRebalancing) {
+        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
+        relayerClients.tokenClient.clearTokenData();
+        await relayerClients.tokenClient.update();
         await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
       }
 
@@ -49,11 +76,39 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       relayerClients.profitClient.clearUnprofitableFills();
       relayerClients.tokenClient.clearTokenShortfall();
 
-      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) {
-        break;
+      if (loop) {
+        const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+        logger.debug({
+          at: "Relayer#run",
+          message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
+        });
+
+        if (!stop && runTime < config.pollingDelay) {
+          const delta = config.pollingDelay - runTime;
+          logger.debug({
+            at: "relayer#run",
+            message: `Waiting ${delta} s before next loop.`,
+          });
+          await delay(delta);
+        }
+      }
+    } while (!stop);
+
+    // Before exiting, wait for transaction submission to complete.
+    for (const [chainId, submission] of Object.entries(txnReceipts)) {
+      const [result] = await Promise.allSettled([submission]);
+      if (sdkUtils.isPromiseRejected(result)) {
+        logger.warn({
+          at: "Relayer#runRelayer",
+          message: `Failed transaction submission on ${getNetworkName(Number(chainId))}.`,
+          reason: result.reason,
+        });
       }
     }
   } finally {
     await disconnectRedisClients(logger);
   }
+
+  const runtime = getCurrentTime() - startTime;
+  logger.debug({ at: "Relayer#index", message: `Completed relayer run ${relayerRun} in ${runtime} seconds.` });
 }

@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { BigNumber } from "ethers";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
@@ -22,20 +23,34 @@ import lodash from "lodash";
 // Use this list of Smart Contract revert reasons to filter out transactions that revert in the
 // Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
-// For example, a NodeJS error might result in a reason string that includes more than just the contract r
-// evert reason.
-export const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+// For example, a NodeJS error might result in a reason string that includes more than just the contract revert reason.
+export const knownRevertReasons = new Set([
+  "nonce has already been used",
+  "replacement fee too low",
+  "relay filled",
+  "Already claimed",
+  "RelayFilled",
+  "ClaimedMerkleLeaf",
+  "InvalidSlowFillRequest",
+]);
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
 // there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
 // a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
 // to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
-export const unknownRevertReason =
-  "missing revert data in call exception; Transaction reverted without a reason string";
+export const unknownRevertReasons = [
+  "missing revert data in call exception; Transaction reverted without a reason string",
+  "execution reverted",
+];
 export const unknownRevertReasonMethodsToIgnore = new Set([
+  "multicall",
   "fillRelay",
   "fillRelayWithUpdatedFee",
+  "fillV3Relay",
+  "fillV3RelayWithUpdatedDeposit",
+  "requestV3SlowFill",
+  "executeV3SlowRelayLeaf",
   "executeSlowRelayLeaf",
   "executeRelayerRefundLeaf",
   "executeRootBundle",
@@ -98,37 +113,25 @@ export class MultiCallerClient {
     }
   }
 
-  async executeTransactionQueue(simulate = false): Promise<string[]> {
-    // For compatibility with the existing implementation, flatten all txn hashes into a single array.
-    // To be resolved once the legacy implementation is removed and the callers have been updated.
-    const txnHashes: { [chainId: number]: string[] } = await this.executeTxnQueues(simulate);
-    return Object.values(txnHashes).flat();
-  }
-
   // For each chain, collate the enqueued transactions and process them in parallel.
-  async executeTxnQueues(simulate = false): Promise<Record<number, string[]>> {
-    const chainIds = [...new Set(Object.keys(this.valueTxns).concat(Object.keys(this.txns)))];
+  async executeTxnQueues(simulate = false, chainIds: number[] = []): Promise<Record<number, string[]>> {
+    if (chainIds.length === 0) {
+      chainIds = sdkUtils.dedupArray([
+        ...Object.keys(this.valueTxns).map(Number),
+        ...Object.keys(this.txns).map(Number),
+      ]);
+    }
 
-    // One promise per chain for parallel execution.
-    const resultsByChain = await Promise.allSettled(
-      chainIds.map((_chainId) => {
-        const chainId = Number(_chainId);
-        const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
-        const valueTxns: AugmentedTransaction[] | undefined = this.valueTxns[chainId];
-
-        this.clearTransactionQueue(chainId);
-        return this.executeChainTxnQueue(chainId, txns, valueTxns, simulate);
-      })
-    );
+    const results = await Promise.allSettled(chainIds.map((chainId) => this.executeTxnQueue(chainId, simulate)));
 
     // Collate the results for each chain.
     const txnHashes: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
-      resultsByChain.map((chainResult, idx) => {
+      results.map((result, idx) => {
         const chainId = chainIds[idx];
-        if (isPromiseFulfilled(chainResult)) {
-          return [chainId, { result: chainResult.value.map((txnResponse) => txnResponse.hash), isError: false }];
+        if (isPromiseFulfilled(result)) {
+          return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
         } else {
-          return [chainId, { result: chainResult.reason, isError: true }];
+          return [chainId, { result: result.reason, isError: true }];
         }
       })
     );
@@ -156,10 +159,18 @@ export class MultiCallerClient {
     return Object.fromEntries(Object.entries(txnHashes).map(([chainId, { result }]) => [chainId, result]));
   }
 
+  // For a single chain, take any enqueued transactions and attempt to execute them.
+  async executeTxnQueue(chainId: number, simulate = false): Promise<TransactionResponse[]> {
+    const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
+    const valueTxns: AugmentedTransaction[] | undefined = this.valueTxns[chainId];
+    this.clearTransactionQueue(chainId);
+    return this._executeTxnQueue(chainId, txns, valueTxns, simulate);
+  }
+
   // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
   // Then, submit a concatenated list of value txns + multicall bundles. If simulation was requested, log the results
   // and return early.
-  async executeChainTxnQueue(
+  protected async _executeTxnQueue(
     chainId: number,
     txns: AugmentedTransaction[] = [],
     valueTxns: AugmentedTransaction[] = [],
@@ -187,7 +198,9 @@ export class MultiCallerClient {
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
       // If txn succeeded or the revert reason is known to be benign, then log at debug level.
-      this.logger[succeed || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"]({
+      this.logger[
+        succeed || simulate || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"
+      ]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
         batchTxn: { ...transaction, contract: transaction.contract.address },
@@ -375,17 +388,33 @@ export class MultiCallerClient {
       });
     }
 
+    // Create groups of transactions to send atomically.
+    // Sort transactions by contract address so we can reduce chance that we need to split them again
+    // to make Multicall work.
+    const getTxnChunks = (_txns: AugmentedTransaction[]): AugmentedTransaction[][] => {
+      const groupIdTxns = _txns.filter(({ groupId }) => isDefined(groupId));
+      const groupIdChunks = Object.values(lodash.groupBy(groupIdTxns, "groupId"))
+        .map((txns) => {
+          return lodash.chunk(
+            txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+            chunkSize
+          );
+        })
+        .flat();
+      const nonGroupedChunks = lodash.chunk(
+        _txns
+          .filter(({ groupId }) => !isDefined(groupId))
+          .sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+        chunkSize
+      );
+      return [...groupIdChunks, ...nonGroupedChunks];
+    };
+
     // If we can't construct multisender contract, then multicall everything. If any of the transactions
     // is for a contract that can't be multicalled, then this function will throw. This client should only be
     // used on contracts that extend Multicaller.
     if ((await this._getMultisender(chainId)) === undefined) {
-      // Sort transactions by contract address so we can reduce chance that we need to split them again
-      // to make Multicall work.
-      const txnChunks = lodash.chunk(
-        multicallerTxns.concat(multisenderTxns).sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
-        chunkSize
-      );
-      return txnChunks
+      return getTxnChunks(multicallerTxns.concat(multisenderTxns))
         .map((txnChunk) => {
           // Don't wrap single transactions in a multicall.
           return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
@@ -394,11 +423,7 @@ export class MultiCallerClient {
     } else {
       // We can support sending multiple transactions to different contracts via an external multisender
       // contract.
-      const multicallerTxnChunks = lodash.chunk(
-        multicallerTxns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
-        chunkSize
-      );
-      const multicallerTxnBundle = multicallerTxnChunks
+      const multicallerTxnBundle = getTxnChunks(multicallerTxns)
         .map((txnChunk) => (txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0]))
         .flat();
       const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
@@ -437,8 +462,15 @@ export class MultiCallerClient {
   // string that includes more than just the contract revert reason.
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
     const { transaction: _txn, reason } = txn;
-    const knownReason = [...knownRevertReasons].some((knownReason) => reason.includes(knownReason));
-    return knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason.includes(unknownRevertReason));
+    const lowerCaseReason = reason.toLowerCase();
+    const knownReason = [...knownRevertReasons].some((knownReason) =>
+      lowerCaseReason.includes(knownReason.toLowerCase())
+    );
+    return (
+      knownReason ||
+      (unknownRevertReasonMethodsToIgnore.has(_txn.method) &&
+        unknownRevertReasons.some((_reason) => lowerCaseReason.includes(_reason.toLowerCase())))
+    );
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may

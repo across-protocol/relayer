@@ -1,3 +1,4 @@
+import assert from "assert";
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
@@ -7,11 +8,12 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer } from "../utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
+import { caching } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
@@ -26,10 +28,13 @@ export async function constructDataworkerClients(
 ): Promise<DataworkerClients> {
   const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
+  const { hubPoolClient, configStoreClient } = commonClients;
+
   await updateClients(commonClients, config);
+  await hubPoolClient.update();
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, signerAddr, {}, commonClients.hubPoolClient);
+  const tokenClient = new TokenClient(logger, signerAddr, {}, hubPoolClient);
   await tokenClient.update();
   // Run approval on hub pool.
   if (config.sendingTransactionsEnabled) {
@@ -42,7 +47,7 @@ export async function constructDataworkerClients(
     logger,
     commonClients,
     {},
-    commonClients.configStoreClient.getChainIdIndicesForBlock(),
+    configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
 
@@ -53,11 +58,23 @@ export async function constructDataworkerClients(
     new defiLlama.PriceFeed(),
   ]);
 
+  // Define the Arweave client. We need to use a read-write signer for the
+  // dataworker to persist bundle data if `persistingBundleData` is enabled.
+  // Otherwise, we can use a read-only signer.
+  const arweaveClient = new caching.ArweaveClient(
+    getArweaveJWKSigner({ keyType: config.persistingBundleData ? "read-write" : "read-only" }),
+    logger,
+    config.arweaveGateway?.url,
+    config.arweaveGateway?.protocol,
+    config.arweaveGateway?.port
+  );
+
   return {
     ...commonClients,
     bundleDataClient,
     tokenClient,
     priceClient,
+    arweaveClient,
   };
 }
 
@@ -81,13 +98,15 @@ export async function constructSpokePoolClientsForFastDataworker(
     endBlocks
   );
   await updateSpokePoolClients(spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
-    "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
+    "V3FundsDeposited",
+    "RequestedV3SlowFill",
+    "FilledV3Relay",
   ]);
+  Object.values(spokePoolClients).forEach(({ chainId, isUpdated }) =>
+    assert(isUpdated, `Failed to update SpokePoolClient for chain ${chainId}`)
+  );
   return spokePoolClients;
 }
 

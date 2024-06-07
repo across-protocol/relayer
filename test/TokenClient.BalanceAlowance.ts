@@ -1,29 +1,35 @@
+import { ConfigStoreClient, SpokePoolClient, TokenClient, TokenDataType } from "../src/clients"; // Tested
+import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
+import { MockHubPoolClient } from "./mocks";
 import {
   Contract,
   SignerWithAddress,
   createSpyLogger,
-  deepEqualsWithBigNumber,
   deployAndConfigureHubPool,
+  deployConfigStore,
   deploySpokePoolWithToken,
-  destinationChainId,
   ethers,
   expect,
-  originChainId,
+  toBN,
   toBNWei,
   winston,
-  zeroAddress,
 } from "./utils";
 
-import { HubPoolClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
-
-let spokePool_1: Contract, spokePool_2: Contract;
-let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let owner: SignerWithAddress, spyLogger: winston.Logger;
-let tokenClient: TokenClient; // tested
-let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
-
 describe("TokenClient: Balance and Allowance", async function () {
+  let spokePool_1: Contract, spokePool_2: Contract;
+  let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
+  let hubPoolClient: MockHubPoolClient, spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+  let owner: SignerWithAddress, spyLogger: winston.Logger;
+  let tokenClient: TokenClient; // tested
+  let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+
+  const updateAllClients = async () => {
+    await hubPoolClient.update();
+    await spokePoolClient_1.update();
+    await spokePoolClient_2.update();
+    await tokenClient.update();
+  };
+
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
@@ -40,7 +46,42 @@ describe("TokenClient: Balance and Allowance", async function () {
       weth: weth_2,
       deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
+
+    const {
+      hubPool,
+      l1Token_1: hubERC20,
+      l1Token_2: hubWeth,
+    } = await deployAndConfigureHubPool(
+      owner,
+      [
+        { l2ChainId: originChainId, spokePool: spokePool_1 },
+        { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      ],
+      ZERO_ADDRESS,
+      ZERO_ADDRESS
+    );
+    const { configStore } = await deployConfigStore(owner, [hubERC20, hubWeth]);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, 0);
+    await configStoreClient.update();
+
+    hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
+    await hubPoolClient.update();
+
+    for (const token of [hubERC20, hubWeth]) {
+      hubPoolClient.addL1Token({
+        address: token.address,
+        symbol: await token.symbol(),
+        decimals: await token.decimals(),
+      });
+    }
+
+    hubPoolClient.setTokenMapping(hubERC20.address, originChainId, erc20_1.address);
+    hubPoolClient.setTokenMapping(hubERC20.address, destinationChainId, erc20_2.address);
+    hubPoolClient.setTokenMapping(hubWeth.address, originChainId, weth_1.address);
+    hubPoolClient.setTokenMapping(hubWeth.address, destinationChainId, weth_2.address);
+
+    const l1Tokens = hubPoolClient.getL1Tokens();
+    expect(l1Tokens.length).to.equal(2);
 
     spokePoolClient_1 = new SpokePoolClient(
       createSpyLogger().spyLogger,
@@ -57,13 +98,21 @@ describe("TokenClient: Balance and Allowance", async function () {
       spokePool2DeploymentBlock
     );
 
-    const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, null);
+    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Fetches all associated balances", async function () {
+    const alignTokenData = (data: TokenDataType): TokenDataType =>
+      Object.entries(data).reduce((acc, [chainId, tokenData]) => {
+        acc[chainId] = Object.entries(tokenData).reduce((acc, [token, { balance, allowance }]) => {
+          acc[token] = { balance: toBN(balance), allowance: toBN(allowance) };
+          return acc;
+        }, {});
+        return acc;
+      }, {});
+
     await updateAllClients();
     const expectedData = {
       [originChainId]: {
@@ -75,7 +124,8 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData)).to.be.true;
+    const tokenData = tokenClient.getAllTokenData();
+    expect(alignTokenData(tokenData)).to.deep.equal(expectedData);
 
     // Check some balance/allowances directly.
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(0));
@@ -86,8 +136,8 @@ describe("TokenClient: Balance and Allowance", async function () {
     await weth_1.approve(spokePool_1.address, toBNWei(420420));
     await erc20_2.approve(spokePool_2.address, toBNWei(6969));
     await weth_2.deposit({ value: toBNWei(1337) });
-
     await updateAllClients();
+
     const expectedData1 = {
       [originChainId]: {
         [erc20_1.address]: { balance: toBNWei(42069), allowance: toBNWei(0) },
@@ -98,7 +148,9 @@ describe("TokenClient: Balance and Allowance", async function () {
         [weth_2.address]: { balance: toBNWei(1337), allowance: toBNWei(0) },
       },
     };
-    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData1)).to.be.true;
+    const tokenData1 = tokenClient.getAllTokenData();
+    expect(alignTokenData(tokenData1)).to.deep.equal(expectedData1);
+
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42069));
     expect(tokenClient.getBalance(destinationChainId, weth_2.address)).to.equal(toBNWei(1337));
 
@@ -125,9 +177,3 @@ describe("TokenClient: Balance and Allowance", async function () {
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42000));
   });
 });
-
-async function updateAllClients() {
-  await spokePoolClient_1.update();
-  await spokePoolClient_2.update();
-  await tokenClient.update();
-}

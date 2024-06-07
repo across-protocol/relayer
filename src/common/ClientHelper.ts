@@ -12,17 +12,19 @@ import {
   SpokePool,
   isDefined,
   getRedisCache,
+  getArweaveJWKSigner,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { clients } from "@across-protocol/sdk-v2";
+import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: ConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   hubSigner?: Signer;
+  arweaveClient: caching.ArweaveClient;
 }
 
 async function getSpokePoolSigners(
@@ -36,6 +38,46 @@ async function getSpokePoolSigners(
       })
     )
   );
+}
+
+/**
+ * Resolve the spoke chain activation block for a SpokePool deployment. Prefer sourcing the
+ * block number from cache, but fall back to resolution via RPC queries and cache the result.
+ * @param chainId Chain ID for the SpokePool deployment.
+ * @param hubPoolClient HubPoolClient instance.
+ * @returns SpokePool activation block number on chainId.
+ */
+export async function resolveSpokePoolActivationBlock(
+  chainId: number,
+  hubPoolClient: HubPoolClient,
+  blockNumber?: number
+): Promise<number> {
+  const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, blockNumber);
+  const key = `relayer_${chainId}_spokepool_${spokePoolAddr}_activation_block`;
+
+  const redis = await getRedisCache(hubPoolClient.logger);
+  if (isDefined(redis)) {
+    const activationBlock = await redis.get(key);
+    const numericActivationBlock = Number(activationBlock);
+    if (Number.isInteger(numericActivationBlock) && numericActivationBlock > 0) {
+      return numericActivationBlock;
+    }
+  }
+
+  // Get the timestamp of the block where the SpokePool was activated on mainnet, and resolve that
+  // to a block number on the SpokePool chain. Use this block as the lower bound for the search.
+  const blockFinder = undefined;
+  const mainnetActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
+  const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
+  const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
+  const activationBlock = await getBlockForTimestamp(chainId, timestamp, blockFinder, redis, hints);
+
+  const cacheAfter = 5 * 24 * 3600; // 5 days
+  if (isDefined(redis) && getCurrentTime() - timestamp > cacheAfter) {
+    await redis.set(key, activationBlock.toString());
+  }
+
+  return activationBlock;
 }
 
 /**
@@ -161,16 +203,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      // Grab latest spoke pool as of `toBlockOverride[1]`. If `toBlockOverride[1]` is undefined, then grabs current
-      // spoke pool.
-      const latestSpokePool = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
-      const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
-      const spokePoolActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
-      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolActivationBlock)).timestamp;
-
-      // Improve BlockFinder efficiency by clamping its search space lower bound to the SpokePool deployment block.
-      const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
-      const registrationBlock = await getBlockForTimestamp(chainId, time, blockFinder, redis, hints);
+      const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
+      const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
+      const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );
@@ -263,7 +298,8 @@ export async function updateSpokePoolClients(
 export async function constructClients(
   logger: winston.Logger,
   config: CommonConfig,
-  baseSigner: Signer
+  baseSigner: Signer,
+  hubPoolLookback?: number
 ): Promise<Clients> {
   const hubPoolProvider = await getProvider(config.hubPoolChainId, logger);
   const hubSigner = baseSigner.connect(hubPoolProvider);
@@ -283,10 +319,12 @@ export async function constructClients(
     config.maxConfigVersion
   );
 
-  const hubPoolClientSearchSettings = {
-    ...rateModelClientSearchSettings,
-    fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-  };
+  const hubPoolDeploymentBlock = Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId));
+  const { average: avgMainnetBlockTime } = await sdkUtils.averageBlockTime(hubPoolProvider);
+  const fromBlock = isDefined(hubPoolLookback)
+    ? Math.max(latestMainnetBlock - hubPoolLookback / avgMainnetBlockTime, hubPoolDeploymentBlock)
+    : hubPoolDeploymentBlock;
+  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, fromBlock };
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
@@ -294,7 +332,7 @@ export async function constructClients(
     logger,
     hubPool,
     configStoreClient,
-    Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
+    hubPoolDeploymentBlock,
     config.hubPoolChainId,
     hubPoolClientSearchSettings,
     await getRedisCache(logger),
@@ -303,7 +341,18 @@ export async function constructClients(
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
 
-  return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
+  // Define the Arweave client as "read-only" to prevent any accidental writes to the Arweave network.
+  // Only the dataworker should have write access to the Arweave network - we will define that in
+  // the more specialized dataworker client helper.
+  const arweaveClient = new caching.ArweaveClient(
+    getArweaveJWKSigner({ keyType: "read-only" }),
+    logger,
+    config.arweaveGateway?.url,
+    config.arweaveGateway?.protocol,
+    config.arweaveGateway?.port
+  );
+
+  return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner, arweaveClient };
 }
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
@@ -311,7 +360,6 @@ export async function constructClients(
 export async function updateClients(clients: Clients, config: CommonConfig): Promise<void> {
   await clients.configStoreClient.update();
   config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
-  await clients.hubPoolClient.update();
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {

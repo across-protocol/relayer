@@ -1,23 +1,31 @@
 import { BundleDataClient } from "../../src/clients";
-import { FillsToRefund } from "../../src/interfaces";
+import { CombinedRefunds } from "../../src/dataworker/DataworkerUtils";
 
 export class MockBundleDataClient extends BundleDataClient {
-  private pendingBundleRefunds: FillsToRefund = {};
-  private nextBundleRefunds: FillsToRefund = {};
+  private pendingBundleRefunds: CombinedRefunds = {};
+  private nextBundleRefunds: CombinedRefunds = {};
 
-  async getPendingRefundsFromValidBundles(): Promise<FillsToRefund[]> {
+  async getPendingRefundsFromValidBundles(): Promise<CombinedRefunds[]> {
     return [this.pendingBundleRefunds];
   }
 
-  async getNextBundleRefunds(): Promise<FillsToRefund> {
-    return this.nextBundleRefunds;
+  async getNextBundleRefunds(): Promise<CombinedRefunds[]> {
+    return [this.nextBundleRefunds];
   }
 
-  setReturnedPendingBundleRefunds(refunds: FillsToRefund): void {
+  setReturnedPendingBundleRefunds(refunds: CombinedRefunds): void {
     this.pendingBundleRefunds = refunds;
   }
 
-  setReturnedNextBundleRefunds(refunds: FillsToRefund): void {
+  setReturnedNextBundleRefunds(refunds: CombinedRefunds): void {
     this.nextBundleRefunds = refunds;
+  }
+
+  getPersistedPendingRefundsFromLastValidBundle(): Promise<CombinedRefunds[] | undefined> {
+    return Promise.resolve(undefined);
+  }
+
+  getPersistedNextBundleRefunds(): Promise<CombinedRefunds | undefined> {
+    return Promise.resolve(undefined);
   }
 }

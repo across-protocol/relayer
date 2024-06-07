@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { utils as sdkUtils, typeguards } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, typeguards } from "@across-protocol/sdk";
 import {
   winston,
   getNetworkName,
@@ -26,6 +26,8 @@ export interface AugmentedTransaction {
   unpermissioned?: boolean; // If false, the transaction must be sent from the enqueuer of the method.
   // If true, then can be sent from the MakerDAO multisender contract.
   canFailInSimulation?: boolean;
+  // Optional batch ID to use to group transactions
+  groupId?: string;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;

@@ -1,64 +1,76 @@
-import { clients } from "@across-protocol/sdk-v2";
-import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient, UBAClient } from "../src/clients";
+import * as contracts from "@across-protocol/contracts/dist/test-utils";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
+import { utils as sdkUtils } from "@across-protocol/sdk";
+import {
+  AcrossApiClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  TokenClient,
+} from "../src/clients";
+import { DepositWithBlock, FillStatus } from "../src/interfaces";
 import {
   CHAIN_ID_TEST_LIST,
   amountToLp,
   defaultMinDepositConfirmations,
-  modifyRelayHelper,
   originChainId,
+  destinationChainId,
   repaymentChainId,
 } from "./constants";
 import { MockInventoryClient, MockProfitClient, MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 import {
+  BigNumber,
   Contract,
   SignerWithAddress,
-  buildDepositStruct,
-  buildFill,
   createSpyLogger,
   deployAndConfigureHubPool,
   deployConfigStore,
   deploySpokePoolWithToken,
-  destinationChainId,
+  depositV3,
+  fillV3Relay,
   enableRoutesOnHubPool,
   ethers,
   expect,
   getLastBlockTime,
   lastSpyLogIncludes,
+  randomAddress,
   setupTokensForWallet,
-  simpleDeposit,
-  toBNWei,
 } from "./utils";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { RelayerUnfilledDeposit, getUnfilledDeposits, toBN, utf8ToHex } from "../src/utils";
-
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, l1Token: Contract, configStore: Contract;
-let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
-
-const { spy, spyLogger } = createSpyLogger();
-let spokePoolClient_1: clients.SpokePoolClient, spokePoolClient_2: clients.SpokePoolClient;
-let configStoreClient: MockConfigStoreClient, hubPoolClient: clients.HubPoolClient;
-let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
-let profitClient: MockProfitClient;
-let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
-
-let relayerInstance: Relayer;
-let unfilledDeposits: RelayerUnfilledDeposit[] = [];
-
-let _getUnfilledDeposits: () => Promise<RelayerUnfilledDeposit[]>;
+import { RelayerUnfilledDeposit, getAllUnfilledDeposits, getUnfilledDeposits, utf8ToHex } from "../src/utils";
 
 describe("Relayer: Unfilled Deposits", async function () {
-  const sortableEventFields = [
-    "blockNumber",
-    "blockTimestamp",
-    "quoteBlockNumber",
-    "logIndex",
-    "transactionIndex",
-    "transactionHash",
-  ];
+  const { bnOne } = sdkUtils;
+
+  let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
+  let hubPool: Contract, l1Token: Contract, configStore: Contract;
+  let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
+
+  let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+  let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
+  let spokePoolClients: Record<number, SpokePoolClient>;
+  let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
+  let profitClient: MockProfitClient;
+  let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+
+  let relayerInstance: Relayer;
+  let unfilledDeposits: RelayerUnfilledDeposit[] = [];
+  let inputAmount: BigNumber, outputAmount: BigNumber;
+
+  let _getAllUnfilledDeposits: () => RelayerUnfilledDeposit[];
+
+  const { spy, spyLogger } = createSpyLogger();
+  const updateAllClients = async () => {
+    await configStoreClient.update();
+    await hubPoolClient.update();
+    await tokenClient.update();
+    await spokePoolClient_1.update();
+    await spokePoolClient_2.update();
+  };
 
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
@@ -86,33 +98,32 @@ describe("Relayer: Unfilled Deposits", async function () {
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
     await configStoreClient.update();
 
-    hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
-    spokePoolClient_1 = new clients.SpokePoolClient(
+    spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
       spokePool_1,
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new clients.SpokePoolClient(
+    spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2,
       hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock,
-      { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+      { fromBlock: 0, toBlock: undefined, maxBlockLookBack: 0 }
     );
 
-    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
-    for (const erc20 of [l1Token]) {
-      await profitClient.initToken(erc20);
-    }
+    await profitClient.initToken(l1Token);
 
+    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -123,23 +134,22 @@ describe("Relayer: Unfilled Deposits", async function () {
         profitClient,
         tokenClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-        ubaClient: {} as unknown as UBAClient, // We don't need this for this test.
+        inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
       } as unknown as RelayerConfig
     );
 
-    await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // seed the owner to LP.
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 100); // seed the depositor to LP.
-    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_1, relayer, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);
+    const weth = undefined;
+    await setupTokensForWallet(spokePool_1, owner, [l1Token], weth, 100); // seed the owner to LP.
+    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], weth, 100); // seed the depositor to LP.
+    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], weth, 10);
+    await setupTokensForWallet(spokePool_1, relayer, [erc20_1], weth, 10);
+    await setupTokensForWallet(spokePool_2, relayer, [erc20_2], weth, 10);
 
     // Approve and add liquidity.
     await enableRoutesOnHubPool(hubPool, [
@@ -149,178 +159,115 @@ describe("Relayer: Unfilled Deposits", async function () {
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
 
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    await spokePool_2.setCurrentTime(await getLastBlockTime(spokePool_2.provider));
+    const currentTime = await getLastBlockTime(spokePool_1.provider);
+    await Promise.all([spokePool_1, spokePool_2].map((spokePool) => spokePool.setCurrentTime(currentTime)));
     await updateAllClients();
 
-    _getUnfilledDeposits = async (): Promise<RelayerUnfilledDeposit[]> => {
-      return await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, hubPoolClient);
-    };
+    _getAllUnfilledDeposits = (): RelayerUnfilledDeposit[] =>
+      Object.values(getAllUnfilledDeposits(relayerInstance.clients.spokePoolClients, hubPoolClient)).flat();
     unfilledDeposits = [];
+
+    const tokenBalance = await erc20_1.balanceOf(depositor.address);
+    outputAmount = tokenBalance.div(100);
+    inputAmount = outputAmount.mul(101).div(100);
   });
 
   it("Correctly fetches unfilled deposits", async function () {
-    expect(true).to.equal(true);
-    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const deposit2 = await simpleDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
+    const deposits = await sdkUtils.mapAsync(
+      [
+        { spokePool: spokePool_1, chainId: destinationChainId, inputToken: erc20_1, outputToken: erc20_2 },
+        { spokePool: spokePool_2, chainId: originChainId, inputToken: erc20_2, outputToken: erc20_1 },
+      ],
+      async ({ spokePool, chainId: dstChainId, inputToken: inToken, outputToken: outToken }) => {
+        const inputToken = inToken.address;
+        const outputToken = outToken.address;
+        return depositV3(spokePool, dstChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+      }
+    );
     await updateAllClients();
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
-    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, l1Token);
 
-    unfilledDeposits = await _getUnfilledDeposits();
+    unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(sortableEventFields)
-      .to.deep.equal([
-        {
-          unfilledAmount: deposit1.amount,
-          deposit: deposit1Complete,
-          fillCount: 0,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-        {
-          unfilledAmount: deposit2.amount,
-          deposit: deposit2Complete,
-          fillCount: 0,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-      ]);
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .to.deep.equal(
+        [...deposits]
+          .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
+          .map((deposit) => ({
+            deposit,
+            unfilledAmount: deposit.outputAmount,
+            invalidFills: [],
+            version: configStoreClient.configStoreVersion,
+          }))
+      );
   });
 
-  it("Correctly defers deposits with future quote timestamps", async function () {
-    const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
-
-    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-
-    await spokePool_1.setCurrentTime(deposit1.quoteTimestamp + delta);
-    const deposit2 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-
-    // One deposit is eligible.
-    await spokePool_1.setCurrentTime(deposit1.quoteTimestamp);
+  it("Correctly uses input fill status", async function () {
+    const deposits: DepositWithBlock[] = [];
+    for (let i = 0; i < 5; ++i) {
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        inputAmount,
+        erc20_2.address,
+        outputAmount
+      );
+      deposits.push(deposit);
+    }
     await updateAllClients();
 
-    unfilledDeposits = await _getUnfilledDeposits();
-    expect(unfilledDeposits.length).to.eq(1);
-    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
+    // Take the 2nd last deposit and mark it filled.
+    expect(deposits.length > 2).to.be.true;
+    const filledDeposit = deposits.at(-2);
+    expect(filledDeposit).to.exist;
 
-    // Still only one deposit.
-    await spokePool_1.setCurrentTime(deposit2.quoteTimestamp - 1);
-    await updateAllClients();
+    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit!);
+    const { fillStatus } = relayerInstance;
+    fillStatus[depositHash] = FillStatus.Filled;
 
-    unfilledDeposits = await _getUnfilledDeposits();
-    expect(unfilledDeposits.length).to.equal(1);
-    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
-
-    // Step slightly beyond the future quoteTimestamp; now both deposits are eligible.
-    await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
-    await updateAllClients();
-
-    unfilledDeposits = await _getUnfilledDeposits();
-    expect(unfilledDeposits.length).to.equal(2);
-    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
-    expect(unfilledDeposits[1].deposit.depositId).to.equal(deposit2.depositId);
-  });
-
-  it("Correctly fetches partially filled deposits", async function () {
-    expect(true).to.equal(true);
-
-    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const deposit2 = await simpleDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
-
-    // Partially fill the first deposit, which is sent to the second spoke pool, with one fill.
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
-    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, l1Token);
-
-    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
-    await updateAllClients();
-
-    // Validate the relayer correctly computes the unfilled amount.
-    unfilledDeposits = await _getUnfilledDeposits();
+    unfilledDeposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, fillStatus);
     expect(unfilledDeposits)
-      .excludingEvery(sortableEventFields)
-      .to.deep.equal([
-        {
-          unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
-          deposit: deposit1Complete,
-          fillCount: 1,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-        {
-          unfilledAmount: deposit2.amount,
-          deposit: deposit2Complete,
-          fillCount: 0,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-      ]);
-
-    // Partially fill the same deposit another two times.
-    const fill2 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
-    const fill3 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
-    await updateAllClients();
-    // Deposit 1 should now be partially filled by all three fills. This should be correctly reflected.
-    const unfilledAmount = deposit1.amount.sub(fill1.fillAmount.add(fill2.fillAmount).add(fill3.fillAmount));
-
-    unfilledDeposits = await _getUnfilledDeposits();
-    expect(unfilledDeposits)
-      .excludingEvery(sortableEventFields)
-      .to.deep.equal([
-        {
-          unfilledAmount: unfilledAmount,
-          deposit: deposit1Complete,
-          fillCount: 3,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-        {
-          unfilledAmount: deposit2.amount,
-          deposit: deposit2Complete,
-          fillCount: 0,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-      ]);
-
-    // Fill the reminding amount on the deposit. It should thus be removed from the unfilledDeposits list.
-    const fill4 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 1);
-    expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
-    await updateAllClients();
-
-    unfilledDeposits = await _getUnfilledDeposits();
-    expect(unfilledDeposits)
-      .excludingEvery(sortableEventFields)
-      .to.deep.equal([
-        {
-          unfilledAmount: deposit2Complete.amount,
-          deposit: deposit2Complete,
-          fillCount: 0,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-      ]);
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .to.deep.equal(
+        deposits
+          .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
+          .map((deposit) => ({
+            deposit,
+            unfilledAmount: deposit.outputAmount,
+            invalidFills: [],
+            version: configStoreClient.configStoreVersion,
+          }))
+      );
   });
 
   it("Correctly excludes fills that are incorrectly applied to a deposit", async function () {
-    expect(true).to.equal(true);
-    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      inputAmount,
+      erc20_2.address,
+      outputAmount
+    );
 
-    // Partially fill the deposit, incorrectly by setting the wrong deposit ID.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, { ...deposit1Complete, depositId: 1337 }, 0.25);
-    await updateAllClients();
+    // Make an invalid fills by tweaking outputAmount and depositId, respectively.
+    const fakeDeposit = { ...deposit, outputAmount: deposit.outputAmount.sub(bnOne) };
+    const invalidFill = await fillV3Relay(spokePool_2, fakeDeposit, relayer);
+    const wrongDepositId = { ...deposit, depositId: deposit.depositId + 1 };
+    await fillV3Relay(spokePool_2, wrongDepositId, relayer);
 
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
-    unfilledDeposits = await _getUnfilledDeposits();
+    await updateAllClients();
+    unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(sortableEventFields)
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
       .to.deep.equal([
         {
-          unfilledAmount: deposit1Complete.amount,
-          deposit: deposit1Complete,
-          fillCount: 0,
-          invalidFills: [],
+          deposit,
+          unfilledAmount: deposit.outputAmount,
+          invalidFills: [invalidFill],
           version: configStoreClient.configStoreVersion,
         },
       ]);
@@ -330,159 +277,248 @@ describe("Relayer: Unfilled Deposits", async function () {
     const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
 
     // perform simple deposit
-    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit1 = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      inputAmount,
+      erc20_2.address,
+      outputAmount
+    );
 
     // Add an "early" deposit
     await spokePool_1.setCurrentTime(deposit1.quoteTimestamp + delta);
-    const deposit2 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit2 = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      inputAmount,
+      erc20_2.address,
+      outputAmount
+    );
     await spokePool_1.setCurrentTime(deposit1.quoteTimestamp);
     await updateAllClients();
 
-    // update fee before either deposit is filled
-    const newRelayFeePct = toBNWei(0.1337);
+    // Update the deposit before either is filled.
+    const updatedOutputAmount = outputAmount.sub(bnOne);
     for (const deposit of [deposit1, deposit2]) {
-      const speedUpSignature = await modifyRelayHelper(
-        newRelayFeePct,
-        deposit.depositId.toString(),
-        deposit.originChainId.toString(),
+      const signature = await contracts.getUpdatedV3DepositSignature(
         depositor,
-        deposit.recipient,
-        "0x"
-      );
-      await spokePool_1.speedUpDeposit(
-        depositor.address,
-        newRelayFeePct,
         deposit.depositId,
+        originChainId,
+        updatedOutputAmount,
         deposit.recipient,
-        "0x",
-        speedUpSignature.signature
+        deposit.message
       );
+
+      await spokePool_1
+        .connect(depositor)
+        .speedUpV3Deposit(
+          depositor.address,
+          deposit.depositId,
+          updatedOutputAmount,
+          deposit.recipient,
+          deposit.message,
+          signature
+        );
     }
     await spokePoolClient_1.update();
 
-    unfilledDeposits = await _getUnfilledDeposits();
-    // expect only one unfilled deposit
-    expect(unfilledDeposits.length).to.eq(1);
-    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
-    // expect unfilled deposit to have new relay fee
-    expect(unfilledDeposits[0].deposit.newRelayerFeePct).to.deep.eq(newRelayFeePct);
-    // Old relayer fee pct is unchanged as this is what's included in relay hash
-    expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(deposit1.relayerFeePct);
+    unfilledDeposits = _getAllUnfilledDeposits();
 
-    // @dev The SpokePoolClient expects to know about the deposit _before_ the SpeedUp. In this case,
-    // the deposit was initially early due to time manipulation, and is not treated as a normal deposit,
-    // so the SpokePoolClient needs to re-initialise to capture both Deposit event and SpeedUp in the
-    // same (or later) update. This fits OK with the serverless mode of operating the bot.
-    spokePoolClient_1 = new clients.SpokePoolClient(
-      spyLogger,
-      spokePool_1,
-      hubPoolClient,
-      originChainId,
-      spokePool1DeploymentBlock
-    );
-    relayerInstance.clients.spokePoolClients = Object.fromEntries(
-      [spokePoolClient_1, spokePoolClient_2].map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
-    );
-
-    // Cycle forward to the next deposit
-    await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
-    await updateAllClients();
-
-    unfilledDeposits = await _getUnfilledDeposits();
+    // Expect both unfilled deposits. The SpokePool contract guarantees
+    // that the quoteTimestamp can't be ahead of SpokePool time.
     expect(unfilledDeposits.length).to.eq(2);
-    expect(unfilledDeposits[1].deposit.depositId).to.equal(deposit2.depositId);
-    // The new relayer fee was still applied to the early deposit.
-    expect(unfilledDeposits[1].deposit.relayerFeePct).to.deep.eq(deposit2.relayerFeePct);
-    expect(unfilledDeposits[1].deposit.newRelayerFeePct).to.deep.eq(newRelayFeePct);
+    [deposit1, deposit2].forEach((deposit, idx) => {
+      const unfilledDeposit = unfilledDeposits[idx];
+      expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
+
+      // expect unfilled deposit to have the same outputAmount, but a lower updatedOutputAmount.
+      expect(unfilledDeposit.deposit.outputAmount).to.deep.eq(outputAmount);
+      expect(unfilledDeposit.deposit.updatedOutputAmount).to.deep.eq(updatedOutputAmount);
+    });
   });
 
   it("Does not double fill deposit when updating fee after fill", async function () {
-    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
-    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
-    await updateAllClients();
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      inputAmount,
+      erc20_2.address,
+      outputAmount
+    );
 
-    unfilledDeposits = await _getUnfilledDeposits();
-    expect(unfilledDeposits)
-      .excludingEvery(sortableEventFields)
-      .to.deep.equal([
-        {
-          unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
-          deposit: deposit1Complete,
-          fillCount: 1,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-      ]);
+    await updateAllClients();
+    unfilledDeposits = _getAllUnfilledDeposits();
+    expect(unfilledDeposits.length).to.equal(1);
+    expect(sdkUtils.getRelayDataHash(unfilledDeposits[0].deposit, destinationChainId)).to.equal(
+      sdkUtils.getRelayDataHash(deposit, deposit.destinationChainId)
+    );
+
+    await fillV3Relay(spokePool_2, deposit, relayer);
+
+    await updateAllClients();
+    unfilledDeposits = _getAllUnfilledDeposits();
+    expect(unfilledDeposits.length).to.equal(0);
 
     // Speed up deposit, and check that unfilled amount is still the same.
-    const newRelayerFeePct = toBNWei(0.1337);
-    const speedUpSignature = await modifyRelayHelper(
-      newRelayerFeePct,
-      deposit1.depositId.toString(),
-      deposit1.originChainId.toString(),
+    const updatedOutputAmount = deposit.outputAmount.sub(bnOne);
+    const signature = await contracts.getUpdatedV3DepositSignature(
       depositor,
-      deposit1.recipient,
-      "0x"
+      deposit.depositId,
+      originChainId,
+      updatedOutputAmount,
+      deposit.recipient,
+      deposit.message
     );
-    await spokePool_1.speedUpDeposit(
-      depositor.address,
-      newRelayerFeePct,
-      deposit1.depositId,
-      deposit1.recipient,
-      "0x",
-      speedUpSignature.signature
-    );
-    await updateAllClients();
-    const depositWithSpeedUp = {
-      ...deposit1Complete,
-      newRelayerFeePct,
-      updatedRecipient: deposit1.recipient,
-      updatedMessage: "0x",
-      speedUpSignature: speedUpSignature.signature,
-    };
 
-    unfilledDeposits = await _getUnfilledDeposits();
-    expect(unfilledDeposits)
-      .excludingEvery(sortableEventFields)
-      .to.deep.equal([
-        {
-          unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
-          deposit: depositWithSpeedUp,
-          fillCount: 1,
-          invalidFills: [],
-          version: configStoreClient.configStoreVersion,
-        },
-      ]);
+    await spokePool_1
+      .connect(depositor)
+      .speedUpV3Deposit(
+        depositor.address,
+        deposit.depositId,
+        updatedOutputAmount,
+        deposit.recipient,
+        deposit.message,
+        signature
+      );
+    await updateAllClients();
+
+    unfilledDeposits = _getAllUnfilledDeposits();
+    expect(unfilledDeposits.length).to.equal(0);
+  });
+
+  it("Batch-computes LP fees correctly", async function () {
+    const nLoops = 25;
+    const [lpTokenAddr] = await hubPool.pooledTokens(l1Token.address);
+    const lpToken = new Contract(lpTokenAddr, ERC20.abi, owner);
+
+    const deposits: DepositWithBlock[] = [];
+    for (let i = 0; i < nLoops; ++i) {
+      // HubPool and origin SpokePool timestamps must be synchronised for quoteTimestamp validation.
+      const quoteTimestamp = (await hubPool.provider.getBlock("latest")).timestamp;
+      await spokePool_1.setCurrentTime(quoteTimestamp);
+
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        inputAmount.add(i),
+        erc20_2.address,
+        outputAmount,
+        { quoteTimestamp }
+      );
+      deposits.push(deposit);
+
+      // Modify the HubPool LP balance to ensure that subsequent deposits will receive a different LP fee.
+      const lpTokenBalance = await lpToken.balanceOf(owner.address);
+      (await hubPool.removeLiquidity(l1Token.address, lpTokenBalance.div(2), false)).wait();
+    }
+    await hubPoolClient.update();
+
+    // Get the relayer's LP fee computation for repayment on both destination and HubPool chains.
+    const relayerLpFees = await relayerInstance.batchComputeLpFees(deposits);
+
+    // Compute LP fees for taking repayment on the HubPool chain.
+    let hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: destinationChainId }))
+    );
+
+    // Verify LP fees for repayment on the destination chain.
+    deposits.forEach((deposit, idx) => {
+      const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+      const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === destinationChainId);
+      expect(relayerLpFee).to.exist;
+      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+    });
+
+    // Compute LP fees for taking repayment on the origin chain.
+    hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: originChainId }))
+    );
+
+    // Verify LP fees for repayment on the origin chain.
+    deposits.forEach((deposit, idx) => {
+      const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+      const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === originChainId);
+      expect(relayerLpFee).to.exist;
+      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+    });
+
+    // Compute LP fees for taking repayment on the HubPool chain.
+    hubPoolLpFees = await hubPoolClient.batchComputeRealizedLpFeePct(
+      deposits.map((deposit) => ({ ...deposit, paymentChainId: hubPoolClient.chainId }))
+    );
+
+    // Verify LP fees for repayment on the HubPool chain.
+    deposits.forEach((deposit, idx) => {
+      const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+      const relayerLpFee = relayerLpFees[lpFeeKey].find(
+        ({ paymentChainId }) => paymentChainId === hubPoolClient.chainId
+      );
+      expect(relayerLpFee).to.exist;
+      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+    });
+
+    // Test for collisions on the LP fee key.
+    const [deposit] = deposits;
+    let lpFeeKey = relayerInstance.getLPFeeKey(deposit);
+    expect(relayerLpFees[lpFeeKey]).to.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, originChainId: destinationChainId });
+    expect(relayerLpFees[lpFeeKey]).not.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: randomAddress() });
+    expect(relayerLpFees[lpFeeKey]).to.not.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputAmount: deposit.inputAmount.add(1) });
+    expect(relayerLpFees[lpFeeKey]).to.not.exist;
+
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, quoteTimestamp: deposit.quoteTimestamp - 1 });
+    expect(relayerLpFees[lpFeeKey]).to.not.exist;
   });
 
   it("Skip invalid fills from the same relayer", async function () {
-    const deposit = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const depositComplete = await buildDepositStruct(deposit, hubPoolClient, l1Token);
-    // Send a fill with a different relayer fee pct from the deposit's. This fill should be considered an invalid fill
-    // and getUnfilledDeposits should log it.
-    const fill = await buildFill(
-      spokePool_2,
-      erc20_2,
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
       depositor,
-      relayer,
-      { ...depositComplete, relayerFeePct: toBN(2) },
-      0.25
+      erc20_1.address,
+      inputAmount,
+      erc20_2.address,
+      outputAmount
+    );
+
+    // Make a fill with a different outputAmount. This fill should be
+    // considered invalid and getAllUnfilledDeposits should log it.
+    const invalidFill = await fillV3Relay(
+      spokePool_2,
+      { ...deposit, outputAmount: deposit.outputAmount.sub(bnOne) },
+      relayer
     );
     await updateAllClients();
 
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
-    const unfilledDeposit = (await _getUnfilledDeposits())[0];
-    expect(unfilledDeposit === undefined).to.be.false;
-    expect(unfilledDeposit.unfilledAmount).to.equal(deposit.amount);
-    expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
-    expect(unfilledDeposit.invalidFills.length).to.equal(1);
-    expect(unfilledDeposit.invalidFills[0].amount).to.equal(toBN(fill.amount));
+    unfilledDeposits = _getAllUnfilledDeposits();
+    expect(unfilledDeposits)
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .to.deep.equal([
+        {
+          deposit,
+          unfilledAmount: deposit.outputAmount,
+          invalidFills: [invalidFill],
+          version: configStoreClient.configStoreVersion,
+        },
+      ]);
     expect(lastSpyLogIncludes(spy, "Invalid fills found")).to.be.true;
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    // Relayer shouldn't try to relay the fill even though it's unfilled as there has been one invalid fill from this
-    // same relayer.
+    // Relayer shouldn't try to fill again because there has been one invalid fill from this same relayer.
     expect(
       spy
         .getCalls()
@@ -503,10 +539,19 @@ describe("Relayer: Unfilled Deposits", async function () {
     // version at the quote timestamp.
     await spokePool_1.setCurrentTime(updateTime + 1);
     await updateAllClients();
-    await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      inputAmount,
+      erc20_2.address,
+      outputAmount
+    );
     await updateAllClients();
 
-    const unfilledDeposits = await _getUnfilledDeposits();
+    const unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
     expect(unfilledDeposits[0].version).to.equal(highVersion);
 
@@ -515,11 +560,3 @@ describe("Relayer: Unfilled Deposits", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 });
-
-async function updateAllClients() {
-  await configStoreClient.update();
-  await hubPoolClient.update();
-  await tokenClient.update();
-  await spokePoolClient_1.update();
-  await spokePoolClient_2.update();
-}

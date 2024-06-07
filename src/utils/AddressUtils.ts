@@ -1,5 +1,5 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
-import { BigNumber, ethers } from ".";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { BigNumber, ethers, isDefined } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
   // Convert address strings to BigNumbers and then sort numerical value of the BigNumber, which sorts the addresses
@@ -15,8 +15,18 @@ export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0
   }
 }
 
-export function compareAddressesSimple(addressA: string, addressB: string): boolean {
+export function compareAddressesSimple(addressA?: string, addressB?: string): boolean {
+  if (addressA === undefined || addressB === undefined) {
+    return false;
+  }
   return addressA.toLowerCase() === addressB.toLowerCase();
+}
+
+export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
+  if (!isDefined(address)) {
+    return false;
+  }
+  return list.filter((listAddress) => compareAddressesSimple(address, listAddress)).length > 0;
 }
 
 /**
@@ -48,6 +58,8 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
 
 /**
  * Resolves a list of token symbols for a list of token addresses and a chain ID.
+ * @dev This function is dangerous because multiple token addresses can map to the same token symbol
+ * so the output can be unexpected.
  * @param tokenAddresses The token addresses to resolve the symbols for.
  * @param chainId The chain ID to resolve the symbols for.
  * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
@@ -69,6 +81,34 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
     throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
   }
   return targetAddress;
+}
+
+export function getTokenAddressWithCCTP(
+  l1Token: string,
+  hubChainId: number,
+  l2ChainId: number,
+  isNativeUsdc = false
+): string {
+  // Base Case
+  if (hubChainId === l2ChainId) {
+    return l1Token;
+  }
+  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
+    const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
+    return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];
+  }
+  return getTokenAddress(l1Token, hubChainId, l2ChainId);
+}
+
+/**
+ * Get the USDC symbol for the given token address and chain ID.
+ * @param l2Token A Web3 token address (not case sensitive)
+ * @param chainId A chain Id to reference
+ * @returns Either USDC (if native) or USDbC/USDC.e (if bridged) or undefined if the token address is not recognized.
+ */
+export function getUsdcSymbol(l2Token: string, chainId: number): string | undefined {
+  const compareToken = (token?: string) => isDefined(token) && compareAddressesSimple(l2Token, token);
+  return ["USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token]?.addresses?.[chainId]));
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {

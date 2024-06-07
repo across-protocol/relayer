@@ -1,27 +1,27 @@
 import assert from "assert";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { Deposit, FillWithBlock } from "../src/interfaces";
-import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL, getDepositPath } from "../src/utils";
-import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
+import { Deposit } from "../src/interfaces";
+import { MAX_UINT_VAL } from "../src/utils";
+import { CHAIN_ID_TEST_LIST, amountToDeposit, destinationChainId, originChainId } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
   SignerWithAddress,
-  buildDeposit,
-  buildFill,
-  buildFillForRepaymentChain,
+  depositV3,
   ethers,
   expect,
+  fillV3,
   lastSpyLogIncludes,
   lastSpyLogLevel,
   setupTokensForWallet,
+  requestSlowFill,
   sinon,
   toBNWei,
+  utf8ToHex,
 } from "./utils";
-// Tested
-import { MockConfigStoreClient } from "./mocks";
+import { MockConfigStoreClient } from "./mocks"; // Tested
 
 class TestSpokePoolClient extends SpokePoolClient {
   deleteDeposit(depositId: number): void {
@@ -77,34 +77,24 @@ describe("Dataworker: Propose root bundle", async function () {
   it("Simple lifecycle", async function () {
     await updateAllClients();
 
-    const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
-      return spy
-        .getCalls()
-        .sort((logA: unknown, logB: unknown) => logB["callId"] - logA["callId"]) // Sort by callId in descending order
-        .find((log: unknown) => log["lastArg"]["message"].includes(message)).lastArg;
-    };
-
     // TEST 1:
     // Before submitting any spoke pool transactions, check that dataworker behaves as expected with no roots.
-    const latestBlock1 = await hubPool.provider.getBlockNumber();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
-    const loadDataResults1 = getMostRecentLog(spy, "Finished loading spoke pool data");
-    expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map(() => [0, latestBlock1]));
 
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
-    const deposit = await buildDeposit(
-      hubPoolClient,
+    const deposit = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
     await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await requestSlowFill(spokePool_2, depositor, deposit);
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
     const blockRange2 = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock2]);
@@ -119,16 +109,6 @@ describe("Dataworker: Propose root bundle", async function () {
     );
     const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
-    expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
-    expect(loadDataResults2.unfilledDepositsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
-    expect(loadDataResults2.depositsInRangeByOriginChain).to.deep.equal({
-      [originChainId]: { [getDepositPath(deposit)]: 1 },
-    });
-    expect(loadDataResults2.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: 1 },
-    });
-
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot2.tree.getHexRoot());
@@ -137,7 +117,7 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
@@ -166,21 +146,12 @@ describe("Dataworker: Propose root bundle", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    const latestBlock3 = await hubPool.provider.getBlockNumber();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const blockRange3 = [
-      [latestBlock2 + 1, latestBlock3],
-      [latestBlock2 + 1, latestBlock3],
-      [latestBlock2 + 1, latestBlock3],
-      [latestBlock2 + 1, latestBlock3],
-    ];
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
-    const loadDataResults3 = getMostRecentLog(spy, "Finished loading spoke pool data");
-    expect(loadDataResults3.blockRangesForChains).to.deep.equal(blockRange3);
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
     const latestBlock4 = await hubPool.provider.getBlockNumber();
     const blockRange4 = [
@@ -196,6 +167,7 @@ describe("Dataworker: Propose root bundle", async function () {
       expectedPoolRebalanceRoot4.leaves,
       expectedPoolRebalanceRoot4.runningBalances
     );
+    const expectedSlowRelayRefundRoot4 = await dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
 
     // TEST 5:
     // Won't submit anything if the USD threshold to propose a root is set and set too high:
@@ -204,36 +176,14 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
-    expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
-    expect(loadDataResults4.unfilledDepositsByDestinationChain).to.deep.equal({});
-    expect(loadDataResults4.depositsInRangeByOriginChain).to.deep.equal({});
-    expect(loadDataResults4.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: 1 },
-    });
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.relayerRefundRoot).to.equal(expectedRelayerRefundRoot4.tree.getHexRoot());
-    expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(EMPTY_MERKLE_ROOT);
-
-    // Should be able to look up 2 historical valid fills, even though there is 1 refund in the range.
-    // This test is really important because `allValidFills` should not constrain by block range otherwise the pool
-    // rebalance root can fail to be built in cases where a fill in the block range matches a deposit with a fill
-    // in a previous root bundle. This would be a case where there is excess slow fill payment sent to the spoke
-    // pool and we need to send some back to the hub pool, because of this fill in the current block range that
-    // came after the slow fill was sent.
-    const { allValidFills } = await dataworkerInstance.clients.bundleDataClient.loadData(
-      loadDataResults4.blockRangesForChains,
-      spokePoolClients
-    );
-    const allValidFillsByDestinationChain = allValidFills.filter(
-      (fill: FillWithBlock) => fill.destinationChainId === destinationChainId
-    );
-    expect(allValidFillsByDestinationChain.length).to.equal(2);
+    expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(expectedSlowRelayRefundRoot4.tree.getHexRoot());
 
     // Execute queue and check that root bundle is pending:
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
@@ -253,17 +203,18 @@ describe("Dataworker: Propose root bundle", async function () {
     await spokePool_1.setCurrentTime(updateTime + 1);
     await updateAllClients();
 
-    const deposit = await buildDeposit(
-      hubPoolClient,
+    const deposit = await depositV3(
       spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
       destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
       amountToDeposit
     );
+
     await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(multiCallerClient.transactionCount()).to.equal(0);
@@ -295,14 +246,14 @@ describe("Dataworker: Propose root bundle", async function () {
       // Prime the origin spoke with a single deposit. Some utility functions involved in searching for deposits
       // rely on the lowest deposit ID in order to bound the search by. A missing initial deposit ID would always
       // be caught during pre-launch testing, so that's not a concern here.
-      let deposit = await buildDeposit(
-        hubPoolClient,
+      let deposit = await depositV3(
         originSpoke.spokePool,
-        erc20_1,
-        l1Token_1,
-        depositor,
         destinationChainId,
-        amountToDeposit
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit,
       );
 
       // Since the SpokePoolClient relies on SpokePoolClient.latestDepositIdQueried, we can't currently detect
@@ -311,21 +262,21 @@ describe("Dataworker: Propose root bundle", async function () {
       let missingDepositId = -1;
 
       for (let idx = 0; idx < nDeposits; ++idx) {
-        deposit = await buildDeposit(
-          hubPoolClient,
+        deposit = await depositV3(
           originSpoke.spokePool,
-          erc20_1,
-          l1Token_1,
-          depositor,
           destinationChainId,
-          amountToDeposit
+          depositor,
+          erc20_1.address,
+          amountToDeposit,
+          erc20_2.address,
+          amountToDeposit,
         );
 
         if (idx === missingDepositIdx) {
           missingDepositId = deposit.depositId;
         }
 
-        await buildFill(destinationSpoke.spokePool, erc20_2, depositor, relayer, deposit, 1);
+        await fillV3Relay(destinationSpoke.spokePool, deposit, relayer);
       }
       await hubPool.setCurrentTime(deposit.quoteTimestamp + 1);
       await hubPoolClient.update();
@@ -398,7 +349,7 @@ describe("Dataworker: Propose root bundle", async function () {
       let fillBlock = -1;
       let deposit: Deposit;
       for (let idx = 0; idx < nDeposits; ++idx) {
-        deposit = await buildDeposit(
+        deposit = await depositV3(
           hubPoolClient,
           originSpoke.spokePool,
           erc20_1,
