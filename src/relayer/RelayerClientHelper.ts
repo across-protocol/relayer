@@ -93,7 +93,7 @@ export async function constructRelayerClients(
         const opts = {
           finality,
           lookback: config.maxRelayerLookBack,
-          blockRange: config.maxBlockLookBack[chainId] ?? 5_000,
+          blockRange: config.maxBlockLookBack[chainId],
         };
         return [chainId, await indexedSpokePoolClient(baseSigner, hubPoolClient, chainId, opts)];
       })
