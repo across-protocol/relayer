@@ -109,10 +109,7 @@ export abstract class BaseAdapter {
    */
   public async updateSearchConfig(provider: Provider, fromBlock: number): Promise<EventSearchConfig> {
     const toBlock = await provider.getBlockNumber();
-
-    const { chainId } = await provider.getNetwork();
-    const { maxBlockLookBack } = chainId === this.hubChainId ? this.baseL1SearchConfig : this.baseL2SearchConfig;
-
+    const { maxBlockLookBack } = this.chainId === this.hubChainId ? this.baseL1SearchConfig : this.baseL2SearchConfig;
     return { fromBlock, toBlock, maxBlockLookBack };
   }
 
@@ -122,7 +119,7 @@ export abstract class BaseAdapter {
       this.nextHubBlock
     );
     const l2SearchConfig = await this.updateSearchConfig(
-      this.spokePoolClients[this.hubChainId].spokePool.provider,
+      this.spokePoolClients[this.chainId].spokePool.provider,
       this.nextSpokeBlock
     );
 
