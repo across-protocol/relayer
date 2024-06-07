@@ -593,16 +593,6 @@ export const CONTRACT_ADDRESSES: {
           stateMutability: "nonpayable",
           type: "function",
         },
-        {
-          inputs: [
-            { internalType: "uint256", name: "_l2BlockNumber", type: "uint256" },
-            { internalType: "uint256", name: "_l2MessageIndex", type: "uint256" },
-          ],
-          name: "isEthWithdrawalFinalized",
-          outputs: [{ internalType: "bool", name: "", type: "bool" }],
-          stateMutability: "view",
-          type: "function",
-        },
       ],
     },
     zkSyncDefaultErc20Bridge: {
@@ -632,16 +622,6 @@ export const CONTRACT_ADDRESSES: {
           name: "finalizeWithdrawal",
           outputs: [],
           stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          inputs: [
-            { internalType: "uint256", name: "_l2BlockNumber", type: "uint256" },
-            { internalType: "uint256", name: "_l2MessageIndex", type: "uint256" },
-          ],
-          name: "isWithdrawalFinalized",
-          outputs: [{ internalType: "bool", name: "", type: "bool" }],
-          stateMutability: "view",
           type: "function",
         },
         {

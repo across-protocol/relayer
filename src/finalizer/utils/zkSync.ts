@@ -1,7 +1,7 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
-import { Provider as zksProvider, Wallet as zkWallet } from "zksync-web3";
+import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import {
@@ -103,7 +103,7 @@ export async function zkSyncFinalizer(
 
 /**
  * @dev For L2 transactions, status "finalized" is required before any contained messages can be executed on the L1.
- * @param provider zkSync L2 provider instance (must be of type zksync-web3.Provider).
+ * @param provider zkSync L2 provider instance (must be of type zksync-ethers.Provider).
  * @param tokensBridged Array of TokensBridged events to evaluate for finalization.
  * @returns TokensBridged events sorted according to pending and ready for finalization.
  */
