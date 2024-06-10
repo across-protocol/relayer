@@ -253,7 +253,7 @@ describe("Dataworker: Propose root bundle", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit,
+        amountToDeposit
       );
 
       // Since the SpokePoolClient relies on SpokePoolClient.latestDepositIdQueried, we can't currently detect
@@ -269,7 +269,7 @@ describe("Dataworker: Propose root bundle", async function () {
           erc20_1.address,
           amountToDeposit,
           erc20_2.address,
-          amountToDeposit,
+          amountToDeposit
         );
 
         if (idx === missingDepositIdx) {
