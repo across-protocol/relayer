@@ -293,7 +293,7 @@ export class LineaAdapter extends BaseAdapter {
       l1Bridge.filters.BridgingInitiatedV2(null /* sender */, monitoredAddress /* recipient */, l1Token),
       l1SearchConfig
     );
-    return initiatedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
+    return initiatedQueryResult;
   }
 
   async getErc20DepositFinalizedEvents(
@@ -312,7 +312,7 @@ export class LineaAdapter extends BaseAdapter {
       ),
       l2SearchConfig
     );
-    return finalizedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
+    return finalizedQueryResult;
   }
 
   matchErc20DepositEvents(
