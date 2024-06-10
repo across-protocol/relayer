@@ -1,8 +1,8 @@
 import assert from "assert";
 import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
-import * as contracts from "@across-protocol/contracts-v2";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import * as contracts from "@across-protocol/contracts";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
 
 // https://nodejs.org/api/process.html#exit-codes

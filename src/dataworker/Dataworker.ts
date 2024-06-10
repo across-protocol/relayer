@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils } from "ethers";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   winston,
@@ -42,7 +42,7 @@ import {
 } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
-import * as sdk from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,
@@ -383,6 +383,7 @@ export class Dataworker {
       blockRangesForProposal,
       spokePoolClients,
       latestBlockSearched,
+      false, // Don't load data from arweave when proposing.
       logData
     );
 
@@ -470,11 +471,12 @@ export class Dataworker {
     blockRangesForProposal: number[][],
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBundleEndBlock: number,
+    loadDataFromArweave = false,
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
-      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients);
+      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
     // Prepare information about what we need to store to
     // Arweave for the bundle. We will be doing this at a
     // later point so that we can confirm that this data is
@@ -627,7 +629,8 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
+    loadDataFromArweave = false
   ): Promise<
     // If valid is false, we get a reason and we might get expected trees.
     | {
@@ -834,7 +837,7 @@ export class Dataworker {
     // @dev only throw this error if the hub chain ID is 1, suggesting we're running on production.
     if (versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION && hubPoolChainId === 1) {
       throw new Error(
-        "Must use relayer-v2 code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
+        "Must use relayer code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
       );
     }
 
@@ -843,6 +846,7 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients,
       rootBundle.proposalBlockNumber,
+      loadDataFromArweave,
       logData
     );
 
@@ -1039,7 +1043,8 @@ export class Dataworker {
           const rootBundleData = await this._proposeRootBundle(
             blockNumberRanges,
             spokePoolClients,
-            matchingRootBundle.blockNumber
+            matchingRootBundle.blockNumber,
+            true // Load data from arweave when executing for speed.
           );
 
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
@@ -1331,7 +1336,8 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients
+      earliestBlocksInSpokePoolClients,
+      true // Load data from arweave when executing leaves for speed.
     );
 
     if (!valid) {
@@ -1372,6 +1378,17 @@ export class Dataworker {
         at: "Dataworker#executePoolRebalanceLeaves",
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
+      });
+      return leafCount;
+    }
+
+    // At this point, check again that there are still unexecuted pool rebalance leaves. This is done because the above
+    // logic, to reconstruct this pool rebalance root and the prerequisite spoke pool client updates, can take a while.
+    const pendingProposal: PendingRootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
+    if (pendingProposal.unclaimedPoolRebalanceLeafCount === 0) {
+      this.logger.debug({
+        at: "Dataworker#executePoolRebalanceLeaves",
+        message: "Exiting early due to dataworker function collision",
       });
       return leafCount;
     }
@@ -1534,7 +1551,6 @@ export class Dataworker {
               root: tree.getHexRoot(),
               leafId: leaf.leafId,
               rebalanceChain: leaf.chainId,
-              chainId: hubPoolChainId,
               token: leaf.l1Tokens,
               netSendAmounts: leaf.netSendAmounts,
             });
@@ -1962,7 +1978,8 @@ export class Dataworker {
         const { relayerRefundLeaves: leaves, relayerRefundTree: tree } = await this._proposeRootBundle(
           blockNumberRanges,
           spokePoolClients,
-          matchingRootBundle.blockNumber
+          matchingRootBundle.blockNumber,
+          true // load data from Arweave for speed purposes
         );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
@@ -2221,6 +2238,7 @@ export class Dataworker {
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
       this.rootCache[key] = _buildPoolRebalanceRoot(
         latestMainnetBlock,

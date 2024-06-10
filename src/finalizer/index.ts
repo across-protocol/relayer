@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { BigNumber, Contract, constants } from "ethers";
 import { getAddress } from "ethers/lib/utils";

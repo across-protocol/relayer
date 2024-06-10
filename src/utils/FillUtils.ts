@@ -1,6 +1,6 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient } from "../clients";
-import { Fill, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
+import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
 import { bnZero } from "../utils";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
@@ -54,15 +54,19 @@ export type RelayerUnfilledDeposit = {
 export function getUnfilledDeposits(
   destinationChainId: number,
   spokePoolClients: SpokePoolClientsByChain,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  fillStatus: { [deposit: string]: number } = {}
 ): RelayerUnfilledDeposit[] {
   const destinationClient = spokePoolClients[destinationChainId];
 
   // Iterate over each chainId and check for unfilled deposits.
   const deposits = Object.values(spokePoolClients)
     .filter(({ chainId, isUpdated }) => isUpdated && chainId !== destinationChainId)
-    .map((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
-    .flat();
+    .flatMap((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
+    .filter((deposit) => {
+      const depositHash = spokePoolClients[deposit.originChainId].getDepositHash(deposit);
+      return (fillStatus[depositHash] ?? FillStatus.Unfilled) !== FillStatus.Filled;
+    });
 
   return deposits
     .map((deposit) => {

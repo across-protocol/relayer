@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
 import {
@@ -16,6 +16,7 @@ import {
   isDefined,
   winston,
   fixedPointAdjustment,
+  TransactionResponse,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -35,6 +36,8 @@ type RepaymentChainProfitability = {
 
 export class Relayer {
   public readonly relayerAddress: string;
+  public readonly fillStatus: { [depositHash: string]: number } = {};
+  private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
 
   constructor(
     relayerAddress: string,
@@ -225,7 +228,7 @@ export class Relayer {
         .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
         .map(({ chainId: destinationChainId }) => [
           destinationChainId,
-          getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).filter((deposit) =>
+          getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, this.fillStatus).filter((deposit) =>
             this.filterDeposit(deposit)
           ),
         ])
@@ -441,15 +444,36 @@ export class Relayer {
     return lpFees;
   }
 
+  protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
+    const {
+      pendingTxnReceipts,
+      clients: { multiCallerClient },
+    } = this;
+
+    if (isDefined(pendingTxnReceipts[chainId])) {
+      this.logger.info({
+        at: "Relayer::executeFills",
+        message: `${getNetworkName(chainId)} transaction queue has pending fills; skipping...`,
+      });
+      multiCallerClient.clearTransactionQueue(chainId);
+      return [];
+    }
+    pendingTxnReceipts[chainId] = multiCallerClient.executeTxnQueue(chainId, simulate);
+    const txnReceipts = await pendingTxnReceipts[chainId];
+    delete pendingTxnReceipts[chainId];
+
+    return txnReceipts.map(({ hash }) => hash);
+  }
+
   async checkForUnfilledDepositsAndFill(
     sendSlowRelays = true,
     simulate = false
-  ): Promise<{ [chainId: number]: string[] }> {
+  ): Promise<{ [chainId: number]: Promise<string[]> }> {
     const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
-    const txnReceipts: { [chainId: number]: string[] } = Object.fromEntries(
+    const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
       Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
     );
 
@@ -480,7 +504,12 @@ export class Relayer {
 
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
-        .filter(({ fillStatus }) => fillStatus !== FillStatus.Filled);
+        .filter(({ fillStatus, ...deposit }) => {
+          // Track the fill status for faster filtering on subsequent loops.
+          const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+          this.fillStatus[depositHash] = fillStatus;
+          return fillStatus !== FillStatus.Filled;
+        });
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(
@@ -492,8 +521,7 @@ export class Relayer {
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
       if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
-        const receipts = await multiCallerClient.executeTxnQueues(simulate, [destinationChainId]);
-        txnReceipts[destinationChainId] = receipts[destinationChainId];
+        txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
       }
     });
 
@@ -691,7 +719,7 @@ export class Relayer {
     // If none of the preferred chains are profitable and they also don't include the destination chain,
     // then check if the destination chain is profitable.
     // This assumes that the depositor is getting quotes from the /suggested-fees endpoint
-    // in the frontend-v2 repo which assumes that repayment is the destination chain. If this is profitable, then
+    // in the frontend repo which assumes that repayment is the destination chain. If this is profitable, then
     // go ahead and use the preferred chain as repayment and log the lp fee delta. This is a temporary solution
     // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
     // we come up with a smarter fee quoting algorithm that takes into account relayer inventory management more

@@ -30,7 +30,7 @@ import {
   getRedisCache,
   getTokenAddressWithCCTP,
 } from "../../utils";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk";
 
 import { CONTRACT_ADDRESSES, TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
