@@ -290,7 +290,7 @@ export class LineaAdapter extends BaseAdapter {
   ): Promise<Event[]> {
     const initiatedQueryResult = await paginatedEventQuery(
       l1Bridge,
-      l1Bridge.filters.BridgingInitiatedV2(null /* sender */, null /* recipient, non-indexed must be null */, l1Token),
+      l1Bridge.filters.BridgingInitiatedV2(null /* sender */, monitoredAddress /* recipient */, l1Token),
       l1SearchConfig
     );
     return initiatedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
@@ -304,7 +304,12 @@ export class LineaAdapter extends BaseAdapter {
   ): Promise<Event[]> {
     const finalizedQueryResult = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.BridgingFinalizedV2(l1Token),
+      l2Bridge.filters.BridgingFinalizedV2(
+        l1Token,
+        null /* bridgedToken */,
+        null /* bridgedToken */,
+        monitoredAddress /* recipient */
+      ),
       l2SearchConfig
     );
     return finalizedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
