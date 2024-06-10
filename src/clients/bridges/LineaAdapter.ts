@@ -304,7 +304,7 @@ export class LineaAdapter extends BaseAdapter {
   ): Promise<Event[]> {
     const finalizedQueryResult = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.BridgingFinalized(l1Token),
+      l2Bridge.filters.BridgingFinalizedV2(l1Token),
       l2SearchConfig
     );
     return finalizedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);

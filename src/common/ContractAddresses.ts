@@ -298,19 +298,19 @@ export const LINEA_TOKEN_BRIDGE_CONTRACT_ABI = [
         type: "address",
       },
       {
-        indexed: true,
+        indexed: false,
         internalType: "uint256",
         name: "amount",
         type: "uint256",
       },
       {
-        indexed: false,
+        indexed: true,
         internalType: "address",
         name: "recipient",
         type: "address",
       },
     ],
-    name: "BridgingFinalized",
+    name: "BridgingFinalizedV2",
     type: "event",
   },
   {
