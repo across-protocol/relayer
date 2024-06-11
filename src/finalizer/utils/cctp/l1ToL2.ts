@@ -32,9 +32,7 @@ export async function cctpL1toL2Finalizer(
   spokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  // Let's just assume for now CCTP transfers don't take longer than 1 day and can
-  // happen very quickly.
-  const lookback = getCurrentTime() - 60 * 60 * 24;
+  const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
   const redis = await getRedisCache(logger);
   const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
   logger.debug({
@@ -83,7 +81,7 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
   );
   const eventFilter = tokenMessengerContract.filters.DepositForBurn(
     undefined,
-    TOKEN_SYMBOLS_MAP._USDC.addresses[currentChainId], // Filter by only USDC token deposits
+    TOKEN_SYMBOLS_MAP.USDC.addresses[currentChainId], // Filter by only USDC token deposits
     undefined,
     addressesToSearch // All depositors that we are monitoring for
   );

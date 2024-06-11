@@ -1,4 +1,4 @@
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   BigNumber,
@@ -372,7 +372,7 @@ export class InventoryClient {
 
     // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
     // is Bridged USDC and the output token is Native USDC.
-    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either _USDC, USDC.e or USDbC.
+    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either USDC, USDC.e or USDbC.
     // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
     // check specifically handles the case where the input token is Bridged/Native and the output token Native/Bridged.
     const isInputTokenUSDC = isDefined(getUsdcSymbol(inputToken, originChainId));
@@ -383,26 +383,29 @@ export class InventoryClient {
     return isInputTokenUSDC && isOutputTokenBridgedUSDC;
   }
 
-  // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
-  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm for each
-  // of the origin and destination chain:
-  // a) Find the chain virtual balance (current balance + pending relays + pending refunds) minus current shortfall.
-  // b) Find the cumulative virtual balance, including the total refunds on all chains and excluding current shortfall.
-  // c) Consider the size of a and b post relay (i.e after the relay is paid and all current transfers are settled what
-  // will the balances be on the target chain and the overall cumulative balance).
-  // d) Use c to compute what the post relay post current in-flight transactions allocation would be. Compare this
-  // number to the target threshold and:
-  //     If this number is less than the target for the destination chain + rebalance then select destination chain. We
-  //     slightly prefer destination to origin chain to support relayer capital efficiency.
-  //     Else, if this number is less than the target for the origin chain + rebalance then select origin
-  //     chain.
-  //     Else, take repayment on the Hub chain for ease of transferring out of L1 to any L2.
-  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number> {
+  /*
+   * Return all eligible repayment chains for a deposit. If inventory management is enabled, then this function will
+   * only choose chains where the post-relay balance allocation for a potential repayment chain is under the maximum
+   * allowed allocation on that chain. Origin, Destination, and HubChains are always evaluated as potential
+   * repayment chains in addition to  "Slow Withdrawal chains" such as Base, Optimism and Arbitrum for which
+   * taking repayment would reduce HubPool utilization. Post-relay allocation percentages take into
+   * account pending cross-chain inventory-management transfers, upcoming bundle refunds, token shortfalls
+   * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
+   * selected if the SpokePool's running balance for that chain is over the system's desired target.
+   * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
+   * chains are over-allocated.
+   * @dev If inventory management is disabled, then destinationChain is used as a default.
+   * @param deposit Deposit to determine repayment chains for.
+   * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
+   * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
+   * to lowest priority.
+   */
+  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
     if (!this.isInventoryManagementEnabled()) {
-      return destinationChainId;
+      return [destinationChainId];
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
@@ -469,6 +472,7 @@ export class InventoryClient {
       chainsToEvaluate.push(originChainId);
     }
 
+    const eligibleRefundChains: number[] = [];
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
     for (const _chain of chainsToEvaluate) {
@@ -507,7 +511,10 @@ export class InventoryClient {
 
       // Consider configured buffer for target to allow relayer to support slight overages.
       const tokenConfig = this.getTokenConfig(l1Token, _chain, repaymentToken);
-      assert(isDefined(tokenConfig), `No ${outputToken} tokenConfig for ${l1Token} on ${_chain}.`);
+      assert(
+        isDefined(tokenConfig),
+        `No ${outputToken} tokenConfig in the Inventory Config for ${l1Token} on ${_chain} with a repaymentToken of ${repaymentToken}.`
+      );
       const thresholdPct = toBN(tokenConfig.targetPct)
         .mul(tokenConfig.targetOverageBuffer ?? toBNWei("1"))
         .div(fixedPointAdjustment);
@@ -535,15 +542,16 @@ export class InventoryClient {
         }
       );
       if (expectedPostRelayAllocation.lte(thresholdPct)) {
-        return _chain;
+        eligibleRefundChains.push(_chain);
       }
     }
 
-    // None of the chain allocation percentages are lower than their target so take
-    // repayment on the hub chain by default. The caller has also set a token config so they are not expecting
-    // repayments to default to destination chain. If caller wanted repayments to default to destination
-    // chain, then they should not set a token config.
-    return hubChainId;
+    // Always add hubChain as a fallback option if inventory management is enabled. If none of the chainsToEvaluate
+    // were selected, then this function will return just the hub chain as a fallback option.
+    if (!eligibleRefundChains.includes(hubChainId)) {
+      eligibleRefundChains.push(hubChainId);
+    }
+    return eligibleRefundChains;
   }
 
   /**

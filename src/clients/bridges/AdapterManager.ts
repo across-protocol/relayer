@@ -8,10 +8,11 @@ import {
   ZKSyncAdapter,
   BaseChainAdapter,
   LineaAdapter,
+  ModeAdapter,
 } from "./";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
-import { utils } from "@across-protocol/sdk-v2";
-import { CHAIN_IDs } from "@across-protocol/constants-v2";
+import { utils } from "@across-protocol/sdk";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { spokesThatHoldEthAndWeth } from "../../common/Constants";
 
 export class AdapterManager {
@@ -61,6 +62,9 @@ export class AdapterManager {
     }
     if (this.spokePoolClients[59144] !== undefined) {
       this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(59144));
+    }
+    if (this.spokePoolClients[34443] !== undefined) {
+      this.adapters[34443] = new ModeAdapter(logger, spokePoolClients, filterMonitoredAddresses(34443));
     }
 
     logger.debug({

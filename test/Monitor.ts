@@ -10,7 +10,7 @@ import {
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { BalanceType, V3DepositWithBlock } from "../src/interfaces";
+import { BalanceType, L1Token, V3DepositWithBlock } from "../src/interfaces";
 import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { MAX_UINT_VAL, getNetworkName, toBN } from "../src/utils";
@@ -30,6 +30,20 @@ import {
   lastSpyLogIncludes,
   toBNWei,
 } from "./utils";
+
+type TokenMap = { [l2TokenAddress: string]: L1Token };
+
+class TestMonitor extends Monitor {
+  private overriddenTokenMap: { [chainId: number]: TokenMap } = {};
+
+  setL2ToL1TokenMap(chainId: number, map: TokenMap): void {
+    this.overriddenTokenMap[chainId] = map;
+  }
+  // Override internal function that calls into externally defined and hard-coded TOKEN_SYMBOLS_MAP.
+  protected getL2ToL1TokenMap(l1Tokens: L1Token[], chainId): TokenMap {
+    return this.overriddenTokenMap[chainId] ?? super.getL2ToL1TokenMap(l1Tokens, chainId);
+  }
+}
 
 describe("Monitor", async function () {
   const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
@@ -154,7 +168,7 @@ describe("Monitor", async function () {
     adapterManager = new MockAdapterManager(null, null, null, null);
     adapterManager.setSupportedChains(chainIds);
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
-    monitorInstance = new Monitor(spyLogger, monitorConfig, {
+    monitorInstance = new TestMonitor(spyLogger, monitorConfig, {
       bundleDataClient,
       configStoreClient,
       multiCallerClient,
@@ -163,7 +177,27 @@ describe("Monitor", async function () {
       tokenTransferClient,
       crossChainTransferClient,
     });
-
+    (monitorInstance as TestMonitor).setL2ToL1TokenMap(originChainId, {
+      [l2Token.address]: {
+        symbol: "L1Token1",
+        address: l1Token.address,
+        decimals: 18,
+      },
+    });
+    (monitorInstance as TestMonitor).setL2ToL1TokenMap(destinationChainId, {
+      [erc20_2.address]: {
+        symbol: "L1Token1",
+        address: l1Token.address,
+        decimals: 18,
+      },
+    });
+    (monitorInstance as TestMonitor).setL2ToL1TokenMap(hubPoolClient.chainId, {
+      [l1Token.address]: {
+        symbol: "L1Token1",
+        address: l1Token.address,
+        decimals: 18,
+      },
+    });
     await updateAllClients();
   });
 
@@ -228,7 +262,7 @@ describe("Monitor", async function () {
     // Have the data worker propose a new bundle.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // While the new bundle is still pending, refunds are in the "next" category
     await updateAllClients();
@@ -275,7 +309,7 @@ describe("Monitor", async function () {
     };
     await monitorInstance.update();
     await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Now, pending refunds should be 0.
     await monitorInstance.update();
@@ -321,7 +355,7 @@ describe("Monitor", async function () {
     // Have the data worker propose a new bundle.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Execute pool rebalance leaves.
     await executeBundle(hubPool);
@@ -409,7 +443,7 @@ describe("Monitor", async function () {
     await _monitor.refillBalances();
 
     expect(multiCallerClient.transactionCount()).to.equal(1);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(toBNWei("2"));
   });

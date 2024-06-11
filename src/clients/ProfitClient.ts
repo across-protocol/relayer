@@ -6,7 +6,7 @@ import {
   relayFeeCalculator,
   typeguards,
   utils as sdkUtils,
-} from "@across-protocol/sdk-v2";
+} from "@across-protocol/sdk";
 import * as constants from "../common/Constants";
 import {
   assert,
@@ -83,35 +83,6 @@ type UnprofitableFill = {
 // the SpokePool implements custom behaviour when relayer === recipient, it's important not to use the
 // relayer's own address. The specified address is deliberately setup by RL to have a 0 token balance.
 const TEST_RECIPIENT = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
-
-// These are used to simulate fills on L2s to return estimated gas costs.
-// Note: the type here assumes that all of these classes take the same constructor parameters.
-const QUERY_HANDLERS: {
-  [chainId: number]: new (
-    ...args: ConstructorParameters<typeof relayFeeCalculator.BaseQueries>
-  ) => relayFeeCalculator.QueryInterface;
-} = {
-  1: relayFeeCalculator.EthereumQueries,
-  10: relayFeeCalculator.OptimismQueries,
-  137: relayFeeCalculator.PolygonQueries,
-  288: relayFeeCalculator.BobaQueries,
-  324: relayFeeCalculator.ZkSyncQueries,
-  8453: relayFeeCalculator.BaseQueries,
-  42161: relayFeeCalculator.ArbitrumQueries,
-  59144: relayFeeCalculator.LineaQueries,
-  // Testnets:
-  5: relayFeeCalculator.EthereumGoerliQueries,
-  280: relayFeeCalculator.zkSyncGoerliQueries,
-  420: relayFeeCalculator.OptimismGoerliQueries,
-  59140: relayFeeCalculator.LineaGoerliQueries,
-  80001: relayFeeCalculator.PolygonMumbaiQueries,
-  84531: relayFeeCalculator.BaseGoerliQueries,
-  84532: relayFeeCalculator.BaseSepoliaQueries,
-  421613: relayFeeCalculator.ArbitrumGoerliQueries,
-  421614: relayFeeCalculator.ArbitrumSepoliaQueries,
-  11155111: relayFeeCalculator.EthereumSepoliaQueries,
-  11155420: relayFeeCalculator.OptimismSepoliaQueries,
-};
 
 const { PriceClient } = priceClient;
 const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
@@ -431,17 +402,22 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
   }
 
-  async getFillProfitability(deposit: V3Deposit, lpFeePct: BigNumber, l1Token: L1Token): Promise<FillProfit> {
+  async getFillProfitability(
+    deposit: V3Deposit,
+    lpFeePct: BigNumber,
+    l1Token: L1Token,
+    repaymentChainId: number
+  ): Promise<FillProfit> {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
-      const { depositId, originChainId } = deposit;
+      const { depositId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${l1Token.symbol} v3 deposit ${depositId} on chain ${originChainId} is ${profitable}`,
+        message: `${l1Token.symbol} v3 deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit,
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
@@ -470,17 +446,19 @@ export class ProfitClient {
   async isFillProfitable(
     deposit: V3Deposit,
     lpFeePct: BigNumber,
-    l1Token: L1Token
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "grossRelayerFeePct">> {
+    l1Token: L1Token,
+    repaymentChainId: number
+  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "netRelayerFeePct">> {
     let profitable = false;
-    let grossRelayerFeePct = bnZero;
+    let netRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
     let tokenGasCost = uint256Max;
     try {
-      ({ profitable, grossRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
+      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
         deposit,
         lpFeePct,
-        l1Token
+        l1Token,
+        repaymentChainId
       ));
     } catch (err) {
       this.logger.debug({
@@ -495,7 +473,7 @@ export class ProfitClient {
       profitable: profitable || (this.isTestnet && nativeGasCost.lt(uint256Max)),
       nativeGasCost,
       tokenGasCost,
-      grossRelayerFeePct,
+      netRelayerFeePct,
     };
   }
 
@@ -641,7 +619,9 @@ export class ProfitClient {
     const coingeckoProApiKey = undefined;
     // TODO: Set this once we figure out gas markup on the API side.
     const gasMarkup = 0;
-    return new QUERY_HANDLERS[chainId](
+    // Call the factory to create a new QueryBase instance.
+    return relayFeeCalculator.QueryBase__factory.create(
+      chainId,
       provider,
       undefined, // symbolMapping
       undefined, // spokePoolAddress

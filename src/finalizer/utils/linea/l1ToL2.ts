@@ -1,10 +1,10 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -40,9 +40,7 @@ export async function lineaL1ToL2Finalizer(
   );
 
   // Optimize block range for querying Linea's MessageSent events on L1.
-  // We want to conservatively query for events that are between 0 and 24 hours old
-  // because Linea L1->L2 messages are claimable after ~20 mins.
-  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24, 0);
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24 * 7, 0);
   logger.debug({
     at: "Finalizer#LineaL1ToL2Finalizer",
     message: "Linea MessageSent event filter",
@@ -71,7 +69,10 @@ export async function lineaL1ToL2Finalizer(
     } = event;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
-    const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
+
+    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
+    // twice with a 1 second delay between in case of intermittent RPC failures.
+    const messageStatus = await retryAsync(() => l2MessageServiceContract.getMessageStatus(_messageHash), 2, 1);
     return {
       messageSender: _from,
       destination: _to,

@@ -32,7 +32,7 @@ import {
   _buildPoolRebalanceRoot,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk";
 import {
   BundleDepositsV3,
   BundleExcessSlowFills,
@@ -302,7 +302,7 @@ export class BundleDataClient {
           const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
           const hasMatchingDeposit =
             matchingDeposit !== undefined &&
-            utils.getRelayHashFromEvent(fill) === utils.getRelayHashFromEvent(matchingDeposit);
+            this.getRelayHashFromEvent(fill) === this.getRelayHashFromEvent(matchingDeposit);
           return hasMatchingDeposit;
         })
         .forEach((fill) => {
@@ -414,7 +414,10 @@ export class BundleDataClient {
     // If a chain is disabled or doesn't have a spoke pool client, return a range of 0
     function getBlockRangeDelta(_pendingBlockRanges: number[][]): number[][] {
       return widestBundleBlockRanges.map((blockRange, index) => {
-        const initialBlockRange = _pendingBlockRanges[index];
+        // If pending block range doesn't have an entry for the widest range, which is possible when a new chain
+        // is added to the CHAIN_ID_INDICES list, then simply set the initial block range to the widest block range.
+        // This will produce a block range delta of 0 where the returned range for this chain is [widest[1], widest[1]].
+        const initialBlockRange = _pendingBlockRanges[index] ?? blockRange;
         // If chain is disabled, return disabled range
         if (initialBlockRange[0] === initialBlockRange[1]) {
           return initialBlockRange;
@@ -566,6 +569,7 @@ export class BundleDataClient {
 
   private async loadArweaveData(blockRangesForChains: number[][]): Promise<LoadDataReturnValue> {
     const arweaveKey = this.getArweaveClientKey(blockRangesForChains);
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.arweaveDataCache[arweaveKey]) {
       this.arweaveDataCache[arweaveKey] = this.loadPersistedDataFromArweave(blockRangesForChains);
     }
@@ -582,6 +586,7 @@ export class BundleDataClient {
     attemptArweaveLoad = false
   ): Promise<LoadDataReturnValue> {
     const key = JSON.stringify(blockRangesForChains);
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.loadDataCache[key]) {
       let arweaveData;
       if (attemptArweaveLoad) {
@@ -604,7 +609,7 @@ export class BundleDataClient {
     blockRangesForChains: number[][],
     spokePoolClients: SpokePoolClientsByChain
   ): Promise<LoadDataReturnValue> {
-    const start = performance.now();
+    let start = performance.now();
     const key = JSON.stringify(blockRangesForChains);
 
     if (!this.clients.configStoreClient.isUpdated) {
@@ -744,6 +749,7 @@ export class BundleDataClient {
     // - olderDepositHashes: Deposits sent in a prior bundle that newly expired in this bundle
     const olderDepositHashes: Set<string> = new Set<string>();
 
+    let depositCounter = 0;
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
       const originChainBlockRange = getBlockRangeForChain(blockRangesForChains, originChainId, chainIds);
@@ -757,7 +763,8 @@ export class BundleDataClient {
           .getDepositsForDestinationChain(destinationChainId)
           .filter((deposit) => deposit.blockNumber <= originChainBlockRange[1])
           .forEach((deposit) => {
-            const relayDataHash = utils.getRelayHashFromEvent(deposit);
+            depositCounter++;
+            const relayDataHash = this.getRelayHashFromEvent(deposit);
             if (v3RelayHashes[relayDataHash]) {
               // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
               // gives us bad data.
@@ -791,11 +798,17 @@ export class BundleDataClient {
           });
       }
     }
+    this.logger.debug({
+      at: "BundleDataClient#loadData",
+      message: `Processed ${depositCounter} deposits in ${performance.now() - start}ms.`,
+    });
+    start = performance.now();
 
     // Process fills now that we've populated relay hash dictionary with deposits:
     const validatedBundleV3Fills: (V3FillWithBlock & { quoteTimestamp: number })[] = [];
     const validatedBundleSlowFills: V3DepositWithBlock[] = [];
     const validatedBundleUnexecutableSlowFills: V3DepositWithBlock[] = [];
+    let fillCounter = 0;
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
       for (const destinationChainId of allChainIds) {
@@ -814,7 +827,8 @@ export class BundleDataClient {
             .getFillsForOriginChain(originChainId)
             .filter((fill) => fill.blockNumber <= destinationChainBlockRange[1]),
           async (fill) => {
-            const relayDataHash = utils.getRelayHashFromEvent(fill);
+            const relayDataHash = this.getRelayHashFromEvent(fill);
+            fillCounter++;
 
             if (v3RelayHashes[relayDataHash]) {
               if (!v3RelayHashes[relayDataHash].fill) {
@@ -862,7 +876,7 @@ export class BundleDataClient {
                 // object property values against the deposit's, we
                 // sanity check it here by comparing the full relay hashes. If there's an error here then the
                 // historical deposit query is not working as expected.
-                assert(utils.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
+                assert(this.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
                 validatedBundleV3Fills.push({
                   ...fill,
                   quoteTimestamp: matchedDeposit.quoteTimestamp,
@@ -881,7 +895,7 @@ export class BundleDataClient {
             .getSlowFillRequestsForOriginChain(originChainId)
             .filter((request) => request.blockNumber <= destinationChainBlockRange[1]),
           async (slowFillRequest: SlowFillRequestWithBlock) => {
-            const relayDataHash = utils.getRelayHashFromEvent(slowFillRequest);
+            const relayDataHash = this.getRelayHashFromEvent(slowFillRequest);
 
             if (v3RelayHashes[relayDataHash]) {
               if (!v3RelayHashes[relayDataHash].slowFillRequest) {
@@ -949,7 +963,7 @@ export class BundleDataClient {
               // object property values against the deposit's, we
               // sanity check it here by comparing the full relay hashes. If there's an error here then the
               // historical deposit query is not working as expected.
-              assert(utils.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
+              assert(this.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
               v3RelayHashes[relayDataHash].deposit = matchedDeposit;
 
               // Note: we don't need to query for a historical fill at this point because a fill
@@ -1005,6 +1019,11 @@ export class BundleDataClient {
         });
       }
     }
+    this.logger.debug({
+      at: "BundleDataClient#loadData",
+      message: `Processed ${fillCounter} fills in ${performance.now() - start}ms.`,
+    });
+    start = performance.now();
 
     // Go through expired deposits in this bundle and now prune those that we have seen a fill for to construct
     // the list of expired deposits we need to refund in this bundle.
@@ -1087,6 +1106,7 @@ export class BundleDataClient {
     });
 
     // Batch compute V3 lp fees.
+    start = performance.now();
     const promises = [
       validatedBundleV3Fills.length > 0
         ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
@@ -1126,6 +1146,10 @@ export class BundleDataClient {
         : [],
     ];
     const [v3FillLpFees, v3SlowFillLpFees, v3UnexecutableSlowFillLpFees] = await Promise.all(promises);
+    this.logger.debug({
+      at: "BundleDataClient#loadData",
+      message: `Computed batch async LP fees in ${performance.now() - start}ms.`,
+    });
     v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {
       const fill = validatedBundleV3Fills[idx];
       const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
@@ -1176,6 +1200,14 @@ export class BundleDataClient {
       unexecutableSlowFills,
       bundleSlowFillsV3,
     };
+  }
+
+  // Internal function to uniquely identify a bridge event. This is preferred over `SDK.getRelayDataHash` which returns
+  // keccak256 hash of the relay data, which can be used as input into the on-chain `fillStatuses()` function in the
+  // spoke pool contract. However, this internal function is used to uniquely identify a bridging event
+  // for speed since its easier to build a string from the event data than to hash it.
+  private getRelayHashFromEvent(event: V3DepositWithBlock | V3FillWithBlock | SlowFillRequestWithBlock): string {
+    return `${event.depositor}-${event.recipient}-${event.exclusiveRelayer}-${event.inputToken}-${event.outputToken}-${event.inputAmount}-${event.outputAmount}-${event.originChainId}-${event.depositId}-${event.fillDeadline}-${event.exclusivityDeadline}-${event.message}-${event.destinationChainId}`;
   }
 
   async getBundleBlockTimestamps(

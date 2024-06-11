@@ -1,4 +1,4 @@
-import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
 import { Provider as zksProvider, Wallet as zkWallet } from "zksync-web3";
@@ -9,6 +9,7 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   getEthAddressForChain,
+  getL1TokenInfo,
   getRedisCache,
   getUniqueLogIndex,
   winston,
@@ -43,21 +44,23 @@ export async function zkSyncFinalizer(
   const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
 
   // Zksync takes 1 day to finalize so ignore any events
-  // older than 2 days and earlier than 1 day.
+  // earlier than 1 day.
   const redis = await getRedisCache(logger);
-  const [fromBlock, toBlock] = await Promise.all([
-    getBlockForTimestamp(l2ChainId, getCurrentTime() - 2 * 60 * 60 * 24, undefined, redis),
-    getBlockForTimestamp(l2ChainId, getCurrentTime() - 1 * 60 * 60 * 24, undefined, redis),
-  ]);
+  const latestBlockToFinalize = await getBlockForTimestamp(
+    l2ChainId,
+    getCurrentTime() - 1 * 60 * 60 * 24,
+    undefined,
+    redis
+  );
+
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
     message: "ZkSync TokensBridged event filter",
-    fromBlock,
-    toBlock,
+    toBlock: latestBlockToFinalize,
   });
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber >= fromBlock && blockNumber <= toBlock);
+    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l2Finalized);
@@ -65,12 +68,7 @@ export async function zkSyncFinalizer(
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
 
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
-    const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-      l2TokenAddress,
-      l2ChainId,
-      hubPoolClient.latestBlockSearched
-    );
-    const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, l1TokenCounterpart);
+    const { decimals, symbol: l1TokenSymbol } = getL1TokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: l2ChainId,

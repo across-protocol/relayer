@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils, interfaces, caching } from "@across-protocol/sdk-v2";
+import { utils, interfaces, caching } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
 import { spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
@@ -69,7 +69,7 @@ export function getEndBlockBuffers(
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => blockRangeEndBlockBuffer[chainId] ?? 0);
 }
 
-// TODO: Move to SDK-v2 since this implements UMIP logic about validating block ranges.
+// TODO: Move to SDK since this implements UMIP logic about validating block ranges.
 // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
 // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
 export async function blockRangesAreInvalidForSpokeClients(
@@ -246,14 +246,16 @@ export function getRefundsFromBundle(
       if (refunds === undefined) {
         return;
       }
+      // @dev use shallow copy so that modifying combinedRefunds doesn't modify the original refunds object.
+      const refundsShallowCopy = { ...refunds };
       if (combinedRefunds[repaymentChainId][l2TokenAddress] === undefined) {
-        combinedRefunds[repaymentChainId][l2TokenAddress] = refunds;
+        combinedRefunds[repaymentChainId][l2TokenAddress] = refundsShallowCopy;
       } else {
         // Each refunds object should have a unique refund address so we can add new ones to the
         // existing dictionary.
         combinedRefunds[repaymentChainId][l2TokenAddress] = {
           ...combinedRefunds[repaymentChainId][l2TokenAddress],
-          ...refunds,
+          ...refundsShallowCopy,
         };
       }
     });
@@ -343,7 +345,11 @@ export function _buildRelayerRefundRoot(
         return;
       }
 
-      const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(leaf.l1Tokens[index], leaf.chainId);
+      const l2TokenCounterpart = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(
+        leaf.l1Tokens[index],
+        leaf.chainId,
+        endBlockForMainnet
+      );
       // If we've already seen this leaf, then skip.
       const existingLeaf = relayerRefundLeaves.find(
         (relayerRefundLeaf) =>
@@ -420,7 +426,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           l2TokenAddress,
           repaymentChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
 
         updateRunningBalance(runningBalances, repaymentChainId, l1TokenCounterpart, totalRefundAmount);
@@ -443,7 +449,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           outputToken,
           destinationChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
         const lpFee = deposit.lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
         updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, deposit.inputAmount.sub(lpFee));
@@ -467,7 +473,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           outputToken,
           destinationChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
         const lpFee = deposit.lpFeePct.mul(deposit.inputAmount).div(fixedPointAdjustment);
         updateRunningBalance(runningBalances, destinationChainId, l1TokenCounterpart, lpFee.sub(deposit.inputAmount));
@@ -503,7 +509,7 @@ export async function _buildPoolRebalanceRoot(
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           inputToken,
           originChainId,
-          latestMainnetBlock
+          mainnetBundleEndBlock
         );
         updateRunningBalance(runningBalances, originChainId, l1TokenCounterpart, deposit.inputAmount);
       });

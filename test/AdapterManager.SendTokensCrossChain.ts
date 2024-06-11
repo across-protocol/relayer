@@ -140,7 +140,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens.usdc, // l1 token
-      getL2TokenAddresses(mainnetTokens.usdc)[chainId], // l2 token
+      TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], // l2 token
       amountToSend, // amount
       addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data
@@ -153,7 +153,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc,
       amountToSend,
       undefined,
-      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -199,7 +199,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc,
       amountToSend,
       false,
-      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -241,7 +241,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc,
       amountToSend,
       false,
-      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -285,7 +285,14 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.ZK_SYNC;
     l1MailboxContract.l2TransactionBaseCost.returns(toBNWei("0.2"));
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.usdc, amountToSend);
+    await adapterManager.sendTokenCrossChain(
+      relayer.address,
+      chainId,
+      mainnetTokens.usdc,
+      amountToSend,
+      false,
+      TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId]
+    );
     expect(l1ZkSyncBridge.deposit).to.have.been.calledWith(
       relayer.address, // user
       mainnetTokens.usdc, // root token
@@ -325,7 +332,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc,
       amountToSend,
       undefined,
-      TOKEN_SYMBOLS_MAP._USDC.addresses[chainId]
+      TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -345,7 +352,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens.usdc, // l1 token
-      getL2TokenAddresses(mainnetTokens.usdc)[chainId], // l2 token
+      TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId], // l2 token
       amountToSend, // amount
       addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
       "0x" // data

@@ -33,8 +33,8 @@ export class MockInventoryClient extends InventoryClient {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  override async determineRefundChainId(_deposit: Deposit): Promise<number> {
-    return this.inventoryConfig === null ? 1 : super.determineRefundChainId(_deposit);
+  override async determineRefundChainId(_deposit: Deposit): Promise<number[]> {
+    return this.inventoryConfig === null ? [1] : super.determineRefundChainId(_deposit);
   }
 
   setExcessRunningBalances(l1Token: string, balances: { [chainId: number]: BigNumber }): void {

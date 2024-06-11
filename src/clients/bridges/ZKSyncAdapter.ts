@@ -17,7 +17,7 @@ import assert from "assert";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
-import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, utils } from "@across-protocol/sdk";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 import { matchL2EthDepositAndWrapEvents } from "./utils";
 
@@ -155,7 +155,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     });
 
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
-    this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
+    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }

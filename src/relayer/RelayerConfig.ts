@@ -1,5 +1,5 @@
 import { utils as ethersUtils } from "ethers";
-import { typeguards } from "@across-protocol/sdk-v2";
+import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
   bnUint256Max,
@@ -178,7 +178,7 @@ export class RelayerConfig extends CommonConfig {
         tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
 
         // For WETH, also consider any unwrap target/threshold.
-        if (l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
+        if (l1Token === TOKEN_SYMBOLS_MAP.WETH.symbol) {
           if (unwrapWethThreshold !== undefined) {
             tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
           }
