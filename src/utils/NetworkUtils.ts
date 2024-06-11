@@ -1,11 +1,9 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 
 export const { getNetworkName } = sdkUtils;
 
 export function getNativeTokenSymbol(chainId: number | string): string {
   if (chainId.toString() === "137" || chainId.toString() === "80001") {
-  return PUBLIC_NETWORKS[chainId].nativeToken;
     return "MATIC";
   }
   return "ETH";
