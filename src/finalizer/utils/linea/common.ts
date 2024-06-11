@@ -206,7 +206,7 @@ export async function findMessageFromTokenBridge(
 ): Promise<MessageSentEvent[]> {
   const bridgeEvents = await paginatedEventQuery(
     bridgeContract,
-    bridgeContract.filters.BridgingInitiated(l1ToL2AddressesToFinalize),
+    bridgeContract.filters.BridgingInitiatedV2(l1ToL2AddressesToFinalize),
     searchConfig
   );
   const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
