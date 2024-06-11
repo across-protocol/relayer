@@ -13,7 +13,6 @@ import {
   isDefined,
   toBNWei,
   ZERO_ADDRESS,
-  CHAIN_IDs,
   chainIsMatic,
 } from "../utils";
 import {
