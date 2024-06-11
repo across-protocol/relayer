@@ -14,6 +14,7 @@ import {
   toBNWei,
   ZERO_ADDRESS,
   CHAIN_IDs,
+  chainIsMatic,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -1263,7 +1264,7 @@ export class Dataworker {
           canFailInSimulation: chainId === hubChainId,
           // If polygon, keep separate from relayer refund leaves since we can't execute refunds atomically
           // with fills.
-          groupId: chainId === CHAIN_IDs.POLYGON ? "slowRelay" : undefined,
+          groupId: chainIsMatic(chainId) ? "slowRelay" : undefined,
         });
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });

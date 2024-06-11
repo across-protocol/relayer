@@ -97,16 +97,8 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  [CHAIN_IDs.LINEA_GOERLI]: {
-    finalizeOnL1: [lineaL2ToL1Finalizer],
-    finalizeOnL2: [lineaL1ToL2Finalizer],
-  },
   [CHAIN_IDs.MODE_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-  },
-  [CHAIN_IDs.ZK_SYNC_GOERLI]: {
-    finalizeOnL1: [zkSyncFinalizer],
     finalizeOnL2: [],
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
