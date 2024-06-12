@@ -1,3 +1,4 @@
+import { AsciiTable3, AlignmentEnum } from "ascii-table3";
 import { BalanceAllocator } from "../clients";
 import { spokePoolClientsToProviders } from "../common";
 import {
@@ -47,7 +48,7 @@ export const REBALANCE_FINALIZE_GRACE_PERIOD = process.env.REBALANCE_FINALIZE_GR
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
 
 // bundle frequency.
-export const ALL_CHAINS_NAME = "All chains";
+export const ALL_CHAINS_NAME = "All";
 const ALL_BALANCE_TYPES = [
   BalanceType.CURRENT,
   BalanceType.PENDING,
@@ -247,47 +248,47 @@ export class Monitor {
       decimals: 6,
     });
     const chainIds = this.monitorChains;
-    const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
-    const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
+    const reports = this.initializeBalanceReports(
+      relayers,
+      allL1Tokens,
+      chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME])
+    );
 
     await this.updateCurrentRelayerBalances(reports);
     await this.updateLatestAndFutureRelayerRefunds(reports);
 
     for (const relayer of relayers) {
       const report = reports[relayer];
-      let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
+      let summaryMrkdwn = "\n *[Summary]*\n";
       for (const token of allL1Tokens) {
-        let tokenMrkdwn = "";
-        for (const chainName of allChainNames) {
-          const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(bnZero))) {
-            // Human-readable balances
-            const balances = balancesBN.map((balance) =>
-              balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
-            );
-            tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
-          } else {
-            // Shorten balances in the report if everything is 0.
-            tokenMrkdwn += `${chainName}: 0\n`;
-          }
+        const table = new AsciiTable3(token.symbol);
+        table.setAligns(Array(6).fill(AlignmentEnum.RIGHT));
+        table.setHeading("Chain", "Current", "Pending", "Future", "X/C Trans.", "Total");
+        for (const chainId of chainIds.concat(-1)) {
+          const network = chainId !== -1 ? getNetworkName(chainId) : ALL_CHAINS_NAME;
+          const balancesBN = Object.values(report[token.symbol][network]);
+          // Human-readable balances
+          const balances = balancesBN.map((balance) =>
+            balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
+          );
+          table.addRow(`${chainId !== -1 ? chainId : ALL_CHAINS_NAME}`, ...balances);
         }
+
+        this.logger.info({
+          at: "Monitor#reportRelayerBalances",
+          message: `Balance report for ${relayer} and token ${token.symbol} 📖`,
+          mrkdwn: "```" + table.toString() + "```\n",
+        });
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        if (totalBalance.gt(bnZero)) {
-          mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
-          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
-        } else {
-          summaryMrkdwn += `${token.symbol}: 0\n`;
-        }
+        summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
       }
 
-      mrkdwn += summaryMrkdwn;
       this.logger.info({
         at: "Monitor#reportRelayerBalances",
-        message: `Balance report for ${relayer} 📖`,
-        mrkdwn,
+        message: `Balance report summary for ${relayer} 📖`,
+        mrkdwn: summaryMrkdwn,
       });
     }
   }
