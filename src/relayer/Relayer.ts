@@ -810,6 +810,7 @@ export class Relayer {
 
   private handleTokenShortfall() {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
+    const hubChainId = this.clients.hubPoolClient.chainId;
 
     let mrkdwn = "";
     Object.entries(tokenShortfall).forEach(([_chainId, shortfallForChain]) => {
@@ -818,7 +819,7 @@ export class Relayer {
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
         const { symbol, formatter } = this.formatAmount(chainId, token);
         let crossChainLog = "";
-        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
+        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
           crossChainLog =
