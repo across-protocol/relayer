@@ -575,10 +575,10 @@
     ethers "^5.5.4"
     lodash "^4.17.21"
 
-"@eth-optimism/sdk@0.0.0-sc-sdk-fps-mainnet-20240610215134":
-  version "0.0.0-sc-sdk-fps-mainnet-20240610215134"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-0.0.0-sc-sdk-fps-mainnet-20240610215134.tgz#3be6487e4fbf760ce5d2768ce0bc2be79ae4f2c0"
-  integrity sha512-bDEKdHT5elid9blYBC1ISU5polQpK80+qHXRuh9q/s/oqxND3XDpW4cToqqG68VD+XFJs5jw5DY5eHeSOkHRJQ==
+"@eth-optimism/sdk@0.0.0-refs-pull-383-merge-20240612003713":
+  version "0.0.0-refs-pull-383-merge-20240612003713"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-0.0.0-refs-pull-383-merge-20240612003713.tgz#72b78faa2f3c4b650974a390bb79f3a3258177d0"
+  integrity sha512-aIe+KXspWFgY5swy5fyxXf4iZh3guAk1ksdhdL0neIVu2T7+lePpwBFRdtDa2vbAjs5FjyMazuaj+lfBSnSt+g==
   dependencies:
     "@eth-optimism/contracts" "0.6.0"
     "@eth-optimism/core-utils" "^0.13.2"
