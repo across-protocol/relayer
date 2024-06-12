@@ -16,6 +16,11 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.0.0.tgz#0f5cbcaf40d43babbecb322d91a689b49c5536a0"
   integrity sha512-iJz1EDdYr+GRgHRZwcAw2G06ZvV9VOW6GQ846X7G/dd8wVQej18v1Fpx6th4bcSba1j7jR5Hfi+/zqSDoxyLmw==
 
+"@across-protocol/constants@^3.0.1":
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.0.1.tgz#8fb2760a3c64801c9324bcbf76084fae9dfabb52"
+  integrity sha512-cCrhLEpYfiFeDrXscUgdRTnOW5Sn2W9mmdrxxl1dXLC+tYMb1c2rgQVBQNxrdW7LGiDqCR4a5m5jYgWPXonzQg==
+
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
@@ -45,14 +50,34 @@
     axios "^1.6.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@^3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.0.0.tgz#f261f9bd24ed30a23f2969f03dfbc551d417867d"
-  integrity sha512-ZLZlobj96pHI7dXSdhfAj5BDIDP7xryu0BIJnNbkmYeinc8bNG5BkrxKJdjUb8a6VDnexXdGH5dkO8ljr1i+/Q==
+"@across-protocol/contracts@^3.0.1":
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.1.tgz#05944932ee5f64895c940041c2770824964fb00f"
+  integrity sha512-8OGsYRRzewrsb3OKhM2KBQAILXpQ6OWNmiuKqnX9el7x2K+sLdWVjBklPybI8mgngbJ/vALstulkQtQXOqkZ1Q==
+  dependencies:
+    "@across-protocol/constants" "^3.0.1"
+    "@defi-wonderland/smock" "^2.3.4"
+    "@eth-optimism/contracts" "^0.5.40"
+    "@ethersproject/abstract-provider" "5.7.0"
+    "@ethersproject/abstract-signer" "5.7.0"
+    "@ethersproject/bignumber" "5.7.0"
+    "@openzeppelin/contracts" "4.9.6"
+    "@openzeppelin/contracts-upgradeable" "4.9.6"
+    "@scroll-tech/contracts" "^0.1.0"
+    "@uma/common" "^2.34.0"
+    "@uma/contracts-node" "^0.4.17"
+    "@uma/core" "^2.56.0"
+    axios "^1.6.2"
+    zksync-web3 "^0.14.3"
+
+"@across-protocol/sdk@^3.0.3":
+  version "3.0.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.0.3.tgz#e5da758f58e968454de37673de49e32206a36c78"
+  integrity sha512-Tn/Su4ZZeBRx20A8wv5ZCzAzDA2wmwDQ0wUjGm8C9yPeewK8WBRb0JMsV2MIKg0RPQWkbxIEmnu1MdfGBSHZYw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.0.0"
-    "@across-protocol/contracts" "^3.0.0"
+    "@across-protocol/constants" "^3.0.1"
+    "@across-protocol/contracts" "^3.0.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@pinata/sdk" "^2.1.0"
     "@types/mocha" "^10.0.1"
