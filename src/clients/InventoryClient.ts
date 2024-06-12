@@ -1112,11 +1112,12 @@ export class InventoryClient {
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  async update(): Promise<void> {
+  update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
-    await this.crossChainTransferClient.update(this.getL1Tokens());
+
+    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
   }
 
   isInventoryManagementEnabled(): boolean {
