@@ -34,7 +34,9 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   logIndex: number;
 }
 
-type OVM_CHAIN_ID = 10 | 8453 | 34443;
+const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
+
+type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export async function opStackFinalizer(
@@ -44,7 +46,7 @@ export async function opStackFinalizer(
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
-  assert(isOVMChainId(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
+  assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
   const networkName = getNetworkName(chainId);
 
   const crossChainMessenger = getOptimismClient(chainId, signer);
@@ -107,10 +109,6 @@ export async function opStackFinalizer(
   const crossChainTransfers = [...proofs.withdrawals, ...finalizations.withdrawals];
 
   return { callData, crossChainMessages: crossChainTransfers };
-}
-
-function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
-  return chainIsOPStack(chainId);
 }
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
