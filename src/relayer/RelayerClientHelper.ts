@@ -198,9 +198,12 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   await clients.tokenClient.update();
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
+  const inventoryChainIds = Object.values(spokePoolClients)
+    .filter(({ latestBlockSearched, deploymentBlock }) => latestBlockSearched > deploymentBlock)
+    .map(({ chainId }) => chainId);
   await Promise.all([
     clients.acrossApiClient.update(config.ignoreLimits),
-    clients.inventoryClient.update(),
+    clients.inventoryClient.update(inventoryChainIds),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),
     config.sendingRelaysEnabled ? clients.tokenClient.setOriginTokenApprovals() : Promise.resolve(),
