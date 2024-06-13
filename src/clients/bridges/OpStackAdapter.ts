@@ -11,15 +11,15 @@ import {
   assign,
   winston,
   TOKEN_SYMBOLS_MAP,
-} from "../../../utils";
-import { SpokePoolClient } from "../..";
-import { BaseAdapter } from "..";
-import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
-import { CONTRACT_ADDRESSES } from "../../../common";
-import { OpStackBridge } from "./OpStackBridgeInterface";
-import { WethBridge } from "./WethBridge";
-import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
-import { UsdcTokenSplitterBridge } from "./UsdcTokenSplitterBridge";
+} from "../../utils";
+import { SpokePoolClient } from "../";
+import { BaseAdapter } from "./";
+import { SortableEvent, OutstandingTransfers } from "../../interfaces";
+import { CONTRACT_ADDRESSES } from "../../common";
+import { OpStackBridge } from "./bridges/OpStackBridgeInterface";
+import { WethBridge } from "./bridges/WethBridge";
+import { DefaultERC20Bridge } from "./bridges/DefaultErc20Bridge";
+import { UsdcTokenSplitterBridge } from "./bridges/UsdcTokenSplitterBridge";
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;

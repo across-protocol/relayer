@@ -1,19 +1,11 @@
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import {
-  OptimismAdapter,
-  ArbitrumAdapter,
-  PolygonAdapter,
-  BaseAdapter,
-  ZKSyncAdapter,
-  BaseChainAdapter,
-  LineaAdapter,
-  ModeAdapter,
-} from "./";
+import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, BaseAdapter } from "./";
+import { DaiOptimismBridge, SnxOptimismBridge } from "./bridges";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { utils } from "@across-protocol/sdk";
-import { CHAIN_IDs } from "@across-protocol/constants";
-import { spokesThatHoldEthAndWeth } from "../../common/Constants";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
@@ -45,26 +37,76 @@ export class AdapterManager {
           !spokePoolAddresses.includes(address)
       );
     };
-    if (this.spokePoolClients[10] !== undefined) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, filterMonitoredAddresses(10));
+    if (this.spokePoolClients[CHAIN_IDs.OPTIMISM] !== undefined) {
+      const customBridges = {};
+      customBridges[TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]] = new DaiOptimismBridge(
+        CHAIN_IDs.OPTIMISM,
+        CHAIN_IDs.MAINNET,
+        spokePoolClients[CHAIN_IDs.OPTIMISM].spokePool.signer,
+        spokePoolClients[CHAIN_IDs.MAINNET].spokePool.signer
+      );
+      customBridges[TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]] = new SnxOptimismBridge(
+        CHAIN_IDs.OPTIMISM,
+        CHAIN_IDs.MAINNET,
+        spokePoolClients[CHAIN_IDs.OPTIMISM].spokePool.signer,
+        spokePoolClients[CHAIN_IDs.MAINNET].spokePool.signer
+      );
+      this.adapters[CHAIN_IDs.OPTIMISM] = new OpStackAdapter(
+        CHAIN_IDs.OPTIMISM,
+        customBridges,
+        logger,
+        SUPPORTED_TOKENS[CHAIN_IDs.OPTIMISM],
+        spokePoolClients,
+        filterMonitoredAddresses(CHAIN_IDs.OPTIMISM)
+      );
     }
-    if (this.spokePoolClients[137] !== undefined) {
-      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, filterMonitoredAddresses(137));
+    if (this.spokePoolClients[CHAIN_IDs.POLYGON] !== undefined) {
+      this.adapters[CHAIN_IDs.POLYGON] = new PolygonAdapter(
+        logger,
+        spokePoolClients,
+        filterMonitoredAddresses(CHAIN_IDs.POLYGON)
+      );
     }
-    if (this.spokePoolClients[42161] !== undefined) {
-      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, filterMonitoredAddresses(42161));
+    if (this.spokePoolClients[CHAIN_IDs.ARBITRUM] !== undefined) {
+      this.adapters[CHAIN_IDs.ARBITRUM] = new ArbitrumAdapter(
+        logger,
+        spokePoolClients,
+        filterMonitoredAddresses(CHAIN_IDs.ARBITRUM)
+      );
     }
-    if (this.spokePoolClients[324] !== undefined) {
-      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, filterMonitoredAddresses(324));
+    if (this.spokePoolClients[CHAIN_IDs.ZK_SYNC] !== undefined) {
+      this.adapters[CHAIN_IDs.ZK_SYNC] = new ZKSyncAdapter(
+        logger,
+        spokePoolClients,
+        filterMonitoredAddresses(CHAIN_IDs.ZK_SYNC)
+      );
     }
-    if (this.spokePoolClients[8453] !== undefined) {
-      this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, filterMonitoredAddresses(8453));
+    if (this.spokePoolClients[CHAIN_IDs.BASE] !== undefined) {
+      this.adapters[CHAIN_IDs.BASE] = new OpStackAdapter(
+        CHAIN_IDs.BASE,
+        {},
+        logger,
+        SUPPORTED_TOKENS[CHAIN_IDs.BASE],
+        spokePoolClients,
+        filterMonitoredAddresses(CHAIN_IDs.BASE)
+      );
     }
-    if (this.spokePoolClients[59144] !== undefined) {
-      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(59144));
+    if (this.spokePoolClients[CHAIN_IDs.LINEA] !== undefined) {
+      this.adapters[CHAIN_IDs.LINEA] = new LineaAdapter(
+        logger,
+        spokePoolClients,
+        filterMonitoredAddresses(CHAIN_IDs.LINEA)
+      );
     }
-    if (this.spokePoolClients[34443] !== undefined) {
-      this.adapters[34443] = new ModeAdapter(logger, spokePoolClients, filterMonitoredAddresses(34443));
+    if (this.spokePoolClients[CHAIN_IDs.MODE] !== undefined) {
+      this.adapters[CHAIN_IDs.MODE] = new OpStackAdapter(
+        CHAIN_IDs.MODE,
+        {},
+        logger,
+        SUPPORTED_TOKENS[CHAIN_IDs.MODE],
+        spokePoolClients,
+        filterMonitoredAddresses(CHAIN_IDs.MODE)
+      );
     }
 
     logger.debug({
