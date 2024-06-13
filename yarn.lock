@@ -575,18 +575,6 @@
     ethers "^5.5.4"
     lodash "^4.17.21"
 
-"@eth-optimism/sdk@3.3.2":
-  version "3.3.2"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.3.2.tgz#68a5f6e77f9c85f6eeb9db8044b3b69199520eb0"
-  integrity sha512-+zhxT0YkBIEzHsuIayQGjr8g9NawZo6/HYfzg1NSEFsE2Yt0NyCWqVDFTuuak0T6AvIa2kNcl3r0Z8drdb2QmQ==
-  dependencies:
-    "@eth-optimism/contracts" "0.6.0"
-    "@eth-optimism/core-utils" "^0.13.2"
-    lodash "^4.17.21"
-    merkletreejs "^0.3.11"
-    rlp "^2.2.7"
-    semver "^7.6.0"
-
 "@eth-optimism/sdk@^3.3.1":
   version "3.3.1"
   resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.3.1.tgz#f72b6f93b58e2a2943f10aca3be91dfc23d9839f"
@@ -594,6 +582,18 @@
   dependencies:
     "@eth-optimism/contracts" "0.6.0"
     "@eth-optimism/core-utils" "0.13.2"
+    lodash "^4.17.21"
+    merkletreejs "^0.3.11"
+    rlp "^2.2.7"
+    semver "^7.6.0"
+
+"@eth-optimism/sdk@^3.3.2":
+  version "3.3.2"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.3.2.tgz#68a5f6e77f9c85f6eeb9db8044b3b69199520eb0"
+  integrity sha512-+zhxT0YkBIEzHsuIayQGjr8g9NawZo6/HYfzg1NSEFsE2Yt0NyCWqVDFTuuak0T6AvIa2kNcl3r0Z8drdb2QmQ==
+  dependencies:
+    "@eth-optimism/contracts" "0.6.0"
+    "@eth-optimism/core-utils" "^0.13.2"
     lodash "^4.17.21"
     merkletreejs "^0.3.11"
     rlp "^2.2.7"
