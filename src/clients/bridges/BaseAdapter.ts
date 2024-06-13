@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/ban-types */
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
+import { utils } from "@across-protocol/sdk";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
+import { CONTRACT_ADDRESSES } from "../../common";
+import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import {
   AnyObject,
   BigNumber,
@@ -11,29 +14,23 @@ import {
   ERC20,
   EventSearchConfig,
   MAX_SAFE_ALLOWANCE,
-  MAX_UINT_VAL,
   MakeOptional,
   TransactionResponse,
   ZERO_ADDRESS,
   assert,
-  blockExplorerLink,
   compareAddressesSimple,
   formatUnitsForToken,
   getNetworkName,
   matchTokenSymbol,
-  runTransaction,
   toBN,
   winston,
   createFormatFunction,
   BigNumberish,
   TOKEN_SYMBOLS_MAP,
-  getRedisCache,
   getTokenAddressWithCCTP,
 } from "../../utils";
-import { utils } from "@across-protocol/sdk";
+import { approveTokens, getAllowanceCacheKey, getTokenAllowanceFromCache, setTokenAllowanceInCache } from "./utils";
 
-import { CONTRACT_ADDRESSES, TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
-import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   transactionHash: string;
@@ -113,61 +110,59 @@ export abstract class BaseAdapter {
   }
 
   async getAllowanceCacheKey(l1Token: string, targetContract: string): Promise<string> {
-    return `l1CanonicalTokenBridgeAllowance_${l1Token}_${await this.getSigner(
-      this.hubChainId
-    ).getAddress()}_targetContract:${targetContract}`;
+    return getAllowanceCacheKey(l1Token, targetContract, await this.getSigner(this.hubChainId).getAddress());
   }
 
   resolveL2TokenAddress(l1Token: string, isNativeUsdc = false): string {
     return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.chainId, isNativeUsdc);
   }
 
-  async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
-    this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
+  async checkAndSendTokenApprovals(address: string, l1Tokens: string[], l1Bridges: string[]): Promise<void> {
+    this.log("Checking and sending token approvals", { l1Tokens, l1Bridges });
 
-    assert(l1Tokens.length === associatedL1Bridges.length, "Token and bridge arrays are not the same length");
+    assert(l1Tokens.length === l1Bridges.length, "Token and bridge arrays are not the same length");
 
-    const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
+    const tokensToApprove: { token: Contract; bridge: string }[] = [];
     const l1TokenContracts = l1Tokens.map(
       (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
     );
-    const redis = await getRedisCache(this.logger);
+
     const allowances = await Promise.all(
-      l1TokenContracts.map(async (l1TokenContract, index) => {
-        // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
-        // an approval transaction. For example not every chain has a bridge contract for every token. In this case
-        // we clearly dont want to send any approval transactions.
-        if (l1TokenContract && associatedL1Bridges[index]) {
-          // Check if we've cached already that this allowance is high enough. Returning null means we won't
-          // send an allowance approval transaction.
-          if (redis) {
-            const key = await this.getAllowanceCacheKey(l1TokenContract.address, associatedL1Bridges[index]);
-            const result = await redis.get<string>(key);
-            if (result !== null) {
-              const savedAllowance = toBN(result);
-              if (savedAllowance.gte(toBN(MAX_SAFE_ALLOWANCE))) {
-                return null;
-              }
-            }
-          }
-          return l1TokenContract.allowance(address, associatedL1Bridges[index]);
-        } else {
-          return null;
+      l1TokenContracts.map(async (l1Token, idx) => {
+        const l1Bridge = l1Bridges[idx];
+
+        // If there is not both a l1TokenContract and l1Bridge then return a number that wont send an approval
+        // transaction. For example not every chain has a bridge contract for every token. In this case we clearly
+        // don't want to send any approval transactions.
+        if (!l1Token && l1Bridge) {
+          return undefined;
         }
+
+        // Check if we've cached already that this allowance is high enough, else fallback to an RPC query.
+        let allowance = await getTokenAllowanceFromCache(l1Token.address, address, l1Bridge);
+        if (allowance) {
+          return allowance;
+        }
+
+        // If the onchain allowance is > MAX_SAFE_ALLOWANCE, cache it for next time.
+        allowance = await l1Token.allowance(address, l1Bridge);
+        if (allowance.gte(MAX_SAFE_ALLOWANCE)) {
+          await setTokenAllowanceInCache(l1Token.address, address, l1Bridge, allowance);
+        }
+
+        return allowance;
       })
     );
 
-    await utils.forEachAsync(allowances, async (allowance, index) => {
-      if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
-        tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
-      } else {
-        // Save allowance in cache with no TTL as these should never decrement.
-        if (redis) {
-          await redis.set(
-            await this.getAllowanceCacheKey(l1TokenContracts[index].address, associatedL1Bridges[index]),
-            MAX_SAFE_ALLOWANCE
-          );
-        }
+    await utils.forEachAsync(allowances, async (allowance, idx) => {
+      if (!allowance) {
+        return; // No bridge for this token.
+      }
+
+      const token = l1TokenContracts[idx];
+      const bridge = l1Bridges[idx];
+      if (allowance.lt(MAX_SAFE_ALLOWANCE)) {
+        tokensToApprove.push({ token, bridge });
       }
     });
     if (tokensToApprove.length === 0) {
@@ -175,26 +170,7 @@ export abstract class BaseAdapter {
       return;
     }
 
-    let mrkdwn = "*Approval transactions:* \n";
-    for (const { l1Token, targetContract } of tokensToApprove) {
-      const { hubChainId } = this;
-      const txs = [];
-      if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
-        txs.push(await runTransaction(this.logger, l1Token, "approve", [targetContract, bnZero]));
-      }
-      txs.push(await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]));
-      const receipts = await Promise.all(txs.map((tx) => tx.wait()));
-      const hubNetwork = getNetworkName(hubChainId);
-      const spokeNetwork = getNetworkName(this.chainId);
-      mrkdwn +=
-        ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(targetContract, hubChainId)} ` +
-        `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-        `tx: ${blockExplorerLink(receipts[receipts.length - 1].transactionHash, hubChainId)}`;
-      if (receipts.length > 1) {
-        mrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
-      }
-      mrkdwn += "\n";
-    }
+    const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
