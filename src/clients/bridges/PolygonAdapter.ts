@@ -117,7 +117,8 @@ export class PolygonAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 137, monitoredAddresses, logger, SUPPORTED_TOKENS[CHAIN_IDs.POLYGON]);
+    const { POLYGON } = CHAIN_IDs;
+    super(spokePoolClients, POLYGON, monitoredAddresses, logger, SUPPORTED_TOKENS[POLYGON]);
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.

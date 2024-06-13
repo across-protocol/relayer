@@ -28,7 +28,8 @@ export class LineaAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, CHAIN_IDs.LINEA, monitoredAddresses, logger, SUPPORTED_TOKENS[CHAIN_IDs.LINEA]);
+    const { LINEA } = CHAIN_IDs;
+    super(spokePoolClients, LINEA, monitoredAddresses, logger, SUPPORTED_TOKENS[LINEA]);
   }
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Note: Linea has two bridges: one for
