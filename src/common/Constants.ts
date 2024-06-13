@@ -314,7 +314,7 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
 };
 
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
-  10: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+  10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
