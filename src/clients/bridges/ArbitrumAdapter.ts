@@ -18,7 +18,7 @@ import {
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { CCTPAdapter } from "./CCTPAdapter";
 
 // TODO: Move to ../../common/ContractAddresses.ts
@@ -67,18 +67,7 @@ export class ArbitrumAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 42161, monitoredAddresses, logger, [
-      "USDC",
-      "USDT",
-      "WETH",
-      "DAI",
-      "WBTC",
-      "UMA",
-      "BADGER",
-      "BAL",
-      "ACX",
-      "POOL",
-    ]);
+    super(spokePoolClients, 42161, monitoredAddresses, logger, SUPPORTED_TOKENS[CHAIN_IDs.ARBITRUM]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {

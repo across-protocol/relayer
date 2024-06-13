@@ -1,6 +1,7 @@
-import { winston } from "../../../../utils";
+import { winston, CHAIN_IDs } from "../../../../utils";
 import { SpokePoolClient } from "../../..";
 import { OpStackAdapter } from "../OpStackAdapter";
+import { SUPPORTED_TOKENS } from "../../../../common";
 
 // Note: this is called BaseChainAdapter because BaseAdapter is the name of the base class.
 export class BaseChainAdapter extends OpStackAdapter {
@@ -14,7 +15,7 @@ export class BaseChainAdapter extends OpStackAdapter {
       // Custom Bridges
       {},
       logger,
-      ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
+      SUPPORTED_TOKENS[CHAIN_IDs.BASE], 
       spokePoolClients,
       monitoredAddresses
     );
