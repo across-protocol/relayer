@@ -199,9 +199,8 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   // Cross-chain deposit tracking produces duplicates in looping mode, so in that case don't attempt it.
-  const inventoryChainIds = config.pollingDelay === 0
-    ? Object.values(spokePoolClients).map(({ chainId }) => chainId)
-    : [];
+  const inventoryChainIds =
+    config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
   await Promise.all([
     clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(inventoryChainIds),
