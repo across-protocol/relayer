@@ -1,6 +1,6 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { assert, ethers, isDefined } from "../utils";
+import { assert, CHAIN_IDs, ethers, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -64,7 +64,7 @@ export class CommonConfig {
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
-    this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
+    this.hubPoolChainId = Number(HUB_CHAIN_ID ?? CHAIN_IDs.MAINNET);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};

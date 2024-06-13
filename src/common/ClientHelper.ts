@@ -124,7 +124,7 @@ export async function constructSpokePoolClientsWithLookback(
   const fromBlocks = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
-        if (chainId === 1) {
+        if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
         } else {
           return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
