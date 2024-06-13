@@ -4,7 +4,7 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston, CHAIN_IDs } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -24,7 +24,7 @@ export async function lineaL1ToL2Finalizer(
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
-  const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
+  const l2ChainId = l1ChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
   const l1MessageServiceContract = lineaSdk.getL1Contract();

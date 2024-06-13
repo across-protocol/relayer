@@ -496,7 +496,7 @@ export class InventoryClient {
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[_chain]
+        totalRefundsPerChain[_chain] ?? bnZero
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
