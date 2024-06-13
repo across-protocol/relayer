@@ -116,11 +116,6 @@ export class Relayer {
       return false;
     }
 
-    // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-    if (deposit.quoteTimestamp > hubPoolClient.currentTime) {
-      return false;
-    }
-
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
