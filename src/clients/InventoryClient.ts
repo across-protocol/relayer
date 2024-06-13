@@ -496,7 +496,7 @@ export class InventoryClient {
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[_chain]
+        totalRefundsPerChain[_chain] ?? bnZero
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
@@ -1112,11 +1112,12 @@ export class InventoryClient {
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  async update(): Promise<void> {
+  update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
-    await this.crossChainTransferClient.update(this.getL1Tokens());
+
+    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
   }
 
   isInventoryManagementEnabled(): boolean {
