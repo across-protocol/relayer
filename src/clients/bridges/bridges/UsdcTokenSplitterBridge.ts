@@ -2,10 +2,10 @@ import { BigNumber, Signer } from "ethers";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, assert, compareAddressesSimple } from "../../../utils";
-import { BridgeTransactionDetails, OpStackBridge, OpStackEvents } from "./OpStackBridgeInterface";
+import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "../BaseBridgeAdapter";
 import { CONTRACT_ADDRESSES } from "../../../common";
 
-export class UsdcTokenSplitterBridge extends OpStackBridge {
+export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   private readonly cctpBridge: UsdcCCTPBridge;
   private readonly canonicalBridge: DefaultERC20Bridge;
 
@@ -23,7 +23,7 @@ export class UsdcTokenSplitterBridge extends OpStackBridge {
    * @param l2Token The L2 token address to get the bridge for.
    * @returns If the L2 token is native USDC, returns the CCTP bridge. Otherwise, returns the canonical bridge.
    */
-  private getL1Bridge(l2Token: string): OpStackBridge {
+  private getL1Bridge(l2Token: string): BaseBridgeAdapter {
     return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
       ? this.cctpBridge
       : this.canonicalBridge;
@@ -45,7 +45,7 @@ export class UsdcTokenSplitterBridge extends OpStackBridge {
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<OpStackEvents> {
+  ): Promise<BridgeEvents> {
     // We should *only* be calling this class for USDC tokens
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
@@ -69,7 +69,7 @@ export class UsdcTokenSplitterBridge extends OpStackBridge {
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<OpStackEvents> {
+  ): Promise<BridgeEvents> {
     // We should *only* be calling this class for USDC tokens
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([

@@ -1,5 +1,4 @@
-import { utils } from "@across-protocol/sdk-v2";
-import { SpokePoolClient } from "../..";
+import { SpokePoolClient } from "../";
 import {
   AnyObject,
   BigNumber,
@@ -20,14 +19,17 @@ import {
   matchTokenSymbol,
   toBN,
   winston,
-} from "../../../utils";
-import { AugmentedTransaction, TransactionClient } from "../../TransactionClient";
+  forEachAsync,
+  filterAsync,
+  mapAsync,
+} from "../../utils";
+import { AugmentedTransaction, TransactionClient } from "../TransactionClient";
 import { OutstandingTransfers, SupportedL1Token, SupportedTokenSymbol } from "./types";
 import { approveTokens, getTokenAllowanceFromCache, isMaxAllowance, setTokenAllowanceInCache } from "./utils";
-import { BaseBrideAdapter } from "./BaseBridgeAdapter";
-import { CONTRACT_ADDRESSES } from "../../../common";
+import { BaseBridgeAdapter } from "./BaseBridgeAdapter";
+import { CONTRACT_ADDRESSES } from "../../common";
 
-export abstract class BaseChainAdapter {
+export class BaseChainAdapter {
   protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   protected baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   private transactionClient: TransactionClient;
@@ -38,8 +40,8 @@ export abstract class BaseChainAdapter {
     protected readonly hubChainId: number,
     protected readonly monitoredAddresses: string[],
     protected readonly logger: winston.Logger,
-    protected readonly supportedTokens: SupportedTokenSymbol[],
-    protected readonly bridges: { [l1Token: string]: BaseBrideAdapter },
+    public readonly supportedTokens: SupportedTokenSymbol[],
+    protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
     protected readonly gasMultiplier: number
   ) {
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
@@ -65,7 +67,7 @@ export abstract class BaseChainAdapter {
   }
 
   // Note: this must be called after the SpokePoolClients are updated.
-  private getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
+  public getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
     const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
     const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockSearched;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
@@ -101,7 +103,7 @@ export abstract class BaseChainAdapter {
   async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
     const unavailableTokens: string[] = [];
     const tokensToApprove = (
-      await utils.mapAsync(
+      await mapAsync(
         l1Tokens.map((token) => [token, this.bridges[token]?.l1Gateways] as [string, string[]]),
         async ([l1Token, bridges]) => {
           const erc20 = ERC20.connect(l1Token, this.getSigner(this.hubChainId));
@@ -109,7 +111,7 @@ export abstract class BaseChainAdapter {
             unavailableTokens.push(l1Token);
             return { token: erc20, bridges: [] };
           }
-          const bridgesToApprove = await utils.filterAsync(bridges, async (bridge) => {
+          const bridgesToApprove = await filterAsync(bridges, async (bridge) => {
             const senderAddress = await erc20.signer.getAddress();
             const cachedResult = await getTokenAllowanceFromCache(l1Token, senderAddress, bridge);
             const allowance = cachedResult ?? (await erc20.allowance(senderAddress, bridge));
@@ -133,16 +135,18 @@ export abstract class BaseChainAdapter {
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
+  // TODO: address L2Gas in a more sustainable way
   async sendTokenToTargetChain(
     address: string,
     l1Token: string,
     l2Token: string,
     amount: BigNumber,
-    simMode: boolean
+    simMode: boolean,
+    l2Gas = 1
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-    const { contract, method, args, value } = bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
+    const { contract, method, args, value } = bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, l2Gas);
     const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
@@ -214,8 +218,8 @@ export abstract class BaseChainAdapter {
 
     const outstandingTransfers: OutstandingTransfers = {};
 
-    await utils.forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
-      await utils.forEachAsync(availableL1Tokens, async (l1Token) => {
+    await forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
+      await forEachAsync(availableL1Tokens, async (l1Token) => {
         const bridge = this.bridges[l1Token];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, l1SearchConfig),
@@ -242,7 +246,7 @@ export abstract class BaseChainAdapter {
     });
 
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
-    this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
+    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return outstandingTransfers;
   }

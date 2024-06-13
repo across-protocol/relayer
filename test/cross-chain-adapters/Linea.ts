@@ -1,13 +1,13 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { SpokePoolClient } from "../../src/clients";
-import { LineaAdapter } from "../../src/clients/bridges/LineaAdapter";
+import { BaseChainAdapter } from "../../src/clients/bridges/BaseChainAdapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32, toBN } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { ZERO_ADDRESS } from "@uma/common";
-import { CONTRACT_ADDRESSES } from "../../src/common";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
 
 describe("Cross Chain Adapter: Linea", async function () {
-  let adapter: LineaAdapter;
+  let adapter: BaseChainAdapter;
   let monitoredEoa: string;
   let l1Token, l1USDCToken, l1WETHToken: string;
 
@@ -36,18 +36,48 @@ describe("Cross Chain Adapter: Linea", async function () {
     const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, CHAIN_IDs.MAINNET, 0, {
       fromBlock: 0,
     });
-    adapter = new LineaAdapter(
-      null,
-      {
-        [CHAIN_IDs.LINEA]: l2SpokePoolClient,
-        [CHAIN_IDs.MAINNET]: l1SpokePoolClient,
-      }, // Don't need spoke pool clients for this test
-      [] // monitored address doesn't matter for this test since we inject it into the function
-    );
 
     wethBridgeContract = await (await getContractFactory("LineaWethBridge", deployer)).deploy();
     usdcBridgeContract = await (await getContractFactory("LineaUsdcBridge", deployer)).deploy();
     erc20BridgeContract = await (await getContractFactory("LineaERC20Bridge", deployer)).deploy();
+
+    const bridges = {
+      [wethBridgeContract.address]: new BaseBridgeAdapter(
+        CHAIN_IDs.LINEA,
+        CHAIN_IDs.MAINNET,
+        l1SpokePoolClient.spokePool.signer,
+        l2SpokePoolClient.spokePool.signer,
+        wethBridgeContract.address
+      ),
+      [usdcBridgeContract.address]: new BaseBridgeAdapter(
+        CHAIN_IDs.LINEA,
+        CHAIN_IDs.MAINNET,
+        l1SpokePoolClient.spokePool.signer,
+        l2SpokePoolClient.spokePool.signer,
+        usdcBridgeContract.address
+      ),
+      [erc20BridgeContract.address]: new BaseBridgeAdapter(
+        CHAIN_IDs.LINEA,
+        CHAIN_IDs.MAINNET,
+        l1SpokePoolClient.spokePool.signer,
+        l2SpokePoolClient.spokePool.signer,
+        erc20BridgeContract.address
+      ),
+    };
+
+    adapter = new BaseChainAdapter(
+      {
+        [CHAIN_IDs.LINEA]: l2SpokePoolClient,
+        [CHAIN_IDs.MAINNET]: l1SpokePoolClient,
+      }, // Don't need spoke pool clients for this test
+      CHAIN_IDs.LINEA,
+      CHAIN_IDs.MAINNET,
+      [], // monitored address doesn't matter for this test since we inject it into the function
+      null,
+      SUPPORTED_TOKENS[CHAIN_IDs.LINEA],
+      bridges,
+      1.5
+    );
   });
 
   describe("WETH", function () {

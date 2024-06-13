@@ -329,6 +329,24 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
   ],
 };
 
+// A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
+export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
+  10: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+  137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "BADGER", "POOL", "MATIC"],
+  324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
+  34443: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
+  42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BADGER", "BAL", "ACX", "POOL"],
+  59144: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+
+  // Testnets:
+  919: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
+  59141: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  84532: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
+  421614: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BADGER", "BAL", "ACX", "POOL"],
+  11155420: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+};
+
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.
 export const RELAYER_DEFAULT_SPOKEPOOL_INDEXER = "./dist/src/libexec/RelayerSpokePoolIndexer.js";
 

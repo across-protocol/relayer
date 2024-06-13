@@ -2,7 +2,7 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../../src/common";
-import { WethBridge } from "../../src/clients/bridges/op-stack/WethBridge";
+import { WethBridge } from "../../src/clients/bridges/bridges/WethBridge";
 import { Event, Signer } from "ethers";
 
 describe("Cross Chain Adapter: OP Stack", async function () {

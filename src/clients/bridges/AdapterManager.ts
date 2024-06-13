@@ -1,22 +1,26 @@
-import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
-import { SpokePoolClient, HubPoolClient } from "../";
 import {
-  OptimismAdapter,
-  ArbitrumAdapter,
-  PolygonAdapter,
-  BaseAdapter,
-  ZKSyncAdapter,
-  BaseChainAdapter,
-  LineaAdapter,
-  ModeAdapter,
-} from "./";
+  BigNumber,
+  isDefined,
+  winston,
+  Signer,
+  getL2TokenAddresses,
+  TransactionResponse,
+  assert,
+  CHAIN_IDs,
+  mapAsync,
+} from "../../utils";
+import { SpokePoolClient, HubPoolClient } from "../";
+import { BaseChainAdapter } from "./";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
-import { utils } from "@across-protocol/sdk";
-import { CHAIN_IDs } from "@across-protocol/constants";
-import { spokesThatHoldEthAndWeth } from "../../common/Constants";
+import {
+  spokesThatHoldEthAndWeth,
+  SUPPORTED_TOKENS,
+  DEFAULT_GAS_FEE_SCALERS,
+  DEFAULT_RELAYER_GAS_MULTIPLIER,
+} from "../../common";
 
 export class AdapterManager {
-  public adapters: { [chainId: number]: BaseAdapter } = {};
+  public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -34,6 +38,7 @@ export class AdapterManager {
       return;
     }
     const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+    const hubChainId = this.hubPoolClient.chainId;
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
@@ -45,27 +50,29 @@ export class AdapterManager {
           !spokePoolAddresses.includes(address)
       );
     };
-    if (this.spokePoolClients[10] !== undefined) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, filterMonitoredAddresses(10));
-    }
-    if (this.spokePoolClients[137] !== undefined) {
-      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, filterMonitoredAddresses(137));
-    }
-    if (this.spokePoolClients[42161] !== undefined) {
-      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, filterMonitoredAddresses(42161));
-    }
-    if (this.spokePoolClients[324] !== undefined) {
-      this.adapters[324] = new ZKSyncAdapter(logger, spokePoolClients, filterMonitoredAddresses(324));
-    }
-    if (this.spokePoolClients[8453] !== undefined) {
-      this.adapters[8453] = new BaseChainAdapter(logger, spokePoolClients, filterMonitoredAddresses(8453));
-    }
-    if (this.spokePoolClients[59144] !== undefined) {
-      this.adapters[59144] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(59144));
-    }
-    if (this.spokePoolClients[34443] !== undefined) {
-      this.adapters[34443] = new ModeAdapter(logger, spokePoolClients, filterMonitoredAddresses(34443));
-    }
+
+    // TODO: Implement a programmatic way to fetch all custom bridges for a given chain ID
+    // (probably using some LUT in common/Constants) and add them. Also need to migrate the bridges to
+    // James's generic format.
+    Object.values(CHAIN_IDs).map((chainId) => {
+      if (this.spokePoolClients[chainId] !== undefined) {
+        // First, fetch all the bridges associated with the chain.
+        const customBridges = {};
+
+        // Then instantiate a generic adapter.
+        // TODO: Do something about the gas multiplier
+        this.adapters[chainId] = new BaseChainAdapter(
+          spokePoolClients,
+          chainId,
+          hubChainId,
+          filterMonitoredAddresses(chainId),
+          logger,
+          SUPPORTED_TOKENS[chainId],
+          customBridges,
+          DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler ?? Number(DEFAULT_RELAYER_GAS_MULTIPLIER)
+        );
+      }
+    });
 
     logger.debug({
       at: "AdapterManager#constructor",
@@ -118,7 +125,7 @@ export class AdapterManager {
   // L2 refund recipient, and on ZkSync, because the relayer is set as the refund recipient when rebalancing
   // inventory from L1 to ZkSync via the AtomicDepositor.
   async wrapEthIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
-    await utils.mapAsync(
+    await mapAsync(
       this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
       async (chainId) => {
         const wrapThreshold =
@@ -163,14 +170,14 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async setL1TokenApprovals(l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     for (const chainId of this.supportedChains()) {
       const adapter = this.adapters[chainId];
       if (isDefined(adapter)) {
         const hubTokens = l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, chainId));
-        await adapter.checkTokenApprovals(address, hubTokens);
+        await adapter.checkTokenApprovals(hubTokens);
       }
     }
   }
