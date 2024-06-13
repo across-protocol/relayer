@@ -15,7 +15,7 @@ export class BaseChainAdapter extends OpStackAdapter {
       // Custom Bridges
       {},
       logger,
-      SUPPORTED_TOKENS[CHAIN_IDs.BASE], 
+      SUPPORTED_TOKENS[CHAIN_IDs.BASE],
       spokePoolClients,
       monitoredAddresses
     );
