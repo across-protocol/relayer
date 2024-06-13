@@ -13,6 +13,7 @@ import {
   DefaultLogLevels,
   ERC20,
   EventSearchConfig,
+  isDefined,
   MAX_SAFE_ALLOWANCE,
   MakeOptional,
   TransactionResponse,
@@ -119,10 +120,8 @@ export abstract class BaseAdapter {
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], l1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, l1Bridges });
-
     assert(l1Tokens.length === l1Bridges.length, "Token and bridge arrays are not the same length");
 
-    const tokensToApprove: { token: Contract; bridge: string }[] = [];
     const l1TokenContracts = l1Tokens.map(
       (l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(this.hubChainId))
     );
@@ -154,17 +153,15 @@ export abstract class BaseAdapter {
       })
     );
 
-    await utils.forEachAsync(allowances, async (allowance, idx) => {
-      if (!allowance) {
-        return; // No bridge for this token.
-      }
-
-      const token = l1TokenContracts[idx];
-      const bridge = l1Bridges[idx];
-      if (allowance.lt(MAX_SAFE_ALLOWANCE)) {
-        tokensToApprove.push({ token, bridge });
-      }
-    });
+    const tokensToApprove = allowances
+      .map((allowance, idx) => {
+        const token = l1TokenContracts[idx];
+        const bridge = l1Bridges[idx];
+        if (token && bridge && allowance.lt(MAX_SAFE_ALLOWANCE)) {
+          return { token, bridge };
+        }
+      })
+      .filter(isDefined);
     if (tokensToApprove.length === 0) {
       this.log("No token bridge approvals needed", { l1Tokens });
       return;
