@@ -47,61 +47,51 @@ export class AdapterManager {
         [dai]: new DaiOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner),
         [snx]: new SnxOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner),
       };
-      this.adapters[CHAIN_IDs.OPTIMISM] = new OpStackAdapter(
-        CHAIN_IDs.OPTIMISM,
+      this.adapters[OPTIMISM] = new OpStackAdapter(
+        OPTIMISM,
         customBridges,
         logger,
-        SUPPORTED_TOKENS[CHAIN_IDs.OPTIMISM],
+        SUPPORTED_TOKENS[OPTIMISM],
         spokePoolClients,
-        filterMonitoredAddresses(CHAIN_IDs.OPTIMISM)
+        filterMonitoredAddresses(OPTIMISM)
       );
     }
     if (this.spokePoolClients[CHAIN_IDs.POLYGON] !== undefined) {
-      this.adapters[CHAIN_IDs.POLYGON] = new PolygonAdapter(
-        logger,
-        spokePoolClients,
-        filterMonitoredAddresses(CHAIN_IDs.POLYGON)
-      );
+      const { POLYGON } = CHAIN_IDs;
+      this.adapters[POLYGON] = new PolygonAdapter(logger, spokePoolClients, filterMonitoredAddresses(POLYGON));
     }
     if (this.spokePoolClients[CHAIN_IDs.ARBITRUM] !== undefined) {
-      this.adapters[CHAIN_IDs.ARBITRUM] = new ArbitrumAdapter(
-        logger,
-        spokePoolClients,
-        filterMonitoredAddresses(CHAIN_IDs.ARBITRUM)
-      );
+      const { ARBITRUM } = CHAIN_IDs;
+      this.adapters[ARBITRUM] = new ArbitrumAdapter(logger, spokePoolClients, filterMonitoredAddresses(ARBITRUM));
     }
     if (this.spokePoolClients[CHAIN_IDs.ZK_SYNC] !== undefined) {
-      this.adapters[CHAIN_IDs.ZK_SYNC] = new ZKSyncAdapter(
-        logger,
-        spokePoolClients,
-        filterMonitoredAddresses(CHAIN_IDs.ZK_SYNC)
-      );
+      const { ZK_SYNC } = CHAIN_IDs;
+      this.adapters[ZK_SYNC] = new ZKSyncAdapter(logger, spokePoolClients, filterMonitoredAddresses(ZK_SYNC));
     }
     if (this.spokePoolClients[CHAIN_IDs.BASE] !== undefined) {
-      this.adapters[CHAIN_IDs.BASE] = new OpStackAdapter(
-        CHAIN_IDs.BASE,
+      const { BASE } = CHAIN_IDs;
+      this.adapters[BASE] = new OpStackAdapter(
+        BASE,
         {},
         logger,
-        SUPPORTED_TOKENS[CHAIN_IDs.BASE],
+        SUPPORTED_TOKENS[BASE],
         spokePoolClients,
-        filterMonitoredAddresses(CHAIN_IDs.BASE)
+        filterMonitoredAddresses(BASE)
       );
     }
     if (this.spokePoolClients[CHAIN_IDs.LINEA] !== undefined) {
-      this.adapters[CHAIN_IDs.LINEA] = new LineaAdapter(
-        logger,
-        spokePoolClients,
-        filterMonitoredAddresses(CHAIN_IDs.LINEA)
-      );
+      const { LINEA } = CHAIN_IDs;
+      this.adapters[LINEA] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(LINEA));
     }
     if (this.spokePoolClients[CHAIN_IDs.MODE] !== undefined) {
-      this.adapters[CHAIN_IDs.MODE] = new OpStackAdapter(
-        CHAIN_IDs.MODE,
+      const { MODE } = CHAIN_IDs;
+      this.adapters[MODE] = new OpStackAdapter(
+        MODE,
         {},
         logger,
-        SUPPORTED_TOKENS[CHAIN_IDs.MODE],
+        SUPPORTED_TOKENS[MODE],
         spokePoolClients,
-        filterMonitoredAddresses(CHAIN_IDs.MODE)
+        filterMonitoredAddresses(MODE)
       );
     }
 
