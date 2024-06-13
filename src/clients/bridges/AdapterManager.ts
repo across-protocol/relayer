@@ -38,19 +38,15 @@ export class AdapterManager {
       );
     };
     if (this.spokePoolClients[CHAIN_IDs.OPTIMISM] !== undefined) {
-      const customBridges = {};
-      customBridges[TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]] = new DaiOptimismBridge(
-        CHAIN_IDs.OPTIMISM,
-        CHAIN_IDs.MAINNET,
-        spokePoolClients[CHAIN_IDs.OPTIMISM].spokePool.signer,
-        spokePoolClients[CHAIN_IDs.MAINNET].spokePool.signer
-      );
-      customBridges[TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]] = new SnxOptimismBridge(
-        CHAIN_IDs.OPTIMISM,
-        CHAIN_IDs.MAINNET,
-        spokePoolClients[CHAIN_IDs.OPTIMISM].spokePool.signer,
-        spokePoolClients[CHAIN_IDs.MAINNET].spokePool.signer
-      );
+      const { MAINNET, OPTIMISM } = CHAIN_IDs;
+      const mainnetSigner = spokePoolClients[MAINNET].spokePool.signer;
+      const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[MAINNET];
+      const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[MAINNET];
+      const l2Signer = spokePoolClients[OPTIMISM].spokePool.signer;
+      const customBridges = {
+        [dai]: new DaiOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner),
+        [snx]: new SnxOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner),
+      };
       this.adapters[CHAIN_IDs.OPTIMISM] = new OpStackAdapter(
         CHAIN_IDs.OPTIMISM,
         customBridges,
