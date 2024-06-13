@@ -10,7 +10,7 @@ import {
 } from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { SortableEvent } from "../../../interfaces";
-import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "../BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { Event } from "ethers";
 
 export class DaiOptimismBridge extends BaseBridgeAdapter {

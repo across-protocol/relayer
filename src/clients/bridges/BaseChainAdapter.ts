@@ -26,7 +26,7 @@ import {
 import { AugmentedTransaction, TransactionClient } from "../TransactionClient";
 import { OutstandingTransfers, SupportedL1Token, SupportedTokenSymbol } from "./types";
 import { approveTokens, getTokenAllowanceFromCache, isMaxAllowance, setTokenAllowanceInCache } from "./utils";
-import { BaseBridgeAdapter } from "./BaseBridgeAdapter";
+import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
 import { CONTRACT_ADDRESSES } from "../../common";
 
 export class BaseChainAdapter {

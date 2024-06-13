@@ -1,4 +1,4 @@
-import { Contract, BigNumber, EventSearchConfig, Signer, Provider, getTokenAddressWithCCTP } from "../../utils";
+import { Contract, BigNumber, EventSearchConfig, Signer, Provider, getTokenAddressWithCCTP } from "../../../utils";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;

@@ -2,7 +2,7 @@ import { BigNumber, Signer } from "ethers";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, assert, compareAddressesSimple } from "../../../utils";
-import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "../BaseBridgeAdapter";
+import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { CONTRACT_ADDRESSES } from "../../../common";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {

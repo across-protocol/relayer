@@ -1,4 +1,18 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider } from "../utils";
+import {
+  BaseBridgeAdapter,
+  DefaultERC20Bridge,
+  SnxOptimismBridge,
+  DaiOptimismBridge,
+  UsdcTokenSplitterBridge,
+  WethBridge,
+  PolygonWethBridge,
+  PolygonERC20Bridge,
+  ZKSyncBridge,
+  ArbitrumBridge,
+  LineaBridge,
+  LineaUSDCBridge,
+} from "../clients/bridges/bridges";
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
@@ -345,6 +359,67 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   84532: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   421614: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BADGER", "BAL", "ACX", "POOL"],
   11155420: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+};
+
+// Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
+// case, it is the default bridge for the given chain.
+export const CANONICAL_BRIDGE: {
+  [chainId: number]: {
+    new (
+      l2chainId: number,
+      hubChainId: number,
+      l1Signer: Signer,
+      l2SignerOrProvider: Signer | Provider
+    ): BaseBridgeAdapter;
+  };
+} = {
+  10: DefaultERC20Bridge,
+  137: PolygonERC20Bridge,
+  324: ZKSyncBridge,
+  8453: DefaultERC20Bridge,
+  34443: DefaultERC20Bridge,
+  42161: ArbitrumBridge,
+  59144: LineaBridge,
+};
+
+// Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
+// In addition to mapping a chain to the custom bridges, we also need to specify which token the bridge supports.
+export const CUSTOM_BRIDGE: {
+  [chainId: number]: {
+    [tokenAddress: string]: {
+      new (
+        l2chainId: number,
+        hubChainId: number,
+        l1Signer: Signer,
+        l2SignerOrProvider: Signer | Provider
+      ): BaseBridgeAdapter;
+    };
+  };
+} = {
+  10: {
+    [TOKEN_SYMBOLS_MAP.SNX[1]]: SnxOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.DAI[1]]: DaiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH[1]]: WethBridge,
+  },
+  137: {
+    [TOKEN_SYMBOLS_MAP.WETH[1]]: PolygonWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
+  },
+  324: {},
+  8453: {
+    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH[1]]: WethBridge,
+  },
+  34443: {
+    [TOKEN_SYMBOLS_MAP.WETH[1]]: WethBridge,
+  },
+  42161: {
+    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
+  },
+  59144: {
+    [TOKEN_SYMBOLS_MAP.USDC[1]]: LineaUSDCBridge,
+  },
 };
 
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.

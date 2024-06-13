@@ -17,7 +17,7 @@ import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { SortableEvent } from "../../../interfaces";
 
-export class WethBridge extends BaseBridgeAdapter {
+export class PolygonWethBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
   private readonly atomicDepositor: Contract;

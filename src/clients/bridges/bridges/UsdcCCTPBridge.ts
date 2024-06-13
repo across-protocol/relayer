@@ -1,6 +1,6 @@
 import { BigNumber, Contract, Signer, Event } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../../common";
-import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "../BaseBridgeAdapter";
+import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { SortableEvent } from "../../../interfaces";
 import {
   EventSearchConfig,

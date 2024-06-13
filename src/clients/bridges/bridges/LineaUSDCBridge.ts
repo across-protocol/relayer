@@ -13,7 +13,7 @@ import { SortableEvent } from "../../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { Event } from "ethers";
 
-export class DefaultERC20Bridge extends BaseBridgeAdapter {
+export class LineaUSDCBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 

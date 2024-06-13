@@ -8,6 +8,7 @@ import {
   assert,
   CHAIN_IDs,
   mapAsync,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { BaseChainAdapter } from "./";
@@ -17,6 +18,8 @@ import {
   SUPPORTED_TOKENS,
   DEFAULT_GAS_FEE_SCALERS,
   DEFAULT_RELAYER_GAS_MULTIPLIER,
+  CUSTOM_BRIDGE,
+  CANONICAL_BRIDGE,
 } from "../../common";
 
 export class AdapterManager {
@@ -51,13 +54,18 @@ export class AdapterManager {
       );
     };
 
-    // TODO: Implement a programmatic way to fetch all custom bridges for a given chain ID
-    // (probably using some LUT in common/Constants) and add them. Also need to migrate the bridges to
-    // James's generic format.
+    const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
+
     Object.values(CHAIN_IDs).map((chainId) => {
       if (this.spokePoolClients[chainId] !== undefined) {
         // First, fetch all the bridges associated with the chain.
-        const customBridges = {};
+        const bridges = {};
+        const l2Signer = spokePoolClients[chainId].spokePool.signer;
+        SUPPORTED_TOKENS[chainId].map((symbol) => {
+          const address = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
+          const bridgeConstructor = CUSTOM_BRIDGE[chainId][address] ?? CANONICAL_BRIDGE[chainId];
+          bridges[address] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer);
+        });
 
         // Then instantiate a generic adapter.
         // TODO: Do something about the gas multiplier
@@ -68,7 +76,7 @@ export class AdapterManager {
           filterMonitoredAddresses(chainId),
           logger,
           SUPPORTED_TOKENS[chainId],
-          customBridges,
+          bridges,
           DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler ?? Number(DEFAULT_RELAYER_GAS_MULTIPLIER)
         );
       }
