@@ -12,6 +12,8 @@ export const {
   bnUint32Max,
   bnUint256Max,
   chainIsOPStack,
+  chainIsMatic,
+  chainIsProd,
   dedupArray,
   fillStatusArray,
   fixedPointAdjustment,
