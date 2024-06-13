@@ -575,10 +575,10 @@
     ethers "^5.5.4"
     lodash "^4.17.21"
 
-"@eth-optimism/sdk@0.0.0-refs-pull-383-merge-20240612003713":
-  version "0.0.0-refs-pull-383-merge-20240612003713"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-0.0.0-refs-pull-383-merge-20240612003713.tgz#72b78faa2f3c4b650974a390bb79f3a3258177d0"
-  integrity sha512-aIe+KXspWFgY5swy5fyxXf4iZh3guAk1ksdhdL0neIVu2T7+lePpwBFRdtDa2vbAjs5FjyMazuaj+lfBSnSt+g==
+"@eth-optimism/sdk@3.3.2":
+  version "3.3.2"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.3.2.tgz#68a5f6e77f9c85f6eeb9db8044b3b69199520eb0"
+  integrity sha512-+zhxT0YkBIEzHsuIayQGjr8g9NawZo6/HYfzg1NSEFsE2Yt0NyCWqVDFTuuak0T6AvIa2kNcl3r0Z8drdb2QmQ==
   dependencies:
     "@eth-optimism/contracts" "0.6.0"
     "@eth-optimism/core-utils" "^0.13.2"
