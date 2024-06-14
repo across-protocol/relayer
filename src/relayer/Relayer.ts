@@ -24,6 +24,7 @@ import { RelayerConfig } from "./RelayerConfig";
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
+const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 
 type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
 type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
@@ -38,6 +39,8 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
+
+  private hubPoolBlockBuffer: number;
 
   constructor(
     relayerAddress: string,
@@ -117,7 +120,15 @@ export class Relayer {
     }
 
     // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-    if (deposit.quoteTimestamp > hubPoolClient.currentTime) {
+    if (deposit.quoteTimestamp - hubPoolClient.currentTime > this.hubPoolBlockBuffer) {
+      this.logger.debug({
+        at: "Relayer::evaluateFill",
+        message: `Skipping ${srcChain} deposit due to future quoteTimestamp.`,
+        currentTime: hubPoolClient.currentTime,
+        quoteTimestamp: deposit.quoteTimestamp,
+        buffer: this.hubPoolBlockBuffer,
+        transactionHash: deposit.transactionHash,
+      });
       return false;
     }
 
@@ -469,7 +480,12 @@ export class Relayer {
     sendSlowRelays = true,
     simulate = false
   ): Promise<{ [chainId: number]: Promise<string[]> }> {
-    const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+
+    // Fetch the average block time for mainnet, for later use in evaluating quoteTimestamps.
+    this.hubPoolBlockBuffer ??= Math.ceil(
+      HUB_SPOKE_BLOCK_LAG * (await sdkUtils.averageBlockTime(hubPoolClient.hubPool.provider)).average
+    );
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();

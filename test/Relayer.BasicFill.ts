@@ -448,15 +448,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Override hub pool client timestamp to make deposit look like its in the future
       await updateAllClients();
-      hubPoolClient.currentTime = quoteTimestamp - 1;
+      hubPoolClient.currentTime = quoteTimestamp - 100;
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       for (const receipts of Object.values(txnReceipts)) {
         expect((await receipts).length).to.equal(0);
       }
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
 
-      // If we reset the timestamp, the relayer will fill the deposit:
-      hubPoolClient.currentTime = quoteTimestamp;
+      // If we reset the timestamp to within the block lag buffer, the relayer will fill the deposit:
+      hubPoolClient.currentTime = quoteTimestamp - 1;
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       expect((await txnReceipts[destinationChainId]).length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
