@@ -197,10 +197,13 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // Update the token client first so that inventory client has latest balances.
   await clients.tokenClient.update();
 
-  // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
-  const inventoryChainIds = Object.values(spokePoolClients)
-    .filter(({ latestBlockSearched, deploymentBlock }) => latestBlockSearched > deploymentBlock)
-    .map(({ chainId }) => chainId);
+  // We can update the inventory client in parallel with checking for eth wrapping as these do not depend on each other.
+  // Cross-chain deposit tracking produces duplicates in looping mode, so in that case don't attempt it. This does not
+  // disable inventory management, but does make it ignorant of in-flight cross-chain transfers. The rebalancer is
+  // assumed to run separately from the relayer and with pollingDelay 0, so it doesn't loop and will track transfers
+  // correctly to avoid repeat rebalances.
+  const inventoryChainIds =
+    config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
   await Promise.all([
     clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(inventoryChainIds),
