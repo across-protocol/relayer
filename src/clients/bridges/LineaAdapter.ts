@@ -1,5 +1,5 @@
 import * as sdk from "@across-protocol/sdk";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { OutstandingTransfers } from "../../interfaces";
 import {
   BigNumber,
@@ -28,7 +28,8 @@ export class LineaAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, CHAIN_IDs.LINEA, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
+    const { LINEA } = CHAIN_IDs;
+    super(spokePoolClients, LINEA, monitoredAddresses, logger, SUPPORTED_TOKENS[LINEA]);
   }
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Note: Linea has two bridges: one for
