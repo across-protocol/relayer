@@ -1,7 +1,7 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { SpokePoolClient } from "../../src/clients";
 import { ArbitrumAdapter, l1Gateways, l2Gateways } from "../../src/clients/bridges/ArbitrumAdapter";
-import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32, toBN } from "../utils";
+import { ethers, getContractFactory, Contract, randomAddress, expect, toBN } from "../utils";
 import { utils, relayFeeCalculator } from "@across-protocol/sdk";
 import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES } from "../../src/common";
