@@ -482,8 +482,9 @@ export class Relayer {
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
 
     // Fetch the average block time for mainnet, for later use in evaluating quoteTimestamps.
-    this.hubPoolBlockBuffer ??=
-      HUB_SPOKE_BLOCK_LAG * (await sdkUtils.averageBlockTime(hubPoolClient.hubPool.provider)).average;
+    this.hubPoolBlockBuffer ??= Math.ceil(
+      HUB_SPOKE_BLOCK_LAG * (await sdkUtils.averageBlockTime(hubPoolClient.hubPool.provider)).average
+    );
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
