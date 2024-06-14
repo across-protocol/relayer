@@ -126,6 +126,7 @@ export class Relayer {
         message: `Skipping ${srcChain} deposit due to future quoteTimestamp.`,
         currentTime: hubPoolClient.currentTime,
         quoteTimestamp: deposit.quoteTimestamp,
+        buffer: this.hubPoolBlockBuffer,
         transactionHash: deposit.transactionHash,
       });
       return false;
