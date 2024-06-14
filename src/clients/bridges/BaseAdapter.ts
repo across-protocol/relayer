@@ -139,14 +139,12 @@ export abstract class BaseAdapter {
 
         // Check if we've cached already that this allowance is high enough, else fallback to an RPC query.
         let allowance = await getTokenAllowanceFromCache(l1Token.address, address, l1Bridge);
-        if (allowance) {
-          return allowance;
-        }
-
-        // If the onchain allowance is > MAX_SAFE_ALLOWANCE, cache it for next time.
-        allowance = await l1Token.allowance(address, l1Bridge);
-        if (allowance.gte(MAX_SAFE_ALLOWANCE)) {
-          await setTokenAllowanceInCache(l1Token.address, address, l1Bridge, allowance);
+        if (!allowance) {
+          // If the onchain allowance is > MAX_SAFE_ALLOWANCE, cache it for next time.
+          allowance = await l1Token.allowance(address, l1Bridge);
+          if (allowance.gte(MAX_SAFE_ALLOWANCE)) {
+            await setTokenAllowanceInCache(l1Token.address, address, l1Bridge, allowance);
+          }
         }
 
         return allowance;
