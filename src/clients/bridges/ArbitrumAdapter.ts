@@ -15,6 +15,7 @@ import {
   assert,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  EventSearchConfig,
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
@@ -23,7 +24,7 @@ import { CCTPAdapter } from "./CCTPAdapter";
 
 // TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
-const l1Gateways = {
+export const l1Gateways = {
   [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
   [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
   [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
@@ -36,7 +37,7 @@ const l1Gateways = {
   [TOKEN_SYMBOLS_MAP.POOL.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // POOL
 } as const;
 
-const l2Gateways = {
+export const l2Gateways = {
   [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "0x096760F208390250649E3e8763348E783AEF5562", // USDC
   [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: "0x096760F208390250649E3e8763348E783AEF5562", // USDT
   [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
@@ -65,10 +66,54 @@ export class ArbitrumAdapter extends CCTPAdapter {
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    monitoredAddresses: string[]
+    monitoredAddresses: string[],
+    private gatewayAddressOverrides: {
+      l1?: Record<SupportedL1Token, string>;
+      l2?: Record<SupportedL1Token, string>;
+    } = {}
   ) {
     const { ARBITRUM } = CHAIN_IDs;
     super(spokePoolClients, ARBITRUM, monitoredAddresses, logger, SUPPORTED_TOKENS[ARBITRUM]);
+  }
+
+  async getL1DepositInitiatedEvents(
+    l1Token: string,
+    monitoredAddress: string,
+    l1SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    const l1Bridge = this.getL1Bridge(l1Token);
+
+    // l1Token is not an indexed field on deposit events in L1 but is on finalization events on Arb.
+    // This unfortunately leads to fetching of all deposit events for all tokens multiple times, one per l1Token.
+    // There's likely not much we can do here as the deposit events don't have l1Token as an indexed field.
+    // https://github.com/OffchainLabs/arbitrum/blob/master/packages/arb-bridge-peripherals/contracts/tokenbridge/ethereum/gateway/L1ArbitrumGateway.sol#L51
+    const l1SearchFilter = [undefined, monitoredAddress];
+    const events = await paginatedEventQuery(
+      l1Bridge,
+      l1Bridge.filters.DepositInitiated(...l1SearchFilter),
+      l1SearchConfig
+    );
+    // l1Token is not an indexed field on Aribtrum gateway's deposit events, so these events are for all tokens.
+    // Therefore, we need to filter unrelated deposits of other tokens.
+    const filteredEvents = events.filter((event) => event.args.l1Token === l1Token);
+    return filteredEvents;
+  }
+
+  async getL2DepositFinalizedEvents(
+    l1Token: string,
+    monitoredAddress: string,
+    l2SearchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    const l2Bridge = this.getL2Bridge(l1Token);
+
+    // https://github.com/OffchainLabs/arbitrum/blob/d75568fa70919364cf56463038c57c96d1ca8cda/packages/arb-bridge-peripherals/contracts/tokenbridge/arbitrum/gateway/L2ArbitrumGateway.sol#L40
+    const l2SearchFilter = [l1Token, monitoredAddress, undefined];
+    const events = await paginatedEventQuery(
+      l2Bridge,
+      l2Bridge.filters.DepositFinalized(...l2SearchFilter),
+      l2SearchConfig
+    );
+    return events;
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -88,19 +133,9 @@ export class ArbitrumAdapter extends CCTPAdapter {
           cctpOutstandingTransfersPromise[monitoredAddress] = this.getOutstandingCctpTransfers(monitoredAddress);
         }
 
-        const l1Bridge = this.getL1Bridge(l1Token);
-        const l2Bridge = this.getL2Bridge(l1Token);
-
-        // l1Token is not an indexed field on deposit events in L1 but is on finalization events on Arb.
-        // This unfortunately leads to fetching of all deposit events for all tokens multiple times, one per l1Token.
-        // There's likely not much we can do here as the deposit events don't have l1Token as an indexed field.
-        // https://github.com/OffchainLabs/arbitrum/blob/master/packages/arb-bridge-peripherals/contracts/tokenbridge/ethereum/gateway/L1ArbitrumGateway.sol#L51
-        const l1SearchFilter = [undefined, monitoredAddress];
-        // https://github.com/OffchainLabs/arbitrum/blob/d75568fa70919364cf56463038c57c96d1ca8cda/packages/arb-bridge-peripherals/contracts/tokenbridge/arbitrum/gateway/L2ArbitrumGateway.sol#L40
-        const l2SearchFilter = [l1Token, monitoredAddress, undefined];
         promises.push(
-          paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...l1SearchFilter), l1SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig)
+          this.getL1DepositInitiatedEvents(l1Token, monitoredAddress, l1SearchConfig),
+          this.getL2DepositFinalizedEvents(l1Token, monitoredAddress, l2SearchConfig)
         );
       }
     }
@@ -236,10 +271,14 @@ export class ArbitrumAdapter extends CCTPAdapter {
   async wrapEthIfAboveThreshold(
     threshold: BigNumber,
     target: BigNumber,
-    simMode = false
+    simMode = false,
+    skipChainIdCheck = false
   ): Promise<TransactionResponse | null> {
     const { chainId } = this;
-    assert(42161 === chainId, `chainId ${chainId} is not supported`);
+
+    if (!skipChainIdCheck) {
+      assert(42161 === chainId, `chainId ${chainId} is not supported`);
+    }
 
     const weth = CONTRACT_ADDRESSES[this.chainId].weth;
     const ethBalance = await this.getSigner(chainId).getBalance();
@@ -263,7 +302,7 @@ export class ArbitrumAdapter extends CCTPAdapter {
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
     return new Contract(
-      l1Gateways[l1Token],
+      this.gatewayAddressOverrides.l1?.[l1Token] || l1Gateways[l1Token],
       CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi,
       this.getSigner(this.hubChainId)
     );
@@ -278,6 +317,10 @@ export class ArbitrumAdapter extends CCTPAdapter {
   }
 
   getL2Bridge(l1Token: SupportedL1Token): Contract {
-    return new Contract(l2Gateways[l1Token], CONTRACT_ADDRESSES[42161].erc20Gateway.abi, this.getSigner(this.chainId));
+    return new Contract(
+      this.gatewayAddressOverrides.l2?.[l1Token] || l2Gateways[l1Token],
+      CONTRACT_ADDRESSES[42161].erc20Gateway.abi,
+      this.getSigner(this.chainId)
+    );
   }
 }
