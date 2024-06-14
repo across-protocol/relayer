@@ -2,7 +2,6 @@ export * from "./DaiOptimismBridge";
 export * from "./SnxOptimismBridge";
 export * from "./BaseBridgeAdapter";
 export * from "./UsdcCCTPBridge";
-export * from "./UsdcTokenSplitterBridge";
 export * from "./WethBridge";
 export * from "./ArbitrumBridge";
 export * from "./LineaBridge";

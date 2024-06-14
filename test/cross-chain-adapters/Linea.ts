@@ -1,6 +1,7 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { SpokePoolClient } from "../../src/clients";
-import { BaseChainAdapter } from "../../src/clients/bridges/BaseChainAdapter";
+import { LineaBridge, LineaUSDCBridge } from "../../src/clients/bridges/bridges";
+import { BaseChainAdapter } from "../../src/clients/bridges";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32, toBN } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { ZERO_ADDRESS } from "@uma/common";
@@ -42,26 +43,23 @@ describe("Cross Chain Adapter: Linea", async function () {
     erc20BridgeContract = await (await getContractFactory("LineaERC20Bridge", deployer)).deploy();
 
     const bridges = {
-      [wethBridgeContract.address]: new BaseBridgeAdapter(
+      [l1WETHToken]: new LineaUSDCBridge(
         CHAIN_IDs.LINEA,
         CHAIN_IDs.MAINNET,
         l1SpokePoolClient.spokePool.signer,
-        l2SpokePoolClient.spokePool.signer,
-        wethBridgeContract.address
+        l2SpokePoolClient.spokePool.signer
       ),
-      [usdcBridgeContract.address]: new BaseBridgeAdapter(
+      [l1USDCToken]: new LineaBridge(
         CHAIN_IDs.LINEA,
         CHAIN_IDs.MAINNET,
         l1SpokePoolClient.spokePool.signer,
-        l2SpokePoolClient.spokePool.signer,
-        usdcBridgeContract.address
+        l2SpokePoolClient.spokePool.signer
       ),
-      [erc20BridgeContract.address]: new BaseBridgeAdapter(
+      [l1Token]: new LineaBridge(
         CHAIN_IDs.LINEA,
         CHAIN_IDs.MAINNET,
         l1SpokePoolClient.spokePool.signer,
-        l2SpokePoolClient.spokePool.signer,
-        erc20BridgeContract.address
+        l2SpokePoolClient.spokePool.signer
       ),
     };
 

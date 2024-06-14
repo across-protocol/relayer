@@ -8,6 +8,8 @@ import {
   TOKEN_SYMBOLS_MAP,
   spreadEventWithBlockNumber,
   BigNumberish,
+  compareAddressesSimple,
+  assert,
 } from "../../../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../../utils/CCTPUtils";
 
@@ -48,6 +50,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l2Gas: number
   ): BridgeTransactionDetails {
+    assert(compareAddressesSimple(_l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     return {
       contract: this.l1CctpTokenBridge,
       method: "depositForBurn",
@@ -60,6 +63,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     // TODO: This shows up a lot. Make it show up less.
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
@@ -99,6 +103,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     l1Token;
     fromAddress;
     eventConfig;
+    assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
 
     // Per the documentation of the BaseAdapter's computeOutstandingCrossChainTransfers method, we can return an empty array here
     // and only return the relevant outstanding events from queryL1BridgeInitiationEvents.

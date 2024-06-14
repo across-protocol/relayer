@@ -48,9 +48,9 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.OPTIMISM]];
       expect(result.length).to.equal(1);
-      expect(result[0].args._from).to.equal(atomicDepositorAddress);
-      expect(result[0].args._to).to.equal(monitoredEoa);
-      expect(result[0].args._amount).to.equal(1);
+      expect(result[0].from).to.equal(atomicDepositorAddress);
+      expect(result[0].to).to.equal(monitoredEoa);
+      expect(result[0].amount).to.equal(1);
     });
     // TODO: Add unit tests when from address is contract but need to change the providers such that we can
     // pretend we are monitoring the hub pool contract.
@@ -83,8 +83,8 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       );
       expect(result.length).to.equal(1);
-      expect(result[0].args._from).to.equal(atomicDepositorAddress);
-      expect(result[0].args._to).to.equal(monitoredEoa);
+      expect(result[0].from).to.equal(atomicDepositorAddress);
+      expect(result[0].to).to.equal(monitoredEoa);
     });
   });
 });

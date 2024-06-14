@@ -12,20 +12,23 @@ import { CONTRACT_ADDRESSES } from "../../../common";
 import { SortableEvent } from "../../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { Event } from "ethers";
+import * as zksync from "zksync-web3";
 
 export class ZKSyncBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
+  private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
+
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address,
+      CONTRACT_ADDRESSES[hubChainId]["zkSyncDefaultErc20Bridge"].address,
     ]);
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkSyncDefaultErc20Bridge;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].zkSyncDefaultErc20Bridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
@@ -38,8 +41,8 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   ): BridgeTransactionDetails {
     return {
       contract: this.l1Bridge,
-      method: "depositERC20",
-      args: [l1Token, l2Token, amount, l2Gas, "0x"],
+      method: "deposit",
+      args: [l1Token, l2Token, amount, l2Gas, this.gasPerPubdataLimit],
     };
   }
 
@@ -50,7 +53,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+      this.l1Bridge.filters.DepositInitiated(l1Token, undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {
@@ -79,7 +82,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+      this.l1Bridge.filters.FinalizeDeposit(l1Token, undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {

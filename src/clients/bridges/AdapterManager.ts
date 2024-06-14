@@ -9,6 +9,8 @@ import {
   CHAIN_IDs,
   mapAsync,
   TOKEN_SYMBOLS_MAP,
+  chainIsMatic,
+  chainIsArbitrum,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { BaseChainAdapter } from "./";
@@ -56,31 +58,49 @@ export class AdapterManager {
 
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
 
-    Object.values(CHAIN_IDs).map((chainId) => {
-      if (this.spokePoolClients[chainId] !== undefined) {
-        // First, fetch all the bridges associated with the chain.
-        const bridges = {};
-        const l2Signer = spokePoolClients[chainId].spokePool.signer;
-        SUPPORTED_TOKENS[chainId].map((symbol) => {
-          const address = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
-          const bridgeConstructor = CUSTOM_BRIDGE[chainId][address] ?? CANONICAL_BRIDGE[chainId];
-          bridges[address] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer);
-        });
+    Object.values(CHAIN_IDs)
+      .filter((chainId) => chainId !== hubChainId)
+      .map((chainId) => {
+        if (this.spokePoolClients[chainId] !== undefined) {
+          // First, fetch all the bridges associated with the chain.
+          const bridges = {};
+          const l2Signer = spokePoolClients[chainId].spokePool.signer;
+          // TODO: Bridges do NOT distinguish USDC and USDC.e
+          SUPPORTED_TOKENS[chainId].map((symbol) => {
+            const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+            const bridgeConstructor = CUSTOM_BRIDGE[chainId][l1Token] ?? CANONICAL_BRIDGE[chainId];
 
-        // Then instantiate a generic adapter.
-        // TODO: Do something about the gas multiplier
-        this.adapters[chainId] = new BaseChainAdapter(
-          spokePoolClients,
-          chainId,
-          hubChainId,
-          filterMonitoredAddresses(chainId),
-          logger,
-          SUPPORTED_TOKENS[chainId],
-          bridges,
-          DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler ?? Number(DEFAULT_RELAYER_GAS_MULTIPLIER)
-        );
-      }
-    });
+            // For bridges like Arbitrum and Polygon, we need to supply additional information about the token
+            // so that we may properly select the l1Gateway
+            if (chainIsMatic(chainId) && !CUSTOM_BRIDGE[chainId][l1Token]) {
+              bridges[l1Token] = new bridgeConstructor(
+                chainId,
+                hubChainId,
+                l1Signer,
+                l2Signer,
+                this.l2TokenForL1Token(l1Token, chainId)
+              );
+            } else if (chainIsArbitrum(chainId)) {
+              bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
+            } else {
+              bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
+            }
+          });
+
+          // Then instantiate a generic adapter.
+          // TODO: Do something about the gas multiplier
+          this.adapters[chainId] = new BaseChainAdapter(
+            spokePoolClients,
+            chainId,
+            hubChainId,
+            filterMonitoredAddresses(chainId),
+            logger,
+            SUPPORTED_TOKENS[chainId],
+            bridges,
+            DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler ?? Number(DEFAULT_RELAYER_GAS_MULTIPLIER)
+          );
+        }
+      });
 
     logger.debug({
       at: "AdapterManager#constructor",

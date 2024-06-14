@@ -34,17 +34,18 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
       [CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address]
     );
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId]["polygonEthBridge"];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
+    const l2Address = TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId];
+    const l2Abi = CONTRACT_ADDRESSES[l2chainId].withdrawableErc20.abi;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
 
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
-    const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
-    this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
+    // TODO
+    this.l2Weth = new Contract(l2Address, l2Abi, l2SignerOrProvider);
 
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
@@ -58,7 +59,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   ): BridgeTransactionDetails {
     return {
       contract: this.atomicDepositor,
-      method: "bridgeWethToOvm",
+      method: "bridgeWethToPolygon",
       args: [toAddress, amount, l2Gas, this.l2chainId],
     };
   }

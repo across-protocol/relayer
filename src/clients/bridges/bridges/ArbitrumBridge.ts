@@ -8,24 +8,34 @@ import {
   spreadEventWithBlockNumber,
   BigNumberish,
 } from "../../../utils";
-import { CONTRACT_ADDRESSES } from "../../../common";
+import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../../common";
 import { SortableEvent } from "../../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { Event } from "ethers";
+
+const DEFAULT_ERC20_GATEWAY = {
+  l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
+  l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
+};
 
 export class ArbitrumBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address,
-    ]);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    l1Token: string
+  ) {
+    const { address: gatewayAddress, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].arbitrumErc20GatewayRouter;
+    const { l1: l1Address, l2: l2Address } = CUSTOM_ARBITRUM_GATEWAYS[l1Token] ?? DEFAULT_ERC20_GATEWAY;
+    const l2Abi = CONTRACT_ADDRESSES[l2chainId].arbitrumErc20Gateway.abi;
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [gatewayAddress]);
+
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
-
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
@@ -50,7 +60,7 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+      this.l1Bridge.filters.DepositInitiated(l1Token, undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {

@@ -4,7 +4,7 @@ import {
   DefaultERC20Bridge,
   SnxOptimismBridge,
   DaiOptimismBridge,
-  UsdcTokenSplitterBridge,
+  UsdcCCTPBridge,
   WethBridge,
   PolygonWethBridge,
   PolygonERC20Bridge,
@@ -345,12 +345,13 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
-  10: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
-  137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "BADGER", "POOL", "MATIC"],
+  10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX", "USDC.e"],
+  137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "USDC.e"],
+  288: [],
   324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
-  34443: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
-  42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BADGER", "BAL", "ACX", "POOL"],
+  8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL", "USDC.e"],
+  34443: ["ETH", "WETH", "USDC.e", "USDT", "WBTC"],
+  42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "USDC.e"],
   59144: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
 
   // Testnets:
@@ -369,7 +370,8 @@ export const CANONICAL_BRIDGE: {
       l2chainId: number,
       hubChainId: number,
       l1Signer: Signer,
-      l2SignerOrProvider: Signer | Provider
+      l2SignerOrProvider: Signer | Provider,
+      l2Token?: string
     ): BaseBridgeAdapter;
   };
 } = {
@@ -391,34 +393,35 @@ export const CUSTOM_BRIDGE: {
         l2chainId: number,
         hubChainId: number,
         l1Signer: Signer,
-        l2SignerOrProvider: Signer | Provider
+        l2SignerOrProvider: Signer | Provider,
+        l2Token?: string
       ): BaseBridgeAdapter;
     };
   };
 } = {
   10: {
-    [TOKEN_SYMBOLS_MAP.SNX[1]]: SnxOptimismBridge,
-    [TOKEN_SYMBOLS_MAP.DAI[1]]: DaiOptimismBridge,
-    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH[1]]: WethBridge,
+    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: SnxOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: DaiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
   },
   137: {
-    [TOKEN_SYMBOLS_MAP.WETH[1]]: PolygonWethBridge,
-    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: PolygonWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
   },
   324: {},
   8453: {
-    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH[1]]: WethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
   },
   34443: {
-    [TOKEN_SYMBOLS_MAP.WETH[1]]: WethBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
   },
   42161: {
-    [TOKEN_SYMBOLS_MAP.USDC[1]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
   },
   59144: {
-    [TOKEN_SYMBOLS_MAP.USDC[1]]: LineaUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: LineaUSDCBridge,
   },
 };
 
@@ -430,3 +433,18 @@ export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
 // This does not include all  7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM];
+
+export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { l1: string; l2: string } } = {
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
+    l2: "0x096760F208390250649E3e8763348E783AEF5562",
+  },
+  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
+    l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
+  },
+  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
+    l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
+  },
+};

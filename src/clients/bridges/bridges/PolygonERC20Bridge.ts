@@ -17,16 +17,21 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address,
-    ]);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    l2Token: string
+  ) {
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId]["polygonBridge"];
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    // For Polygon, we look for mint events triggered by the L2 token, not the L2 Bridge.
+    const l2Abi = CONTRACT_ADDRESSES[l2chainId].withdrawableErc20.abi;
+    this.l2Bridge = new Contract(l2Token, l2Abi, l2SignerOrProvider);
   }
 
   constructL1ToL2Txn(

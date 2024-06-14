@@ -529,6 +529,84 @@ const OVM_STANDARD_BRIDGE_ABI = [
   },
 ];
 
+const POLYGON_BRIDGE_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "depositor", type: "address" },
+      { indexed: true, internalType: "address", name: "depositReceiver", type: "address" },
+      { indexed: true, internalType: "address", name: "rootToken", type: "address" },
+      { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "LockedERC20",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "depositor", type: "address" },
+      { indexed: true, internalType: "address", name: "depositReceiver", type: "address" },
+      { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "LockedEther",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "owner", type: "address" },
+      { indexed: true, internalType: "address", name: "token", type: "address" },
+      { indexed: false, internalType: "uint256", name: "amountOrNFTId", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "depositBlockId", type: "uint256" },
+    ],
+    name: "NewDepositBlock",
+    type: "event",
+  },
+];
+
+const ARBITRUM_L1_GATEWAY_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "_token", type: "address" },
+      { internalType: "address", name: "_to", type: "address" },
+      { internalType: "uint256", name: "_amount", type: "uint256" },
+      { internalType: "uint256", name: "_maxGas", type: "uint256" },
+      { internalType: "uint256", name: "_gasPriceBid", type: "uint256" },
+      { internalType: "bytes", name: "_data", type: "bytes" },
+    ],
+    name: "outboundTransfer",
+    outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: false, internalType: "address", name: "l1Token", type: "address" },
+      { indexed: true, internalType: "address", name: "_from", type: "address" },
+      { indexed: true, internalType: "address", name: "_to", type: "address" },
+      { indexed: true, internalType: "uint256", name: "_sequenceNumber", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+    ],
+    name: "DepositInitiated",
+    type: "event",
+  },
+];
+
+const ARBITRUM_L2_GATEWAY_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "l1Token", type: "address" },
+      { indexed: true, internalType: "address", name: "from", type: "address" },
+      { indexed: true, internalType: "address", name: "to", type: "address" },
+      { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "DepositFinalized",
+    type: "event",
+  },
+];
+
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -828,71 +906,16 @@ export const CONTRACT_ADDRESSES: {
       ],
     },
     polygonBridge: {
-      abi: [
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "depositor", type: "address" },
-            { indexed: true, internalType: "address", name: "depositReceiver", type: "address" },
-            { indexed: true, internalType: "address", name: "rootToken", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "LockedERC20",
-          type: "event",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "depositor", type: "address" },
-            { indexed: true, internalType: "address", name: "depositReceiver", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "LockedEther",
-          type: "event",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "owner", type: "address" },
-            { indexed: true, internalType: "address", name: "token", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amountOrNFTId", type: "uint256" },
-            { indexed: false, internalType: "uint256", name: "depositBlockId", type: "uint256" },
-          ],
-          name: "NewDepositBlock",
-          type: "event",
-        },
-      ],
+      address: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+      abi: POLYGON_BRIDGE_ABI,
+    },
+    polygonEthBridge: {
+      address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
+      abi: POLYGON_BRIDGE_ABI,
     },
     arbitrumErc20GatewayRouter: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
-      abi: [
-        {
-          inputs: [
-            { internalType: "address", name: "_token", type: "address" },
-            { internalType: "address", name: "_to", type: "address" },
-            { internalType: "uint256", name: "_amount", type: "uint256" },
-            { internalType: "uint256", name: "_maxGas", type: "uint256" },
-            { internalType: "uint256", name: "_gasPriceBid", type: "uint256" },
-            { internalType: "bytes", name: "_data", type: "bytes" },
-          ],
-          name: "outboundTransfer",
-          outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
-          stateMutability: "payable",
-          type: "function",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: false, internalType: "address", name: "l1Token", type: "address" },
-            { indexed: true, internalType: "address", name: "_from", type: "address" },
-            { indexed: true, internalType: "address", name: "_to", type: "address" },
-            { indexed: true, internalType: "uint256", name: "_sequenceNumber", type: "uint256" },
-            { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
-          ],
-          name: "DepositInitiated",
-          type: "event",
-        },
-      ],
+      abi: ARBITRUM_L1_GATEWAY_ABI,
     },
     weth: {
       abi: [
@@ -1195,20 +1218,8 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   42161: {
-    erc20Gateway: {
-      abi: [
-        {
-          anonymous: false,
-          inputs: [
-            { indexed: true, internalType: "address", name: "l1Token", type: "address" },
-            { indexed: true, internalType: "address", name: "from", type: "address" },
-            { indexed: true, internalType: "address", name: "to", type: "address" },
-            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "DepositFinalized",
-          type: "event",
-        },
-      ],
+    arbitrumErc20Gateway: {
+      abi: ARBITRUM_L2_GATEWAY_ABI,
     },
     weth: {
       address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
