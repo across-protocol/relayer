@@ -1,7 +1,7 @@
 export * from "./DaiOptimismBridge";
 export * from "./SnxOptimismBridge";
 export * from "./BaseBridgeAdapter";
-export * from "./UsdcCCTPBridge";
+export * from "./UsdcTokenSplitterBridge";
 export * from "./WethBridge";
 export * from "./ArbitrumBridge";
 export * from "./LineaBridge";
@@ -10,3 +10,5 @@ export * from "./PolygonERC20Bridge";
 export * from "./PolygonWethBridge";
 export * from "./ZKSyncBridge";
 export * from "./DefaultErc20Bridge";
+export * from "./ZKSyncWethBridge";
+export * from "./LineaWethBridge";

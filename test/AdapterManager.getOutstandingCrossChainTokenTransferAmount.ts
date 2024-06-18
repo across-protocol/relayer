@@ -34,16 +34,10 @@ class TestAdapter extends BaseChainAdapter {
     this.l2DepositFinalizedEvents = { "0xmonitored": { token: { token: deposits as unknown as DepositEvent[] } } };
   }
 
-  getOutstandingCrossChainTransfers(): Promise<OutstandingTransfers> {
-    throw new Error("This Test Adapter has not implemented this FN.");
-  }
   sendTokenToTargetChain(): Promise<TransactionResponse> {
     throw new Error("This Test Adapter has not implemented this FN.");
   }
   checkTokenApprovals(): Promise<void> {
-    throw new Error("This Test Adapter has not implemented this FN.");
-  }
-  wrapEthIfAboveThreshold(): Promise<TransactionResponse> {
     throw new Error("This Test Adapter has not implemented this FN.");
   }
 }
@@ -54,7 +48,7 @@ describe("AdapterManager: Get outstanding cross chain token transfer amounts", a
     adapter = new TestAdapter();
   });
 
-  it("Deposits and finalizations perfectly match", () => {
+  it("Deposits and finalizations perfectly match", async () => {
     // Perfectly match.
     adapter.setDepositEvents([1, 2, 3]);
     adapter.setFinalizationEvents([1, 2, 3]);

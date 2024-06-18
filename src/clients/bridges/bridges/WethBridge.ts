@@ -24,6 +24,8 @@ export class WethBridge extends BaseBridgeAdapter {
   private readonly l2Weth: Contract;
   private readonly hubPoolAddress: string;
 
+  private readonly l2Gas = 200000;
+
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(
       l2chainId,
@@ -49,17 +51,11 @@ export class WethBridge extends BaseBridgeAdapter {
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
 
-  constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber,
-    l2Gas: number
-  ): BridgeTransactionDetails {
+  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     return {
       contract: this.atomicDepositor,
       method: "bridgeWethToOvm",
-      args: [toAddress, amount, l2Gas, this.l2chainId],
+      args: [toAddress, amount, this.l2Gas, this.l2chainId],
     };
   }
 

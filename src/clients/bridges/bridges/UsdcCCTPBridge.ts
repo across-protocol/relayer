@@ -46,9 +46,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     toAddress: string,
     _l1Token: string,
     _l2Token: string,
-    amount: BigNumber,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _l2Gas: number
+    amount: BigNumber
   ): BridgeTransactionDetails {
     assert(compareAddressesSimple(_l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     return {

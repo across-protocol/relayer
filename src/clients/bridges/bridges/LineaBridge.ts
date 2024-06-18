@@ -26,17 +26,11 @@ export class LineaBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber,
-    l2Gas: number
-  ): BridgeTransactionDetails {
+  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     return {
       contract: this.l1Bridge,
-      method: "depositERC20",
-      args: [l1Token, l2Token, amount, l2Gas, "0x"],
+      method: "bridgeToken",
+      args: [l1Token, amount, toAddress],
     };
   }
 
@@ -47,20 +41,20 @@ export class LineaBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+      this.l1Bridge.filters.BridgingInitiatedV2(undefined, fromAddress, l1Token),
       eventConfig
     );
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
+        amount: BigNumber;
         to: string;
         from: string;
         transactionHash: string;
       };
       return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
+        amount: eventSpread["amount"],
+        to: eventSpread["recipient"],
+        from: eventSpread["sender"],
         transactionHash: eventSpread.transactionHash,
       };
     };
@@ -75,8 +69,8 @@ export class LineaBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+      this.l2Bridge,
+      this.l2Bridge.filters.BridgingFinalizedV2(l1Token, undefined, undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {

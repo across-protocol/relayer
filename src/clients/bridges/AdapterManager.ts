@@ -65,7 +65,7 @@ export class AdapterManager {
           // First, fetch all the bridges associated with the chain.
           const bridges = {};
           const l2Signer = spokePoolClients[chainId].spokePool.signer;
-          // TODO: Bridges do NOT distinguish USDC and USDC.e
+
           SUPPORTED_TOKENS[chainId].map((symbol) => {
             const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
             const bridgeConstructor = CUSTOM_BRIDGE[chainId][l1Token] ?? CANONICAL_BRIDGE[chainId];

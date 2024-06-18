@@ -7,6 +7,7 @@ import {
   Provider,
   spreadEventWithBlockNumber,
   BigNumberish,
+  toBN,
 } from "../../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../../common";
 import { SortableEvent } from "../../../interfaces";
@@ -21,6 +22,13 @@ const DEFAULT_ERC20_GATEWAY = {
 export class ArbitrumBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
+
+  private readonly l1Gateway: Contract;
+
+  private readonly transactionSubmissionData =
+    "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
+  private readonly l2GasLimit = toBN(150000);
+  private readonly l2GasPrice = toBN(20e9);
 
   constructor(
     l2chainId: number,
@@ -37,19 +45,14 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l1Gateway = new Contract(gatewayAddress, l1Abi, l1Signer);
   }
 
-  constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber,
-    l2Gas: number
-  ): BridgeTransactionDetails {
+  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     return {
-      contract: this.l1Bridge,
-      method: "depositERC20",
-      args: [l1Token, l2Token, amount, l2Gas, "0x"],
+      contract: this.l1Gateway,
+      method: "outboundTransfer",
+      args: [l1Token, toAddress, amount, this.l2GasLimit, this.l2GasPrice, this.transactionSubmissionData],
     };
   }
 
@@ -60,7 +63,7 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.DepositInitiated(l1Token, undefined, fromAddress),
+      this.l1Bridge.filters.DepositInitiated(undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {
@@ -88,8 +91,8 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+      this.l2Bridge,
+      this.l2Bridge.filters.DepositFinalized(l1Token, fromAddress, undefined),
       eventConfig
     );
     const processEvent = (event: Event) => {

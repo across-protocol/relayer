@@ -19,10 +19,11 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   private readonly l2Bridge: Contract;
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
+  private readonly l2GasLimit = 2_000_000; // We should dynamically define this.
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId]["zkSyncDefaultErc20Bridge"].address,
+      CONTRACT_ADDRESSES[hubChainId].zkSyncDefaultErc20Bridge.address,
     ]);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkSyncDefaultErc20Bridge;
@@ -32,17 +33,11 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber,
-    l2Gas: number
-  ): BridgeTransactionDetails {
+  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     return {
       contract: this.l1Bridge,
       method: "deposit",
-      args: [l1Token, l2Token, amount, l2Gas, this.gasPerPubdataLimit],
+      args: [toAddress, l1Token, amount, this.l2GasLimit.toString(), this.gasPerPubdataLimit],
     };
   }
 
@@ -53,7 +48,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.DepositInitiated(l1Token, undefined, fromAddress),
+      this.l1Bridge.filters.DepositInitiated(undefined, fromAddress, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {
@@ -80,9 +75,10 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    const l2Token = this.resolveL2TokenAddress(l1Token);
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.FinalizeDeposit(l1Token, undefined, fromAddress),
+      this.l2Bridge,
+      this.l2Bridge.filters.FinalizeDeposit(fromAddress, fromAddress, l2Token),
       eventConfig
     );
     const processEvent = (event: Event) => {

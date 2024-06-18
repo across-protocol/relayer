@@ -29,14 +29,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    l2Gas: number
-  ): BridgeTransactionDetails {
+  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     return {
       contract: this.l1Bridge,
       method: "depositTo",
@@ -81,8 +74,8 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.DepositFinalized(toAddress),
+      this.l2Bridge,
+      this.l2Bridge.filters.DepositFinalized(toAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {

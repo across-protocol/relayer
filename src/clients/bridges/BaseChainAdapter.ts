@@ -135,18 +135,16 @@ export class BaseChainAdapter {
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
-  // TODO: address L2Gas in a more sustainable way
   async sendTokenToTargetChain(
     address: string,
     l1Token: string,
     l2Token: string,
     amount: BigNumber,
-    simMode: boolean,
-    l2Gas = 1
+    simMode: boolean
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-    const { contract, method, args, value } = bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, l2Gas);
+    const { contract, method, args, value } = bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
     const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;

@@ -4,14 +4,16 @@ import {
   DefaultERC20Bridge,
   SnxOptimismBridge,
   DaiOptimismBridge,
-  UsdcCCTPBridge,
+  UsdcTokenSplitterBridge,
   WethBridge,
   PolygonWethBridge,
   PolygonERC20Bridge,
   ZKSyncBridge,
+  ZKSyncWethBridge,
   ArbitrumBridge,
   LineaBridge,
   LineaUSDCBridge,
+  LineaWethBridge,
 } from "../clients/bridges/bridges";
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
@@ -345,13 +347,13 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
-  10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX", "USDC.e"],
-  137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "USDC.e"],
+  10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+  137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   288: [],
   324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL", "USDC.e"],
+  8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   34443: ["ETH", "WETH", "USDC.e", "USDT", "WBTC"],
-  42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "USDC.e"],
+  42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   59144: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
 
   // Testnets:
@@ -402,26 +404,29 @@ export const CUSTOM_BRIDGE: {
   10: {
     [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: SnxOptimismBridge,
     [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: DaiOptimismBridge,
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
   },
   137: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: PolygonWethBridge,
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
   },
-  324: {},
+  324: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: ZKSyncWethBridge,
+  },
   8453: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
   },
   34443: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
   },
   42161: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
   },
   59144: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: LineaUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: LineaWethBridge,
   },
 };
 

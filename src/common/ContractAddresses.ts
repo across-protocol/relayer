@@ -909,7 +909,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
       abi: POLYGON_BRIDGE_ABI,
     },
-    polygonEthBridge: {
+    polygonWethBridge: {
       address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
       abi: POLYGON_BRIDGE_ABI,
     },

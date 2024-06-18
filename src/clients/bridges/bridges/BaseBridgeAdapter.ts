@@ -29,8 +29,7 @@ export abstract class BaseBridgeAdapter {
     toAddress: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber,
-    l2Gas: number
+    amount: BigNumber
   ): BridgeTransactionDetails;
 
   abstract queryL1BridgeInitiationEvents(
