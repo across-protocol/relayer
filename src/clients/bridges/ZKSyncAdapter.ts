@@ -32,7 +32,8 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, SUPPORTED_TOKENS[CHAIN_IDs.ZK_SYNC]);
+    const { ZK_SYNC } = CHAIN_IDs;
+    super(spokePoolClients, ZK_SYNC, monitoredAddresses, logger, SUPPORTED_TOKENS[ZK_SYNC]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {

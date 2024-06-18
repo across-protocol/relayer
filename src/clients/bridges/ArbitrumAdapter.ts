@@ -67,7 +67,8 @@ export class ArbitrumAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 42161, monitoredAddresses, logger, SUPPORTED_TOKENS[CHAIN_IDs.ARBITRUM]);
+    const { ARBITRUM } = CHAIN_IDs;
+    super(spokePoolClients, ARBITRUM, monitoredAddresses, logger, SUPPORTED_TOKENS[ARBITRUM]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
