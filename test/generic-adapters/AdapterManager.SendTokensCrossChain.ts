@@ -1,7 +1,7 @@
 import * as zksync from "zksync-web3";
-import { SpokePoolClient } from "../src/clients";
-import { AdapterManager } from "../src/clients/bridges"; // Tested
-import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../src/common";
+import { SpokePoolClient } from "../../src/clients";
+import { AdapterManager } from "../../src/adapter"; // Tested
+import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../src/common";
 import {
   bnToHex,
   getL2TokenAddresses,
@@ -9,8 +9,8 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   cctpAddressToBytes32,
-} from "../src/utils";
-import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+} from "../../src/utils";
+import { MockConfigStoreClient, MockHubPoolClient } from "../mocks";
 import {
   BigNumber,
   FakeContract,
@@ -23,7 +23,7 @@ import {
   smock,
   toBN,
   winston,
-} from "./utils";
+} from "../utils";
 
 let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
@@ -64,14 +64,6 @@ const mainnetTokens = {
   snx: TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET],
   bal: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET],
 } as const;
-
-const addAttrib = (obj: unknown) =>
-  obj as {
-    l2Gas: number;
-    l2GasLimit: number;
-    l2GasPrice: number;
-    transactionSubmissionData: number;
-  };
 
 describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
@@ -119,6 +111,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
   it("Correctly sends tokens to chain: Optimism", async function () {
     const chainId = CHAIN_IDs.OPTIMISM;
+    const l2Gas = 200000; // This is hardcoded in all OVM Bridges
 
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.bal, amountToSend);
@@ -126,7 +119,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.bal, // l1 token
       getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -142,7 +135,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc, // l1 token
       TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -175,7 +168,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.dai, // l1 token
       getL2TokenAddresses(mainnetTokens.dai)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -184,7 +177,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       chainId // chainId
     );
   });
@@ -234,6 +227,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Arbitrum", async function () {
     const chainId = CHAIN_IDs.ARBITRUM;
 
+    // These values are hardcoded into the Arbitrum bridge contract
+    const transactionSubmissionData =
+      "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
+    const l2GasLimit = toBN(150000);
+    const l2GasPrice = toBN(20e9);
+
     //  CCTP tokens:
     await adapterManager.sendTokenCrossChain(
       relayer.address,
@@ -256,18 +255,18 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.wbtc, // token
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+      l2GasLimit, // maxGas
+      l2GasPrice, // gasPriceBid
+      transactionSubmissionData // data
     );
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.dai, amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens.dai, // token
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+      l2GasLimit, // maxGas
+      l2GasPrice, // gasPriceBid
+      transactionSubmissionData // data
     );
     // Weth can be bridged like a standard ERC20 token to arbitrum.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
@@ -275,9 +274,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.weth, // token
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+      l2GasLimit, // maxGas
+      l2GasPrice, // gasPriceBid
+      transactionSubmissionData // data
     );
   });
 
@@ -325,6 +324,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
   it("Correctly sends tokens to chain: Base", async function () {
     const chainId = CHAIN_IDs.BASE;
+    const l2Gas = 200000; // This is hardcoded in all OVM Bridges
     //  CCTP tokens:
     await adapterManager.sendTokenCrossChain(
       relayer.address,
@@ -354,7 +354,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc, // l1 token
       TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -363,7 +363,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.bal, // l1 token
       getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -373,7 +373,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.dai, // l1 token
       getL2TokenAddresses(mainnetTokens.dai)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -382,7 +382,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      l2Gas, // l2Gas
       chainId // chainId
     );
   });

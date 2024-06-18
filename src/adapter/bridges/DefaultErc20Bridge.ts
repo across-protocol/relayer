@@ -7,39 +7,35 @@ import {
   Provider,
   spreadEventWithBlockNumber,
   BigNumberish,
-} from "../../../utils";
-import { CONTRACT_ADDRESSES } from "../../../common";
-import { SortableEvent } from "../../../interfaces";
+} from "../../utils";
+import { CONTRACT_ADDRESSES } from "../../common";
+import { SortableEvent } from "../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { Event } from "ethers";
-import * as zksync from "zksync-web3";
 
-// TODO!!!
-export class ZKSyncWethBridge extends BaseBridgeAdapter {
+export class DefaultERC20Bridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
-  private readonly atomicDepositor: Contract;
 
-  private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
-  private readonly l2GasLimit = 2_000_000; // We should dynamically define this.
+  private readonly l2Gas = 200000;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
+      CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address,
+    ]);
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkSyncDefaultErc20Bridge;
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].zkSyncDefaultErc20Bridge;
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
-    this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
   }
 
   constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     return {
-      contract: this.atomicDepositor,
-      method: "bridgeWethToZkSync",
-      args: [toAddress, amount, this.l2GasLimit.toString(), this.gasPerPubdataLimit],
+      contract: this.l1Bridge,
+      method: "depositERC20",
+      args: [l1Token, l2Token, amount, this.l2Gas, "0x"],
     };
   }
 
@@ -50,7 +46,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.ZkSyncEthDepositInitiated(undefined, fromAddress, fromAddress),
+      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {
@@ -77,10 +73,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const l2Token = this.resolveL2TokenAddress(l1Token);
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.FinalizeDeposit(fromAddress, fromAddress, l2Token),
+      this.l2Bridge,
+      this.l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {

@@ -1099,7 +1099,7 @@ export class InventoryClient {
     }
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(l1Tokens);
+    await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {

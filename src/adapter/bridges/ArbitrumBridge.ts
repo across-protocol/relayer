@@ -8,9 +8,9 @@ import {
   spreadEventWithBlockNumber,
   BigNumberish,
   toBN,
-} from "../../../utils";
-import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../../common";
-import { SortableEvent } from "../../../interfaces";
+} from "../../utils";
+import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../common";
+import { SortableEvent } from "../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { Event } from "ethers";
 

@@ -1,5 +1,5 @@
 import { BigNumber } from "ethers";
-import { SortableEvent } from "../../interfaces";
+import { SortableEvent } from "../interfaces";
 
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;

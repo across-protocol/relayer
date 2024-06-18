@@ -1,19 +1,8 @@
-import {
-  Contract,
-  BigNumber,
-  paginatedEventQuery,
-  EventSearchConfig,
-  Signer,
-  Provider,
-  spreadEventWithBlockNumber,
-  BigNumberish,
-} from "../../../utils";
+import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Provider } from "../../../utils";
 import { CONTRACT_ADDRESSES } from "../../../common";
-import { SortableEvent } from "../../../interfaces";
-import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
-import { Event } from "ethers";
+import { OpStackBridge, BridgeTransactionDetails, OpStackEvents } from "./OpStackBridgeInterface";
 
-export class SnxOptimismBridge extends BaseBridgeAdapter {
+export class SnxOptimismBridge extends OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
@@ -29,7 +18,14 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
+  constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    l2Gas: number
+  ): BridgeTransactionDetails {
     return {
       contract: this.l1Bridge,
       method: "depositTo",
@@ -41,30 +37,15 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     l1Token: string,
     toAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<BridgeEvents> {
+  ): Promise<OpStackEvents> {
     // @dev For the SnxBridge, only the `toAddress` is indexed on the L2 event so we treat the `fromAddress` as the
     // toAddress when fetching the L1 event.
-    const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.DepositInitiated(undefined, toAddress),
-      eventConfig
-    );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
+        this.l1Bridge,
+        this.l1Bridge.filters.DepositInitiated(undefined, toAddress),
+        eventConfig
+      ),
     };
   }
 
@@ -72,28 +53,13 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     l1Token: string,
     toAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<BridgeEvents> {
-    const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(toAddress),
-      eventConfig
-    );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
+  ): Promise<OpStackEvents> {
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
+        this.l2Bridge,
+        this.l2Bridge.filters.DepositFinalized(toAddress),
+        eventConfig
+      ),
     };
   }
 }

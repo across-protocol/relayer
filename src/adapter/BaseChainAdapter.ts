@@ -1,4 +1,4 @@
-import { SpokePoolClient } from "../";
+import { SpokePoolClient } from "../clients";
 import {
   AnyObject,
   BigNumber,
@@ -22,12 +22,12 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
-} from "../../utils";
-import { AugmentedTransaction, TransactionClient } from "../TransactionClient";
+} from "../utils";
+import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { OutstandingTransfers, SupportedL1Token, SupportedTokenSymbol } from "./types";
 import { approveTokens, getTokenAllowanceFromCache, isMaxAllowance, setTokenAllowanceInCache } from "./utils";
 import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES } from "../common";
 
 export class BaseChainAdapter {
   protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;

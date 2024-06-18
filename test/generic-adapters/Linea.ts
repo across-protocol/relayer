@@ -1,15 +1,17 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { SpokePoolClient } from "../../src/clients";
-import { LineaAdapter } from "../../src/clients/bridges/LineaAdapter";
+import { LineaBridge, LineaUSDCBridge, LineaWethBridge } from "../../src/adapter/bridges";
+import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32, toBN } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { ZERO_ADDRESS } from "@uma/common";
-import { CONTRACT_ADDRESSES } from "../../src/common";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
 
 describe("Cross Chain Adapter: Linea", async function () {
-  let adapter: LineaAdapter;
+  let adapter: BaseChainAdapter;
   let monitoredEoa: string;
-  let l1Token, l1USDCToken, l1WETHToken: string;
+  let l1Token, l1USDCToken, l1WETHToken, l2Token, l2USDCToken, l2WETHToken: string;
+  let hubChainId, l2ChainId;
 
   let wethBridgeContract: Contract;
   let usdcBridgeContract: Contract;
@@ -24,30 +26,64 @@ describe("Cross Chain Adapter: Linea", async function () {
     const [deployer] = await ethers.getSigners();
 
     monitoredEoa = randomAddress();
-    l1Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
-    l1USDCToken = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
-    l1WETHToken = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
+    hubChainId = CHAIN_IDs.MAINNET;
+    l2ChainId = CHAIN_IDs.LINEA;
+
+    l1Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[hubChainId];
+    l1USDCToken = TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId];
+    l1WETHToken = TOKEN_SYMBOLS_MAP.WETH.addresses[hubChainId];
+
+    l2Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[l2ChainId];
+    l2USDCToken = TOKEN_SYMBOLS_MAP["USDC.e"].addresses[l2ChainId];
+    l2WETHToken = TOKEN_SYMBOLS_MAP.WETH.addresses[l2ChainId];
 
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
-    const l2SpokePoolClient = new SpokePoolClient(null, spokePool, null, CHAIN_IDs.LINEA, 0, {
+    const l2SpokePoolClient = new SpokePoolClient(null, spokePool, null, l2ChainId, 0, {
       fromBlock: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, CHAIN_IDs.MAINNET, 0, {
+    const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, hubChainId, 0, {
       fromBlock: 0,
     });
-    adapter = new LineaAdapter(
-      null,
-      {
-        [CHAIN_IDs.LINEA]: l2SpokePoolClient,
-        [CHAIN_IDs.MAINNET]: l1SpokePoolClient,
-      }, // Don't need spoke pool clients for this test
-      [] // monitored address doesn't matter for this test since we inject it into the function
-    );
 
     wethBridgeContract = await (await getContractFactory("LineaWethBridge", deployer)).deploy();
     usdcBridgeContract = await (await getContractFactory("LineaUsdcBridge", deployer)).deploy();
     erc20BridgeContract = await (await getContractFactory("LineaERC20Bridge", deployer)).deploy();
+
+    const bridges = {
+      [l1WETHToken]: new LineaWethBridge(
+        l2ChainId,
+        hubChainId,
+        l1SpokePoolClient.spokePool.signer,
+        l2SpokePoolClient.spokePool.signer
+      ),
+      [l1USDCToken]: new LineaUSDCBridge(
+        l2ChainId,
+        hubChainId,
+        l1SpokePoolClient.spokePool.signer,
+        l2SpokePoolClient.spokePool.signer
+      ),
+      [l1Token]: new LineaBridge(
+        l2ChainId,
+        hubChainId,
+        l1SpokePoolClient.spokePool.signer,
+        l2SpokePoolClient.spokePool.signer
+      ),
+    };
+
+    adapter = new BaseChainAdapter(
+      {
+        [l2ChainId]: l2SpokePoolClient,
+        [hubChainId]: l1SpokePoolClient,
+      }, // Don't need spoke pool clients for this test
+      l2ChainId,
+      hubChainId,
+      [], // monitored address doesn't matter for this test since we inject it into the function
+      null,
+      SUPPORTED_TOKENS[l2ChainId],
+      bridges,
+      1.5
+    );
   });
 
   describe("WETH", function () {
@@ -61,20 +97,39 @@ describe("Cross Chain Adapter: Linea", async function () {
       await wethBridgeContract.emitMessageSent(monitoredEoa, randomAddress(), 0);
       await wethBridgeContract.emitMessageSent(randomAddress(), monitoredEoa, 1);
       await wethBridgeContract.emitMessageSent(monitoredEoa, randomAddress(), 1);
-      const result = await adapter.getWethDepositInitiatedEvents(wethBridgeContract, monitoredEoa, searchConfig);
-      expect(result.length).to.equal(1);
-      expect(result[0].args._to).to.equal(monitoredEoa);
-      expect(result[0].args._value).to.equal(1);
+
+      // Our LineaWethBridge will have its l1Bridge contract automatically be set to the mainnet deployment
+      // (0x051...3391). This means that it will NOT pick up the emitted events of the mock deployment contract
+      // unless we overwrite the l1Bridge attribute.
+      adapter.bridges[l1WETHToken].l1Bridge = wethBridgeContract;
+
+      const wethBridge = adapter.bridges[l1WETHToken];
+      const result = await wethBridge.queryL1BridgeInitiationEvents(l1WETHToken, monitoredEoa, searchConfig);
+      expect(Object.keys(result).length).to.equal(1);
+      expect(result[l2WETHToken].length).to.equal(1);
+      expect(result[l2WETHToken][0].to).to.equal(monitoredEoa);
+      expect(result[l2WETHToken][0].amount).to.equal(1);
     });
     it("Get L2 finalized events", async function () {
       // Function should return only finalized events that match
       // on message hash.
-      const messageHash = createRandomBytes32();
+
+      await wethBridgeContract.emitMessageSent(randomAddress(), monitoredEoa, 1);
+      await wethBridgeContract.emitMessageSent(monitoredEoa, randomAddress(), 1);
+
+      // The mocked Linea bridge has no logic to construct a message hash so its expected value is
+      // the default bytes32.
+      const messageHash = "0x0000000000000000000000000000000000000000000000000000000000000000";
       const otherMessageHash = createRandomBytes32();
       await wethBridgeContract.emitMessageClaimed(messageHash);
       await wethBridgeContract.emitMessageClaimed(otherMessageHash);
-      const result = await adapter.getWethDepositFinalizedEvents(wethBridgeContract, [messageHash], searchConfig);
-      expect(result.length).to.equal(1);
+
+      adapter.bridges[l1WETHToken].l2Bridge = wethBridgeContract;
+
+      const wethBridge = adapter.bridges[l1WETHToken];
+      const result = await wethBridge.queryL2BridgeFinalizationEvents(l1WETHToken, monitoredEoa, searchConfig);
+
+      expect(Object.keys(result).length).to.equal(1);
       expect(result[0].args._messageHash).to.equal(messageHash);
     });
     it("Matches L1 and L2 events", async function () {
@@ -94,7 +149,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       outstandingTransfers = {};
       adapter.matchWethDepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1WETHToken);
       expect(
-        outstandingTransfers[monitoredEoa][l1WETHToken][TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.LINEA]]
+        outstandingTransfers[monitoredEoa][l1WETHToken][TOKEN_SYMBOLS_MAP.WETH.addresses[l2ChainId]]
       ).to.deep.equal({
         totalAmount: toBN(1),
         depositTxHashes: l1Events.map((e) => e.transactionHash),
@@ -105,9 +160,13 @@ describe("Cross Chain Adapter: Linea", async function () {
     it("Get L1 initiated events", async function () {
       await usdcBridgeContract.emitDeposited(randomAddress(), monitoredEoa);
       await usdcBridgeContract.emitDeposited(monitoredEoa, randomAddress());
-      const result = await adapter.getUsdcDepositInitiatedEvents(usdcBridgeContract, monitoredEoa, searchConfig);
-      expect(result.length).to.equal(1);
-      expect(result[0].args.to).to.equal(monitoredEoa);
+
+      adapter.bridges[l1USDCToken].l1Bridge = usdcBridgeContract;
+      const usdcBridge = adapter.bridges[l1USDCToken];
+
+      const result = await usdcBridge.queryL1BridgeInitiationEvents(l1USDCToken, monitoredEoa, searchConfig);
+      expect(Object.keys(result).length).to.equal(1);
+      expect(result[l2USDCToken][0].to).to.equal(monitoredEoa);
     });
     it("Get L2 finalized events", async function () {
       await usdcBridgeContract.emitReceivedFromOtherLayer(randomAddress());
@@ -132,7 +191,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       outstandingTransfers = {};
       adapter.matchUsdcDepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1USDCToken);
       expect(
-        outstandingTransfers[monitoredEoa][l1USDCToken][TOKEN_SYMBOLS_MAP["USDC.e"].addresses[CHAIN_IDs.LINEA]]
+        outstandingTransfers[monitoredEoa][l1USDCToken][TOKEN_SYMBOLS_MAP["USDC.e"].addresses[l2ChainId]]
       ).to.deep.equal({
         totalAmount: toBN(0),
         depositTxHashes: l1Events.map((e) => e.transactionHash),
@@ -144,15 +203,13 @@ describe("Cross Chain Adapter: Linea", async function () {
       await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);
       await erc20BridgeContract.emitBridgingInitiated(monitoredEoa, randomAddress(), l1Token);
       await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, randomAddress());
-      const result = await adapter.getErc20DepositInitiatedEvents(
-        erc20BridgeContract,
-        monitoredEoa,
-        l1Token,
-        searchConfig
-      );
-      expect(result.length).to.equal(1);
-      expect(result[0].args.recipient).to.equal(monitoredEoa);
-      expect(result[0].args.token).to.equal(l1Token);
+
+      adapter.bridges[l1Token].l1Bridge = erc20BridgeContract;
+      const erc20Bridge = adapter.bridges[l1Token];
+
+      const result = await erc20Bridge.queryL1BridgeInitiationEvents(l1Token, monitoredEoa, searchConfig);
+      expect(Object.keys(result).length).to.equal(1);
+      expect(result[l2Token][0].to).to.equal(monitoredEoa);
     });
     it("Get L2 finalized events", async function () {
       // Should return only event
@@ -194,9 +251,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       // 2. If finalized event is missing, there will be an outstanding transfer.
       outstandingTransfers = {};
       adapter.matchErc20DepositEvents(l1Events, [], outstandingTransfers, monitoredEoa, l1Token);
-      expect(
-        outstandingTransfers[monitoredEoa][l1Token][TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.LINEA]]
-      ).to.deep.equal({
+      expect(outstandingTransfers[monitoredEoa][l1Token][TOKEN_SYMBOLS_MAP.WBTC.addresses[l2ChainId]]).to.deep.equal({
         totalAmount: toBN(0),
         depositTxHashes: l1Events.map((e) => e.transactionHash),
       });
@@ -204,33 +259,33 @@ describe("Cross Chain Adapter: Linea", async function () {
   });
 
   it("getL1MessageService", async function () {
-    const l1MessageService = adapter.getL1MessageService();
-    expect(l1MessageService).to.not.be.undefined;
-    expect(l1MessageService.address) === CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET]["lineaMessageService"].address;
+    const wethBridge = adapter.bridges[TOKEN_SYMBOLS_MAP.WETH.addresses[hubChainId]];
+    expect(wethBridge.l1Bridge).to.not.be.undefined;
+    expect(wethBridge.l1Bridge.address) === CONTRACT_ADDRESSES[hubChainId]["lineaMessageService"].address;
   });
   it("getL2MessageService", async function () {
-    const l2MessageService = adapter.getL2MessageService();
-    expect(l2MessageService).to.not.be.undefined;
-    expect(l2MessageService.address) === CONTRACT_ADDRESSES[CHAIN_IDs.LINEA]["l2MessageService"].address;
+    const wethBridge = adapter.bridges[TOKEN_SYMBOLS_MAP.WETH.addresses[hubChainId]];
+    expect(wethBridge.l2Bridge).to.not.be.undefined;
+    expect(wethBridge.l2Bridge.address) === CONTRACT_ADDRESSES[l2ChainId]["l2MessageService"].address;
   });
   it("getL1Bridge: USDC", async function () {
-    const bridge = adapter.getL1Bridge(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
-    expect(bridge).to.not.be.undefined;
-    expect(bridge.address) === CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET]["lineaL1UsdcBridge"].address;
+    const usdcBridge = adapter.bridges[TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId]];
+    expect(usdcBridge.l1Bridge).to.not.be.undefined;
+    expect(usdcBridge.l1Bridge.address) === CONTRACT_ADDRESSES[hubChainId]["lineaL1UsdcBridge"].address;
   });
   it("getL2Bridge: USDC", async function () {
-    const bridge = adapter.getL2Bridge(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
-    expect(bridge).to.not.be.undefined;
-    expect(bridge.address) === CONTRACT_ADDRESSES[CHAIN_IDs.LINEA]["lineaL2UsdcBridge"].address;
+    const usdcBridge = adapter.bridges[TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId]];
+    expect(usdcBridge.l2Bridge).to.not.be.undefined;
+    expect(usdcBridge.l2Bridge.address) === CONTRACT_ADDRESSES[l2ChainId]["lineaL2UsdcBridge"].address;
   });
   it("getL1Bridge: ERC20", async function () {
-    const bridge = adapter.getL1Bridge(TOKEN_SYMBOLS_MAP.WBTC.addresses[this.hubChainId]);
-    expect(bridge).to.not.be.undefined;
-    expect(bridge.address) === CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET]["lineaL1TokenBridge"].address;
+    const erc20Bridge = adapter.bridges[TOKEN_SYMBOLS_MAP.WBTC.addresses[hubChainId]];
+    expect(erc20Bridge.l1Bridge).to.not.be.undefined;
+    expect(erc20Bridge.l1Bridge.address) === CONTRACT_ADDRESSES[hubChainId]["lineaL1TokenBridge"].address;
   });
   it("getL2Bridge: ERC20", async function () {
-    const bridge = adapter.getL2Bridge(TOKEN_SYMBOLS_MAP.WBTC.addresses[this.hubChainId]);
-    expect(bridge).to.not.be.undefined;
-    expect(bridge.address) === CONTRACT_ADDRESSES[CHAIN_IDs.LINEA]["lineaL2TokenBridge"].address;
+    const erc20Bridge = adapter.bridges[TOKEN_SYMBOLS_MAP.WBTC.addresses[hubChainId]];
+    expect(erc20Bridge.l2Bridge).to.not.be.undefined;
+    expect(erc20Bridge.l2Bridge.address) === CONTRACT_ADDRESSES[l2ChainId]["lineaL2TokenBridge"].address;
   });
 });

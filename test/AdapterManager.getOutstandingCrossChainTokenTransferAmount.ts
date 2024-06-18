@@ -1,22 +1,19 @@
 import { TransactionResponse } from "@ethersproject/abstract-provider";
 import { SpokePoolClient } from "../src/clients";
-import { BaseChainAdapter, DepositEvent } from "../src/clients/bridges";
+import { BaseAdapter, DepositEvent } from "../src/clients/bridges";
 import { OutstandingTransfers } from "../src/interfaces";
 import { createSpyLogger, expect, toBN } from "./utils";
 
-class TestAdapter extends BaseChainAdapter {
+class TestAdapter extends BaseAdapter {
   constructor() {
     super(
       {
         1: { latestBlockSearched: 123 } as unknown as SpokePoolClient,
       },
       1,
-      1,
       ["0xmonitored"],
       createSpyLogger().spyLogger,
-      [],
-      {},
-      1.5
+      []
     );
   }
 
@@ -34,10 +31,16 @@ class TestAdapter extends BaseChainAdapter {
     this.l2DepositFinalizedEvents = { "0xmonitored": { token: { token: deposits as unknown as DepositEvent[] } } };
   }
 
+  getOutstandingCrossChainTransfers(): Promise<OutstandingTransfers> {
+    throw new Error("This Test Adapter has not implemented this FN.");
+  }
   sendTokenToTargetChain(): Promise<TransactionResponse> {
     throw new Error("This Test Adapter has not implemented this FN.");
   }
   checkTokenApprovals(): Promise<void> {
+    throw new Error("This Test Adapter has not implemented this FN.");
+  }
+  wrapEthIfAboveThreshold(): Promise<TransactionResponse> {
     throw new Error("This Test Adapter has not implemented this FN.");
   }
 }
@@ -48,7 +51,7 @@ describe("AdapterManager: Get outstanding cross chain token transfer amounts", a
     adapter = new TestAdapter();
   });
 
-  it("Deposits and finalizations perfectly match", async () => {
+  it("Deposits and finalizations perfectly match", () => {
     // Perfectly match.
     adapter.setDepositEvents([1, 2, 3]);
     adapter.setFinalizationEvents([1, 2, 3]);

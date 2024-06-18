@@ -1,52 +1,51 @@
 import { BigNumber, Signer } from "ethers";
-import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
+import { CONTRACT_ADDRESSES, CANONICAL_BRIDGE } from "../../common";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
-import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, assert, compareAddressesSimple } from "../../../utils";
-import { BridgeTransactionDetails, OpStackBridge, OpStackEvents } from "./OpStackBridgeInterface";
-import { CONTRACT_ADDRESSES } from "../../../common";
+import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
+import {
+  EventSearchConfig,
+  Provider,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
+  assert,
+  chainIsMatic,
+} from "../../utils";
 
-export class UsdcTokenSplitterBridge extends OpStackBridge {
-  private readonly cctpBridge: UsdcCCTPBridge;
-  private readonly canonicalBridge: DefaultERC20Bridge;
+export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
+  private readonly cctpBridge: BaseBridgeAdapter;
+  private readonly canonicalBridge: BaseBridgeAdapter;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    const token = chainIsMatic(l2chainId)
+      ? TOKEN_SYMBOLS_MAP["USDC.e"].addresses[l2chainId]
+      : TOKEN_SYMBOLS_MAP["USDC.e"].addresses[hubChainId];
+    const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](l2chainId, hubChainId, l1Signer, l2SignerOrProvider, token);
+
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address,
-      CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address,
+      canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
+
     this.cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
-    this.canonicalBridge = new DefaultERC20Bridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
+    this.canonicalBridge = canonicalBridge;
   }
 
-  /**
-   * Get the correct bridge for the given L2 token address.
-   * @param l2Token The L2 token address to get the bridge for.
-   * @returns If the L2 token is native USDC, returns the CCTP bridge. Otherwise, returns the canonical bridge.
-   */
-  private getL1Bridge(l2Token: string): OpStackBridge {
+  private getL1Bridge(l2Token: string): BaseBridgeAdapter {
     return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
       ? this.cctpBridge
       : this.canonicalBridge;
   }
 
-  constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber,
-    l2Gas: number
-  ): BridgeTransactionDetails {
-    // We should *only* be calling this class for USDC tokens
+  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    return this.getL1Bridge(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount, l2Gas);
+    return this.getL1Bridge(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount);
   }
 
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<OpStackEvents> {
-    // We should *only* be calling this class for USDC tokens
+  ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
       this.cctpBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, eventConfig),
@@ -69,8 +68,7 @@ export class UsdcTokenSplitterBridge extends OpStackBridge {
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<OpStackEvents> {
-    // We should *only* be calling this class for USDC tokens
+  ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
       this.cctpBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, eventConfig),

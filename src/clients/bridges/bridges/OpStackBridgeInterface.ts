@@ -1,22 +1,22 @@
-import { Contract, BigNumber, EventSearchConfig, Signer, Provider, getTokenAddressWithCCTP } from "../../../utils";
+import {
+  Contract,
+  BigNumber,
+  Event,
+  EventSearchConfig,
+  Signer,
+  Provider,
+  getTokenAddressWithCCTP,
+} from "../../../utils";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;
   readonly method: string;
   readonly args: unknown[];
-  readonly value?: BigNumber;
 }
 
-export interface BridgeEvent {
-  to: string;
-  from: string;
-  amount: BigNumber;
-  transactionHash: string;
-}
+export type OpStackEvents = { [l2Token: string]: Event[] };
 
-export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
-
-export abstract class BaseBridgeAdapter {
+export abstract class OpStackBridge {
   constructor(
     protected l2chainId: number,
     protected hubChainId: number,
@@ -29,20 +29,21 @@ export abstract class BaseBridgeAdapter {
     toAddress: string,
     l1Token: string,
     l2Token: string,
-    amount: BigNumber
+    amount: BigNumber,
+    l2Gas: number
   ): BridgeTransactionDetails;
 
   abstract queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<BridgeEvents>;
+  ): Promise<OpStackEvents>;
 
   abstract queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
     eventConfig: EventSearchConfig
-  ): Promise<BridgeEvents>;
+  ): Promise<OpStackEvents>;
 
   protected resolveL2TokenAddress(l1Token: string): string {
     return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.l2chainId, false);

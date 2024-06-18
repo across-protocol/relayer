@@ -7,19 +7,19 @@ import {
   Provider,
   spreadEventWithBlockNumber,
   BigNumberish,
-} from "../../../utils";
-import { CONTRACT_ADDRESSES } from "../../../common";
-import { SortableEvent } from "../../../interfaces";
+} from "../../utils";
+import { CONTRACT_ADDRESSES } from "../../common";
+import { SortableEvent } from "../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { Event } from "ethers";
 
-export class LineaBridge extends BaseBridgeAdapter {
+export class LineaUSDCBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1TokenBridge;
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2TokenBridge;
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1UsdcBridge;
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2UsdcBridge;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
@@ -29,8 +29,8 @@ export class LineaBridge extends BaseBridgeAdapter {
   constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
     return {
       contract: this.l1Bridge,
-      method: "bridgeToken",
-      args: [l1Token, amount, toAddress],
+      method: "depositTo",
+      args: [amount, toAddress],
     };
   }
 
@@ -41,7 +41,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.BridgingInitiatedV2(undefined, fromAddress, l1Token),
+      this.l1Bridge.filters.Deposited(undefined, undefined, fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {
@@ -53,8 +53,8 @@ export class LineaBridge extends BaseBridgeAdapter {
       };
       return {
         amount: eventSpread["amount"],
-        to: eventSpread["recipient"],
-        from: eventSpread["sender"],
+        to: eventSpread["to"],
+        from: eventSpread["depositor"],
         transactionHash: eventSpread.transactionHash,
       };
     };
@@ -70,7 +70,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.l2Bridge,
-      this.l2Bridge.filters.BridgingFinalizedV2(l1Token, undefined, undefined, fromAddress),
+      this.l2Bridge.filters.ReceivedFromOtherLayer(fromAddress),
       eventConfig
     );
     const processEvent = (event: Event) => {
