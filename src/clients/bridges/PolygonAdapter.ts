@@ -285,18 +285,18 @@ export class PolygonAdapter extends CCTPAdapter {
         if (!this.isSupportedToken(l1Token)) {
           return [];
         }
-        if (this.isWeth(l1Token)) {
-          l1TokenListToApprove.push(l1Token);
-          return [this.getL1TokenGateway(l1Token)?.address];
-        }
-        const bridgeAddresses: string[] = [];
+
+        // Deposits for Polygon are always routed via the gateway address, so only approve that.
+        // The l1Bridge addresses are only required for event scanning and do not need approvals.
+        const bridgeAddresses = [this.getL1TokenGateway(l1Token).address];
+
+        // For USDC, also approve the CCTP bridge.
         if (this.isL1TokenUsdc(l1Token)) {
           bridgeAddresses.push(this.getL1CCTPTokenMessengerBridge().address);
         }
-        bridgeAddresses.push(this.getL1Bridge(l1Token).address);
 
         // Push the l1 token to the list of tokens to approve N times, where N is the number of bridges.
-        // I.e. the arrays have to be parallel.
+        // I.e. the arrays have to be of equal length.
         l1TokenListToApprove.push(...Array(bridgeAddresses.length).fill(l1Token));
 
         return bridgeAddresses;
