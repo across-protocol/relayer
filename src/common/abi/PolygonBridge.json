@@ -1,34 +1,34 @@
 [
-    {
-      "anonymous": false,
-      "inputs": [
-        { "indexed": true, "internalType": "address", "name": "depositor", "type": "address" },
-        { "indexed": true, "internalType": "address", "name": "depositReceiver", "type": "address" },
-        { "indexed": true, "internalType": "address", "name": "rootToken", "type": "address" },
-        { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
-      ],
-      "name": "LockedERC20",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        { "indexed": true, "internalType": "address", "name": "depositor", "type": "address" },
-        { "indexed": true, "internalType": "address", "name": "depositReceiver", "type": "address" },
-        { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
-      ],
-      "name": "LockedEther",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        { "indexed": true, "internalType": "address", "name": "owner", "type": "address" },
-        { "indexed": true, "internalType": "address", "name": "token", "type": "address" },
-        { "indexed": false, "internalType": "uint256", "name": "amountOrNFTId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "depositBlockId", "type": "uint256" }
-      ],
-      "name": "NewDepositBlock",
-      "type": "event"
-    }
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "depositor", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "depositReceiver", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "rootToken", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+    ],
+    "name": "LockedERC20",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "depositor", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "depositReceiver", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+    ],
+    "name": "LockedEther",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "owner", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "token", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amountOrNFTId", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "depositBlockId", "type": "uint256" }
+    ],
+    "name": "NewDepositBlock",
+    "type": "event"
+  }
 ]
