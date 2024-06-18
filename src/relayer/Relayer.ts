@@ -320,8 +320,9 @@ export class Relayer {
     sendSlowRelays: boolean
   ): Promise<void> {
     const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
-    const { hubPoolClient, profitClient, tokenClient } = this.clients;
+    const { hubPoolClient, profitClient, tokenClient, configStoreClient } = this.clients;
     const { slowDepositors } = this.config;
+    const isLiteChain = configStoreClient.isChainLiteChainAtBlock(originChainId);
 
     // If the deposit does not meet the minimum number of block confirmations, skip it.
     if (deposit.blockNumber > maxBlockNumber) {
@@ -363,7 +364,7 @@ export class Relayer {
       const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
       if (isDefined(repaymentChainId)) {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+        this.fillRelay(deposit, isLiteChain ? originChainId : repaymentChainId, realizedLpFeePct, gasLimit);
 
         // Update local balance to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
@@ -375,13 +376,26 @@ export class Relayer {
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
       const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
-      this.fillRelay(deposit, destinationChainId, lpFeePct);
+      this.fillRelay(deposit, isLiteChain ? originChainId : destinationChainId, lpFeePct);
     } else {
-      // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
-      // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
-      tokenClient.captureTokenShortfallForFill(deposit);
-      if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
-        this.requestSlowFill(deposit);
+      // Disable slow fills for lite chains.
+      if (isLiteChain) {
+        this.logger.debug({
+          at: "Relayer::evaluateFil::slowFill",
+          message: `Skipping slow fill for lite chain deposit ${depositId}.`,
+          depositId,
+          depositor,
+          recipient,
+          transactionHash: deposit.transactionHash,
+          isLiteChain,
+        });
+      } else {
+        // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
+        // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
+        tokenClient.captureTokenShortfallForFill(deposit);
+        if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
+          this.requestSlowFill(deposit);
+        }
       }
     }
   }
@@ -646,7 +660,7 @@ export class Relayer {
     repaymentChainId?: number;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
-    const { inventoryClient, profitClient } = this.clients;
+    const { inventoryClient, profitClient, configStoreClient } = this.clients;
     const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
@@ -740,7 +754,14 @@ export class Relayer {
     // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
     // we come up with a smarter fee quoting algorithm that takes into account relayer inventory management more
     // accurately.
-    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId)) {
+    //
+    // Additionally we don't want to take this code path if the chain is a lite chain because we can't reason about
+    // destination chain repayments on lite chains. We should check this for the most recent block on the config store
+    if (
+      !isDefined(preferredChain) &&
+      !preferredChainIds.includes(destinationChainId) &&
+      !configStoreClient.isChainLiteChainAtBlock(originChainId)
+    ) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Preferred chains ${JSON.stringify(

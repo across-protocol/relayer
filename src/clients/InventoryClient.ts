@@ -394,6 +394,7 @@ export class InventoryClient {
    * selected if the SpokePool's running balance for that chain is over the system's desired target.
    * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
    * chains are over-allocated.
+   * @dev If the origin chain is a lite chain, then only the origin chain is evaluated as a potential repayment chain.
    * @dev If inventory management is disabled, then destinationChain is used as a default.
    * @param deposit Deposit to determine repayment chains for.
    * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
@@ -403,6 +404,11 @@ export class InventoryClient {
   async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
+
+    // Check if the origin chain is currently a lite chain. If it is, then we should only consider the origin chain
+    if (this.hubPoolClient.configStoreClient.isChainLiteChainAtBlock(originChainId)) {
+      return [originChainId];
+    }
 
     if (!this.isInventoryManagementEnabled()) {
       return [destinationChainId];
