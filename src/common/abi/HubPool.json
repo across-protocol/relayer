@@ -1,0 +1,13 @@
+[
+    {
+      "anonymous": false,
+      "inputs": [
+        { "indexed": false, "internalType": "address", "name": "l1Token", "type": "address" },
+        { "indexed": false, "internalType": "address", "name": "l2Token", "type": "address" },
+        { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+        { "indexed": false, "internalType": "address", "name": "to", "type": "address" }
+      ],
+      "name": "TokensRelayed",
+      "type": "event"
+    }
+]
