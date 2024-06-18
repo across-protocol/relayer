@@ -1,12 +1,12 @@
 # How Across Root Bundles are Constructed
 
-This document explains how the Dataworker constructs "root bundles", which instruct the Across system how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
+This document explains how the Dataworker constructs "root bundles", which instruct the Across system on how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
 
 ## Why does Across need to move capital around?
 
 There are two types of capital pools in Across: liquidity provider capital in the `HubPool` ("LP capital") and capital held in the `SpokePools` ("SpokePool balance").
 
-SpokePool capital is required for two purposes: refunding relayers who successfully filled a deposit, on the repayment chain of their choice, and fulfilling deposits "slowly". These "slow" fills are performed when a deposit has not been fully filled by relayers and provides an assurance to depositors that their deposits will be filled **eventually** after some capped amount of time.
+SpokePool capital is required for two purposes: refunding relayers who successfully filled a deposit, on the repayment chain of their choice, and fulfilling deposits "slowly". These "slow" fills are performed when a deposit has not been fully filled by relayers and provide an assurance to depositors that their deposits will be filled **eventually** after some capped amount of time.
 
 However, oftentimes SpokePools do not have enough capital on hand to fulfill the capital requirements described in the previous paragraph. This is when Across would want to tap into LP capital on HubPool to fulfill these capital deficits. Usually, the L2 network on which the SpokePool in question is deployed has a canonical bridge connected to Ethereum, where the HubPool is deployed. Across can therefore send its LP capital from the HubPool to the SpokePool and usually, this is a pretty fast L1 to L2 bridge over the canonical bridge.
 
@@ -33,11 +33,11 @@ Relayer --> [*]
 
 ### What is a canonical bridge?
 
-An L2's "canonical bridge" is one that is secured by the same trusted agents that secures the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://docs.avax.network/learn/avalanche/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumoptions.
+An L2's "canonical bridge" is one that is secured by the same trusted agents that secure the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://docs.avax.network/learn/avalanche/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumptions.
 
 ### Supporting capital deficits on SpokePools without canonical bridges
 
-When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Across has a few ways to over come this.
+When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Across has a few ways to overcome this.
 
 One, it could use a third party bridge, but this is strongly avoided because it exposes LP capital to additional trust assumptions. Across historically has avoided supporting networks without canonical bridges for this reason, and moreover its been unnecessary as the most popular L2 networks have proven to be those that have spent the time to build out an effective canonical bridge.
 
@@ -68,9 +68,9 @@ If the running balance is positive, then Across has a choice: keep the excess ba
 
 ## How often does Across move capital around?
 
-In a fantastical world, Across moves capital around instantaneously whenever capital deficits and excesses appear. This is obviously unrealistic however because bundles are constructed and proposed optimistically. This means that an actor, called a "Dataworker", will propose instructions for moving LP capital around that are subject to an optimistic challenge period. This challenge period is currently set to two hours. This valueis configured such that all actors with stake in Across, including relayers who need to be refunded, LP's who have deposited funds passively to earn yield in the HubPool, and depositors who are expecting to be filled on their destination chain, can verify that the instructions proposed are valid.
+In a fantastical world, Across moves capital around instantaneously whenever capital deficits and excesses appear. This is obviously unrealistic however because bundles are constructed and proposed optimistically. This means that an actor, called a "Dataworker", will propose instructions for moving LP capital around that are subject to an optimistic challenge period. This challenge period is currently set to two hours. This value is configured such that all actors with stake in Across, including relayers who need to be refunded, LP's who have deposited funds passively to earn yield in the HubPool, and depositors who are expecting to be filled on their destination chain, can verify that the instructions proposed are valid.
 
-These instructions can very easily be modified to conduct an "attack" on Across: "send all LP capital to my EOA on the Ethereum_SpokePool". Therefore its important that these bundle proposals are subject to a long enough challenge period that every invalid bundle gets challenged.
+These instructions can very easily be modified to conduct an "attack" on Across: "send all LP capital to my EOA on the Ethereum_SpokePool". Therefore it's important that these bundle proposals are subject to a long enough challenge period that every invalid bundle gets challenged.
 
 On the other hand, the longer the challenge period, the slower that Across can respond to capital requirements. Across essentially can only move capital around as often as the challenge period, so every two hours currently.
 
@@ -97,7 +97,7 @@ One assumption in Across, is that each chain that Across supports must have an e
 
 ## Determining bundle start blocks when evaluating a pending root bundle proposal
 
-`B` is trivially known since it is emitted in the [`ProposedRootBundle`](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L152) event during the creation of each new pending bundle proposal. We therefore need to find `A`, the bundle start block `<= B` to evaluating the root bundle.
+`B` is trivially known since it is emitted in the [`ProposedRootBundle`](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L152) event during the creation of each new pending bundle proposal. We therefore need to find `A`, the bundle start block `<= B` to evaluate the root bundle.
 
 ```mermaid
 flowchart LR
