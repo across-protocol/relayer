@@ -1,6 +1,7 @@
-import { winston, TOKEN_SYMBOLS_MAP } from "../../../../utils";
+import { winston, TOKEN_SYMBOLS_MAP, CHAIN_IDs } from "../../../../utils";
 import { SpokePoolClient } from "../../..";
 import { BaseAdapter } from "../..";
+import { SUPPORTED_TOKENS } from "../../../../common";
 import { OpStackAdapter } from "../OpStackAdapter";
 import { DaiOptimismBridge } from "./DaiOptimismBridge";
 import { SnxOptimismBridge } from "./SnxOptimismBridge";
@@ -24,7 +25,7 @@ export class OptimismAdapter extends OpStackAdapter {
         [TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId]]: snxBridge,
       },
       logger,
-      ["DAI", "SNX", "USDC", "USDT", "WETH", "WBTC", "UMA", "BAL", "ACX", "POOL"],
+      SUPPORTED_TOKENS[CHAIN_IDs.OPTIMISM],
       spokePoolClients,
       monitoredAddresses
     );

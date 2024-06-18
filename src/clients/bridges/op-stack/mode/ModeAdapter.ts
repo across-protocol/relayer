@@ -1,6 +1,7 @@
-import { winston } from "../../../../utils";
+import { winston, CHAIN_IDs } from "../../../../utils";
 import { SpokePoolClient } from "../../..";
 import { OpStackAdapter } from "../OpStackAdapter";
+import { SUPPORTED_TOKENS } from "../../../../common";
 
 export class ModeAdapter extends OpStackAdapter {
   constructor(
@@ -13,7 +14,7 @@ export class ModeAdapter extends OpStackAdapter {
       // Custom Bridges
       {},
       logger,
-      ["ETH", "WETH", "USDC", "USDT", "WBTC"],
+      SUPPORTED_TOKENS[CHAIN_IDs.MODE],
       spokePoolClients,
       monitoredAddresses
     );
