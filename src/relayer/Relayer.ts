@@ -372,11 +372,23 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
-      // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
-      // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
-      // expensive fills on (for example) mainnet.
-      const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
-      this.fillRelay(deposit, isLiteChain ? originChainId : destinationChainId, lpFeePct);
+      if (isLiteChain) {
+        this.logger.debug({
+          at: "Relayer::evaluateFil::selfRelay",
+          message: `Skipping self relay for lite chain deposit ${depositId}.`,
+          depositId,
+          depositor,
+          recipient,
+          transactionHash: deposit.transactionHash,
+          isLiteChain,
+        });
+      } else {
+        // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
+        // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
+        // expensive fills on (for example) mainnet.
+        const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
+        this.fillRelay(deposit, destinationChainId, lpFeePct);
+      }
     } else {
       // Disable slow fills for lite chains.
       if (isLiteChain) {
