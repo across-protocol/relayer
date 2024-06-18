@@ -1,7 +1,7 @@
-import { Event, BigNumber } from "ethers";
+import { BigNumber, Contract, Event } from "ethers";
+import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
 import {
   MAX_SAFE_ALLOWANCE,
-  MAX_UINT_VAL,
   blockExplorerLink,
   bnZero,
   getNetworkName,
@@ -11,8 +11,6 @@ import {
   winston,
   mapAsync,
 } from "../../utils";
-import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
-import { ExpandedERC20 } from "@across-protocol/contracts";
 
 /**
  * @notice This function is designed to be used in L2 chain adapters when identifying "finalized" cross
@@ -53,10 +51,6 @@ export function getAllowanceCacheKey(l1Token: string, targetContract: string, us
   return `l1CanonicalTokenBridgeAllowance_${l1Token}_${userAddress}_targetContract:${targetContract}`;
 }
 
-export function isMaxAllowance(allowance: BigNumber): boolean {
-  return allowance.gte(toBN(MAX_SAFE_ALLOWANCE));
-}
-
 export async function getTokenAllowanceFromCache(
   l1Token: string,
   userAddress: string,
@@ -83,18 +77,17 @@ export async function setTokenAllowanceInCache(
 }
 
 export async function approveTokens(
-  tokens: { token: ExpandedERC20; bridges: string[] }[],
+  tokens: { token: Contract; bridge: string }[],
   chainId: number,
   hubChainId: number,
   logger: winston.Logger
 ): Promise<string> {
-  const bridges = tokens.flatMap(({ token, bridges }) => bridges.map((bridge) => ({ token, bridge })));
-  const approvalMarkdwn = await mapAsync(bridges, async ({ token: l1Token, bridge }) => {
+  const approvalMarkdwn = await mapAsync(tokens, async ({ token: l1Token, bridge }) => {
     const txs = [];
     if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
       txs.push(await runTransaction(logger, l1Token, "approve", [bridge, bnZero]));
     }
-    txs.push(await runTransaction(logger, l1Token, "approve", [bridge, MAX_UINT_VAL]));
+    txs.push(await runTransaction(logger, l1Token, "approve", [bridge, MAX_SAFE_ALLOWANCE]));
     const receipts = await Promise.all(txs.map((tx) => tx.wait()));
     const hubNetwork = getNetworkName(hubChainId);
     const spokeNetwork = getNetworkName(chainId);
