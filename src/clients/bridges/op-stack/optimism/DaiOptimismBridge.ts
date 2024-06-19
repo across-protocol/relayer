@@ -6,16 +6,26 @@ export class DaiOptimismBridge extends OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge.address,
-    ]);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    bridgeAddresses: Partial<{
+      l1: string;
+      l2: string;
+    }> = {}
+  ) {
+    bridgeAddresses.l1 = bridgeAddresses.l1 || CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge.address;
+    bridgeAddresses.l2 = bridgeAddresses.l2 || CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge.address;
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
-    this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [bridgeAddresses.l1]);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    const { abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
+    this.l1Bridge = new Contract(bridgeAddresses.l1, l1Abi, l1Signer);
+
+    const { abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge;
+    this.l2Bridge = new Contract(bridgeAddresses.l2, l2Abi, l2SignerOrProvider);
   }
 
   constructL1ToL2Txn(
