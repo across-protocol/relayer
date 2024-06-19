@@ -19,9 +19,7 @@ import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json"
 // ZkSync
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI from "./abi/ZkSyncDefaultErc20BridgeL1.json";
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI from "./abi/ZkSyncDefaultErc20BridgeL2.json";
-import ZK_SYNC_ETH_ABI from "./abi/ZkSyncEth.json";
 import ZK_SYNC_MAILBOX_ABI from "./abi/ZkSyncMailbox.json";
-import ZK_SYNC_WETH_ABI from "./abi/ZkSyncWeth.json";
 // Arbitrum
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "./abi/ArbitrumErc20GatewayL2.json";
@@ -177,11 +175,11 @@ export const CONTRACT_ADDRESSES: {
     },
     eth: {
       address: "0x000000000000000000000000000000000000800A",
-      abi: ZK_SYNC_ETH_ABI,
+      abi: WETH_ABI,
     },
     weth: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
-      abi: ZK_SYNC_WETH_ABI,
+      abi: WETH_ABI,
     },
   },
   8453: {
