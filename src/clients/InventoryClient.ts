@@ -1,4 +1,4 @@
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   BigNumber,
@@ -372,7 +372,7 @@ export class InventoryClient {
 
     // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
     // is Bridged USDC and the output token is Native USDC.
-    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either _USDC, USDC.e or USDbC.
+    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either USDC, USDC.e or USDbC.
     // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
     // check specifically handles the case where the input token is Bridged/Native and the output token Native/Bridged.
     const isInputTokenUSDC = isDefined(getUsdcSymbol(inputToken, originChainId));
@@ -496,7 +496,7 @@ export class InventoryClient {
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[_chain]
+        totalRefundsPerChain[_chain] ?? bnZero
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
@@ -1112,11 +1112,12 @@ export class InventoryClient {
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  async update(): Promise<void> {
+  update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
-    await this.crossChainTransferClient.update(this.getL1Tokens());
+
+    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
   }
 
   isInventoryManagementEnabled(): boolean {

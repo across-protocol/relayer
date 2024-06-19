@@ -13,7 +13,7 @@ import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
-import { caching } from "@across-protocol/sdk-v2";
+import { caching } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;

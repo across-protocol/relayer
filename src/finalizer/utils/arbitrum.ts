@@ -13,13 +13,14 @@ import {
   getL1TokenInfo,
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
+  CHAIN_IDs,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
-const CHAIN_ID = 42161;
+const CHAIN_ID = CHAIN_IDs.ARBITRUM;
 
 export async function arbitrumOneFinalizer(
   logger: winston.Logger,
@@ -47,7 +48,7 @@ export async function arbitrumOneFinalizer(
     (e) =>
       e.blockNumber <= latestBlockToFinalize &&
       // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
+      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[CHAIN_ID])
   );
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);

@@ -184,6 +184,7 @@ export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
   10: 75,
   8453: 75,
+  59144: 50,
 };
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
@@ -312,6 +313,22 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
   80001: 7, // Polygon PoS Mumbai
 };
 
+export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
+  10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+  137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
+  324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
+  34443: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
+  42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
+  59144: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+
+  // Testnets:
+  919: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
+  59141: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  84532: ["BAL", "DAI", "ETH", "WETH", "USDC"],
+  421614: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
+  11155420: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
+};
 /**
  * A mapping of chain IDs to tokens on that chain which need their allowance
  * to first be zeroed before setting a new allowance. This is useful for

@@ -6,7 +6,7 @@ import {
   relayFeeCalculator,
   typeguards,
   utils as sdkUtils,
-} from "@across-protocol/sdk-v2";
+} from "@across-protocol/sdk";
 import * as constants from "../common/Constants";
 import {
   assert,

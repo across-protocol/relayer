@@ -1,4 +1,4 @@
-import { interfaces, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
 import { Provider as zksProvider, Wallet as zkWallet } from "zksync-web3";

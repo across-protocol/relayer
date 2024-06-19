@@ -12,8 +12,8 @@ import {
   winston,
   TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
-import { SpokePoolClient } from "../..";
-import { BaseAdapter } from "..";
+import { SpokePoolClient } from "../../";
+import { BaseAdapter } from "../";
 import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { OpStackBridge } from "./OpStackBridgeInterface";
@@ -51,8 +51,8 @@ export class OpStackAdapter extends BaseAdapter {
     // assume that all Op Stack chains will have a bridged USDC.e variant that uses the OVM standard bridge, so we
     // only need to check if a native USDC exists for this chain. If so, then we'll use the TokenSplitter bridge
     // which maps to either the CCTP or OVM Standard bridge depending on the request.
-    const usdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
-    const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.chainId];
+    const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
+    const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId];
     if (usdcAddress && l2NativeUsdcAddress) {
       this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(
         this.chainId,

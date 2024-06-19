@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { BigNumber, Contract, constants } from "ethers";
 import { getAddress } from "ethers/lib/utils";
@@ -26,6 +26,7 @@ import {
   processEndPollingLoop,
   startupLogLevel,
   winston,
+  CHAIN_IDs,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage } from "./types";
 import {
@@ -59,54 +60,50 @@ type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2";
  */
 const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; finalizeOnL1: ChainFinalizer[] } } = {
   // Mainnets
-  10: {
+  [CHAIN_IDs.OPTIMISM]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  137: {
+  [CHAIN_IDs.POLYGON]: {
     finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  324: {
+  [CHAIN_IDs.ZK_SYNC]: {
     finalizeOnL1: [zkSyncFinalizer],
     finalizeOnL2: [],
   },
-  8453: {
+  [CHAIN_IDs.BASE]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  42161: {
+  [CHAIN_IDs.ARBITRUM]: {
     finalizeOnL1: [arbitrumOneFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  59144: {
+  [CHAIN_IDs.LINEA]: {
     finalizeOnL1: [lineaL2ToL1Finalizer],
     finalizeOnL2: [lineaL1ToL2Finalizer],
   },
-  280: {
-    finalizeOnL1: [zkSyncFinalizer],
-    finalizeOnL2: [],
-  },
-  534352: {
+  [CHAIN_IDs.SCROLL]: {
     finalizeOnL1: [scrollFinalizer],
     finalizeOnL2: [],
   },
-  34443: {
+  [CHAIN_IDs.MODE]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
   // Testnets
-  84532: {
+  [CHAIN_IDs.BASE_SEPOLIA]: {
     finalizeOnL1: [cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  59140: {
-    finalizeOnL1: [lineaL2ToL1Finalizer],
-    finalizeOnL2: [lineaL1ToL2Finalizer],
-  },
-  919: {
+  [CHAIN_IDs.MODE_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+  },
+  [CHAIN_IDs.POLYGON_AMOY]: {
+    finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
   },
 };
 

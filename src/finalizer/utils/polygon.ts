@@ -15,6 +15,7 @@ import {
   getL1TokenInfo,
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
+  CHAIN_IDs,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -24,7 +25,7 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
 
-const CHAIN_ID = 137;
+const CHAIN_ID = CHAIN_IDs.POLYGON;
 enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
   CAN_EXIT = "CAN_EXIT",
@@ -120,7 +121,7 @@ async function getFinalizableTransactions(
       // one followed by a non-USDC one, the USDC 'logIndex' as far as building the payload is concerned
       // will be 0 and the non-USDC 'logIndex' will be 1. This is why we can't filter out USDC CCTP withdrawals
       // until after we've computed payloads.
-      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[chainId])) {
+      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])) {
         return { status: "USDC_CCTP_L2_WITHDRAWAL" };
       }
 
