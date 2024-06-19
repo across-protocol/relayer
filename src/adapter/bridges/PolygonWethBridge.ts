@@ -43,12 +43,17 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Token, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
-    return {
+  async constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<BridgeTransactionDetails> {
+    return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWethToPolygon",
       args: [toAddress, amount.toString()],
-    };
+    });
   }
 
   async queryL1BridgeInitiationEvents(

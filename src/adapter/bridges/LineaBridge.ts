@@ -6,7 +6,6 @@ import {
   EventSearchConfig,
   Provider,
   spreadEventWithBlockNumber,
-  BigNumberish,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { SortableEvent } from "../../interfaces";
@@ -26,12 +25,17 @@ export class LineaBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
-    return {
+  async constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<BridgeTransactionDetails> {
+    return Promise.resolve({
       contract: this.l1Bridge,
       method: "bridgeToken",
       args: [l1Token, amount, toAddress],
-    };
+    });
   }
 
   async queryL1BridgeInitiationEvents(
@@ -75,15 +79,15 @@ export class LineaBridge extends BaseBridgeAdapter {
     );
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
+        amount: BigNumber;
         to: string;
         from: string;
         transactionHash: string;
       };
       return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
+        amount: eventSpread["amount"],
+        to: eventSpread["recipient"],
+        from: eventSpread["bridgedToken"], // There is no "from" field in this event, so we set it to the L2 token received.
         transactionHash: eventSpread.transactionHash,
       };
     };

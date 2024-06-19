@@ -42,18 +42,18 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
   }
 
-  constructL1ToL2Txn(
+  async constructL1ToL2Txn(
     toAddress: string,
     _l1Token: string,
     _l2Token: string,
     amount: BigNumber
-  ): BridgeTransactionDetails {
+  ): Promise<BridgeTransactionDetails> {
     assert(compareAddressesSimple(_l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    return {
+    return Promise.resolve({
       contract: this.l1CctpTokenBridge,
       method: "depositForBurn",
       args: [amount, this.l2DestinationDomain, cctpAddressToBytes32(toAddress), this.l1UsdcTokenAddress],
-    };
+    });
   }
 
   async queryL1BridgeInitiationEvents(

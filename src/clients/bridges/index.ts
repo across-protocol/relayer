@@ -1,6 +1,6 @@
 export * from "./BaseAdapter";
 export * from "./AdapterManager";
-export * from "./OpStackAdapter";
+export * from "./op-stack/OpStackAdapter";
 export * from "./ArbitrumAdapter";
 export * from "./PolygonAdapter";
 export * from "./CrossChainTransferClient";

@@ -36,6 +36,7 @@ export const {
   createFormatFunction,
   fromWei,
   blockExplorerLink,
+  isContractDeployedToAddress,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
 } = sdk.utils;

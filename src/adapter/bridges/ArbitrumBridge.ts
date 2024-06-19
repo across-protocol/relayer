@@ -48,12 +48,17 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
     this.l1Gateway = new Contract(gatewayAddress, l1Abi, l1Signer);
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
-    return {
+  async constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<BridgeTransactionDetails> {
+    return Promise.resolve({
       contract: this.l1Gateway,
       method: "outboundTransfer",
       args: [l1Token, toAddress, amount, this.l2GasLimit, this.l2GasPrice, this.transactionSubmissionData],
-    };
+    });
   }
 
   async queryL1BridgeInitiationEvents(

@@ -51,12 +51,17 @@ export class WethBridge extends BaseBridgeAdapter {
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
-    return {
+  async constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<BridgeTransactionDetails> {
+    return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWethToOvm",
       args: [toAddress, amount, this.l2Gas, this.l2chainId],
-    };
+    });
   }
 
   private convertEventListToBridgeEvents(events: Event[]): BridgeEvents {

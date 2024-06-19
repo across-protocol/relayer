@@ -31,12 +31,17 @@ export class DefaultERC20Bridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
-    return {
+  async constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<BridgeTransactionDetails> {
+    return Promise.resolve({
       contract: this.l1Bridge,
       method: "depositERC20",
       args: [l1Token, l2Token, amount, this.l2Gas, "0x"],
-    };
+    });
   }
 
   async queryL1BridgeInitiationEvents(

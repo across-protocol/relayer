@@ -30,7 +30,7 @@ export abstract class BaseBridgeAdapter {
     l1Token: string,
     l2Token: string,
     amount: BigNumber
-  ): BridgeTransactionDetails;
+  ): Promise<BridgeTransactionDetails>;
 
   abstract queryL1BridgeInitiationEvents(
     l1Token: string,

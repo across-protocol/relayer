@@ -30,12 +30,17 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
-    return {
+  async constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<BridgeTransactionDetails> {
+    return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWethToLinea",
       args: [toAddress, amount],
-    };
+    });
   }
 
   async queryL1BridgeInitiationEvents(
@@ -90,6 +95,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       this.l2Bridge.filters.MessageClaimed(internalMessageHashes),
       eventConfig
     );
+    const finalizedHashes = events.map(({ args }) => args._messageHash);
     const processEvent = (event: Event) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
         amount: BigNumberish;
@@ -105,7 +111,9 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       };
     };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: initiatedQueryResult
+        .filter(({ args }) => finalizedHashes.includes(args._messageHash))
+        .map(processEvent),
     };
   }
 }

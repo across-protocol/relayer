@@ -1,7 +1,7 @@
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, BaseAdapter } from "./";
-import { DaiOptimismBridge, SnxOptimismBridge } from "./bridges";
+import { DaiOptimismBridge, SnxOptimismBridge } from "./op-stack/optimism";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { utils } from "@across-protocol/sdk";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";

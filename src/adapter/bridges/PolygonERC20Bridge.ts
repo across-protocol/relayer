@@ -44,12 +44,17 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2Token, l2Abi, l2SignerOrProvider);
   }
 
-  constructL1ToL2Txn(toAddress: string, l1Token: string, l2Token: string, amount: BigNumber): BridgeTransactionDetails {
-    return {
+  async constructL1ToL2Txn(
+    toAddress: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<BridgeTransactionDetails> {
+    return Promise.resolve({
       contract: this.l1Gateway,
       method: "depositFor",
       args: [toAddress, l1Token, bnToHex(amount)],
-    };
+    });
   }
 
   async queryL1BridgeInitiationEvents(

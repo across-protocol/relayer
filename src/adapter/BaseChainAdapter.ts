@@ -144,7 +144,7 @@ export class BaseChainAdapter {
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-    const { contract, method, args, value } = bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
+    const { contract, method, args, value } = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
     const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
