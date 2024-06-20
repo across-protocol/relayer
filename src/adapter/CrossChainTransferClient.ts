@@ -4,12 +4,15 @@ import { OutstandingTransfers } from "../interfaces";
 
 export class CrossChainTransferClient {
   private outstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
+  private hubChainId;
 
   constructor(
     readonly logger: winston.Logger,
     readonly chainIdList: number[],
     readonly adapterManager: AdapterManager
-  ) {}
+  ) {
+    this.hubChainId = adapterManager.hubPoolClient.chainId;
+  }
 
   // Get any funds currently in the canonical bridge.
   getOutstandingCrossChainTransferAmount(
@@ -55,7 +58,7 @@ export class CrossChainTransferClient {
   }
 
   getEnabledL2Chains(): number[] {
-    return this.getEnabledChains().filter((chainId) => chainId !== 1);
+    return this.getEnabledChains().filter((chainId) => chainId !== this.hubChainId);
   }
 
   increaseOutstandingTransfer(

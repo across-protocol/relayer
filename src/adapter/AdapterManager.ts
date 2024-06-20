@@ -10,7 +10,6 @@ import {
   mapAsync,
   TOKEN_SYMBOLS_MAP,
   chainIsMatic,
-  chainIsArbitrum,
 } from "../utils";
 import { SpokePoolClient, HubPoolClient } from "../clients";
 import { BaseChainAdapter } from "./";
@@ -59,47 +58,43 @@ export class AdapterManager {
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
 
     Object.values(CHAIN_IDs)
-      .filter((chainId) => chainId !== hubChainId)
+      .filter((chainId) => isDefined(chainId) && chainId !== hubChainId)
       .map((chainId) => {
-        if (this.spokePoolClients[chainId] !== undefined) {
-          // First, fetch all the bridges associated with the chain.
-          const bridges = {};
-          const l2Signer = spokePoolClients[chainId].spokePool.signer;
+        // First, fetch all the bridges associated with the chain.
+        const bridges = {};
+        const l2Signer = spokePoolClients[chainId].spokePool.signer;
 
-          SUPPORTED_TOKENS[chainId].map((symbol) => {
-            const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-            const bridgeConstructor = CUSTOM_BRIDGE[chainId][l1Token] ?? CANONICAL_BRIDGE[chainId];
+        SUPPORTED_TOKENS[chainId].map((symbol) => {
+          const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+          const bridgeConstructor = CUSTOM_BRIDGE[chainId][l1Token] ?? CANONICAL_BRIDGE[chainId];
 
-            // For bridges like Arbitrum and Polygon, we need to supply additional information about the token
-            // so that we may properly select the l1Gateway
-            if (chainIsMatic(chainId) && !CUSTOM_BRIDGE[chainId][l1Token]) {
-              bridges[l1Token] = new bridgeConstructor(
-                chainId,
-                hubChainId,
-                l1Signer,
-                l2Signer,
-                this.l2TokenForL1Token(l1Token, chainId)
-              );
-            } else if (chainIsArbitrum(chainId)) {
-              bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
-            } else {
-              bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
-            }
-          });
+          // For bridges like Arbitrum and Polygon, we need to supply additional information about the token
+          // so that we may properly select the l1Gateway
+          if (chainIsMatic(chainId) && !CUSTOM_BRIDGE[chainId]?.[l1Token]) {
+            bridges[l1Token] = new bridgeConstructor(
+              chainId,
+              hubChainId,
+              l1Signer,
+              l2Signer,
+              this.l2TokenForL1Token(l1Token, chainId)
+            );
+          } else {
+            bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
+          }
+        });
 
-          // Then instantiate a generic adapter.
-          // TODO: Do something about the gas multiplier
-          this.adapters[chainId] = new BaseChainAdapter(
-            spokePoolClients,
-            chainId,
-            hubChainId,
-            filterMonitoredAddresses(chainId),
-            logger,
-            SUPPORTED_TOKENS[chainId],
-            bridges,
-            DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler ?? Number(DEFAULT_RELAYER_GAS_MULTIPLIER)
-          );
-        }
+        // Then instantiate a generic adapter.
+        // TODO: Do something about the gas multiplier
+        this.adapters[chainId] = new BaseChainAdapter(
+          spokePoolClients,
+          chainId,
+          hubChainId,
+          filterMonitoredAddresses(chainId),
+          logger,
+          SUPPORTED_TOKENS[chainId],
+          bridges,
+          DEFAULT_GAS_FEE_SCALERS[hubChainId]?.maxFeePerGasScaler ?? Number(DEFAULT_RELAYER_GAS_MULTIPLIER)
+        );
       });
 
     logger.debug({
@@ -118,10 +113,11 @@ export class AdapterManager {
   }
 
   getOutstandingCrossChainTokenTransferAmount(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
+    const hubChainId = this.hubPoolClient.chainId;
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
     const adapterSupportedL1Tokens = l1Tokens.filter((token) =>
-      adapter.supportedTokens.includes(this.hubPoolClient.getTokenInfo(CHAIN_IDs.MAINNET, token).symbol)
+      adapter.supportedTokens.includes(this.hubPoolClient.getTokenInfo(hubChainId, token).symbol)
     );
     this.logger.debug({
       at: "AdapterManager",
@@ -134,13 +130,12 @@ export class AdapterManager {
 
   sendTokenCrossChain(
     address: string,
-    chainId: number | string,
+    chainId: number,
     l1Token: string,
     amount: BigNumber,
     simMode = false,
     l2Token?: string
   ): Promise<TransactionResponse> {
-    chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     l2Token ??= this.l2TokenForL1Token(l1Token, Number(chainId));
     return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
@@ -161,7 +156,7 @@ export class AdapterManager {
         const wrapTarget = inventoryConfig?.wrapEtherTargetPerChain?.[chainId] ?? inventoryConfig.wrapEtherTarget;
         assert(
           wrapThreshold.gte(wrapTarget),
-          `wrapEtherThreshold ${wrapThreshold.toString()} must be >= wrapEtherTarget ${wrapTarget.toString()}`
+          `wrapEtherThreshold ${wrapThreshold} must be >= wrapEtherTarget ${wrapTarget}`
         );
         await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
       }
