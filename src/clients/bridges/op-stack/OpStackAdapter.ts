@@ -12,8 +12,8 @@ import {
   winston,
   TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
-import { SpokePoolClient } from "../..";
-import { BaseAdapter } from "..";
+import { SpokePoolClient } from "../../";
+import { BaseAdapter } from "../";
 import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { OpStackBridge } from "./OpStackBridgeInterface";
