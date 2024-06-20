@@ -1,18 +1,7 @@
-import {
-  Contract,
-  BigNumber,
-  paginatedEventQuery,
-  Signer,
-  EventSearchConfig,
-  Provider,
-  spreadEventWithBlockNumber,
-  BigNumberish,
-  toBN,
-} from "../../utils";
+import { Contract, BigNumber, paginatedEventQuery, Signer, EventSearchConfig, Provider, toBN } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../common";
-import { SortableEvent } from "../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { Event } from "ethers";
+import { processEvent } from "../utils";
 
 const DEFAULT_ERC20_GATEWAY = {
   l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
@@ -71,22 +60,8 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
       this.l1Bridge.filters.DepositInitiated(undefined, fromAddress),
       eventConfig
     );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
   }
 
@@ -100,22 +75,8 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
       this.l2Bridge.filters.DepositFinalized(l1Token, fromAddress, undefined),
       eventConfig
     );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
   }
 }

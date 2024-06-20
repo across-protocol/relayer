@@ -1,16 +1,7 @@
-import {
-  Contract,
-  BigNumber,
-  paginatedEventQuery,
-  Signer,
-  EventSearchConfig,
-  Provider,
-  spreadEventWithBlockNumber,
-} from "../../utils";
+import { Contract, BigNumber, paginatedEventQuery, Signer, EventSearchConfig, Provider } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { SortableEvent } from "../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { Event } from "ethers";
+import { processEvent } from "../utils";
 
 export class LineaUSDCBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
@@ -48,22 +39,8 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
       this.l1Bridge.filters.Deposited(undefined, undefined, fromAddress),
       eventConfig
     );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumber;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["amount"],
-        to: eventSpread["to"],
-        from: eventSpread["depositor"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "to", "depositor")),
     };
   }
 
@@ -77,22 +54,11 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
       this.l2Bridge.filters.ReceivedFromOtherLayer(fromAddress),
       eventConfig
     );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumber;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["amount"],
-        to: eventSpread["recipient"],
-        from: eventSpread["recipient"], // There is no "from" address in this event.
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
+    // There is no "from" address in this event.
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
+        processEvent(event, "amount", "recipient", "recipient")
+      ),
     };
   }
 }

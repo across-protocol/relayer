@@ -1,17 +1,7 @@
-import {
-  Contract,
-  BigNumber,
-  paginatedEventQuery,
-  Signer,
-  EventSearchConfig,
-  Provider,
-  spreadEventWithBlockNumber,
-  BigNumberish,
-} from "../../utils";
+import { Contract, BigNumber, paginatedEventQuery, bnZero, Signer, EventSearchConfig, Provider } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { SortableEvent } from "../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { Event } from "ethers";
+import { processEvent } from "../utils";
 
 export class LineaWethBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
@@ -53,22 +43,10 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       this.l1Bridge.filters.MessageSent(undefined, fromAddress),
       eventConfig
     );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_value"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent).filter(({ amount }) => amount > 0),
+      [this.resolveL2TokenAddress(l1Token)]: events
+        .map((event) => processEvent(event, "_value", "_to", "_from"))
+        .filter(({ amount }) => amount > bnZero),
     };
   }
 
@@ -96,24 +74,10 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       eventConfig
     );
     const finalizedHashes = events.map(({ args }) => args._messageHash);
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_value"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
       [this.resolveL2TokenAddress(l1Token)]: initiatedQueryResult
         .filter(({ args }) => finalizedHashes.includes(args._messageHash))
-        .map(processEvent),
+        .map((event) => processEvent(event, "_value", "_to", "_from")),
     };
   }
 }

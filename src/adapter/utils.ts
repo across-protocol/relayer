@@ -4,6 +4,7 @@ import {
   MAX_SAFE_ALLOWANCE,
   blockExplorerLink,
   bnZero,
+  spreadEventWithBlockNumber,
   getNetworkName,
   getRedisCache,
   runTransaction,
@@ -11,6 +12,8 @@ import {
   winston,
   mapAsync,
 } from "../utils";
+import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
+import { SortableEvent } from "../interfaces";
 import { ExpandedERC20 } from "@across-protocol/contracts";
 
 /**
@@ -107,4 +110,19 @@ export async function approveTokens(
     return internalMrkdwn;
   });
   return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
+}
+
+export function processEvent(event: Event, amountField: string, toField: string, fromField: string): BridgeEvent {
+  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+    amount: BigNumber;
+    to: string;
+    from: string;
+    transactionHash: string;
+  };
+  return {
+    amount: eventSpread[amountField],
+    to: eventSpread[toField],
+    from: eventSpread[fromField],
+    transactionHash: eventSpread.transactionHash,
+  };
 }

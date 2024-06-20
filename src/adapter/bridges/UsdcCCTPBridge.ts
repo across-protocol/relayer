@@ -1,16 +1,8 @@
-import { BigNumber, Contract, Signer, Event } from "ethers";
+import { BigNumber, Contract, Signer } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { SortableEvent } from "../../interfaces";
-import {
-  EventSearchConfig,
-  Provider,
-  TOKEN_SYMBOLS_MAP,
-  spreadEventWithBlockNumber,
-  BigNumberish,
-  compareAddressesSimple,
-  assert,
-} from "../../utils";
+import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
+import { processEvent } from "../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
@@ -62,22 +54,6 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    // TODO: This shows up a lot. Make it show up less.
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
-
     const events = await retrieveOutstandingCCTPBridgeUSDCTransfers(
       this.l1CctpTokenBridge,
       this.l2CctpMessageTransmitter,
@@ -87,9 +63,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       this.l2chainId,
       fromAddress
     );
-
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
   }
   queryL2BridgeFinalizationEvents(

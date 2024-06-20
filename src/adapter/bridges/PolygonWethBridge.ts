@@ -5,14 +5,11 @@ import {
   Signer,
   EventSearchConfig,
   Provider,
-  spreadEventWithBlockNumber,
-  BigNumberish,
   ZERO_ADDRESS,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { SortableEvent } from "../../interfaces";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { Event } from "ethers";
+import { processEvent } from "../utils";
 
 /* Polygon has a bridge which we check for L1 <-> L2 events
  * and a token gateway which is the address used to initiate a
@@ -66,22 +63,8 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
       this.l1Bridge.filters.LockedEther(undefined, fromAddress),
       eventConfig
     );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
   }
 
@@ -95,22 +78,8 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
       this.l2Bridge.filters.Transfer(ZERO_ADDRESS, fromAddress),
       eventConfig
     );
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map(processEvent),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
   }
 }

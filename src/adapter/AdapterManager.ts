@@ -58,7 +58,7 @@ export class AdapterManager {
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
 
     Object.values(CHAIN_IDs)
-      .filter((chainId) => isDefined(chainId) && chainId !== hubChainId)
+      .filter((chainId) => isDefined(this.spokePoolClients[chainId]) && chainId !== hubChainId)
       .map((chainId) => {
         // First, fetch all the bridges associated with the chain.
         const bridges = {};

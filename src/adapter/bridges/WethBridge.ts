@@ -5,17 +5,14 @@ import {
   paginatedEventQuery,
   Signer,
   Provider,
-  ZERO_ADDRESS,
   Event,
+  ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
-  BigNumberish,
-  spreadEventWithBlockNumber,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { matchL2EthDepositAndWrapEvents } from "../utils";
+import { matchL2EthDepositAndWrapEvents, processEvent } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { SortableEvent } from "../../interfaces";
 
 export class WethBridge extends BaseBridgeAdapter {
   private readonly l1Bridge: Contract;
@@ -65,24 +62,10 @@ export class WethBridge extends BaseBridgeAdapter {
   }
 
   private convertEventListToBridgeEvents(events: Event[]): BridgeEvents {
-    // TODO: Lean down this section.
-    const processEvent = (event: Event) => {
-      const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-        amount: BigNumberish;
-        to: string;
-        from: string;
-        transactionHash: string;
-      };
-      return {
-        amount: eventSpread["_amount"],
-        to: eventSpread["_to"],
-        from: eventSpread["_from"],
-        transactionHash: eventSpread.transactionHash,
-      };
-    };
-
     return {
-      [this.resolveL2TokenAddress(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId])]: events.map(processEvent),
+      [this.resolveL2TokenAddress(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId])]: events.map((event) =>
+        processEvent(event, "_amount", "_to", "_from")
+      ),
     };
   }
 
