@@ -145,7 +145,7 @@ export class AcrossApiClient {
       const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
       await redis.set(
         this.getLimitsCacheKey(l1Tokens),
-        liquidReserves.map((n) => n.toString()),
+        liquidReserves.map((n) => n.toString()).join(","),
         ttl
       );
     }
