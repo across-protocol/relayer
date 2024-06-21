@@ -67,7 +67,7 @@ export class AcrossApiClient {
     });
     this.updatedLimits = false;
 
-    // /liquidReserves
+    // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
     const liquidReserves = await this.callLimits(enabledTokens);
     tokens.forEach((token, i) => (this.limits[token] = liquidReserves[i]));
