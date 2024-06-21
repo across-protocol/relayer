@@ -143,11 +143,7 @@ export class AcrossApiClient {
       const baseTtl = 300;
       // Apply a random margin to spread expiry over a larger time window.
       const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
-      await redis.set(
-        this.getLimitsCacheKey(l1Tokens),
-        liquidReserves.map((n) => n.toString()).join(","),
-        ttl
-      );
+      await redis.set(this.getLimitsCacheKey(l1Tokens), liquidReserves.map((n) => n.toString()).join(","), ttl);
     }
 
     return liquidReserves;
