@@ -564,11 +564,13 @@ export class Monitor {
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
+    const { currentTime } = hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
     }
+    const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.crossChainAdapterSupportedChains) {
@@ -576,8 +578,6 @@ export class Monitor {
       // If we're still within the grace period, skip looking for any stuck rebalances.
       // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
       // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
-      const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
-      const currentTime = Number(await this.clients.hubPoolClient.hubPool.getCurrentTime());
       if (lastFullyExecutedBundleTime + gracePeriod > currentTime) {
         this.logger.debug({
           at: "Monitor#checkStuckRebalances",
