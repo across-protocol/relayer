@@ -100,7 +100,7 @@ export class AdapterManager {
     logger.debug({
       at: "AdapterManager#constructor",
       message: "Initialized AdapterManager",
-      adapterChains: Object.keys(this.adapters).map((chainId) => Number(chainId)),
+      adapterChains: Object.keys(this.adapters).map((chainId) => chainId),
     });
   }
 

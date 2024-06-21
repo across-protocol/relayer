@@ -35,12 +35,14 @@ export abstract class BaseBridgeAdapter {
   abstract queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
 
   abstract queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
 

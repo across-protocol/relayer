@@ -71,19 +71,26 @@ describe("Cross Chain Adapter: Linea", async function () {
       ),
     };
 
-    adapter = new BaseChainAdapter(
+    adapter = new MockBaseChainAdapter(
       {
         [l2ChainId]: l2SpokePoolClient,
         [hubChainId]: l1SpokePoolClient,
       }, // Don't need spoke pool clients for this test
       l2ChainId,
       hubChainId,
-      [], // monitored address doesn't matter for this test since we inject it into the function
+      [monitoredEoa],
       null,
       SUPPORTED_TOKENS[l2ChainId],
       bridges,
       1.5
     );
+    adapter.setTargetL1Bridge(l1WETHToken, wethBridgeContract);
+    adapter.setTargetL1Bridge(l1USDCToken, usdcBridgeContract);
+    adapter.setTargetL1Bridge(l1Token, erc20BridgeContract);
+
+    adapter.setTargetL2Bridge(l1WETHToken, wethBridgeContract);
+    adapter.setTargetL2Bridge(l1USDCToken, usdcBridgeContract);
+    adapter.setTargetL2Bridge(l1Token, erc20BridgeContract);
   });
 
   describe("WETH", function () {
@@ -98,13 +105,8 @@ describe("Cross Chain Adapter: Linea", async function () {
       await wethBridgeContract.emitMessageSent(randomAddress(), monitoredEoa, 1);
       await wethBridgeContract.emitMessageSent(monitoredEoa, randomAddress(), 1);
 
-      // Our LineaWethBridge will have its l1Bridge contract automatically be set to the mainnet deployment
-      // (0x051...3391). This means that it will NOT pick up the emitted events of the mock deployment contract
-      // unless we overwrite the l1Bridge attribute.
-      adapter.bridges[l1WETHToken].l1Bridge = wethBridgeContract;
-
       const wethBridge = adapter.bridges[l1WETHToken];
-      const result = await wethBridge.queryL1BridgeInitiationEvents(l1WETHToken, monitoredEoa, searchConfig);
+      const result = await wethBridge.queryL1BridgeInitiationEvents(l1WETHToken, monitoredEoa, undefined, searchConfig);
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2WETHToken].length).to.equal(1);
       expect(result[l2WETHToken][0].to).to.equal(monitoredEoa);
@@ -123,11 +125,13 @@ describe("Cross Chain Adapter: Linea", async function () {
       await wethBridgeContract.emitMessageClaimed(expectedMessageHash);
       await wethBridgeContract.emitMessageClaimed(otherMessageHash);
 
-      adapter.bridges[l1WETHToken].l1Bridge = wethBridgeContract;
-      adapter.bridges[l1WETHToken].l2Bridge = wethBridgeContract;
-
       const wethBridge = adapter.bridges[l1WETHToken];
-      const result = await wethBridge.queryL2BridgeFinalizationEvents(l1WETHToken, monitoredEoa, searchConfig);
+      const result = await wethBridge.queryL2BridgeFinalizationEvents(
+        l1WETHToken,
+        monitoredEoa,
+        undefined,
+        searchConfig
+      );
 
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2WETHToken][0].amount).to.equal(1);
@@ -143,16 +147,7 @@ describe("Cross Chain Adapter: Linea", async function () {
         otherMessageHash
       );
       await wethBridgeContract.emitMessageClaimed(messageHash);
-
-      // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
-      // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
-      adapter.monitoredAddresses.push(monitoredEoa);
-      const blockNumber = await adapter.spokePoolClients[hubChainId].spokePool.provider.getBlockNumber();
-      adapter.spokePoolClients[hubChainId].latestBlockSearched = blockNumber;
-      adapter.spokePoolClients[l2ChainId].latestBlockSearched = blockNumber;
-      adapter.bridges[l1WETHToken].l1Bridge = wethBridgeContract;
-      adapter.bridges[l1WETHToken].l2Bridge = wethBridgeContract;
-
+      await adapter.updateSpokePoolClients();
       const result = await adapter.getOutstandingCrossChainTransfers([l1WETHToken]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
@@ -168,10 +163,9 @@ describe("Cross Chain Adapter: Linea", async function () {
       await usdcBridgeContract.emitDeposited(randomAddress(), monitoredEoa);
       await usdcBridgeContract.emitDeposited(monitoredEoa, randomAddress());
 
-      adapter.bridges[l1USDCToken].l1Bridge = usdcBridgeContract;
       const usdcBridge = adapter.bridges[l1USDCToken];
+      const result = await usdcBridge.queryL1BridgeInitiationEvents(l1USDCToken, monitoredEoa, undefined, searchConfig);
 
-      const result = await usdcBridge.queryL1BridgeInitiationEvents(l1USDCToken, monitoredEoa, searchConfig);
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2USDCToken][0].to).to.equal(monitoredEoa);
     });
@@ -179,11 +173,14 @@ describe("Cross Chain Adapter: Linea", async function () {
       await usdcBridgeContract.emitReceivedFromOtherLayer(randomAddress());
       await usdcBridgeContract.emitReceivedFromOtherLayer(monitoredEoa);
 
-      adapter.bridges[l1USDCToken].l1Bridge = usdcBridgeContract;
-      adapter.bridges[l1USDCToken].l2Bridge = usdcBridgeContract;
-
       const usdcBridge = adapter.bridges[l1USDCToken];
-      const result = await usdcBridge.queryL2BridgeFinalizationEvents(l1USDCToken, monitoredEoa, searchConfig);
+      const result = await usdcBridge.queryL2BridgeFinalizationEvents(
+        l1USDCToken,
+        monitoredEoa,
+        undefined,
+        searchConfig
+      );
+
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2USDCToken][0].to).to.equal(monitoredEoa);
     });
@@ -192,13 +189,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       const unfinalizedTx = await usdcBridgeContract.emitDeposited(randomAddress(), monitoredEoa);
       await usdcBridgeContract.emitReceivedFromOtherLayer(monitoredEoa);
 
-      adapter.monitoredAddresses.push(monitoredEoa);
-      const blockNumber = await adapter.spokePoolClients[hubChainId].spokePool.provider.getBlockNumber();
-      adapter.spokePoolClients[hubChainId].latestBlockSearched = blockNumber;
-      adapter.spokePoolClients[l2ChainId].latestBlockSearched = blockNumber;
-      adapter.bridges[l1USDCToken].l1Bridge = usdcBridgeContract;
-      adapter.bridges[l1USDCToken].l2Bridge = usdcBridgeContract;
-
+      await adapter.updateSpokePoolClients();
       const result = await adapter.getOutstandingCrossChainTransfers([l1USDCToken]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
@@ -215,10 +206,9 @@ describe("Cross Chain Adapter: Linea", async function () {
       await erc20BridgeContract.emitBridgingInitiated(monitoredEoa, randomAddress(), l1Token);
       await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, randomAddress());
 
-      adapter.bridges[l1Token].l1Bridge = erc20BridgeContract;
       const erc20Bridge = adapter.bridges[l1Token];
+      const result = await erc20Bridge.queryL1BridgeInitiationEvents(l1Token, monitoredEoa, undefined, searchConfig);
 
-      const result = await erc20Bridge.queryL1BridgeInitiationEvents(l1Token, monitoredEoa, searchConfig);
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2Token][0].to).to.equal(monitoredEoa);
     });
@@ -228,11 +218,9 @@ describe("Cross Chain Adapter: Linea", async function () {
       await erc20BridgeContract.emitBridgingFinalized(randomAddress(), monitoredEoa);
       await erc20BridgeContract.emitBridgingFinalized(l1Token, randomAddress());
 
-      adapter.bridges[l1Token].l1Bridge = erc20BridgeContract;
-      adapter.bridges[l1Token].l2Bridge = erc20BridgeContract;
       const erc20Bridge = adapter.bridges[l1Token];
+      const result = await erc20Bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredEoa, undefined, searchConfig);
 
-      const result = await erc20Bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredEoa, searchConfig);
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2Token][0].to).to.equal(monitoredEoa);
     });
@@ -241,13 +229,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       const unfinalizedTx = await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);
       await erc20BridgeContract.emitBridgingFinalized(l1Token, monitoredEoa);
 
-      adapter.monitoredAddresses.push(monitoredEoa);
-      const blockNumber = await adapter.spokePoolClients[hubChainId].spokePool.provider.getBlockNumber();
-      adapter.spokePoolClients[hubChainId].latestBlockSearched = blockNumber;
-      adapter.spokePoolClients[l2ChainId].latestBlockSearched = blockNumber;
-      adapter.bridges[l1Token].l1Bridge = erc20BridgeContract;
-      adapter.bridges[l1Token].l2Bridge = erc20BridgeContract;
-
+      await adapter.updateSpokePoolClients();
       const result = await adapter.getOutstandingCrossChainTransfers([l1Token]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
@@ -290,3 +272,21 @@ describe("Cross Chain Adapter: Linea", async function () {
     expect(erc20Bridge.l2Bridge.address) === CONTRACT_ADDRESSES[l2ChainId]["lineaL2TokenBridge"].address;
   });
 });
+
+class MockBaseChainAdapter extends BaseChainAdapter {
+  setTargetL1Bridge(l1Token: string, l1Bridge: Contract) {
+    this.bridges[l1Token].l1Bridge = l1Bridge;
+  }
+
+  setTargetL2Bridge(l1Token: string, l2Bridge: Contract) {
+    this.bridges[l1Token].l2Bridge = l2Bridge;
+  }
+
+  async updateSpokePoolClients() {
+    // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
+    // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
+    const blockNumber = await this.spokePoolClients[this.hubChainId].spokePool.provider.getBlockNumber();
+    this.spokePoolClients[this.hubChainId].latestBlockSearched = blockNumber;
+    this.spokePoolClients[this.chainId].latestBlockSearched = blockNumber;
+  }
+}

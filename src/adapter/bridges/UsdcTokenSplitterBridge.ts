@@ -49,21 +49,18 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
-      this.cctpBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, eventConfig),
-      this.canonicalBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, eventConfig),
+      this.cctpBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, eventConfig),
+      this.canonicalBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, eventConfig),
     ]);
     // Reduce the events to a single Object. If there are any duplicate keys, merge the events.
     return events.reduce((acc, event) => {
       Object.entries(event).forEach(([l2Token, events]) => {
-        if (l2Token in acc) {
-          acc[l2Token] = acc[l2Token].concat(events);
-        } else {
-          acc[l2Token] = events;
-        }
+        acc[l2Token] = (acc[l2Token] ?? []).concat(events);
       });
       return acc;
     }, {});
@@ -72,21 +69,18 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
-      this.cctpBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, eventConfig),
-      this.canonicalBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, eventConfig),
+      this.cctpBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, toAddress, eventConfig),
+      this.canonicalBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, toAddress, eventConfig),
     ]);
     // Reduce the events to a single object. If there are any duplicate keys, merge the events.
     return events.reduce((acc, event) => {
       Object.entries(event).forEach(([l2Token, events]) => {
-        if (l2Token in acc) {
-          acc[l2Token] = acc[l2Token].concat(events);
-        } else {
-          acc[l2Token] = events;
-        }
+        acc[l2Token] = (acc[l2Token] ?? []).concat(events);
       });
       return acc;
     }, {});

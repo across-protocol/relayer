@@ -25,10 +25,19 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     monitoredEoa = monitoredEoaAccount.address;
     atomicDepositorAddress = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].atomicDepositor.address;
 
-    wethBridge = new OpStackWethBridge(CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, monitoredEoaAccount, monitoredEoaAccount);
+    wethBridge = new MockOpStackWethBridge(
+      CHAIN_IDs.OPTIMISM,
+      CHAIN_IDs.MAINNET,
+      monitoredEoaAccount,
+      monitoredEoaAccount
+    );
 
     wethBridgeContract = await (await getContractFactory("OpStackWethBridge", monitoredEoaAccount)).deploy();
     wethContract = await (await getContractFactory("WETH9", monitoredEoaAccount)).deploy();
+
+    wethBridge.setL1Bridge(wethBridgeContract);
+    wethBridge.setL2Bridge(wethBridgeContract);
+    wethBridge.setWeth(wethContract);
   });
 
   describe("WETH", function () {
@@ -40,12 +49,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await wethBridgeContract.emitDepositInitiated(atomicDepositorAddress, randomAddress(), 1);
       await wethBridgeContract.emitDepositInitiated(atomicDepositorAddress, monitoredEoa, 1);
       const result = (
-        await wethBridge.queryL1BridgeInitiationEvents(
-          wethContract.address,
-          monitoredEoa,
-          searchConfig,
-          wethBridgeContract
-        )
+        await wethBridge.queryL1BridgeInitiationEvents(wethContract.address, monitoredEoa, undefined, searchConfig)
       )[TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.OPTIMISM]];
       expect(result.length).to.equal(1);
       expect(result[0].from).to.equal(atomicDepositorAddress);
@@ -61,26 +65,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       const convertResults = (result: Record<string, Event[]>) =>
         result[TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.OPTIMISM]];
       const emptyResult = convertResults(
-        await wethBridge.queryL2BridgeFinalizationEvents(
-          wethContract.address,
-          monitoredEoa,
-          searchConfig,
-          wethBridgeContract,
-          wethContract
-        )
+        await wethBridge.queryL2BridgeFinalizationEvents(wethContract.address, monitoredEoa, undefined, searchConfig)
       );
       expect(emptyResult.length).to.equal(0);
 
       // Mine Deposit event now.
       await wethContract.connect(monitoredEoaAccount).deposit({ value: 0 });
       const result = convertResults(
-        await wethBridge.queryL2BridgeFinalizationEvents(
-          wethContract.address,
-          monitoredEoa,
-          searchConfig,
-          wethBridgeContract,
-          wethContract
-        )
+        await wethBridge.queryL2BridgeFinalizationEvents(wethContract.address, monitoredEoa, undefined, searchConfig)
       );
       expect(result.length).to.equal(1);
       expect(result[0].from).to.equal(atomicDepositorAddress);
@@ -88,3 +80,17 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     });
   });
 });
+
+class MockOpStackWethBridge extends OpStackWethBridge {
+  setL1Bridge(l1Bridge: Contract) {
+    this.l1Bridge = l1Bridge;
+  }
+
+  setL2Bridge(l2Bridge: Contract) {
+    this.l2Bridge = l2Bridge;
+  }
+
+  setWeth(weth: Contract) {
+    this.l2Weth = weth;
+  }
+}

@@ -36,6 +36,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
@@ -53,6 +54,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // TODO: This can probably be refactored to save an RPC call since this is called in parallel with

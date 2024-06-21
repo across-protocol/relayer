@@ -32,6 +32,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
@@ -49,6 +50,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(

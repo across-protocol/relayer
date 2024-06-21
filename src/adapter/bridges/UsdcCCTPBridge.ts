@@ -51,6 +51,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
@@ -73,6 +74,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
+    toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Lint Appeasement
@@ -81,9 +83,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     eventConfig;
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
 
-    // Per the documentation of the BaseAdapter's computeOutstandingCrossChainTransfers method, we can return an empty array here
-    // and only return the relevant outstanding events from queryL1BridgeInitiationEvents.
-    // Relevant link: https://github.com/across-protocol/relayer/blob/master/src/clients/bridges/BaseAdapter.ts#L189
+    // The function queryL1BridgeInitiationEvents already comuptes outstanding CCTP Bridge transfers,
+    // so we can return nothing here.
     return Promise.resolve({});
   }
 }
