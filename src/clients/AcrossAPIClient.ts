@@ -60,7 +60,7 @@ export class AcrossApiClient {
     const tokens = this.tokensQuery.filter((token) => enabledTokens.includes(token));
     this.logger.debug({
       at: "AcrossAPIClient",
-      message: "Querying /liquidReserves",
+      message: "Querying /liquid-reserves",
       timeout: this.timeout,
       tokens,
       endpoint: this.endpoint,
