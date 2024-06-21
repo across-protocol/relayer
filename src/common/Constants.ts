@@ -455,4 +455,15 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { l1: string; l2: st
     l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
     l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
   },
+}
+
+// Expected worst-case time for message from L1 to propogate to L2 in seconds
+export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
+  59144: 60 * 60,
+  42161: 20 * 60,
+  10: 20 * 60,
+  137: 60 * 60,
+  324: 60 * 60,
+  8453: 20 * 60,
+  34443: 20 * 60,
 };
