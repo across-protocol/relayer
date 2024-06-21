@@ -930,6 +930,26 @@ export class BundleDataClient {
                   return;
                 }
 
+                // slow fill requests for deposits originating from a lite chain are considered invalid
+                if (
+                  this.clients.configStoreClient.isChainLiteChainAtTimestamp(
+                    slowFillRequest.originChainId,
+                    v3RelayHashes[relayDataHash].deposit.quoteTimestamp
+                  )
+                ) {
+                  return;
+                }
+
+                // slow fills requested on a lite chain are considered invalid
+                if (
+                  this.clients.configStoreClient.isChainLiteChainAtTimestamp(
+                    slowFillRequest.destinationChainId,
+                    v3RelayHashes[relayDataHash].deposit.quoteTimestamp
+                  )
+                ) {
+                  return;
+                }
+
                 // If there is no fill matching the relay hash, then this might be a valid slow fill request
                 // that we should produce a slow fill leaf for. Check if the slow fill request is in the
                 // destination chain block range and that the underlying deposit has not expired yet.

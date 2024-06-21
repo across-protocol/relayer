@@ -588,8 +588,21 @@ export class Relayer {
       return;
     }
 
-    const { hubPoolClient, spokePoolClients, multiCallerClient } = this.clients;
+    const { hubPoolClient, spokePoolClients, multiCallerClient, configStoreClient } = this.clients;
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
+
+    // don't request slow fill if origin chain is a lite chain
+    if (configStoreClient.isChainLiteChainAtTimestamp(deposit.originChainId, deposit.quoteTimestamp)) {
+      return;
+    }
+
+    // don't request slow fill if destination is a lite chain
+    if (
+      this.clients.configStoreClient.isChainLiteChainAtTimestamp(deposit.destinationChainId, deposit.quoteTimestamp)
+    ) {
+      return;
+    }
+
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
