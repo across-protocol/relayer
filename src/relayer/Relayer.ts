@@ -319,10 +319,10 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
-    const { hubPoolClient, profitClient, tokenClient, configStoreClient } = this.clients;
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, originatesFromLiteChain } =
+      deposit;
+    const { hubPoolClient, profitClient, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
-    const isLiteChain = configStoreClient.isChainLiteChainAtBlock(originChainId);
 
     // If the deposit does not meet the minimum number of block confirmations, skip it.
     if (deposit.blockNumber > maxBlockNumber) {
@@ -364,7 +364,7 @@ export class Relayer {
       const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
       if (isDefined(repaymentChainId)) {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-        this.fillRelay(deposit, isLiteChain ? originChainId : repaymentChainId, realizedLpFeePct, gasLimit);
+        this.fillRelay(deposit, originatesFromLiteChain ? originChainId : repaymentChainId, realizedLpFeePct, gasLimit);
 
         // Update local balance to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
@@ -372,17 +372,7 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
-      if (isLiteChain) {
-        this.logger.debug({
-          at: "Relayer::evaluateFil::selfRelay",
-          message: `Skipping self relay for lite chain deposit ${depositId}.`,
-          depositId,
-          depositor,
-          recipient,
-          transactionHash: deposit.transactionHash,
-          isLiteChain,
-        });
-      } else {
+      if (!originatesFromLiteChain) {
         // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
         // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
         // expensive fills on (for example) mainnet.
@@ -390,24 +380,11 @@ export class Relayer {
         this.fillRelay(deposit, destinationChainId, lpFeePct);
       }
     } else {
-      // Disable slow fills for lite chains.
-      if (isLiteChain) {
-        this.logger.debug({
-          at: "Relayer::evaluateFil::slowFill",
-          message: `Skipping slow fill for lite chain deposit ${depositId}.`,
-          depositId,
-          depositor,
-          recipient,
-          transactionHash: deposit.transactionHash,
-          isLiteChain,
-        });
-      } else {
-        // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
-        // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
-        tokenClient.captureTokenShortfallForFill(deposit);
-        if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
-          this.requestSlowFill(deposit);
-        }
+      // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
+      // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
+      tokenClient.captureTokenShortfallForFill(deposit);
+      if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
+        this.requestSlowFill(deposit);
       }
     }
   }
@@ -672,8 +649,16 @@ export class Relayer {
     repaymentChainId?: number;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
-    const { inventoryClient, profitClient, configStoreClient } = this.clients;
-    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash } = deposit;
+    const { inventoryClient, profitClient } = this.clients;
+    const {
+      depositId,
+      originChainId,
+      destinationChainId,
+      inputAmount,
+      outputAmount,
+      transactionHash,
+      originatesFromLiteChain,
+    } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
@@ -768,12 +753,8 @@ export class Relayer {
     // accurately.
     //
     // Additionally we don't want to take this code path if the chain is a lite chain because we can't reason about
-    // destination chain repayments on lite chains. We should check this for the most recent block on the config store
-    if (
-      !isDefined(preferredChain) &&
-      !preferredChainIds.includes(destinationChainId) &&
-      !configStoreClient.isChainLiteChainAtBlock(originChainId)
-    ) {
+    // destination chain repayments on lite chains.
+    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !originatesFromLiteChain) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Preferred chains ${JSON.stringify(

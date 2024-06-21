@@ -406,7 +406,7 @@ export class InventoryClient {
     const hubChainId = this.hubPoolClient.chainId;
 
     // Check if the origin chain is currently a lite chain. If it is, then we should only consider the origin chain
-    if (this.hubPoolClient.configStoreClient.isChainLiteChainAtBlock(originChainId)) {
+    if (deposit.originatesFromLiteChain) {
       return [originChainId];
     }
 
