@@ -31,7 +31,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
   ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonBridge;
     const { address: l1GatewayAddress, abi: l1GatewayAbi } = CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1GatewayAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l1Gateway = new Contract(l1GatewayAddress, l1GatewayAbi, l1Signer);

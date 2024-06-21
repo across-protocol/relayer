@@ -30,7 +30,7 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
     const { l1: l1Address, l2: l2Address } = CUSTOM_ARBITRUM_GATEWAYS[l1Token] ?? DEFAULT_ERC20_GATEWAY;
     const l2Abi = CONTRACT_ADDRESSES[l2chainId].arbitrumErc20Gateway.abi;
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [gatewayAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);

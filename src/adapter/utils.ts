@@ -93,7 +93,6 @@ export async function approveTokens(
   const bridges = tokens.flatMap(({ token, bridges }) => bridges.map((bridge) => ({ token, bridge })));
   const approvalMarkdwn = await mapAsync(bridges, async ({ token: l1Token, bridge }) => {
     const txs = [];
-    console.log("HERE BEFORE FIL");
     if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
       txs.push(await runTransaction(logger, l1Token, "approve", [bridge, bnZero]));
     }
