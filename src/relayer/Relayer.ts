@@ -364,7 +364,7 @@ export class Relayer {
       const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
       if (isDefined(repaymentChainId)) {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-        this.fillRelay(deposit, originatesFromLiteChain ? originChainId : repaymentChainId, realizedLpFeePct, gasLimit);
+        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
 
         // Update local balance to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
