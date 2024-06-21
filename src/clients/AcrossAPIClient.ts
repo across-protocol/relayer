@@ -2,11 +2,9 @@ import _ from "lodash";
 import axios, { AxiosError } from "axios";
 import {
   bnZero,
-  isDefined,
   winston,
   BigNumber,
   getCurrentTime,
-  getL2TokenAddresses,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   getRedisCache,
@@ -59,59 +57,24 @@ export class AcrossApiClient {
       throw new Error("HubPoolClient must be updated before AcrossAPIClient");
     }
     const enabledTokens = hubPoolClient.getL1Tokens().map((token) => token.address);
-    const tokensQuery = this.tokensQuery.filter((token) => enabledTokens.includes(token));
+    const tokens = this.tokensQuery.filter((token) => enabledTokens.includes(token));
     this.logger.debug({
       at: "AcrossAPIClient",
-      message: "Querying /limits",
+      message: "Querying /liquidReserves",
       timeout: this.timeout,
-      tokensQuery,
+      tokens,
       endpoint: this.endpoint,
     });
     this.updatedLimits = false;
 
-    // /limits
-    // Store the max deposit limit for each L1 token. The origin chain can be any supported chain
-    // expect the HubPool chain. This assumes the worst-case bridging delay of !mainnet -> mainnet.
-    const data = await Promise.all(
-      tokensQuery.map((l1Token) => {
-        const l2TokenAddresses = getL2TokenAddresses(l1Token);
-        const originChainIds = Object.keys(l2TokenAddresses)
-          .map(Number)
-          .filter((chainId) => {
-            try {
-              // Verify that a token mapping exists on the origin chain.
-              hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId); // throws if not found.
-              return this.chainIds.includes(chainId);
-            } catch {
-              return false;
-            }
-          });
-
-        // No valid deposit routes from mainnet for this token. We won't record a limit for it.
-        if (originChainIds.length === 0) {
-          return undefined;
-        }
-
-        return this.callLimits(l1Token, originChainIds);
-      })
-    );
-
-    tokensQuery.forEach((token, i) => {
-      const resolvedData = data[i];
-      if (isDefined(resolvedData)) {
-        this.limits[token] = data[i].maxDeposit;
-      } else {
-        this.logger.debug({
-          at: "AcrossAPIClient",
-          message: "No valid deposit routes for enabled LP token, skipping",
-          token,
-        });
-      }
-    });
+    // /liquidReserves
+    // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
+    const liquidReserves = await this.callLimits(enabledTokens);
+    tokens.forEach((token, i) => (this.limits[token] = liquidReserves[i]));
 
     this.logger.debug({
       at: "AcrossAPIClient",
-      message: "🏁 Fetched max deposit limits",
+      message: "🏁 Fetched HubPool liquid reserves",
       limits: this.limits,
     });
     this.updatedLimits = true;
@@ -129,74 +92,64 @@ export class AcrossApiClient {
         at: "AcrossApiClient::getLimit",
         message: `No limit stored for l1Token ${l1Token}, defaulting to 0.`,
       });
-      return bnZero;
     }
-    return this.limits[l1Token];
+    return this.limits[l1Token] ?? bnZero;
   }
 
-  getLimitsCacheKey(l1Token: string, originChainId: number): string {
-    return `limits_api_${l1Token}_${originChainId}`;
+  getLimitsCacheKey(l1Tokens: string[]): string {
+    return `limits_api_${l1Tokens.join(",")}`;
   }
 
-  private async callLimits(l1Token: string, originChainIds: number[], timeout = this.timeout): Promise<DepositLimits> {
-    const path = "limits";
+  private async callLimits(l1Tokens: string[], timeout = this.timeout): Promise<BigNumber[]> {
+    const path = "liquid-reserves";
     const url = `${this.endpoint}/${path}`;
 
     const redis = await getRedisCache();
 
     // Assume worst-case payout on mainnet.
-    const destinationChainId = this.hubPoolClient.chainId;
-    for (const originChainId of originChainIds) {
-      const token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, originChainId);
-      const params = { token, originChainId, destinationChainId };
-      if (redis) {
-        try {
-          const cachedLimits = await redis.get<string>(this.getLimitsCacheKey(l1Token, originChainId));
-          if (cachedLimits !== null) {
-            return { maxDeposit: BigNumber.from(cachedLimits) };
-          }
-        } catch (e) {
-          this.logger.debug({
-            at: "AcrossAPIClient",
-            message: "Failed to get cached limits data",
-            l1Token,
-            originChainId,
-            error: e,
-          });
-        }
-      }
+    if (redis) {
       try {
-        const result = await axios(url, { timeout, params });
-        if (!result?.data?.maxDeposit) {
-          this.logger.error({
-            at: "AcrossAPIClient",
-            message: "Invalid response from /limits, expected maxDeposit field.",
-            url,
-            params,
-            result,
-          });
-          continue;
+        const reserves = await redis.get<string>(this.getLimitsCacheKey(l1Tokens));
+        if (reserves !== null) {
+          return reserves.split(",").map(BigNumber.from);
         }
-        if (redis) {
-          // Cache limit for 5 minutes.
-          const baseTtl = 300;
-          // Apply a random margin to spread expiry over a larger time window.
-          const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
-          await redis.set(this.getLimitsCacheKey(l1Token, originChainId), result.data.maxDeposit.toString(), ttl);
-        }
-        return result.data;
-      } catch (err) {
-        const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
-        this.logger.warn({
-          at: "AcrossAPIClient",
-          message: "Failed to get /limits",
-          url,
-          params,
-          msg,
-        });
+      } catch (e) {
+        this.logger.debug({ at: "AcrossAPIClient", message: `Failed to get cached ${path} data.`, l1Tokens, error: e });
       }
     }
 
-    return { maxDeposit: bnZero };
+    const params = { l1Tokens: l1Tokens.join(",") };
+    let liquidReserves: BigNumber[] = [];
+    try {
+      const result = await axios(url, { timeout, params });
+      if (!result?.data) {
+        this.logger.error({
+          at: "AcrossAPIClient",
+          message: `Invalid response from /${path}, expected maxDeposit field.`,
+          url,
+          params,
+          result,
+        });
+      }
+      liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result.data[l1Token] ?? bnZero));
+    } catch (err) {
+      const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
+      this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params, msg });
+      return l1Tokens.map(() => bnZero);
+    }
+
+    if (redis) {
+      // Cache limit for 5 minutes.
+      const baseTtl = 300;
+      // Apply a random margin to spread expiry over a larger time window.
+      const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
+      await redis.set(
+        this.getLimitsCacheKey(l1Tokens),
+        liquidReserves.map((n) => n.toString()),
+        ttl
+      );
+    }
+
+    return liquidReserves;
   }
 }
