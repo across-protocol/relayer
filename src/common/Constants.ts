@@ -329,22 +329,6 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
   80001: 7, // Polygon PoS Mumbai
 };
 
-/**
- * A mapping of chain IDs to tokens on that chain which need their allowance
- * to first be zeroed before setting a new allowance. This is useful for
- * tokens that have a non-standard approval process.
- * @dev this is a generalization for USDT on Ethereum. Other tokens may be added
- */
-export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
-  [CHAIN_IDs.MAINNET]: [
-    // Required for USDT on Mainnet. Spurred by the following vulnerability:
-    // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-    // Essentially the current version of USDT has a vulnerability whose solution
-    // requires the user to have a zero allowance prior to setting an approval.
-    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
-  ],
-};
-
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
@@ -361,6 +345,22 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   84532: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   421614: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BADGER", "BAL", "ACX", "POOL"],
   11155420: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+};
+
+/**
+ * A mapping of chain IDs to tokens on that chain which need their allowance
+ * to first be zeroed before setting a new allowance. This is useful for
+ * tokens that have a non-standard approval process.
+ * @dev this is a generalization for USDT on Ethereum. Other tokens may be added
+ */
+export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
+  [CHAIN_IDs.MAINNET]: [
+    // Required for USDT on Mainnet. Spurred by the following vulnerability:
+    // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+    // Essentially the current version of USDT has a vulnerability whose solution
+    // requires the user to have a zero allowance prior to setting an approval.
+    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
+  ],
 };
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
@@ -455,7 +455,7 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { l1: string; l2: st
     l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
     l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
   },
-}
+};
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
