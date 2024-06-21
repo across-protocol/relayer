@@ -4,8 +4,8 @@ import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class DaiOptimismBridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
 
   private readonly l2Gas = 200000;
 

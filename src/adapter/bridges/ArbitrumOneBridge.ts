@@ -8,11 +8,11 @@ const DEFAULT_ERC20_GATEWAY = {
   l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
 };
 
-export class ArbitrumBridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
+export class ArbitrumOneBridge extends BaseBridgeAdapter {
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
 
-  private readonly l1Gateway: Contract;
+  protected l1Gateway: Contract;
 
   private readonly transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
@@ -76,7 +76,7 @@ export class ArbitrumBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "to", "from")),
     };
   }
 }

@@ -16,10 +16,10 @@ import { processEvent } from "../utils";
  * deposit
  */
 export class PolygonWethBridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
 
-  private readonly atomicDepositor: Contract;
+  protected atomicDepositor: Contract;
 
   constructor(
     l2chainId: number,
@@ -64,7 +64,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "depositReceiver", "depositor")),
     };
   }
 
@@ -79,7 +79,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "value", "to", "from")),
     };
   }
 }

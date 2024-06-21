@@ -1,4 +1,5 @@
 import { Contract, BigNumber, EventSearchConfig, Signer, Provider, getTokenAddressWithCCTP } from "../../utils";
+import { SortableEvent } from "../../interfaces";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;
@@ -7,12 +8,11 @@ export interface BridgeTransactionDetails {
   readonly value?: BigNumber;
 }
 
-export interface BridgeEvent {
+export type BridgeEvent = SortableEvent & {
   to: string;
   from: string;
   amount: BigNumber;
-  transactionHash: string;
-}
+};
 
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 

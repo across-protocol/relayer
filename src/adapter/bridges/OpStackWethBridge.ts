@@ -14,11 +14,11 @@ import { matchL2EthDepositAndWrapEvents, processEvent } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 
-export class WethBridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
-  private readonly atomicDepositor: Contract;
-  private readonly l2Weth: Contract;
+export class OpStackWethBridge extends BaseBridgeAdapter {
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
+  protected atomicDepositor: Contract;
+  protected l2Weth: Contract;
   private readonly hubPoolAddress: string;
 
   private readonly l2Gas = 200000;

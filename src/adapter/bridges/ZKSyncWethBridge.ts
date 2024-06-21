@@ -21,9 +21,9 @@ import { zkSync as zkSyncUtils } from "../../utils/chains";
  * is an async fn).
  */
 export class ZKSyncWethBridge extends BaseBridgeAdapter {
-  private readonly l2Eth: Contract;
-  private readonly l2Weth: Contract;
-  private readonly atomicDepositor: Contract;
+  protected l2Eth: Contract;
+  protected l2Weth: Contract;
+  protected atomicDepositor: Contract;
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
 
@@ -65,7 +65,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
           toAddress,
           this.gasPerPubdataLimit
         )
-      : 2_000_000;
+      : BigNumber.from(2_000_000);
 
     return Promise.resolve({
       contract: this.atomicDepositor,

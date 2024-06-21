@@ -4,8 +4,8 @@ import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class SnxOptimismBridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [

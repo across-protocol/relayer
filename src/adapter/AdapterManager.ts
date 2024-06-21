@@ -64,7 +64,7 @@ export class AdapterManager {
         const bridges = {};
         const l2Signer = spokePoolClients[chainId].spokePool.signer;
 
-        SUPPORTED_TOKENS[chainId].map((symbol) => {
+        SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId][l1Token] ?? CANONICAL_BRIDGE[chainId];
 

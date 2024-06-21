@@ -17,10 +17,10 @@ import { processEvent } from "../utils";
  * deposit
  */
 export class PolygonERC20Bridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
 
-  private readonly l1Gateway: Contract;
+  protected l1Gateway: Contract;
 
   constructor(
     l2chainId: number,
@@ -65,7 +65,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "depositorReceiver", "depositor")),
     };
   }
 
@@ -80,7 +80,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "value", "to", "from")),
     };
   }
 }

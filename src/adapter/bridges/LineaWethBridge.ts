@@ -4,10 +4,10 @@ import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class LineaWethBridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
 
-  private readonly atomicDepositor: Contract;
+  protected atomicDepositor: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaMessageService;

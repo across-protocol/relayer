@@ -1,16 +1,16 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider } from "../utils";
 import {
   BaseBridgeAdapter,
-  DefaultERC20Bridge,
+  OpStackDefaultERC20Bridge,
   SnxOptimismBridge,
   DaiOptimismBridge,
   UsdcTokenSplitterBridge,
-  WethBridge,
+  OpStackWethBridge,
   PolygonWethBridge,
   PolygonERC20Bridge,
   ZKSyncBridge,
   ZKSyncWethBridge,
-  ArbitrumBridge,
+  ArbitrumOneBridge,
   LineaBridge,
   LineaUSDCBridge,
   LineaWethBridge,
@@ -349,7 +349,6 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
-  288: [],
   324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   34443: ["ETH", "WETH", "USDC.e", "USDT", "WBTC"],
@@ -377,12 +376,12 @@ export const CANONICAL_BRIDGE: {
     ): BaseBridgeAdapter;
   };
 } = {
-  10: DefaultERC20Bridge,
+  10: OpStackDefaultERC20Bridge,
   137: PolygonERC20Bridge,
   324: ZKSyncBridge,
-  8453: DefaultERC20Bridge,
-  34443: DefaultERC20Bridge,
-  42161: ArbitrumBridge,
+  8453: OpStackDefaultERC20Bridge,
+  34443: OpStackDefaultERC20Bridge,
+  42161: ArbitrumOneBridge,
   59144: LineaBridge,
 };
 
@@ -405,7 +404,7 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: SnxOptimismBridge,
     [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: DaiOptimismBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: OpStackWethBridge,
   },
   137: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: PolygonWethBridge,
@@ -416,10 +415,10 @@ export const CUSTOM_BRIDGE: {
   },
   8453: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: OpStackWethBridge,
   },
   34443: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: WethBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: OpStackWethBridge,
   },
   42161: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,

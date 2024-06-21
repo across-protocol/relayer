@@ -2,7 +2,7 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../../src/common";
-import { WethBridge } from "../../src/adapter/bridges/WethBridge";
+import { OpStackWethBridge } from "../../src/adapter/bridges/OpStackWethBridge";
 import { Event, Signer } from "ethers";
 
 describe("Cross Chain Adapter: OP Stack", async function () {
@@ -10,7 +10,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
   let atomicDepositorAddress: string;
   let monitoredEoaAccount: Signer;
 
-  let wethBridge: WethBridge;
+  let wethBridge: OpStackWethBridge;
   let wethBridgeContract: Contract;
   let wethContract: Contract;
   let searchConfig: utils.EventSearchConfig;
@@ -25,7 +25,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     monitoredEoa = monitoredEoaAccount.address;
     atomicDepositorAddress = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].atomicDepositor.address;
 
-    wethBridge = new WethBridge(CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, monitoredEoaAccount, monitoredEoaAccount);
+    wethBridge = new OpStackWethBridge(CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, monitoredEoaAccount, monitoredEoaAccount);
 
     wethBridgeContract = await (await getContractFactory("OpStackWethBridge", monitoredEoaAccount)).deploy();
     wethContract = await (await getContractFactory("WETH9", monitoredEoaAccount)).deploy();

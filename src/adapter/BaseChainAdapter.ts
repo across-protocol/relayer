@@ -24,10 +24,13 @@ import {
   mapAsync,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
-import { OutstandingTransfers, SupportedL1Token, SupportedTokenSymbol } from "./types";
 import { approveTokens, getTokenAllowanceFromCache, isMaxAllowance, setTokenAllowanceInCache } from "./utils";
 import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
 import { CONTRACT_ADDRESSES } from "../common";
+import { OutstandingTransfers } from "../interfaces";
+
+export type SupportedL1Token = string;
+export type SupportedTokenSymbol = string;
 
 export class BaseChainAdapter {
   protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;

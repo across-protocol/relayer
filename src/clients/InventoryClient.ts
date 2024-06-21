@@ -25,7 +25,8 @@ import {
   getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { AdapterManager, CrossChainTransferClient } from "./bridges";
+import { AdapterManager, CrossChainTransferClient } from "../adapter";
+// import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { V3Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
@@ -1099,7 +1100,7 @@ export class InventoryClient {
     }
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
+    await this.adapterManager.setL1TokenApprovals(l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {

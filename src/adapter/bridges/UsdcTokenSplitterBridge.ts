@@ -12,8 +12,8 @@ import {
 } from "../../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
-  private readonly cctpBridge: BaseBridgeAdapter;
-  private readonly canonicalBridge: BaseBridgeAdapter;
+  protected cctpBridge: BaseBridgeAdapter;
+  protected canonicalBridge: BaseBridgeAdapter;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const token = chainIsMatic(l2chainId)

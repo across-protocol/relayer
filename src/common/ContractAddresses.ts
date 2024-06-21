@@ -8,8 +8,6 @@ import VOTING_V2_ABI from "./abi/VotingV2.json";
 // OpStack
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
-import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
-import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
 import SNX_OPTIMISM_BRIDGE_L2_ABI from "./abi/SnxOptimismBridgeL2.json";
 // Polygon
@@ -63,7 +61,7 @@ export const CONTRACT_ADDRESSES: {
     },
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
-      abi: DAI_OPTIMISM_BRIDGE_L1_ABI,
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     snxOptimismBridge: {
       address: "0x39Ea01a0298C315d149a490E34B59Dbf2EC7e48F",
@@ -134,7 +132,7 @@ export const CONTRACT_ADDRESSES: {
   10: {
     daiOptimismBridge: {
       address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
-      abi: DAI_OPTIMISM_BRIDGE_L2_ABI,
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
     snxOptimismBridge: {
       address: "0x136b1EC699c62b0606854056f02dC7Bb80482d63",

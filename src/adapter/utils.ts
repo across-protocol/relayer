@@ -117,12 +117,11 @@ export function processEvent(event: Event, amountField: string, toField: string,
     amount: BigNumber;
     to: string;
     from: string;
-    transactionHash: string;
   };
   return {
     amount: eventSpread[amountField],
     to: eventSpread[toField],
     from: eventSpread[fromField],
-    transactionHash: eventSpread.transactionHash,
+    ...eventSpread,
   };
 }

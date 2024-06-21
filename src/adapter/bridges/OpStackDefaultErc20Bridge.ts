@@ -3,9 +3,9 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
-export class DefaultERC20Bridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
+export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
 
   private readonly l2Gas = 200000;
 

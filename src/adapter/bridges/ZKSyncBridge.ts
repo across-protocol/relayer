@@ -14,9 +14,9 @@ import { zkSync as zkSyncUtils } from "../../utils/chains";
  * is an async fn).
  */
 export class ZKSyncBridge extends BaseBridgeAdapter {
-  private readonly l1Bridge: Contract;
-  private readonly l2Bridge: Contract;
-  private readonly zkSyncMailbox: Contract;
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
+  protected zkSyncMailbox: Contract;
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
   private readonly l2GasLimit = 2_000_000; // We should dynamically define this.
@@ -63,7 +63,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
           toAddress,
           this.gasPerPubdataLimit
         )
-      : 2_000_000;
+      : BigNumber.from(2_000_000);
 
     const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider);
     // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
@@ -101,7 +101,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "from")),
     };
   }
 
@@ -117,7 +117,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender")),
     };
   }
 }

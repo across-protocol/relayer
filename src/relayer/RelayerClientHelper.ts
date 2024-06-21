@@ -9,7 +9,8 @@ import {
   TokenClient,
 } from "../clients";
 import { IndexedSpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
-import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+import { CrossChainTransferClient, AdapterManager } from "../adapter";
+// import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
   Clients,
   constructClients,

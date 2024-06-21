@@ -6,8 +6,8 @@ import { processEvent } from "../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
-  private readonly l1CctpTokenBridge: Contract;
-  private readonly l2CctpMessageTransmitter: Contract;
+  protected l1CctpTokenBridge: Contract;
+  protected l2CctpMessageTransmitter: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
@@ -64,9 +64,10 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       fromAddress
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "mintRecipient", "depositor")),
     };
   }
+
   queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
