@@ -557,6 +557,16 @@ export class Relayer {
   }
 
   requestSlowFill(deposit: V3Deposit): void {
+    // Verify that this deposit does not originate on a lite chain, since slow fills are not supported for lite chains.
+    if (deposit.originatesFromLiteChain) {
+      this.logger.warn({
+        at: "Relayer::requestSlowFill",
+        message: "Suppressing slow fill request for deposit originating from lite chain.",
+        deposit,
+      });
+      return;
+    }
+
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
