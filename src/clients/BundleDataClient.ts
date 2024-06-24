@@ -836,6 +836,14 @@ export class BundleDataClient {
                 // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                 // so this fill is validated.
                 v3RelayHashes[relayDataHash].fill = fill;
+
+                // We need to ensure that the repayment chain is the origin chain if the deposit originates
+                // from a lite chain.
+                if (v3RelayHashes[relayDataHash].deposit.originatesFromLiteChain) {
+                  v3RelayHashes[relayDataHash].fill.repaymentChainId =
+                    v3RelayHashes[relayDataHash].deposit.originChainId;
+                }
+
                 if (fill.blockNumber >= destinationChainBlockRange[0]) {
                   validatedBundleV3Fills.push({
                     ...fill,
