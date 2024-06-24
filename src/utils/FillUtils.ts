@@ -8,14 +8,20 @@ export function getRefundInformationFromFill(
   fill: Fill,
   hubPoolClient: HubPoolClient,
   blockRangesForChains: number[][],
-  chainIdListForBundleEvaluationBlockNumbers: number[]
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  originatesFromLiteChain: boolean
 ): {
   chainToSendRefundTo: number;
   repaymentToken: string;
 } {
   // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
   // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
-  const chainToSendRefundTo = sdkUtils.isSlowFill(fill) ? fill.destinationChainId : fill.repaymentChainId;
+  // If the fill is for a deposit originating from the lite chain, the repayment chain is the origin chain.
+  const chainToSendRefundTo = originatesFromLiteChain
+    ? fill.originChainId
+    : sdkUtils.isSlowFill(fill)
+    ? fill.destinationChainId
+    : fill.repaymentChainId;
 
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(

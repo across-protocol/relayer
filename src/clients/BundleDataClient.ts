@@ -306,11 +306,13 @@ export class BundleDataClient {
           return hasMatchingDeposit;
         })
         .forEach((fill) => {
+          const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
           const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
             fill,
             this.clients.hubPoolClient,
             blockRanges,
-            this.chainIdListForBundleEvaluationBlockNumbers
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            matchingDeposit.originatesFromLiteChain
           );
           // Assume that lp fees are 0 for the sake of speed. In the future we could batch compute
           // these or make hardcoded assumptions based on the origin-repayment chain direction. This might result
@@ -836,14 +838,6 @@ export class BundleDataClient {
                 // At this point, the v3RelayHashes entry already existed meaning that there is a matching deposit,
                 // so this fill is validated.
                 v3RelayHashes[relayDataHash].fill = fill;
-
-                // We need to ensure that the repayment chain is the origin chain if the deposit originates
-                // from a lite chain.
-                if (v3RelayHashes[relayDataHash].deposit.originatesFromLiteChain) {
-                  v3RelayHashes[relayDataHash].fill.repaymentChainId =
-                    v3RelayHashes[relayDataHash].deposit.originChainId;
-                }
-
                 if (fill.blockNumber >= destinationChainBlockRange[0]) {
                   validatedBundleV3Fills.push({
                     ...fill,
@@ -890,14 +884,6 @@ export class BundleDataClient {
                   quoteTimestamp: matchedDeposit.quoteTimestamp,
                 });
                 v3RelayHashes[relayDataHash].deposit = matchedDeposit;
-
-                // We need to ensure that the repayment chain is the origin chain if the deposit originates
-                // from a lite chain.
-                if (v3RelayHashes[relayDataHash].deposit.originatesFromLiteChain) {
-                  v3RelayHashes[relayDataHash].fill.repaymentChainId =
-                    v3RelayHashes[relayDataHash].deposit.originChainId;
-                }
-
                 if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
                   fastFillsReplacingSlowFills.push(relayDataHash);
                 }
@@ -1131,7 +1117,8 @@ export class BundleDataClient {
                 fill,
                 this.clients.hubPoolClient,
                 blockRangesForChains,
-                chainIds
+                chainIds,
+                v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit.originatesFromLiteChain
               );
               return {
                 ...fill,
@@ -1168,11 +1155,18 @@ export class BundleDataClient {
     });
     v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {
       const fill = validatedBundleV3Fills[idx];
+      const associatedDeposit = v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit;
+      if (!isDefined(associatedDeposit)) {
+        throw new Error(
+          `Associated deposit not found for fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
+        );
+      }
       const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
         fill,
         this.clients.hubPoolClient,
         blockRangesForChains,
-        chainIds
+        chainIds,
+        associatedDeposit.originatesFromLiteChain
       );
       updateBundleFillsV3(bundleFillsV3, fill, realizedLpFeePct, chainToSendRefundTo, repaymentToken);
     });

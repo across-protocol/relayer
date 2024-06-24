@@ -319,8 +319,7 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, originatesFromLiteChain } =
-      deposit;
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
     const { hubPoolClient, profitClient, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
 
@@ -616,6 +615,12 @@ export class Relayer {
       repaymentChainId,
       realizedLpFeePct,
     });
+
+    // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
+    assert(
+      !deposit.originatesFromLiteChain || repaymentChainId === deposit.originChainId,
+      `Lite chain deposits must be filled on their origin chain. Deposit ${deposit.depositId}.`
+    );
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
