@@ -91,6 +91,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x735aDBbE72226BD52e818E7181953f42E3b0FF21",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_1135: {
+      address: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     polygonRootChainManager: {
       address: "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77",
       abi: POLYGON_ROOT_CHAIN_MANAGER_ABI,
@@ -204,6 +208,19 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   34443: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    weth: {
+      address: "0x4200000000000000000000000000000000000006",
+      abi: WETH_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  1135: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
