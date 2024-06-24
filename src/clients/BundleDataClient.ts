@@ -931,12 +931,7 @@ export class BundleDataClient {
                 }
 
                 // slow fill requests for deposits originating from a lite chain are considered invalid
-                if (
-                  this.clients.configStoreClient.isChainLiteChainAtTimestamp(
-                    slowFillRequest.originChainId,
-                    v3RelayHashes[relayDataHash].deposit.quoteTimestamp
-                  )
-                ) {
+                if (v3RelayHashes[relayDataHash].deposit.originatesFromLiteChain) {
                   return;
                 }
 
