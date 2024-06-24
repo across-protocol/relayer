@@ -555,7 +555,7 @@ export class Relayer {
   requestSlowFill(deposit: V3Deposit): void {
     // Verify that this deposit does not originate on a lite chain, since slow fills are not supported for lite chains.
     if (deposit.originatesFromLiteChain) {
-      this.logger.warn({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit originating from lite chain.",
         deposit,
