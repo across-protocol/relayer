@@ -70,10 +70,10 @@
     axios "^1.6.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@^3.0.3":
-  version "3.0.3"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.0.3.tgz#e5da758f58e968454de37673de49e32206a36c78"
-  integrity sha512-Tn/Su4ZZeBRx20A8wv5ZCzAzDA2wmwDQ0wUjGm8C9yPeewK8WBRb0JMsV2MIKg0RPQWkbxIEmnu1MdfGBSHZYw==
+"@across-protocol/sdk@^3.1.2":
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.2.tgz#61d3486fe91e1a184283b7f4ec5d267dc80fccc4"
+  integrity sha512-2UkvObHlx8bAr0oWy5y4/KB5JO5cz1l7a+r1Nk+2uV6J7i9YH1dfBoA/ACPgbS2poD4SWqY56eysCm8wLhB2eA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.0.1"
