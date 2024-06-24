@@ -1,4 +1,17 @@
-import { object, min, number, optional, string, array, record, coerce, instance, integer, pattern } from "superstruct";
+import {
+  object,
+  min,
+  number,
+  optional,
+  string,
+  array,
+  record,
+  coerce,
+  instance,
+  integer,
+  pattern,
+  boolean,
+} from "superstruct";
 import { BigNumber } from "ethers";
 
 const PositiveIntegerStringSS = pattern(string(), /\d+/);
@@ -40,6 +53,7 @@ const SortableEventSS = {
 };
 
 const V3DepositSS = {
+  originatesFromLiteChain: optional(boolean()),
   destinationChainId: number(),
   quoteTimestamp: number(),
   relayerFeePct: optional(BigNumberType),
