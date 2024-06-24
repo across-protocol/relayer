@@ -890,6 +890,14 @@ export class BundleDataClient {
                   quoteTimestamp: matchedDeposit.quoteTimestamp,
                 });
                 v3RelayHashes[relayDataHash].deposit = matchedDeposit;
+
+                // We need to ensure that the repayment chain is the origin chain if the deposit originates
+                // from a lite chain.
+                if (v3RelayHashes[relayDataHash].deposit.originatesFromLiteChain) {
+                  v3RelayHashes[relayDataHash].fill.repaymentChainId =
+                    v3RelayHashes[relayDataHash].deposit.originChainId;
+                }
+
                 if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
                   fastFillsReplacingSlowFills.push(relayDataHash);
                 }
