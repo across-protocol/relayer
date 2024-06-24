@@ -307,6 +307,11 @@ export class BundleDataClient {
         })
         .forEach((fill) => {
           const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
+          if (!isDefined(matchingDeposit?.originatesFromLiteChain)) {
+            throw new Error(
+              `Associated deposit lite-chain flag not found for fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
+            );
+          }
           const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
             fill,
             this.clients.hubPoolClient,
@@ -1113,6 +1118,12 @@ export class BundleDataClient {
       validatedBundleV3Fills.length > 0
         ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
             validatedBundleV3Fills.map((fill) => {
+              const matchedDeposit = v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit;
+              if (!isDefined(matchedDeposit?.originatesFromLiteChain)) {
+                throw new Error(
+                  `Associated deposit not found for a validated fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
+                );
+              }
               const { chainToSendRefundTo: paymentChainId } = getRefundInformationFromFill(
                 fill,
                 this.clients.hubPoolClient,
@@ -1156,9 +1167,9 @@ export class BundleDataClient {
     v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {
       const fill = validatedBundleV3Fills[idx];
       const associatedDeposit = v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit;
-      if (!isDefined(associatedDeposit)) {
+      if (!isDefined(associatedDeposit?.originatesFromLiteChain)) {
         throw new Error(
-          `Associated deposit not found for fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
+          `Associated deposit lite-chain flag not found for fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
         );
       }
       const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
