@@ -590,6 +590,7 @@ export class ProfitClient {
       exclusivityDeadline: 0,
       exclusiveRelayer: ZERO_ADDRESS,
       message: EMPTY_MESSAGE,
+      originatesFromLiteChain: false, // TODO: We *may* care about this in the future.
     };
 
     // Pre-fetch total gas costs for relays on enabled chains.
