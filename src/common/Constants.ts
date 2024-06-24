@@ -299,7 +299,7 @@ export type Multicall2Call = {
 
 // These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
 // a bundle execution is possible with the funds in the pool.
-export const spokesThatHoldEthAndWeth = [10, 324, 1335, 8453, 34443, 59144];
+export const spokesThatHoldEthAndWeth = [10, 324, 1135, 8453, 34443, 59144];
 
 /**
  * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
@@ -326,7 +326,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  1135: ["WETH", "LSK", "USDC", "USDT"],
+  1135: ["WETH", "USDT"],
   8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   34443: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
