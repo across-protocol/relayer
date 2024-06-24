@@ -7,7 +7,15 @@ export class LineaBridge extends BaseBridgeAdapter {
   protected l1Bridge: Contract;
   protected l2Bridge: Contract;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    _l1Token: string
+  ) {
+    // Lint Appeasement
+    _l1Token;
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1TokenBridge;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2TokenBridge;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);

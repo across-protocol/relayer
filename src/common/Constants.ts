@@ -372,7 +372,7 @@ export const CANONICAL_BRIDGE: {
       hubChainId: number,
       l1Signer: Signer,
       l2SignerOrProvider: Signer | Provider,
-      l2Token?: string
+      l1Token: string
     ): BaseBridgeAdapter;
   };
 } = {
@@ -395,7 +395,7 @@ export const CUSTOM_BRIDGE: {
         hubChainId: number,
         l1Signer: Signer,
         l2SignerOrProvider: Signer | Provider,
-        l2Token?: string
+        l1Token: string
       ): BaseBridgeAdapter;
     };
   };

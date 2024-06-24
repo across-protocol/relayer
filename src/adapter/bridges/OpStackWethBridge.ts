@@ -23,7 +23,15 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
   private readonly l2Gas = 200000;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    _l1Token: string
+  ) {
+    // Lint Appeasement
+    _l1Token;
     super(
       l2chainId,
       hubChainId,

@@ -9,7 +9,6 @@ import {
   CHAIN_IDs,
   mapAsync,
   TOKEN_SYMBOLS_MAP,
-  chainIsMatic,
 } from "../utils";
 import { SpokePoolClient, HubPoolClient } from "../clients";
 import { BaseChainAdapter } from "./";
@@ -68,19 +67,7 @@ export class AdapterManager {
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId][l1Token] ?? CANONICAL_BRIDGE[chainId];
 
-          // For bridges like Arbitrum and Polygon, we need to supply additional information about the token
-          // so that we may properly select the l1Gateway
-          if (chainIsMatic(chainId) && !CUSTOM_BRIDGE[chainId]?.[l1Token]) {
-            bridges[l1Token] = new bridgeConstructor(
-              chainId,
-              hubChainId,
-              l1Signer,
-              l2Signer,
-              this.l2TokenForL1Token(l1Token, chainId)
-            );
-          } else {
-            bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
-          }
+          bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
         });
 
         // Then instantiate a generic adapter.

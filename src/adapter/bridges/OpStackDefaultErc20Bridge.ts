@@ -9,7 +9,15 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
 
   private readonly l2Gas = 200000;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    _l1Token: string
+  ) {
+    // Lint Appeasement
+    _l1Token;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address,
     ]);

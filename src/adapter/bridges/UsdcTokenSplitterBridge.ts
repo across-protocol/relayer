@@ -2,24 +2,26 @@ import { BigNumber, Signer } from "ethers";
 import { CONTRACT_ADDRESSES, CANONICAL_BRIDGE } from "../../common";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import {
-  EventSearchConfig,
-  Provider,
-  TOKEN_SYMBOLS_MAP,
-  compareAddressesSimple,
-  assert,
-  chainIsMatic,
-} from "../../utils";
+import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   protected cctpBridge: BaseBridgeAdapter;
   protected canonicalBridge: BaseBridgeAdapter;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    const token = chainIsMatic(l2chainId)
-      ? TOKEN_SYMBOLS_MAP["USDC.e"].addresses[l2chainId]
-      : TOKEN_SYMBOLS_MAP["USDC.e"].addresses[hubChainId];
-    const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](l2chainId, hubChainId, l1Signer, l2SignerOrProvider, token);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    l1Token: string
+  ) {
+    const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](
+      l2chainId,
+      hubChainId,
+      l1Signer,
+      l2SignerOrProvider,
+      l1Token
+    );
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address,

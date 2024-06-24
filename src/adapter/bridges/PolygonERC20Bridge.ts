@@ -7,6 +7,7 @@ import {
   Provider,
   bnToHex,
   ZERO_ADDRESS,
+  getL2TokenAddresses,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -27,8 +28,13 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l2Token: string
+    l1Token: string
   ) {
+    // @dev This method fetches the *SDK's* most up-to-date values of
+    // TOKEN_SYMBOLS_MAP. This constructor will therefore break if
+    // either the SDK, or the constants dependency in the SDK, is not
+    // up-to-date.
+    const l2TokenAddresses = getL2TokenAddresses(l1Token);
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonBridge;
     const { address: l1GatewayAddress, abi: l1GatewayAbi } = CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
@@ -38,7 +44,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
 
     // For Polygon, we look for mint events triggered by the L2 token, not the L2 Bridge.
     const l2Abi = CONTRACT_ADDRESSES[l2chainId].withdrawableErc20.abi;
-    this.l2Bridge = new Contract(l2Token, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2TokenAddresses[l2chainId], l2Abi, l2SignerOrProvider);
   }
 
   async constructL1ToL2Txn(
