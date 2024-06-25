@@ -6,26 +6,24 @@ export class DaiOptimismBridge extends OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
-    bridgeAddresses: Partial<{
-      l1: string;
-      l2: string;
-    }> = {}
-  ) {
-    bridgeAddresses.l1 = bridgeAddresses.l1 || CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge.address;
-    bridgeAddresses.l2 = bridgeAddresses.l2 || CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge.address;
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
+      CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge.address,
+    ]);
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [bridgeAddresses.l1]);
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
+    this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
-    this.l1Bridge = new Contract(bridgeAddresses.l1, l1Abi, l1Signer);
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge;
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+  }
 
-    const { abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge;
-    this.l2Bridge = new Contract(bridgeAddresses.l2, l2Abi, l2SignerOrProvider);
+  protected getL1Bridge(): Contract {
+    return this.l1Bridge;
+  }
+
+  protected getL2Bridge(): Contract {
+    return this.l2Bridge;
   }
 
   constructL1ToL2Txn(
@@ -36,7 +34,7 @@ export class DaiOptimismBridge extends OpStackBridge {
     l2Gas: number
   ): BridgeTransactionDetails {
     return {
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "depositERC20",
       args: [l1Token, l2Token, amount, l2Gas, "0x"],
     };
@@ -47,10 +45,11 @@ export class DaiOptimismBridge extends OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l1Bridge = this.getL1Bridge();
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+        l1Bridge,
+        l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
         eventConfig
       ),
     };
@@ -61,10 +60,11 @@ export class DaiOptimismBridge extends OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l2Bridge = this.getL2Bridge();
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+        l2Bridge,
+        l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
         eventConfig
       ),
     };

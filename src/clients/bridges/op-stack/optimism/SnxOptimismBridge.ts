@@ -6,26 +6,24 @@ export class SnxOptimismBridge extends OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
-    bridgeAddresses: Partial<{
-      l1: string;
-      l2: string;
-    }> = {}
-  ) {
-    bridgeAddresses.l1 = bridgeAddresses.l1 || CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address;
-    bridgeAddresses.l2 = bridgeAddresses.l2 || CONTRACT_ADDRESSES[l2chainId].snxOptimismBridge.address;
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
+      CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address,
+    ]);
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [bridgeAddresses.l1]);
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge;
+    this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge;
-    this.l1Bridge = new Contract(bridgeAddresses.l1, l1Abi, l1Signer);
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].snxOptimismBridge;
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+  }
 
-    const { abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].snxOptimismBridge;
-    this.l2Bridge = new Contract(bridgeAddresses.l2, l2Abi, l2SignerOrProvider);
+  protected getL1Bridge(): Contract {
+    return this.l1Bridge;
+  }
+
+  protected getL2Bridge(): Contract {
+    return this.l2Bridge;
   }
 
   constructL1ToL2Txn(
@@ -37,7 +35,7 @@ export class SnxOptimismBridge extends OpStackBridge {
     l2Gas: number
   ): BridgeTransactionDetails {
     return {
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "depositTo",
       args: [toAddress, amount],
     };
@@ -48,12 +46,13 @@ export class SnxOptimismBridge extends OpStackBridge {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l1Bridge = this.getL1Bridge();
     // @dev For the SnxBridge, only the `toAddress` is indexed on the L2 event so we treat the `fromAddress` as the
     // toAddress when fetching the L1 event.
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.DepositInitiated(undefined, toAddress),
+        l1Bridge,
+        l1Bridge.filters.DepositInitiated(undefined, toAddress),
         eventConfig
       ),
     };
@@ -64,10 +63,11 @@ export class SnxOptimismBridge extends OpStackBridge {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l2Bridge = this.getL2Bridge();
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.DepositFinalized(toAddress),
+        l2Bridge,
+        l2Bridge.filters.DepositFinalized(toAddress),
         eventConfig
       ),
     };
