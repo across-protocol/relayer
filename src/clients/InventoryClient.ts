@@ -406,7 +406,7 @@ export class InventoryClient {
     const hubChainId = this.hubPoolClient.chainId;
 
     // Check if the deposit originates from a lite chain.
-    if (deposit.originatesFromLiteChain) {
+    if (deposit.fromLiteChain) {
       return [originChainId];
     }
 

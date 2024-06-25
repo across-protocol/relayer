@@ -307,7 +307,7 @@ export class BundleDataClient {
         })
         .forEach((fill) => {
           const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
-          if (!isDefined(matchingDeposit?.originatesFromLiteChain)) {
+          if (!isDefined(matchingDeposit?.fromLiteChain)) {
             throw new Error(
               `Associated deposit lite-chain flag not found for fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
             );
@@ -317,7 +317,7 @@ export class BundleDataClient {
             this.clients.hubPoolClient,
             blockRanges,
             this.chainIdListForBundleEvaluationBlockNumbers,
-            matchingDeposit.originatesFromLiteChain
+            matchingDeposit.fromLiteChain
           );
           // Assume that lp fees are 0 for the sake of speed. In the future we could batch compute
           // these or make hardcoded assumptions based on the origin-repayment chain direction. This might result
@@ -1119,7 +1119,7 @@ export class BundleDataClient {
         ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
             validatedBundleV3Fills.map((fill) => {
               const matchedDeposit = v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit;
-              if (!isDefined(matchedDeposit?.originatesFromLiteChain)) {
+              if (!isDefined(matchedDeposit?.fromLiteChain)) {
                 throw new Error(
                   `Associated deposit not found for a validated fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
                 );
@@ -1129,7 +1129,7 @@ export class BundleDataClient {
                 this.clients.hubPoolClient,
                 blockRangesForChains,
                 chainIds,
-                v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit.originatesFromLiteChain
+                v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit.fromLiteChain
               );
               return {
                 ...fill,
@@ -1167,7 +1167,7 @@ export class BundleDataClient {
     v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {
       const fill = validatedBundleV3Fills[idx];
       const associatedDeposit = v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit;
-      if (!isDefined(associatedDeposit?.originatesFromLiteChain)) {
+      if (!isDefined(associatedDeposit?.fromLiteChain)) {
         throw new Error(
           `Associated deposit lite-chain flag not found for fill: (Origin Chain ID: ${fill.originChainId}, Deposit ID: ${fill.depositId})`
         );
@@ -1177,7 +1177,7 @@ export class BundleDataClient {
         this.clients.hubPoolClient,
         blockRangesForChains,
         chainIds,
-        associatedDeposit.originatesFromLiteChain
+        associatedDeposit.fromLiteChain
       );
       updateBundleFillsV3(bundleFillsV3, fill, realizedLpFeePct, chainToSendRefundTo, repaymentToken);
     });

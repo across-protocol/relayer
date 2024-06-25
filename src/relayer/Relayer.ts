@@ -375,7 +375,7 @@ export class Relayer {
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
       const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
-      this.fillRelay(deposit, deposit.originatesFromLiteChain ? deposit.originChainId : destinationChainId, lpFeePct);
+      this.fillRelay(deposit, deposit.fromLiteChain ? deposit.originChainId : destinationChainId, lpFeePct);
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
@@ -554,7 +554,7 @@ export class Relayer {
 
   requestSlowFill(deposit: V3Deposit): void {
     // Verify that this deposit does not originate on a lite chain, since slow fills are not supported for lite chains.
-    if (deposit.originatesFromLiteChain) {
+    if (deposit.fromLiteChain) {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit originating from lite chain.",
@@ -618,7 +618,7 @@ export class Relayer {
 
     // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
     assert(
-      !deposit.originatesFromLiteChain || repaymentChainId === deposit.originChainId,
+      !deposit.fromLiteChain || repaymentChainId === deposit.originChainId,
       `Lite chain deposits must be filled on their origin chain. Deposit ${deposit.depositId}.`
     );
 
@@ -670,7 +670,7 @@ export class Relayer {
       inputAmount,
       outputAmount,
       transactionHash,
-      originatesFromLiteChain,
+      fromLiteChain,
     } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
@@ -767,7 +767,7 @@ export class Relayer {
     //
     // Additionally we don't want to take this code path if the chain is a lite chain because we can't reason about
     // destination chain repayments on lite chains.
-    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !originatesFromLiteChain) {
+    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !fromLiteChain) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Preferred chains ${JSON.stringify(

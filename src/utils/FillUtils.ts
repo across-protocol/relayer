@@ -9,7 +9,7 @@ export function getRefundInformationFromFill(
   hubPoolClient: HubPoolClient,
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  originatesFromLiteChain: boolean
+  fromLiteChain: boolean
 ): {
   chainToSendRefundTo: number;
   repaymentToken: string;
@@ -19,7 +19,7 @@ export function getRefundInformationFromFill(
   let chainToSendRefundTo = sdkUtils.isSlowFill(fill) ? fill.destinationChainId : fill.repaymentChainId;
   // If the fill is for a deposit originating from the lite chain, the repayment chain is the origin chain
   // regardless of whether it is a slow or fast fill (we ignore slow fills but this is for posterity).
-  if (originatesFromLiteChain) {
+  if (fromLiteChain) {
     chainToSendRefundTo = fill.originChainId;
   }
 

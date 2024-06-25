@@ -53,7 +53,8 @@ const SortableEventSS = {
 };
 
 const V3DepositSS = {
-  originatesFromLiteChain: optional(boolean()),
+  fromLiteChain: optional(boolean()),
+  toLiteChain: optional(boolean()),
   destinationChainId: number(),
   quoteTimestamp: number(),
   relayerFeePct: optional(BigNumberType),
