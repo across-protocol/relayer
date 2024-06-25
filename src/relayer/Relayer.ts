@@ -555,7 +555,7 @@ export class Relayer {
   requestSlowFill(deposit: V3Deposit): void {
     // Verify that this deposit does not originate on a lite chain, since slow fills are not supported for lite chains.
     if (deposit.fromLiteChain) {
-      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
+      this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit originating from lite chain.",
         deposit,
@@ -663,15 +663,8 @@ export class Relayer {
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
-    const {
-      depositId,
-      originChainId,
-      destinationChainId,
-      inputAmount,
-      outputAmount,
-      transactionHash,
-      fromLiteChain,
-    } = deposit;
+    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash, fromLiteChain } =
+      deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
