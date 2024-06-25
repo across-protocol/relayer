@@ -175,7 +175,8 @@ export class OpStackAdapter extends BaseAdapter {
     return null;
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
+    const address = await this.getSigner(this.hubChainId).getAddress();
     const l1TokenListToApprove = [];
     // We need to approve the Atomic depositor to bridge WETH to optimism via the ETH route.
     const associatedL1Bridges = l1Tokens.flatMap((l1Token) => {

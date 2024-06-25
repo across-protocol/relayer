@@ -300,7 +300,8 @@ export class ZKSyncAdapter extends BaseAdapter {
     return null;
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
+    const address = await this.getSigner(this.hubChainId).getAddress();
     const associatedL1Bridges = l1Tokens
       .filter((token) => this.isSupportedToken(token))
       .map((l1Token) => this.getL1TokenBridge(l1Token).address);

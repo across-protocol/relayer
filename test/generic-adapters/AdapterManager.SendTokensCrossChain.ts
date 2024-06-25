@@ -1,6 +1,6 @@
 import * as zksync from "zksync-web3";
 import { SpokePoolClient } from "../../src/clients";
-import { AdapterManager } from "../../src/adapter"; // Tested
+import { GenericAdapterManager } from "../../src/adapter/AdapterManager"; // Tested
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../src/common";
 import {
   bnToHex,
@@ -78,7 +78,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();
-    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
+    adapterManager = new GenericAdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
 
     await constructChainSpecificFakes();
 

@@ -32,6 +32,8 @@ import {
 } from "../../utils";
 import { approveTokens, getAllowanceCacheKey, getTokenAllowanceFromCache, setTokenAllowanceInCache } from "./utils";
 
+import { BaseChainAdapter } from "../../adapter";
+
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
   transactionHash: string;
@@ -47,13 +49,11 @@ interface Events {
 type SupportedL1Token = string;
 type SupportedTokenSymbol = string;
 
-export abstract class BaseAdapter {
+export class BaseAdapter extends BaseChainAdapter {
   static readonly HUB_CHAIN_ID = 1; // @todo: Make dynamic
 
   readonly hubChainId = BaseAdapter.HUB_CHAIN_ID;
 
-  baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
-  baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   readonly wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
   readonly atomicDepositorAddress = CONTRACT_ADDRESSES[this.hubChainId]?.atomicDepositor.address;
 
@@ -69,8 +69,10 @@ export abstract class BaseAdapter {
     readonly logger: winston.Logger,
     readonly supportedTokens: SupportedTokenSymbol[]
   ) {
-    this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
-    this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
+    // If the BaseAdapter constructor is being called, we know the caller is a constructor of one of the tailored
+    // chain adapters, so we do not need to supply any bridges/gas multiplier, since the bridging logic is done
+    // in the adapters themselves.
+    super(spokePoolClients, chainId, BaseAdapter.HUB_CHAIN_ID, monitoredAddresses, logger, supportedTokens, {}, 1);
     this.txnClient = new TransactionClient(logger);
   }
 
@@ -378,22 +380,4 @@ export abstract class BaseAdapter {
       )[0];
     }
   }
-
-  abstract getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers>;
-
-  abstract sendTokenToTargetChain(
-    address: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber,
-    simMode: boolean
-  ): Promise<TransactionResponse>;
-
-  abstract checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void>;
-
-  abstract wrapEthIfAboveThreshold(
-    threshold: BigNumber,
-    target: BigNumber,
-    simMode: boolean
-  ): Promise<TransactionResponse | null>;
 }

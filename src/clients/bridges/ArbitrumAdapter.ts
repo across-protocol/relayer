@@ -168,7 +168,8 @@ export class ArbitrumAdapter extends CCTPAdapter {
     return this.computeOutstandingCrossChainTransfers(availableL1Tokens);
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
+    const address = await this.getSigner(this.hubChainId).getAddress();
     const l1TokenListToApprove = [];
 
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.

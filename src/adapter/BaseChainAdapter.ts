@@ -38,7 +38,7 @@ export class BaseChainAdapter {
   private transactionClient: TransactionClient;
 
   constructor(
-    private readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    protected readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     protected readonly chainId: number,
     protected readonly hubChainId: number,
     protected readonly monitoredAddresses: string[],
@@ -61,11 +61,11 @@ export class BaseChainAdapter {
     this.logger[level]({ at: name, message, ...data });
   }
 
-  private getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {
+  protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
-  private getSigner(chainId: number): Signer {
+  protected getSigner(chainId: number): Signer {
     return this.spokePoolClients[chainId].spokePool.signer;
   }
 

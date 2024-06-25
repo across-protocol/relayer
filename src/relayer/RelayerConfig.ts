@@ -53,6 +53,9 @@ export class RelayerConfig extends CommonConfig {
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
 
+  // TODO: Remove this config item once we fully move to generic chain adapters.
+  readonly useGenericAdapter: boolean;
+
   constructor(env: ProcessEnv) {
     const {
       RELAYER_ORIGIN_CHAINS,
@@ -77,8 +80,11 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
       RELAYER_SPOKEPOOL_INDEXER_PATH,
+      RELAYER_USE_GENERIC_ADAPTER,
     } = env;
     super(env);
+
+    this.useGenericAdapter = RELAYER_USE_GENERIC_ADAPTER === "true";
 
     // External indexing is dependent on looping mode being configured.
     this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";

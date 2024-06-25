@@ -31,7 +31,8 @@ export class LineaAdapter extends BaseAdapter {
     const { LINEA } = CHAIN_IDs;
     super(spokePoolClients, LINEA, monitoredAddresses, logger, SUPPORTED_TOKENS[LINEA]);
   }
-  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
+    const address = await this.getSigner(this.hubChainId).getAddress();
     // Note: Linea has two bridges: one for
     const associatedL1Bridges = l1Tokens
       .map((l1Token) => {

@@ -39,6 +39,9 @@ export class MonitorConfig extends CommonConfig {
     token: string;
   }[] = [];
 
+  // TODO: Remove this config once we fully migrate to generic adapters.
+  readonly useGenericAdapter: boolean;
+
   constructor(env: ProcessEnv) {
     super(env);
 
@@ -58,6 +61,7 @@ export class MonitorConfig extends CommonConfig {
       REFILL_BALANCES,
       REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
+      MONITOR_USE_GENERIC_ADAPTER,
     } = env;
 
     this.botModes = {
@@ -68,6 +72,8 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
     };
+
+    this.useGenericAdapter = MONITOR_USE_GENERIC_ADAPTER === "true";
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);

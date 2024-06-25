@@ -1,14 +1,16 @@
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, BaseAdapter } from "./";
+import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter } from "./";
 import { DaiOptimismBridge, SnxOptimismBridge } from "./op-stack/optimism";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { utils } from "@across-protocol/sdk";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
 
+import { BaseChainAdapter } from "../../adapter";
+
 export class AdapterManager {
-  public adapters: { [chainId: number]: BaseAdapter } = {};
+  public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -191,14 +193,14 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async setL1TokenApprovals(l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     for (const chainId of this.supportedChains()) {
       const adapter = this.adapters[chainId];
       if (isDefined(adapter)) {
         const hubTokens = l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, chainId));
-        await adapter.checkTokenApprovals(address, hubTokens);
+        await adapter.checkTokenApprovals(hubTokens);
       }
     }
   }
