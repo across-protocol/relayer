@@ -1,67 +1,71 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { SpokePoolClient } from "../../src/clients";
-import { ArbitrumAdapter, l1Gateways, l2Gateways } from "../../src/clients/bridges/ArbitrumAdapter";
-import { ethers, getContractFactory, Contract, randomAddress, expect, toBN } from "../utils";
-import { utils, relayFeeCalculator } from "@across-protocol/sdk";
+import { ArbitrumAdapter } from "../../src/clients/bridges/ArbitrumAdapter";
+import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
 import { ZERO_ADDRESS } from "@uma/common";
-import { CONTRACT_ADDRESSES } from "../../src/common";
+import { chainIdsToCctpDomains } from "../../src/common";
+import { hashCCTPSourceAndNonce } from "../../src/utils";
+
+const logger = createSpyLogger().spyLogger;
+const searchConfig = {
+  fromBlock: 1,
+  toBlock: 1_000_000,
+};
+
+const monitoredEoa = randomAddress();
+const l1Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
+const l2Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.ARBITRUM];
+const l1UsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
+const l2UsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM];
+
+let erc20BridgeContract: Contract;
+let cctpBridgeContract: Contract;
+let cctpMessageTransmitterContract: Contract;
+
+let adapter: ArbitrumAdapter;
+
+class ArbitrumAdapterTest extends ArbitrumAdapter {
+  protected override getL1Bridge(_l1Token: string): Contract {
+    return erc20BridgeContract;
+  }
+
+  protected override getL2Bridge(_l1Token: string): Contract {
+    return erc20BridgeContract;
+  }
+
+  protected override getL1CCTPTokenMessengerBridge(): Contract {
+    return cctpBridgeContract;
+  }
+
+  protected override getL2CCTPMessageTransmitter(): Contract {
+    return cctpMessageTransmitterContract;
+  }
+}
 
 describe("Cross Chain Adapter: Arbitrum", async function () {
-  let adapter: ArbitrumAdapter;
-  let defaultAdapter: ArbitrumAdapter;
-  let monitoredEoa: string;
-  let l1Token: string;
-  let l2Token: string;
-
-  let erc20BridgeContract: Contract;
-  let searchConfig: utils.EventSearchConfig;
-
   beforeEach(async function () {
-    searchConfig = {
-      fromBlock: 1,
-      toBlock: 1_000_000,
-    };
     const [deployer] = await ethers.getSigners();
-    const logger = relayFeeCalculator.DEFAULT_LOGGER;
-
-    monitoredEoa = randomAddress();
-    l1Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
-    l2Token = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.ARBITRUM];
 
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
+
     erc20BridgeContract = await (await getContractFactory("ArbitrumERC20Bridge", deployer)).deploy();
+    cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
+    cctpMessageTransmitterContract = await (await getContractFactory("CctpMessageTransmitter", deployer)).deploy();
 
-    const l2SpokePoolClient = new SpokePoolClient(null, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
+    const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
       fromBlock: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, CHAIN_IDs.MAINNET, 0, {
+    const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.MAINNET, 0, {
       fromBlock: 0,
     });
 
-    adapter = new ArbitrumAdapter(
+    adapter = new ArbitrumAdapterTest(
       logger,
       {
         [CHAIN_IDs.ARBITRUM]: l2SpokePoolClient,
         [CHAIN_IDs.MAINNET]: l1SpokePoolClient,
       },
-      [monitoredEoa],
-      {
-        // Override the gateway addresses to use the mocked bridge contract
-        l1: {
-          [l1Token]: erc20BridgeContract.address,
-        },
-        l2: {
-          [l1Token]: erc20BridgeContract.address,
-        },
-      }
-    );
-    defaultAdapter = new ArbitrumAdapter(
-      null,
-      {
-        [CHAIN_IDs.ARBITRUM]: l2SpokePoolClient,
-        [CHAIN_IDs.MAINNET]: l1SpokePoolClient,
-      },
-      []
+      [monitoredEoa]
     );
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
@@ -120,28 +124,36 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     });
   });
 
-  describe("Contract getters", () => {
-    it("return correct L1 bridge contract", async () => {
-      const overriddenL1Bridge = adapter.getL1Bridge(l1Token);
-      const defaultL1Bridge = defaultAdapter.getL1Bridge(l1Token);
-
-      expect(overriddenL1Bridge.address).to.equal(erc20BridgeContract.address);
-      expect(defaultL1Bridge.address).to.equal(l1Gateways[l1Token]);
-    });
-
-    it("return correct L2 bridge contract", async () => {
-      const overriddenL2Bridge = adapter.getL2Bridge(l1Token);
-      const defaultL2Bridge = defaultAdapter.getL2Bridge(l1Token);
-
-      expect(overriddenL2Bridge.address).to.equal(erc20BridgeContract.address);
-      expect(defaultL2Bridge.address).to.equal(l2Gateways[l1Token]);
-    });
-
-    it("return correct L1 gateway router contract", async () => {
-      const gatewayRouter = adapter.getL1GatewayRouter();
-      expect(gatewayRouter.address).to.equal(
-        CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET]["arbitrumErc20GatewayRouter"].address
+  describe("CCTP", () => {
+    it("return only relevant L1 bridge init events", async () => {
+      const processedNonce = 1;
+      const unprocessedNonce = 2;
+      await cctpBridgeContract.emitDepositForBurn(
+        processedNonce,
+        l1UsdcAddress,
+        1,
+        monitoredEoa,
+        ethers.utils.hexZeroPad(monitoredEoa, 32),
+        chainIdsToCctpDomains[CHAIN_IDs.ARBITRUM],
+        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
+      await cctpBridgeContract.emitDepositForBurn(
+        unprocessedNonce,
+        l1UsdcAddress,
+        1,
+        monitoredEoa,
+        ethers.utils.hexZeroPad(monitoredEoa, 32),
+        chainIdsToCctpDomains[CHAIN_IDs.ARBITRUM],
+        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(monitoredEoa, 32)
+      );
+      await cctpMessageTransmitterContract.setUsedNonce(
+        hashCCTPSourceAndNonce(chainIdsToCctpDomains[CHAIN_IDs.MAINNET], processedNonce),
+        processedNonce
+      );
+      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1UsdcAddress]);
+      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
     });
   });
 });

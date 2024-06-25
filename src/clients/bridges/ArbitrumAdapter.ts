@@ -66,11 +66,7 @@ export class ArbitrumAdapter extends CCTPAdapter {
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    monitoredAddresses: string[],
-    private gatewayAddressOverrides: {
-      l1?: Record<SupportedL1Token, string>;
-      l2?: Record<SupportedL1Token, string>;
-    } = {}
+    monitoredAddresses: string[]
   ) {
     const { ARBITRUM } = CHAIN_IDs;
     super(spokePoolClients, ARBITRUM, monitoredAddresses, logger, SUPPORTED_TOKENS[ARBITRUM]);
@@ -300,15 +296,15 @@ export class ArbitrumAdapter extends CCTPAdapter {
     return null;
   }
 
-  getL1Bridge(l1Token: SupportedL1Token): Contract {
+  protected getL1Bridge(l1Token: SupportedL1Token): Contract {
     return new Contract(
-      this.gatewayAddressOverrides.l1?.[l1Token] || l1Gateways[l1Token],
+      l1Gateways[l1Token],
       CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi,
       this.getSigner(this.hubChainId)
     );
   }
 
-  getL1GatewayRouter(): Contract {
+  protected getL1GatewayRouter(): Contract {
     return new Contract(
       CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address,
       CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi,
@@ -316,11 +312,7 @@ export class ArbitrumAdapter extends CCTPAdapter {
     );
   }
 
-  getL2Bridge(l1Token: SupportedL1Token): Contract {
-    return new Contract(
-      this.gatewayAddressOverrides.l2?.[l1Token] || l2Gateways[l1Token],
-      CONTRACT_ADDRESSES[42161].erc20Gateway.abi,
-      this.getSigner(this.chainId)
-    );
+  protected getL2Bridge(l1Token: SupportedL1Token): Contract {
+    return new Contract(l2Gateways[l1Token], CONTRACT_ADDRESSES[42161].erc20Gateway.abi, this.getSigner(this.chainId));
   }
 }
