@@ -38,20 +38,20 @@ export class OpStackAdapter extends BaseAdapter {
     super(spokePoolClients, chainId, monitoredAddresses, logger, supportedTokens);
     this.l2Gas = 200000;
 
-    const { MAINNET, OPTIMISM } = CHAIN_IDs;
+    const { hubChainId, wethAddress } = this;
+    const { OPTIMISM } = CHAIN_IDs;
     if (chainId === OPTIMISM) {
-      const mainnetSigner = spokePoolClients[MAINNET].spokePool.signer;
+      const mainnetSigner = spokePoolClients[hubChainId].spokePool.signer;
       const l2Signer = spokePoolClients[OPTIMISM].spokePool.signer;
 
-      const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[MAINNET];
-      const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[MAINNET];
-      this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner);
-      this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner);
+      const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
+      const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId];
+      this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, hubChainId, l2Signer, mainnetSigner);
+      this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, hubChainId, l2Signer, mainnetSigner);
     }
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
-    const wethAddress = this.wethAddress;
-    if (wethAddress && !this.customBridges[wethAddress]) {
+    if (wethAddress) {
       this.customBridges[wethAddress] = new WethBridge(
         this.chainId,
         this.hubChainId,
