@@ -364,13 +364,13 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Mock the config store client to include the lite chain index.
       mockConfigStore.updateGlobalConfig(
         GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
-        JSON.stringify([spokePoolClient_1.chainId])
+        JSON.stringify([originChainId])
       );
       await mockConfigStore.update();
       // Ensure that our test has the right setup.
       expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
       mockConfigStore.liteChainIndicesUpdates[0].timestamp = 0;
-      expect(repaymentChainId).to.not.eq(spokePoolClient_1.chainId);
+      expect(repaymentChainId).to.not.eq(originChainId);
 
       // Mock the config store client being included on the spoke client
       mockOriginSpokePoolClient.setConfigStoreClient(mockConfigStore);
@@ -485,14 +485,14 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Mock the config store client to include the lite chain index.
       mockConfigStore.updateGlobalConfig(
         GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
-        JSON.stringify([spokePoolClient_1.chainId])
+        JSON.stringify([originChainId])
       );
       await mockConfigStore.update();
       // Ensure that our test has the right setup.
       expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
       mockConfigStore.liteChainIndicesUpdates[0].timestamp = depositObject.quoteTimestamp - 1;
       expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
-      expect(repaymentChainId).to.not.eq(spokePoolClient_1.chainId);
+      expect(repaymentChainId).to.not.eq(originChainId);
 
       // Mock the config store client being included on the spoke client
       (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
