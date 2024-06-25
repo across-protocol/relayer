@@ -1049,7 +1049,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleSlowFillsV3).to.deep.equal({});
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
     });
-    it.only("Slow fill request for deposit that isn't eligible for slow fill because origin is lite chain", async function () {
+    it("Slow fill request for deposit that isn't eligible for slow fill because origin is lite chain", async function () {
       mockConfigStore.updateGlobalConfig(
         GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
         JSON.stringify([spokePoolClient_1.chainId])
@@ -1084,7 +1084,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleSlowFillsV3).to.deep.equal({});
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
     });
-    it.only("Slow fill request for deposit that isn't eligible for slow fill because destination is lite chain", async function () {
+    it("Slow fill request for deposit that isn't eligible for slow fill because destination is lite chain", async function () {
       mockConfigStore.updateGlobalConfig(
         GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
         JSON.stringify([spokePoolClient_2.chainId])
