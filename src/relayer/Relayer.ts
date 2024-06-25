@@ -371,6 +371,9 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
+      // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
+      // prefer someone else to fill the deposits. By doing this, we ensure repayment on the origin chain, resulting
+      // in no net change in capital allocation for our account and avoiding the need to pay an LP fee.
       if (deposit.fromLiteChain) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
