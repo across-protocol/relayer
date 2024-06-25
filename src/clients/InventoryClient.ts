@@ -393,9 +393,11 @@ export class InventoryClient {
    * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
    * selected if the SpokePool's running balance for that chain is over the system's desired target.
    * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
-   * chains are over-allocated.
+   * chains are over-allocated, unless the origin chain is a lite chain, in which case.
+   * there is no fallback if the origin chain is not an eligible repayment chain.
    * @dev If the origin chain is a lite chain, then only the origin chain is evaluated as a potential repayment chain.
-   * @dev If inventory management is disabled, then destinationChain is used as a default.
+   * @dev If inventory management is disabled, then destinationChain is used as a default unless the
+   * originChain is a lite chain, then originChain is the default used.
    * @param deposit Deposit to determine repayment chains for.
    * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
