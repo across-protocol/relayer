@@ -405,13 +405,8 @@ export class InventoryClient {
     const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
-    // Check if the deposit originates from a lite chain.
-    if (deposit.fromLiteChain) {
-      return [originChainId];
-    }
-
     if (!this.isInventoryManagementEnabled()) {
-      return [destinationChainId];
+      return [deposit.fromLiteChain ? originChainId : destinationChainId];
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
@@ -445,7 +440,7 @@ export class InventoryClient {
     // hub in the next root bundle over the slow canonical bridge.
     // We need to calculate the latest running balance for each optimistic rollup chain.
     // We'll add the last proposed running balance plus new deposits and refunds.
-    if (this.prioritizeLpUtilization) {
+    if (!deposit.fromLiteChain && this.prioritizeLpUtilization) {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmount,
@@ -465,6 +460,7 @@ export class InventoryClient {
     // since its the fallback chain if both destination and origin chain are over allocated.
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
     if (
+      !deposit.fromLiteChain &&
       !chainsToEvaluate.includes(destinationChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(destinationChainId))
     ) {
@@ -550,6 +546,19 @@ export class InventoryClient {
       if (expectedPostRelayAllocation.lte(thresholdPct)) {
         eligibleRefundChains.push(_chain);
       }
+    }
+
+    // At this point, if the deposit originated on a lite chain, which forces fillers to take repayment on the origin
+    // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
+    // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
+    // funds from.
+    if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
+      this.logger.warn({
+        at: "InventoryClient#determineRefundChainId",
+        message: `Deposit ${deposit.depositId} originated on lite chain ${originChainId} and origin chain is over-allocated. Refusing to fill deposit.`,
+        eligibleRefundChains,
+      });
+      return [];
     }
 
     // Always add hubChain as a fallback option if inventory management is enabled. If none of the chainsToEvaluate
