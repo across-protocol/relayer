@@ -371,11 +371,20 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
+      if (deposit.fromLiteChain) {
+        this.logger.debug({
+          at: "Relayer::evaluateFill",
+          message: "Skipping self-relay deposit originating from lite chain.",
+          originChainId,
+          depositId,
+        });
+        return;
+      }
       // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
       const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
-      this.fillRelay(deposit, deposit.fromLiteChain ? deposit.originChainId : destinationChainId, lpFeePct);
+      this.fillRelay(deposit, destinationChainId, lpFeePct);
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
