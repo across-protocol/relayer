@@ -596,9 +596,8 @@ export class Relayer {
       return;
     }
 
-    const { hubPoolClient, spokePoolClients, multiCallerClient, configStoreClient } = this.clients;
+    const { hubPoolClient, spokePoolClients, multiCallerClient } = this.clients;
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
-
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
