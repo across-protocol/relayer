@@ -25,11 +25,11 @@ let cctpMessageTransmitterContract: Contract;
 let adapter: ArbitrumAdapter;
 
 class ArbitrumAdapterTest extends ArbitrumAdapter {
-  protected override getL1Bridge(_l1Token: string): Contract {
+  protected override getL1Bridge(): Contract {
     return erc20BridgeContract;
   }
 
-  protected override getL2Bridge(_l1Token: string): Contract {
+  protected override getL2Bridge(): Contract {
     return erc20BridgeContract;
   }
 
