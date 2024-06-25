@@ -1055,8 +1055,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         JSON.stringify([spokePoolClient_1.chainId])
       );
       await mockConfigStore.update();
-      (spokePoolClient_1 as any).configStoreClient = mockConfigStore; 
-      (spokePoolClient_2 as any).configStoreClient = mockConfigStore; 
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -1090,8 +1090,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         JSON.stringify([spokePoolClient_2.chainId])
       );
       await mockConfigStore.update();
-      (spokePoolClient_1 as any).configStoreClient = mockConfigStore; 
-      (spokePoolClient_2 as any).configStoreClient = mockConfigStore; 
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
