@@ -74,7 +74,7 @@ export class Relayer {
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
-    const { ignoredAddresses, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const { ignoredAddresses, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
     // If we don't have the latest code to support this deposit, skip it.
@@ -203,23 +203,21 @@ export class Relayer {
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
-    if (!ignoreLimits) {
-      const { inputAmount } = deposit;
-      const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
-      if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
-        this.logger.warn({
-          at: "Relayer::filterDeposit",
-          message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-          limit,
-          l1Token: l1Token.address,
-          depositId,
-          inputToken,
-          inputAmount,
-          originChainId,
-          transactionHash: deposit.transactionHash,
-        });
-        return false;
-      }
+    const { inputAmount } = deposit;
+    const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
+    if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
+      this.logger.warn({
+        at: "Relayer::filterDeposit",
+        message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
+        limit,
+        l1Token: l1Token.address,
+        depositId,
+        inputToken,
+        inputAmount,
+        originChainId,
+        transactionHash: deposit.transactionHash,
+      });
+      return false;
     }
 
     // The deposit passed all checks, so we can include it in the list of unfilled deposits.
@@ -567,30 +565,6 @@ export class Relayer {
   }
 
   requestSlowFill(deposit: V3Deposit): void {
-    // Verify that this deposit does not originate on a lite chain, since slow fills are not supported for lite chains.
-    if (deposit.fromLiteChain) {
-      this.logger.debug({
-        at: "Relayer::requestSlowFill",
-        message: "Suppressing slow fill request for deposit originating from lite chain.",
-        deposit,
-      });
-      return;
-    }
-
-    // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
-    // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
-    if (!isMessageEmpty(deposit.message)) {
-      this.logger.warn({
-        at: "Relayer::requestSlowFill",
-        message: "Suppressing slow fill request for deposit with message.",
-        deposit,
-      });
-      return;
-    }
-
-    const { hubPoolClient, spokePoolClients, multiCallerClient, configStoreClient } = this.clients;
-    const { originChainId, destinationChainId, depositId, outputToken } = deposit;
-
     // don't request slow fill if origin chain is a lite chain
     if (deposit.fromLiteChain) {
       this.logger.debug({
@@ -610,6 +584,20 @@ export class Relayer {
       });
       return;
     }
+
+    // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
+    // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
+    if (!isMessageEmpty(deposit.message)) {
+      this.logger.warn({
+        at: "Relayer::requestSlowFill",
+        message: "Suppressing slow fill request for deposit with message.",
+        deposit,
+      });
+      return;
+    }
+
+    const { hubPoolClient, spokePoolClients, multiCallerClient, configStoreClient } = this.clients;
+    const { originChainId, destinationChainId, depositId, outputToken } = deposit;
 
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
