@@ -1,15 +1,10 @@
-import { CHAIN_IDs } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter } from "./";
-import { DaiOptimismBridge, SnxOptimismBridge } from "./op-stack/optimism";
-import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
-import { utils } from "@across-protocol/sdk";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
+import { CHAIN_IDs } from "@across-protocol/constants";
 
 import { BaseChainAdapter } from "../../adapter";
 
