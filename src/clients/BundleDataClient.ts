@@ -1129,7 +1129,7 @@ export class BundleDataClient {
                 this.clients.hubPoolClient,
                 blockRangesForChains,
                 chainIds,
-                v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit.fromLiteChain
+                matchedDeposit.fromLiteChain
               );
               return {
                 ...fill,
