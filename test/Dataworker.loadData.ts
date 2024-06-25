@@ -1049,6 +1049,76 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleSlowFillsV3).to.deep.equal({});
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
     });
+    it.only("Slow fill request for deposit that isn't eligible for slow fill because origin is lite chain", async function () {
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([spokePoolClient_1.chainId])
+      );
+      await mockConfigStore.update();
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore; 
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore; 
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await spokePoolClient_1.update();
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+      await requestSlowFill(spokePool_2, relayer, depositObject);
+      await updateAllClients();
+      const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+      expect(requests.length).to.equal(1);
+      expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
+    it.only("Slow fill request for deposit that isn't eligible for slow fill because destination is lite chain", async function () {
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([spokePoolClient_2.chainId])
+      );
+      await mockConfigStore.update();
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore; 
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore; 
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await spokePoolClient_1.update();
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+      await requestSlowFill(spokePool_2, relayer, depositObject);
+      await updateAllClients();
+      const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+      expect(requests.length).to.equal(1);
+      expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
     it("Returns prior bundle expired deposits", async function () {
       // Send deposit that expires in this bundle.
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
