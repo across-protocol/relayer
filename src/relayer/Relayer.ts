@@ -592,7 +592,7 @@ export class Relayer {
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
 
     // don't request slow fill if origin chain is a lite chain
-    if (configStoreClient.isChainLiteChainAtTimestamp(deposit.originChainId, deposit.quoteTimestamp)) {
+    if (deposit.fromLiteChain) {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Prevent requesting slow fill request from lite chain.",
@@ -602,9 +602,7 @@ export class Relayer {
     }
 
     // don't request slow fill if destination is a lite chain
-    if (
-      this.clients.configStoreClient.isChainLiteChainAtTimestamp(deposit.destinationChainId, deposit.quoteTimestamp)
-    ) {
+    if (deposit.toLiteChain) {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Prevent requesting slow fill request to lite chain.",
