@@ -54,21 +54,9 @@ contract AtomicWethDepositor is Ownable {
     //   Hardcoded Addresses     //
     ///////////////////////////////
 
-    /**
-     * @notice A hardcoded address for WETH on Ethereum mainnet.
-     */
     Weth public immutable weth = Weth(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
-    /**
-     * @notice A hardcoded address for the Polygon L1 bridge on Ethereum mainnet.
-     */
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
-    /**
-     * @notice A hardcoded address for the ZKSync L1 bridge on Ethereum mainnet.
-     */
     ZkSyncL1Bridge public immutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
-    /**
-     * @notice A hardcoded address for the Optimism L1 bridge on Ethereum mainnet.
-     */
     LineaL1MessageService public immutable lineaL1MessageService =
         LineaL1MessageService(0xd19d4B5d358258f05D7B411E21A1460D11B0876F);
 
@@ -86,34 +74,16 @@ contract AtomicWethDepositor is Ownable {
     //          Events           //
     ///////////////////////////////
 
-    /**
-     * @notice An event to track ETH deposits to ZkSync. This event is emitted when a deposit to ZkSync is initiated.
-     */
     event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
-    /**
-     * @notice An event to track ETH deposits to Linea. This event is emitted when a deposit to Linea is initiated.
-     */
     event LineaEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
-    /**
-     * @notice An event to track ETH deposits to OVM chains. This event is emitted when a deposit to an OVM chain is initiated.
-     */
     event OVMEthDepositInitiated(uint256 indexed chainId, address indexed from, address indexed to, uint256 amount);
-    /**
-     * @notice An event to track ETH deposits to Polygon. This event is emitted when a deposit to Polygon is initiated.
-     */
     event PolygonEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
-    /**
-     * @notice An event to track when the mapping of an OVM L1 bridge contract is modified.
-     */
     event OVML1BridgeModified(uint256 indexed chainId, address indexed newBridge, address oldBridge);
 
     ///////////////////////////////
     //          Errors           //
     ///////////////////////////////
 
-    /**
-     * @notice An error message to be used when an invalid OVM chainId is provided.
-     */
     error InvalidOvmChainId();
 
     ///////////////////////////////
