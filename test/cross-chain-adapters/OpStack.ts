@@ -14,6 +14,7 @@ import { ethers, getContractFactory, Contract, randomAddress, expect, createSpyL
 import { UsdcTokenSplitterBridge } from "../../src/clients/bridges/op-stack/UsdcTokenSplitterBridge";
 import { hashCCTPSourceAndNonce } from "../../src/utils";
 import { UsdcCCTPBridge } from "../../src/clients/bridges/op-stack/UsdcCCTPBridge";
+import { OpStackBridge } from "../../src/clients/bridges/op-stack/OpStackBridgeInterface";
 
 const atomicDepositorAddress = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].atomicDepositor.address;
 const l1WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
@@ -118,6 +119,19 @@ class UsdcTokenSplitterBridgeTest extends UsdcTokenSplitterBridge {
   }
 }
 
+class OpStackAdapterTest extends OpStackAdapter {
+  getBridge(l1Token: string): OpStackBridge {
+    const overrides = {
+      [l1WethAddress]: wethBridge,
+      [l1SnxAddress]: snxBridge,
+      [l1DaiAddress]: daiBridge,
+      [l1Erc20Address]: erc20Bridge,
+      [l1UsdcAddress]: usdcTokenSplitterBridge,
+    };
+    return overrides[l1Token] ?? super.getBridge(l1Token);
+  }
+}
+
 describe("Cross Chain Adapter: OP Stack", async function () {
   beforeEach(async function () {
     searchConfig = {
@@ -158,15 +172,8 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       fromBlock: 0,
     });
 
-    adapter = new OpStackAdapter(
+    adapter = new OpStackAdapterTest(
       CHAIN_IDs.OPTIMISM,
-      {
-        [l1WethAddress]: wethBridge,
-        [l1SnxAddress]: snxBridge,
-        [l1DaiAddress]: daiBridge,
-        [l1Erc20Address]: erc20Bridge,
-        [l1UsdcAddress]: usdcTokenSplitterBridge,
-      },
       logger,
       ["WETH", "SNX", "DAI", "WBTC", "USDC"],
       {

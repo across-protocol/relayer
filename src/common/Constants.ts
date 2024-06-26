@@ -353,3 +353,14 @@ export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
 // This does not include all  7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM];
+
+// Expected worst-case time for message from L1 to propogate to L2 in seconds
+export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
+  59144: 60 * 60,
+  42161: 20 * 60,
+  10: 20 * 60,
+  137: 60 * 60,
+  324: 60 * 60,
+  8453: 20 * 60,
+  34443: 20 * 60,
+};
