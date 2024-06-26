@@ -1,13 +1,7 @@
 import { isDefined, winston, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../utils";
 import { SpokePoolClient, HubPoolClient } from "../clients";
 import { BaseChainAdapter } from "./";
-import {
-  SUPPORTED_TOKENS,
-  DEFAULT_GAS_FEE_SCALERS,
-  DEFAULT_RELAYER_GAS_MULTIPLIER,
-  CUSTOM_BRIDGE,
-  CANONICAL_BRIDGE,
-} from "../common";
+import { SUPPORTED_TOKENS, CUSTOM_BRIDGE, CANONICAL_BRIDGE, DEFAULT_GAS_MULTIPLIER } from "../common";
 
 import { AdapterManager } from "../clients/bridges";
 
@@ -53,7 +47,6 @@ export class GenericAdapterManager extends AdapterManager {
         });
 
         // Then instantiate a generic adapter.
-        // TODO: Do something about the gas multiplier
         this.adapters[chainId] = new BaseChainAdapter(
           spokePoolClients,
           chainId,
@@ -62,7 +55,7 @@ export class GenericAdapterManager extends AdapterManager {
           logger,
           SUPPORTED_TOKENS[chainId],
           bridges,
-          DEFAULT_GAS_FEE_SCALERS[hubChainId]?.maxFeePerGasScaler ?? Number(DEFAULT_RELAYER_GAS_MULTIPLIER)
+          DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
         );
       });
 

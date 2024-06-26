@@ -467,3 +467,9 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   8453: 20 * 60,
   34443: 20 * 60,
 };
+
+export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
+  [CHAIN_IDs.OPTIMISM]: 1.5,
+  [CHAIN_IDs.BASE]: 1.5,
+  [CHAIN_IDs.MODE]: 1.5,
+};
