@@ -44,10 +44,7 @@ contract CctpMessageTransmitter {
     mapping(bytes32 => uint256) public usedNonces;
 
     function setUsedNonce(bytes32 nonceHash, bool isUsed) external {
-        if (isUsed) {
-            usedNonces[nonceHash] = 1;
-        } else {
-            usedNonces[nonceHash] = 0;
+usedNonces[nonceHash] = isUsed ? 1 : 0;
         }
     }
 }
