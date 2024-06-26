@@ -931,7 +931,10 @@ export class BundleDataClient {
                 }
 
                 // slow fill requests for deposits from or to lite chains are considered invalid
-                if (v3RelayHashes[relayDataHash].deposit.fromLiteChain || v3RelayHashes[relayDataHash].deposit.toLiteChain) {
+                if (
+                  v3RelayHashes[relayDataHash].deposit.fromLiteChain ||
+                  v3RelayHashes[relayDataHash].deposit.toLiteChain
+                ) {
                   return;
                 }
 
