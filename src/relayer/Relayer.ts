@@ -220,6 +220,7 @@ export class Relayer {
         });
         return false;
       }
+    }
 
     // The deposit passed all checks, so we can include it in the list of unfilled deposits.
     return true;
