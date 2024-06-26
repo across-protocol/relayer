@@ -128,16 +128,12 @@ contract AtomicWethDepositor is Ownable {
      * @dev throws InvalidOvmChainId if the chainId provided is not a valid OVM chainId.
      */
     function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {
-        // Get the OvmL1Bridge contract for the given chainId - if it doesn't exist, throw an error.
         OvmL1Bridge ovmL1Bridge = ovmChainIdToBridge[chainId];
         if (address(ovmL1Bridge) == address(0)) {
             revert InvalidOvmChainId();
         }
-        // Transfer the WETH to this contract and withdraw it to ETH.
         _withdrawWeth(amount);
-        // Deposit the ETH to the OVM chain.
         ovmL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
-        // Emit an event that we can easily track in the OVM-related adapters/finalizers
         emit OVMEthDepositInitiated(chainId, msg.sender, to, amount);
     }
 
@@ -147,11 +143,8 @@ contract AtomicWethDepositor is Ownable {
      * @param amount The amount of WETH to deposit.
      */
     function bridgeWethToPolygon(address to, uint256 amount) public {
-        // Transfer the WETH to this contract and withdraw it to ETH.
         _withdrawWeth(amount);
-        // Deposit the ETH to Polygon.
         polygonL1Bridge.depositEtherFor{ value: amount }(to);
-        // Emit an event that we can easily track in the Polygon-related adapters/finalizers
         emit PolygonEthDepositInitiated(msg.sender, to, amount);
     }
 
@@ -161,11 +154,8 @@ contract AtomicWethDepositor is Ownable {
      * @param amount The amount of WETH to deposit.
      */
     function bridgeWethToLinea(address to, uint256 amount) public payable {
-        // Transfer the WETH to this contract and withdraw it to ETH.
         _withdrawWeth(amount);
-        // Deposit the ETH to Linea.
         lineaL1MessageService.sendMessage{ value: amount + msg.value }(to, msg.value, "");
-        // Emit an event that we can easily track in the Linea-related adapters/finalizers
         emit LineaEthDepositInitiated(msg.sender, to, amount);
     }
 
@@ -195,9 +185,7 @@ contract AtomicWethDepositor is Ownable {
             l2GasPerPubdataByteLimit
         );
         uint256 valueToSubmitXChainMessage = l2TransactionBaseCost + amount;
-        // Transfer the WETH to this contract and withdraw it to ETH.
         _withdrawWeth(valueToSubmitXChainMessage);
-        // Deposit the ETH to ZkSync.
         zkSyncL1Bridge.requestL2Transaction{ value: valueToSubmitXChainMessage }(
             to,
             amount,
@@ -207,9 +195,6 @@ contract AtomicWethDepositor is Ownable {
             new bytes[](0),
             refundRecipient
         );
-
-        // Emit an event that we can easily track in the ZkSyncAdapter because otherwise there is no easy event to
-        // track ETH deposit initiations.
         emit ZkSyncEthDepositInitiated(msg.sender, to, amount);
     }
 
