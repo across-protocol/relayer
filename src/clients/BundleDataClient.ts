@@ -981,6 +981,17 @@ export class BundleDataClient {
               // sanity check it here by comparing the full relay hashes. If there's an error here then the
               // historical deposit query is not working as expected.
               assert(this.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
+
+              // slow fill requests for deposits originating from a lite chain are considered invalid
+              if (matchedDeposit.fromLiteChain) {
+                return;
+              }
+
+              // slow fills requested on a lite chain are considered invalid
+              if (matchedDeposit.toLiteChain) {
+                return;
+              }
+
               v3RelayHashes[relayDataHash].deposit = matchedDeposit;
 
               // Note: we don't need to query for a historical fill at this point because a fill
