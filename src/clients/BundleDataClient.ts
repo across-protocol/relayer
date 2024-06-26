@@ -930,13 +930,8 @@ export class BundleDataClient {
                   return;
                 }
 
-                // slow fill requests for deposits originating from a lite chain are considered invalid
-                if (v3RelayHashes[relayDataHash].deposit.fromLiteChain) {
-                  return;
-                }
-
-                // slow fills requested on a lite chain are considered invalid
-                if (v3RelayHashes[relayDataHash].deposit.toLiteChain) {
+                // slow fill requests for deposits from or to lite chains are considered invalid
+                if (v3RelayHashes[relayDataHash].deposit.fromLiteChain || v3RelayHashes[relayDataHash].deposit.toLiteChain) {
                   return;
                 }
 
@@ -982,13 +977,8 @@ export class BundleDataClient {
               // historical deposit query is not working as expected.
               assert(this.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
 
-              // slow fill requests for deposits originating from a lite chain are considered invalid
-              if (matchedDeposit.fromLiteChain) {
-                return;
-              }
-
-              // slow fills requested on a lite chain are considered invalid
-              if (matchedDeposit.toLiteChain) {
+              // slow fill requests for deposits from or to lite chains are considered invalid
+              if (matchedDeposit.fromLiteChain || matchedDeposit.toLiteChain) {
                 return;
               }
 
