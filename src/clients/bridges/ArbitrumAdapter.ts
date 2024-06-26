@@ -267,14 +267,10 @@ export class ArbitrumAdapter extends CCTPAdapter {
   async wrapEthIfAboveThreshold(
     threshold: BigNumber,
     target: BigNumber,
-    simMode = false,
-    skipChainIdCheck = false
+    simMode = false
   ): Promise<TransactionResponse | null> {
     const { chainId } = this;
-
-    if (!skipChainIdCheck) {
-      assert(42161 === chainId, `chainId ${chainId} is not supported`);
-    }
+    assert(42161 === chainId, `chainId ${chainId} is not supported`);
 
     const weth = CONTRACT_ADDRESSES[this.chainId].weth;
     const ethBalance = await this.getSigner(chainId).getBalance();
