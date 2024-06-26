@@ -930,6 +930,14 @@ export class BundleDataClient {
                   return;
                 }
 
+                // slow fill requests for deposits from or to lite chains are considered invalid
+                if (
+                  v3RelayHashes[relayDataHash].deposit.fromLiteChain ||
+                  v3RelayHashes[relayDataHash].deposit.toLiteChain
+                ) {
+                  return;
+                }
+
                 // If there is no fill matching the relay hash, then this might be a valid slow fill request
                 // that we should produce a slow fill leaf for. Check if the slow fill request is in the
                 // destination chain block range and that the underlying deposit has not expired yet.
@@ -971,6 +979,12 @@ export class BundleDataClient {
               // sanity check it here by comparing the full relay hashes. If there's an error here then the
               // historical deposit query is not working as expected.
               assert(this.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
+
+              // slow fill requests for deposits from or to lite chains are considered invalid
+              if (matchedDeposit.fromLiteChain || matchedDeposit.toLiteChain) {
+                return;
+              }
+
               v3RelayHashes[relayDataHash].deposit = matchedDeposit;
 
               // Note: we don't need to query for a historical fill at this point because a fill
