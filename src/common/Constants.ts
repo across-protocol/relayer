@@ -33,6 +33,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   137: 138240,
   288: 11520,
   324: 4 * 24 * 60 * 60,
+  1135: 172800, // Same as Optimism.
   8453: 172800, // Same as Optimism.
   34443: 172800, // Same as Optimism.
   42161: 1382400,
@@ -70,6 +71,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
   324: 120,
+  1135: 120, // Same as other OVM. Hard finality is 1800 blocks
   8453: 120,
   34443: 120,
   42161: 0,
@@ -79,6 +81,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   280: 0,
   420: 0,
   919: 0,
+  4202: 0,
   59140: 0,
   80001: 0,
   84531: 0,
@@ -95,6 +98,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
     324: 0,
+    1135: 60,
     8453: 60,
     34443: 60,
     42161: 0,
@@ -104,6 +108,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     280: 0,
     420: 0,
     919: 0,
+    4202: 0,
     59140: 0,
     80001: 0,
     84531: 0,
@@ -115,6 +120,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     137: 80,
     288: 0,
     324: 0,
+    1135: 60,
     8453: 60,
     34443: 60,
     42161: 0,
@@ -124,6 +130,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     280: 0,
     420: 0,
     919: 0,
+    4202: 0,
     59140: 0,
     80001: 0,
     84531: 0,
@@ -144,6 +151,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   137: 3490,
   288: 4990,
   324: 10000,
+  1135: 1500,
   8453: 1500,
   34443: 1500,
   42161: 10000,
@@ -153,6 +161,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   280: 10000,
   420: 10000,
   919: 10000,
+  4202: 10000,
   59140: 10000,
   80001: 10000,
   84531: 10000,
@@ -173,6 +182,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   137: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   288: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   324: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  1135: 60, // 2s/block gives 2 mins buffer time.
   8453: 60, // 2s/block. Same finality profile as Optimism
   34443: 60, // 2s/block. Same finality profile as Optimism
   42161: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
@@ -182,6 +192,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   280: 0,
   420: 0,
   919: 0,
+  4202: 0,
   59140: 0,
   80001: 0,
   84531: 0,
@@ -221,6 +232,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   137: 256,
   288: 0,
   324: 512,
+  1135: 120,
   8453: 120,
   34443: 120,
   42161: 32,
@@ -231,6 +243,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   280: 0,
   420: 0,
   919: 0,
+  4202: 0,
   59140: 0,
   80001: 0,
   84531: 0,
@@ -251,6 +264,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   137: 86400,
   288: 86400,
   324: 172800,
+  1135: 86400,
   8453: 86400,
   34443: 86400,
   59144: 57600,
@@ -264,6 +278,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
 } = {
   1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  1135: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   8453: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   34443: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
 };
@@ -306,7 +321,7 @@ export type Multicall2Call = {
 
 // These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
 // a bundle execution is possible with the funds in the pool.
-export const spokesThatHoldEthAndWeth = [10, 324, 8453, 34443, 59144];
+export const spokesThatHoldEthAndWeth = [10, 324, 1135, 8453, 34443, 59144];
 
 /**
  * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
@@ -334,6 +349,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   10: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   137: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   324: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  1135: ["WETH", "USDT"],
   8453: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   34443: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   42161: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
@@ -341,6 +357,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
 
   // Testnets:
   919: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
+  4202: ["WETH", "USDT"],
   59141: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   84532: ["BAL", "DAI", "ETH", "WETH", "USDC"],
   421614: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
@@ -464,6 +481,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   10: 20 * 60,
   137: 60 * 60,
   324: 60 * 60,
+  1135: 20 * 60,
   8453: 20 * 60,
   34443: 20 * 60,
 };
