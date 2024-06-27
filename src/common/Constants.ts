@@ -54,8 +54,8 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   [CHAIN_IDs.BOBA]: 0,
-  [CHAIN_IDs.LISK]: 120, // Same as other OVM. Hard finality is 1800 blocks
   [CHAIN_IDs.ZK_SYNC]: 120,
+  [CHAIN_IDs.LISK]: 120, // Same as other OVM. Hard finality is 1800 blocks
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.MODE]: 120,
   [CHAIN_IDs.ARBITRUM]: 0,
