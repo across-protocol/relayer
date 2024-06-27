@@ -133,6 +133,7 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
         "l1BatchNumber", // zkSync
         "l1BatchTimestamp", // zkSync
         "size", // Alchemy/Arbitrum (temporary)
+        "totalDifficulty", // Quicknode/Alchemy (sometimes)
       ],
       rpcResultA,
       rpcResultB
