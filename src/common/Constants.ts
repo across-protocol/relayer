@@ -17,6 +17,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 138240,
   [CHAIN_IDs.BOBA]: 11520,
   [CHAIN_IDs.ZK_SYNC]: 4 * 24 * 60 * 60,
+  [CHAIN_IDs.LISK]: 172800, // Same as Optimism.
   [CHAIN_IDs.BASE]: 172800, // Same as Optimism.
   [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
   [CHAIN_IDs.ARBITRUM]: 1382400,
@@ -53,6 +54,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   [CHAIN_IDs.BOBA]: 0,
+  [CHAIN_IDs.LISK]: 120, // Same as other OVM. Hard finality is 1800 blocks
   [CHAIN_IDs.ZK_SYNC]: 120,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.MODE]: 120,
@@ -73,6 +75,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.ZK_SYNC]: 0,
+    [CHAIN_IDs.LISK]: 60,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.ARBITRUM]: 0,
@@ -80,6 +83,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
+    [CHAIN_IDs.LISK_SEPOLIA]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   },
@@ -89,6 +93,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 80,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.ZK_SYNC]: 0,
+    [CHAIN_IDs.LISK]: 60,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.ARBITRUM]: 0,
@@ -96,6 +101,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
+    [CHAIN_IDs.LISK_SEPOLIA]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   },
@@ -114,6 +120,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.POLYGON]: 3490,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.ZK_SYNC]: 10000,
+  [CHAIN_IDs.LISK]: 1500,
   [CHAIN_IDs.BASE]: 1500,
   [CHAIN_IDs.MODE]: 1500,
   [CHAIN_IDs.ARBITRUM]: 10000,
@@ -121,6 +128,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
   [CHAIN_IDs.POLYGON_AMOY]: 10000,
+  [CHAIN_IDs.LISK]: 10000,
   [CHAIN_IDs.BASE_SEPOLIA]: 10000,
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
   [CHAIN_IDs.SEPOLIA]: 10000,
@@ -137,12 +145,14 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  [CHAIN_IDs.LISK]: 60, // 2s/block gives 2 mins buffer time.
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
+  [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
@@ -179,6 +189,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 256,
   [CHAIN_IDs.BOBA]: 0,
   [CHAIN_IDs.ZK_SYNC]: 512,
+  [CHAIN_IDs.LISK]: 120,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.MODE]: 120,
   [CHAIN_IDs.ARBITRUM]: 32,
@@ -186,6 +197,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.SCROLL]: 0,
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
+  [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
@@ -202,6 +214,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
   [CHAIN_IDs.ZK_SYNC]: 172800,
+  [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.LINEA]: 57600,
@@ -215,6 +228,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
 } = {
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
 };
@@ -254,6 +268,7 @@ export type Multicall2Call = {
 export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.ZK_SYNC,
+  CHAIN_IDs.LISK,
   CHAIN_IDs.BASE,
   CHAIN_IDs.MODE,
   CHAIN_IDs.LINEA,
@@ -281,6 +296,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.LISK]: ["WETH", "USDT"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
@@ -288,10 +304,12 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
 
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
+  [CHAIN_IDs.LISK_SEPOLIA]: ["WETH", "USDT"],
   [CHAIN_IDs.BASE_SEPOLIA]: ["BAL", "DAI", "ETH", "WETH", "USDC"],
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
 };
+
 /**
  * A mapping of chain IDs to tokens on that chain which need their allowance
  * to first be zeroed before setting a new allowance. This is useful for
@@ -324,6 +342,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.OPTIMISM]: 20 * 60,
   [CHAIN_IDs.POLYGON]: 60 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,
+  [CHAIN_IDs.LISK]: 20 * 60,
   [CHAIN_IDs.BASE]: 20 * 60,
   [CHAIN_IDs.MODE]: 20 * 60,
 };
