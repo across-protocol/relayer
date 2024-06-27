@@ -82,8 +82,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.LINEA]: 1,
     // Testnets:
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
-    [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 0,
+    [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   },
@@ -100,8 +100,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.LINEA]: 1,
     // Testnets:
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
-    [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 0,
+    [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   },
