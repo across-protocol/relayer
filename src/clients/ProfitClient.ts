@@ -595,9 +595,9 @@ export class ProfitClient {
     // Pre-fetch total gas costs for relays on enabled chains.
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
       // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
-      testSymbol = [CHAIN_IDs.LISK, CHAIN_IDs.LISK_SEPOLIA].includes(destinationChainId)
-        ? "WETH"
-        : "USDT";
+      if (destinationChainId === CHAIN_IDs.LISK) {
+        testSymbol = "USDT";
+      }
       const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
       const outputToken =
         destinationChainId === hubPoolClient.chainId
