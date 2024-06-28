@@ -16,6 +16,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 172800, // Same as Optimism.
   [CHAIN_IDs.BOBA]: 11520,
   [CHAIN_IDs.LINEA]: 115200, // 1 block every 3 seconds
+  [CHAIN_IDs.LISK]: 172800, // Same as Optimism.
   [CHAIN_IDs.MAINNET]: 28800,
   [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
   [CHAIN_IDs.OPTIMISM]: 172800, // 1 block every 2 seconds after bedrock
@@ -53,6 +54,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BOBA]: 0,
   [CHAIN_IDs.LINEA]: 30,
+  [CHAIN_IDs.LISK]: 120, // Same as other OVM. Hard finality is 1800 blocks
   [CHAIN_IDs.MAINNET]: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
   [CHAIN_IDs.MODE]: 120,
   [CHAIN_IDs.OPTIMISM]: 120,
@@ -61,17 +63,20 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
+  [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
 };
+
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.LINEA]: 1,
+    [CHAIN_IDs.LISK]: 60,
     [CHAIN_IDs.MAINNET]: 32, // Justified block
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.OPTIMISM]: 60,
@@ -79,6 +84,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZK_SYNC]: 0,
     // Testnets:
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
+    [CHAIN_IDs.LISK_SEPOLIA]: 60,
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
@@ -88,6 +94,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.LINEA]: 1,
+    [CHAIN_IDs.LISK]: 60,
     [CHAIN_IDs.MAINNET]: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.OPTIMISM]: 60,
@@ -96,6 +103,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
+    [CHAIN_IDs.LISK_SEPOLIA]: 0,
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.SEPOLIA]: 0,
@@ -114,6 +122,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.BASE]: 1500,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.LINEA]: 5000,
+  [CHAIN_IDs.LISK]: 1500,
   [CHAIN_IDs.MAINNET]: 10000,
   [CHAIN_IDs.MODE]: 1500,
   [CHAIN_IDs.OPTIMISM]: 10000, // Quick
@@ -122,6 +131,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
   [CHAIN_IDs.BASE_SEPOLIA]: 10000,
+  [CHAIN_IDs.LISK_SEPOLIA]: 10000,
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
   [CHAIN_IDs.POLYGON_AMOY]: 10000,
@@ -137,6 +147,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
+  [CHAIN_IDs.LISK]: 60, // 2s/block gives 2 mins buffer time.
   [CHAIN_IDs.MAINNET]: 5, // 12s/block
   [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
@@ -145,6 +156,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
+  [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
@@ -159,6 +171,7 @@ export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 75,
   [CHAIN_IDs.LINEA]: 50,
+  [CHAIN_IDs.LISK]: 75,
   [CHAIN_IDs.OPTIMISM]: 75,
 };
 
@@ -178,6 +191,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BOBA]: 0,
+  [CHAIN_IDs.LISK]: 120,
   [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
   [CHAIN_IDs.MAINNET]: 128,
   [CHAIN_IDs.MODE]: 120,
@@ -188,6 +202,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
+  [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
@@ -202,6 +217,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
   [CHAIN_IDs.LINEA]: 57600,
+  [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.MAINNET]: 14400,
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.OPTIMISM]: 86400,
@@ -215,6 +231,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
 } = {
   [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
@@ -255,6 +272,7 @@ export type Multicall2Call = {
 export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.BASE,
   CHAIN_IDs.LINEA,
+  CHAIN_IDs.LISK,
   CHAIN_IDs.MODE,
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.ZK_SYNC,
@@ -282,6 +300,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.LISK]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
@@ -290,9 +309,11 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.BASE_SEPOLIA]: ["BAL", "DAI", "ETH", "WETH", "USDC"],
+  [CHAIN_IDs.LISK_SEPOLIA]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
 };
+
 /**
  * A mapping of chain IDs to tokens on that chain which need their allowance
  * to first be zeroed before setting a new allowance. This is useful for
@@ -323,6 +344,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.ARBITRUM]: 20 * 60,
   [CHAIN_IDs.BASE]: 20 * 60,
   [CHAIN_IDs.LINEA]: 60 * 60,
+  [CHAIN_IDs.LISK]: 20 * 60,
   [CHAIN_IDs.MODE]: 20 * 60,
   [CHAIN_IDs.OPTIMISM]: 20 * 60,
   [CHAIN_IDs.POLYGON]: 60 * 60,

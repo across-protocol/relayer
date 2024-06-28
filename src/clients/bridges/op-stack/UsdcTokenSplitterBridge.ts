@@ -29,6 +29,14 @@ export class UsdcTokenSplitterBridge extends OpStackBridge {
       : this.canonicalBridge;
   }
 
+  protected getCCTPBridge(): UsdcCCTPBridge {
+    return this.cctpBridge;
+  }
+
+  protected getCanonicalBridge(): DefaultERC20Bridge {
+    return this.canonicalBridge;
+  }
+
   constructL1ToL2Txn(
     toAddress: string,
     l1Token: string,
@@ -49,8 +57,8 @@ export class UsdcTokenSplitterBridge extends OpStackBridge {
     // We should *only* be calling this class for USDC tokens
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
-      this.cctpBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, eventConfig),
-      this.canonicalBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, eventConfig),
+      this.getCCTPBridge().queryL1BridgeInitiationEvents(l1Token, fromAddress, eventConfig),
+      this.getCanonicalBridge().queryL1BridgeInitiationEvents(l1Token, fromAddress, eventConfig),
     ]);
     // Reduce the events to a single Object. If there are any duplicate keys, merge the events.
     return events.reduce((acc, event) => {
@@ -73,8 +81,8 @@ export class UsdcTokenSplitterBridge extends OpStackBridge {
     // We should *only* be calling this class for USDC tokens
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
-      this.cctpBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, eventConfig),
-      this.canonicalBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, eventConfig),
+      this.getCCTPBridge().queryL2BridgeFinalizationEvents(l1Token, fromAddress, eventConfig),
+      this.getCanonicalBridge().queryL2BridgeFinalizationEvents(l1Token, fromAddress, eventConfig),
     ]);
     // Reduce the events to a single object. If there are any duplicate keys, merge the events.
     return events.reduce((acc, event) => {
