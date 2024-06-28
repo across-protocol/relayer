@@ -571,7 +571,7 @@ export class ProfitClient {
     // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
     // the main RL address because it has all supported tokens and approvals in place on all chains.
     const testSymbols = {
-      [CHAIN_IDs.LISK]: "USDT",
+      [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
     };
     const [defaultTestSymbol, relayer] =
       this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
@@ -597,7 +597,6 @@ export class ProfitClient {
 
     // Pre-fetch total gas costs for relays on enabled chains.
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
-      // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
       const hubToken = TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId];
       const outputToken =
