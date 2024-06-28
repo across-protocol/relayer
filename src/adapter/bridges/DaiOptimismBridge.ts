@@ -1,14 +1,8 @@
-import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Provider } from "../../utils";
+import { Contract, Signer, Provider } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
-import { processEvent } from "../utils";
+import { OpStackDefaultERC20Bridge } from "./OpStackDefaultErc20Bridge";
 
-export class DaiOptimismBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
-  private readonly l2Gas = 200000;
-
+export class DaiOptimismBridge extends OpStackDefaultERC20Bridge {
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -16,61 +10,12 @@ export class DaiOptimismBridge extends BaseBridgeAdapter {
     l2SignerOrProvider: Signer | Provider,
     _l1Token: string
   ) {
-    // Lint Appeasement
-    _l1Token;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge.address,
-    ]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, _l1Token);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
-  }
-
-  async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
-    amount: BigNumber
-  ): Promise<BridgeTransactionDetails> {
-    return Promise.resolve({
-      contract: this.l1Bridge,
-      method: "depositERC20",
-      args: [l1Token, l2Token, amount, this.l2Gas, "0x"],
-    });
-  }
-
-  async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
-    eventConfig: EventSearchConfig
-  ): Promise<BridgeEvents> {
-    const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
-      eventConfig
-    );
-    return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
-    };
-  }
-
-  async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
-    eventConfig: EventSearchConfig
-  ): Promise<BridgeEvents> {
-    const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
-      eventConfig
-    );
-    return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
-    };
   }
 }
