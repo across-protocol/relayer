@@ -1,7 +1,7 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers } from "../utils";
 
 /**
- * Note: When adding new chains, it's preferred to retain the alphabetical ordering of CHAIN_IDs in Object mappings.
+ * Note: When adding new chains, it's preferred to retain alphabetical ordering of CHAIN_IDs in Object mappings.
  */
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
