@@ -188,7 +188,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         [...deposits]
           .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
@@ -228,7 +228,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, fillStatus);
     expect(unfilledDeposits)
-      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         deposits
           .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
@@ -262,7 +262,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
           deposit,
@@ -506,7 +506,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
     unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber"])
+      .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
           deposit,
