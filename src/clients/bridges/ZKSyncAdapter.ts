@@ -71,7 +71,7 @@ export class ZKSyncAdapter extends BaseAdapter {
         const isL2Contract = await this.isL2ChainContract(address);
         // This adapter will only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
         // and any L2 contracts that are not the SpokePool.
-        if (address === this.getHubPool().address) {
+        if (address === hubPool.address) {
           return;
         }
         const isSpokePoolContract = isL2Contract;
@@ -115,9 +115,10 @@ export class ZKSyncAdapter extends BaseAdapter {
             finalizedQueryResult = matchL2EthDepositAndWrapEvents(finalizedQueryResult, wrapQueryResult);
           }
         } else {
+          const [from, to] = isL2Contract ? [hubPool.address, null] : [address, address];
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
-            this.getERC20Deposits(l1ERC20Bridge, l1SearchConfig, address, address),
-            this.getERC20Receipts(l2ERC20Bridge, l2SearchConfig, address, address),
+            this.getERC20Deposits(l1ERC20Bridge, l1SearchConfig, from, to),
+            this.getERC20Receipts(l2ERC20Bridge, l2SearchConfig, from, to),
           ]);
         }
 

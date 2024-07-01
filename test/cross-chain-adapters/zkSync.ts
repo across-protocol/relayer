@@ -18,8 +18,11 @@ import { ZERO_ADDRESS } from "../constants";
 const { MAINNET, ZK_SYNC } = CHAIN_IDs;
 let l1Bridge: Contract;
 let l2Bridge: Contract;
+let hubPool: Contract;
 
 class zkSyncTestAdapter extends ZKSyncAdapter {
+  protected hubPool: Contract;
+
   override getAtomicDepositor(): Contract {
     return l1Bridge;
   }
@@ -30,6 +33,10 @@ class zkSyncTestAdapter extends ZKSyncAdapter {
 
   protected override getL2ERC20BridgeContract(): Contract {
     return l2Bridge;
+  }
+
+  override getHubPool(): Contract {
+    return hubPool;
   }
 
   protected async getL2GasCost(
@@ -54,7 +61,8 @@ describe("Cross Chain Adapter: zkSync", async function () {
   const l1Token = USDC.addresses[MAINNET];
   const l1Weth = WETH.addresses[MAINNET];
 
-  let adapter: ZKSyncAdapter;
+  let spokePool: Contract;
+  let adapter: zkSyncTestAdapter;
   let monitoredEoa: string;
   let l2Token: string, l2Weth: string;
 
@@ -65,7 +73,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
     const [depositor] = await ethers.getSigners();
     monitoredEoa = await depositor.getAddress();
 
-    const spokePool = await (await getContractFactory("MockSpokePool", depositor)).deploy(ZERO_ADDRESS);
+    hubPool = await (await getContractFactory("MockHubPool", depositor)).deploy();
+
+    spokePool = await (await getContractFactory("MockSpokePool", depositor)).deploy(ZERO_ADDRESS);
     const deploymentBlock = spokePool.deployTransaction.blockNumber!;
 
     const hubPoolClient = null;
@@ -83,7 +93,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         [MAINNET]: l1SpokePoolClient,
         [ZK_SYNC]: l2SpokePoolClient,
       },
-      [monitoredEoa] // monitored address doesn't matter for this test since we inject it into the function
+      [monitoredEoa, hubPool.address, spokePool.address]
     );
 
     amount = toBN(Math.round(Math.random() * 1e18));
@@ -95,9 +105,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
   });
 
   describe("WETH bridge", function () {
-    it("Get L1 deposits", async function () {
-      // @todo: Need to do one for HubPool -> SpokePool.
-
+    it("Get L1 deposits: EOA", async function () {
       await l1Bridge.bridgeWethToZkSync(monitoredEoa, amount, 0, 0, ZERO_ADDRESS);
 
       const result = await adapter.getWETHDeposits(l1Bridge, searchConfig);
@@ -112,7 +120,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(_amount).to.equal(amount);
     });
 
-    it("Get L2 receipts", async function () {
+    it("Get L2 receipts: EOA", async function () {
       await l2Bridge.transfer(monitoredEoa, monitoredEoa, amount);
 
       const result = await adapter.getWETHReceipts(l2Bridge, searchConfig, monitoredEoa, monitoredEoa);
@@ -126,12 +134,11 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(_amount).to.equal(amount);
     });
 
-    // XXX Resume here - piggyback on ERC20 tracking.
-    it("Matches L1 and L2 events", async function () {
+    it("Matches L1 and L2 events: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
       let transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
-      expect(transfers).to.deep.equal({ [monitoredEoa]: {} });
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
 
       // Make a single l1 -> l2 deposit.
       await l1Bridge.bridgeWethToZkSync(monitoredEoa, amount, 0, 0, ZERO_ADDRESS);
@@ -155,6 +162,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [spokePool.address]: {},
       });
 
       // Finalise the ongoing deposit on the destination chain.
@@ -166,14 +174,85 @@ describe("Cross Chain Adapter: zkSync", async function () {
       // There should be no outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
       transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
-      expect(transfers).to.deep.equal({ [monitoredEoa]: {} });
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
+    });
+
+    it("Get L1 deposits: HubPool", async function () {
+      await hubPool.relayTokens(l1Weth, l2Weth, amount, spokePool.address);
+
+      const result = await adapter.getWETHDeposits(hubPool, searchConfig, hubPool.address);
+      expect(result).to.exist;
+      expect(result.length).to.equal(1);
+
+      const deposit = result.at(0)!;
+      expect(deposit.args).to.exist;
+      const { to, amount: _amount } = deposit.args!;
+      expect(to).to.equal(spokePool.address);
+      expect(_amount).to.equal(amount);
+    });
+
+    it("Get L2 receipts: HubPool", async function () {
+      await l2Bridge.transfer(hubPool.address, spokePool.address, amount);
+
+      const result = await adapter.getWETHReceipts(l2Bridge, searchConfig, hubPool.address, spokePool.address);
+      expect(result.length).to.equal(1);
+
+      const receipt = result.at(0)!;
+      expect(receipt.args).to.exist;
+      const { from, to, amount: _amount } = receipt.args!;
+      expect(from).to.equal(hubPool.address);
+      expect(to).to.equal(spokePool.address);
+      expect(_amount).to.equal(amount);
+    });
+
+    it("Matches L1 and L2 events: HubPool", async function () {
+      // There should be no pre-existing outstanding transfers.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
+
+      // Make a single l1 -> l2 deposit.
+      await l1Bridge.bridgeWethToZkSync(monitoredEoa, amount, 0, 0, ZERO_ADDRESS);
+      const deposits = await adapter.getWETHDeposits(l1Bridge, searchConfig);
+      expect(deposits).to.exist;
+      expect(deposits.length).to.equal(1);
+
+      let receipts = await adapter.getERC20Receipts(l2Bridge, searchConfig, monitoredEoa, monitoredEoa);
+      expect(receipts).to.exist;
+      expect(receipts.length).to.equal(0);
+
+      // There should be 1 outstanding transfer.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      expect(transfers).to.deep.equal({
+        [monitoredEoa]: {
+          [l1Weth]: {
+            [l2Weth]: {
+              depositTxHashes: [deposits[0].transactionHash],
+              totalAmount: deposits[0].args!.amount,
+            },
+          },
+        },
+        [spokePool.address]: {},
+      });
+
+      // Finalise the ongoing deposit on the destination chain.
+      await l2Bridge.finalizeDeposit(monitoredEoa, monitoredEoa, l1Token, amount);
+      receipts = await adapter.getERC20Receipts(l2Bridge, searchConfig, monitoredEoa, monitoredEoa);
+      expect(receipts).to.exist;
+      expect(receipts.length).to.equal(1);
+
+      // There should be no outstanding transfers.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
     });
 
     it("Correctly makes l1 deposits", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
       let transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
-      expect(transfers).to.deep.equal({ [monitoredEoa]: {} });
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
 
       // Make a single l1 -> l2 deposit via the chaina adapter.
       await adapter.sendTokenToTargetChain(monitoredEoa, l1Weth, l2Token, amount);
@@ -193,6 +272,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [spokePool.address]: {},
       });
     });
   });
@@ -204,7 +284,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await l2Bridge.mapToken(l1Token, l2Token);
     });
 
-    it("Get L1 deposits", async function () {
+    it("Get L1 deposits: EOA", async function () {
       await l1Bridge.deposit(monitoredEoa, l1Token, amount, l2TxGasLimit, l2TxGasPerPubdataByte);
       await l1Bridge.deposit(randomEoa, l1Token, amount, l2TxGasLimit, l2TxGasPerPubdataByte);
 
@@ -227,7 +307,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       }
     });
 
-    it("Get L2 receipts", async function () {
+    it("Get L2 receipts: EOA", async function () {
       // Should return only event
       await l2Bridge.finalizeDeposit(monitoredEoa, monitoredEoa, l1Token, amount);
       await l2Bridge.finalizeDeposit(monitoredEoa, randomEoa, l1Token, amount);
@@ -250,11 +330,11 @@ describe("Cross Chain Adapter: zkSync", async function () {
       }
     });
 
-    it("Matches l1 deposits and l2 receipts", async function () {
+    it("Matches l1 deposits and l2 receipts: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
       let transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
-      expect(transfers).to.deep.equal({ [monitoredEoa]: {} });
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
 
       // Make a single l1 -> l2 deposit.
       await l1Bridge.deposit(monitoredEoa, l1Token, amount, l2TxGasLimit, l2TxGasPerPubdataByte);
@@ -278,6 +358,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [spokePool.address]: {},
       });
 
       // Finalise the ongoing deposit on the destination chain.
@@ -289,14 +370,123 @@ describe("Cross Chain Adapter: zkSync", async function () {
       // There should be no outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
       transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
-      expect(transfers).to.deep.equal({ [monitoredEoa]: {} });
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
+    });
+
+    it("Get L1 deposits: HubPool", async function () {
+      await l1Bridge.depositFor(
+        hubPool.address,
+        spokePool.address,
+        l1Token,
+        amount,
+        l2TxGasLimit,
+        l2TxGasPerPubdataByte
+      );
+      await l1Bridge.depositFor(randomEoa, monitoredEoa, l1Token, amount, l2TxGasLimit, l2TxGasPerPubdataByte);
+
+      const result = await adapter.getERC20Deposits(l1Bridge, searchConfig);
+      expect(result).to.exist;
+      expect(result.length).to.equal(2);
+
+      // Ensure that the recipient address filters work.
+      for (const [sender, recipient] of [
+        [hubPool.address, spokePool.address],
+        [randomEoa, monitoredEoa],
+      ]) {
+        const result = await adapter.getERC20Deposits(l1Bridge, searchConfig, sender, recipient);
+        expect(result).to.exist;
+        expect(result.length).to.equal(1);
+
+        const deposit = result.at(0)!;
+        expect(deposit.args).to.exist;
+        const { from, to, l1Token: _l1Token } = deposit.args!;
+        expect(from).to.equal(sender);
+        expect(to).to.equal(recipient);
+        expect(_l1Token).to.equal(l1Token);
+      }
+    });
+
+    it("Get L2 receipts: HubPool", async function () {
+      // Should return only event
+      await l2Bridge.finalizeDeposit(hubPool.address, spokePool.address, l1Token, amount);
+      await l2Bridge.finalizeDeposit(randomEoa, monitoredEoa, l1Token, amount);
+
+      const result = await adapter.getERC20Receipts(l2Bridge, searchConfig);
+      expect(result.length).to.equal(2);
+
+      // Ensure that the recipient address filters work.
+      for (const [sender, recipient] of [
+        [hubPool.address, spokePool.address],
+        [randomEoa, monitoredEoa],
+      ]) {
+        const result = await adapter.getERC20Receipts(l2Bridge, searchConfig, sender, recipient);
+        expect(result).to.exist;
+        expect(result.length).to.equal(1);
+
+        const deposit = result.at(0)!;
+        expect(deposit.args).to.exist;
+        const { l1Sender, l2Receiver, l2Token: _l2Token } = deposit.args!;
+        expect(l1Sender).to.equal(sender);
+        expect(l2Receiver).to.equal(recipient);
+        expect(_l2Token).to.equal(l2Token);
+      }
+    });
+
+    it("Matches l1 deposits and l2 receipts: HubPool", async function () {
+      // There should be no pre-existing outstanding transfers.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
+
+      // Make a single l1 -> l2 deposit.
+      await l1Bridge.depositFor(
+        hubPool.address,
+        spokePool.address,
+        l1Token,
+        amount,
+        l2TxGasLimit,
+        l2TxGasPerPubdataByte
+      );
+      const deposits = await adapter.getERC20Deposits(l1Bridge, searchConfig);
+      expect(deposits).to.exist;
+      expect(deposits.length).to.equal(1);
+
+      let receipts = await adapter.getERC20Receipts(l2Bridge, searchConfig, hubPool.address, spokePool.address);
+      expect(receipts).to.exist;
+      expect(receipts.length).to.equal(0);
+
+      // There should be 1 outstanding transfer.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      expect(transfers).to.deep.equal({
+        [monitoredEoa]: {},
+        [spokePool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [deposits[0].transactionHash],
+              totalAmount: deposits[0].args!.amount,
+            },
+          },
+        },
+      });
+
+      // Finalise the ongoing deposit on the destination chain.
+      await l2Bridge.finalizeDeposit(hubPool.address, spokePool.address, l1Token, amount);
+      receipts = await adapter.getERC20Receipts(l2Bridge, searchConfig, hubPool.address, spokePool.address);
+      expect(receipts).to.exist;
+      expect(receipts.length).to.equal(1);
+
+      // There should be no outstanding transfers.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
     });
 
     it("Correctly makes l1 deposits", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
       let transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
-      expect(transfers).to.deep.equal({ [monitoredEoa]: {} });
+      expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
 
       // Make a single l1 -> l2 deposit via the chaina adapter.
       await adapter.sendTokenToTargetChain(monitoredEoa, l1Token, l2Token, amount);
@@ -316,6 +506,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [spokePool.address]: {},
       });
     });
   });
