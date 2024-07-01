@@ -5,7 +5,6 @@ import {
   winston,
   BigNumber,
   getCurrentTime,
-  CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   getRedisCache,
   bnUint256Max as uint256Max,
