@@ -462,9 +462,9 @@ export class InventoryClient {
     // since its the fallback chain if both destination and origin chain are over allocated.
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
     if (
-      !deposit.fromLiteChain &&
       !chainsToEvaluate.includes(destinationChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId))
+      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
+      !deposit.fromLiteChain
     ) {
       chainsToEvaluate.push(destinationChainId);
     }
