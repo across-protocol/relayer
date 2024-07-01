@@ -633,7 +633,7 @@ export class Relayer {
     // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
     assert(
       !deposit.fromLiteChain || repaymentChainId === deposit.originChainId,
-      `Lite chain deposits must be filled on their origin chain. Deposit ${deposit.depositId}.`
+      `Lite chain deposits must be filled on its origin chain (${deposit.originChainId}). Deposit Id: ${deposit.depositId}.`
     );
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
