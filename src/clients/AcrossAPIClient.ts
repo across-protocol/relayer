@@ -34,11 +34,12 @@ export class AcrossApiClient {
     readonly tokensQuery: string[] = [],
     readonly timeout: number = 3000
   ) {
+    const hubChainId = hubPoolClient.chainId;
     if (Object.keys(tokensQuery).length === 0) {
-      this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[CHAIN_IDs.MAINNET]);
+      this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[hubChainId]);
     }
 
-    this.chainIds = chainIds.filter((chainId) => chainId !== hubPoolClient.chainId);
+    this.chainIds = chainIds.filter((chainId) => chainId !== hubChainId);
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
