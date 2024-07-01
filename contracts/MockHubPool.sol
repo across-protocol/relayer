@@ -7,6 +7,6 @@ contract MockHubPool {
     event TokensRelayed(address l1Token, address l2Token, uint256 amount, address to);
 
     function relayTokens(address l1Token, address l2Token, uint256 amount, address to) public {
-      emit TokensRelayed(l1Token, l2Token, amount, to);
+        emit TokensRelayed(l1Token, l2Token, amount, to);
     }
 }

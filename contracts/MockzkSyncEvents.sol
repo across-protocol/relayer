@@ -37,14 +37,14 @@ contract zkSync_L1Bridge {
     }
 
     function _depositFor(
-      address l1Sender,
-      address l2Receiver,
-      address l1Token,
-      uint256 amount
+        address l1Sender,
+        address l2Receiver,
+        address l1Token,
+        uint256 amount
     ) internal returns (bytes32 l2TxHash) {
-      l2TxHash = "";
-      emit DepositInitiated(l2TxHash, l1Sender, l2Receiver, l1Token, amount);
-      return l2TxHash;
+        l2TxHash = "";
+        emit DepositInitiated(l2TxHash, l1Sender, l2Receiver, l1Token, amount);
+        return l2TxHash;
     }
 
     // AtomicDepositor function.
