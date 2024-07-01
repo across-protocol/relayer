@@ -15,9 +15,6 @@ contract zkSync_L1Bridge {
     // AtomicDepositor event.
     event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
 
-    // HubPool (chain adapter) event.
-    event TokensRelayed(address l1Token, address l2Token, uint256 amount, address to);
-
     function deposit(
         address _l2Receiver,
         address _l1Token,
@@ -50,15 +47,9 @@ contract zkSync_L1Bridge {
       return l2TxHash;
     }
 
-
     // AtomicDepositor function.
     function bridgeWethToZkSync(address to, uint256 amount, uint256, uint256, address) public {
         emit ZkSyncEthDepositInitiated(msg.sender, to, amount);
-    }
-
-    // HubPool (chain adapter) function.
-    function relayTokens(address l1Token, address l2Token, uint256 amount, address to) public {
-      emit TokensRelayed(l1Token, l2Token, amount, to);
     }
 }
 
