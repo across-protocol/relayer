@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.3",
-    "@across-protocol/contracts": "^3.0.0",
+    "@across-protocol/contracts": "^3.0.2",
     "@across-protocol/sdk": "^3.0.3",
     "@arbitrum/sdk": "^3.1.3",
     "@consensys/linea-sdk": "^0.2.1",
