@@ -18,7 +18,7 @@ export interface DepositLimits {
 const API_UPDATE_RETENTION_TIME = 60; // seconds
 
 export class AcrossApiClient {
-  private endpoint = "https://app.across.to/api";
+  private endpoint: string;
   private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
   private updatedAt = 0;
@@ -34,6 +34,7 @@ export class AcrossApiClient {
     readonly timeout: number = 3000
   ) {
     const hubChainId = hubPoolClient.chainId;
+    this.endpoint = `https://${hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to"}/api`;
     if (Object.keys(tokensQuery).length === 0) {
       this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[hubChainId]);
     }
