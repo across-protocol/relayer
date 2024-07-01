@@ -22,6 +22,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
   [CHAIN_IDs.ARBITRUM]: 1382400,
   [CHAIN_IDs.LINEA]: 115200, // 1 block every 3 seconds
+  [CHAIN_IDs.BLAST]: 172800,
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -60,6 +61,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   [CHAIN_IDs.MODE]: 120,
   [CHAIN_IDs.ARBITRUM]: 0,
   [CHAIN_IDs.LINEA]: 30,
+  [CHAIN_IDs.BLAST]: 120,
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
@@ -68,6 +70,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   [CHAIN_IDs.SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
@@ -81,12 +84,14 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.LINEA]: 1,
+    [CHAIN_IDs.BLAST]: 60,
     // Testnets:
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
+    [CHAIN_IDs.BLAST_SEPOLIA]: 0,
   },
   100: {
     [CHAIN_IDs.MAINNET]: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
@@ -99,12 +104,14 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.LINEA]: 1,
+    [CHAIN_IDs.BLAST]: 60,
     // Testnets:
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
+    [CHAIN_IDs.BLAST_SEPOLIA]: 0,
   },
 };
 
@@ -126,6 +133,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.MODE]: 1500,
   [CHAIN_IDs.ARBITRUM]: 10000,
   [CHAIN_IDs.LINEA]: 5000,
+  [CHAIN_IDs.BLAST]: 1500,
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
   [CHAIN_IDs.POLYGON_AMOY]: 10000,
@@ -134,6 +142,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
   [CHAIN_IDs.SEPOLIA]: 10000,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 10000,
 };
 
 // These should be safely above the finalization period for the chain and
@@ -151,6 +160,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
+  [CHAIN_IDs.BLAST]: 60,
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
@@ -159,6 +169,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
@@ -196,6 +207,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
   [CHAIN_IDs.SCROLL]: 0,
+  [CHAIN_IDs.BLAST]: 120,
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
@@ -204,6 +216,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
 };
 
 // This is the block distance at which the bot, by default, stores in redis with no TTL.
@@ -221,6 +234,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LINEA]: 57600,
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.SCROLL]: 57600,
+  [CHAIN_IDs.BLAST]: 86400,
 };
 
 // Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
@@ -232,6 +246,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  [CHAIN_IDs.BLAST]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -253,11 +268,13 @@ export const multicall3Addresses = {
   [CHAIN_IDs.ARBITRUM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.LINEA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  // testnet
+  [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  // Testnet:
   [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BASE_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  [CHAIN_IDs.BLAST_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
@@ -273,6 +290,7 @@ export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.BASE,
   CHAIN_IDs.MODE,
   CHAIN_IDs.LINEA,
+  CHAIN_IDs.BLAST,
 ];
 
 /**
@@ -302,6 +320,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.BLAST]: ["USDC", "USDT", "WETH"],
 
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
@@ -309,6 +328,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BASE_SEPOLIA]: ["BAL", "DAI", "ETH", "WETH", "USDC"],
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
+  [CHAIN_IDs.BLAST_SEPOLIA]: ["USDC", "USDT", "WETH"],
 };
 
 /**
@@ -346,4 +366,5 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.LISK]: 20 * 60,
   [CHAIN_IDs.BASE]: 20 * 60,
   [CHAIN_IDs.MODE]: 20 * 60,
+  [CHAIN_IDs.BLAST]: 20 * 60,
 };
