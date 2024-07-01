@@ -24,7 +24,10 @@ export async function lineaL1ToL2Finalizer(
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
-  const l2ChainId = l1ChainId === CHAIN_IDs.MAINNET ? CHAIN_IDs.LINEA : CHAIN_IDs.LINEA_GOERLI;
+  if (l1ChainId !== CHAIN_IDs.MAINNET) {
+    throw new Error("Finalizations for Linea testnet is not supported.");
+  }
+  const l2ChainId = CHAIN_IDs.LINEA;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
   const l1MessageServiceContract = lineaSdk.getL1Contract();

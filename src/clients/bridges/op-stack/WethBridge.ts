@@ -46,6 +46,26 @@ export class WethBridge extends OpStackBridge {
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
 
+  protected getHubPoolAddress(): string {
+    return this.hubPoolAddress;
+  }
+
+  protected getL1Bridge(): Contract {
+    return this.l1Bridge;
+  }
+
+  protected getL2Bridge(): Contract {
+    return this.l2Bridge;
+  }
+
+  protected getAtomicDepositor(): Contract {
+    return this.atomicDepositor;
+  }
+
+  protected getL2Weth(): Contract {
+    return this.l2Weth;
+  }
+
   constructL1ToL2Txn(
     toAddress: string,
     l1Token: string,
@@ -54,7 +74,7 @@ export class WethBridge extends OpStackBridge {
     l2Gas: number
   ): BridgeTransactionDetails {
     return {
-      contract: this.atomicDepositor,
+      contract: this.getAtomicDepositor(),
       method: "bridgeWethToOvm",
       args: [toAddress, amount, l2Gas, this.l2chainId],
     };
@@ -69,9 +89,10 @@ export class WethBridge extends OpStackBridge {
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
-    eventConfig: EventSearchConfig,
-    l1Bridge = this.l1Bridge
+    eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l1Bridge = this.getL1Bridge();
+    const atomicDepositor = this.getAtomicDepositor();
     // We need to be smart about the filtering here because the ETHDepositInitiated event does not
     // index on the `toAddress` which is the `fromAddress` that we pass in here and the address we want
     // to actually filter on. So we make some simplifying assumptions:
@@ -88,7 +109,7 @@ export class WethBridge extends OpStackBridge {
 
     const events = await paginatedEventQuery(
       l1Bridge,
-      l1Bridge.filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
+      l1Bridge.filters.ETHDepositInitiated(isContract ? fromAddress : atomicDepositor.address),
       eventConfig
     );
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
@@ -102,16 +123,19 @@ export class WethBridge extends OpStackBridge {
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
-    eventConfig: EventSearchConfig,
-    l2Bridge = this.l2Bridge,
-    l2Weth = this.l2Weth
+    eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l2Bridge = this.getL2Bridge();
+    const l2Weth = this.getL2Weth();
+    const atomicDepositor = this.getAtomicDepositor();
+    const hubPoolAddress = this.getHubPoolAddress();
+
     // Check if the sender is a contract on the L1 network.
     const isContract = await this.isHubChainContract(fromAddress);
 
     // See above for why we don't want to monitor the spoke pool contract.
     const isL2ChainContract = await this.isL2ChainContract(fromAddress);
-    if (isL2ChainContract || (isContract && fromAddress !== this.hubPoolAddress)) {
+    if (isL2ChainContract || (isContract && fromAddress !== hubPoolAddress)) {
       return this.convertEventListToOpStackEvents([]);
     }
 
@@ -124,7 +148,7 @@ export class WethBridge extends OpStackBridge {
       const l2EthDepositEvents = (
         await paginatedEventQuery(
           l2Bridge,
-          l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, this.atomicDepositor.address),
+          l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, atomicDepositor.address),
           eventConfig
         )
       )
@@ -158,10 +182,12 @@ export class WethBridge extends OpStackBridge {
   }
 
   async isHubChainContract(address: string): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address, this.l1Bridge.provider);
+    const l1Bridge = this.getL1Bridge();
+    return utils.isContractDeployedToAddress(address, l1Bridge.provider);
   }
   async isL2ChainContract(address: string): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address, this.l2Bridge.provider);
+    const l2Bridge = this.getL2Bridge();
+    return utils.isContractDeployedToAddress(address, l2Bridge.provider);
   }
 
   private queryL2WrapEthEvents(
