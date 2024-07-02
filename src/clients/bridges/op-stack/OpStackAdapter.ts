@@ -46,8 +46,8 @@ export class OpStackAdapter extends BaseAdapter {
 
       const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
       const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId];
-      this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, hubChainId, l2Signer, mainnetSigner);
-      this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, hubChainId, l2Signer, mainnetSigner);
+      this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
+      this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
     }
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
