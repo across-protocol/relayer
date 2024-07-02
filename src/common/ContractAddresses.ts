@@ -81,8 +81,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
-    // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
-    // Stack chain to the name to differentiate. This one is for Base.
+    ovmStandardBridge_1135: {
+      address: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     ovmStandardBridge_8453: {
       address: "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
@@ -180,6 +182,19 @@ export const CONTRACT_ADDRESSES: {
     weth: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
       abi: WETH_ABI,
+    },
+  },
+  1135: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    weth: {
+      address: "0x4200000000000000000000000000000000000006",
+      abi: WETH_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   8453: {
