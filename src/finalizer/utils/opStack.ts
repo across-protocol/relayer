@@ -20,6 +20,7 @@ import {
   Signer,
   TOKEN_SYMBOLS_MAP,
   winston,
+  chainIsProd,
 } from "../../utils";
 import { Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -34,7 +35,12 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   logIndex: number;
 }
 
-type OVM_CHAIN_ID = 10 | 8453 | 34443;
+const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
+/* OP_STACK_CHAINS should contain all chains which satisfy chainIsOPStack().
+ * (typeof OP_STACK_CHAINS)[number] then takes all elements in this array and "unions" their type (i.e. 10 | 8453 | 3443 | ... ).
+ * https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-1.html#keyof-and-lookup-types
+ */
+type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export async function opStackFinalizer(
@@ -44,7 +50,7 @@ export async function opStackFinalizer(
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
-  assert(isOVMChainId(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
+  assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
   const networkName = getNetworkName(chainId);
 
   const crossChainMessenger = getOptimismClient(chainId, signer);
@@ -57,7 +63,12 @@ export async function opStackFinalizer(
   const redis = await getRedisCache(logger);
   const latestBlockToProve = await getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
-    spokePoolClient.getTokensBridged(),
+    spokePoolClient.getTokensBridged().filter(
+      (e) =>
+        // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
+        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
+        !(chainId === CHAIN_IDs.BASE || chainId === CHAIN_IDs.OPTIMISM)
+    ),
     (e) => {
       if (e.blockNumber >= latestBlockToProve) {
         return "recentTokensBridgedEvents";
@@ -104,16 +115,13 @@ export async function opStackFinalizer(
   return { callData, crossChainMessages: crossChainTransfers };
 }
 
-function isOVMChainId(chainId: number): chainId is OVM_CHAIN_ID {
-  return chainIsOPStack(chainId);
-}
-
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
+  const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
-    l1ChainId: 1,
+    l1ChainId: hubChainId,
     l2ChainId: chainId,
-    l1SignerOrProvider: hubSigner.connect(getCachedProvider(1, true)),
+    l1SignerOrProvider: hubSigner.connect(getCachedProvider(hubChainId, true)),
     l2SignerOrProvider: hubSigner.connect(getCachedProvider(chainId, true)),
   });
 }
@@ -128,31 +136,22 @@ async function getCrossChainMessages(
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
 
   return (
-    (
-      await Promise.all(
-        tokensBridged.map(
-          async (l2Event, i) =>
-            (
-              await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
-                direction: optimismSDK.MessageDirection.L2_TO_L1,
-              })
-            )[logIndexesForMessage[i]]
-        )
-      )
-    )
-      .map((message, i) => {
-        return {
-          message,
-          event: tokensBridged[i],
-        };
+    await Promise.all(
+      tokensBridged.map(async (l2Event, i) => {
+        const withdrawals = await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
+          direction: optimismSDK.MessageDirection.L2_TO_L1,
+        });
+        const logIndexOfEvent = logIndexesForMessage[i];
+        assert(logIndexOfEvent < withdrawals.length);
+        return withdrawals[logIndexOfEvent];
       })
-      // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
-      .filter(
-        (e) =>
-          !compareAddressesSimple(e.event.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[_chainId]) ||
-          !(_chainId === CHAIN_IDs.BASE || _chainId === CHAIN_IDs.OPTIMISM)
-      )
-  );
+    )
+  ).map((message, i) => {
+    return {
+      message,
+      event: tokensBridged[i],
+    };
+  });
 }
 
 async function getMessageStatuses(

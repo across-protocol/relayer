@@ -7,7 +7,7 @@ import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { getWidestPossibleExpectedBlockRange } from "../src/dataworker/PoolRebalanceUtils";
 import { originChainId } from "./constants";
 import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
-import { getDeployedBlockNumber } from "@across-protocol/contracts-v2";
+import { getDeployedBlockNumber } from "@across-protocol/contracts";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
 import { assert } from "../src/utils";

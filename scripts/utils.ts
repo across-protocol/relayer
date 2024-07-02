@@ -1,8 +1,8 @@
 import assert from "assert";
 import { Contract, ethers, utils as ethersUtils } from "ethers";
 import readline from "readline";
-import * as contracts from "@across-protocol/contracts-v2";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import * as contracts from "@across-protocol/contracts";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
 
 // https://nodejs.org/api/process.html#exit-codes
@@ -19,7 +19,6 @@ export type ERC20 = {
 // Public RPC endpoints to be used if preferred providers are not defined in the environment.
 const fallbackProviders: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "https://eth.llamarpc.com",
-  [CHAIN_IDs.GOERLI]: "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
   [CHAIN_IDs.SEPOLIA]: "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
 };
 

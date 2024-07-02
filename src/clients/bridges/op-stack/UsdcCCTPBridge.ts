@@ -25,12 +25,20 @@ export class UsdcCCTPBridge extends OpStackBridge {
   }
 
   private get l1UsdcTokenAddress(): string {
-    return TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
+    return TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
+  }
+
+  protected getL1Bridge(): Contract {
+    return this.l1CctpTokenBridge;
+  }
+
+  protected getL2Bridge(): Contract {
+    return this.l2CctpMessageTransmitter;
   }
 
   protected resolveL2TokenAddress(l1Token: string): string {
     l1Token;
-    return TOKEN_SYMBOLS_MAP._USDC.addresses[this.l2chainId];
+    return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
   }
 
   constructL1ToL2Txn(
@@ -42,7 +50,7 @@ export class UsdcCCTPBridge extends OpStackBridge {
     _l2Gas: number
   ): BridgeTransactionDetails {
     return {
-      contract: this.l1CctpTokenBridge,
+      contract: this.getL1Bridge(),
       method: "depositForBurn",
       args: [amount, this.l2DestinationDomain, cctpAddressToBytes32(toAddress), this.l1UsdcTokenAddress],
     };
@@ -55,8 +63,8 @@ export class UsdcCCTPBridge extends OpStackBridge {
   ): Promise<OpStackEvents> {
     return {
       [this.resolveL2TokenAddress(l1Token)]: await retrieveOutstandingCCTPBridgeUSDCTransfers(
-        this.l1CctpTokenBridge,
-        this.l2CctpMessageTransmitter,
+        this.getL1Bridge(),
+        this.getL2Bridge(),
         eventConfig,
         this.l1UsdcTokenAddress,
         this.hubChainId,
@@ -77,7 +85,7 @@ export class UsdcCCTPBridge extends OpStackBridge {
 
     // Per the documentation of the BaseAdapter's computeOutstandingCrossChainTransfers method, we can return an empty array here
     // and only return the relevant outstanding events from queryL1BridgeInitiationEvents.
-    // Relevant link: https://github.com/across-protocol/relayer-v2/blob/master/src/clients/bridges/BaseAdapter.ts#L189
+    // Relevant link: https://github.com/across-protocol/relayer/blob/master/src/clients/bridges/BaseAdapter.ts#L189
     return Promise.resolve({});
   }
 }

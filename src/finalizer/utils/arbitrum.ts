@@ -13,13 +13,14 @@ import {
   getL1TokenInfo,
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
+  CHAIN_IDs,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
-const CHAIN_ID = 42161;
+const CHAIN_ID = CHAIN_IDs.ARBITRUM;
 
 export async function arbitrumOneFinalizer(
   logger: winston.Logger,
@@ -43,9 +44,12 @@ export async function arbitrumOneFinalizer(
     toBlock: latestBlockToFinalize,
   });
   // Skip events that are likely not past the seven day challenge period.
-  const olderTokensBridgedEvents = spokePoolClient
-    .getTokensBridged()
-    .filter((e) => e.blockNumber <= latestBlockToFinalize);
+  const olderTokensBridgedEvents = spokePoolClient.getTokensBridged().filter(
+    (e) =>
+      e.blockNumber <= latestBlockToFinalize &&
+      // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
+      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[CHAIN_ID])
+  );
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
@@ -142,24 +146,17 @@ async function getAllMessageStatuses(
   // This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   return (
-    (
-      await Promise.all(
-        tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
-      )
+    await Promise.all(
+      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
     )
-      .map((result, i) => {
-        return {
-          ...result,
-          info: tokensBridged[i],
-        };
-      })
-      // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      .filter(
-        (result) =>
-          result.message !== undefined &&
-          !compareAddressesSimple(result.info.l2TokenAddress, TOKEN_SYMBOLS_MAP["_USDC"].addresses[CHAIN_ID])
-      )
-  );
+  )
+    .map((result, i) => {
+      return {
+        ...result,
+        info: tokensBridged[i],
+      };
+    })
+    .filter((result) => result.message !== undefined);
 }
 
 async function getMessageOutboxStatusAndProof(
@@ -178,13 +175,15 @@ async function getMessageOutboxStatusAndProof(
   try {
     const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
-      const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
+      const error = new Error(
+        `No outgoing messages found in transaction:${event.transactionHash} for l2 token ${event.l2TokenAddress}`
+      );
       logger.warn({
         at: "ArbitrumFinalizer",
         message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
         logIndex,
         l2ToL1Messages: l2ToL1Messages.length,
-        txnHash: event.transactionHash,
+        event,
         reason: error.stack || error.message || error.toString(),
         notificationPath: "across-error",
       });

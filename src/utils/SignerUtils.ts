@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 import { constants as ethersConsts, VoidSigner } from "ethers";
-import { typeguards } from "@across-protocol/sdk-v2";
+import { typeguards } from "@across-protocol/sdk";
 import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined, assert } from "./";
 import { ArweaveWalletJWKInterface, ArweaveWalletJWKInterfaceSS } from "../interfaces";
 

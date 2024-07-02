@@ -4,8 +4,8 @@ import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
-import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts-v2";
+import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
 import {
   BigNumber,
   formatFeePct,
@@ -383,7 +383,7 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
 
   // @note: Querying over such a large block range typically only works on top-tier providers.
   // @todo: Narrow the block range for the depositId, subject to this PR:
-  //        https://github.com/across-protocol/sdk-v2/pull/476
+  //        https://github.com/across-protocol/sdk/pull/476
   return await spokePool.queryFilter(filter, deploymentBlockNumber, latestBlockNumber);
 }
 

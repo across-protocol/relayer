@@ -1,4 +1,4 @@
-import { clients } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk";
 
 export type SpokePoolClient = clients.SpokePoolClient;
 export type SpokePoolUpdate = clients.SpokePoolUpdate;

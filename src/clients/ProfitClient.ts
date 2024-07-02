@@ -6,7 +6,7 @@ import {
   relayFeeCalculator,
   typeguards,
   utils as sdkUtils,
-} from "@across-protocol/sdk-v2";
+} from "@across-protocol/sdk";
 import * as constants from "../common/Constants";
 import {
   assert,
@@ -590,6 +590,8 @@ export class ProfitClient {
       exclusivityDeadline: 0,
       exclusiveRelayer: ZERO_ADDRESS,
       message: EMPTY_MESSAGE,
+      fromLiteChain: false,
+      toLiteChain: false,
     };
 
     // Pre-fetch total gas costs for relays on enabled chains.

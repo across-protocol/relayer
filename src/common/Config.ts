@@ -1,6 +1,6 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { assert, ethers, isDefined } from "../utils";
+import { assert, CHAIN_IDs, ethers, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -23,7 +23,7 @@ export class CommonConfig {
   readonly arweaveGateway: ArweaveGatewayInterface;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
-  public multiCallChunkSize: { [chainId: number]: number };
+  public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
 
   constructor(env: ProcessEnv) {
@@ -64,7 +64,7 @@ export class CommonConfig {
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
-    this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
+    this.hubPoolChainId = Number(HUB_CHAIN_ID ?? CHAIN_IDs.MAINNET);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
@@ -91,8 +91,6 @@ export class CommonConfig {
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
   loadAndValidateConfigForChains(chainIdIndices: number[]): void {
-    const multiCallChunkSize: { [chainId: number]: number } = {};
-
     for (const chainId of chainIdIndices) {
       // Validate that there is a block range end block buffer for each chain.
       if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
@@ -114,11 +112,12 @@ export class CommonConfig {
       // prettier-ignore
       const chunkSize = Number(
       process.env[`MULTICALL_CHUNK_SIZE_CHAIN_${chainId}`]
+        ?? process.env.MULTICALL_CHUNK_SIZE
         ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
         ?? DEFAULT_MULTICALL_CHUNK_SIZE
-    );
+      );
       assert(chunkSize > 0, `Chain ${chainId} multicall chunk size (${chunkSize}) must be greater than 0`);
-      multiCallChunkSize[chainId] = chunkSize;
+      this.multiCallChunkSize[chainId] = chunkSize;
 
       // Load any toBlock overrides.
       if (process.env[`TO_BLOCK_OVERRIDE_${chainId}`] !== undefined) {
@@ -127,7 +126,5 @@ export class CommonConfig {
         this.toBlockOverride[chainId] = toBlock;
       }
     }
-
-    this.multiCallChunkSize = multiCallChunkSize;
   }
 }

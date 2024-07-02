@@ -17,7 +17,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -124,7 +124,7 @@ export async function constructSpokePoolClientsWithLookback(
   const fromBlocks = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
-        if (chainId === 1) {
+        if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
         } else {
           return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];

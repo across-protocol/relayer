@@ -1,5 +1,6 @@
 import assert from "assert";
 import {
+  CHAIN_IDs,
   Contract,
   BigNumber,
   BigNumberish,
@@ -12,22 +13,23 @@ import {
   winston,
   TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
-import { SpokePoolClient } from "../..";
-import { BaseAdapter } from "..";
+import { SpokePoolClient } from "../../";
+import { BaseAdapter } from "../";
 import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { OpStackBridge } from "./OpStackBridgeInterface";
 import { WethBridge } from "./WethBridge";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
 import { UsdcTokenSplitterBridge } from "./UsdcTokenSplitterBridge";
+import { DaiOptimismBridge, SnxOptimismBridge } from "./optimism";
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
   private readonly defaultBridge: OpStackBridge;
+  private readonly customBridges: { [l1Address: string]: OpStackBridge } = {};
 
   constructor(
     chainId: number,
-    private customBridges: { [l1Address: string]: OpStackBridge },
     logger: winston.Logger,
     supportedTokens: string[],
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -36,9 +38,20 @@ export class OpStackAdapter extends BaseAdapter {
     super(spokePoolClients, chainId, monitoredAddresses, logger, supportedTokens);
     this.l2Gas = 200000;
 
+    const { hubChainId, wethAddress } = this;
+    const { OPTIMISM } = CHAIN_IDs;
+    if (chainId === OPTIMISM) {
+      const mainnetSigner = spokePoolClients[hubChainId].spokePool.signer;
+      const l2Signer = spokePoolClients[OPTIMISM].spokePool.signer;
+
+      const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
+      const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId];
+      this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, hubChainId, l2Signer, mainnetSigner);
+      this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, hubChainId, l2Signer, mainnetSigner);
+    }
+
     // Typically, a custom WETH bridge is not provided, so use the standard one.
-    const wethAddress = this.wethAddress;
-    if (wethAddress && !this.customBridges[wethAddress]) {
+    if (wethAddress) {
       this.customBridges[wethAddress] = new WethBridge(
         this.chainId,
         this.hubChainId,
@@ -51,8 +64,8 @@ export class OpStackAdapter extends BaseAdapter {
     // assume that all Op Stack chains will have a bridged USDC.e variant that uses the OVM standard bridge, so we
     // only need to check if a native USDC exists for this chain. If so, then we'll use the TokenSplitter bridge
     // which maps to either the CCTP or OVM Standard bridge depending on the request.
-    const usdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.hubChainId];
-    const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP._USDC.addresses[this.chainId];
+    const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
+    const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId];
     if (usdcAddress && l2NativeUsdcAddress) {
       this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(
         this.chainId,

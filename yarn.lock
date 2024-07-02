@@ -11,17 +11,31 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/constants-v2@1.0.26", "@across-protocol/constants-v2@^1.0.26":
-  version "1.0.26"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants-v2/-/constants-v2-1.0.26.tgz#04fff84574af9fe4128318a19d7b7990ee10f32e"
-  integrity sha512-XuxBGNvhevdTT+GQGreg1YP+RsRWzuqOEHNA9m/p7l3qjFkXuWUM9nj77ttccbIi0tCZQDiMR8VxwHBCAXB4LQ==
+"@across-protocol/constants@^3.1.3":
+  version "3.1.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.3.tgz#534764a4137bd5181ab4214543d0cbbf44a90c63"
+  integrity sha512-4pUjJrRor9gFPAsskbva6bDK780tzXYMWtqCtBa1jOUc+X3PxC6U6lF7ZoyX+lqU/KcfAWDLg8YEsz+KLm3NrQ==
 
-"@across-protocol/contracts-v2@2.5.9":
-  version "2.5.9"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.5.9.tgz#75d9795fae7a9724e192a20afb72ad32d525577f"
-  integrity sha512-j/6HAyASerFJpxRBErvXLT3PeQnLOLwRufc7+0LuNvNkJ4Q0vO/SFVsSwvSbX6FD+F3+w0DILVj0R/HleN1reg==
+"@across-protocol/constants@^3.1.5":
+  version "3.1.5"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.5.tgz#58cdd06816518b5cf1d92d94a4bc175ab0bc9d0c"
+  integrity sha512-3bqBNdYhVnpNwd9zwxmDWewM0ixRxTiL0SCHmOWlmDEx9xqPFHx5t+GLJWOa18wIoPP5KWv/TyI+fdwi3Tg5Bw==
+
+"@across-protocol/contracts@^0.1.4":
+  version "0.1.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
+  integrity sha512-y9FVRSFdPgEdGWBcf8rUmmzdYhzGdy0752HwpaAFtMJ1pn+HFgNaI0EZc/UudMKIPOkk+/BxPIHYPy7tKad5/A==
   dependencies:
-    "@across-protocol/constants-v2" "^1.0.26"
+    "@eth-optimism/contracts" "^0.5.5"
+    "@openzeppelin/contracts" "4.1.0"
+    "@uma/core" "^2.18.0"
+
+"@across-protocol/contracts@^3.0.3":
+  version "3.0.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.3.tgz#e3f97af29b7ed55c82305e89272b30915632c226"
+  integrity sha512-4pQkgyUOhzgKk5kVrJsLOXmI9ko31aDKI7aEi9nYIU5at6JcWteySGvlFtRZVgq1gQqv0uiYHcSrKoP7dlVE/A==
+  dependencies:
+    "@across-protocol/constants" "^3.1.3"
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
     "@ethersproject/abstract-provider" "5.7.0"
@@ -36,23 +50,14 @@
     axios "^1.6.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts@^0.1.4":
-  version "0.1.4"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
-  integrity sha512-y9FVRSFdPgEdGWBcf8rUmmzdYhzGdy0752HwpaAFtMJ1pn+HFgNaI0EZc/UudMKIPOkk+/BxPIHYPy7tKad5/A==
-  dependencies:
-    "@eth-optimism/contracts" "^0.5.5"
-    "@openzeppelin/contracts" "4.1.0"
-    "@uma/core" "^2.18.0"
-
-"@across-protocol/sdk-v2@0.24.2":
-  version "0.24.2"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.24.2.tgz#736a1d89d656c061f6131150306dec0291870247"
-  integrity sha512-oar6OlJB+fboU5tn2nuninXfehENcyfY4Hz89Ibiwv8Qe4gksnHrH8nhE+i38j6U8QbHudo+z0xRV+C7adw6/g==
+"@across-protocol/sdk@^3.1.8":
+  version "3.1.8"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.8.tgz#0f6f8c5b3aa6f13d9ca955b2a00a50d902ef4bc2"
+  integrity sha512-gIV6p3lfb0kKN2JI8ZBikma4xUnTMAeruaUQ1oMwtVSZgEybiKw+CKJYgamG9MavXYDFa0uSYLzhD5PCmZ4Xxw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants-v2" "^1.0.26"
-    "@across-protocol/contracts-v2" "2.5.9"
+    "@across-protocol/constants" "^3.1.5"
+    "@across-protocol/contracts" "^3.0.3"
     "@eth-optimism/sdk" "^3.3.1"
     "@pinata/sdk" "^2.1.0"
     "@types/mocha" "^10.0.1"
@@ -542,7 +547,7 @@
     bufio "^1.0.7"
     chai "^4.3.4"
 
-"@eth-optimism/core-utils@0.13.2":
+"@eth-optimism/core-utils@0.13.2", "@eth-optimism/core-utils@^0.13.2":
   version "0.13.2"
   resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.13.2.tgz#c0187c3abf6d86dad039edf04ff81299253214fe"
   integrity sha512-u7TOKm1RxH1V5zw7dHmfy91bOuEAZU68LT/9vJPkuWEjaTl+BgvPDRDTurjzclHzN0GbWdcpOqPZg4ftjkJGaw==
@@ -582,6 +587,18 @@
   dependencies:
     "@eth-optimism/contracts" "0.6.0"
     "@eth-optimism/core-utils" "0.13.2"
+    lodash "^4.17.21"
+    merkletreejs "^0.3.11"
+    rlp "^2.2.7"
+    semver "^7.6.0"
+
+"@eth-optimism/sdk@^3.3.2":
+  version "3.3.2"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-3.3.2.tgz#68a5f6e77f9c85f6eeb9db8044b3b69199520eb0"
+  integrity sha512-+zhxT0YkBIEzHsuIayQGjr8g9NawZo6/HYfzg1NSEFsE2Yt0NyCWqVDFTuuak0T6AvIa2kNcl3r0Z8drdb2QmQ==
+  dependencies:
+    "@eth-optimism/contracts" "0.6.0"
+    "@eth-optimism/core-utils" "^0.13.2"
     lodash "^4.17.21"
     merkletreejs "^0.3.11"
     rlp "^2.2.7"
