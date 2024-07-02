@@ -32,7 +32,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     this.canonicalBridge = canonicalBridge;
   }
 
-  private getL1Bridge(l2Token: string): BaseBridgeAdapter {
+  private getRouteForL2Token(l2Token: string): BaseBridgeAdapter {
     return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
       ? this.cctpBridge
       : this.canonicalBridge;
@@ -45,7 +45,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    return this.getL1Bridge(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount);
+    return this.getRouteForL2Token(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount);
   }
 
   async queryL1BridgeInitiationEvents(

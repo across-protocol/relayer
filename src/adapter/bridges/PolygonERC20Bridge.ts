@@ -18,9 +18,6 @@ import { processEvent } from "../utils";
  * deposit
  */
 export class PolygonERC20Bridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   protected l1Gateway: Contract;
 
   constructor(
@@ -67,8 +64,8 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.LockedERC20(undefined, fromAddress, l1Token),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.LockedERC20(undefined, fromAddress, l1Token),
       eventConfig
     );
     return {
@@ -85,8 +82,8 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.Transfer(ZERO_ADDRESS, fromAddress),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, fromAddress),
       eventConfig
     );
     return {

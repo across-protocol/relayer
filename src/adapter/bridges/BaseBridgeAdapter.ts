@@ -1,4 +1,13 @@
-import { Contract, BigNumber, EventSearchConfig, Signer, Provider, getTokenAddressWithCCTP } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  EventSearchConfig,
+  Signer,
+  Provider,
+  getTokenAddressWithCCTP,
+  assert,
+  isDefined,
+} from "../../utils";
 import { SortableEvent } from "../../interfaces";
 
 export interface BridgeTransactionDetails {
@@ -17,12 +26,15 @@ export type BridgeEvent = SortableEvent & {
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 
 export abstract class BaseBridgeAdapter {
+  protected l1Bridge: Contract;
+  protected l2Bridge: Contract;
+
   constructor(
     protected l2chainId: number,
     protected hubChainId: number,
     protected l1Signer: Signer,
     protected l2SignerOrProvider: Signer | Provider,
-    readonly l1Gateways: string[]
+    public l1Gateways: string[]
   ) {}
 
   abstract constructL1ToL2Txn(
@@ -48,5 +60,15 @@ export abstract class BaseBridgeAdapter {
 
   protected resolveL2TokenAddress(l1Token: string): string {
     return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.l2chainId, false);
+  }
+
+  protected getL1Bridge(): Contract {
+    assert(isDefined(this.l1Bridge), "Cannot access L1 Bridge when it is undefined.");
+    return this.l1Bridge;
+  }
+
+  protected getL2Bridge(): Contract {
+    assert(isDefined(this.l2Bridge), "Cannot access L2 Bridge when it is undefined.");
+    return this.l2Bridge;
   }
 }

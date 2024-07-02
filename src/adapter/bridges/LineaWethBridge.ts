@@ -4,9 +4,6 @@ import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class LineaWethBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   protected atomicDepositor: Contract;
 
   constructor(
@@ -48,8 +45,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.MessageSent(undefined, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.MessageSent(undefined, fromAddress),
       eventConfig
     );
     return {
@@ -68,8 +65,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     // TODO: This can probably be refactored to save an RPC call since this is called in parallel with
     // queryL1BridgeInitiationEvents in the BaseChainAdapter class.
     const initiatedQueryResult = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.MessageSent(undefined, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.MessageSent(undefined, fromAddress),
       eventConfig
     );
 
@@ -79,8 +76,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       .filter(({ args }) => args._value.gt(0))
       .map(({ args }) => args._messageHash);
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.MessageClaimed(internalMessageHashes),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.MessageClaimed(internalMessageHashes),
       eventConfig
     );
     const finalizedHashes = events.map(({ args }) => args._messageHash);

@@ -17,9 +17,6 @@ import { processEvent } from "../utils";
  * deposit
  */
 export class PolygonWethBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   protected atomicDepositor: Contract;
 
   constructor(
@@ -66,8 +63,8 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.LockedEther(undefined, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.LockedEther(undefined, fromAddress),
       eventConfig
     );
     return {
@@ -84,8 +81,8 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.Transfer(ZERO_ADDRESS, fromAddress),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, fromAddress),
       eventConfig
     );
     return {

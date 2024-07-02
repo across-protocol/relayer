@@ -14,8 +14,6 @@ import { zkSync as zkSyncUtils } from "../../utils/chains";
  * is an async fn).
  */
 export class ZKSyncBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
   protected zkSyncMailbox: Contract;
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
@@ -50,8 +48,8 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    const l1Provider = this.l1Bridge.provider;
-    const l2Provider = this.l2Bridge.provider;
+    const l1Provider = this.getL1Bridge().provider;
+    const l2Provider = this.getL2Bridge().provider;
 
     let zkProvider;
     try {
@@ -91,7 +89,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
       this.gasPerPubdataLimit
     );
     return Promise.resolve({
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "deposit",
       args: [toAddress, l1Token, amount, l2GasLimit.toString(), this.gasPerPubdataLimit],
       value: l2TransactionBaseCost,
@@ -105,8 +103,8 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.DepositInitiated(undefined, fromAddress, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress, fromAddress),
       eventConfig
     );
     return {
@@ -122,8 +120,8 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.FinalizeDeposit(fromAddress, fromAddress, l2Token),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.FinalizeDeposit(fromAddress, fromAddress, l2Token),
       eventConfig
     );
     return {

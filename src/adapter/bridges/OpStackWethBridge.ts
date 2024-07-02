@@ -15,8 +15,6 @@ import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 
 export class OpStackWethBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
   protected atomicDepositor: Contract;
   protected l2Weth: Contract;
   private readonly hubPoolAddress: string;
@@ -98,8 +96,8 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     }
 
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
       eventConfig
     );
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
@@ -133,8 +131,8 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       // signifying that the relayer has received WETH into their inventory.
       const l2EthDepositEvents = (
         await paginatedEventQuery(
-          this.l2Bridge,
-          this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, this.atomicDepositor.address),
+          this.getL2Bridge(),
+          this.getL2Bridge().filters.DepositFinalized(ZERO_ADDRESS, undefined, this.atomicDepositor.address),
           eventConfig
         )
       )
@@ -159,8 +157,8 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
       return this.convertEventListToBridgeEvents(
         await paginatedEventQuery(
-          this.l2Bridge,
-          this.l2Bridge.filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+          this.getL2Bridge(),
+          this.getL2Bridge().filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
           eventConfig
         )
       );
@@ -168,10 +166,10 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
   }
 
   async isHubChainContract(address: string): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address, this.l1Bridge.provider);
+    return utils.isContractDeployedToAddress(address, this.getL1Bridge().provider);
   }
   async isL2ChainContract(address: string): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address, this.l2Bridge.provider);
+    return utils.isContractDeployedToAddress(address, this.getL2Bridge().provider);
   }
 
   private queryL2WrapEthEvents(

@@ -61,8 +61,8 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   }
 
   public setCctpBridge(address: string, cctpBridge: Contract, messageTransmitter: Contract) {
-    this.bridges[address].cctpBridge.l1CctpTokenBridge = cctpBridge;
-    this.bridges[address].cctpBridge.l2CctpMessageTransmitter = messageTransmitter;
+    this.bridges[address].cctpBridge.l1Bridge = cctpBridge;
+    this.bridges[address].cctpBridge.l2Bridge = messageTransmitter;
   }
 }
 

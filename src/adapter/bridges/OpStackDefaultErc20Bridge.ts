@@ -4,9 +4,6 @@ import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   private readonly l2Gas = 200000;
 
   constructor(
@@ -36,7 +33,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     return Promise.resolve({
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "depositERC20",
       args: [l1Token, l2Token, amount, this.l2Gas, "0x"],
     });
@@ -49,8 +46,8 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
       eventConfig
     );
     return {
@@ -65,8 +62,8 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.DepositFinalized(l1Token, undefined, fromAddress),
       eventConfig
     );
     return {

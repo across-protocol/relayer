@@ -4,9 +4,6 @@ import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class LineaBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -31,7 +28,7 @@ export class LineaBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     return Promise.resolve({
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "bridgeToken",
       args: [l1Token, amount, toAddress],
     });
@@ -44,8 +41,8 @@ export class LineaBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.BridgingInitiatedV2(undefined, fromAddress, l1Token),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.BridgingInitiatedV2(undefined, fromAddress, l1Token),
       eventConfig
     );
     return {
@@ -62,8 +59,8 @@ export class LineaBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.BridgingFinalizedV2(l1Token, undefined, undefined, fromAddress),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.BridgingFinalizedV2(l1Token, undefined, undefined, fromAddress),
       eventConfig
     );
     // There is no "from" field in this event, so we set it to the L2 token received.

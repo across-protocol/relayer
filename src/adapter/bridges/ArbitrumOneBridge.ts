@@ -9,9 +9,6 @@ const DEFAULT_ERC20_GATEWAY = {
 };
 
 export class ArbitrumOneBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   protected l1Gateway: Contract;
 
   private readonly transactionSubmissionData =
@@ -57,8 +54,8 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.DepositInitiated(undefined, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress),
       eventConfig
     );
     return {
@@ -73,8 +70,8 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(l1Token, fromAddress, undefined),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.DepositFinalized(l1Token, fromAddress, undefined),
       eventConfig
     );
     return {

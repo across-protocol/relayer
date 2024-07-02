@@ -4,9 +4,6 @@ import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class SnxOptimismBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -34,7 +31,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     return Promise.resolve({
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "depositTo",
       args: [toAddress, amount],
     });
@@ -49,8 +46,8 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     // @dev For the SnxBridge, only the `toAddress` is indexed on the L2 event so we treat the `fromAddress` as the
     // toAddress when fetching the L1 event.
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.DepositInitiated(undefined, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress),
       eventConfig
     );
     return {
@@ -65,8 +62,8 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.DepositFinalized(fromAddress),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.DepositFinalized(fromAddress),
       eventConfig
     );
     return {

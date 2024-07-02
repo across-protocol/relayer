@@ -109,8 +109,11 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         : this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, fromAddress),
       eventConfig
     );
+    const processedEvents = events.map((event) =>
+      isL2Contract ? processEvent(event, "amount", "to", "l2Token") : processEvent(event, "_amount", "_to", "from")
+    );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents,
     };
   }
 
@@ -144,7 +147,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       );
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "_to", "_from")),
     };
   }
 

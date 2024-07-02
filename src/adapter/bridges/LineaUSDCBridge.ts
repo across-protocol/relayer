@@ -4,9 +4,6 @@ import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 
 export class LineaUSDCBridge extends BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
-
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -31,7 +28,7 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     return Promise.resolve({
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "depositTo",
       args: [amount, toAddress],
     });
@@ -44,8 +41,8 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.Deposited(undefined, undefined, fromAddress),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.Deposited(undefined, undefined, fromAddress),
       eventConfig
     );
     return {
@@ -60,8 +57,8 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.ReceivedFromOtherLayer(fromAddress),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.ReceivedFromOtherLayer(fromAddress),
       eventConfig
     );
     // There is no "from" address in this event.
