@@ -4,6 +4,7 @@ import {
   bnZero,
   winston,
   BigNumber,
+  dedupArray,
   getCurrentTime,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
@@ -35,7 +36,9 @@ export class AcrossApiClient {
     readonly timeout: number = 3000
   ) {
     if (Object.keys(tokensQuery).length === 0) {
-      this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[CHAIN_IDs.MAINNET]);
+      this.tokensQuery = dedupArray(
+        Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[CHAIN_IDs.MAINNET])
+      );
     }
 
     this.chainIds = chainIds.filter((chainId) => chainId !== hubPoolClient.chainId);
