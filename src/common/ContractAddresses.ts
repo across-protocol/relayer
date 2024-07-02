@@ -81,8 +81,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
-    // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
-    // Stack chain to the name to differentiate. This one is for Base.
     ovmStandardBridge_1135: {
       address: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
