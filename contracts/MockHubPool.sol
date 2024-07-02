@@ -1,5 +1,4 @@
-// This file contains contracts that can be used to unit test the src/clients/bridges/ZkSyncAdapter.ts
-// code which reads events from zkSync contracts facilitating cross chain transfers.
+// This file contains contracts that can be used to unit test bridge adapters.
 
 pragma solidity ^0.8.0;
 
