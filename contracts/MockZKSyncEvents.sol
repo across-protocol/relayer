@@ -61,8 +61,6 @@ contract zkSync_L2Bridge {
         uint256 amount
     );
 
-    event Transfer(address indexed from, address indexed to, uint256 amount);
-
     mapping(address => address) tokenMap;
 
     function mapToken(address _l1Token, address _l2Token) external {
@@ -72,9 +70,5 @@ contract zkSync_L2Bridge {
     function finalizeDeposit(address _l1Sender, address _l2Receiver, address _l1Token, uint256 _amount) external {
         address l2Token = tokenMap[_l1Token];
         emit FinalizeDeposit(_l1Sender, _l2Receiver, l2Token, _amount);
-    }
-
-    function transfer(address from, address to, uint256 amount) external {
-        emit Transfer(from, to, amount);
     }
 }
