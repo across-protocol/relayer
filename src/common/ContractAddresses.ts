@@ -30,6 +30,9 @@ import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 // Scroll
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
+// Blast
+import BLAST_BRIDGE_L1_ABI from "./abi/BlastBridgeL1.json";
+import BLAST_BRIDGE_L2_ABI from "./abi/BlastBridgeL2.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -93,6 +96,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x735aDBbE72226BD52e818E7181953f42E3b0FF21",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_81457: {
+      address: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     polygonRootChainManager: {
       address: "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77",
       abi: POLYGON_ROOT_CHAIN_MANAGER_ABI,
@@ -126,6 +133,10 @@ export const CONTRACT_ADDRESSES: {
     hubPool: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       abi: HUB_POOL_ABI,
+    },
+    blastBridge: {
+      address: "0x3a05E5d33d7Ab3864D53aaEc93c8301C1Fa49115",
+      abi: BLAST_BRIDGE_L1_ABI,
     },
   },
   10: {
@@ -229,6 +240,23 @@ export const CONTRACT_ADDRESSES: {
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  81457: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    weth: {
+      address: "0x4200000000000000000000000000000000000004",
+      abi: WETH_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+    blastBridge: {
+      address: "0x4300000000000000000000000000000000000005",
+      abi: BLAST_BRIDGE_L2_ABI,
     },
   },
   42161: {

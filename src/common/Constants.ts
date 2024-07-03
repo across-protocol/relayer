@@ -320,7 +320,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  [CHAIN_IDs.BLAST]: ["USDC", "USDT", "WETH"],
+  [CHAIN_IDs.BLAST]: ["DAI", "USDT", "WETH"],
 
   // Testnets:
   [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
@@ -328,7 +328,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BASE_SEPOLIA]: ["BAL", "DAI", "ETH", "WETH", "USDC"],
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
-  [CHAIN_IDs.BLAST_SEPOLIA]: ["USDC", "USDT", "WETH"],
+  [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
 };
 
 /**
