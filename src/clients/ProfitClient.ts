@@ -570,7 +570,10 @@ export class ProfitClient {
     // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
     // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
     // the main RL address because it has all supported tokens and approvals in place on all chains.
-    const [testSymbol, relayer] =
+    const testSymbols = {
+      [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
+    };
+    const [defaultTestSymbol, relayer] =
       this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
 
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
@@ -590,16 +593,19 @@ export class ProfitClient {
       exclusivityDeadline: 0,
       exclusiveRelayer: ZERO_ADDRESS,
       message: EMPTY_MESSAGE,
+      fromLiteChain: false,
+      toLiteChain: false,
     };
 
     // Pre-fetch total gas costs for relays on enabled chains.
-    const hubToken = TOKEN_SYMBOLS_MAP[testSymbol].addresses[this.hubPoolClient.chainId];
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
+      const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
+      const hubToken = TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId];
       const outputToken =
         destinationChainId === hubPoolClient.chainId
           ? hubToken
           : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
-      assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${testSymbol}`);
+      assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
       const deposit = { ...sampleDeposit, destinationChainId, outputToken };
       this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
