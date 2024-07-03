@@ -66,7 +66,7 @@ export class OpStackAdapter extends BaseAdapter {
     // which maps to either the CCTP or OVM Standard bridge depending on the request.
     const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
     const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId];
-    if (usdcAddress && l2NativeUsdcAddress) {
+    if (usdcAddress && l2NativeUsdcAddress && !this.customBridges[usdcAddress]) {
       this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(
         this.chainId,
         this.hubChainId,
