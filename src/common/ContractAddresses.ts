@@ -31,7 +31,7 @@ import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 // Scroll
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 // Blast
-import BLAST_BRIDGE_ABI from "./abi/BlastBridgeL1.json";
+import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
