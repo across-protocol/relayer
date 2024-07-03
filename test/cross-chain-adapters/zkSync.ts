@@ -110,8 +110,8 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     l1Bridge = await (await getContractFactory("zkSync_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("zkSync_L2Bridge", depositor)).deploy();
-    l2Eth = await (await getContractFactory("WETH9", depositor)).deploy();
-    l2Weth = await (await getContractFactory("WETH9", depositor)).deploy();
+    l2Eth = await (await getContractFactory("MockWETH9", depositor)).deploy();
+    l2Weth = await (await getContractFactory("MockWETH9", depositor)).deploy();
 
     adapter = new zkSyncTestAdapter(
       logger,
