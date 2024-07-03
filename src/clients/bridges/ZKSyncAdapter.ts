@@ -69,7 +69,7 @@ export class ZKSyncAdapter extends BaseAdapter {
         // and any L2 contracts that are not the SpokePool.
         const { spokePool } = this.spokePoolClients[this.chainId];
         const isSpokePool = address === spokePool.address;
-        if (address === hubPool.address || (!isSpokePool && await this.isL2ChainContract(address))) {
+        if (address === hubPool.address || (!isSpokePool && (await this.isL2ChainContract(address)))) {
           return;
         }
 
