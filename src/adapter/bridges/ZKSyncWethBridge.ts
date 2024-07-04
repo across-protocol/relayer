@@ -92,7 +92,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     // This fn will only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
     // and any L2 contracts that are not the SpokePool.
     if (fromAddress === this.getHubPool().address) {
-      return;
+      return Promise.resolve({});
     }
     const isL2Contract = await this.isL2ChainContract(fromAddress);
     const hubPool = this.getHubPool();
@@ -126,7 +126,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     // This fn will also only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
     // and any L2 contracts that are not the SpokePool.
     if (fromAddress === this.getHubPool().address) {
-      return;
+      return Promise.resolve({});
     }
 
     const isL2Contract = await this.isL2ChainContract(fromAddress);

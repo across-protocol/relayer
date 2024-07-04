@@ -364,6 +364,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
   [CHAIN_IDs.LINEA]: LineaBridge,
+  [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -407,6 +408,9 @@ export const CUSTOM_BRIDGE: {
   [CHAIN_IDs.LINEA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: LineaUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
+  },
+  [CHAIN_IDs.LISK]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
 };
 
