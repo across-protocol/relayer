@@ -180,7 +180,7 @@ export class ZKSyncAdapter extends BaseAdapter {
       }
 
       bridge = this.getL2Eth();
-      filter = bridge.filters.Transfer(null, recipient);
+      filter = bridge.filters.Transfer(sender, recipient);
     } else {
       const l2Token = this.resolveL2TokenAddress(l1Token, false); // CCTP doesn't exist on ZkSync.
       bridge = this.getL2ERC20BridgeContract();
