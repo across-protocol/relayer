@@ -357,13 +357,13 @@ export const CANONICAL_BRIDGE: {
     ): BaseBridgeAdapter;
   };
 } = {
-  10: OpStackDefaultERC20Bridge,
-  137: PolygonERC20Bridge,
-  324: ZKSyncBridge,
-  8453: OpStackDefaultERC20Bridge,
-  34443: OpStackDefaultERC20Bridge,
-  42161: ArbitrumOneBridge,
-  59144: LineaBridge,
+  [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
+  [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
+  [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
+  [CHAIN_IDs.LINEA]: LineaBridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -381,32 +381,32 @@ export const CUSTOM_BRIDGE: {
     };
   };
 } = {
-  10: {
-    [TOKEN_SYMBOLS_MAP.SNX.addresses[1]]: SnxOptimismBridge,
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: DaiOptimismBridge,
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: OpStackWethBridge,
+  [CHAIN_IDs.OPTIMISM]: {
+    [TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]]: SnxOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
-  137: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: PolygonWethBridge,
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
+  [CHAIN_IDs.POLYGON]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
   },
-  324: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: ZKSyncWethBridge,
+  [CHAIN_IDs.ZK_SYNC]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKSyncWethBridge,
   },
-  8453: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: OpStackWethBridge,
+  [CHAIN_IDs.BASE]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
-  34443: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: OpStackWethBridge,
+  [CHAIN_IDs.MODE]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
-  42161: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: UsdcTokenSplitterBridge,
+  [CHAIN_IDs.ARBITRUM]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
   },
-  59144: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[1]]: LineaUSDCBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[1]]: LineaWethBridge,
+  [CHAIN_IDs.LINEA]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: LineaUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
   },
 };
 
