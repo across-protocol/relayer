@@ -48,8 +48,7 @@ export class OpStackAdapter extends BaseAdapter {
       const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId];
       this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
       this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
-    }
-    if (chainId === BLAST) {
+    } else if (chainId === BLAST) {
       const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
       this.customBridges[dai] = new BlastBridge(BLAST, hubChainId, mainnetSigner, l2Signer);
     }
@@ -70,7 +69,7 @@ export class OpStackAdapter extends BaseAdapter {
     // which maps to either the CCTP or OVM Standard bridge depending on the request.
     const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
     const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId];
-    if (usdcAddress && l2NativeUsdcAddress) {
+    if (usdcAddress && l2NativeUsdcAddress && !this.customBridges[usdcAddress]) {
       this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(
         this.chainId,
         this.hubChainId,
