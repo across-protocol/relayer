@@ -11,25 +11,15 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/constants@^3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.0.0.tgz#0f5cbcaf40d43babbecb322d91a689b49c5536a0"
-  integrity sha512-iJz1EDdYr+GRgHRZwcAw2G06ZvV9VOW6GQ846X7G/dd8wVQej18v1Fpx6th4bcSba1j7jR5Hfi+/zqSDoxyLmw==
-
-"@across-protocol/constants@^3.0.1":
-  version "3.0.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.0.1.tgz#8fb2760a3c64801c9324bcbf76084fae9dfabb52"
-  integrity sha512-cCrhLEpYfiFeDrXscUgdRTnOW5Sn2W9mmdrxxl1dXLC+tYMb1c2rgQVBQNxrdW7LGiDqCR4a5m5jYgWPXonzQg==
-
-"@across-protocol/constants@^3.1.1":
-  version "3.1.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.1.tgz#fdcb19a06948a445694274507cad99d01cb647c7"
-  integrity sha512-f0a+5LgGojmzG2J4OyjBUP/HyU+R6FztG9bcsWH4tl1TcSEm9JjWst3K26LYUIKLmVq/nu/QSXoC6IRIHKZsOQ==
-
 "@across-protocol/constants@^3.1.3":
   version "3.1.3"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.3.tgz#534764a4137bd5181ab4214543d0cbbf44a90c63"
   integrity sha512-4pUjJrRor9gFPAsskbva6bDK780tzXYMWtqCtBa1jOUc+X3PxC6U6lF7ZoyX+lqU/KcfAWDLg8YEsz+KLm3NrQ==
+
+"@across-protocol/constants@^3.1.5":
+  version "3.1.5"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.5.tgz#58cdd06816518b5cf1d92d94a4bc175ab0bc9d0c"
+  integrity sha512-3bqBNdYhVnpNwd9zwxmDWewM0ixRxTiL0SCHmOWlmDEx9xqPFHx5t+GLJWOa18wIoPP5KWv/TyI+fdwi3Tg5Bw==
 
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
@@ -40,12 +30,12 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/contracts@^3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.0.tgz#2897823d51d1fb8bd4292e9d05500c4d824c3c08"
-  integrity sha512-4rZTWR8gJAKecdfbhX31HHL5QgRuKJFL7epNEiPfHODFDivAfCltUkY/ozxf0EUnl2u3DrfrEhc6HeOS2lXNHw==
+"@across-protocol/contracts@^3.0.4":
+  version "3.0.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.4.tgz#249e5294ebbc3ee7076702eeaf01e054835e3624"
+  integrity sha512-NhpNE3iwMNNOeHCA2IVcXYZAdmRqI9OAWrRF/gwCJ0yzKL46fodKlZEVjBwGMbTWE4QLqiPTnI0cVwARoFdybg==
   dependencies:
-    "@across-protocol/constants" "^3.0.0"
+    "@across-protocol/constants" "^3.1.3"
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
     "@ethersproject/abstract-provider" "5.7.0"
@@ -60,34 +50,14 @@
     axios "^1.6.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts@^3.0.1":
-  version "3.0.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.1.tgz#05944932ee5f64895c940041c2770824964fb00f"
-  integrity sha512-8OGsYRRzewrsb3OKhM2KBQAILXpQ6OWNmiuKqnX9el7x2K+sLdWVjBklPybI8mgngbJ/vALstulkQtQXOqkZ1Q==
-  dependencies:
-    "@across-protocol/constants" "^3.0.1"
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/abstract-provider" "5.7.0"
-    "@ethersproject/abstract-signer" "5.7.0"
-    "@ethersproject/bignumber" "5.7.0"
-    "@openzeppelin/contracts" "4.9.6"
-    "@openzeppelin/contracts-upgradeable" "4.9.6"
-    "@scroll-tech/contracts" "^0.1.0"
-    "@uma/common" "^2.34.0"
-    "@uma/contracts-node" "^0.4.17"
-    "@uma/core" "^2.56.0"
-    axios "^1.6.2"
-    zksync-web3 "^0.14.3"
-
-"@across-protocol/sdk@^3.1.3":
-  version "3.1.3"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.3.tgz#be791b77a84b4098b4ebc691bc307cdc442c1464"
-  integrity sha512-+qVR7iMTF3cN0hLklLMeOVeIshPwbh/WNe6fMxnbfiGT27fRJQZFQgnH7PGC1FtcHnYAOewsDk0tP7HhQfi44A==
+"@across-protocol/sdk@^3.1.9":
+  version "3.1.9"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.9.tgz#bd8ac48be71cffca9c2465721c9e73cc5062fc6b"
+  integrity sha512-135eUiv+tEgn8HMgeEORsElaVmUhYcUvawCPwaHvMbD1iqHa1ZKRZnas8piNArbYqJcg/GJrxrv6gEmHa3m+9A==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.1"
-    "@across-protocol/contracts" "^3.0.1"
+    "@across-protocol/constants" "^3.1.5"
+    "@across-protocol/contracts" "^3.0.4"
     "@eth-optimism/sdk" "^3.3.1"
     "@pinata/sdk" "^2.1.0"
     "@types/mocha" "^10.0.1"

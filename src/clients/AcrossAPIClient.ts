@@ -5,8 +5,8 @@ import {
   winston,
   BigNumber,
   getCurrentTime,
-  CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  CHAIN_IDs,
   getRedisCache,
   bnUint256Max as uint256Max,
 } from "../utils";
@@ -19,7 +19,7 @@ export interface DepositLimits {
 const API_UPDATE_RETENTION_TIME = 60; // seconds
 
 export class AcrossApiClient {
-  private endpoint = "https://app.across.to/api";
+  private endpoint: string;
   private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
   private updatedAt = 0;
@@ -34,11 +34,13 @@ export class AcrossApiClient {
     readonly tokensQuery: string[] = [],
     readonly timeout: number = 3000
   ) {
+    const hubChainId = hubPoolClient.chainId;
+    this.endpoint = `https://${hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to"}/api`;
     if (Object.keys(tokensQuery).length === 0) {
-      this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[CHAIN_IDs.MAINNET]);
+      this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[hubChainId]);
     }
 
-    this.chainIds = chainIds.filter((chainId) => chainId !== hubPoolClient.chainId);
+    this.chainIds = chainIds.filter((chainId) => chainId !== hubChainId);
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
