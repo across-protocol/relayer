@@ -41,6 +41,7 @@ export class Relayer {
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
 
   private hubPoolBlockBuffer: number;
+  protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
 
   constructor(
     relayerAddress: string,
@@ -108,7 +109,7 @@ export class Relayer {
     const { latestBlockSearched } = spokePoolClients[originChainId];
     if (latestBlockSearched - blockNumber < minConfirmations) {
       this.logger.debug({
-        at: "Relayer::evaluateFill",
+        at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
         depositId,
         blockNumber,
@@ -122,7 +123,7 @@ export class Relayer {
     // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
     if (deposit.quoteTimestamp - hubPoolClient.currentTime > this.hubPoolBlockBuffer) {
       this.logger.debug({
-        at: "Relayer::evaluateFill",
+        at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to future quoteTimestamp.`,
         currentTime: hubPoolClient.currentTime,
         quoteTimestamp: deposit.quoteTimestamp,
@@ -268,6 +269,78 @@ export class Relayer {
     return true;
   }
 
+  computeOriginChainCommitment(chainId: number, fromBlock: number, toBlock: number): BigNumber {
+    const { hubPoolClient, profitClient, spokePoolClients } = this.clients;
+    const originSpoke = spokePoolClients[chainId];
+
+    const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
+    const commitment = deposits.reduce((acc, deposit) => {
+      const fill = spokePoolClients[deposit.destinationChainId]?.getFillForDeposit(deposit);
+      if (!isDefined(fill) || fill.relayer !== this.relayerAddress) {
+        return acc;
+      }
+
+      // @todo: Requires an update to support arbitrary outputTokens.
+      const outputToken = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
+      const tokenPrice = profitClient.getPriceOfToken(outputToken.symbol);
+      const amount = deposit.outputAmount.mul(tokenPrice).div(fixedPointAdjustment);
+      return acc.add(amount);
+    }, bnZero);
+
+    return commitment;
+  }
+
+  computeOriginChainLimits(chainId: number): { fromBlock: number; limit: BigNumber }[] {
+    const mdcs = this.config.minDepositConfirmations[chainId];
+    const originSpoke = this.clients.spokePoolClients[chainId];
+
+    let totalCommitment = bnZero;
+    let toBlock = originSpoke.latestBlockSearched;
+
+    // For each deposit confirmation tier (lookback), sum all outstanding commitments back to head.
+    const limits = Object.values(mdcs).map(({ minConfirmations, usdThreshold }) => {
+      const fromBlock = Math.max(toBlock - minConfirmations, originSpoke.deploymentBlock);
+      const commitment = this.computeOriginChainCommitment(chainId, fromBlock, toBlock);
+
+      totalCommitment = totalCommitment.add(commitment);
+      const limit = usdThreshold.sub(totalCommitment);
+      toBlock = fromBlock - 1; // Shuffle the range for the next loop.
+
+      return { fromBlock, limit };
+    });
+
+    // Warn on the highest overcommitment, if any.
+    for (let i = limits.length - 1; i >= 0; --i) {
+      const { limit, fromBlock } = limits[i];
+      if (limit.lt(bnZero)) {
+        this.logger.warn({
+          at: "Relayer::computeOriginChainlimits",
+          message: `Relayer has overcommitted funds to ${getNetworkName(chainId)}.`,
+          overCommitment: limit.abs(),
+          usdThreshold: mdcs[i].usdThreshold,
+          fromBlock,
+          toBlock: originSpoke.latestBlockSearched,
+        });
+        break;
+      }
+    }
+
+    return limits;
+  }
+
+  computeFillLimits(): { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] } {
+    // For each SpokePool reduce the amount available for fills by the amount
+    // previously committed within the origin chain's finality window.
+    const limits = Object.fromEntries(
+      Object.values(this.clients.spokePoolClients).map(({ chainId: originChainId }) => {
+        const limits = this.computeOriginChainLimits(originChainId)
+        return [originChainId, limits];
+      })
+    );
+
+    return limits;
+  }
+
   computeRequiredDepositConfirmations(
     deposits: V3Deposit[],
     destinationChainId: number
@@ -321,7 +394,7 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
     const { hubPoolClient, profitClient, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
 
@@ -364,11 +437,27 @@ export class Relayer {
       );
       const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
       if (isDefined(repaymentChainId)) {
+        const fillLimits = this.fillLimits[originChainId];
+        const fillLimit = fillLimits.find(({ fromBlock }) => fromBlock > deposit.blockNumber);
+        const tokenPrice = profitClient.getPriceOfToken(l1Token.symbol);
+        const outputAmountUsd = outputAmount.mul(tokenPrice).div(fixedPointAdjustment);
+        if (outputAmountUsd.gt(fillLimit.limit)) {
+          const originChain = getNetworkName(originChainId);
+          this.logger.debug({
+            at: "Relayer::evaluateFill",
+            message: `Skipping ${originChain} deposit ${depositId} due to subsequent origin chain overcommitment.`,
+            outputAmountUsd,
+            limit: fillLimit.limit,
+            transactionHash: deposit.transactionHash,
+          });
+        }
+
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
 
-        // Update local balance to account for the enqueued fill.
+        // Update local balances & limits to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
+        fillLimit.limit = fillLimit.limit.sub(outputAmountUsd);
       } else {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
@@ -513,6 +602,8 @@ export class Relayer {
       .flat()
       .map(({ deposit }) => deposit);
 
+    this.fillLimits = this.computeFillLimits();
+
     this.logger.debug({
       at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
@@ -537,7 +628,9 @@ export class Relayer {
           // Track the fill status for faster filtering on subsequent loops.
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
-          return fillStatus !== FillStatus.Filled;
+          if (fillStatus === FillStatus.Filled) {
+            return false;
+          }
         });
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
@@ -547,6 +640,7 @@ export class Relayer {
           latestBlockSearched - mdcPerChain[chainId],
         ])
       );
+
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
       if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
