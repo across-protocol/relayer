@@ -96,6 +96,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
+  [CHAIN_IDs.BLAST]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+  },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
     finalizeOnL1: [cctpL2toL1Finalizer],
@@ -110,6 +114,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.LISK_SEPOLIA]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+  },
+  [CHAIN_IDs.BLAST_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
