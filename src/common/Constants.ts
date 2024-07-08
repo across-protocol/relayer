@@ -1,4 +1,5 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers } from "../utils";
+import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
@@ -347,3 +348,24 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.BASE]: 20 * 60,
   [CHAIN_IDs.MODE]: 20 * 60,
 };
+
+export const OPSTACK_CONTRACT_OVERRIDES = {
+    [CHAIN_IDs.LISK]: {
+        l1: {
+          AddressManager: '0x2dF7057d3F25212E51aFEA8dA628668229Ea423f' as const,
+          L1CrossDomainMessenger:
+            '0x31B72D76FB666844C41EdF08dF0254875Dbb7edB' as const,
+          L1StandardBridge: '0x2658723Bf70c7667De6B25F99fcce13A16D25d08' as const,
+          StateCommitmentChain:
+            '0x0000000000000000000000000000000000000000' as const,
+          CanonicalTransactionChain:
+            '0x0000000000000000000000000000000000000000' as const,
+          BondManager: '0x0000000000000000000000000000000000000000' as const,
+          OptimismPortal: '0x26dB93F8b8b4f7016240af62F7730979d353f9A7' as const,
+          L2OutputOracle: '0x113cB99283AF242Da0A0C54347667edF531Aa7d6' as const,
+          OptimismPortal2: '0x0000000000000000000000000000000000000000' as const,
+          DisputeGameFactory: '0x0000000000000000000000000000000000000000' as const,
+        },
+        l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+    },
+}
