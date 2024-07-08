@@ -22,6 +22,7 @@ import { WethBridge } from "./WethBridge";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
 import { UsdcTokenSplitterBridge } from "./UsdcTokenSplitterBridge";
 import { DaiOptimismBridge, SnxOptimismBridge } from "./optimism";
+import { BlastBridge } from "./blast/BlastBridge";
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
@@ -39,15 +40,17 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
 
     const { hubChainId, wethAddress } = this;
-    const { OPTIMISM } = CHAIN_IDs;
+    const mainnetSigner = spokePoolClients[hubChainId].spokePool.signer;
+    const l2Signer = spokePoolClients[chainId].spokePool.signer;
+    const { OPTIMISM, BLAST } = CHAIN_IDs;
     if (chainId === OPTIMISM) {
-      const mainnetSigner = spokePoolClients[hubChainId].spokePool.signer;
-      const l2Signer = spokePoolClients[OPTIMISM].spokePool.signer;
-
       const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
       const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId];
       this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
       this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
+    } else if (chainId === BLAST) {
+      const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
+      this.customBridges[dai] = new BlastBridge(BLAST, hubChainId, mainnetSigner, l2Signer);
     }
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
