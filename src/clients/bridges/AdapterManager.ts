@@ -1,11 +1,10 @@
+import { CHAIN_IDs } from "@across-protocol/constants";
+import { utils } from "@across-protocol/sdk";
+import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
+import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, BaseAdapter } from "./";
-import { DaiOptimismBridge, SnxOptimismBridge } from "./op-stack/optimism";
-import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
-import { utils } from "@across-protocol/sdk";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseAdapter } = {};
@@ -37,61 +36,63 @@ export class AdapterManager {
           !spokePoolAddresses.includes(address)
       );
     };
-    if (this.spokePoolClients[CHAIN_IDs.OPTIMISM] !== undefined) {
-      const { MAINNET, OPTIMISM } = CHAIN_IDs;
-      const mainnetSigner = spokePoolClients[MAINNET].spokePool.signer;
-      const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[MAINNET];
-      const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[MAINNET];
-      const l2Signer = spokePoolClients[OPTIMISM].spokePool.signer;
-      const customBridges = {
-        [dai]: new DaiOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner),
-        [snx]: new SnxOptimismBridge(OPTIMISM, MAINNET, l2Signer, mainnetSigner),
-      };
+
+    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST } = CHAIN_IDs;
+    if (this.spokePoolClients[OPTIMISM] !== undefined) {
       this.adapters[OPTIMISM] = new OpStackAdapter(
         OPTIMISM,
-        customBridges,
         logger,
         SUPPORTED_TOKENS[OPTIMISM],
         spokePoolClients,
         filterMonitoredAddresses(OPTIMISM)
       );
     }
-    if (this.spokePoolClients[CHAIN_IDs.POLYGON] !== undefined) {
-      const { POLYGON } = CHAIN_IDs;
+    if (this.spokePoolClients[POLYGON] !== undefined) {
       this.adapters[POLYGON] = new PolygonAdapter(logger, spokePoolClients, filterMonitoredAddresses(POLYGON));
     }
-    if (this.spokePoolClients[CHAIN_IDs.ARBITRUM] !== undefined) {
-      const { ARBITRUM } = CHAIN_IDs;
+    if (this.spokePoolClients[ARBITRUM] !== undefined) {
       this.adapters[ARBITRUM] = new ArbitrumAdapter(logger, spokePoolClients, filterMonitoredAddresses(ARBITRUM));
     }
-    if (this.spokePoolClients[CHAIN_IDs.ZK_SYNC] !== undefined) {
-      const { ZK_SYNC } = CHAIN_IDs;
+    if (this.spokePoolClients[ZK_SYNC] !== undefined) {
       this.adapters[ZK_SYNC] = new ZKSyncAdapter(logger, spokePoolClients, filterMonitoredAddresses(ZK_SYNC));
     }
-    if (this.spokePoolClients[CHAIN_IDs.BASE] !== undefined) {
-      const { BASE } = CHAIN_IDs;
+    if (this.spokePoolClients[BASE] !== undefined) {
       this.adapters[BASE] = new OpStackAdapter(
         BASE,
-        {},
         logger,
         SUPPORTED_TOKENS[BASE],
         spokePoolClients,
         filterMonitoredAddresses(BASE)
       );
     }
-    if (this.spokePoolClients[CHAIN_IDs.LINEA] !== undefined) {
-      const { LINEA } = CHAIN_IDs;
+    if (this.spokePoolClients[LINEA] !== undefined) {
       this.adapters[LINEA] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(LINEA));
     }
-    if (this.spokePoolClients[CHAIN_IDs.MODE] !== undefined) {
-      const { MODE } = CHAIN_IDs;
+    if (this.spokePoolClients[MODE] !== undefined) {
       this.adapters[MODE] = new OpStackAdapter(
         MODE,
-        {},
         logger,
         SUPPORTED_TOKENS[MODE],
         spokePoolClients,
         filterMonitoredAddresses(MODE)
+      );
+    }
+    if (this.spokePoolClients[LISK] !== undefined) {
+      this.adapters[LISK] = new OpStackAdapter(
+        LISK,
+        logger,
+        SUPPORTED_TOKENS[LISK],
+        spokePoolClients,
+        filterMonitoredAddresses(LISK)
+      );
+    }
+    if (this.spokePoolClients[BLAST] !== undefined) {
+      this.adapters[BLAST] = new OpStackAdapter(
+        BLAST,
+        logger,
+        SUPPORTED_TOKENS[BLAST],
+        spokePoolClients,
+        filterMonitoredAddresses(BLAST)
       );
     }
 

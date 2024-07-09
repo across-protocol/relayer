@@ -2,19 +2,16 @@ import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Pr
 import { CONTRACT_ADDRESSES } from "../../../../common";
 import { OpStackBridge, BridgeTransactionDetails, OpStackEvents } from "../OpStackBridgeInterface";
 
-export class DaiOptimismBridge extends OpStackBridge {
+export class BlastBridge extends OpStackBridge {
   private readonly l1Bridge: Contract;
   private readonly l2Bridge: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge.address,
-    ]);
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].blastBridge;
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].blastBridge;
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
-
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
@@ -35,7 +32,7 @@ export class DaiOptimismBridge extends OpStackBridge {
   ): BridgeTransactionDetails {
     return {
       contract: this.getL1Bridge(),
-      method: "depositERC20",
+      method: "bridgeERC20",
       args: [l1Token, l2Token, amount, l2Gas, "0x"],
     };
   }
@@ -49,7 +46,7 @@ export class DaiOptimismBridge extends OpStackBridge {
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
         l1Bridge,
-        l1Bridge.filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+        l1Bridge.filters.ERC20BridgeInitiated(l1Token, undefined, fromAddress),
         eventConfig
       ),
     };
@@ -64,7 +61,7 @@ export class DaiOptimismBridge extends OpStackBridge {
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
         l2Bridge,
-        l2Bridge.filters.DepositFinalized(l1Token, undefined, fromAddress),
+        l2Bridge.filters.ERC20BridgeFinalized(l1Token, undefined, fromAddress),
         eventConfig
       ),
     };
