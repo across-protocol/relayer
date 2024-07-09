@@ -14,6 +14,7 @@ import {
   LineaBridge,
   LineaUSDCBridge,
   LineaWethBridge,
+  BlastBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 
@@ -392,14 +393,15 @@ export const CANONICAL_BRIDGE: {
     ): BaseBridgeAdapter;
   };
 } = {
+  [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
+  [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.LINEA]: LineaBridge,
+  [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
-  [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
-  [CHAIN_IDs.LINEA]: LineaBridge,
-  [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -417,6 +419,27 @@ export const CUSTOM_BRIDGE: {
     };
   };
 } = {
+  [CHAIN_IDs.ARBITRUM]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+  },
+  [CHAIN_IDs.BASE]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.BLAST]: {
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: BlastBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.LINEA]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: LineaUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
+  },
+  [CHAIN_IDs.LISK]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.MODE]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
   [CHAIN_IDs.OPTIMISM]: {
     [TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]]: SnxOptimismBridge,
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
@@ -429,23 +452,6 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKSyncWethBridge,
-  },
-  [CHAIN_IDs.BASE]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-  },
-  [CHAIN_IDs.MODE]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-  },
-  [CHAIN_IDs.ARBITRUM]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
-  },
-  [CHAIN_IDs.LINEA]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: LineaUSDCBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
-  },
-  [CHAIN_IDs.LISK]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
 };
 

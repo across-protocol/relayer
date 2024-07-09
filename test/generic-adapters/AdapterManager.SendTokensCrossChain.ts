@@ -402,6 +402,7 @@ async function seedMocks() {
       mockSpokePoolClients[chainId] = {} as unknown as SpokePoolClient;
     }
     mockSpokePoolClients[chainId] = {
+      chainId,
       spokePool: {
         provider: ethers.provider,
         signer: (await ethers.getSigners())[0],

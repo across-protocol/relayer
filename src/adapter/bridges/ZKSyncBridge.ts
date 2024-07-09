@@ -17,7 +17,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   protected zkSyncMailbox: Contract;
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
-  private readonly l2GasLimit = 2_000_000; // We should dynamically define this.
+  private readonly l2GasLimit = BigNumber.from(2_000_000); // We should dynamically define this.
 
   constructor(
     l2chainId: number,
@@ -69,7 +69,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
           toAddress,
           this.gasPerPubdataLimit
         )
-      : BigNumber.from(2_000_000);
+      : this.l2GasLimit;
 
     const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider);
     // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base

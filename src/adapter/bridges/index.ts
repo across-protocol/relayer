@@ -12,3 +12,4 @@ export * from "./ZKSyncBridge";
 export * from "./OpStackDefaultErc20Bridge";
 export * from "./ZKSyncWethBridge";
 export * from "./LineaWethBridge";
+export * from "./BlastBridge";

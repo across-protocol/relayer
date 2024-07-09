@@ -1,4 +1,4 @@
-import { isDefined, winston, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../utils";
+import { winston, TOKEN_SYMBOLS_MAP } from "../utils";
 import { SpokePoolClient, HubPoolClient } from "../clients";
 import { BaseChainAdapter } from "./";
 import { SUPPORTED_TOKENS, CUSTOM_BRIDGE, CANONICAL_BRIDGE, DEFAULT_GAS_MULTIPLIER } from "../common";
@@ -32,9 +32,9 @@ export class GenericAdapterManager extends AdapterManager {
 
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
 
-    Object.values(CHAIN_IDs)
-      .filter((chainId) => isDefined(this.spokePoolClients[chainId]) && chainId !== hubChainId)
-      .map((chainId) => {
+    Object.values(this.spokePoolClients)
+      .filter(({ chainId }) => chainId !== hubChainId)
+      .map(({ chainId }) => {
         // First, fetch all the bridges associated with the chain.
         const bridges = {};
         const l2Signer = spokePoolClients[chainId].spokePool.signer;
