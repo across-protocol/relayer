@@ -19,6 +19,7 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 1382400,
   [CHAIN_IDs.BASE]: 172800, // Same as Optimism.
+  [CHAIN_IDs.BLAST]: 172800,
   [CHAIN_IDs.BOBA]: 11520,
   [CHAIN_IDs.LINEA]: 115200, // 1 block every 3 seconds
   [CHAIN_IDs.LISK]: 172800, // Same as Optimism.
@@ -57,6 +58,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   [CHAIN_IDs.ARBITRUM]: 0,
   [CHAIN_IDs.BASE]: 120,
+  [CHAIN_IDs.BLAST]: 120,
   [CHAIN_IDs.BOBA]: 0,
   [CHAIN_IDs.LINEA]: 30,
   [CHAIN_IDs.LISK]: 120, // Same as other OVM. Hard finality is 1800 blocks
@@ -68,6 +70,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
@@ -79,6 +82,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   1000: {
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
+    [CHAIN_IDs.BLAST]: 60,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.LISK]: 60,
@@ -90,6 +94,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
+    [CHAIN_IDs.BLAST_SEPOLIA]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 60,
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
@@ -99,6 +104,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   100: {
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
+    [CHAIN_IDs.BLAST]: 60,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.LISK]: 60,
@@ -110,6 +116,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     // Testnets:
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
+    [CHAIN_IDs.BLAST_SEPOLIA]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 0,
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
@@ -128,6 +135,7 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.ARBITRUM]: 10000,
   [CHAIN_IDs.BASE]: 1500,
+  [CHAIN_IDs.BLAST]: 1500,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.LINEA]: 5000,
   [CHAIN_IDs.LISK]: 1500,
@@ -139,6 +147,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
   [CHAIN_IDs.BASE_SEPOLIA]: 10000,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 10000,
   [CHAIN_IDs.LISK_SEPOLIA]: 10000,
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
@@ -153,6 +162,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
+  [CHAIN_IDs.BLAST]: 60,
   [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
   [CHAIN_IDs.LISK]: 60, // 2s/block gives 2 mins buffer time.
@@ -164,6 +174,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
@@ -199,6 +210,7 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.BASE]: 120,
+  [CHAIN_IDs.BLAST]: 120,
   [CHAIN_IDs.BOBA]: 0,
   [CHAIN_IDs.LISK]: 120,
   [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
@@ -211,6 +223,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
+  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
@@ -224,6 +237,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.BASE]: 86400,
+  [CHAIN_IDs.BLAST]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
   [CHAIN_IDs.LINEA]: 57600,
   [CHAIN_IDs.LISK]: 86400,
@@ -240,6 +254,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
 } = {
   [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  [CHAIN_IDs.BLAST]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
@@ -257,6 +272,7 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 export const multicall3Addresses = {
   [CHAIN_IDs.ARBITRUM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BASE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BOBA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.LINEA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.MAINNET]: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -265,8 +281,10 @@ export const multicall3Addresses = {
   [CHAIN_IDs.POLYGON]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.ZK_SYNC]: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
-  // testnet
+  // Testnet:
+  [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BASE_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  [CHAIN_IDs.BLAST_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -281,6 +299,7 @@ export type Multicall2Call = {
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.BASE,
+  CHAIN_IDs.BLAST,
   CHAIN_IDs.LINEA,
   CHAIN_IDs.LISK,
   CHAIN_IDs.MODE,
@@ -310,6 +329,7 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
+  [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.LISK]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
@@ -323,6 +343,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
+  [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
 };
 
 /**
@@ -354,6 +375,7 @@ export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.ARBITRUM]: 20 * 60,
   [CHAIN_IDs.BASE]: 20 * 60,
+  [CHAIN_IDs.BLAST]: 20 * 60,
   [CHAIN_IDs.LINEA]: 60 * 60,
   [CHAIN_IDs.LISK]: 20 * 60,
   [CHAIN_IDs.MODE]: 20 * 60,
