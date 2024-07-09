@@ -73,7 +73,6 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
 };
 
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
@@ -89,11 +88,13 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.ZK_SYNC]: 0,
     // Testnets:
+    [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 60,
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
     [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
+    [CHAIN_IDs.SEPOLIA]: 0,
   },
   100: {
     [CHAIN_IDs.ARBITRUM]: 0,
@@ -111,6 +112,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.BASE_SEPOLIA]: 0,
     [CHAIN_IDs.LISK_SEPOLIA]: 0,
     [CHAIN_IDs.MODE_SEPOLIA]: 0,
+    [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
     [CHAIN_IDs.POLYGON_AMOY]: 0,
     [CHAIN_IDs.SEPOLIA]: 0,
   },
@@ -178,6 +180,7 @@ export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } =
   [CHAIN_IDs.BASE]: 75,
   [CHAIN_IDs.LINEA]: 50,
   [CHAIN_IDs.LISK]: 75,
+  [CHAIN_IDs.MODE]: 75,
   [CHAIN_IDs.OPTIMISM]: 75,
 };
 
@@ -268,6 +271,7 @@ export const multicall3Addresses = {
   [CHAIN_IDs.SCROLL_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
+
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
   target: string;
@@ -295,6 +299,7 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 3,
   [CHAIN_IDs.BASE]: 6,
   [CHAIN_IDs.POLYGON]: 7,
+  // Testnet
   [CHAIN_IDs.SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 2,
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 3,
