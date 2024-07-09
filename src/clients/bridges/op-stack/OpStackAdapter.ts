@@ -40,14 +40,15 @@ export class OpStackAdapter extends BaseAdapter {
     this.l2Gas = 200000;
 
     const { hubChainId, wethAddress } = this;
-    const mainnetSigner = spokePoolClients[hubChainId].spokePool.signer;
-    const l2Signer = spokePoolClients[chainId].spokePool.signer;
+    const mainnetSigner = this.getSigner(hubChainId);
+    const l2Signer = this.getSigner(chainId);
+
     const { OPTIMISM, BLAST } = CHAIN_IDs;
     if (chainId === OPTIMISM) {
       const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
       const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId];
-      this.customBridges[dai] = new DaiOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
-      this.customBridges[snx] = new SnxOptimismBridge(OPTIMISM, hubChainId, mainnetSigner, l2Signer);
+      this.customBridges[dai] = new DaiOptimismBridge(chainId, hubChainId, mainnetSigner, l2Signer);
+      this.customBridges[snx] = new SnxOptimismBridge(chainId, hubChainId, mainnetSigner, l2Signer);
     } else if (chainId === BLAST) {
       const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
       this.customBridges[dai] = new BlastBridge(BLAST, hubChainId, mainnetSigner, l2Signer);
@@ -55,35 +56,20 @@ export class OpStackAdapter extends BaseAdapter {
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
     if (wethAddress) {
-      this.customBridges[wethAddress] = new WethBridge(
-        this.chainId,
-        this.hubChainId,
-        this.getSigner(this.hubChainId),
-        this.getSigner(chainId)
-      );
+      this.customBridges[wethAddress] = new WethBridge(chainId, hubChainId, mainnetSigner, l2Signer);
     }
 
     // We should manually override the bridge for USDC to use CCTP if this chain has a Native USDC entry. We can
     // assume that all Op Stack chains will have a bridged USDC.e variant that uses the OVM standard bridge, so we
     // only need to check if a native USDC exists for this chain. If so, then we'll use the TokenSplitter bridge
     // which maps to either the CCTP or OVM Standard bridge depending on the request.
-    const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
-    const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId];
+    const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId];
+    const l2NativeUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
     if (usdcAddress && l2NativeUsdcAddress && !this.customBridges[usdcAddress]) {
-      this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(
-        this.chainId,
-        this.hubChainId,
-        this.getSigner(this.hubChainId),
-        this.getSigner(chainId)
-      );
+      this.customBridges[usdcAddress] = new UsdcTokenSplitterBridge(chainId, hubChainId, mainnetSigner, l2Signer);
     }
 
-    this.defaultBridge = new DefaultERC20Bridge(
-      this.chainId,
-      this.hubChainId,
-      this.getSigner(this.hubChainId),
-      this.getSigner(chainId)
-    );
+    this.defaultBridge = new DefaultERC20Bridge(chainId, hubChainId, mainnetSigner, l2Signer);
 
     // Before using this mapping, we need to verify that every key is a correctly checksummed address.
     assert(
