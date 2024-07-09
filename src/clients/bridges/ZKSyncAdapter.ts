@@ -79,8 +79,8 @@ export class ZKSyncAdapter extends BaseAdapter {
         const isWeth = this.isWeth(l1TokenAddress);
         if (isWeth) {
           const queries = [
-            this.queryL1BridgeInitiationEvents(l1TokenAddress, address, address, l1SearchConfig),
-            this.queryL2BridgeFinalizationEvents(l1TokenAddress, address, address, l2SearchConfig),
+            this.queryL1BridgeInitiationEvents(l1TokenAddress, null, address, l1SearchConfig),
+            this.queryL2BridgeFinalizationEvents(l1TokenAddress, null, address, l2SearchConfig),
           ];
 
           // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
