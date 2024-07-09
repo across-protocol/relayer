@@ -173,6 +173,8 @@ export class ZKSyncAdapter extends BaseAdapter {
     let filter: EventFilter;
 
     if (this.isWeth(l1Token)) {
+      // Opinionated assumption: WETH was sent via either the AtomicDepositor or HubPool.
+      // If the sender was not specified, sub one in based on the type of recipient address.
       if (sender === null && recipient !== null) {
         sender = this.getAddressAlias(
           (await this.isL2ChainContract(recipient)) ? this.getHubPool().address : this.getAtomicDepositor().address
