@@ -1,35 +1,29 @@
-// Mainnet
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
-// OpStack
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
 import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
 import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
 import SNX_OPTIMISM_BRIDGE_L2_ABI from "./abi/SnxOptimismBridgeL2.json";
-// Polygon
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
 import POLYGON_ROOT_CHAIN_MANAGER_ABI from "./abi/PolygonRootChainManager.json";
 import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json";
-// ZkSync
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI from "./abi/ZkSyncDefaultErc20BridgeL1.json";
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI from "./abi/ZkSyncDefaultErc20BridgeL2.json";
 import ZK_SYNC_MAILBOX_ABI from "./abi/ZkSyncMailbox.json";
-// Arbitrum
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "./abi/ArbitrumErc20GatewayL2.json";
 import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
-// Linea
 import LINEA_MESSAGE_SERVICE_ABI from "./abi/LineaMessageService.json";
 import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
-// Scroll
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
+import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -93,6 +87,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x735aDBbE72226BD52e818E7181953f42E3b0FF21",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_81457: {
+      address: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     polygonRootChainManager: {
       address: "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77",
       abi: POLYGON_ROOT_CHAIN_MANAGER_ABI,
@@ -126,6 +124,10 @@ export const CONTRACT_ADDRESSES: {
     hubPool: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       abi: HUB_POOL_ABI,
+    },
+    blastBridge: {
+      address: "0x3a05E5d33d7Ab3864D53aaEc93c8301C1Fa49115",
+      abi: BLAST_BRIDGE_ABI,
     },
   },
   10: {
@@ -229,6 +231,23 @@ export const CONTRACT_ADDRESSES: {
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  81457: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    weth: {
+      address: "0x4200000000000000000000000000000000000004",
+      abi: WETH_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+    blastBridge: {
+      address: "0x4300000000000000000000000000000000000005",
+      abi: BLAST_BRIDGE_ABI,
     },
   },
   42161: {

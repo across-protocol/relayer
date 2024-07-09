@@ -22,6 +22,7 @@ import { WethBridge } from "./WethBridge";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
 import { UsdcTokenSplitterBridge } from "./UsdcTokenSplitterBridge";
 import { DaiOptimismBridge, SnxOptimismBridge } from "./optimism";
+import { BlastBridge } from "./blast/BlastBridge";
 
 export class OpStackAdapter extends BaseAdapter {
   public l2Gas: number;
@@ -42,12 +43,15 @@ export class OpStackAdapter extends BaseAdapter {
     const mainnetSigner = this.getSigner(hubChainId);
     const l2Signer = this.getSigner(chainId);
 
-    const { OPTIMISM } = CHAIN_IDs;
+    const { OPTIMISM, BLAST } = CHAIN_IDs;
     if (chainId === OPTIMISM) {
       const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
       const snx = TOKEN_SYMBOLS_MAP.SNX.addresses[hubChainId];
       this.customBridges[dai] = new DaiOptimismBridge(chainId, hubChainId, mainnetSigner, l2Signer);
       this.customBridges[snx] = new SnxOptimismBridge(chainId, hubChainId, mainnetSigner, l2Signer);
+    } else if (chainId === BLAST) {
+      const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
+      this.customBridges[dai] = new BlastBridge(chainId, hubChainId, mainnetSigner, l2Signer);
     }
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
