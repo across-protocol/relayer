@@ -49,6 +49,7 @@ contract AtomicWethDepositor {
     OvmL1Bridge public immutable modeL1Bridge = OvmL1Bridge(0x735aDBbE72226BD52e818E7181953f42E3b0FF21);
     OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
     OvmL1Bridge public immutable baseL1Bridge = OvmL1Bridge(0x3154Cf16ccdb4C6d922629664174b904d80F2C35);
+    OvmL1Bridge public immutable liskL1Bridge = OvmL1Bridge(0x2658723Bf70c7667De6B25F99fcce13A16D25d08);
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
     ZkSyncL1Bridge public immutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
     LineaL1MessageService public immutable lineaL1MessageService =
@@ -68,6 +69,8 @@ contract AtomicWethDepositor {
             baseL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 34443) {
             modeL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else if (chainId == 1135) {
+            liskL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 288) {
             bobaL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else {
