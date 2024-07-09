@@ -51,7 +51,7 @@ export class OpStackAdapter extends BaseAdapter {
       this.customBridges[snx] = new SnxOptimismBridge(chainId, hubChainId, mainnetSigner, l2Signer);
     } else if (chainId === BLAST) {
       const dai = TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId];
-      this.customBridges[dai] = new BlastBridge(BLAST, hubChainId, mainnetSigner, l2Signer);
+      this.customBridges[dai] = new BlastBridge(chainId, hubChainId, mainnetSigner, l2Signer);
     }
 
     // Typically, a custom WETH bridge is not provided, so use the standard one.
