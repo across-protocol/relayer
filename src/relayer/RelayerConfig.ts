@@ -1,9 +1,14 @@
 import { utils as ethersUtils } from "ethers";
-import { typeguards } from "@across-protocol/sdk-v2";
+import winston from "winston";
+import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
+  bnUint256Max,
+  CHAIN_IDs,
+  dedupArray,
   toBNWei,
   assert,
+  getNetworkName,
   isDefined,
   readFileSync,
   toBN,
@@ -13,7 +18,12 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig } from "../interfaces";
+import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
+
+type DepositConfirmationConfig = {
+  usdThreshold: BigNumber;
+  minConfirmations: number;
+};
 
 export class RelayerConfig extends CommonConfig {
   readonly externalIndexer: boolean;
@@ -40,7 +50,7 @@ export class RelayerConfig extends CommonConfig {
   readonly slowDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
-    [threshold: number]: { [chainId: number]: number };
+    [chainId: number]: DepositConfirmationConfig[];
   };
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
@@ -146,47 +156,73 @@ export class RelayerConfig extends CommonConfig {
         }
       });
 
+      const parseTokenConfig = (
+        l1Token: string,
+        chainId: string,
+        rawTokenConfig: TokenBalanceConfig
+      ): TokenBalanceConfig => {
+        const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } = rawTokenConfig;
+        const tokenConfig: TokenBalanceConfig = { targetPct, thresholdPct, targetOverageBuffer };
+
+        assert(
+          targetPct !== undefined && thresholdPct !== undefined,
+          `Bad config. Must specify targetPct, thresholdPct for ${l1Token} on ${chainId}`
+        );
+        assert(
+          toBN(thresholdPct).lte(toBN(targetPct)),
+          `Bad config. thresholdPct<=targetPct for ${l1Token} on ${chainId}`
+        );
+        tokenConfig.targetPct = toBNWei(targetPct).div(100);
+        tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
+
+        // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
+        // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
+        // holding more tokens than the targetPct, but perhaps a better default is 100%
+        tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
+
+        // For WETH, also consider any unwrap target/threshold.
+        if (l1Token === TOKEN_SYMBOLS_MAP.WETH.symbol) {
+          if (unwrapWethThreshold !== undefined) {
+            tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
+          }
+          tokenConfig.unwrapWethTarget = toBNWei(unwrapWethTarget ?? 2);
+        }
+
+        return tokenConfig;
+      };
+
       const rawTokenConfigs = inventoryConfig?.tokenConfig ?? {};
       const tokenConfigs = (inventoryConfig.tokenConfig = {});
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
           ? l1Token
-          : TOKEN_SYMBOLS_MAP[l1Token]?.addresses[this.hubPoolChainId];
+          : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
         assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
 
-        Object.keys(rawTokenConfigs[l1Token]).forEach((chainId) => {
-          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } =
-            rawTokenConfigs[l1Token][chainId];
+        tokenConfigs[effectiveL1Token] ??= {};
+        const hubTokenConfig = rawTokenConfigs[l1Token];
 
-          tokenConfigs[effectiveL1Token] ??= {};
-          tokenConfigs[effectiveL1Token][chainId] ??= { targetPct, thresholdPct, targetOverageBuffer };
-          const tokenConfig = tokenConfigs[effectiveL1Token][chainId];
+        if (isAliasConfig(hubTokenConfig)) {
+          Object.keys(hubTokenConfig).forEach((symbol) => {
+            Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
+              const rawTokenConfig = hubTokenConfig[symbol][chainId];
+              const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
 
-          assert(
-            targetPct !== undefined && thresholdPct !== undefined,
-            `Bad config. Must specify targetPct, thresholdPct for ${l1Token} on ${chainId}`
-          );
-          assert(
-            toBN(thresholdPct).lte(toBN(targetPct)),
-            `Bad config. thresholdPct<=targetPct for ${l1Token} on ${chainId}`
-          );
-          tokenConfig.targetPct = toBNWei(targetPct).div(100);
-          tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
-
-          // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
-          // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
-          // holding more tokens than the targetPct, but perhaps a better default is 100%
-          tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
-
-          // For WETH, also consider any unwrap target/threshold.
-          if (effectiveL1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
-            if (unwrapWethThreshold !== undefined) {
-              tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
-            }
-            tokenConfig.unwrapWethTarget = toBNWei(unwrapWethTarget ?? 2);
-          }
-        });
+              tokenConfigs[effectiveL1Token][effectiveSpokeToken] ??= {};
+              tokenConfigs[effectiveL1Token][effectiveSpokeToken][chainId] = parseTokenConfig(
+                l1Token,
+                chainId,
+                rawTokenConfig
+              );
+            });
+          });
+        } else {
+          Object.keys(hubTokenConfig).forEach((chainId) => {
+            const rawTokenConfig = hubTokenConfig[chainId];
+            tokenConfigs[effectiveL1Token][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
+          });
+        }
       });
     }
 
@@ -203,20 +239,73 @@ export class RelayerConfig extends CommonConfig {
     this.skipRebalancing = SKIP_REBALANCING === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
-    (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
+
+    const minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
-      : Constants.MIN_DEPOSIT_CONFIRMATIONS),
-      Object.keys(this.minDepositConfirmations).forEach((threshold) => {
-        Object.keys(this.minDepositConfirmations[threshold]).forEach((chainId) => {
-          const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
+      : Constants.MIN_DEPOSIT_CONFIRMATIONS;
+
+    // Transform deposit confirmation requirements into an array of ascending
+    // deposit confirmations, sorted by the corresponding threshold in USD.
+    this.minDepositConfirmations = {};
+    Object.keys(minDepositConfirmations)
+      .map((_threshold) => {
+        const threshold = Number(_threshold);
+        assert(!isNaN(threshold) && threshold >= 0, `Invalid deposit confirmation threshold (${_threshold})`);
+        return Number(threshold);
+      })
+      .sort((x, y) => x - y)
+      .forEach((usdThreshold) => {
+        const config = minDepositConfirmations[usdThreshold];
+
+        Object.entries(config).forEach(([chainId, _minConfirmations]) => {
+          const minConfirmations = Number(_minConfirmations);
           assert(
-            !isNaN(nBlocks) && nBlocks >= 0,
-            `Chain ${chainId} minimum deposit confirmations for "${threshold}" threshold missing or invalid (${nBlocks}).`
+            !isNaN(minConfirmations) && minConfirmations >= 0,
+            `${getNetworkName(chainId)} deposit confirmations for` +
+              ` ${usdThreshold} threshold missing or invalid (${_minConfirmations}).`
           );
+
+          this.minDepositConfirmations[chainId] ??= [];
+          this.minDepositConfirmations[chainId].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
         });
       });
-    // Force default thresholds in MDC config.
-    this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
+
+    // Append default thresholds as a safe upper-bound.
+    Object.keys(this.minDepositConfirmations).forEach((chainId) =>
+      this.minDepositConfirmations[chainId].push({
+        usdThreshold: bnUint256Max,
+        minConfirmations: Number.MAX_SAFE_INTEGER,
+      })
+    );
+
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
+  }
+
+  /**
+   * @notice Loads additional configuration state that can only be known after we know all chains that we're going to
+   * support. Warns or throws if any of the configurations are not valid.
+   * @param chainIdIndices All expected chain ID's that could be supported by this config.
+   * @param logger Optional logger object.
+   */
+  override validate(chainIds: number[], logger: winston.Logger): void {
+    const { relayerOriginChains, relayerDestinationChains } = this;
+    const relayerChainIds =
+      relayerOriginChains.length > 0 && relayerDestinationChains.length > 0
+        ? dedupArray([...relayerOriginChains, ...relayerDestinationChains])
+        : chainIds;
+
+    const ignoredChainIds = chainIds.filter(
+      (chainId) => !relayerChainIds.includes(chainId) && chainId !== CHAIN_IDs.BOBA
+    );
+    if (ignoredChainIds.length > 0 && logger) {
+      logger.debug({
+        at: "RelayerConfig::validate",
+        message: `Ignoring ${ignoredChainIds.length} chains.`,
+        ignoredChainIds,
+      });
+    }
+
+    // Only validate config for chains that the relayer cares about.
+    super.validate(relayerChainIds, logger);
   }
 }

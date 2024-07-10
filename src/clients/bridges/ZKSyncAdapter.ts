@@ -9,16 +9,16 @@ import {
   assign,
   Event,
   ZERO_ADDRESS,
-  getTokenAddress,
   TOKEN_SYMBOLS_MAP,
   bnZero,
+  CHAIN_IDs,
 } from "../../utils";
 import { SpokePoolClient } from "../.";
 import assert from "assert";
 import * as zksync from "zksync-web3";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
-import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, utils } from "@across-protocol/sdk";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 import { matchL2EthDepositAndWrapEvents } from "./utils";
 
@@ -32,7 +32,8 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
+    const { ZK_SYNC } = CHAIN_IDs;
+    super(spokePoolClients, ZK_SYNC, monitoredAddresses, logger, SUPPORTED_TOKENS[ZK_SYNC]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -78,6 +79,7 @@ export class ZKSyncAdapter extends BaseAdapter {
 
         // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
+        const l2Token = this.resolveL2TokenAddress(l1TokenAddress, false); // CCTP doesn't exist on ZkSync.
         if (isWeth) {
           [initiatedQueryResult, finalizedQueryResult, wrapQueryResult] = await Promise.all([
             // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
@@ -121,7 +123,6 @@ export class ZKSyncAdapter extends BaseAdapter {
             finalizedQueryResult = matchL2EthDepositAndWrapEvents(finalizedQueryResult, wrapQueryResult);
           }
         } else {
-          const l2Token = getTokenAddress(l1TokenAddress, this.hubChainId, this.chainId);
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
             // Filter on 'from' and 'to' address
             paginatedEventQuery(
@@ -141,18 +142,22 @@ export class ZKSyncAdapter extends BaseAdapter {
 
         assign(
           this.l1DepositInitiatedEvents,
-          [address, l1TokenAddress],
+          [address, l1TokenAddress, l2Token],
           // An initiatedQueryResult could be a zkSync DepositInitiated or an AtomicDepositor
           // ZkSyncEthDepositInitiated event, subject to whether the deposit token was WETH or not.
           // A ZkSyncEthDepositInitiated event doesn't have a token or l1Token param.
           initiatedQueryResult.map(processEvent).filter((e) => isWeth || e.l1Token === l1TokenAddress)
         );
-        assign(this.l2DepositFinalizedEvents, [address, l1TokenAddress], finalizedQueryResult.map(processEvent));
+        assign(
+          this.l2DepositFinalizedEvents,
+          [address, l1TokenAddress, l2Token],
+          finalizedQueryResult.map(processEvent)
+        );
       });
     });
 
     this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
-    this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
+    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }

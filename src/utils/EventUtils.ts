@@ -4,7 +4,7 @@ import { Event, utils as ethersUtils } from "ethers";
 import { getNetworkName } from "./NetworkUtils";
 import { dedupArray } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export type EventSearchConfig = sdkUtils.EventSearchConfig;
 
@@ -60,17 +60,19 @@ export function getUniqueLogIndex(events: { transactionHash: string }[]): number
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [blockNumber: number]: (Event & { providers: string[] })[] } = {};
+  public readonly finality: number;
 
   private blockNumber: number;
 
   constructor(
     private readonly logger: winston.Logger,
     public readonly chainId: number,
-    public readonly finality: number,
+    finality: number,
     public readonly quorum: number
   ) {
     this.chain = getNetworkName(chainId);
     this.blockNumber = 0;
+    this.finality = Math.max(finality, 1);
   }
 
   /**
@@ -174,9 +176,20 @@ export class EventManager {
     // This is configurable and will almost always be less than chain finality guarantees.
     const finalised = blockNumber - this.finality;
 
-    // Collect the events that met quorum, stripping out the provider information.
+    // Collect the events that met quorum, stripping out the provider information; drop any that didn't.
+    // This can be brittle when finality is low (i.e. 1). @todo: Support querying back over multiple blocks
+    // to account for RPC notification delays.
     const events = (this.events[finalised] ?? [])
-      .filter((event) => this.getEventQuorum(event) >= this.quorum)
+      .filter((event) => {
+        const eventQuorum = this.getEventQuorum(event);
+        if (this.quorum > eventQuorum) {
+          this.logger.debug({
+            at: "EventManager::tick",
+            message: `Dropped ${this.chain} ${event.event} event due to insufficient quorum.`,
+          });
+        }
+        return eventQuorum >= this.quorum;
+      })
       .map(({ providers, ...event }) => event);
 
     // Flush the events that were just submitted.

@@ -1,4 +1,4 @@
-import { clients } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk";
 export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   public maxFillDeadlineOverride?: number;
   public oldestBlockTimestampOverride?: number;

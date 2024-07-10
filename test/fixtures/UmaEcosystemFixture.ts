@@ -1,7 +1,7 @@
-import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
+import * as utils from "@across-protocol/contracts/dist/test-utils";
 import { Contract } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { utf8ToHex, identifier, refundProposalLiveness } from "@across-protocol/contracts-v2/dist/test-utils";
+import { utf8ToHex, identifier, refundProposalLiveness } from "@across-protocol/contracts/dist/test-utils";
 
 export async function setupUmaEcosystem(owner: SignerWithAddress): Promise<{
   timer: Contract;

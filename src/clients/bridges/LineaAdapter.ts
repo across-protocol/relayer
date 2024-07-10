@@ -1,5 +1,5 @@
-import * as sdk from "@across-protocol/sdk-v2";
-import { CONTRACT_ADDRESSES } from "../../common";
+import * as sdk from "@across-protocol/sdk";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { OutstandingTransfers } from "../../interfaces";
 import {
   BigNumber,
@@ -28,7 +28,8 @@ export class LineaAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, CHAIN_IDs.LINEA, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
+    const { LINEA } = CHAIN_IDs;
+    super(spokePoolClients, LINEA, monitoredAddresses, logger, SUPPORTED_TOKENS[LINEA]);
   }
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Note: Linea has two bridges: one for
@@ -139,7 +140,7 @@ export class LineaAdapter extends BaseAdapter {
       : this.getL1TokenBridge();
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<sdk.interfaces.OutstandingTransfers> {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const outstandingTransfers: OutstandingTransfers = {};
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const supportedL1Tokens = this.filterSupportedTokens(l1Tokens);
@@ -266,15 +267,18 @@ export class LineaAdapter extends BaseAdapter {
     l1Token: string,
     transferEvents: Event[]
   ): void {
+    const l2Token = this.resolveL2TokenAddress(l1Token, false); // There's no native USDC on Linea
+    assert(!isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.chainId])); // We can blow up if this eventually stops being true
     transferEvents.forEach((event) => {
       const txHash = event.transactionHash;
       // @dev WETH events have a _value field, while ERC20 events have an amount field.
       const amount = event.args._value ?? event.args.amount;
       outstandingTransfers[monitoredAddress] ??= {};
-      outstandingTransfers[monitoredAddress][l1Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
-      outstandingTransfers[monitoredAddress][l1Token] = {
-        totalAmount: outstandingTransfers[monitoredAddress][l1Token].totalAmount.add(amount),
-        depositTxHashes: [...outstandingTransfers[monitoredAddress][l1Token].depositTxHashes, txHash],
+      outstandingTransfers[monitoredAddress][l1Token] ??= {};
+      outstandingTransfers[monitoredAddress][l1Token][l2Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
+      outstandingTransfers[monitoredAddress][l1Token][l2Token] = {
+        totalAmount: outstandingTransfers[monitoredAddress][l1Token][l2Token].totalAmount.add(amount),
+        depositTxHashes: [...outstandingTransfers[monitoredAddress][l1Token][l2Token].depositTxHashes, txHash],
       };
     });
   }
@@ -287,10 +291,10 @@ export class LineaAdapter extends BaseAdapter {
   ): Promise<Event[]> {
     const initiatedQueryResult = await paginatedEventQuery(
       l1Bridge,
-      l1Bridge.filters.BridgingInitiated(null /* sender */, null /* recipient, non-indexed must be null */, l1Token),
+      l1Bridge.filters.BridgingInitiatedV2(null /* sender */, monitoredAddress /* recipient */, l1Token),
       l1SearchConfig
     );
-    return initiatedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
+    return initiatedQueryResult;
   }
 
   async getErc20DepositFinalizedEvents(
@@ -301,10 +305,15 @@ export class LineaAdapter extends BaseAdapter {
   ): Promise<Event[]> {
     const finalizedQueryResult = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.BridgingFinalized(l1Token),
+      l2Bridge.filters.BridgingFinalizedV2(
+        l1Token,
+        null /* bridgedToken */,
+        null /* bridgedToken */,
+        monitoredAddress /* recipient */
+      ),
       l2SearchConfig
     );
-    return finalizedQueryResult.filter(({ args }) => args.recipient === monitoredAddress);
+    return finalizedQueryResult;
   }
 
   matchErc20DepositEvents(

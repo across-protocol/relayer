@@ -1,4 +1,4 @@
-import { interfaces, constants } from "@across-protocol/sdk-v2";
+import { interfaces, constants } from "@across-protocol/sdk";
 import { RedisClient, setRedisKey } from "../utils";
 
 /**

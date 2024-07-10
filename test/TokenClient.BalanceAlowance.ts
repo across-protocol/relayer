@@ -1,4 +1,4 @@
-import { ConfigStoreClient, SpokePoolClient, TokenClient } from "../src/clients"; // Tested
+import { ConfigStoreClient, SpokePoolClient, TokenClient, TokenDataType } from "../src/clients"; // Tested
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import { MockHubPoolClient } from "./mocks";
 import {
@@ -10,6 +10,7 @@ import {
   deploySpokePoolWithToken,
   ethers,
   expect,
+  toBN,
   toBNWei,
   winston,
 } from "./utils";
@@ -103,6 +104,15 @@ describe("TokenClient: Balance and Allowance", async function () {
   });
 
   it("Fetches all associated balances", async function () {
+    const alignTokenData = (data: TokenDataType): TokenDataType =>
+      Object.entries(data).reduce((acc, [chainId, tokenData]) => {
+        acc[chainId] = Object.entries(tokenData).reduce((acc, [token, { balance, allowance }]) => {
+          acc[token] = { balance: toBN(balance), allowance: toBN(allowance) };
+          return acc;
+        }, {});
+        return acc;
+      }, {});
+
     await updateAllClients();
     const expectedData = {
       [originChainId]: {
@@ -115,7 +125,7 @@ describe("TokenClient: Balance and Allowance", async function () {
       },
     };
     const tokenData = tokenClient.getAllTokenData();
-    expect(tokenData).to.deep.equal(expectedData);
+    expect(alignTokenData(tokenData)).to.deep.equal(expectedData);
 
     // Check some balance/allowances directly.
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(0));
@@ -139,7 +149,7 @@ describe("TokenClient: Balance and Allowance", async function () {
       },
     };
     const tokenData1 = tokenClient.getAllTokenData();
-    expect(tokenData1).to.deep.equal(expectedData1);
+    expect(alignTokenData(tokenData1)).to.deep.equal(expectedData1);
 
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42069));
     expect(tokenClient.getBalance(destinationChainId, weth_2.address)).to.equal(toBNWei(1337));

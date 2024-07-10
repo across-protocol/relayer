@@ -1,4 +1,4 @@
-import * as sdk from "@across-protocol/sdk-v2";
+import * as sdk from "@across-protocol/sdk";
 
 export class BlockFinder extends sdk.utils.BlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
@@ -12,8 +12,13 @@ export const {
   bnUint32Max,
   bnUint256Max,
   chainIsOPStack,
+  chainIsMatic,
+  chainIsProd,
   dedupArray,
+  fillStatusArray,
   fixedPointAdjustment,
+  forEachAsync,
+  mapAsync,
   toBN,
   bnToHex,
   toWei,

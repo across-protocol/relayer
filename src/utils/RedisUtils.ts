@@ -5,7 +5,7 @@ import winston from "winston";
 import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
 import { RedisCache } from "../caching/RedisCache";
-import { constants } from "@across-protocol/sdk-v2";
+import { constants } from "@across-protocol/sdk";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE

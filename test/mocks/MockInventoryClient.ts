@@ -33,8 +33,8 @@ export class MockInventoryClient extends InventoryClient {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async determineRefundChainId(_deposit: Deposit): Promise<number> {
-    return this.inventoryConfig === null ? 1 : super.determineRefundChainId(_deposit);
+  override async determineRefundChainId(_deposit: Deposit): Promise<number[]> {
+    return this.inventoryConfig === null ? [1] : super.determineRefundChainId(_deposit);
   }
 
   setExcessRunningBalances(l1Token: string, balances: { [chainId: number]: BigNumber }): void {
@@ -53,7 +53,7 @@ export class MockInventoryClient extends InventoryClient {
     this.possibleRebalances = [];
   }
 
-  getPossibleRebalances(): Rebalance[] {
+  override getPossibleRebalances(): Rebalance[] {
     return this.possibleRebalances;
   }
 
@@ -61,7 +61,7 @@ export class MockInventoryClient extends InventoryClient {
     this.balanceOnChain = newBalance;
   }
 
-  getBalanceOnChainForL1Token(): BigNumber {
+  override getBalanceOnChain(): BigNumber {
     return this.balanceOnChain;
   }
 }
