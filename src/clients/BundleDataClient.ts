@@ -306,11 +306,14 @@ export class BundleDataClient {
           return hasMatchingDeposit;
         })
         .forEach((fill) => {
+          const matchingDeposit = this.spokePoolClients[fill.originChainId].getDeposit(fill.depositId);
+          assert(isDefined(matchingDeposit));
           const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
             fill,
             this.clients.hubPoolClient,
             blockRanges,
-            this.chainIdListForBundleEvaluationBlockNumbers
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            matchingDeposit.fromLiteChain
           );
           // Assume that lp fees are 0 for the sake of speed. In the future we could batch compute
           // these or make hardcoded assumptions based on the origin-repayment chain direction. This might result
@@ -923,6 +926,14 @@ export class BundleDataClient {
                   return;
                 }
 
+                // slow fill requests for deposits from or to lite chains are considered invalid
+                if (
+                  v3RelayHashes[relayDataHash].deposit.fromLiteChain ||
+                  v3RelayHashes[relayDataHash].deposit.toLiteChain
+                ) {
+                  return;
+                }
+
                 // If there is no fill matching the relay hash, then this might be a valid slow fill request
                 // that we should produce a slow fill leaf for. Check if the slow fill request is in the
                 // destination chain block range and that the underlying deposit has not expired yet.
@@ -964,6 +975,12 @@ export class BundleDataClient {
               // sanity check it here by comparing the full relay hashes. If there's an error here then the
               // historical deposit query is not working as expected.
               assert(this.getRelayHashFromEvent(matchedDeposit) === relayDataHash);
+
+              // slow fill requests for deposits from or to lite chains are considered invalid
+              if (matchedDeposit.fromLiteChain || matchedDeposit.toLiteChain) {
+                return;
+              }
+
               v3RelayHashes[relayDataHash].deposit = matchedDeposit;
 
               // Note: we don't need to query for a historical fill at this point because a fill
@@ -1111,11 +1128,14 @@ export class BundleDataClient {
       validatedBundleV3Fills.length > 0
         ? this.clients.hubPoolClient.batchComputeRealizedLpFeePct(
             validatedBundleV3Fills.map((fill) => {
+              const matchedDeposit = v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit;
+              assert(isDefined(matchedDeposit));
               const { chainToSendRefundTo: paymentChainId } = getRefundInformationFromFill(
                 fill,
                 this.clients.hubPoolClient,
                 blockRangesForChains,
-                chainIds
+                chainIds,
+                matchedDeposit.fromLiteChain
               );
               return {
                 ...fill,
@@ -1152,11 +1172,14 @@ export class BundleDataClient {
     });
     v3FillLpFees.forEach(({ realizedLpFeePct }, idx) => {
       const fill = validatedBundleV3Fills[idx];
+      const associatedDeposit = v3RelayHashes[this.getRelayHashFromEvent(fill)].deposit;
+      assert(isDefined(associatedDeposit));
       const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
         fill,
         this.clients.hubPoolClient,
         blockRangesForChains,
-        chainIds
+        chainIds,
+        associatedDeposit.fromLiteChain
       );
       updateBundleFillsV3(bundleFillsV3, fill, realizedLpFeePct, chainToSendRefundTo, repaymentToken);
     });

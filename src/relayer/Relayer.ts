@@ -74,7 +74,7 @@ export class Relayer {
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
-    const { ignoredAddresses, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const { ignoredAddresses, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
     // If we don't have the latest code to support this deposit, skip it.
@@ -203,21 +203,23 @@ export class Relayer {
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
-    const { inputAmount } = deposit;
-    const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
-    if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
-      this.logger.warn({
-        at: "Relayer::filterDeposit",
-        message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-        limit,
-        l1Token: l1Token.address,
-        depositId,
-        inputToken,
-        inputAmount,
-        originChainId,
-        transactionHash: deposit.transactionHash,
-      });
-      return false;
+    if (!ignoreLimits) {
+      const { inputAmount } = deposit;
+      const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
+      if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
+        this.logger.warn({
+          at: "Relayer::filterDeposit",
+          message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
+          limit,
+          l1Token: l1Token.address,
+          depositId,
+          inputToken,
+          inputAmount,
+          originChainId,
+          transactionHash: deposit.transactionHash,
+        });
+        return false;
+      }
     }
 
     // The deposit passed all checks, so we can include it in the list of unfilled deposits.
@@ -371,6 +373,17 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
+      // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
+      // prefer someone else to fill the deposits.
+      if (deposit.fromLiteChain) {
+        this.logger.debug({
+          at: "Relayer::evaluateFill",
+          message: "Skipping self-relay deposit originating from lite chain.",
+          originChainId,
+          depositId,
+        });
+        return;
+      }
       // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
@@ -553,6 +566,16 @@ export class Relayer {
   }
 
   requestSlowFill(deposit: V3Deposit): void {
+    // don't request slow fill if origin/destination chain is a lite chain
+    if (deposit.fromLiteChain || deposit.toLiteChain) {
+      this.logger.debug({
+        at: "Relayer::requestSlowFill",
+        message: "Prevent requesting slow fill request to/from lite chain.",
+        deposit,
+      });
+      return;
+    }
+
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
@@ -606,6 +629,12 @@ export class Relayer {
       realizedLpFeePct,
     });
 
+    // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
+    assert(
+      !deposit.fromLiteChain || repaymentChainId === deposit.originChainId,
+      `Lite chain deposits must be filled on its origin chain (${deposit.originChainId}). Deposit Id: ${deposit.depositId}.`
+    );
+
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
@@ -647,7 +676,8 @@ export class Relayer {
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
-    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash } = deposit;
+    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash, fromLiteChain } =
+      deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
@@ -740,7 +770,10 @@ export class Relayer {
     // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
     // we come up with a smarter fee quoting algorithm that takes into account relayer inventory management more
     // accurately.
-    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId)) {
+    //
+    // Additionally we don't want to take this code path if the chain is a lite chain because we can't reason about
+    // destination chain repayments on lite chains.
+    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !fromLiteChain) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Preferred chains ${JSON.stringify(
