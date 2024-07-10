@@ -5,7 +5,7 @@ import {
   EventSearchConfig,
   Signer,
   Provider,
-  getTokenAddressWithCCTP,
+  getTranslatedTokenAddress,
 } from "../../../utils";
 
 export interface BridgeTransactionDetails {
@@ -46,6 +46,6 @@ export abstract class OpStackBridge {
   ): Promise<OpStackEvents>;
 
   protected resolveL2TokenAddress(l1Token: string): string {
-    return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.l2chainId, false);
+    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false);
   }
 }
