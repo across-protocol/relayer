@@ -161,7 +161,7 @@ export class MonitorConfig extends CommonConfig {
     }
   }
 
-  override validate(chainIds: number[], logger?: winston.Logger): void {
+  override validate(chainIds: number[], logger: winston.Logger): void {
     super.validate(chainIds, logger);
 
     // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.

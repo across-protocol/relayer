@@ -1,7 +1,7 @@
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { assert, CHAIN_IDs, ethers, getNetworkName, isDefined } from "../utils";
+import { assert, CHAIN_IDs, ethers, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -91,7 +91,7 @@ export class CommonConfig {
    * @throws If overridden TO_BLOCK_OVERRIDE_${chainId} isn't greater than 0
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
-  validate(chainIds: number[], logger?: winston.Logger): void {
+  validate(chainIds: number[], logger: winston.Logger): void {
     const { maxBlockLookBack } = this;
 
     // Warn about any missing MAX_BLOCK_LOOK_BACK config.
@@ -99,9 +99,7 @@ export class CommonConfig {
       const lookback = Object.keys(maxBlockLookBack).map(Number);
       const missing = chainIds.find((chainId) => !lookback.includes(chainId));
       if (missing) {
-        const message = `Missing ${getNetworkName(missing)} MAX_BLOCK_LOOK_BACK configuration`;
-        assert(!missing || logger, message);
-
+        const message = `Missing MAX_BLOCK_LOOK_BACK configuration for chainId ${missing}`;
         logger.warn({ at: "RelayerConfig::validate", message });
         maxBlockLookBack[missing] = 5000; // Revert to a safe default.
       }
@@ -111,7 +109,7 @@ export class CommonConfig {
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
       const buffer = Object.keys(maxBlockLookBack).map(Number);
       const missing = chainIds.find((chainId) => !buffer.includes(chainId));
-      assert(!missing, `Missing ${getNetworkName(missing)} BLOCK_RANGE_END_BLOCK_BUFFER configuration`);
+      assert(!missing, `Missing BLOCK_RANGE_END_BLOCK_BUFFER configuration for chainId ${missing}`);
     }
 
     for (const chainId of chainIds) {

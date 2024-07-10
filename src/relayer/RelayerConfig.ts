@@ -287,7 +287,7 @@ export class RelayerConfig extends CommonConfig {
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    * @param logger Optional logger object.
    */
-  override validate(chainIds: number[], logger?: winston.Logger): void {
+  override validate(chainIds: number[], logger: winston.Logger): void {
     const { relayerOriginChains, relayerDestinationChains } = this;
     const relayerChainIds =
       relayerOriginChains.length > 0 && relayerDestinationChains.length > 0
