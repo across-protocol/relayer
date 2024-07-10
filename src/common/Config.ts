@@ -1,6 +1,7 @@
+import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { assert, CHAIN_IDs, ethers, isDefined } from "../utils";
+import { assert, CHAIN_IDs, ethers, getNetworkName, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -90,24 +91,30 @@ export class CommonConfig {
    * @throws If overridden TO_BLOCK_OVERRIDE_${chainId} isn't greater than 0
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
-  loadAndValidateConfigForChains(chainIdIndices: number[]): void {
-    for (const chainId of chainIdIndices) {
-      // Validate that there is a block range end block buffer for each chain.
-      if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
-        assert(
-          Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
-          `BLOCK_RANGE_END_BLOCK_BUFFER is missing chainId ${chainId}`
-        );
-      }
+  validate(chainIds: number[], logger?: winston.Logger): void {
+    const { maxBlockLookBack } = this;
 
-      // Validate that there is a max block look back for each chain.
-      if (Object.keys(this.maxBlockLookBack).length > 0) {
-        assert(
-          Object.keys(this.maxBlockLookBack).includes(chainId.toString()),
-          `MAX_BLOCK_LOOK_BACK is missing chainId ${chainId}`
-        );
-      }
+    // Warn about any missing MAX_BLOCK_LOOK_BACK config.
+    if (Object.keys(maxBlockLookBack).length > 0) {
+      const lookback = Object.keys(maxBlockLookBack).map(Number);
+      const missing = chainIds.find((chainId) => !lookback.includes(chainId));
+      if (missing) {
+        const message = `Missing ${getNetworkName(missing)} MAX_BLOCK_LOOK_BACK configuration`;
+        assert(!missing || logger, message);
 
+        logger.warn({ at: "RelayerConfig::validate", message });
+        maxBlockLookBack[missing] = 5000; // Revert to a safe default.
+      }
+    }
+
+    // BLOCK_RANGE_END_BLOCK_BUFFER is important for the dataworker, so assert on it.
+    if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
+      const buffer = Object.keys(maxBlockLookBack).map(Number);
+      const missing = chainIds.find((chainId) => !buffer.includes(chainId));
+      assert(!missing, `Missing ${getNetworkName(missing)} BLOCK_RANGE_END_BLOCK_BUFFER configuration`);
+    }
+
+    for (const chainId of chainIds) {
       // Multicall chunk size precedence: Environment, chain-specific config, global default.
       // prettier-ignore
       const chunkSize = Number(
@@ -120,8 +127,8 @@ export class CommonConfig {
       this.multiCallChunkSize[chainId] = chunkSize;
 
       // Load any toBlock overrides.
-      if (process.env[`TO_BLOCK_OVERRIDE_${chainId}`] !== undefined) {
-        const toBlock = Number(process.env[`TO_BLOCK_OVERRIDE_${chainId}`]);
+      const toBlock = Number(process.env[`TO_BLOCK_OVERRIDE_${chainId}`]) || undefined;
+      if (isDefined(toBlock)) {
         assert(toBlock > 0, `TO_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
         this.toBlockOverride[chainId] = toBlock;
       }
