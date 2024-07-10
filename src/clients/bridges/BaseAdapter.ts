@@ -28,7 +28,7 @@ import {
   createFormatFunction,
   BigNumberish,
   TOKEN_SYMBOLS_MAP,
-  getTokenAddressWithCCTP,
+  getTranslatedTokenAddress,
 } from "../../utils";
 import { approveTokens, getAllowanceCacheKey, getTokenAllowanceFromCache, setTokenAllowanceInCache } from "./utils";
 
@@ -115,7 +115,7 @@ export abstract class BaseAdapter {
   }
 
   resolveL2TokenAddress(l1Token: string, isNativeUsdc = false): string {
-    return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.chainId, isNativeUsdc);
+    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.chainId, isNativeUsdc);
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], l1Bridges: string[]): Promise<void> {

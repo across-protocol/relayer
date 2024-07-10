@@ -1,3 +1,4 @@
+import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
 import { ethers, getEthAddressForChain } from "../utils";
 
@@ -160,19 +161,16 @@ export class MonitorConfig extends CommonConfig {
     }
   }
 
-  loadAndValidateConfigForChains(chainIdIndices: number[]): void {
+  override validate(chainIds: number[], logger: winston.Logger): void {
+    super.validate(chainIds, logger);
+
     // Min deposit confirmations seems like the most likely constant to have all possible chain IDs listed.
-    chainIdIndices.forEach((chainId) => {
+    chainIds.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
-        startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
-          ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
-          : undefined,
-        endingBlock: process.env[`ENDING_BLOCK_NUMBER_${chainId}`]
-          ? Number(process.env[`ENDING_BLOCK_NUMBER_${chainId}`])
-          : undefined,
+        startingBlock: Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`]) || undefined,
+        endingBlock: Number(process.env[`ENDING_BLOCK_NUMBER_${chainId}`]) || undefined,
       };
     });
-    super.loadAndValidateConfigForChains(chainIdIndices);
   }
 }
 
