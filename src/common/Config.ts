@@ -92,7 +92,7 @@ export class CommonConfig {
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
   validate(chainIds: number[], logger: winston.Logger): void {
-    const { maxBlockLookBack } = this;
+    const { blockRangeEndBlockBuffer, maxBlockLookBack } = this;
 
     // Warn about any missing MAX_BLOCK_LOOK_BACK config.
     if (Object.keys(maxBlockLookBack).length > 0) {
@@ -106,8 +106,8 @@ export class CommonConfig {
     }
 
     // BLOCK_RANGE_END_BLOCK_BUFFER is important for the dataworker, so assert on it.
-    if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
-      const buffer = Object.keys(maxBlockLookBack).map(Number);
+    if (Object.keys(blockRangeEndBlockBuffer).length > 0) {
+      const buffer = Object.keys(blockRangeEndBlockBuffer).map(Number);
       const missing = chainIds.find((chainId) => !buffer.includes(chainId));
       assert(!missing, `Missing BLOCK_RANGE_END_BLOCK_BUFFER configuration for chainId ${missing}`);
     }
