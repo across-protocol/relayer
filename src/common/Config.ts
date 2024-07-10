@@ -119,8 +119,7 @@ export class CommonConfig {
         process.env[`MULTICALL_CHUNK_SIZE_CHAIN_${chainId}`]
           ?? process.env.MULTICALL_CHUNK_SIZE
           ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
-          ?? DEFAULT_MULTICALL_CHUNK_SIZE
-      );
+      ) || DEFAULT_MULTICALL_CHUNK_SIZE;
       assert(chunkSize > 0, `Chain ${chainId} multicall chunk size (${chunkSize}) must be greater than 0`);
       this.multiCallChunkSize[chainId] = chunkSize;
 
