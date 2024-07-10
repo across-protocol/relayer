@@ -294,13 +294,14 @@ export class RelayerConfig extends CommonConfig {
         ? dedupArray([...relayerOriginChains, ...relayerDestinationChains])
         : chainIds;
 
-    const ignoredChainIds = chainIds
-      .filter((chainId) => !relayerChainIds.includes(chainId) && chainId !== CHAIN_IDs.BOBA);
+    const ignoredChainIds = chainIds.filter(
+      (chainId) => !relayerChainIds.includes(chainId) && chainId !== CHAIN_IDs.BOBA
+    );
     if (ignoredChainIds.length > 0 && logger) {
       logger.debug({
         at: "RelayerConfig::validate",
         message: `Ignoring ${ignoredChainIds.length} chains.`,
-        ignoredChainIds
+        ignoredChainIds,
       });
     }
 
