@@ -92,23 +92,21 @@ export class CommonConfig {
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
   validate(chainIds: number[], logger: winston.Logger): void {
-    const { blockRangeEndBlockBuffer, maxBlockLookBack } = this;
-
     // Warn about any missing MAX_BLOCK_LOOK_BACK config.
-    if (Object.keys(maxBlockLookBack).length > 0) {
-      const lookback = Object.keys(maxBlockLookBack).map(Number);
-      const missing = chainIds.find((chainId) => !lookback.includes(chainId));
+    const lookbackKeys = Object.keys(this.maxBlockLookBack).map(Number);
+    if (lookbackKeys.length > 0) {
+      const missing = chainIds.find((chainId) => !lookbackKeys.includes(chainId));
       if (missing) {
         const message = `Missing MAX_BLOCK_LOOK_BACK configuration for chainId ${missing}`;
         logger.warn({ at: "RelayerConfig::validate", message });
-        maxBlockLookBack[missing] = 5000; // Revert to a safe default.
+        this.maxBlockLookBack[missing] = 5000; // Revert to a safe default.
       }
     }
 
     // BLOCK_RANGE_END_BLOCK_BUFFER is important for the dataworker, so assert on it.
-    if (Object.keys(blockRangeEndBlockBuffer).length > 0) {
-      const buffer = Object.keys(blockRangeEndBlockBuffer).map(Number);
-      const missing = chainIds.find((chainId) => !buffer.includes(chainId));
+    const bufferKeys = Object.keys(this.blockRangeEndBlockBuffer).map(Number);
+    if (bufferKeys.length > 0) {
+      const missing = chainIds.find((chainId) => !bufferKeys.includes(chainId));
       assert(!missing, `Missing BLOCK_RANGE_END_BLOCK_BUFFER configuration for chainId ${missing}`);
     }
 
