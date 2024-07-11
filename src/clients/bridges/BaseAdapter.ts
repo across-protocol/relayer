@@ -349,6 +349,19 @@ export abstract class BaseAdapter {
     simMode = false
   ): Promise<TransactionResponse> {
     const { chainId, txnClient } = this;
+
+    // First verify that the target contract looks like WETH. This protects against
+    // accidentally sending ETH to the wrong address, which would be a critical error.
+    // Permit bypass if simMode is set in order to permit tests to pass.
+    let symbol: string;
+    if (simMode === false) {
+      symbol = await l2WEthContract.symbol();
+      assert(
+        symbol === "WETH",
+        `Critical (may delete ETH): Unable to verify ${this.getName()} WETH address (${l2WEthContract.address})`
+      );
+    }
+
     const method = "deposit";
     const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =
@@ -371,6 +384,7 @@ export abstract class BaseAdapter {
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     } else {
+      assert(symbol === "WETH");
       return (
         await txnClient.submit(chainId, [
           { contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message },

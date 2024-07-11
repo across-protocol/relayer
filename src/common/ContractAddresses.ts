@@ -239,7 +239,7 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
     weth: {
-      address: "0x4200000000000000000000000000000000000004",
+      address: "0x4300000000000000000000000000000000000004",
       abi: WETH_ABI,
     },
     eth: {
