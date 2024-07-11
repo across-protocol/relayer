@@ -353,12 +353,10 @@ export abstract class BaseAdapter {
     // First verify that the target contract looks like WETH. This protects against accidentally
     // sending ETH to the wrong address, would be a critical error and would delete funds.
     const symbol = await l2WEthContract.symbol();
-    if (symbol !== "WETH") {
-      assert(
-        symbol === "WETH",
-        `Critical (may delete ETH): Unable to verify ${this.getName()} WETH address (${l2WEthContract.address})`
-      );
-    }
+    assert(
+      symbol === "WETH",
+      `Critical (may delete ETH): Unable to verify ${this.getName()} WETH address (${l2WEthContract.address})`
+    );
 
     const method = "deposit";
     const formatFunc = createFormatFunction(2, 4, false, 18);
