@@ -355,7 +355,7 @@ export abstract class BaseAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     let symbol: string;
     if (simMode === false) {
-      const symbol = await l2WEthContract.symbol();
+      symbol = await l2WEthContract.symbol();
       assert(
         symbol === "WETH",
         `Critical (may delete ETH): Unable to verify ${this.getName()} WETH address (${l2WEthContract.address})`
