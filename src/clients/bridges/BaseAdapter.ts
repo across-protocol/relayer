@@ -350,8 +350,8 @@ export abstract class BaseAdapter {
   ): Promise<TransactionResponse> {
     const { chainId, txnClient } = this;
 
-    // First verify that the target contract looks like WETH. This protects against accidentally
-    // sending ETH to the wrong address, would be a critical error and would delete funds.
+    // First verify that the target contract looks like WETH. This protects against
+    // accidentally sending ETH to the wrong address, which would be a critical error.
     const symbol = await l2WEthContract.symbol();
     assert(
       symbol === "WETH",
