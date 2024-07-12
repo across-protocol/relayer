@@ -15,7 +15,7 @@ import {
   getMultisender,
   getProvider,
 } from "../utils";
-import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
+import { AugmentedTransaction, TransactionClient, RawTransaction } from "./TransactionClient";
 import lodash from "lodash";
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
@@ -511,5 +511,148 @@ export class MultiCallerClient {
         notificationPath: "across-error",
       });
     }
+  }
+}
+
+export class TryMulticallClient extends MultiCallerClient {
+  constructor(
+    readonly logger: winston.Logger,
+    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
+    readonly baseSigner?: Signer
+  ) {
+    super(logger, chunkSize, baseSigner);
+  }
+
+  override _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+    const txn = super._buildMultiCallBundle(transactions);
+    txn.method = "tryMulticall";
+    return txn;
+  }
+
+  protected override async _executeTxnQueue(
+    chainId: number,
+    txns: AugmentedTransaction[] = [],
+    valueTxns: AugmentedTransaction[] = [],
+    simulate = false
+  ): Promise<TransactionResponse[]> {
+    const nTxns = txns.length + valueTxns.length;
+    if (nTxns === 0) {
+      return [];
+    }
+
+    const networkName = getNetworkName(chainId);
+    this.logger.debug({
+      at: "TryMulticallClient#executeTxnQueue",
+      message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
+    });
+
+    const buildRawTransaction = (contract: Contract, data: string) => {
+      return {
+        contract,
+        data,
+      } as RawTransaction;
+    };
+
+    const txnRequestsToSubmit: AugmentedTransaction[] = [];
+    const txnCalldataToRebuild: RawTransaction[] = [];
+
+    // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
+    // need to simulate transactions individually. If the batch failed, then we need to
+    // simulate the transactions individually and pick out the successful ones.
+    const bundledTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
+    const [bundledSimResults, valueSimResults] = await Promise.all([
+      this.txnClient.simulate(bundledTxns),
+      this.txnClient.simulate(valueTxns),
+    ]);
+
+    bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
+      // If txn succeeded or the revert reason is known to be benign, then log at debug level.
+      this.logger[
+        succeed || simulate || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"
+      ]({
+        at: "tryMulticallClient#executeChainTxnQueue",
+        message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
+        batchTxn: { ...transaction, contract: transaction.contract.address },
+        reason,
+      });
+
+      if (succeed) {
+        const succeededTxnCalldata: string[] = [];
+        // Go through each transaction result of the txns batched in tryMulticall.
+        // If a transaction succeeded, we take note by adding it to succeededTxnCalldata.
+        data?.filter(({ success }) => success).forEach((calldata) => succeededTxnCalldata.push(calldata));
+
+        // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
+        // some txns in the bundle must have failed. We take note only of the ones which succeeded.
+        if (succeededTxnCalldata.length != (data?.length ?? 0)) {
+          txnCalldataToRebuild.push(
+            ...succeededTxnCalldata.map((calldata) => buildRawTransaction(transaction.contract, calldata))
+          );
+        } else {
+          // Otherwise, none of the transactions failed, so we can add the bundle to txnRequestsToSubmit.
+          bundledTxns[idx].gasLimit = transaction.gasLimit;
+          txnRequestsToSubmit.push(bundledTxns[idx]);
+        }
+      }
+    });
+
+    // Value txns are not multicalled. We need to individually check if it succeeded,
+    // and only add the txns which succeeded.
+    valueSimResults.forEach(({ succeed, transaction, reason }, idx) => {
+      // If txn succeeded or the revert reason is known to be benign, then log at debug level.
+      this.logger[
+        succeed || simulate || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"
+      ]({
+        at: "tryMulticallClient#executeChainTxnQueue",
+        message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
+        batchTxn: { ...transaction, contract: transaction.contract.address },
+        reason,
+      });
+
+      if (succeed) {
+        valueTxns[idx].gasLimit = transaction.gasLimit;
+        txnRequestsToSubmit.push(valueTxns[idx]);
+      }
+    });
+
+    if (!txnCalldataToRebuild.length) {
+      // At this point, every transaction here will be aimed at the same spoke pool, so we only need to chunk based on
+      // chunk size.
+      const txnChunks = lodash.chunk(txnCalldataToRebuild, this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE);
+      const rebuildTryMulticall = (txns: RawTransaction[]) => {
+        const mrkdwn: string[] = [];
+        txns.forEach((txn, idx) => {
+          mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
+        });
+        return {
+          chainId,
+          contract: txns[0].contract,
+          method: "tryMulticall",
+          args: [...txns.map((txn) => txn.data)],
+          message: "Across multicall transaction",
+          mrkdwn: mrkdwn.join(""),
+        } as AugmentedTransaction;
+      };
+      txnRequestsToSubmit.push(...txnChunks.map(rebuildTryMulticall));
+    }
+
+    if (simulate) {
+      let mrkdwn = "";
+      txnRequestsToSubmit.forEach((txn, idx) => {
+        mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+      });
+      this.logger.debug({
+        at: "MultiCallerClient#executeTxnQueue",
+        message: `${txnRequestsToSubmit.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
+        mrkdwn,
+      });
+      this.logger.debug({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      return [];
+    }
+
+    const txnResponses: TransactionResponse[] =
+      txnRequestsToSubmit.length > 0 ? await this.txnClient.submit(chainId, txnRequestsToSubmit) : [];
+
+    return txnResponses;
   }
 }

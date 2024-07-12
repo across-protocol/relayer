@@ -55,6 +55,9 @@ export class RelayerConfig extends CommonConfig {
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
+  // Set to all chain ids where the relayer should use tryMulticall over multicall on the associated spoke pool.
+  // It is up to the user to ensure that the spoke pool on the target chain has tryMulticall in its active implementation.
+  readonly tryMulticallChains: number[];
 
   constructor(env: ProcessEnv) {
     const {
@@ -80,6 +83,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
       RELAYER_SPOKEPOOL_INDEXER_PATH,
+      RELAYER_TRY_MULTICALL_CHAINS,
     } = env;
     super(env);
 
@@ -100,6 +104,8 @@ export class RelayerConfig extends CommonConfig {
       : [];
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
+
+    this.tryMulticallChains = JSON.parse(RELAYER_TRY_MULTICALL_CHAINS ?? "[]");
 
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),

@@ -469,10 +469,10 @@ export class Relayer {
   }
 
   protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
-    const {
-      pendingTxnReceipts,
-      clients: { multiCallerClient },
-    } = this;
+    const multiCallerClient = this.config.tryMulticallChains.includes(chainId)
+      ? this.clients.tryMulticallClient
+      : this.clients.multiCallerClient;
+    const { pendingTxnReceipts } = this;
 
     if (isDefined(pendingTxnReceipts[chainId])) {
       this.logger.info({
@@ -493,7 +493,8 @@ export class Relayer {
     sendSlowRelays = true,
     simulate = false
   ): Promise<{ [chainId: number]: Promise<string[]> }> {
-    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
+      this.clients;
 
     // Fetch the average block time for mainnet, for later use in evaluating quoteTimestamps.
     this.hubPoolBlockBuffer ??= Math.ceil(
@@ -502,6 +503,7 @@ export class Relayer {
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
+    tryMulticallClient.clearTransactionQueue();
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
       Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
     );
@@ -549,7 +551,10 @@ export class Relayer {
       );
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
-      if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
+      const pendingTxnAmount = this.config.tryMulticallChains.includes(destinationChainId)
+        ? tryMulticallClient.getQueuedTransactions(destinationChainId).length
+        : multiCallerClient.getQueuedTransactions(destinationChainId).length;
+      if (pendingTxnAmount > 0) {
         txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
       }
     });
@@ -587,8 +592,11 @@ export class Relayer {
       return;
     }
 
-    const { hubPoolClient, spokePoolClients, multiCallerClient } = this.clients;
+    const { hubPoolClient, spokePoolClients } = this.clients;
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
+    const multiCallerClient = this.config.tryMulticallChains.includes(destinationChainId)
+      ? this.clients.tryMulticallClient
+      : this.clients.multiCallerClient;
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
@@ -620,7 +628,7 @@ export class Relayer {
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
-    const { spokePoolClients, multiCallerClient } = this.clients;
+    const { spokePoolClients } = this.clients;
     this.logger.debug({
       at: "Relayer::fillRelay",
       message: `Filling v3 deposit ${deposit.depositId} with repayment on ${repaymentChainId}.`,
@@ -654,6 +662,9 @@ export class Relayer {
     const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct);
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
+    const multiCallerClient = this.config.tryMulticallChains.includes(chainId)
+      ? this.clients.tryMulticallClient
+      : this.clients.multiCallerClient;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
   }
 
