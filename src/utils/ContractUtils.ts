@@ -1,4 +1,4 @@
-import { getNetworkName, Contract, Signer, getDeployedAddress, getDeployedBlockNumber } from ".";
+import { getNetworkName, Contract, Signer, getDeployedAddress, getDeployedBlockNumber, CHAIN_IDs } from ".";
 
 import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
 
@@ -41,4 +41,9 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
   } catch (error) {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }
+}
+
+// TODO: Once all other spokes are redeployed with tryMulticall, we can delete this function.
+export function spokeHasTryMulticall(chainId: number): boolean {
+  return [CHAIN_IDs.LISK, CHAIN_IDs.BLAST, CHAIN_IDs.LISK_SEPOLIA, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
 }

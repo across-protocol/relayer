@@ -30,6 +30,11 @@ export interface AugmentedTransaction {
   groupId?: string;
 }
 
+export interface RawTransaction {
+  contract: Contract;
+  data: string;
+}
+
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { isError } = typeguards;
 
@@ -47,6 +52,9 @@ export class TransactionClient {
   // results due to execution sequence or intermediate changes in on-chain state.
   simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
+  }
+
+  simulateRaw(txns: RawTransaction[]): Promise<TransactionSimulationResult> {
   }
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {

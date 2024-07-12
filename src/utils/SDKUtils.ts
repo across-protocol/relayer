@@ -35,4 +35,5 @@ export const {
   blockExplorerLink,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
+  chainIsL1,
 } = sdk.utils;

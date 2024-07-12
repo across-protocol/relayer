@@ -26,6 +26,8 @@ export type TransactionSimulationResult = {
   data?: any;
 };
 
+export type RawTransactionSimulationResult
+
 const { isError, isEthersError } = typeguards;
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);

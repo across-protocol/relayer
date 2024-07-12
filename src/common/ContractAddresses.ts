@@ -294,6 +294,10 @@ export const CONTRACT_ADDRESSES: {
   },
   // Testnets
   11155111: {
+    hubPool: {
+      address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
+      abi: HUB_POOL_ABI,
+    },
     cctpMessageTransmitter: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,

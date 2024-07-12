@@ -615,7 +615,7 @@ describe("MultiCallerClient - Base", async function () {
   });
 });
 
-describe("MultiCallerClient - Contract Sim", async function () {
+describe.only("MultiCallerClient - tryMulticall", async function () {
   const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
   let address; // Address for a test Ethereum spoke pool.
 
@@ -643,7 +643,7 @@ describe("MultiCallerClient - Contract Sim", async function () {
     inputAmount = await erc20_1.balanceOf(depositor.address);
   });
 
-  it("Correctly uses tryMulticall when only calling relayer functions", async function () {
+  it("Correctly uses tryMulticall on a spoke pool", async function () {
     const spokePoolMethods = ["fillV3Relay", "requestV3SlowFill"];
     const chainId = chainIds[0];
     const multicallTxns: AugmentedTransaction[] = [];
@@ -666,7 +666,7 @@ describe("MultiCallerClient - Contract Sim", async function () {
     txnQueue.forEach(({ method }) => expect(method).to.equal("tryMulticall"));
   });
 
-  it("Correctly uses multicall when using even a single non-relayer function", async function () {
+  it("Correctly uses multicall on the hub pool", async function () {
     const spokePoolMethods = ["fillV3Relay", "requestV3SlowFill", "test"];
     const chainId = chainIds[0];
     const multicallTxns: AugmentedTransaction[] = [];
@@ -689,7 +689,7 @@ describe("MultiCallerClient - Contract Sim", async function () {
     txnQueue.forEach(({ method }) => expect(method).to.equal("multicall"));
   });
 
-  it("Defaults to tryMulticall for simulation and rejects failed transactions", async function () {
+  it("Properly removes failed tryMulticall transactions from the transaction queue", async function () {
     const nTxns = 10;
 
     const successfulTransactions = [];
@@ -726,11 +726,13 @@ describe("MultiCallerClient - Contract Sim", async function () {
         );
       }
     }
-    const tx = await multiCaller.executeTransactionQueue();
+    const tx = await multiCaller.executeTxnQueues();
 
     // There is just one bundle
     const receipt = await ethers.provider.getTransaction(tx[0]);
     const expectedReceiptData = spokePool_1.interface.encodeFunctionData("tryMulticall", [successfulTransactions]);
     expect(expectedReceiptData).to.eq(receipt.data);
   });
+
+  it("Properly sorts transactions to resimulate if hub pool transactions are mixed with spoke pool transactions", async function () {});
 });

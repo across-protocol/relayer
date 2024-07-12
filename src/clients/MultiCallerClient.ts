@@ -1,6 +1,11 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { BigNumber } from "ethers";
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
+import {
+  DEFAULT_MULTICALL_CHUNK_SIZE,
+  DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
+  Multicall2Call,
+  CONTRACT_ADDRESSES,
+} from "../common";
 import {
   winston,
   bnZero,
@@ -14,8 +19,10 @@ import {
   Signer,
   getMultisender,
   getProvider,
+  spokeHasTryMulticall,
+  chainIsL1,
 } from "../utils";
-import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
+import { AugmentedTransaction, TransactionClient, RawTransaction } from "./TransactionClient";
 import lodash from "lodash";
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
@@ -187,61 +194,112 @@ export class MultiCallerClient {
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
     });
 
+    // There are three outcomes of simulation:
+    // 1. All txns in the multicall bundle succeed. We add this to txnRequestsToSubmit.
+    // 2. Some txns in tryMulticall fail. We drop those and add the successful ones to txnCalldataToRebuild.
+    // 3. Multicall fails. All txns are added to txnCalldataToResimulate to check each one individually.
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
-    const txnRequestsToRebuild: AugmentedTransaction[] = [];
+
+    const txnCalldataToRebuild: RawTransaction[] = [];
+    const txnCalldataToResimulate: RawTransaction[] = [];
 
     // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
     // need to simulate transactions individually. If the batch failed, then we need to
     // simulate the transactions individually and pick out the successful ones.
     const bundledTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
-    const batchTxns: AugmentedTransaction[] = bundledTxns.concat(valueTxns);
-    const batchSimResults = await this.txnClient.simulate(batchTxns);
-    const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason, data }, idx) => {
-      // If txn succeeded or the revert reason is known to be benign, then log at debug level.
-      this.logger[
-        succeed || simulate || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"
-      ]({
-        at: "MultiCallerClient#executeChainTxnQueue",
-        message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
-        batchTxn: { ...transaction, contract: transaction.contract.address },
-        reason,
-      });
+    const [bundledSimResults, valueSimResults] = await Promise.all([
+      this.txnClient.simulate(bundledTxns),
+      this.txnClient.simulate(valueTxns),
+    ]);
+
+    // TODO: Do something clever with the gas limit.
+    const buildRawTransaction = (contract: Contract, data: string, gasLimit: BigNumber) => {
+      return {
+        contract,
+        data,
+      } as RawTransaction;
+    };
+    // The transactions of bundledSimResults will either be from tryMulticall or Multicall.
+    bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
+      // Option 1: The bundle called tryMulticall:
       if (transaction.method === "tryMulticall") {
-        const succeededTxnRequests: AugmentedTransaction[] = [];
-        data?.forEach(({ success }, subIdx) => {
+        const succeededTxnCalldata: string[] = [];
+        // Go through each transaction result of the txns batched in tryMulticall.
+        // If a transaction succeeded, we take note by adding it to succeededTxnCalldata.
+        // TODO: Can make this into one line.
+        data?.forEach(({ success }, txnIdx) => {
           if (success) {
-            const txnIdx = (this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE) * idx + subIdx;
-            succeededTxnRequests.push(txns[txnIdx]);
+            succeededTxnCalldata.push(transaction.args[txnIdx]);
           }
         });
-        if (succeededTxnRequests.length != (data?.length ?? 0)) {
-          batchTxns.splice(idx, 1);
-          txnRequestsToRebuild.push(...succeededTxnRequests);
+        // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
+        // some txns in the bundle must have failed. We take note only of the ones which succeeded.
+        if (succeededTxnCalldata.length != (data?.length ?? 0)) {
+          txnCalldataToRebuild.push(
+            ...succeededTxnCalldata.map((calldata) =>
+              buildRawTransaction(transaction.contract, calldata, transaction.gasLimit)
+            )
+          );
+        } else {
+          // Otherwise, none of the transactions failed, so we can add the bundle to txnRequestsToSubmit.
+          bundledTxns[idx].gasLimit = transaction.gasLimit;
+          txnRequestsToSubmit.push(bundledTxns[idx]);
         }
-      } else {
-        batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
       }
-      return succeed;
+
+      // Option 2: The bundle called multicall or aggregate:
+      else {
+        // If multicall/aggregate succeeded, then all transactions in the bundle
+        // succeeded, so we add this to txnRequestsToSubmit.
+        if (succeed) {
+          bundledTxns[idx].gasLimit = transaction.gasLimit;
+          txnRequestsToSubmit.push(bundledTxns[idx]);
+        } else {
+          // Otherwise, we need to resimulate all the transactions which were multicalled.
+          txnCalldataToResimulate.push(
+            ...transaction.args.map((calldata) =>
+              buildRawTransaction(transaction.contract, calldata, transaction.gasLimit)
+            )
+          );
+        }
+      }
     });
 
-    if (batchesAllSucceeded) {
-      if (txnRequestsToRebuild.length != 0) {
-        txnRequestsToSubmit.push(
-          ...batchTxns.concat(await this.buildMultiCallBundles(txnRequestsToRebuild, this.chunkSize[chainId]))
-        );
-      } else {
-        txnRequestsToSubmit.push(...batchTxns);
+    // Value txns are not multicalled. We need to individually check if it succeeded,
+    // and only add the txns which succeeded.
+    valueSimResults.forEach(({ succeed, transaction, reason }, idx) => {
+      if (succeed) {
+        valueTxns[idx].gasLimit = transaction.gasLimit;
+        txnRequestsToSubmit.push(valueTxns[idx]);
       }
-    } else {
-      const individualTxnSimResults = await Promise.allSettled([
-        this.simulateTransactionQueue(txns),
-        this.simulateTransactionQueue(valueTxns),
-      ]);
-      const [_txns, _valueTxns] = individualTxnSimResults.map((result): AugmentedTransaction[] => {
-        return isPromiseFulfilled(result) ? result.value : [];
-      });
-      // Fill in the set of txns to submit to the network. Anything that failed simulation is dropped.
-      txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
+    });
+
+    // Rebuild the tryMulticall bundle with only the successful transactions and add to txnRequestsToSubmit.
+    if (!txnCalldataToRebuild.length) {
+      // At this point, every transaction here will be aimed at the same spoke pool, so we only need to chunk based on
+      // chunk size.
+      const txnChunks = lodash.chunk(txnCalldataToRebuild, this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE);
+      const rebuildTryMulticall = (txns: RawTransaction[]) => {
+        // TODO: Fix markdown.
+        return {
+          chainId,
+          contract: txns[0].contract,
+          method: "tryMulticall",
+          args: [...txns.map((txn) => txn.data)],
+          message: "Across multicall transaction",
+          mrkdwn: "",
+        } as AugmentedTransaction;
+      };
+      txnRequestsToSubmit.push(...txnChunks.map(rebuildTryMulticall));
+    }
+
+    // Individually simulate the multicall txns and add the successful ones to their own multicall bundle.
+    if (!txnCalldataToResimulate.length) {
+      // These transactions can either be calling aggregate from multicall3 or multicall from the hub pool.
+      // We divide both of them by target contract.
+      const successfulRawTxns = await txnCalldataToResimulate.map(simulateRaw);
+      const txnsGroupedByTarget = lodash.groupBy(successfulRawTxns, (txn) => txn.contract.address);
+
     }
 
     if (simulate) {
@@ -354,9 +412,13 @@ export class MultiCallerClient {
       // simulated. In this case, drop the aggregation and revert to undefined to force estimation on submission.
       gasLimit = isDefined(gasLimit) && isDefined(txn.gasLimit) ? gasLimit.add(txn.gasLimit) : undefined;
     });
-    const method = transactions.every((txn) => ["fillV3Relay", "requestV3SlowFill"].includes(txn.method))
-      ? "tryMulticall"
-      : "multicall";
+    let method =
+      chainIsL1(chainId) && CONTRACT_ADDRESSES[chainId].hubPool.address === contract.address
+        ? "multicall"
+        : "tryMulticall";
+    // TODO: For the time being, we need to check whether the spoke pool actually contains tryMulticall in the deployed contract.
+    // Once all other spoke pools are upgraded, this line can be removed.
+    method = spokeHasTryMulticall(chainId) ? "tryMulticall" : "multicall";
 
     this.logger.debug({
       at: "MultiCallerClient",
@@ -478,6 +540,26 @@ export class MultiCallerClient {
 
     return validTxns;
   }
+
+  async simulateRawTransactionQueue(transactions: RawTransaction[]): Promise<RawTransaction[]> {
+    const validTxns: RawTransaction[] = [];
+
+    // Simulate the transaction execution for the whole queue.
+    const txnSimulations = await this.txnClient.simulateRaw(transactions);
+    txnSimulations.forEach((txn) => {
+      if (txn.succeed) {
+        validTxns.push(txn.transaction);
+      } else {
+        invalidTxns.push(txn);
+      }
+    });
+    if (invalidTxns.length > 0) {
+      this.logSimulationFailures(invalidTxns);
+    }
+
+    return validTxns;
+
+  };
 
   // Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons for any
   // contract method. Note: Check for exact revert reason instead of using .includes() to partially match reason string
