@@ -253,12 +253,12 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
 export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
 } = {
-  [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
-  [CHAIN_IDs.BLAST]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
-  [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
+  [CHAIN_IDs.BLAST]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
+  [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
-  [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
-  [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
+  [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
