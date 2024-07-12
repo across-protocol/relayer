@@ -54,6 +54,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   let configStoreClient: ConfigStoreClient, hubPoolClient: clients.HubPoolClient, tokenClient: TokenClient;
   let relayerInstance: Relayer;
   let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
+  let tryMulticallClient: MultiCallerClient;
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
   let chainIds: number[];
@@ -108,6 +109,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await hubPoolClient.update();
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
+    tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
     spokePoolClient_1 = new clients.SpokePoolClient(
       spyLogger,
@@ -153,11 +155,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         multiCallerClient,
         inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
+        tryMulticallClient,
       },
       {
         relayerTokens: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         sendingRelaysEnabled: true,
+        tryMulticallChains: [],
       } as unknown as RelayerConfig
     );
 
@@ -293,6 +297,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           tokenClient,
           profitClient,
           multiCallerClient,
+          tryMulticallClient,
           inventoryClient: new MockInventoryClient(),
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         },
@@ -301,6 +306,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           relayerOriginChains: [destinationChainId],
           relayerDestinationChains: [originChainId],
           minDepositConfirmations: defaultMinDepositConfirmations,
+          tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
 
@@ -414,6 +420,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           tokenClient,
           profitClient,
           multiCallerClient,
+          tryMulticallClient,
           inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         },
@@ -423,6 +430,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             [originChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 3 }],
           },
           sendingRelaysEnabled: true,
+          tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
 
