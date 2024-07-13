@@ -532,10 +532,12 @@ export class TryMulticallClient extends MultiCallerClient {
   protected override async _executeTxnQueue(
     chainId: number,
     txns: AugmentedTransaction[] = [],
-    valueTxns: AugmentedTransaction[] = [],
+    _valueTxns: AugmentedTransaction[] = [],
     simulate = false
   ): Promise<TransactionResponse[]> {
-    const nTxns = txns.length + valueTxns.length;
+    // Lint Appeasement
+    _valueTxns;
+    const nTxns = txns.length;
     if (nTxns === 0) {
       return [];
     }
@@ -560,10 +562,7 @@ export class TryMulticallClient extends MultiCallerClient {
     // need to simulate transactions individually. If the batch failed, then we need to
     // simulate the transactions individually and pick out the successful ones.
     const bundledTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
-    const [bundledSimResults, valueSimResults] = await Promise.all([
-      this.txnClient.simulate(bundledTxns),
-      this.txnClient.simulate(valueTxns),
-    ]);
+    const bundledSimResults = await this.txnClient.simulate(bundledTxns);
 
     bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
       // If txn succeeded or the revert reason is known to be benign, then log at debug level.
@@ -596,25 +595,6 @@ export class TryMulticallClient extends MultiCallerClient {
       }
     });
 
-    // Value txns are not multicalled. We need to individually check if it succeeded,
-    // and only add the txns which succeeded.
-    valueSimResults.forEach(({ succeed, transaction, reason }, idx) => {
-      // If txn succeeded or the revert reason is known to be benign, then log at debug level.
-      this.logger[
-        succeed || simulate || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"
-      ]({
-        at: "tryMulticallClient#executeChainTxnQueue",
-        message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
-        batchTxn: { ...transaction, contract: transaction.contract.address },
-        reason,
-      });
-
-      if (succeed) {
-        valueTxns[idx].gasLimit = transaction.gasLimit;
-        txnRequestsToSubmit.push(valueTxns[idx]);
-      }
-    });
-
     if (!txnCalldataToRebuild.length) {
       // At this point, every transaction here will be aimed at the same spoke pool, so we only need to chunk based on
       // chunk size.
@@ -642,11 +622,11 @@ export class TryMulticallClient extends MultiCallerClient {
         mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       });
       this.logger.debug({
-        at: "MultiCallerClient#executeTxnQueue",
+        at: "TryMulticallClient#executeTxnQueue",
         message: `${txnRequestsToSubmit.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
         mrkdwn,
       });
-      this.logger.debug({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      this.logger.debug({ at: "TryMulticallClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
       return [];
     }
 
