@@ -53,6 +53,7 @@ const slowRootCache = {};
 
 const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
   [10]: { ["USDC"]: 15.336508 }, // On May 4th, USDC was sent to the SpokePool here: https://optimistic.etherscan.io/tx/0x5f53293fe6a27ff9897d4dde445fd6aab46f841ca641befea48beef62014a549
+  [42161]: { ["WBTC"]: 1.9988628 }, // On May 15th, WBTC slow fill was produced here that is not executed: https://etherscan.io/tx/0xe339869271cb4f558faedbf9beed6f5b5440d395367743e5f12b13a4c199bdd6
 };
 
 export async function runScript(_logger: winston.Logger, baseSigner: Signer): Promise<void> {

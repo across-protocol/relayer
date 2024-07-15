@@ -90,7 +90,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
@@ -105,7 +105,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
     // console.log(spy.getCall(-1))
     expect(multiCallerClient.transactionCount()).to.equal(4);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range

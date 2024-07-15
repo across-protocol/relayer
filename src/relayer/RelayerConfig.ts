@@ -1,8 +1,11 @@
 import { utils as ethersUtils } from "ethers";
-import { typeguards } from "@across-protocol/sdk-v2";
+import winston from "winston";
+import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
   bnUint256Max,
+  CHAIN_IDs,
+  dedupArray,
   toBNWei,
   assert,
   getNetworkName,
@@ -178,7 +181,7 @@ export class RelayerConfig extends CommonConfig {
         tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
 
         // For WETH, also consider any unwrap target/threshold.
-        if (l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolChainId]) {
+        if (l1Token === TOKEN_SYMBOLS_MAP.WETH.symbol) {
           if (unwrapWethThreshold !== undefined) {
             tokenConfig.unwrapWethThreshold = toBNWei(unwrapWethThreshold);
           }
@@ -276,5 +279,33 @@ export class RelayerConfig extends CommonConfig {
     );
 
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
+  }
+
+  /**
+   * @notice Loads additional configuration state that can only be known after we know all chains that we're going to
+   * support. Warns or throws if any of the configurations are not valid.
+   * @param chainIdIndices All expected chain ID's that could be supported by this config.
+   * @param logger Optional logger object.
+   */
+  override validate(chainIds: number[], logger: winston.Logger): void {
+    const { relayerOriginChains, relayerDestinationChains } = this;
+    const relayerChainIds =
+      relayerOriginChains.length > 0 && relayerDestinationChains.length > 0
+        ? dedupArray([...relayerOriginChains, ...relayerDestinationChains])
+        : chainIds;
+
+    const ignoredChainIds = chainIds.filter(
+      (chainId) => !relayerChainIds.includes(chainId) && chainId !== CHAIN_IDs.BOBA
+    );
+    if (ignoredChainIds.length > 0 && logger) {
+      logger.debug({
+        at: "RelayerConfig::validate",
+        message: `Ignoring ${ignoredChainIds.length} chains.`,
+        ignoredChainIds,
+      });
+    }
+
+    // Only validate config for chains that the relayer cares about.
+    super.validate(relayerChainIds, logger);
   }
 }

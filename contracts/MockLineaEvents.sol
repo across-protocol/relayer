@@ -42,19 +42,19 @@ contract LineaUsdcBridge {
 }
 
 contract LineaERC20Bridge {
-    event BridgingInitiated(address indexed sender, address recipient, address indexed token, uint256 indexed amount);
-    event BridgingFinalized(
+    event BridgingInitiatedV2(address indexed sender, address indexed recipient, address indexed token, uint256 amount);
+    event BridgingFinalizedV2(
         address indexed nativeToken,
         address indexed bridgedToken,
-        uint256 indexed amount,
-        address recipient
+        uint256 amount,
+        address indexed recipient
     );
 
     function emitBridgingInitiated(address sender, address recipient, address token) external {
-        emit BridgingInitiated(sender, recipient, token, 0);
+        emit BridgingInitiatedV2(sender, recipient, token, 0);
     }
 
     function emitBridgingFinalized(address l1Token, address recipient) external {
-        emit BridgingFinalized(l1Token, address(0), 0, recipient);
+        emit BridgingFinalizedV2(l1Token, address(0), 0, recipient);
     }
 }

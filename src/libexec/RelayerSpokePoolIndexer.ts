@@ -2,7 +2,7 @@ import assert from "assert";
 import minimist from "minimist";
 import { setTimeout } from "node:timers/promises";
 import { Contract, Event, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import { SpokePoolClientMessage } from "../clients";
 import {
@@ -11,6 +11,7 @@ import {
   exit,
   isDefined,
   getBlockForTimestamp,
+  getChainQuorum,
   getDeploymentBlockNumber,
   getNetworkName,
   getOriginFromURL,
@@ -29,7 +30,6 @@ type EventSearchConfig = sdkUtils.EventSearchConfig;
 type ScraperOpts = {
   lookback?: number; // Event lookback (in seconds).
   finality?: number; // Event finality (in blocks).
-  quorum?: number; // Provider quorum to apply.
   deploymentBlock: number; // SpokePool deployment block
   maxBlockRange?: number; // Maximum block range for paginated getLogs queries.
   filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
@@ -209,17 +209,18 @@ async function listen(
  */
 async function run(argv: string[]): Promise<void> {
   const minimistOpts = {
-    string: ["relayer"],
+    string: ["lookback", "relayer"],
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, quorum = 1, lookback = 7200, relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainId, finality = 32, lookback = "5400", relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(finality), "finality must be numeric ");
-  assert(Number.isInteger(quorum), "quorum must be numeric ");
-  assert(Number.isInteger(lookback), "lookback must be numeric");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), "relayer address is invalid");
+  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
+
+  const { quorum = getChainQuorum(chainId) } = args;
+  assert(Number.isInteger(quorum), "quorum must be numeric ");
 
   chain = getNetworkName(chainId);
 
@@ -229,17 +230,24 @@ async function run(argv: string[]): Promise<void> {
   const latestBlock = await quorumProvider.getBlock("latest");
 
   const deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
-  const startBlock = Math.max(
-    deploymentBlock,
-    await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
-  );
-  const nBlocks = latestBlock.number - startBlock;
+  let startBlock: number;
+  if (/^@[0-9]+$/.test(lookback)) {
+    // Lookback to a specific block (lookback = @<block-number>).
+    startBlock = Number(lookback.slice(1));
+  } else {
+    // Resolve `lookback` seconds from head to a specific block.
+    assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
+    startBlock = Math.max(
+      deploymentBlock,
+      await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
+    );
+  }
 
   const opts = {
     finality,
     quorum,
     deploymentBlock,
-    lookback: nBlocks,
+    lookback: latestBlock.number - startBlock,
     maxBlockRange,
     filterArgs: getEventFilterArgs(relayer),
   };
@@ -248,12 +256,12 @@ async function run(argv: string[]): Promise<void> {
   const spokePool = await utils.getSpokePoolContract(chainId);
 
   process.on("SIGHUP", () => {
-    logger.debug({ at: "Relayer#run", message: "Received SIGHUP, stopping..." });
+    logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
     stop = true;
   });
 
   process.on("disconnect", () => {
-    logger.debug({ at: "Relayer::run", message: "Parent disconnected, stopping..." });
+    logger.debug({ at: "Relayer::run", message: `${chain} parent disconnected, stopping...` });
     stop = true;
   });
 
@@ -286,6 +294,20 @@ async function run(argv: string[]): Promise<void> {
     try {
       providers = getWSProviders(chainId, quorum);
       assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
+      providers.forEach((provider) => {
+        provider._websocket.on("error", (err) =>
+          logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Caught ${chain} provider error.`, err })
+        );
+
+        provider._websocket.on("close", () => {
+          logger.debug({
+            at: "RelayerSpokePoolIndexer::run",
+            message: `${chain} provider connection closed.`,
+            provider: getOriginFromURL(provider.connection.url),
+          });
+        });
+      });
+
       logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} listener.`, events, opts });
       await listen(eventMgr, spokePool, events, providers, opts);
     } catch (err) {
@@ -310,11 +332,12 @@ if (require.main === module) {
       process.exitCode = NODE_SUCCESS;
     })
     .catch((error) => {
-      logger.error({ at: "RelayerSpokePoolIndexer", message: "Process exited with error.", error });
+      logger.error({ at: "RelayerSpokePoolIndexer", message: `${chain} listener exited with error.`, error });
       process.exitCode = NODE_APP_ERR;
     })
     .finally(async () => {
       await disconnectRedisClients();
+      logger.debug({ at: "RelayerSpokePoolIndexer", message: `Exiting ${chain} listener.` });
       exit(process.exitCode);
     });
 }

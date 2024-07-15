@@ -1,4 +1,4 @@
-import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
@@ -158,13 +158,13 @@ export async function getGasPrice(
   }
 
   // Handle chains with legacy pricing.
-  if (feeData.maxPriorityFeePerGas.eq(0)) {
+  if (feeData.maxPriorityFeePerGas.eq(bnZero)) {
     return { gasPrice: scaleByNumber(feeData.maxFeePerGas, priorityScaler) };
   }
 
   // Default to EIP-1559 (type 2) pricing.
   return {
-    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, priorityScaler * maxFeePerGasScaler),
+    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, Math.max(priorityScaler * maxFeePerGasScaler, 1)),
     maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
   };
 }

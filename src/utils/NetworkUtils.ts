@@ -1,13 +1,6 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
-export const { getNetworkName } = sdkUtils;
-
-export function getNativeTokenSymbol(chainId: number | string): string {
-  if (chainId.toString() === "137" || chainId.toString() === "80001") {
-    return "MATIC";
-  }
-  return "ETH";
-}
+export const { getNetworkName, getNativeTokenSymbol } = sdkUtils;
 
 /**
  * Returns the origin of a URL.

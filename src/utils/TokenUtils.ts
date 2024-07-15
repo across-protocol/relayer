@@ -1,7 +1,7 @@
-import { constants, utils } from "@across-protocol/sdk-v2";
+import { constants, utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, utils as ethersUtils } from "ethers";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { L1Token } from "../interfaces";
 const { ZERO_ADDRESS } = constants;
 

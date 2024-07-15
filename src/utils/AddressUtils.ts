@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants-v2";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BigNumber, ethers, isDefined } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
@@ -83,7 +83,7 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
-export function getTokenAddressWithCCTP(
+export function getTranslatedTokenAddress(
   l1Token: string,
   hubChainId: number,
   l2ChainId: number,
@@ -93,10 +93,16 @@ export function getTokenAddressWithCCTP(
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
-  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP._USDC.addresses[hubChainId])) {
+  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
-    return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "_USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];
+    return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];
+  } else if (
+    l2ChainId === CHAIN_IDs.BLAST &&
+    compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId])
+  ) {
+    return TOKEN_SYMBOLS_MAP.USDB.addresses[l2ChainId];
   }
+
   return getTokenAddress(l1Token, hubChainId, l2ChainId);
 }
 
@@ -108,7 +114,7 @@ export function getTokenAddressWithCCTP(
  */
 export function getUsdcSymbol(l2Token: string, chainId: number): string | undefined {
   const compareToken = (token?: string) => isDefined(token) && compareAddressesSimple(l2Token, token);
-  return ["_USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token]?.addresses?.[chainId]));
+  return ["USDC", "USDbC", "USDC.e"].find((token) => compareToken(TOKEN_SYMBOLS_MAP[token]?.addresses?.[chainId]));
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {

@@ -13,7 +13,7 @@ import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
-import { caching } from "@across-protocol/sdk-v2";
+import { caching } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
@@ -30,7 +30,7 @@ export async function constructDataworkerClients(
   const commonClients = await constructClients(logger, config, baseSigner);
   const { hubPoolClient, configStoreClient } = commonClients;
 
-  await updateClients(commonClients, config);
+  await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
@@ -111,7 +111,7 @@ export async function constructSpokePoolClientsForFastDataworker(
 }
 
 export function getSpokePoolClientEventSearchConfigsForFastDataworker(
-  config: Omit<DataworkerConfig, "loadAndValidateConfigForChains">,
+  config: Omit<DataworkerConfig, "validate">,
   clients: DataworkerClients,
   dataworker: Dataworker
 ): {
