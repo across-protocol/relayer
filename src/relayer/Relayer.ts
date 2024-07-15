@@ -24,6 +24,7 @@ import { RelayerConfig } from "./RelayerConfig";
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
+const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 
 type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
 type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
@@ -38,6 +39,8 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
+
+  private hubPoolBlockBuffer: number;
 
   constructor(
     relayerAddress: string,
@@ -71,7 +74,7 @@ export class Relayer {
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
-    const { ignoredAddresses, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const { ignoredAddresses, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
     // If we don't have the latest code to support this deposit, skip it.
@@ -117,7 +120,15 @@ export class Relayer {
     }
 
     // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-    if (deposit.quoteTimestamp > hubPoolClient.currentTime) {
+    if (deposit.quoteTimestamp - hubPoolClient.currentTime > this.hubPoolBlockBuffer) {
+      this.logger.debug({
+        at: "Relayer::evaluateFill",
+        message: `Skipping ${srcChain} deposit due to future quoteTimestamp.`,
+        currentTime: hubPoolClient.currentTime,
+        quoteTimestamp: deposit.quoteTimestamp,
+        buffer: this.hubPoolBlockBuffer,
+        transactionHash: deposit.transactionHash,
+      });
       return false;
     }
 
@@ -192,21 +203,23 @@ export class Relayer {
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
-    const { inputAmount } = deposit;
-    const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
-    if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
-      this.logger.warn({
-        at: "Relayer::filterDeposit",
-        message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-        limit,
-        l1Token: l1Token.address,
-        depositId,
-        inputToken,
-        inputAmount,
-        originChainId,
-        transactionHash: deposit.transactionHash,
-      });
-      return false;
+    if (!ignoreLimits) {
+      const { inputAmount } = deposit;
+      const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
+      if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
+        this.logger.warn({
+          at: "Relayer::filterDeposit",
+          message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
+          limit,
+          l1Token: l1Token.address,
+          depositId,
+          inputToken,
+          inputAmount,
+          originChainId,
+          transactionHash: deposit.transactionHash,
+        });
+        return false;
+      }
     }
 
     // The deposit passed all checks, so we can include it in the list of unfilled deposits.
@@ -360,6 +373,17 @@ export class Relayer {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
     } else if (selfRelay) {
+      // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
+      // prefer someone else to fill the deposits.
+      if (deposit.fromLiteChain) {
+        this.logger.debug({
+          at: "Relayer::evaluateFill",
+          message: "Skipping self-relay deposit originating from lite chain.",
+          originChainId,
+          depositId,
+        });
+        return;
+      }
       // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
@@ -469,7 +493,12 @@ export class Relayer {
     sendSlowRelays = true,
     simulate = false
   ): Promise<{ [chainId: number]: Promise<string[]> }> {
-    const { profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+
+    // Fetch the average block time for mainnet, for later use in evaluating quoteTimestamps.
+    this.hubPoolBlockBuffer ??= Math.ceil(
+      HUB_SPOKE_BLOCK_LAG * (await sdkUtils.averageBlockTime(hubPoolClient.hubPool.provider)).average
+    );
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
@@ -537,6 +566,16 @@ export class Relayer {
   }
 
   requestSlowFill(deposit: V3Deposit): void {
+    // don't request slow fill if origin/destination chain is a lite chain
+    if (deposit.fromLiteChain || deposit.toLiteChain) {
+      this.logger.debug({
+        at: "Relayer::requestSlowFill",
+        message: "Prevent requesting slow fill request to/from lite chain.",
+        deposit,
+      });
+      return;
+    }
+
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
@@ -590,6 +629,12 @@ export class Relayer {
       realizedLpFeePct,
     });
 
+    // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
+    assert(
+      !deposit.fromLiteChain || repaymentChainId === deposit.originChainId,
+      `Lite chain deposits must be filled on its origin chain (${deposit.originChainId}). Deposit Id: ${deposit.depositId}.`
+    );
+
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
@@ -631,7 +676,8 @@ export class Relayer {
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
-    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash } = deposit;
+    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash, fromLiteChain } =
+      deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
@@ -724,7 +770,10 @@ export class Relayer {
     // so that depositors can continue to quote lp fees assuming repayment is on the destination chain until
     // we come up with a smarter fee quoting algorithm that takes into account relayer inventory management more
     // accurately.
-    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId)) {
+    //
+    // Additionally we don't want to take this code path if the chain is a lite chain because we can't reason about
+    // destination chain repayments on lite chains.
+    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !fromLiteChain) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Preferred chains ${JSON.stringify(
@@ -810,6 +859,7 @@ export class Relayer {
 
   private handleTokenShortfall() {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
+    const hubChainId = this.clients.hubPoolClient.chainId;
 
     let mrkdwn = "";
     Object.entries(tokenShortfall).forEach(([_chainId, shortfallForChain]) => {
@@ -818,7 +868,7 @@ export class Relayer {
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
         const { symbol, formatter } = this.formatAmount(chainId, token);
         let crossChainLog = "";
-        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
+        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
           crossChainLog =
