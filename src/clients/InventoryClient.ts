@@ -484,7 +484,8 @@ export class InventoryClient {
       // Destination chain:
       const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
       const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, repaymentToken);
-      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken);
+      // Add in the amount to be repaid if we were to select this chain into the chain virtual balance.
+      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken).add(inputAmount);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
