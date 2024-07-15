@@ -144,8 +144,9 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
     // Additional reference: https://github.com/ethers-io/ethers.js/issues/1721
     // 2023-08-31 Added blockHash because of upstream zkSync provider disagreements. Consider removing later.
     // 2024-05-07 Added l1BatchNumber and logType due to Alchemy. Consider removing later.
+    // 2024-07-11 Added blockTimestamp after zkSync rolled out a new node release.
     return compareArrayResultsWithIgnoredKeys(
-      ["transactionLogIndex", "l1BatchNumber", "logType"],
+      ["blockTimestamp", "transactionLogIndex", "l1BatchNumber", "logType"],
       rpcResultA,
       rpcResultB
     );
