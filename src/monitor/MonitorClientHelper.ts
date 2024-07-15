@@ -28,7 +28,7 @@ export async function constructMonitorClients(
   const commonClients = await constructClients(logger, config, baseSigner);
   const { hubPoolClient, configStoreClient } = commonClients;
 
-  await updateClients(commonClients, config);
+  await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
