@@ -208,7 +208,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // correctly to avoid repeat rebalances.
   const inventoryChainIds =
     config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
-  
+
   await Promise.all([
     clients.inventoryClient.update(inventoryChainIds),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
