@@ -51,17 +51,6 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
 // anything under 7 days.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
-  // Defaults for testnets.
-  [Number.MAX_SAFE_INTEGER]: {
-    [CHAIN_IDs.ARBITRUM_SEPOLIA]: 1,
-    [CHAIN_IDs.BASE_SEPOLIA]: 1,
-    [CHAIN_IDs.BLAST_SEPOLIA]: 1,
-    [CHAIN_IDs.LISK_SEPOLIA]: 1,
-    [CHAIN_IDs.MODE_SEPOLIA]: 1,
-    [CHAIN_IDs.OPTIMISM_SEPOLIA]: 1,
-    [CHAIN_IDs.POLYGON_AMOY]: 1,
-    [CHAIN_IDs.SEPOLIA]: 1,
-  },
   10000: {
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 120,
