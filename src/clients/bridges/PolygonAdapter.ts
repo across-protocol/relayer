@@ -18,7 +18,7 @@ import {
 } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { SortableEvent, OutstandingTransfers } from "../../interfaces";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { CCTPAdapter } from "./CCTPAdapter";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
@@ -117,19 +117,8 @@ export class PolygonAdapter extends CCTPAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 137, monitoredAddresses, logger, [
-      "USDC",
-      "USDT",
-      "WETH",
-      "DAI",
-      "WBTC",
-      "UMA",
-      "BAL",
-      "ACX",
-      "BADGER",
-      "POOL",
-      "MATIC",
-    ]);
+    const { POLYGON } = CHAIN_IDs;
+    super(spokePoolClients, POLYGON, monitoredAddresses, logger, SUPPORTED_TOKENS[POLYGON]);
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.

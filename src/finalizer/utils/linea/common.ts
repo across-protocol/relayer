@@ -17,6 +17,7 @@ import {
   getRedisCache,
   paginatedEventQuery,
   retryAsync,
+  CHAIN_IDs,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
@@ -33,7 +34,7 @@ export function initLineaSdk(l1ChainId: number, l2ChainId: number): LineaSDK {
   return new LineaSDK({
     l1RpcUrl: getNodeUrlList(l1ChainId)[0],
     l2RpcUrl: getNodeUrlList(l2ChainId)[0],
-    network: l1ChainId === 1 ? "linea-mainnet" : "linea-goerli",
+    network: l1ChainId === CHAIN_IDs.MAINNET ? "linea-mainnet" : "linea-goerli",
     mode: "read-only",
   });
 }
@@ -206,7 +207,7 @@ export async function findMessageFromTokenBridge(
 ): Promise<MessageSentEvent[]> {
   const bridgeEvents = await paginatedEventQuery(
     bridgeContract,
-    bridgeContract.filters.BridgingInitiated(l1ToL2AddressesToFinalize),
+    bridgeContract.filters.BridgingInitiatedV2(l1ToL2AddressesToFinalize),
     searchConfig
   );
   const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");

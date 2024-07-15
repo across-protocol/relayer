@@ -83,7 +83,7 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
-export function getTokenAddressWithCCTP(
+export function getTranslatedTokenAddress(
   l1Token: string,
   hubChainId: number,
   l2ChainId: number,
@@ -96,7 +96,13 @@ export function getTokenAddressWithCCTP(
   if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
     return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];
+  } else if (
+    l2ChainId === CHAIN_IDs.BLAST &&
+    compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId])
+  ) {
+    return TOKEN_SYMBOLS_MAP.USDB.addresses[l2ChainId];
   }
+
   return getTokenAddress(l1Token, hubChainId, l2ChainId);
 }
 

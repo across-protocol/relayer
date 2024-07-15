@@ -1,4 +1,10 @@
-import { BundleDataClient, ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
+import {
+  BundleDataClient,
+  ConfigStoreClient,
+  GLOBAL_CONFIG_STORE_KEYS,
+  HubPoolClient,
+  SpokePoolClient,
+} from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -32,7 +38,7 @@ import {
   ZERO_ADDRESS,
   BigNumber,
 } from "../src/utils";
-import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
@@ -99,6 +105,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockHubPoolClient: MockHubPoolClient;
     let mockDestinationSpokePool: FakeContract;
+    let mockConfigStore: MockConfigStoreClient;
     const lpFeePct = toBNWei("0.01");
     beforeEach(async function () {
       await updateAllClients();
@@ -108,6 +115,15 @@ describe("Dataworker: Load data used in all functions", async function () {
         configStoreClient,
         hubPoolClient.deploymentBlock,
         hubPoolClient.chainId
+      );
+      mockConfigStore = new MockConfigStoreClient(
+        configStoreClient.logger,
+        configStoreClient.configStore,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true
       );
       // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
       mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
@@ -159,7 +175,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         outputToken: eventOverride?.outputToken ?? erc20_2.address,
         realizedLpFeePct: eventOverride?.realizedLpFeePct ?? bnZero,
         message: "0x",
-        quoteTimestamp: getCurrentTime() - 10,
+        quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
         destinationChainId,
         blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
@@ -343,6 +359,69 @@ describe("Dataworker: Load data used in all functions", async function () {
           .div(fixedPointAdjustment),
       });
     });
+
+    it("Saves V3 fast fill under correct repayment chain and repayment token when dealing with lite chains", async function () {
+      // Mock the config store client to include the lite chain index.
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([originChainId])
+      );
+      await mockConfigStore.update();
+      // Ensure that our test has the right setup.
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      mockConfigStore.liteChainIndicesUpdates[0].timestamp = 0;
+      expect(repaymentChainId).to.not.eq(originChainId);
+
+      // Mock the config store client being included on the spoke client
+      mockOriginSpokePoolClient.setConfigStoreClient(mockConfigStore);
+
+      const depositV3Events: Event[] = [];
+      const fillV3Events: Event[] = [];
+
+      // Create three valid deposits
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      // Fill deposits from different relayers
+      const relayer2 = randomAddress();
+      fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.equal(depositV3Events.length);
+      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.depositId)).to.deep.equal(
+        fillV3Events.map((event) => event.args.depositId)
+      );
+      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
+        fillV3Events.map(() => lpFeePct)
+      );
+      const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
+      const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
+      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[originChainId][erc20_1.address].realizedLpFees);
+      expect(data1.bundleFillsV3[originChainId][erc20_1.address].totalRefundAmount).to.equal(
+        totalGrossRefundAmount.sub(totalV3LpFees)
+      );
+      const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
+      expect(data1.bundleFillsV3[originChainId][erc20_1.address].refunds).to.deep.equal({
+        [relayer.address]: fillV3Events
+          .slice(0, fillV3Events.length - 1)
+          .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
+          .mul(refundAmountPct)
+          .div(fixedPointAdjustment),
+        [relayer2]: fillV3Events[fillV3Events.length - 1].args.inputAmount
+          .mul(refundAmountPct)
+          .div(fixedPointAdjustment),
+      });
+    });
+
     it("Validates fill against old deposit", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
@@ -379,6 +458,63 @@ describe("Dataworker: Load data used in all functions", async function () {
       });
       expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleDepositsV3).to.deep.equal({});
+    });
+    it("Validates fill from lite chain against old deposit", async function () {
+      // For this test, we need to actually send a deposit on the spoke pool
+      // because queryHistoricalDepositForFill eth_call's the contract.
+
+      // Send a deposit.
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      const depositBlock = await spokePool_1.provider.getBlockNumber();
+      // Construct a spoke pool client with a small search range that would not include the deposit.
+      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      await spokePoolClient_1.update();
+      const deposits = spokePoolClient_1.getDeposits();
+      expect(deposits.length).to.equal(0);
+
+      // Mock the config store client to include the lite chain index.
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([originChainId])
+      );
+      await mockConfigStore.update();
+      // Ensure that our test has the right setup.
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      mockConfigStore.liteChainIndicesUpdates[0].timestamp = depositObject.quoteTimestamp - 1;
+      expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+      expect(repaymentChainId).to.not.eq(originChainId);
+
+      // Mock the config store client being included on the spoke client
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+
+      // Send a fill now and force the bundle data client to query for the historical deposit.
+      await fillV3(spokePool_2, relayer, depositObject);
+      await updateAllClients();
+      const fills = spokePoolClient_2.getFills();
+      expect(fills.length).to.equal(1);
+
+      // Load information needed to build a bundle
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+      expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+
+      // Ensure the repayment chain id is not in the bundle data.
+      expect(data1.bundleFillsV3[repaymentChainId]).to.be.undefined;
+      // Make sure that the origin data is in fact populated
+      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.eq(1);
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
     it("Searches for old deposit for fill but cannot find matching one", async function () {
@@ -912,6 +1048,164 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       expect(data1.bundleSlowFillsV3).to.deep.equal({});
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
+    it("Slow fill request for deposit that isn't eligible for slow fill because origin is lite chain", async function () {
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([spokePoolClient_1.chainId])
+      );
+      await mockConfigStore.update();
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await spokePoolClient_1.update();
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+      await requestSlowFill(spokePool_2, relayer, depositObject);
+      await updateAllClients();
+      const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+      expect(requests.length).to.equal(1);
+      expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
+    it("Slow fill request for deposit that isn't eligible for slow fill because destination is lite chain", async function () {
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([spokePoolClient_2.chainId])
+      );
+      await mockConfigStore.update();
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      await spokePoolClient_1.update();
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+      await requestSlowFill(spokePool_2, relayer, depositObject);
+      await updateAllClients();
+      const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+      expect(requests.length).to.equal(1);
+      expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
+    it("Invalid slow fill request against old deposit with origin lite chain", async function () {
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([spokePoolClient_1.chainId])
+      );
+      await mockConfigStore.update();
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
+      // Send a deposit.
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      const depositBlock = await spokePool_1.provider.getBlockNumber();
+
+      // Construct a spoke pool client with a small search range that would not include the deposit.
+      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      await spokePoolClient_1.update();
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+      const deposits = spokePoolClient_1.getDeposits();
+      expect(deposits.length).to.equal(0);
+
+      // Send a slow fill request now and force the bundle data client to query for the historical deposit.
+      await requestSlowFill(spokePool_2, relayer, depositObject);
+      await updateAllClients();
+      const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+      expect(requests.length).to.equal(1);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+      expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
+      expect(data1.bundleDepositsV3).to.deep.equal({});
+    });
+    it("Invalid slow fill request against old deposit with destination lite chain", async function () {
+      mockConfigStore.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+        JSON.stringify([spokePoolClient_2.chainId])
+      );
+      await mockConfigStore.update();
+      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+      (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
+      // Send a deposit.
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit
+      );
+      const depositBlock = await spokePool_1.provider.getBlockNumber();
+
+      // Construct a spoke pool client with a small search range that would not include the deposit.
+      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      await spokePoolClient_1.update();
+      expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+      expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+      const deposits = spokePoolClient_1.getDeposits();
+      expect(deposits.length).to.equal(0);
+
+      // Send a slow fill request now and force the bundle data client to query for the historical deposit.
+      await requestSlowFill(spokePool_2, relayer, depositObject);
+      await updateAllClients();
+      const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+      expect(requests.length).to.equal(1);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+      expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+      expect(data1.bundleSlowFillsV3).to.deep.equal({});
+      expect(data1.bundleDepositsV3).to.deep.equal({});
     });
     it("Returns prior bundle expired deposits", async function () {
       // Send deposit that expires in this bundle.

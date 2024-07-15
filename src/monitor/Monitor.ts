@@ -1,5 +1,5 @@
 import { BalanceAllocator } from "../clients";
-import { spokePoolClientsToProviders } from "../common";
+import { EXPECTED_L1_TO_L2_MESSAGE_TIME, spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
@@ -564,33 +564,51 @@ export class Monitor {
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
+    const { currentTime } = hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
     }
-    // If we're still within the grace period, skip looking for any stuck rebalances.
-    // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
-    // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
-    const currentTime = Number(await this.clients.hubPoolClient.hubPool.getCurrentTime());
-    if (lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD > currentTime) {
-      this.logger.debug({
-        at: "Monitor#checkStuckRebalances",
-        message: `Within ${REBALANCE_FINALIZE_GRACE_PERIOD / 60}min grace period of last bundle execution`,
-        lastFullyExecutedBundleTime,
-        currentTime,
-      });
-      return;
-    }
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.crossChainAdapterSupportedChains) {
+      const gracePeriod = EXPECTED_L1_TO_L2_MESSAGE_TIME[chainId] ?? REBALANCE_FINALIZE_GRACE_PERIOD;
+      // If we're still within the grace period, skip looking for any stuck rebalances.
+      // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
+      // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
+      if (lastFullyExecutedBundleTime + gracePeriod > currentTime) {
+        this.logger.debug({
+          at: "Monitor#checkStuckRebalances",
+          message: `Within ${gracePeriod / 60}min grace period of last bundle execution for ${getNetworkName(chainId)}`,
+          lastFullyExecutedBundleTime,
+          currentTime,
+        });
+        return;
+      }
+
       // If chain wasn't active in latest bundle, then skip it.
       const chainIndex = this.clients.hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
       if (chainIndex >= lastFullyExecutedBundle.bundleEvaluationBlockNumbers.length) {
         continue;
       }
+
+      // First, log if the root bundle never relayed to the spoke pool.
+      const rootBundleRelay = this.clients.spokePoolClients[chainId].getRootBundleRelays().find((relay) => {
+        return (
+          relay.relayerRefundRoot === lastFullyExecutedBundle.relayerRefundRoot &&
+          relay.slowRelayRoot === lastFullyExecutedBundle.slowRelayRoot
+        );
+      });
+      if (!rootBundleRelay) {
+        this.logger.warn({
+          at: "Monitor#checkStuckRebalances",
+          message: `HubPool -> ${getNetworkName(chainId)} SpokePool root bundle relay stuck 👨🏻‍🦽‍➡️`,
+          lastFullyExecutedBundle,
+        });
+      }
+
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
       for (const l1Token of allL1Tokens) {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which

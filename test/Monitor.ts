@@ -375,11 +375,10 @@ describe("Monitor", async function () {
     await monitorInstance.update();
     await monitorInstance.checkStuckRebalances();
 
-    expect(lastSpyLogIncludes(spy, "HubPool -> SpokePool rebalances stuck 🦴")).to.be.true;
-    const log = spy.lastCall;
-    expect(log.lastArg.mrkdwn).to.contains(
-      `Rebalances of ${await l1Token.symbol()} to ${getNetworkName(originChainId)} is stuck`
-    );
+    const stuckTransfer = spy.getCalls().find((call) => call.lastArg.message.includes("rebalances stuck"));
+    const stuckRootRelay = spy.getCalls().find((call) => call.lastArg.message.includes("root bundle relay stuck"));
+    expect(stuckTransfer).to.not.be.undefined;
+    expect(stuckRootRelay).to.not.be.undefined;
   });
 
   it("Monitor should report unfilled deposits", async function () {

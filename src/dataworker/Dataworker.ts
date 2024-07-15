@@ -13,6 +13,8 @@ import {
   isDefined,
   toBNWei,
   ZERO_ADDRESS,
+  chainIsMatic,
+  CHAIN_IDs,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -835,7 +837,10 @@ export class Dataworker {
 
     // Bundles that need to be validated with older code should emit helpful error logs about which code to run.
     // @dev only throw this error if the hub chain ID is 1, suggesting we're running on production.
-    if (versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION && hubPoolChainId === 1) {
+    if (
+      versionAtProposalBlock <= sdk.constants.TRANSFER_THRESHOLD_MAX_CONFIG_STORE_VERSION &&
+      hubPoolChainId === CHAIN_IDs.MAINNET
+    ) {
       throw new Error(
         "Must use relayer code at commit 412ddc30af72c2ac78f9e4c8dccfccfd0eb478ab to validate a bundle with transferThreshold set"
       );
@@ -1262,7 +1267,7 @@ export class Dataworker {
           canFailInSimulation: chainId === hubChainId,
           // If polygon, keep separate from relayer refund leaves since we can't execute refunds atomically
           // with fills.
-          groupId: chainId === 137 ? "slowRelay" : undefined,
+          groupId: chainIsMatic(chainId) ? "slowRelay" : undefined,
         });
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
@@ -2151,7 +2156,7 @@ export class Dataworker {
           mrkdwn,
           // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
           // SpokePool.multicall() is fine.
-          unpermissioned: Number(chainId) === 1,
+          unpermissioned: Number(chainId) === CHAIN_IDs.MAINNET,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
