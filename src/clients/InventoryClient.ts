@@ -484,20 +484,19 @@ export class InventoryClient {
       // Destination chain:
       const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
       const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, repaymentToken);
-      // Add in the amount to be repaid if we were to select this chain into the chain virtual balance.
-      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken).add(inputAmount);
+      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       const cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-      // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
-      // on destination chain
+      // Add in the amount to be repaid if we were to select this chain into the chain virtual balance. Subtract
+      // output amount if the chain is the destination chain.
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
       let chainVirtualBalanceWithShortfallPostRelay =
         _chain === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
-          ? chainVirtualBalanceWithShortfall.sub(outputAmount)
-          : chainVirtualBalanceWithShortfall;
+          ? chainVirtualBalanceWithShortfall.add(inputAmount).sub(outputAmount)
+          : chainVirtualBalanceWithShortfall.add(inputAmount);
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
