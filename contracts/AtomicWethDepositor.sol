@@ -46,8 +46,11 @@ interface LineaL1MessageService {
 contract AtomicWethDepositor {
     Weth public immutable weth = Weth(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     OvmL1Bridge public immutable optimismL1Bridge = OvmL1Bridge(0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1);
+    OvmL1Bridge public immutable modeL1Bridge = OvmL1Bridge(0x735aDBbE72226BD52e818E7181953f42E3b0FF21);
     OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
     OvmL1Bridge public immutable baseL1Bridge = OvmL1Bridge(0x3154Cf16ccdb4C6d922629664174b904d80F2C35);
+    OvmL1Bridge public immutable liskL1Bridge = OvmL1Bridge(0x2658723Bf70c7667De6B25F99fcce13A16D25d08);
+    OvmL1Bridge public immutable blastL1Bridge = OvmL1Bridge(0x697402166Fbf2F22E970df8a6486Ef171dbfc524);
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
     ZkSyncL1Bridge public immutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
     LineaL1MessageService public immutable lineaL1MessageService =
@@ -55,6 +58,7 @@ contract AtomicWethDepositor {
 
     event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
     event LineaEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
+    event OvmEthDepositInitiated(uint256 indexed chainId, address indexed from, address indexed to, uint256 amount);
 
     function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {
         weth.transferFrom(msg.sender, address(this), amount);
@@ -64,11 +68,19 @@ contract AtomicWethDepositor {
             optimismL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 8453) {
             baseL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else if (chainId == 34443) {
+            modeL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else if (chainId == 1135) {
+            liskL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else if (chainId == 81457) {
+            blastL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 288) {
             bobaL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else {
             revert("Invalid OVM chainId");
         }
+
+        emit OvmEthDepositInitiated(chainId, msg.sender, to, amount);
     }
 
     function bridgeWethToPolygon(address to, uint256 amount) public {

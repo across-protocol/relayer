@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { utils as sdkUtils, typeguards } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils, typeguards } from "@across-protocol/sdk";
 import {
   winston,
   getNetworkName,

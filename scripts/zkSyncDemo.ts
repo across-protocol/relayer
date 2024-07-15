@@ -15,7 +15,7 @@ import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 import * as zksync from "zksync-web3";
 import { CONTRACT_ADDRESSES } from "../src/common";
-import { gasPriceOracle } from "@across-protocol/sdk-v2";
+import { gasPriceOracle } from "@across-protocol/sdk";
 const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId", "zkSyncChainId"],
 });

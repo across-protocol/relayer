@@ -1,6 +1,6 @@
 import { assert } from "chai";
 import { random } from "lodash";
-import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
 import { V3Deposit } from "../src/interfaces";
 import {
@@ -359,7 +359,7 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(deposit, lpFeePct, token);
+            const { profitable } = await profitClient.isFillProfitable(deposit, lpFeePct, token, destinationChainId);
             expect(profitable).to.equal(expected.profitable);
           }
         }
@@ -429,7 +429,12 @@ describe("ProfitClient: Consider relay profit", () => {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const { profitable } = await profitClient.isFillProfitable(deposit, effectiveLpFeePct, token);
+            const { profitable } = await profitClient.isFillProfitable(
+              deposit,
+              effectiveLpFeePct,
+              token,
+              destinationChainId
+            );
             expect(profitable).to.equal(expected.profitable);
           }
         }

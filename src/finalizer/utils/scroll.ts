@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";

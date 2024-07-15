@@ -1,13 +1,12 @@
 import { Contract, Event, providers, utils as ethersUtils } from "ethers";
 import winston from "winston";
 import { Result } from "@ethersproject/abi";
-import { CHAIN_IDs } from "@across-protocol/constants-v2";
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import * as utils from "../scripts/utils";
+import { CHAIN_IDs } from "@across-protocol/constants";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { IndexedSpokePoolClient } from "../src/clients";
-import { mangleEventArgs, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
+import { EventSearchConfig, mangleEventArgs, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
 import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
-import { assertPromiseError, createSpyLogger, expect, randomAddress } from "./utils";
+import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
 type Block = providers.Block;
 type TransactionReceipt = providers.TransactionReceipt;
@@ -17,6 +16,10 @@ class MockIndexedSpokePoolClient extends IndexedSpokePoolClient {
   // Override `protected` attribute.
   override indexerUpdate(rawMessage: unknown): void {
     super.indexerUpdate(rawMessage);
+  }
+
+  override startWorker(): void {
+    return;
   }
 }
 
@@ -121,9 +124,19 @@ describe("IndexedSpokePoolClient: Update", async function () {
   };
 
   beforeEach(async function () {
+    let deploymentBlock: number;
     ({ spyLogger: logger } = createSpyLogger());
-    spokePool = await utils.getSpokePoolContract(chainId);
-    spokePoolClient = new MockIndexedSpokePoolClient(logger, spokePool, null, chainId, 0);
+    ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId, 1_000_000));
+    const eventSearchConfig: EventSearchConfig | undefined = undefined;
+    spokePoolClient = new MockIndexedSpokePoolClient(
+      logger,
+      spokePool,
+      null,
+      chainId,
+      deploymentBlock,
+      eventSearchConfig,
+      {}
+    );
     depositId = 1;
     currentTime = Math.round(Date.now() / 1000);
     oldestTime = currentTime - 7200;

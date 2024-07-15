@@ -1,4 +1,17 @@
-import { Event } from "ethers";
+import { BigNumber, Contract, Event } from "ethers";
+import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
+import {
+  MAX_SAFE_ALLOWANCE,
+  blockExplorerLink,
+  bnZero,
+  getNetworkName,
+  getRedisCache,
+  runTransaction,
+  toBN,
+  winston,
+  mapAsync,
+} from "../../utils";
+
 /**
  * @notice This function is designed to be used in L2 chain adapters when identifying "finalized" cross
  * chain transfers. For certain L2 chains, sending WETH from L1 to L2 is impossible so the EOA is forced to
@@ -32,4 +45,60 @@ export function matchL2EthDepositAndWrapEvents(l2EthDepositEvents: Event[], _l2W
     }
     return false;
   });
+}
+
+export function getAllowanceCacheKey(l1Token: string, targetContract: string, userAddress: string): string {
+  return `l1CanonicalTokenBridgeAllowance_${l1Token}_${userAddress}_targetContract:${targetContract}`;
+}
+
+export async function getTokenAllowanceFromCache(
+  l1Token: string,
+  userAddress: string,
+  contractAddress: string
+): Promise<BigNumber | undefined> {
+  const redis = await getRedisCache();
+  const key = getAllowanceCacheKey(l1Token, contractAddress, userAddress);
+  const allowance = await redis?.get<string>(key);
+  if (allowance === null) {
+    return undefined;
+  }
+  return toBN(allowance);
+}
+
+export async function setTokenAllowanceInCache(
+  l1Token: string,
+  userAddress: string,
+  contractAddress: string,
+  allowance: BigNumber
+): Promise<void> {
+  const redis = await getRedisCache();
+  const key = getAllowanceCacheKey(l1Token, contractAddress, userAddress);
+  await redis?.set(key, allowance.toString());
+}
+
+export async function approveTokens(
+  tokens: { token: Contract; bridge: string }[],
+  chainId: number,
+  hubChainId: number,
+  logger: winston.Logger
+): Promise<string> {
+  const approvalMarkdwn = await mapAsync(tokens, async ({ token: l1Token, bridge }) => {
+    const txs = [];
+    if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
+      txs.push(await runTransaction(logger, l1Token, "approve", [bridge, bnZero]));
+    }
+    txs.push(await runTransaction(logger, l1Token, "approve", [bridge, MAX_SAFE_ALLOWANCE]));
+    const receipts = await Promise.all(txs.map((tx) => tx.wait()));
+    const hubNetwork = getNetworkName(hubChainId);
+    const spokeNetwork = getNetworkName(chainId);
+    let internalMrkdwn =
+      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge, hubChainId)} ` +
+      `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
+      `tx: ${blockExplorerLink(receipts[receipts.length - 1].transactionHash, hubChainId)}`;
+    if (receipts.length > 1) {
+      internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
+    }
+    return internalMrkdwn;
+  });
+  return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
 }

@@ -1,4 +1,4 @@
-import { clients } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk";
 import { EventSearchConfig, MakeOptional, winston } from "../../src/utils";
 import { Contract } from "../utils";
 import { CHAIN_ID_TEST_LIST } from "../constants";
