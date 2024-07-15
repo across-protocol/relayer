@@ -487,7 +487,7 @@ export class InventoryClient {
       // Add in the amount to be repaid if we were to select this chain into the chain virtual balance.
       const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken).add(inputAmount);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-      let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+      const cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
       // on destination chain
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
@@ -505,8 +505,7 @@ export class InventoryClient {
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
-      cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
-      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(outputAmount);
+      const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
