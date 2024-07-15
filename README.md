@@ -17,7 +17,7 @@ Check out [this guide](https://docs.across.to/relayers/running-a-relayer) for de
 
 ## Prerequisites
 
-After installing dependencies and building the repository, be sure to [install RedisDB](https://redis.io/docs/getting-started/installation/), an in-memory storage layer that is required to make the bots work. The bots query blockchain RPCs for a lot of smart contract events so its important that the bot
+After installing dependencies and building the repository, be sure to [install RedisDB](https://redis.io/docs/getting-started/installation/), an in-memory storage layer that is required to make the bots work. The bots query blockchain RPCs for a lot of smart contract events so it's important that the bot
 cache some of this data in order to maintain its speed.
 
 The first time that the bot runs, it might be slower than usual as the Redis DB fills up. This slowdown should disappear on subsequent runs.

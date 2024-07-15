@@ -22,7 +22,7 @@ import {
   winston,
   chainIsProd,
 } from "../../utils";
-import { Multicall2Call } from "../../common";
+import { Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 interface CrossChainMessageWithEvent {
@@ -117,12 +117,14 @@ export async function opStackFinalizer(
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
   const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
+  const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[chainId];
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
     l1ChainId: hubChainId,
     l2ChainId: chainId,
     l1SignerOrProvider: hubSigner.connect(getCachedProvider(hubChainId, true)),
     l2SignerOrProvider: hubSigner.connect(getCachedProvider(chainId, true)),
+    contracts: contractOverrides,
   });
 }
 
