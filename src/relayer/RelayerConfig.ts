@@ -257,7 +257,7 @@ export class RelayerConfig extends CommonConfig {
         .map((_threshold) => {
           const threshold = Number(_threshold);
           assert(!isNaN(threshold) && threshold >= 0, `Invalid deposit confirmation threshold (${_threshold})`);
-          return Number(threshold);
+          return threshold;
         })
         .sort((x, y) => x - y)
         .forEach((usdThreshold) => {
