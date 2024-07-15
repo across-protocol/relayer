@@ -1,0 +1,63 @@
+[
+  {
+    "inputs": [],
+    "name": "minimumFeeInWei",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [{ "indexed": true, "internalType": "bytes32", "name": "_messageHash", "type": "bytes32" }],
+    "name": "MessageClaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "_from",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "name": "_to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "_fee",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "_value",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "_nonce",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "_calldata",
+        "type": "bytes"
+      },
+      {
+        "indexed": true,
+        "name": "_messageHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "MessageSent",
+    "type": "event"
+  }
+]

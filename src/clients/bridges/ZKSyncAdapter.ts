@@ -11,13 +11,14 @@ import {
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
   bnZero,
+  CHAIN_IDs,
 } from "../../utils";
 import { SpokePoolClient } from "../.";
 import assert from "assert";
 import * as zksync from "zksync-web3";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
-import { gasPriceOracle, utils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, utils } from "@across-protocol/sdk";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 import { matchL2EthDepositAndWrapEvents } from "./utils";
 
@@ -31,7 +32,8 @@ export class ZKSyncAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 324, monitoredAddresses, logger, ["USDC", "USDT", "WETH", "WBTC", "DAI"]);
+    const { ZK_SYNC } = CHAIN_IDs;
+    super(spokePoolClients, ZK_SYNC, monitoredAddresses, logger, SUPPORTED_TOKENS[ZK_SYNC]);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {

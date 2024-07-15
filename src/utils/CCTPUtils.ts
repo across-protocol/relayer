@@ -1,4 +1,4 @@
-import { utils } from "@across-protocol/sdk-v2";
+import { utils } from "@across-protocol/sdk";
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { BigNumber, ethers } from "ethers";

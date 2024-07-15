@@ -17,7 +17,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -124,7 +124,7 @@ export async function constructSpokePoolClientsWithLookback(
   const fromBlocks = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
-        if (chainId === 1) {
+        if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
         } else {
           return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
@@ -357,9 +357,9 @@ export async function constructClients(
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
 //      so update the ConfigStoreClient first.
-export async function updateClients(clients: Clients, config: CommonConfig): Promise<void> {
+export async function updateClients(clients: Clients, config: CommonConfig, logger?: winston.Logger): Promise<void> {
   await clients.configStoreClient.update();
-  config.loadAndValidateConfigForChains(clients.configStoreClient.getChainIdIndicesForBlock());
+  config.validate(clients.configStoreClient.getChainIdIndicesForBlock(), logger);
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {

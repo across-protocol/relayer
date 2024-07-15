@@ -1,6 +1,6 @@
 import minimist from "minimist";
 import { Signer } from "ethers";
-import { constants as sdkConsts } from "@across-protocol/sdk-v2";
+import { constants as sdkConsts } from "@across-protocol/sdk";
 import { SignerOptions, getSigner } from "./SignerUtils";
 import { isDefined } from "./TypeGuards";
 

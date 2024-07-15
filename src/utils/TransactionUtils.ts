@@ -1,4 +1,4 @@
-import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";

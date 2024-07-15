@@ -1,10 +1,10 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston, CHAIN_IDs } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -24,7 +24,10 @@ export async function lineaL1ToL2Finalizer(
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
-  const l2ChainId = l1ChainId === 1 ? 59144 : 59140;
+  if (l1ChainId !== CHAIN_IDs.MAINNET) {
+    throw new Error("Finalizations for Linea testnet is not supported.");
+  }
+  const l2ChainId = CHAIN_IDs.LINEA;
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
   const l1MessageServiceContract = lineaSdk.getL1Contract();
@@ -69,7 +72,10 @@ export async function lineaL1ToL2Finalizer(
     } = event;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
-    const messageStatus = await l2MessageServiceContract.getMessageStatus(_messageHash);
+
+    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
+    // twice with a 1 second delay between in case of intermittent RPC failures.
+    const messageStatus = await retryAsync(() => l2MessageServiceContract.getMessageStatus(_messageHash), 2, 1);
     return {
       messageSender: _from,
       destination: _to,

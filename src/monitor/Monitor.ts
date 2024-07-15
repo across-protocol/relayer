@@ -1,8 +1,10 @@
 import { BalanceAllocator } from "../clients";
-import { spokePoolClientsToProviders } from "../common";
+import { EXPECTED_L1_TO_L2_MESSAGE_TIME, spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
+  DepositWithBlock,
+  FillStatus,
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
@@ -16,6 +18,7 @@ import {
   createFormatFunction,
   ERC20,
   ethers,
+  fillStatusArray,
   blockExplorerLink,
   blockExplorerLinks,
   getEthAddressForChain,
@@ -23,6 +26,7 @@ import {
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
+  mapAsync,
   providers,
   toBN,
   toBNWei,
@@ -36,7 +40,12 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-export const REBALANCE_FINALIZE_GRACE_PERIOD = 40 * 60; // 40 minutes, which is 50% of the way through an 80 minute
+export const REBALANCE_FINALIZE_GRACE_PERIOD = process.env.REBALANCE_FINALIZE_GRACE_PERIOD
+  ? Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD)
+  : 60 * 60;
+// 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
+// then its finalizing after the subsequent challenge period has started, which is sub-optimal.
+
 // bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
 const ALL_BALANCE_TYPES = [
@@ -171,7 +180,16 @@ export class Monitor {
   }
 
   async reportUnfilledDeposits(): Promise<void> {
-    const unfilledDeposits = await getUnfilledDeposits(this.clients.spokePoolClients, this.clients.hubPoolClient);
+    const { hubPoolClient, spokePoolClients } = this.clients;
+    const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
+      await mapAsync(Object.values(spokePoolClients), async ({ chainId: destinationChainId }) => {
+        const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
+          ({ deposit }) => deposit
+        );
+        const fillStatus = await fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+        return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
+      })
+    );
 
     // Group unfilled amounts by chain id and token id.
     const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};
@@ -179,7 +197,7 @@ export class Monitor {
       const chainId = Number(_destinationChainId);
       unfilledAmountByChainAndToken[chainId] ??= {};
 
-      deposits.forEach(({ deposit: { outputToken, outputAmount } }) => {
+      deposits.forEach(({ outputToken, outputAmount }) => {
         const unfilledAmount = unfilledAmountByChainAndToken[chainId][outputToken] ?? bnZero;
         unfilledAmountByChainAndToken[chainId][outputToken] = unfilledAmount.add(outputAmount);
       });
@@ -546,33 +564,51 @@ export class Monitor {
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
+    const { currentTime } = hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
     }
-    // If we're still within the grace period, skip looking for any stuck rebalances.
-    // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
-    // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
-    const currentTime = Number(await this.clients.hubPoolClient.hubPool.getCurrentTime());
-    if (lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD > currentTime) {
-      this.logger.debug({
-        at: "Monitor#checkStuckRebalances",
-        message: `Within ${REBALANCE_FINALIZE_GRACE_PERIOD / 60}min grace period of last bundle execution`,
-        lastFullyExecutedBundleTime,
-        currentTime,
-      });
-      return;
-    }
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.crossChainAdapterSupportedChains) {
+      const gracePeriod = EXPECTED_L1_TO_L2_MESSAGE_TIME[chainId] ?? REBALANCE_FINALIZE_GRACE_PERIOD;
+      // If we're still within the grace period, skip looking for any stuck rebalances.
+      // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
+      // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
+      if (lastFullyExecutedBundleTime + gracePeriod > currentTime) {
+        this.logger.debug({
+          at: "Monitor#checkStuckRebalances",
+          message: `Within ${gracePeriod / 60}min grace period of last bundle execution for ${getNetworkName(chainId)}`,
+          lastFullyExecutedBundleTime,
+          currentTime,
+        });
+        return;
+      }
+
       // If chain wasn't active in latest bundle, then skip it.
       const chainIndex = this.clients.hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
       if (chainIndex >= lastFullyExecutedBundle.bundleEvaluationBlockNumbers.length) {
         continue;
       }
+
+      // First, log if the root bundle never relayed to the spoke pool.
+      const rootBundleRelay = this.clients.spokePoolClients[chainId].getRootBundleRelays().find((relay) => {
+        return (
+          relay.relayerRefundRoot === lastFullyExecutedBundle.relayerRefundRoot &&
+          relay.slowRelayRoot === lastFullyExecutedBundle.slowRelayRoot
+        );
+      });
+      if (!rootBundleRelay) {
+        this.logger.warn({
+          at: "Monitor#checkStuckRebalances",
+          message: `HubPool -> ${getNetworkName(chainId)} SpokePool root bundle relay stuck 👨🏻‍🦽‍➡️`,
+          lastFullyExecutedBundle,
+        });
+      }
+
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
       for (const l1Token of allL1Tokens) {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
@@ -649,7 +685,7 @@ export class Monitor {
         if (l1Token.symbol === "USDC" && chainId !== this.clients.hubPoolClient.chainId) {
           const bridgedUsdcAddress =
             TOKEN_SYMBOLS_MAP[chainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses[chainId];
-          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["_USDC"].addresses[chainId];
+          const nativeUsdcAddress = TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId];
           for (const [l2Address, symbol] of [
             [bridgedUsdcAddress, "USDC.e"],
             [nativeUsdcAddress, "USDC"],

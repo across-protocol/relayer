@@ -11,7 +11,7 @@ import {
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3, requestSlowFill } from "./utils";
-import { interfaces } from "@across-protocol/sdk-v2";
+import { interfaces } from "@across-protocol/sdk";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

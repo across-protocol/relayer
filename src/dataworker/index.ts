@@ -128,29 +128,33 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
       }
 
-      if (config.executorEnabled) {
+      if (config.l2ExecutorEnabled || config.l1ExecutorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks
-        );
+        if (config.l1ExecutorEnabled) {
+          poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingExecutionsEnabled,
+            fromBlocks
+          );
+        }
 
-        // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks
-        );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks
-        );
+        if (config.l2ExecutorEnabled) {
+          // Execute slow relays before relayer refunds to give them priority for any L2 funds.
+          await dataworker.executeSlowRelayLeaves(
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingExecutionsEnabled,
+            fromBlocks
+          );
+          await dataworker.executeRelayerRefundLeaves(
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingExecutionsEnabled,
+            fromBlocks
+          );
+        }
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
       }

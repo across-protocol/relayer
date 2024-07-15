@@ -81,7 +81,7 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
   );
   const eventFilter = tokenMessengerContract.filters.DepositForBurn(
     undefined,
-    TOKEN_SYMBOLS_MAP._USDC.addresses[currentChainId], // Filter by only USDC token deposits
+    TOKEN_SYMBOLS_MAP.USDC.addresses[currentChainId], // Filter by only USDC token deposits
     undefined,
     addressesToSearch // All depositors that we are monitoring for
   );

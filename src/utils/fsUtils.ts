@@ -1,6 +1,6 @@
 import * as fs from "fs/promises";
 import { readFileSync as _readFileSync } from "node:fs";
-import { typeguards } from "@across-protocol/sdk-v2";
+import { typeguards } from "@across-protocol/sdk";
 
 export function readFileSync(fileName: string): string {
   try {

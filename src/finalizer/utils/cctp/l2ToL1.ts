@@ -76,7 +76,7 @@ async function resolveRelatedTxnReceipts(
     .filter(
       (bridgeEvent) =>
         bridgeEvent.blockNumber >= latestBlockToFinalize &&
-        compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[sourceChainId])
+        compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
     )
     .forEach((bridgeEvent) => uniqueTxnHashes.add(bridgeEvent.transactionHash));
 

@@ -18,6 +18,14 @@ export class SnxOptimismBridge extends OpStackBridge {
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
+  protected getL1Bridge(): Contract {
+    return this.l1Bridge;
+  }
+
+  protected getL2Bridge(): Contract {
+    return this.l2Bridge;
+  }
+
   constructL1ToL2Txn(
     toAddress: string,
     l1Token: string,
@@ -27,7 +35,7 @@ export class SnxOptimismBridge extends OpStackBridge {
     l2Gas: number
   ): BridgeTransactionDetails {
     return {
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "depositTo",
       args: [toAddress, amount],
     };
@@ -38,12 +46,13 @@ export class SnxOptimismBridge extends OpStackBridge {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l1Bridge = this.getL1Bridge();
     // @dev For the SnxBridge, only the `toAddress` is indexed on the L2 event so we treat the `fromAddress` as the
     // toAddress when fetching the L1 event.
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.DepositInitiated(undefined, toAddress),
+        l1Bridge,
+        l1Bridge.filters.DepositInitiated(undefined, toAddress),
         eventConfig
       ),
     };
@@ -54,10 +63,11 @@ export class SnxOptimismBridge extends OpStackBridge {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<OpStackEvents> {
+    const l2Bridge = this.getL2Bridge();
     return {
       [this.resolveL2TokenAddress(l1Token)]: await paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.DepositFinalized(toAddress),
+        l2Bridge,
+        l2Bridge.filters.DepositFinalized(toAddress),
         eventConfig
       ),
     };

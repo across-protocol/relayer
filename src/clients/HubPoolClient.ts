@@ -1,7 +1,7 @@
-import { clients, interfaces } from "@across-protocol/sdk-v2";
+import { clients, interfaces } from "@across-protocol/sdk";
 import { Contract } from "ethers";
 import winston from "winston";
-import { MakeOptional, EventSearchConfig, getTokenInfo, getL1TokenInfo, getUsdcSymbol } from "../utils";
+import { CHAIN_IDs, MakeOptional, EventSearchConfig, getTokenInfo, getL1TokenInfo, getUsdcSymbol } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { L1Token } from "../interfaces";
 
@@ -13,7 +13,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     hubPool: Contract,
     configStoreClient: clients.AcrossConfigStoreClient,
     deploymentBlock?: number,
-    chainId = 1,
+    chainId = CHAIN_IDs.MAINNET,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     cachingMechanism?: interfaces.CachingMechanismInterface,
     timeToCache?: number

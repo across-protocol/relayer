@@ -1,4 +1,4 @@
-import { constants, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   bnZero,
   BigNumber,
@@ -372,7 +372,7 @@ export class InventoryClient {
 
     // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
     // is Bridged USDC and the output token is Native USDC.
-    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either _USDC, USDC.e or USDbC.
+    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either USDC, USDC.e or USDbC.
     // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
     // check specifically handles the case where the input token is Bridged/Native and the output token Native/Bridged.
     const isInputTokenUSDC = isDefined(getUsdcSymbol(inputToken, originChainId));
@@ -393,8 +393,11 @@ export class InventoryClient {
    * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
    * selected if the SpokePool's running balance for that chain is over the system's desired target.
    * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
-   * chains are over-allocated.
-   * @dev If inventory management is disabled, then destinationChain is used as a default.
+   * chains are over-allocated, unless the origin chain is a lite chain, in which case
+   * there is no fallback if the origin chain is not an eligible repayment chain.
+   * @dev If the origin chain is a lite chain, then only the origin chain is evaluated as a potential repayment chain.
+   * @dev If inventory management is disabled, then destinationChain is used as a default unless the
+   * originChain is a lite chain, then originChain is the default used.
    * @param deposit Deposit to determine repayment chains for.
    * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
@@ -405,7 +408,7 @@ export class InventoryClient {
     const hubChainId = this.hubPoolClient.chainId;
 
     if (!this.isInventoryManagementEnabled()) {
-      return [destinationChainId];
+      return [deposit.fromLiteChain ? originChainId : destinationChainId];
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
@@ -439,7 +442,7 @@ export class InventoryClient {
     // hub in the next root bundle over the slow canonical bridge.
     // We need to calculate the latest running balance for each optimistic rollup chain.
     // We'll add the last proposed running balance plus new deposits and refunds.
-    if (this.prioritizeLpUtilization) {
+    if (!deposit.fromLiteChain && this.prioritizeLpUtilization) {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmount,
@@ -460,7 +463,8 @@ export class InventoryClient {
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
     if (
       !chainsToEvaluate.includes(destinationChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId))
+      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
+      !deposit.fromLiteChain
     ) {
       chainsToEvaluate.push(destinationChainId);
     }
@@ -496,7 +500,7 @@ export class InventoryClient {
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[_chain]
+        totalRefundsPerChain[_chain] ?? bnZero
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
@@ -544,6 +548,19 @@ export class InventoryClient {
       if (expectedPostRelayAllocation.lte(thresholdPct)) {
         eligibleRefundChains.push(_chain);
       }
+    }
+
+    // At this point, if the deposit originated on a lite chain, which forces fillers to take repayment on the origin
+    // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
+    // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
+    // funds from.
+    if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
+      this.logger.warn({
+        at: "InventoryClient#determineRefundChainId",
+        message: `Deposit ${deposit.depositId} originated on lite chain ${originChainId} and origin chain is over-allocated. Refusing to fill deposit.`,
+        eligibleRefundChains,
+      });
+      return [];
     }
 
     // Always add hubChain as a fallback option if inventory management is enabled. If none of the chainsToEvaluate
@@ -1112,11 +1129,12 @@ export class InventoryClient {
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  async update(): Promise<void> {
+  update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
-    await this.crossChainTransferClient.update(this.getL1Tokens());
+
+    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
   }
 
   isInventoryManagementEnabled(): boolean {
