@@ -523,7 +523,7 @@ export class InventoryClient {
       );
       const targetOverage =
         tokenConfig.targetOverageBuffer ?? liteChainIds.includes(chainId) ? toBNWei("1") : toBNWei("1.5");
-      const thresholdPct = toBN(tokenConfig.targetPct).mul(targetOverage).div(fixedPointAdjustment);
+      const thresholdPct = tokenConfig.targetPct.mul(targetOverage).div(fixedPointAdjustment);
 
       this.log(
         `Evaluated taking repayment on ${
