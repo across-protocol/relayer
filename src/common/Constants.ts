@@ -295,7 +295,7 @@ export type Multicall2Call = {
   target: string;
 };
 
-// These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
+// These are the spokes that can hold both ETH and WETH, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.BASE,
