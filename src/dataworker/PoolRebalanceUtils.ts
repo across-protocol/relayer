@@ -405,7 +405,7 @@ export function generateMarkdownForRootBundle(
         ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
     );
 
-    // @todo: When v2 types are removed, update the slowFill definition to be more precise about the memebr fields.
+    // @todo: When v2 types are removed, update the slowFill definition to be more precise about the member fields.
     const slowFill = {
       // Shorten select keys for ease of reading from Slack.
       depositor: shortenHexString(leaf.relayData.depositor),
