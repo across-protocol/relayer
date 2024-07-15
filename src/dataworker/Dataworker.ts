@@ -17,6 +17,8 @@ import {
   CHAIN_IDs,
 } from "../utils";
 import {
+  DepositWithBlock,
+  InvalidFill,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
   SpokePoolClientsByChain,
@@ -340,7 +342,9 @@ export class Dataworker {
       return;
     }
 
-    return blockRangesForProposal;
+    // Narrow the block range depending on potential data incoherencies.
+    const safeBlockRanges = await this.narrowProposalBlockRanges(blockRangesForProposal, spokePoolClients);
+    return safeBlockRanges;
   }
 
   getNextHubChainBundleStartBlock(chainIdList = this.chainIdListForBundleEvaluationBlockNumbers): number {
@@ -469,6 +473,104 @@ export class Dataworker {
     return rootBundleData.dataToPersistToDALayer;
   }
 
+  async narrowProposalBlockRanges(
+    blockRanges: number[][],
+    spokePoolClients: SpokePoolClientsByChain
+  ): Promise<number[][]> {
+    const chainIds = this.chainIdListForBundleEvaluationBlockNumbers;
+    const updatedBlockRanges = Object.fromEntries(chainIds.map((chainId, idx) => [chainId, [...blockRanges[idx]]]));
+
+    const { bundleInvalidFillsV3: invalidFills } = await this.clients.bundleDataClient.loadData(
+      blockRanges,
+      spokePoolClients
+    );
+
+    // Helper to update a chain's end block correctly, accounting for soft-pausing if needed.
+    const updateEndBlock = (chainId: number, endBlock?: number): void => {
+      const [currentStartBlock, currentEndBlock] = updatedBlockRanges[chainId];
+      const previousEndBlock = this.clients.hubPoolClient.getLatestBundleEndBlockForChain(
+        chainIds,
+        this.clients.hubPoolClient.latestBlockSearched,
+        chainId
+      );
+
+      endBlock ??= previousEndBlock;
+      assert(
+        endBlock < currentEndBlock,
+        `Invalid block range update for chain ${chainId}: block ${endBlock} >= ${currentEndBlock}`
+      );
+
+      // If endBlock is equal to or before the currentEndBlock then the chain is "soft-paused" by setting the bundle
+      // start and end block equal to the previous end block. This tells the dataworker to not progress on that chain.
+      updatedBlockRanges[chainId] =
+        endBlock > currentStartBlock ? [currentStartBlock, endBlock] : [previousEndBlock, previousEndBlock];
+    };
+
+    // If invalid fills were detected and they appear to be due to gaps in FundsDeposited events:
+    // - Narrow the origin block range to exclude the missing deposit, AND
+    // - Narrow the destination block range to exclude the invalid fill.
+    invalidFills
+      .filter(({ code }) => code === InvalidFill.DepositIdNotFound)
+      .forEach(({ fill: { depositId, originChainId, destinationChainId, blockNumber } }) => {
+        const [originChain, destinationChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
+
+        // Exclude the missing deposit on the origin chain.
+        const originSpokePoolClient = spokePoolClients[originChainId];
+        let [startBlock, endBlock] = updatedBlockRanges[originChainId];
+
+        // Find the previous known deposit. This may resolve a deposit before the immediately preceding depositId.
+        const previousDeposit = originSpokePoolClient
+          .getDepositsForDestinationChain(destinationChainId)
+          .filter((deposit: DepositWithBlock) => deposit.blockNumber < blockNumber)
+          .at(-1);
+
+        updateEndBlock(originChainId, previousDeposit?.blockNumber);
+        this.logger.debug({
+          at: "Dataworker::narrowBlockRanges",
+          message: `Narrowed proposal block range on ${originChain} due to missing deposit.`,
+          depositId,
+          previousBlockRange: [startBlock, endBlock],
+          newBlockRange: updatedBlockRanges[originChainId],
+        });
+
+        // Update the endBlock on the destination chain to exclude the invalid fill.
+        const destSpokePoolClient = spokePoolClients[destinationChainId];
+        [startBlock, endBlock] = updatedBlockRanges[destinationChainId];
+
+        // The blockNumber is iteratively narrowed in this loop so this fill might already be excluded.
+        if (blockNumber <= endBlock) {
+          // Find the fill immediately preceding this invalid fill.
+          const previousFill = destSpokePoolClient
+            .getFillsWithBlockInRange(startBlock, Math.max(blockNumber - 1, startBlock))
+            .at(-1);
+
+          // Wind back to the bundle end block number to that of the previous fill.
+          updateEndBlock(destinationChainId, previousFill?.blockNumber);
+          this.logger.debug({
+            at: "Dataworker::narrowBlockRanges",
+            message: `Narrowed proposal block range on ${destinationChain} due to missing deposit on ${originChain}.`,
+            depositId,
+            previousBlockRange: [startBlock, endBlock],
+            newBlockRange: updatedBlockRanges[destinationChainId],
+          });
+        }
+      });
+
+    // Quick sanity check - make sure that the block ranges are coherent. A chain may be soft-paused if it has ongoing
+    // RPC issues (block ranges are frozen at the previous proposal endBlock), so ensure that this is also handled.
+    const finalBlockRanges = chainIds.map((chainId) => updatedBlockRanges[chainId]);
+    const coherentBlockRanges = finalBlockRanges.every(([startBlock, endBlock], idx) => {
+      const [originalStartBlock] = blockRanges[idx];
+      return (
+        (endBlock > startBlock && startBlock === originalStartBlock) ||
+        (startBlock === endBlock && startBlock === originalStartBlock - 1) // soft-pause
+      );
+    });
+    assert(coherentBlockRanges, "Updated proposal block ranges are incoherent");
+
+    return finalBlockRanges;
+  }
+
   async _proposeRootBundle(
     blockRangesForProposal: number[][],
     spokePoolClients: SpokePoolClientsByChain,
@@ -477,12 +579,12 @@ export class Dataworker {
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
+
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
       await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
-    // Prepare information about what we need to store to
-    // Arweave for the bundle. We will be doing this at a
-    // later point so that we can confirm that this data is
-    // worth storing.
+
+    // Prepare information about what we need to store to Arweave for the bundle.
+    // We will be doing this at a later point so that we can confirm that this data is worth storing.
     const dataToPersistToDALayer = {
       bundleBlockRanges: blockRangesForProposal,
       bundleDepositsV3,

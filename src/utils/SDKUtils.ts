@@ -6,6 +6,8 @@ export type BlockFinderHints = sdk.utils.BlockFinderHints;
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
+export type InvalidFillEnum = sdk.utils.InvalidFill;
+
 export const {
   bnZero,
   bnOne,
@@ -25,6 +27,7 @@ export const {
   toGWei,
   toBNWei,
   formatFeePct,
+  InvalidFill,
   shortenHexStrings,
   convertFromWei,
   max,

@@ -1,3 +1,4 @@
+import assert from "assert";
 import * as _ from "lodash";
 import {
   ProposedRootBundle,
@@ -16,7 +17,6 @@ import {
   getRefundInformationFromFill,
   queryHistoricalDepositForFill,
   assign,
-  assert,
   fixedPointAdjustment,
   isDefined,
   toBN,
@@ -45,6 +45,15 @@ import {
 import { BundleDataSS } from "../utils/SuperstructUtils";
 import { PoolRebalanceRoot } from "../dataworker/Dataworker";
 
+// type DataCacheValue = {
+//   unfilledDeposits: UnfilledDeposit[];
+//   fillsToRefund: FillsToRefund;
+//   allValidFills: FillWithBlock[];
+//   allInvalidFills: InvalidFill[];
+//   deposits: DepositWithBlock[];
+//   earlyDeposits: typechain.FundsDepositedEvent[];
+// };
+// type DataCache = Record<string, DataCacheValue>;
 type DataCache = Record<string, Promise<LoadDataReturnValue>>;
 
 // V3 dictionary helper functions
