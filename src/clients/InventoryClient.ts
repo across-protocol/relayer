@@ -504,7 +504,8 @@ export class InventoryClient {
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
-      const cumulativeVirtualBalanceWithShortfallPostRefunds = cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
+      const cumulativeVirtualBalanceWithShortfallPostRefunds =
+        cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
