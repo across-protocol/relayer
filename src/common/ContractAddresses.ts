@@ -63,7 +63,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x39Ea01a0298C315d149a490E34B59Dbf2EC7e48F",
       abi: SNX_OPTIMISM_BRIDGE_L1_ABI,
     },
-    // OVM, ZkSync, Linea, and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+    // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
       address: "0xfa52a9DCF51695EA2777E6908d6401481850c391",
