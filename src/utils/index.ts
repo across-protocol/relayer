@@ -31,7 +31,12 @@ export { config } from "dotenv";
 export { replaceAddressCase } from "@uma/common";
 export { Logger, waitForLogger } from "@uma/logger";
 
-export { CHAIN_IDs, TOKEN_SYMBOLS_MAP, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
+export {
+  CHAIN_IDs,
+  TESTNET_CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
+  TOKEN_EQUIVALENCE_REMAPPING,
+} from "@across-protocol/constants";
 
 // TypeChain exports used in the bot.
 export {
