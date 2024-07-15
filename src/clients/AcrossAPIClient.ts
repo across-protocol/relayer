@@ -4,6 +4,7 @@ import {
   bnZero,
   winston,
   BigNumber,
+  dedupArray,
   getCurrentTime,
   TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
@@ -37,7 +38,7 @@ export class AcrossApiClient {
     const hubChainId = hubPoolClient.chainId;
     this.endpoint = `https://${hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to"}/api`;
     if (Object.keys(tokensQuery).length === 0) {
-      this.tokensQuery = Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[hubChainId]);
+      this.tokensQuery = dedupArray(Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[hubChainId]));
     }
 
     this.chainIds = chainIds.filter((chainId) => chainId !== hubChainId);
