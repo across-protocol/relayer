@@ -386,22 +386,22 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       const outstandingOfMonitored = (
         await adapter.getOutstandingCrossChainTransfers([l1WethAddress, l1SnxAddress, l1DaiAddress, l1Erc20Address])
       )[monitoredEoa];
-      expect(outstandingOfMonitored[l1WethAddress][l2WethAddress]).to.deep.equal({
-        totalAmount: toBN(1),
-        depositTxHashes: [outstandingWethEvent?.transactionHash],
-      });
-      expect(outstandingOfMonitored[l1SnxAddress][l2SnxAddress]).to.deep.equal({
-        totalAmount: toBN(1),
-        depositTxHashes: [outstandingSnxEvent?.transactionHash],
-      });
-      expect(outstandingOfMonitored[l1DaiAddress][l2DaiAddress]).to.deep.equal({
-        totalAmount: toBN(1),
-        depositTxHashes: [outstandingDaiEvent?.transactionHash],
-      });
-      expect(outstandingOfMonitored[l1Erc20Address][l2Erc20Address]).to.deep.equal({
-        totalAmount: toBN(1),
-        depositTxHashes: [outstandingErc20Event?.transactionHash],
-      });
+      expect(outstandingOfMonitored[l1WethAddress][l2WethAddress].totalAmount).to.equal(toBN(1));
+      expect(outstandingOfMonitored[l1WethAddress][l2WethAddress].depositTxHashes).to.deep.equal([
+        outstandingWethEvent?.transactionHash,
+      ]);
+      expect(outstandingOfMonitored[l1SnxAddress][l2SnxAddress].totalAmount).to.equal(toBN(1));
+      expect(outstandingOfMonitored[l1SnxAddress][l2SnxAddress].depositTxHashes).to.deep.equal([
+        outstandingSnxEvent?.transactionHash,
+      ]);
+      expect(outstandingOfMonitored[l1DaiAddress][l2DaiAddress].totalAmount).to.equal(toBN(1));
+      expect(outstandingOfMonitored[l1DaiAddress][l2DaiAddress].depositTxHashes).to.deep.equal([
+        outstandingDaiEvent?.transactionHash,
+      ]);
+      expect(outstandingOfMonitored[l1Erc20Address][l2Erc20Address].totalAmount).to.equal(toBN(1));
+      expect(outstandingOfMonitored[l1Erc20Address][l2Erc20Address].depositTxHashes).to.deep.equal([
+        outstandingErc20Event?.transactionHash,
+      ]);
     });
 
     it("return simulated success tx if above threshold", async () => {

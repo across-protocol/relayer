@@ -3,9 +3,8 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
-export class BlastBridge extends BaseBridgeAdapter {
-  private readonly l2Gas = 200000;
-
+export class ScrollERC20Bridge extends BaseBridgeAdapter {
+  protected l2Gas = 20000;
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -15,8 +14,8 @@ export class BlastBridge extends BaseBridgeAdapter {
   ) {
     // Lint Appeasement
     _l1Token;
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].blastBridge;
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].blastBridge;
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].scrollGatewayRouter;
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].scrollGatewayRouter;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
@@ -31,8 +30,8 @@ export class BlastBridge extends BaseBridgeAdapter {
   ): Promise<BridgeTransactionDetails> {
     return Promise.resolve({
       contract: this.getL1Bridge(),
-      method: "bridgeERC20",
-      args: [l1Token, l2Token, amount, this.l2Gas, "0x"],
+      method: "depositERC20",
+      args: [l1Token, toAddress, amount, this.l2Gas],
     });
   }
 
@@ -45,7 +44,7 @@ export class BlastBridge extends BaseBridgeAdapter {
     const l1Bridge = this.getL1Bridge();
     const events = await paginatedEventQuery(
       l1Bridge,
-      l1Bridge.filters.ERC20BridgeInitiated(l1Token, undefined, fromAddress),
+      l1Bridge.filters.DepositERC20(l1Token, undefined, fromAddress),
       eventConfig
     );
     return {
@@ -62,7 +61,7 @@ export class BlastBridge extends BaseBridgeAdapter {
     const l2Bridge = this.getL2Bridge();
     const events = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.ERC20BridgeFinalized(l1Token, undefined, fromAddress),
+      l2Bridge.filters.FinalizeDepositERC20(l1Token, undefined, fromAddress),
       eventConfig
     );
     return {

@@ -4,7 +4,7 @@ import {
   EventSearchConfig,
   Signer,
   Provider,
-  getTokenAddressWithCCTP,
+  getTranslatedTokenAddress,
   assert,
   isDefined,
 } from "../../utils";
@@ -59,7 +59,7 @@ export abstract class BaseBridgeAdapter {
   ): Promise<BridgeEvents>;
 
   protected resolveL2TokenAddress(l1Token: string): string {
-    return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.l2chainId, false);
+    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false);
   }
 
   protected getL1Bridge(): Contract {
