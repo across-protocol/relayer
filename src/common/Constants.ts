@@ -46,7 +46,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
   [CHAIN_IDs.OPTIMISM]: 172800, // 1 block every 2 seconds after bedrock
   [CHAIN_IDs.POLYGON]: 138240,
-  [CHAIN_IDs.SCROLL]: 259200, // 3 * 24 * 60 * 60,
+  [CHAIN_IDs.SCROLL]: 115200, // 4 * 24 * 20 * 60,
   [CHAIN_IDs.ZK_SYNC]: 345600, // 4 * 24 * 60 * 60,
 };
 
