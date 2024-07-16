@@ -163,7 +163,7 @@ export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } =
   [CHAIN_IDs.LISK]: 75,
   [CHAIN_IDs.MODE]: 75,
   [CHAIN_IDs.OPTIMISM]: 75,
-  [CHAIN_IDs.LINEA]: 50,
+  [CHAIN_IDs.SCROLL]: 50,
 };
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
