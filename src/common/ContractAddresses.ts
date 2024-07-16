@@ -102,9 +102,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
-    weth: {
-      abi: WETH_ABI,
-    },
     VotingV2: {
       address: "0x004395edb43EFca9885CEdad51EC9fAf93Bd34ac",
       abi: VOTING_V2_ABI,
@@ -143,10 +140,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
-    },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
@@ -181,19 +174,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
-    weth: {
-      address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
-      abi: WETH_ABI,
-    },
   },
   1135: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -203,10 +188,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -225,10 +206,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
-    },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
@@ -237,10 +214,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4300000000000000000000000000000000000004",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -253,10 +226,6 @@ export const CONTRACT_ADDRESSES: {
   42161: {
     erc20Gateway: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
-    },
-    weth: {
-      address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-      abi: WETH_ABI,
     },
     outbox: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
@@ -283,10 +252,6 @@ export const CONTRACT_ADDRESSES: {
     lineaL2TokenBridge: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
       abi: LINEA_TOKEN_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0x0000000000000000000000000000000000000000",

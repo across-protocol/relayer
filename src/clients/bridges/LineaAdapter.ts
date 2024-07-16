@@ -1,4 +1,5 @@
 import * as sdk from "@across-protocol/sdk";
+import WETH_ABI from "../../common/abi/Weth.json";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { OutstandingTransfers } from "../../interfaces";
 import {
@@ -51,11 +52,11 @@ export class LineaAdapter extends BaseAdapter {
   ): Promise<TransactionResponse> {
     const { chainId } = this;
     assert(sdk.utils.chainIsLinea(chainId), `ChainId ${chainId} is not supported as a Linea chain`);
-    const { address: wethAddress, abi: wethABI } = CONTRACT_ADDRESSES[this.chainId].weth;
+    const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
     const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
-      const contract = new Contract(wethAddress, wethABI, l2Signer);
+      const contract = new Contract(weth, WETH_ABI, l2Signer);
       const value = ethBalance.sub(target);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
       return this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
