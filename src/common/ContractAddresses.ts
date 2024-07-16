@@ -63,10 +63,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x39Ea01a0298C315d149a490E34B59Dbf2EC7e48F",
       abi: SNX_OPTIMISM_BRIDGE_L1_ABI,
     },
-    // OVM, ZkSync, Linea, and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+    // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xd08b928dB8F75Ed2808cb5E7EB56F4320cCBB189",
+      address: "0xfa52a9DCF51695EA2777E6908d6401481850c391",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
@@ -239,7 +239,7 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
     weth: {
-      address: "0x4200000000000000000000000000000000000004",
+      address: "0x4300000000000000000000000000000000000004",
       abi: WETH_ABI,
     },
     eth: {

@@ -74,7 +74,7 @@ export async function constructRelayerClients(
   const hubPoolLookBack = sdkUtils.chainIsProd(config.hubPoolChainId) ? 3600 * 8 : Number.POSITIVE_INFINITY;
   const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
   const { configStoreClient, hubPoolClient } = commonClients;
-  await updateClients(commonClients, config);
+  await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the

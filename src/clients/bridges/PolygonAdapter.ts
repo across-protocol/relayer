@@ -335,6 +335,6 @@ export class PolygonAdapter extends CCTPAdapter {
   }
 
   async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
-    throw new Error("Unneccessary to wrap ETH on Polygon");
+    throw new Error("Unnecessary to wrap ETH on Polygon");
   }
 }
