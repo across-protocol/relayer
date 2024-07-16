@@ -368,7 +368,8 @@ export const RELAYER_DEFAULT_SPOKEPOOL_INDEXER = "./dist/src/libexec/RelayerSpok
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
 
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
-// This does not include all  7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
+// This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
+// This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM];
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
