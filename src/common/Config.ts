@@ -87,6 +87,7 @@ export class CommonConfig {
    * @dev This should be called by passing in the latest chain ID indices from an updated ConfigStoreClient.
    * @throws If blockRangeEndBuffer doesn't include a key for each chain ID
    * @throws If maxBlockLookBack doesn't include a key for each chain ID
+   * @throws If overridden MULTICALL_CHUNK_SIZE_CHAIN_${chainId} isn't greater than 0
    * @throws If overridden TO_BLOCK_OVERRIDE_${chainId} isn't greater than 0
    * @param chainIdIndices All expected chain ID's that could be supported by this config.
    */
