@@ -1,4 +1,4 @@
-import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts-v2";
+import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts";
 import { PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup, V3SlowFillLeaf } from "../interfaces";
 import { getParamType, utils } from ".";
 

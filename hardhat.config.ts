@@ -23,9 +23,20 @@ dotenv.config();
 const solcVersion = "0.8.23";
 const mnemonic = getMnemonic();
 
+const LARGE_CONTRACT_COMPILER_SETTINGS = {
+  version: solcVersion,
+  settings: {
+    optimizer: { enabled: true, runs: 1000000 },
+    viaIR: true,
+  },
+};
+
 const config: HardhatUserConfig = {
   solidity: {
     compilers: [{ version: solcVersion, settings: { optimizer: { enabled: true, runs: 1 }, viaIR: true } }],
+    overrides: {
+      "contracts/AtomicWethDepositor.sol": LARGE_CONTRACT_COMPILER_SETTINGS,
+    },
   },
   networks: {
     hardhat: { accounts: { accountsBalance: "1000000000000000000000000" } },

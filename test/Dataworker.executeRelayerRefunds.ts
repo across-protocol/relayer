@@ -69,13 +69,13 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Advance time and execute rebalance leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, await getNewBalanceAllocator());
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
     await updateAllClients();
@@ -90,7 +90,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Note: without sending tokens, only one of the leaves will be executable.
     // This is the leaf with the deposit that is being pulled back to the hub pool.
     expect(multiCallerClient.transactionCount()).to.equal(1);
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
 
     await updateAllClients();
 
@@ -101,7 +101,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // The other transaction should now be enqueued.
     expect(multiCallerClient.transactionCount()).to.equal(1);
 
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTxnQueues();
   });
   describe("Computing refunds for bundles", function () {
     let relayer: SignerWithAddress;
@@ -132,7 +132,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     it("No validated bundle refunds", async function () {
       // Propose a bundle:
       await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
       await updateAllClients();
 
       // No bundle is validated so no refunds.
@@ -145,13 +145,13 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
       // Propose a bundle:
       await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
 
       // Advance time and execute leaves:
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       await updateAllClients();
       await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, await getNewBalanceAllocator());
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
 
       // Before relayer refund leaves are not executed, should have pending refunds:
       await updateAllClients();
@@ -183,7 +183,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
       await erc20_2.mint(spokePool_2.address, amountToDeposit);
       await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, await getNewBalanceAllocator());
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
 
       // Should now have zero pending refunds
       await updateAllClients();
@@ -216,11 +216,11 @@ describe("Dataworker: Execute relayer refunds", async function () {
 
       // Validate another bundle:
       await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       await updateAllClients();
       await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, await getNewBalanceAllocator());
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
       await updateAllClients();
 
       expect(hubPoolClient.getValidatedRootBundles().length).to.equal(2);
@@ -243,7 +243,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
 
       // Propose a bundle:
       await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
       await updateAllClients();
 
       // After proposal but before execution should show upcoming refund:
@@ -260,7 +260,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       await updateAllClients();
       await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, await getNewBalanceAllocator());
-      await multiCallerClient.executeTransactionQueue();
+      await multiCallerClient.executeTxnQueues();
 
       // Should reset to no refunds in "next bundle", though these will show up in pending bundle.
       await updateAllClients();

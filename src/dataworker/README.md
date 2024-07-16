@@ -1,12 +1,12 @@
 # How Across Root Bundles are Constructed
 
-This document explains how the Dataworker constructs "root bundles", which instruct the Across system how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
+This document explains how the Dataworker constructs "root bundles", which instruct the Across system on how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
 
 ## Why does Across need to move capital around?
 
 There are two types of capital pools in Across: liquidity provider capital in the `HubPool` ("LP capital") and capital held in the `SpokePools` ("SpokePool balance").
 
-SpokePool capital is required for two purposes: refunding relayers who successfully filled a deposit, on the repayment chain of their choice, and fulfilling deposits "slowly". These "slow" fills are performed when a deposit has not been fully filled by relayers and provides an assurance to depositors that their deposits will be filled **eventually** after some capped amount of time.
+SpokePool capital is required for two purposes: refunding relayers who successfully filled a deposit, on the repayment chain of their choice, and fulfilling deposits "slowly". These "slow" fills are performed when a deposit has not been fully filled by relayers and provide an assurance to depositors that their deposits will be filled **eventually** after some capped amount of time.
 
 However, oftentimes SpokePools do not have enough capital on hand to fulfill the capital requirements described in the previous paragraph. This is when Across would want to tap into LP capital on HubPool to fulfill these capital deficits. Usually, the L2 network on which the SpokePool in question is deployed has a canonical bridge connected to Ethereum, where the HubPool is deployed. Across can therefore send its LP capital from the HubPool to the SpokePool and usually, this is a pretty fast L1 to L2 bridge over the canonical bridge.
 
@@ -33,11 +33,11 @@ Relayer --> [*]
 
 ### What is a canonical bridge?
 
-An L2's "canonical bridge" is one that is secured by the same trusted agents that secures the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://docs.avax.network/learn/avalanche/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumoptions.
+An L2's "canonical bridge" is one that is secured by the same trusted agents that secure the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://docs.avax.network/learn/avalanche/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumptions.
 
 ### Supporting capital deficits on SpokePools without canonical bridges
 
-When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Across has a few ways to over come this.
+When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Across has a few ways to overcome this.
 
 One, it could use a third party bridge, but this is strongly avoided because it exposes LP capital to additional trust assumptions. Across historically has avoided supporting networks without canonical bridges for this reason, and moreover its been unnecessary as the most popular L2 networks have proven to be those that have spent the time to build out an effective canonical bridge.
 
@@ -68,13 +68,13 @@ If the running balance is positive, then Across has a choice: keep the excess ba
 
 ## How often does Across move capital around?
 
-In a fantastical world, Across moves capital around instantaneously whenever capital deficits and excesses appear. This is obviously unrealistic however because bundles are constructed and proposed optimistically. This means that an actor, called a "Dataworker", will propose instructions for moving LP capital around that are subject to an optimistic challenge period. This challenge period is currently set to two hours. This valueis configured such that all actors with stake in Across, including relayers who need to be refunded, LP's who have deposited funds passively to earn yield in the HubPool, and depositors who are expecting to be filled on their destination chain, can verify that the instructions proposed are valid.
+In a fantastical world, Across moves capital around instantaneously whenever capital deficits and excesses appear. This is obviously unrealistic however because bundles are constructed and proposed optimistically. This means that an actor, called a "Dataworker", will propose instructions for moving LP capital around that are subject to an optimistic challenge period. This challenge period is currently set to two hours. This value is configured such that all actors with stake in Across, including relayers who need to be refunded, LP's who have deposited funds passively to earn yield in the HubPool, and depositors who are expecting to be filled on their destination chain, can verify that the instructions proposed are valid.
 
-These instructions can very easily be modified to conduct an "attack" on Across: "send all LP capital to my EOA on the Ethereum_SpokePool". Therefore its important that these bundle proposals are subject to a long enough challenge period that every invalid bundle gets challenged.
+These instructions can very easily be modified to conduct an "attack" on Across: "send all LP capital to my EOA on the Ethereum_SpokePool". Therefore it's important that these bundle proposals are subject to a long enough challenge period that every invalid bundle gets challenged.
 
 On the other hand, the longer the challenge period, the slower that Across can respond to capital requirements. Across essentially can only move capital around as often as the challenge period, so every two hours currently.
 
-Every two hours, the Dataworker will propose capital reallocation instructions to Across based on the previous two hours' worth of token flows. This is where the concept of "bundle block ranges" comes into play. Each proposed root bundle includes something called the ["bundle evaluation block numbers"](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L149). These are included by the Dataworker [at proposal time](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L567) and are used by everyone else to validate their proposed Merkle roots.
+Every two hours, the Dataworker will propose capital reallocation instructions to Across based on the previous two hours' worth of token flows. This is where the concept of "bundle block ranges" comes into play. Each proposed root bundle includes something called the ["bundle evaluation block numbers"](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L149). These are included by the Dataworker [at proposal time](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L567) and are used by everyone else to validate their proposed Merkle roots.
 
 These end blocks inform all actors which block ranges, per chain, they included Bridge deposit and fill information for to construct their Merkle roots containing instructions for how Across should move capital around.
 
@@ -89,7 +89,7 @@ The implied block range for a chain is simply:
 
 ### `bundleEvaluationBlockNumbers` is an array of numbers, how do you know which chain each block references?
 
-This is why Across must define a canonical "chain ID index" as shown [here](https://github.com/across-protocol/relayer-v2/blob/master/src/common/Constants.ts#L9) which contains an append-only list of chain ID's. This index list is used by an example Dataworker implementation and matches identically the same canonical list defined in the [Across UMIP](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157.md#global-constants).
+This is why Across must define a canonical "chain ID index" as shown [here](https://github.com/across-protocol/relayer/blob/master/src/common/Constants.ts#L9) which contains an append-only list of chain ID's. This index list is used by an example Dataworker implementation and matches identically the same canonical list defined in the [Across UMIP](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157.md#global-constants).
 
 When evaluating a `bundleEvaluationBlockNumbers`, the index of the block number must be matched with the index in the "chain ID index" list to figure out which chain the block number refers to. For example, if the `bundleEvaluationBlockNumbers=[1,2,3,4,5]` and the chain ID index list is `[1,10,137,288,42161]`, then the end block of `2` must be used as the end block in a block range for chain ID `10` (i.e. Optimism).
 
@@ -97,7 +97,7 @@ One assumption in Across, is that each chain that Across supports must have an e
 
 ## Determining bundle start blocks when evaluating a pending root bundle proposal
 
-`B` is trivially known since it is emitted in the [`ProposedRootBundle`](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L152) event during the creation of each new pending bundle proposal. We therefore need to find `A`, the bundle start block `<= B` to evaluating the root bundle.
+`B` is trivially known since it is emitted in the [`ProposedRootBundle`](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L152) event during the creation of each new pending bundle proposal. We therefore need to find `A`, the bundle start block `<= B` to evaluate the root bundle.
 
 ```mermaid
 flowchart LR
@@ -123,7 +123,7 @@ flowchart TD
 
 ### Validating fills
 
-A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L139)'s:
+A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L139)'s:
 
 ```solidity
 event FilledRelay(
@@ -145,7 +145,7 @@ event FilledRelay(
 );
 ```
 
-A [deposit](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L119) contains:
+A [deposit](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L119) contains:
 
 ```solidity
 event FundsDeposited(
@@ -198,13 +198,13 @@ Excesses from slow fills are only created when a partial fill completes a deposi
 
 At this point we have a running balance for the token for each chain. We also know all of the refund and slow fill payments that we need to instruct each SpokePool to reserve payments for. We can finally figure out how many LP funds to send out of the HubPool to each SpokePool.
 
-This is where we'll incorporate the section on [SpokePool targets and thresholds](#spokepool-targets-and-thresholds) to determine how much of the running balances to move over to the `netSendAmount` value in a [PoolRebalanceLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/HubPoolInterface.sol#L22). Inside the HubPool's code, only the positive `netSendAmounts` are [sent out of the HubPool](https://github.com/across-protocol/contracts-v2/blob/master/contracts/HubPool.sol#L893) to the SpokePools via the canonical bridges. Conversely, the `runningBalances` are simply accounting values to keep track of the running count of SpokePool balances. Whenever a portion of the `runningBalances` are included in the `netSendAmounts`, the running balances should be decremented accordingly to account for the tokens being sent out of the Hub or SpokePool.
+This is where we'll incorporate the section on [SpokePool targets and thresholds](#spokepool-targets-and-thresholds) to determine how much of the running balances to move over to the `netSendAmount` value in a [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L22). Inside the HubPool's code, only the positive `netSendAmounts` are [sent out of the HubPool](https://github.com/across-protocol/contracts/blob/master/contracts/HubPool.sol#L893) to the SpokePools via the canonical bridges. Conversely, the `runningBalances` are simply accounting values to keep track of the running count of SpokePool balances. Whenever a portion of the `runningBalances` are included in the `netSendAmounts`, the running balances should be decremented accordingly to account for the tokens being sent out of the Hub or SpokePool.
 
 ## Completing the `RelayerRefundLeaf`
 
 If a `runningBalance` is below its target for a particular chain, the Dataworker might include a positive `netSendAmount` for that chain to instruct the HubPool to send tokens to the SpokePool.
 
-However, if a `runningBalance` is above its target, the Dataworker might want to send tokens from the SpokePool to the Hub. This is achieved by setting a negative `netSendAmount`. At the HubPool level, negative `netSendAmounts` do nothing. However, the `RelayerRefundLeaf` has a property called [`amountToReturn`](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/SpokePoolInterface.sol#L12) which is supposed to be set equal the negative of any negative `netSendAmounts`. Any positive `amountToReturn` values result in [tokens being sent from the SpokePool](https://github.com/across-protocol/contracts-v2/blob/master/contracts/SpokePool.sol#L923) back to the Hub via the canonical bridge.
+However, if a `runningBalance` is above its target, the Dataworker might want to send tokens from the SpokePool to the Hub. This is achieved by setting a negative `netSendAmount`. At the HubPool level, negative `netSendAmounts` do nothing. However, the `RelayerRefundLeaf` has a property called [`amountToReturn`](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L12) which is supposed to be set equal the negative of any negative `netSendAmounts`. Any positive `amountToReturn` values result in [tokens being sent from the SpokePool](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L923) back to the Hub via the canonical bridge.
 
 ## Conclusion
 
@@ -231,7 +231,7 @@ This is everything that the Dataworker needs to construct a root bundle! All tha
 
 Root bundle merkle leaf formats
 
-- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
-- [RelayerRefundLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
-- [SlowFillLeaf](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/SpokePoolInterface.sol#L29) One per unfilled deposit
-- [RootBundle](https://github.com/across-protocol/contracts-v2/blob/master/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window
+- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
+- [RelayerRefundLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
+- [SlowFillLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L29) One per unfilled deposit
+- [RootBundle](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window

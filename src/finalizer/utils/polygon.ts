@@ -13,6 +13,9 @@ import {
   getRedisCache,
   getBlockForTimestamp,
   getL1TokenInfo,
+  compareAddressesSimple,
+  TOKEN_SYMBOLS_MAP,
+  CHAIN_IDs,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -22,7 +25,7 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
 
-const CHAIN_ID = 137;
+const CHAIN_ID = CHAIN_IDs.POLYGON;
 enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
   CAN_EXIT = "CAN_EXIT",
@@ -110,6 +113,18 @@ async function getFinalizableTransactions(
   const exitStatus = await Promise.all(
     checkpointedTokensBridged.map(async (_, i) => {
       const payload = payloads[i];
+      const { chainId, l2TokenAddress } = tokensBridged[i];
+
+      // @dev we can't filter out USDC CCTP withdrawals until after we build the payloads for exit
+      // because those functions take in a third 'logIndex' parameter which does assume that USDC CCTP
+      // withdrawals are accounted for. For example, if an L2 withdrawal transaction contains two withdrawals: one USDC
+      // one followed by a non-USDC one, the USDC 'logIndex' as far as building the payload is concerned
+      // will be 0 and the non-USDC 'logIndex' will be 1. This is why we can't filter out USDC CCTP withdrawals
+      // until after we've computed payloads.
+      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])) {
+        return { status: "USDC_CCTP_L2_WITHDRAWAL" };
+      }
+
       try {
         // If we can estimate gas for exit transaction call, then we can exit the burn tx, otherwise its likely
         // been processed. Note this will capture mislabel some exit txns that fail for other reasons as "exit

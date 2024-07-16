@@ -28,7 +28,7 @@ export async function cctpL2toL1Finalizer(
 ): Promise<FinalizerPromise> {
   const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
   const redis = await getRedisCache(logger);
-  const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
+  const fromBlock = await getBlockForTimestamp(spokePoolClient.chainId, lookback, undefined, redis);
   logger.debug({
     at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
     message: `MessageSent event filter for ${getNetworkName(spokePoolClient.chainId)} to L1`,
@@ -76,7 +76,7 @@ async function resolveRelatedTxnReceipts(
     .filter(
       (bridgeEvent) =>
         bridgeEvent.blockNumber >= latestBlockToFinalize &&
-        compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP._USDC.addresses[sourceChainId])
+        compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
     )
     .forEach((bridgeEvent) => uniqueTxnHashes.add(bridgeEvent.transactionHash));
 

@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { CachingMechanismInterface, L1Token, V3Deposit } from "../interfaces";
 import {
@@ -21,7 +21,7 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
 
-type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
+export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {
   [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
 };
@@ -186,14 +186,12 @@ export class TokenClient {
           tokenAddrs.push(spokePoolToken);
         } catch {
           // No known deployment for this token on the SpokePool.
-          // note: To be overhauled subject to https://github.com/across-protocol/sdk-v3/pull/643
+          // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
         }
 
         // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
         if (symbol === "USDC") {
-          // At the moment, constants-v3 defines native usdc as _USDC.
-          const usdcAliases = ["_USDC", "USDC.e", "USDbC"]; // After constants-v3 update: ["USDC.e", "USDbC"]
-          usdcAliases
+          ["USDC.e", "USDbC"]
             .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
             .filter(isDefined)
             .forEach((address) => tokenAddrs.push(address));
@@ -274,8 +272,11 @@ export class TokenClient {
       })
     );
 
-    const time = getCurrentTime() - start;
-    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!", balanceData, time });
+    this.logger.debug({
+      at: "TokenBalanceClient",
+      message: `Updated TokenBalance client in ${getCurrentTime() - start} seconds.`,
+      balanceData,
+    });
   }
 
   async fetchTokenData(

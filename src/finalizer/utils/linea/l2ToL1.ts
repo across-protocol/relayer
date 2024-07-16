@@ -27,9 +27,8 @@ export async function lineaL2ToL1Finalizer(
   const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l2Contract, l1ClaimingService);
 
   // Optimize block range for querying relevant source events on L2.
-  // We want to conservatively query for events that are between 8 and 72 hours old
-  // because Linea L2->L1 messages are claimable after 6 - 32 hours
-  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 72, 8);
+  // Linea L2->L1 messages are claimable after 6 - 32 hours
+  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 24 * 8, 6);
   logger.debug({
     at: "Finalizer#LineaL2ToL1Finalizer",
     message: "Linea TokensBridged event filter",
