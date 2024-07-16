@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@uma/core/contracts/common/implementation/MultiCaller.sol";
 
 ///////////////////////////////
 //   Interfaces for Bridges  //
@@ -49,7 +50,7 @@ interface LineaL1MessageService {
  * not WETH.
  * @dev This contract is ownable so that the owner can update the OvmL1Bridge contracts for new chains.
  */
-contract AtomicWethDepositor is Ownable {
+contract AtomicWethDepositor is Ownable, MultiCaller {
     ///////////////////////////////
     //   Hardcoded Addresses     //
     ///////////////////////////////
