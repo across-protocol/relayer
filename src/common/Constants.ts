@@ -40,50 +40,33 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // block. This would cause the relayer to unintentionally send an invalid fill and not refunded. The tradeoff is that
 // the larger the follow distance, the slower the relayer will be to fulfill deposits. Therefore, the following
 // configuration allows the user to set higher follow distances for higher deposit amounts.
-// The Key of the following dictionary is used as the USD threshold to determine the MDC:
+// The key of the following dictionary is used as the USD threshold to determine the MDC:
 // - Searching from highest USD threshold to lowest
-// - If the key value is >= deposited USD amount, then use the MDC associated with the key for the origin chain
-// - If no key values are >= depostied USD amount, use the "default" value for the origin chain
-// - For example, a deposit on Polygon worth $90 would use the MDC associated with the 100 key and chain
-// 137, so it would use a follow distance of 80 blocks, while a deposit on Polygon for $110 would use 1000
-// key. A deposit of $1100 would use the "default" key
-
+// - If the key is >= deposited USD amount, then use the MDC associated with the key for the origin chain
+// - If no keys are >= depostied USD amount, ignore the deposit.
 // To see the latest block reorg events go to:
 // - Ethereum: https://etherscan.io/blocks_forked
 // - Polygon: https://polygonscan.com/blocks_forked
-
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
 // anything under 7 days.
-export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
-  [CHAIN_IDs.ARBITRUM]: 0,
-  [CHAIN_IDs.BASE]: 120,
-  [CHAIN_IDs.BLAST]: 120,
-  [CHAIN_IDs.BOBA]: 0,
-  [CHAIN_IDs.LINEA]: 30,
-  [CHAIN_IDs.LISK]: 120, // Same as other OVM. Hard finality is 1800 blocks
-  [CHAIN_IDs.MAINNET]: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-  [CHAIN_IDs.MODE]: 120,
-  [CHAIN_IDs.OPTIMISM]: 120,
-  [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
-  [CHAIN_IDs.ZK_SYNC]: 120,
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-  [CHAIN_IDs.BASE_SEPOLIA]: 0,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-  [CHAIN_IDs.LISK_SEPOLIA]: 0,
-  [CHAIN_IDs.MODE_SEPOLIA]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-  [CHAIN_IDs.POLYGON_AMOY]: 0,
-  [CHAIN_IDs.SEPOLIA]: 0,
-};
-
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
+  10000: {
+    [CHAIN_IDs.ARBITRUM]: 0,
+    [CHAIN_IDs.BASE]: 120,
+    [CHAIN_IDs.BLAST]: 120,
+    [CHAIN_IDs.LINEA]: 30,
+    [CHAIN_IDs.LISK]: 120,
+    [CHAIN_IDs.MAINNET]: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
+    [CHAIN_IDs.MODE]: 120,
+    [CHAIN_IDs.OPTIMISM]: 120,
+    [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
+    [CHAIN_IDs.ZK_SYNC]: 120,
+  },
   1000: {
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
-    [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.LISK]: 60,
     [CHAIN_IDs.MAINNET]: 32, // Justified block
@@ -91,21 +74,11 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.OPTIMISM]: 60,
     [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.ZK_SYNC]: 0,
-    // Testnets:
-    [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-    [CHAIN_IDs.BASE_SEPOLIA]: 0,
-    [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-    [CHAIN_IDs.LISK_SEPOLIA]: 60,
-    [CHAIN_IDs.MODE_SEPOLIA]: 0,
-    [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-    [CHAIN_IDs.POLYGON_AMOY]: 0,
-    [CHAIN_IDs.SEPOLIA]: 0,
   },
   100: {
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
-    [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.LISK]: 60,
     [CHAIN_IDs.MAINNET]: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
@@ -113,15 +86,6 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.OPTIMISM]: 60,
     [CHAIN_IDs.POLYGON]: 80,
     [CHAIN_IDs.ZK_SYNC]: 0,
-    // Testnets:
-    [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-    [CHAIN_IDs.BASE_SEPOLIA]: 0,
-    [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-    [CHAIN_IDs.LISK_SEPOLIA]: 0,
-    [CHAIN_IDs.MODE_SEPOLIA]: 0,
-    [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-    [CHAIN_IDs.POLYGON_AMOY]: 0,
-    [CHAIN_IDs.SEPOLIA]: 0,
   },
 };
 
@@ -134,15 +98,15 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 // Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.ARBITRUM]: 10000,
-  [CHAIN_IDs.BASE]: 1500,
-  [CHAIN_IDs.BLAST]: 1500,
+  [CHAIN_IDs.BASE]: 10000,
+  [CHAIN_IDs.BLAST]: 10000,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.LINEA]: 5000,
-  [CHAIN_IDs.LISK]: 1500,
+  [CHAIN_IDs.LISK]: 10000,
   [CHAIN_IDs.MAINNET]: 10000,
-  [CHAIN_IDs.MODE]: 1500,
+  [CHAIN_IDs.MODE]: 10000,
   [CHAIN_IDs.OPTIMISM]: 10000, // Quick
-  [CHAIN_IDs.POLYGON]: 3490,
+  [CHAIN_IDs.POLYGON]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
@@ -295,7 +259,7 @@ export type Multicall2Call = {
   target: string;
 };
 
-// These are the spokes that can hold both ETH and WETH, so they should be added together when caclulating whether
+// These are the spokes that can hold both ETH and WETH, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.BASE,
@@ -368,7 +332,8 @@ export const RELAYER_DEFAULT_SPOKEPOOL_INDEXER = "./dist/src/libexec/RelayerSpok
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
 
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
-// This does not include all  7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
+// This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
+// This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM];
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
@@ -385,6 +350,25 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
 };
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
+  [CHAIN_IDs.BLAST]: {
+    l1: {
+      AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
+      L1CrossDomainMessenger: "0x5D4472f31Bd9385709ec61305AFc749F0fA8e9d0",
+      L1StandardBridge: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
+      StateCommitmentChain: "0x0000000000000000000000000000000000000000",
+      CanonicalTransactionChain: "0x0000000000000000000000000000000000000000",
+      BondManager: "0x0000000000000000000000000000000000000000",
+      OptimismPortal: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
+      L2OutputOracle: "0x826D1B0D4111Ad9146Eb8941D7Ca2B6a44215c76",
+      OptimismPortal2: "0x0000000000000000000000000000000000000000",
+      DisputeGameFactory: "0x0000000000000000000000000000000000000000",
+    },
+    // https://github.com/blast-io/blast/blob/master/blast-optimism/op-bindings/predeploys/addresses.go
+    l2: {
+      ...DEFAULT_L2_CONTRACT_ADDRESSES,
+      WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST],
+    },
+  },
   [CHAIN_IDs.LISK]: {
     l1: {
       AddressManager: "0x2dF7057d3F25212E51aFEA8dA628668229Ea423f",
