@@ -48,6 +48,8 @@ export type Rebalance = {
 };
 
 const { CHAIN_IDs } = constants;
+const LITE_CHAIN_OVERAGE = toBNWei("1");
+const DEFAULT_CHAIN_OVERAGE = toBNWei("1.5");
 
 export class InventoryClient {
   private logDisabledManagement = false;
@@ -521,8 +523,12 @@ export class InventoryClient {
         isDefined(tokenConfig),
         `No ${outputToken} tokenConfig for ${l1Token} on ${chainId} with a repaymentToken ${repaymentToken}.`
       );
+
+      // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
+      // destined for that chain in order to offload its excess. In anticipation of most Lite chains tending to be
+      // exit-heavy, drop the default buffer to 1x.
       const targetOverage =
-        tokenConfig.targetOverageBuffer ?? liteChainIds.includes(chainId) ? toBNWei("1") : toBNWei("1.5");
+        tokenConfig.targetOverageBuffer ?? liteChainIds.includes(chainId) ? LITE_CHAIN_OVERAGE : DEFAULT_CHAIN_OVERAGE;
       const thresholdPct = tokenConfig.targetPct.mul(targetOverage).div(fixedPointAdjustment);
 
       this.log(
