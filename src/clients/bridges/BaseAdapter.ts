@@ -28,7 +28,7 @@ import {
   createFormatFunction,
   BigNumberish,
   TOKEN_SYMBOLS_MAP,
-  getTokenAddressWithCCTP,
+  getTranslatedTokenAddress,
 } from "../../utils";
 import { approveTokens, getAllowanceCacheKey, getTokenAllowanceFromCache, setTokenAllowanceInCache } from "./utils";
 
@@ -117,7 +117,7 @@ export class BaseAdapter extends BaseChainAdapter {
   }
 
   resolveL2TokenAddress(l1Token: string, isNativeUsdc = false): string {
-    return getTokenAddressWithCCTP(l1Token, this.hubChainId, this.chainId, isNativeUsdc);
+    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.chainId, isNativeUsdc);
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], l1Bridges: string[]): Promise<void> {
@@ -351,6 +351,19 @@ export class BaseAdapter extends BaseChainAdapter {
     simMode = false
   ): Promise<TransactionResponse> {
     const { chainId, txnClient } = this;
+
+    // First verify that the target contract looks like WETH. This protects against
+    // accidentally sending ETH to the wrong address, which would be a critical error.
+    // Permit bypass if simMode is set in order to permit tests to pass.
+    let symbol: string;
+    if (simMode === false) {
+      symbol = await l2WEthContract.symbol();
+      assert(
+        symbol === "WETH",
+        `Critical (may delete ETH): Unable to verify ${this.getName()} WETH address (${l2WEthContract.address})`
+      );
+    }
+
     const method = "deposit";
     const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =
@@ -373,6 +386,7 @@ export class BaseAdapter extends BaseChainAdapter {
       });
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     } else {
+      assert(symbol === "WETH");
       return (
         await txnClient.submit(chainId, [
           { contract: l2WEthContract, chainId, method, args: [], value, mrkdwn, message },

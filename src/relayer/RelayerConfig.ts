@@ -1,8 +1,11 @@
 import { utils as ethersUtils } from "ethers";
+import winston from "winston";
 import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
   bnUint256Max,
+  CHAIN_IDs,
+  dedupArray,
   toBNWei,
   assert,
   getNetworkName,
@@ -11,6 +14,7 @@ import {
   toBN,
   replaceAddressCase,
   ethers,
+  TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
@@ -250,37 +254,74 @@ export class RelayerConfig extends CommonConfig {
     // Transform deposit confirmation requirements into an array of ascending
     // deposit confirmations, sorted by the corresponding threshold in USD.
     this.minDepositConfirmations = {};
-    Object.keys(minDepositConfirmations)
-      .map((_threshold) => {
-        const threshold = Number(_threshold);
-        assert(!isNaN(threshold) && threshold >= 0, `Invalid deposit confirmation threshold (${_threshold})`);
-        return Number(threshold);
-      })
-      .sort((x, y) => x - y)
-      .forEach((usdThreshold) => {
-        const config = minDepositConfirmations[usdThreshold];
+    if (this.hubPoolChainId !== CHAIN_IDs.MAINNET) {
+      // Sub in permissive defaults for testnet.
+      const standardConfig = { usdThreshold: toBNWei(Number.MAX_SAFE_INTEGER), minConfirmations: 1 };
+      Object.values(TESTNET_CHAIN_IDs).forEach((chainId) => (this.minDepositConfirmations[chainId] = [standardConfig]));
+    } else {
+      Object.keys(minDepositConfirmations)
+        .map((_threshold) => {
+          const threshold = Number(_threshold);
+          assert(!isNaN(threshold) && threshold >= 0, `Invalid deposit confirmation threshold (${_threshold})`);
+          return threshold;
+        })
+        .sort((x, y) => x - y)
+        .forEach((usdThreshold) => {
+          const config = minDepositConfirmations[usdThreshold];
 
-        Object.entries(config).forEach(([chainId, _minConfirmations]) => {
-          const minConfirmations = Number(_minConfirmations);
-          assert(
-            !isNaN(minConfirmations) && minConfirmations >= 0,
-            `${getNetworkName(chainId)} deposit confirmations for` +
-              ` ${usdThreshold} threshold missing or invalid (${_minConfirmations}).`
-          );
+          Object.entries(config).forEach(([chainId, _minConfirmations]) => {
+            const minConfirmations = Number(_minConfirmations);
+            assert(
+              !isNaN(minConfirmations) && minConfirmations >= 0,
+              `${getNetworkName(chainId)} deposit confirmations for` +
+                ` ${usdThreshold} threshold missing or invalid (${_minConfirmations}).`
+            );
 
-          this.minDepositConfirmations[chainId] ??= [];
-          this.minDepositConfirmations[chainId].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
+            this.minDepositConfirmations[chainId] ??= [];
+            this.minDepositConfirmations[chainId].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
+          });
         });
-      });
 
-    // Append default thresholds as a safe upper-bound.
-    Object.keys(this.minDepositConfirmations).forEach((chainId) =>
-      this.minDepositConfirmations[chainId].push({
-        usdThreshold: bnUint256Max,
-        minConfirmations: Number.MAX_SAFE_INTEGER,
-      })
-    );
+      // Append default thresholds as a safe upper-bound.
+      Object.keys(this.minDepositConfirmations).forEach((chainId) => {
+        const depositConfirmations = this.minDepositConfirmations[chainId];
+        if (depositConfirmations.at(-1).minConfirmations < Number.MAX_SAFE_INTEGER) {
+          depositConfirmations.push({
+            usdThreshold: bnUint256Max,
+            minConfirmations: Number.MAX_SAFE_INTEGER,
+          });
+        }
+      });
+    }
 
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
+  }
+
+  /**
+   * @notice Loads additional configuration state that can only be known after we know all chains that we're going to
+   * support. Warns or throws if any of the configurations are not valid.
+   * @param chainIdIndices All expected chain ID's that could be supported by this config.
+   * @param logger Optional logger object.
+   */
+  override validate(chainIds: number[], logger: winston.Logger): void {
+    const { relayerOriginChains, relayerDestinationChains } = this;
+    const relayerChainIds =
+      relayerOriginChains.length > 0 && relayerDestinationChains.length > 0
+        ? dedupArray([...relayerOriginChains, ...relayerDestinationChains])
+        : chainIds;
+
+    const ignoredChainIds = chainIds.filter(
+      (chainId) => !relayerChainIds.includes(chainId) && chainId !== CHAIN_IDs.BOBA
+    );
+    if (ignoredChainIds.length > 0 && logger) {
+      logger.debug({
+        at: "RelayerConfig::validate",
+        message: `Ignoring ${ignoredChainIds.length} chains.`,
+        ignoredChainIds,
+      });
+    }
+
+    // Only validate config for chains that the relayer cares about.
+    super.validate(relayerChainIds, logger);
   }
 }
