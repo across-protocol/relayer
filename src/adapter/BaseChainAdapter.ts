@@ -194,6 +194,18 @@ export class BaseChainAdapter {
     }
     const l2Signer = this.getSigner(this.chainId);
     const contract = new Contract(wethAddress, wethABI, l2Signer);
+
+    // First verify that the target contract looks like WETH. This protects against
+    // accidentally sending ETH to the wrong address, which would be a critical error.
+    // Permit bypass if simMode is set in order to permit tests to pass.
+    if (simMode === false) {
+      const symbol = await contract.symbol();
+      assert(
+        symbol === "WETH",
+        `Critical (may delete ETH): Unable to verify ${this.adapterName()} WETH address (${contract.address})`
+      );
+    }
+    
     const value = ethBalance.sub(target);
     this.log("Wrapping ETH", { threshold, target, value, ethBalance }, "debug", "wrapEthIfAboveThreshold");
     const method = "deposit";
