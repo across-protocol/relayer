@@ -406,7 +406,7 @@ export class InventoryClient {
    * to lowest priority.
    */
   async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
-    const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
+    const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
     if (!this.isInventoryManagementEnabled()) {
@@ -491,15 +491,17 @@ export class InventoryClient {
       const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       const cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-      // Add in the amount to be repaid if we were to select this chain into the chain virtual balance. Subtract
-      // output amount if the chain is the destination chain.
+      // Add in the amount to be repaid if we were to select this chain into the chain virtual balance, unless
+      // the chain is the destination chain. If the chain is the destination chain, then the amount sent in
+      // outputAmount should approximately be equal to the inputAmount minus fees, but for the sake of choosing
+      // a repayment chain, these fees are not relevant.
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
       let chainVirtualBalanceWithShortfallPostRelay =
         chainId === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
-          ? chainVirtualBalanceWithShortfall.add(inputAmount).sub(outputAmount)
+          ? chainVirtualBalanceWithShortfall
           : chainVirtualBalanceWithShortfall.add(inputAmount);
 
       // Add upcoming refunds:
@@ -539,7 +541,6 @@ export class InventoryClient {
         }`,
         {
           l1Token,
-          outputAmount,
           originChainId,
           destinationChainId,
           chainShortfall,
