@@ -307,6 +307,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x5300000000000000000000000000000000000004",
       abi: WETH_ABI,
     },
+    // The Scroll canonical bridge will send WETH on a WETH deposit,
+    // so the dataworker will never use this address to wrap eth in
+    // the spoke pool. However, the relayer may need to wrap eth on
+    // the L2; therefore, we need to define an address here so the
+    // dataworker won't error.
+    eth: {
+      address: "0x0000000000000000000000000000000000000000",
+    },
   },
   // Testnets
   11155111: {
