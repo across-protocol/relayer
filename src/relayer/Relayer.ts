@@ -333,7 +333,7 @@ export class Relayer {
     // previously committed within the origin chain's finality window.
     const limits = Object.fromEntries(
       Object.values(this.clients.spokePoolClients).map(({ chainId: originChainId }) => {
-        const limits = this.computeOriginChainLimits(originChainId)
+        const limits = this.computeOriginChainLimits(originChainId);
         return [originChainId, limits];
       })
     );
