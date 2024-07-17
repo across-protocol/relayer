@@ -202,10 +202,10 @@ export class BaseChainAdapter {
       const symbol = await contract.symbol();
       assert(
         symbol === "WETH",
-        `Critical (may delete ETH): Unable to verify ${this.adapterName()} WETH address (${contract.address})`
+        `Critical (may delete ETH): Unable to verify ${this.adapterName} WETH address (${contract.address})`
       );
     }
-    
+
     const value = ethBalance.sub(target);
     this.log("Wrapping ETH", { threshold, target, value, ethBalance }, "debug", "wrapEthIfAboveThreshold");
     const method = "deposit";

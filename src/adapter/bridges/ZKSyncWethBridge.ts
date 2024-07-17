@@ -139,7 +139,6 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       ),
       eventConfig
     );
-
     // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
     if (isL2Contract) {
       events.concat(
