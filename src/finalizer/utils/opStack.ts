@@ -61,7 +61,8 @@ export async function opStackFinalizer(
   // - Don't submit proofs for finalizations older than 1 day
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const redis = await getRedisCache(logger);
-  const latestBlockToProve = await getBlockForTimestamp(chainId, getFinalizationTime(chainId), undefined, redis);
+  const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
+  const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
       (e) =>
@@ -326,9 +327,4 @@ async function multicallOptimismL1Proofs(
     callData,
     withdrawals,
   };
-}
-
-function getFinalizationTime(chainId: number): number {
-  const challengeWindow = [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId) ? 14 : 7;
-  return getCurrentTime() - challengeWindow * 3600 * 24;
 }
