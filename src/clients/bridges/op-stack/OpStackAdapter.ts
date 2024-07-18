@@ -1,4 +1,5 @@
 import assert from "assert";
+import WETH_ABI from "../../../common/abi/Weth.json";
 import {
   CHAIN_IDs,
   Contract,
@@ -16,7 +17,6 @@ import {
 import { SpokePoolClient } from "../../";
 import { BaseAdapter } from "../";
 import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
-import { CONTRACT_ADDRESSES } from "../../../common";
 import { OpStackBridge } from "./OpStackBridgeInterface";
 import { WethBridge } from "./WethBridge";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
@@ -158,11 +158,11 @@ export class OpStackAdapter extends BaseAdapter {
   ): Promise<TransactionResponse | null> {
     const { chainId } = this;
 
-    const ovmWeth = CONTRACT_ADDRESSES[this.chainId].weth;
+    const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[this.chainId];
     const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
-      const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
+      const contract = new Contract(weth, WETH_ABI, l2Signer);
       const value = ethBalance.sub(target);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
       return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
