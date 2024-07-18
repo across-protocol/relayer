@@ -1,4 +1,5 @@
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
+import WETH_ABI from "../common/abi/Weth.json";
 import {
   bnZero,
   BigNumber,
@@ -29,7 +30,7 @@ import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { V3Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
-import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
@@ -48,6 +49,8 @@ export type Rebalance = {
 };
 
 const { CHAIN_IDs } = constants;
+const LITE_CHAIN_OVERAGE = toBNWei("1");
+const DEFAULT_CHAIN_OVERAGE = toBNWei("1.5");
 
 export class InventoryClient {
   private logDisabledManagement = false;
@@ -476,15 +479,17 @@ export class InventoryClient {
       chainsToEvaluate.push(originChainId);
     }
 
+    const liteChainIds = this.hubPoolClient.configStoreClient.getLiteChainIdIndicesForBlock();
+
     const eligibleRefundChains: number[] = [];
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
-    for (const _chain of chainsToEvaluate) {
-      assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
+    for (const chainId of chainsToEvaluate) {
+      assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
       // Destination chain:
-      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
-      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, repaymentToken);
-      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken);
+      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
+      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken);
+      const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
@@ -493,14 +498,14 @@ export class InventoryClient {
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
       let chainVirtualBalanceWithShortfallPostRelay =
-        _chain === destinationChainId &&
+        chainId === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
           ? chainVirtualBalanceWithShortfall.sub(outputAmount)
           : chainVirtualBalanceWithShortfall;
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[_chain] ?? bnZero
+        totalRefundsPerChain[chainId] ?? bnZero
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
@@ -514,18 +519,23 @@ export class InventoryClient {
         .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
       // Consider configured buffer for target to allow relayer to support slight overages.
-      const tokenConfig = this.getTokenConfig(l1Token, _chain, repaymentToken);
+      const tokenConfig = this.getTokenConfig(l1Token, chainId, repaymentToken);
       assert(
         isDefined(tokenConfig),
-        `No ${outputToken} tokenConfig in the Inventory Config for ${l1Token} on ${_chain} with a repaymentToken of ${repaymentToken}.`
+        `No ${outputToken} tokenConfig for ${l1Token} on ${chainId} with a repaymentToken ${repaymentToken}.`
       );
-      const thresholdPct = toBN(tokenConfig.targetPct)
-        .mul(tokenConfig.targetOverageBuffer ?? toBNWei("1"))
-        .div(fixedPointAdjustment);
+
+      // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
+      // destined for that chain in order to offload its excess. In anticipation of most Lite chains tending to be
+      // exit-heavy, drop the default buffer to 1x.
+      const targetOverage =
+        tokenConfig.targetOverageBuffer ?? liteChainIds.includes(chainId) ? LITE_CHAIN_OVERAGE : DEFAULT_CHAIN_OVERAGE;
+      const thresholdPct = tokenConfig.targetPct.mul(targetOverage).div(fixedPointAdjustment);
+
       this.log(
         `Evaluated taking repayment on ${
-          _chain === originChainId ? "origin" : _chain === destinationChainId ? "destination" : "slow withdrawal"
-        } chain ${_chain} for deposit ${deposit.depositId}: ${
+          chainId === originChainId ? "origin" : chainId === destinationChainId ? "destination" : "slow withdrawal"
+        } chain ${chainId} for deposit ${deposit.depositId}: ${
           expectedPostRelayAllocation.lte(thresholdPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
         }`,
         {
@@ -546,7 +556,7 @@ export class InventoryClient {
         }
       );
       if (expectedPostRelayAllocation.lte(thresholdPct)) {
-        eligibleRefundChains.push(_chain);
+        eligibleRefundChains.push(chainId);
       }
     }
 
@@ -1105,7 +1115,7 @@ export class InventoryClient {
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
-    const l2Weth = new Contract(_l2Weth, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
+    const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
