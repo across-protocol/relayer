@@ -150,14 +150,7 @@ export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and messa
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = "1.0"; // Multiplier on pre-profitability token-only gas estimates.
 export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pre-profitability message fill gas estimates.
 
-export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
-export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
-  [CHAIN_IDs.BASE]: 75,
-  [CHAIN_IDs.LINEA]: 50,
-  [CHAIN_IDs.LISK]: 75,
-  [CHAIN_IDs.MODE]: 75,
-  [CHAIN_IDs.OPTIMISM]: 75,
-};
+export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
 // with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not
