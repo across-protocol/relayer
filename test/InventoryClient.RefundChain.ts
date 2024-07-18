@@ -203,11 +203,10 @@ describe("InventoryClient: Refund chain selection", async function () {
       // 3. chainVirtualBalanceWithShortfallPostRelay: virtual balance with shortfall minus the relay amount. 9.8-1.69=8.11.
       // 4. cumulativeVirtualBalance: total balance across all chains considering fund movement. funds moving over the bridge
       //    does not impact the balance; they are just "moving" so it should be 140-15+15=140
-      // 5. cumulativeVirtualBalanceWithShortfall: cumulative virtual balance minus the shortfall. 140-15+15=140-15=125.
-      // 6. cumulativeVirtualBalanceWithShortfallPostRelay: cumulative virtual balance with shortfall minus the relay amount
-      //    125-1.69=124.31. This is total funds considering the shortfall and the relay amount that is to be executed.
-      // 7. expectedPostRelayAllocation: the expected post relay allocation is the chainVirtualBalanceWithShortfallPostRelay
-      //    divided by the cumulativeVirtualBalanceWithShortfallPostRelay. 8.11/123.31 = 0.0657.
+      // 5. cumulativeVirtualBalancePostRelay: cumulative virtual balance plus upcoming refunds minus the relay amount
+      //    140-1.69=138.31. This is total funds considering the relay amount that is to be executed.
+      // 6. expectedPostRelayAllocation: the expected post relay allocation is the chainVirtualBalanceWithShortfallPostRelay
+      //    divided by the cumulativeVirtualBalancePostRelay. 8.11/138.31 = 0.0586.
       // This number is then used to decide on where funds should be allocated! If this number is above the threshold plus
       // the buffer then refund on L1. if it is below the threshold then refund on the target chain. As this number is
       // is below the buffer plus the threshold then the bot should refund on L2.
@@ -223,20 +222,18 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfall":"9800000000000000000"')).to.be.true; // 24.8-15=9.8
       expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfallPostRelay":"8110000000000000000"')).to.be.true; // 9.8-1.69=8.11
       expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalance":"140000000000000000000')).to.be.true; // 140-15+15=140
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfall":"125000000000000000000"')).to.be.true; // 140-15=125
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfallPostRelay":"123310000000000000000"')).to.be
-        .true; // 125-1.69=123.31
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"65769199578298597')).to.be.true; // 8.11/123.31 = 0.0657
+      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalancePostRelay":"138310000000000000000"')).to.be.true; // 125-1.69=123.31
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"58636396500614561')).to.be.true; // 8.11/123.31 = 0.0657
 
       // Now consider if this small relay was larger to the point that we should be refunding on the L2. set it to 5 WETH.
       // Numerically we can shortcut some of the computations above to the following: chain virtual balance with shortfall
-      // post relay is 9.8 - 5 = 4.8. cumulative virtual balance with shortfall post relay is 125 - 5 = 120. Expected post
-      // relay allocation is 4.8/120 = 0.04. This is below the threshold of 0.05 so the bot should refund on the target.
+      // post relay is 9.8 - 5 = 4.8. cumulative virtual balance post relay is 140 - 5 = 135. Expected post
+      // relay allocation is 4.8/135 = 0.036. This is below the threshold of 0.05 so the bot should refund on the target.
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([ARBITRUM, MAINNET]);
       // Check only the final step in the computation.
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"40000000000000000"')).to.be.true; // 4.8/120 = 0.04
+      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"35555555555555555"')).to.be.true; // 4.8/120 = 0.04
 
       // Consider that we manually send the relayer som funds while it's large transfer is currently in the bridge. This
       // is to validate that the module considers funds in transit correctly + dropping funds indirectly onto the L2 wallet.
