@@ -24,6 +24,8 @@ import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
+import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
+import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -117,6 +119,10 @@ export const CONTRACT_ADDRESSES: {
     scrollRelayMessenger: {
       address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
       abi: SCROLL_RELAY_MESSENGER_ABI,
+    },
+    scrollGatewayRouter: {
+      address: "0xF8B1378579659D8F7EE5f3C929c2f3E332E41Fd6",
+      abi: SCROLL_GATEWAY_ROUTER_L1_ABI,
     },
     hubPool: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
@@ -253,6 +259,20 @@ export const CONTRACT_ADDRESSES: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
       abi: LINEA_TOKEN_BRIDGE_ABI,
     },
+    eth: {
+      address: "0x0000000000000000000000000000000000000000",
+    },
+  },
+  534352: {
+    scrollGatewayRouter: {
+      address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
+      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    },
+    // The Scroll canonical bridge will send WETH on a WETH deposit,
+    // so the dataworker will never use this address to wrap eth in
+    // the spoke pool. However, the relayer may need to wrap eth on
+    // the L2; therefore, we need to define an address here so the
+    // dataworker won't error.
     eth: {
       address: "0x0000000000000000000000000000000000000000",
     },
