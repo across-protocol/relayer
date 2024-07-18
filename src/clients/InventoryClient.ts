@@ -1,4 +1,5 @@
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
+import WETH_ABI from "../common/abi/Weth.json";
 import {
   bnZero,
   BigNumber,
@@ -29,7 +30,7 @@ import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { V3Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
-import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
@@ -1114,7 +1115,7 @@ export class InventoryClient {
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
-    const l2Weth = new Contract(_l2Weth, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
+    const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
