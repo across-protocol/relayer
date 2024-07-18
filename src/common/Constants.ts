@@ -10,7 +10,7 @@ import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
 export const CONFIG_STORE_VERSION = 4;
 
-export const RELAYER_MIN_FEE_PCT = 0.0003;
+export const RELAYER_MIN_FEE_PCT = 0.0001;
 
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
