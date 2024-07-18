@@ -166,7 +166,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
 
     it("Get L2 receipts: EOA", async function () {
-      const aliasedAtomicDepositor = zksync.utils.applyL1ToL2Alias(atomicDepositor.address);
+      const aliasedAtomicDepositor = ethers.utils.getAddress(zksync.utils.applyL1ToL2Alias(atomicDepositor.address));
       await l2Eth.transfer(aliasedAtomicDepositor, monitoredEoa, depositAmount);
       await l2Weth.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
 
