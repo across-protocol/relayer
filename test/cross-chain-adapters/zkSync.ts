@@ -19,6 +19,7 @@ const { MAINNET, ZK_SYNC } = CHAIN_IDs;
 const { USDC, WETH } = TOKEN_SYMBOLS_MAP;
 const l1Weth = WETH.addresses[MAINNET];
 
+let atomicDepositor: Contract;
 let l1Bridge: Contract, l2Bridge: Contract;
 let l2Eth: Contract, l2Weth: Contract;
 let hubPool: Contract, spokePool: Contract;
@@ -35,7 +36,7 @@ class zkSyncTestAdapter extends ZKSyncAdapter {
   }
 
   override getAtomicDepositor(): Contract {
-    return l1Bridge;
+    return atomicDepositor;
   }
 
   override getL1ERC20BridgeContract(): Contract {
@@ -81,7 +82,6 @@ describe("Cross Chain Adapter: zkSync", async function () {
   const l2TxGasLimit = bnZero;
   const l2TxGasPerPubdataByte = bnZero;
   const l1Token = USDC.addresses[MAINNET];
-  let atomicDepositor: string;
 
   let adapter: zkSyncTestAdapter;
   let monitoredEoa: string;
@@ -110,6 +110,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     l1Bridge = await (await getContractFactory("zkSync_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("zkSync_L2Bridge", depositor)).deploy();
+    atomicDepositor = await (await getContractFactory("MockAtomicWethDepositor", depositor)).deploy();
     l2Eth = await (await getContractFactory("MockWETH9", depositor)).deploy();
     l2Weth = await (await getContractFactory("MockWETH9", depositor)).deploy();
 
@@ -121,7 +122,6 @@ describe("Cross Chain Adapter: zkSync", async function () {
       },
       [monitoredEoa, hubPool.address, spokePool.address]
     );
-    atomicDepositor = adapter.getAtomicDepositor().address;
 
     amount = toBN(Math.round(Math.random() * 1e18));
     l2Token = adapter.resolveL2TokenAddress(l1Token);
@@ -129,7 +129,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
   describe("WETH bridge", function () {
     it("Get L1 deposits: EOA", async function () {
-      await l1Bridge.bridgeWethToZkSync(monitoredEoa, amount, 0, 0, ZERO_ADDRESS);
+      await atomicDepositor.bridgeWethToZkSync(monitoredEoa, amount, 0, 0, ZERO_ADDRESS);
 
       const result = await adapter.queryL1BridgeInitiationEvents(l1Weth, monitoredEoa, monitoredEoa, searchConfig);
       expect(result).to.exist;
@@ -144,7 +144,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
 
     it("Get L2 receipts: EOA", async function () {
-      await l2Eth.transfer(adapter.getAddressAlias(atomicDepositor), monitoredEoa, amount);
+      await l2Eth.transfer(adapter.getAddressAlias(atomicDepositor.address), monitoredEoa, amount);
       await l2Weth.transfer(ZERO_ADDRESS, monitoredEoa, amount);
 
       const result = await adapter.queryL2BridgeFinalizationEvents(l1Weth, null, monitoredEoa, searchConfig);
@@ -153,7 +153,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       const receipt = result.at(0)!;
       expect(receipt.args).to.exist;
       const { from, to, amount: _amount } = receipt.args!;
-      expect(from).to.equal(adapter.getAddressAlias(atomicDepositor));
+      expect(from).to.equal(adapter.getAddressAlias(atomicDepositor.address));
       expect(to).to.equal(monitoredEoa);
       expect(_amount).to.equal(amount);
     });
@@ -165,7 +165,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(transfers).to.deep.equal({ [monitoredEoa]: {}, [spokePool.address]: {} });
 
       // Make a single l1 -> l2 deposit.
-      await l1Bridge.bridgeWethToZkSync(monitoredEoa, amount, 0, 0, ZERO_ADDRESS);
+      await atomicDepositor.bridgeWethToZkSync(monitoredEoa, amount, 0, 0, ZERO_ADDRESS);
       const deposits = await adapter.queryL1BridgeInitiationEvents(l1Weth, null, monitoredEoa, searchConfig);
       expect(deposits).to.exist;
       expect(deposits.length).to.equal(1);
@@ -190,7 +190,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       });
 
       // Finalise the ongoing deposit on the destination chain.
-      await l2Eth.transfer(adapter.getAddressAlias(atomicDepositor), monitoredEoa, amount); // Simulate ETH transfer to recipient EOA.
+      await l2Eth.transfer(adapter.getAddressAlias(atomicDepositor.address), monitoredEoa, amount); // Simulate ETH transfer to recipient EOA.
       await l2Weth.transfer(ZERO_ADDRESS, monitoredEoa, amount); // Simulate subsequent WETH deposit.
       receipts = await adapter.queryL2BridgeFinalizationEvents(l1Weth, null, monitoredEoa, searchConfig);
       expect(receipts).to.exist;
