@@ -283,6 +283,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
       });
     });
 
