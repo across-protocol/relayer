@@ -27,7 +27,8 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
   [CHAIN_IDs.OPTIMISM]: 172800, // 1 block every 2 seconds after bedrock
   [CHAIN_IDs.POLYGON]: 138240,
-  [CHAIN_IDs.ZK_SYNC]: 4 * 24 * 60 * 60,
+  [CHAIN_IDs.SCROLL]: 115200, // 4 * 24 * 20 * 60,
+  [CHAIN_IDs.ZK_SYNC]: 345600, // 4 * 24 * 60 * 60,
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -61,6 +62,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 120,
     [CHAIN_IDs.OPTIMISM]: 120,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
+    [CHAIN_IDs.SCROLL]: 30,
     [CHAIN_IDs.ZK_SYNC]: 120,
   },
   1000: {
@@ -73,6 +75,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.OPTIMISM]: 60,
     [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
+    [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
   100: {
@@ -85,6 +88,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.OPTIMISM]: 60,
     [CHAIN_IDs.POLYGON]: 80,
+    [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
 };
@@ -107,6 +111,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.MODE]: 10000,
   [CHAIN_IDs.OPTIMISM]: 10000, // Quick
   [CHAIN_IDs.POLYGON]: 10000,
+  [CHAIN_IDs.SCROLL]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
@@ -134,6 +139,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
+  [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
@@ -175,7 +181,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 120,
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.POLYGON]: 256,
-  [CHAIN_IDs.SCROLL]: 0,
+  [CHAIN_IDs.SCROLL]: 100,
   [CHAIN_IDs.ZK_SYNC]: 512,
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
@@ -261,6 +267,7 @@ export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.LISK,
   CHAIN_IDs.MODE,
   CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.SCROLL,
   CHAIN_IDs.ZK_SYNC,
 ];
 
@@ -292,15 +299,17 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
+  [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
 
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.BASE_SEPOLIA]: ["BAL", "DAI", "ETH", "WETH", "USDC"],
+  [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
-  [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
+  [CHAIN_IDs.SCROLL_SEPOLIA]: ["WETH", "USDC", "USDT", "WBTC"],
 };
 
 /**
@@ -340,6 +349,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.MODE]: 20 * 60,
   [CHAIN_IDs.OPTIMISM]: 20 * 60,
   [CHAIN_IDs.POLYGON]: 60 * 60,
+  [CHAIN_IDs.SCROLL]: 60 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,
 };
 
