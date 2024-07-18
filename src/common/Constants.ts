@@ -326,8 +326,9 @@ export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol
 
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
 // This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
-// This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case.
-export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM];
+// This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case which could cause the
+// relayer to unintentionally overdraw the HubPool's available reserves.
+export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM, CHAIN_IDs.BLAST];
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
