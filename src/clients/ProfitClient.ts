@@ -392,7 +392,7 @@ export class ProfitClient {
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
   getFillAmountInUsd(
-    deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">,
+    deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">
   ): BigNumber | undefined {
     const { destinationChainId, outputToken, outputAmount } = deposit;
     let l1Token: L1Token;
