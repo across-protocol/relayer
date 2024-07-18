@@ -1,5 +1,5 @@
 import winston from "winston";
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
 import { assert, CHAIN_IDs, ethers, isDefined } from "../utils";
 import * as Constants from "./Constants";
@@ -115,8 +115,7 @@ export class CommonConfig {
       // prettier-ignore
       const chunkSize = Number(
         process.env[`MULTICALL_CHUNK_SIZE_CHAIN_${chainId}`]
-          ?? process.env.MULTICALL_CHUNK_SIZE
-          ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
+        ?? process.env.MULTICALL_CHUNK_SIZE
       ) || DEFAULT_MULTICALL_CHUNK_SIZE;
       assert(chunkSize > 0, `Chain ${chainId} multicall chunk size (${chunkSize}) must be greater than 0`);
       this.multiCallChunkSize[chainId] = chunkSize;
