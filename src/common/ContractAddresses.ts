@@ -268,10 +268,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
     },
-    weth: {
-      address: "0x5300000000000000000000000000000000000004",
-      abi: WETH_ABI,
-    },
     // The Scroll canonical bridge will send WETH on a WETH deposit,
     // so the dataworker will never use this address to wrap eth in
     // the spoke pool. However, the relayer may need to wrap eth on
