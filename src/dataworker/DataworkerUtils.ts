@@ -544,7 +544,7 @@ export async function _buildPoolRebalanceRoot(
  * @returns WETH and ETH addresses.
  */
 function getWethAndEth(chainId: number): string[] {
-  // Can't use TOKEN_SYMBOLS_MAP for ETH because it parrots the WETH addresses, which is not correct for this use case.
+  // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
   const wethAndEth = [TOKEN_SYMBOLS_MAP.WETH.addresses[chainId], CONTRACT_ADDRESSES[chainId].eth.address];
   if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
     throw new Error(`WETH or ETH address not defined for chain ${chainId}`);
