@@ -1,4 +1,5 @@
 import { BigNumber, BigNumberish, Contract } from "ethers";
+import WETH_ABI from "../../common/abi/Weth.json";
 import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import {
@@ -285,7 +286,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
       // @dev Can re-use ABI from L1 weth as its the same for the purposes of this function.
-      const contract = new Contract(l2WethAddress, CONTRACT_ADDRESSES[this.hubChainId].weth.abi, l2Signer);
+      const contract = new Contract(l2WethAddress, WETH_ABI, l2Signer);
       const value = ethBalance.sub(target);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, target, value, ethBalance });
       return await this._wrapEthIfAboveThreshold(threshold, contract, value, simMode);
@@ -327,11 +328,11 @@ export class ZKSyncAdapter extends BaseAdapter {
 
   private getL2Weth(): Contract {
     const { chainId } = this;
-    const wethContractData = CONTRACT_ADDRESSES[chainId]?.weth;
-    if (!wethContractData) {
+    const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
+    if (!weth) {
       throw new Error(`wethContractData not found for chain ${chainId}`);
     }
-    return new Contract(wethContractData.address, wethContractData.abi, this.getSigner(chainId));
+    return new Contract(weth, WETH_ABI, this.getSigner(chainId));
   }
 
   private getL1ERC20BridgeContract(): Contract {
