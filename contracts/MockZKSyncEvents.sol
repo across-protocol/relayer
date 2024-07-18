@@ -12,9 +12,6 @@ contract zkSync_L1Bridge {
         uint256 amount
     );
 
-    // AtomicDepositor event.
-    event ZkSyncEthDepositInitiated(address indexed from, address indexed to, uint256 amount);
-
     function deposit(
         address _l2Receiver,
         address _l1Token,
@@ -45,11 +42,6 @@ contract zkSync_L1Bridge {
         l2TxHash = "";
         emit DepositInitiated(l2TxHash, l1Sender, l2Receiver, l1Token, amount);
         return l2TxHash;
-    }
-
-    // AtomicDepositor function.
-    function bridgeWethToZkSync(address to, uint256 amount, uint256, uint256, address) public {
-        emit ZkSyncEthDepositInitiated(msg.sender, to, amount);
     }
 }
 
