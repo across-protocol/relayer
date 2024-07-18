@@ -314,7 +314,8 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
 
     it("Get L2 receipts: HubPool", async function () {
-      await l2Eth.transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), spokePool.address, depositAmount);
+      const aliasedHubPool = ethers.utils.getAddress(zksync.utils.applyL1ToL2Alias(hubPool.address));
+      await l2Eth.transfer(aliasedHubPool, spokePool.address, depositAmount);
 
       const result = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
         l1Weth,
@@ -327,7 +328,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       const receipt = result[l2Weth.address];
       expect(receipt).to.exist;
       const { from, to, amount } = receipt[0];
-      expect(from).to.equal(zksync.utils.applyL1ToL2Alias(hubPool.address));
+      expect(from).to.equal(aliasedHubPool);
       expect(to).to.equal(spokePool.address);
       expect(amount).to.equal(depositAmount);
     });
