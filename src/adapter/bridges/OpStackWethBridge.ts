@@ -13,6 +13,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { matchL2EthDepositAndWrapEvents, processEvent } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
+import WETH_ABI from "../../common/abi/Weth.json";
 
 export class OpStackWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
@@ -48,8 +49,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
-    const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
-    this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
+    this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
 
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }

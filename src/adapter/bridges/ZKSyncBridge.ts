@@ -71,23 +71,8 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
         )
       : this.l2GasLimit;
 
-    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider);
-    // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
-    // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
-    // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
-    // contract does here:
-    // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
+    const l2TransactionBaseCost = await this.getL2GasCost(l1Provider, l2GasLimit, this.gasPerPubdataLimit);
 
-    // The l2TransactionBaseCost needs to be included as msg.value to pay for the transaction. its a bit of an
-    // overestimate if the estimatedL1GasPrice and/or l2GasLimit are overestimates, and if its insufficient then the
-    // L1 transaction will revert.
-
-    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
-    const l2TransactionBaseCost = await this.zkSyncMailbox.l2TransactionBaseCost(
-      estimatedL1GasPrice,
-      l2GasLimit,
-      this.gasPerPubdataLimit
-    );
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "deposit",
@@ -104,7 +89,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress, fromAddress),
+      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress, toAddress),
       eventConfig
     );
     return {
@@ -121,11 +106,41 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.FinalizeDeposit(fromAddress, fromAddress, l2Token),
+      this.getL2Bridge().filters.FinalizeDeposit(fromAddress, toAddress, l2Token),
       eventConfig
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender")),
     };
+  }
+
+  protected async getL2GasCost(
+    provider: Provider,
+    l2GasLimit: BigNumber,
+    gasPerPubdataLimit: number
+  ): Promise<BigNumber> {
+    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(provider);
+
+    // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
+    // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
+    // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
+    // contract does here:
+    // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
+
+    // The l2TransactionBaseCost needs to be included as msg.value to pay for the transaction. its a bit of an
+    // overestimate if the estimatedL1GasPrice and/or l2GasLimit are overestimates, and if its insufficient then the
+    // L1 transaction will revert.
+
+    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
+    const l2Gas = await this.getMailboxContract().l2TransactionBaseCost(
+      estimatedL1GasPrice,
+      l2GasLimit,
+      gasPerPubdataLimit
+    );
+    return l2Gas;
+  }
+
+  protected getMailboxContract() {
+    return this.zkSyncMailbox;
   }
 }

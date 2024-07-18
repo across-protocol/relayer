@@ -22,12 +22,13 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, isMaxAllowance, setTokenAllowanceInCache } from "./utils";
 import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
-import { CONTRACT_ADDRESSES } from "../common";
 import { OutstandingTransfers } from "../interfaces";
+import WETH_ABI from "../common/abi/Weth.json";
 
 export type SupportedL1Token = string;
 export type SupportedTokenSymbol = string;
@@ -186,14 +187,14 @@ export class BaseChainAdapter {
     target: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse | null> {
-    const { address: wethAddress, abi: wethABI } = CONTRACT_ADDRESSES[this.chainId].weth;
+    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.chainId];
     const ethBalance = await this.getSigner(this.chainId).getBalance();
     if (ethBalance.lte(threshold)) {
       this.log("ETH balance below threshold", { threshold, ethBalance });
       return null;
     }
     const l2Signer = this.getSigner(this.chainId);
-    const contract = new Contract(wethAddress, wethABI, l2Signer);
+    const contract = new Contract(wethAddress, WETH_ABI, l2Signer);
 
     // First verify that the target contract looks like WETH. This protects against
     // accidentally sending ETH to the wrong address, which would be a critical error.
@@ -235,8 +236,9 @@ export class BaseChainAdapter {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
         const bridge = this.bridges[l1Token];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
-          bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, undefined, l1SearchConfig),
-          bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, undefined, l2SearchConfig),
+          // TODO: Do the toAddress field in these queries need to be aliased for special cases, e.g. zkSync.
+          bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
+          bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);
 
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {

@@ -7,6 +7,7 @@ import {
   Provider,
   isContractDeployedToAddress,
   ZERO_ADDRESS,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
@@ -41,9 +42,8 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
 
     const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
-    const l2WethAddress = CONTRACT_ADDRESSES[l2chainId].weth.address;
     this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
-    this.l2Weth = new Contract(l2WethAddress, l2EthAbi, l2SignerOrProvider);
+    this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], l2EthAbi, l2SignerOrProvider);
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
   }
 
@@ -94,7 +94,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     if (fromAddress === this.getHubPool().address) {
       return Promise.resolve({});
     }
-    const isL2Contract = await this.isL2ChainContract(fromAddress);
+    const isL2Contract = await this.isL2ChainContract(toAddress);
     const hubPool = this.getHubPool();
 
     // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
@@ -106,7 +106,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       isL2Contract ? hubPool : this.atomicDepositor,
       isL2Contract
         ? hubPool.filters.TokensRelayed()
-        : this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, fromAddress),
+        : this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, toAddress),
       eventConfig
     );
     const processedEvents = events.map((event) =>
@@ -129,13 +129,13 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       return Promise.resolve({});
     }
 
-    const isL2Contract = await this.isL2ChainContract(fromAddress);
+    const isL2Contract = await this.isL2ChainContract(toAddress);
     const hubPool = this.getHubPool();
     const events = await paginatedEventQuery(
       this.l2Eth,
       this.l2Eth.filters.Transfer(
         zksync.utils.applyL1ToL2Alias(isL2Contract ? hubPool.address : this.atomicDepositor.address),
-        fromAddress
+        toAddress
       ),
       eventConfig
     );
