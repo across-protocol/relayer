@@ -1,14 +1,16 @@
-import { BigNumber, BigNumberish, Contract } from "ethers";
+import { BigNumber, BigNumberish, Contract, EventFilter, utils as ethersUtils } from "ethers";
 import WETH_ABI from "../../common/abi/Weth.json";
 import { BaseAdapter } from "./BaseAdapter";
 import { OutstandingTransfers, SortableEvent } from "../../interfaces";
 import {
+  EventSearchConfig,
   paginatedEventQuery,
   TransactionResponse,
   winston,
   spreadEventWithBlockNumber,
   assign,
   Event,
+  Provider,
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
   bnZero,
@@ -41,12 +43,8 @@ export class ZKSyncAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
 
     // Resolve the mailbox and bridge contracts for L1 and L2.
-    const l2EthContract = this.getL2Eth();
     const l2WethContract = this.getL2Weth();
-    const atomicWethDepositor = this.getAtomicDepositor();
     const hubPool = this.getHubPool();
-    const l1ERC20Bridge = this.getL1ERC20BridgeContract();
-    const l2ERC20Bridge = this.getL2ERC20BridgeContract();
     const supportedL1Tokens = this.filterSupportedTokens(l1Tokens);
 
     // Predeclare this function for use below. It is used to process all events that are saved.
@@ -68,53 +66,32 @@ export class ZKSyncAdapter extends BaseAdapter {
 
     await utils.mapAsync(this.monitoredAddresses, async (address) => {
       return await utils.mapAsync(supportedL1Tokens, async (l1TokenAddress) => {
-        const isL2Contract = await this.isL2ChainContract(address);
         // This adapter will only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
         // and any L2 contracts that are not the SpokePool.
-        if (address === this.getHubPool().address) {
+        const { spokePool } = this.spokePoolClients[this.chainId];
+        const isSpokePool = address === spokePool.address;
+        if (address === hubPool.address || (!isSpokePool && (await this.isL2ChainContract(address)))) {
           return;
         }
-        const isSpokePoolContract = isL2Contract;
+
+        const l2Token = this.resolveL2TokenAddress(l1TokenAddress, false); // CCTP doesn't exist on ZkSync.
 
         let initiatedQueryResult: Event[], finalizedQueryResult: Event[], wrapQueryResult: Event[];
-
-        // Resolve whether the token is WETH or not.
         const isWeth = this.isWeth(l1TokenAddress);
-        const l2Token = this.resolveL2TokenAddress(l1TokenAddress, false); // CCTP doesn't exist on ZkSync.
         if (isWeth) {
-          [initiatedQueryResult, finalizedQueryResult, wrapQueryResult] = await Promise.all([
-            // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
-            // AtomicDepositor. If sending WETH from a contract, then the only event we can track from a ZkSync contract
-            // is the NewPriorityRequest event which doesn't have any parameters about the 'to' or 'amount' sent.
-            // Therefore, we must track the HubPool and assume any transfers we are tracking from contracts are
-            // being sent by the HubPool.
-            paginatedEventQuery(
-              isSpokePoolContract ? hubPool : atomicWethDepositor,
-              isSpokePoolContract
-                ? hubPool.filters.TokensRelayed()
-                : atomicWethDepositor.filters.ZkSyncEthDepositInitiated(address, address),
-              l1SearchConfig
-            ),
-            // L2 WETH transfer will come from aliased L1 contract that initiated the deposit.
-            paginatedEventQuery(
-              l2EthContract,
-              l2EthContract.filters.Transfer(
-                zksync.utils.applyL1ToL2Alias(isSpokePoolContract ? hubPool.address : atomicWethDepositor.address),
-                address
-              ),
-              l2SearchConfig
-            ),
-            // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
-            isSpokePoolContract
-              ? Promise.resolve([])
-              : paginatedEventQuery(
-                  l2WethContract,
-                  l2WethContract.filters.Transfer(ZERO_ADDRESS, address),
-                  l2SearchConfig
-                ),
-          ]);
+          const queries = [
+            this.queryL1BridgeInitiationEvents(l1TokenAddress, null, address, l1SearchConfig),
+            this.queryL2BridgeFinalizationEvents(l1TokenAddress, null, address, l2SearchConfig),
+          ];
 
-          if (isSpokePoolContract) {
+          // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
+          if (!isSpokePool) {
+            const filter = l2WethContract.filters.Transfer(ZERO_ADDRESS, address);
+            queries.push(paginatedEventQuery(l2WethContract, filter, l2SearchConfig));
+          }
+          [initiatedQueryResult, finalizedQueryResult, wrapQueryResult] = await Promise.all(queries);
+
+          if (isSpokePool) {
             // Filter here if monitoring SpokePool address since TokensRelayed does not have any indexed params.
             initiatedQueryResult = initiatedQueryResult.filter(
               (e) => e.args.to === address && e.args.l1Token === l1TokenAddress
@@ -124,20 +101,10 @@ export class ZKSyncAdapter extends BaseAdapter {
             finalizedQueryResult = matchL2EthDepositAndWrapEvents(finalizedQueryResult, wrapQueryResult);
           }
         } else {
+          const [from, to] = isSpokePool ? [hubPool.address, address] : [address, address];
           [initiatedQueryResult, finalizedQueryResult] = await Promise.all([
-            // Filter on 'from' and 'to' address
-            paginatedEventQuery(
-              l1ERC20Bridge,
-              l1ERC20Bridge.filters.DepositInitiated(null, address, address),
-              l1SearchConfig
-            ),
-
-            // Filter on `l2Receiver` address, `l1Sender` address, and l2 token.
-            paginatedEventQuery(
-              l2ERC20Bridge,
-              l2ERC20Bridge.filters.FinalizeDeposit(address, address, l2Token),
-              l2SearchConfig
-            ),
+            this.queryL1BridgeInitiationEvents(l1TokenAddress, from, to, l1SearchConfig),
+            this.queryL2BridgeFinalizationEvents(l1TokenAddress, from, to, l2SearchConfig),
           ]);
         }
 
@@ -161,6 +128,69 @@ export class ZKSyncAdapter extends BaseAdapter {
     this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
+  }
+
+  async queryL1BridgeInitiationEvents(
+    l1Token: string,
+    sender: string | null = null,
+    recipient: string | null = null,
+    searchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    const isWeth = this.isWeth(l1Token);
+    const isL2Contract = await this.isL2ChainContract(recipient);
+
+    let bridge: Contract;
+    let filter: EventFilter;
+    if (isWeth) {
+      // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the AtomicDepositor.
+      // If sending WETH from a contract, then the only event we can track from a ZkSync contract is the
+      // NewPriorityRequest event which doesn't have any parameters about the 'to' or 'amount' sent. Therefore, we must
+      // track the HubPool and assume any transfers we are tracking from contracts are being sent by the HubPool.
+      const hubPool = this.getHubPool();
+      const atomicDepositor = this.getAtomicDepositor();
+
+      [bridge, filter] = isL2Contract
+        ? [hubPool, hubPool.filters.TokensRelayed()]
+        : [atomicDepositor, atomicDepositor.filters.ZkSyncEthDepositInitiated(sender, recipient)];
+    } else {
+      bridge = this.getL1ERC20BridgeContract();
+      filter = bridge.filters.DepositInitiated(null, sender, recipient);
+    }
+
+    return paginatedEventQuery(bridge, filter, searchConfig);
+  }
+
+  getAddressAlias(l1Address: string): string {
+    return ethersUtils.getAddress(zksync.utils.applyL1ToL2Alias(l1Address));
+  }
+
+  async queryL2BridgeFinalizationEvents(
+    l1Token: string,
+    sender: string | null = null,
+    recipient: string | null = null,
+    searchConfig: EventSearchConfig
+  ): Promise<Event[]> {
+    let bridge: Contract;
+    let filter: EventFilter;
+
+    if (this.isWeth(l1Token)) {
+      // Opinionated assumption: WETH was sent via either the AtomicDepositor or HubPool.
+      // If the sender was not specified, sub one in based on the type of recipient address.
+      if (sender === null && recipient !== null) {
+        sender = this.getAddressAlias(
+          (await this.isL2ChainContract(recipient)) ? this.getHubPool().address : this.getAtomicDepositor().address
+        );
+      }
+
+      bridge = this.getL2Eth();
+      filter = bridge.filters.Transfer(sender, recipient);
+    } else {
+      const l2Token = this.resolveL2TokenAddress(l1Token, false); // CCTP doesn't exist on ZkSync.
+      bridge = this.getL2ERC20BridgeContract();
+      filter = bridge.filters.FinalizeDeposit(sender, recipient, l2Token);
+    }
+
+    return paginatedEventQuery(bridge, filter, searchConfig);
   }
 
   async sendTokenToTargetChain(
@@ -210,7 +240,7 @@ export class ZKSyncAdapter extends BaseAdapter {
           address,
           gasPerPubdataLimit
         )
-      : 2_000_000;
+      : BigNumber.from(2_000_000);
 
     const contract = this.getL1TokenBridge(l1Token);
     let args = [
@@ -234,37 +264,44 @@ export class ZKSyncAdapter extends BaseAdapter {
         gasPerPubdataLimit, // GasPerPubdataLimit.
       ];
       method = "deposit";
-
-      // Now figure out the equivalent of the "tx.gasprice".
-      const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider);
-      // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
-      // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
-      // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
-      // contract does here:
-      // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
-
-      // The l2TransactionBaseCost needs to be included as msg.value to pay for the transaction. its a bit of an
-      // overestimate if the estimatedL1GasPrice and/or l2GasLimit are overestimates, and if its insufficient then the
-      // L1 transaction will revert.
-
-      const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
-      const l2TransactionBaseCost = await this.getMailboxContract().l2TransactionBaseCost(
-        estimatedL1GasPrice,
-        l2GasLimit,
-        gasPerPubdataLimit
-      );
-      this.log("Computed L1-->L2 message parameters for ERC20 deposit", {
-        l2TransactionBaseCost,
-        gasPerPubdataLimit,
-        estimatedL1GasPrice,
-        l1GasPriceData,
-      });
-      value = l2TransactionBaseCost;
+      value = await this.getL2GasCost(l1Provider, l2GasLimit, gasPerPubdataLimit);
     }
 
-    // Empirically I've seen this L1 to L2 message transaction fail with out of gas without a >1 gas limit multiplier
-    // set.
+    // Empirically this has failed with out of gas without a >1 gas limit multiplier.
     return await this._sendTokenToTargetChain(l1Token, l2Token, amount, contract, method, args, 3, value, simMode);
+  }
+
+  protected async getL2GasCost(
+    provider: Provider,
+    l2GasLimit: BigNumber,
+    gasPerPubdataLimit: number
+  ): Promise<BigNumber> {
+    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(provider);
+
+    // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
+    // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
+    // which is the priority fee plus base fee. This is the same as calling tx.gasprice on-chain as the Mailbox
+    // contract does here:
+    // https://github.com/matter-labs/era-contracts/blob/3a4506522aaef81485d8abb96f5a6394bd2ba69e/ethereum/contracts/zksync/facets/Mailbox.sol#L287
+
+    // The l2TransactionBaseCost needs to be included as msg.value to pay for the transaction. its a bit of an
+    // overestimate if the estimatedL1GasPrice and/or l2GasLimit are overestimates, and if its insufficient then the
+    // L1 transaction will revert.
+
+    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
+    const l2Gas = await this.getMailboxContract().l2TransactionBaseCost(
+      estimatedL1GasPrice,
+      l2GasLimit,
+      gasPerPubdataLimit
+    );
+    this.log("Computed L1-->L2 message parameters for ERC20 deposit", {
+      l2Gas,
+      gasPerPubdataLimit,
+      estimatedL1GasPrice,
+      l1GasPriceData,
+    });
+
+    return l2Gas;
   }
 
   /**
@@ -317,7 +354,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     return new Contract(zkSyncMailboxContractData.address, zkSyncMailboxContractData.abi, this.getSigner(hubChainId));
   }
 
-  private getL2Eth(): Contract {
+  protected getL2Eth(): Contract {
     const { chainId } = this;
     const ethContractData = CONTRACT_ADDRESSES[chainId]?.eth;
     if (!ethContractData) {
@@ -326,7 +363,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     return new Contract(ethContractData.address, ethContractData.abi, this.getSigner(chainId));
   }
 
-  private getL2Weth(): Contract {
+  protected getL2Weth(): Contract {
     const { chainId } = this;
     const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
     if (!weth) {
@@ -335,7 +372,7 @@ export class ZKSyncAdapter extends BaseAdapter {
     return new Contract(weth, WETH_ABI, this.getSigner(chainId));
   }
 
-  private getL1ERC20BridgeContract(): Contract {
+  protected getL1ERC20BridgeContract(): Contract {
     const { hubChainId } = this;
     const l1Erc20BridgeContractData = CONTRACT_ADDRESSES[hubChainId]?.zkSyncDefaultErc20Bridge;
     if (!l1Erc20BridgeContractData) {
@@ -344,15 +381,11 @@ export class ZKSyncAdapter extends BaseAdapter {
     return new Contract(l1Erc20BridgeContractData.address, l1Erc20BridgeContractData.abi, this.getSigner(hubChainId));
   }
 
-  private getL1TokenBridge(l1Token: string): Contract {
-    if (this.isWeth(l1Token)) {
-      return this.getAtomicDepositor();
-    } else {
-      return this.getL1ERC20BridgeContract();
-    }
+  protected getL1TokenBridge(l1Token: string): Contract {
+    return this.isWeth(l1Token) ? this.getAtomicDepositor() : this.getL1ERC20BridgeContract();
   }
 
-  private getL2ERC20BridgeContract(): Contract {
+  protected getL2ERC20BridgeContract(): Contract {
     const { provider } = this.spokePoolClients[this.chainId].spokePool;
     const l2Erc20BridgeContractData = CONTRACT_ADDRESSES[this.chainId]?.zkSyncDefaultErc20Bridge;
     if (!l2Erc20BridgeContractData) {
