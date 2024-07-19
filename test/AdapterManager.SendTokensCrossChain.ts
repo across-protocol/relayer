@@ -1,4 +1,4 @@
-import * as zksync from "zksync-web3";
+import * as zksync from "zksync-ethers";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../src/common";
