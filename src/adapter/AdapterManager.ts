@@ -61,7 +61,7 @@ export class GenericAdapterManager extends AdapterManager {
 
     logger.debug({
       at: "AdapterManager#constructor",
-      message: "Initialized AdapterManager",
+      message: "Initialized experimental AdapterManager for generic adapters. Ensure this was intended!",
       adapterChains: Object.keys(this.adapters).map((chainId) => chainId),
     });
   }
