@@ -15,7 +15,7 @@ import {
   toBN,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
-import * as zksync from "zksync-web3";
+import * as zksync from "zksync-ethers";
 
 const { MAINNET, ZK_SYNC } = CHAIN_IDs;
 const { USDC, WETH } = TOKEN_SYMBOLS_MAP;

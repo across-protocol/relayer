@@ -14,7 +14,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
-import * as zksync from "zksync-web3";
+import * as zksync from "zksync-ethers";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 
 /* For both the canonical bridge and the ZkSync Weth bridge (this
