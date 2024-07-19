@@ -18,7 +18,7 @@ import {
 } from "../../utils";
 import { SpokePoolClient } from "../.";
 import assert from "assert";
-import * as zksync from "zksync-web3";
+import * as zksync from "zksync-ethers";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
 import { gasPriceOracle, utils } from "@across-protocol/sdk";
