@@ -47,7 +47,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     // toAddress when fetching the L1 event.
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress),
+      this.getL1Bridge().filters.DepositInitiated(undefined, toAddress),
       eventConfig
     );
     return {
@@ -63,7 +63,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(fromAddress),
+      this.getL2Bridge().filters.DepositFinalized(toAddress),
       eventConfig
     );
     return {

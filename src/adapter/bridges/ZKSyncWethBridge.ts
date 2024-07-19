@@ -8,6 +8,7 @@ import {
   isContractDeployedToAddress,
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
+  assert,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
@@ -60,7 +61,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     try {
       zkProvider = zkSyncUtils.convertEthersRPCToZKSyncRPC(l2Provider);
     } catch (error) {
-      // We do not have a logger in this class
+      assert(process.env.RELAYER_TEST === "true");
     }
     // If zkSync provider can't be created for some reason, default to a very conservative 2mil L2 gas limit
     // which should be sufficient for this transaction.

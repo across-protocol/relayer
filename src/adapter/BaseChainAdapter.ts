@@ -236,7 +236,6 @@ export class BaseChainAdapter {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
         const bridge = this.bridges[l1Token];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
-          // TODO: Do the toAddress field in these queries need to be aliased for special cases, e.g. zkSync.
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);

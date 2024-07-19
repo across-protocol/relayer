@@ -87,9 +87,10 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    // TODO: This still needs work. The bridge is unable to track cross chain transfers for Hub -> Spoke relays.
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress, toAddress),
+      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress),
       eventConfig
     );
     return {

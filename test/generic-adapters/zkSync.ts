@@ -186,6 +186,8 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(amount).to.equal(amount);
     });
 
+    // We only require two values in `transfers` for this test **because we do not trigger any hub pool events**
+    // See https://github.com/across-protocol/relayer/blob/f42853e28747010111941073e54d3d9d8a3f3a09/src/clients/bridges/ZKSyncAdapter.ts#L72
     it("Matches L1 and L2 events: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
@@ -276,14 +278,6 @@ describe("Cross Chain Adapter: zkSync", async function () {
           },
         },
         [spokePool.address]: {
-          [l1Weth]: {
-            [l2Weth.address]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-        [hubPool.address]: {
           [l1Weth]: {
             [l2Weth.address]: {
               depositTxHashes: [],

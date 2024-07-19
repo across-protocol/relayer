@@ -187,7 +187,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await snxBridgeContract.emitDepositInitiated(notMonitoredEoa, monitoredEoa, 1);
 
       const events = (
-        await snxBridge.queryL1BridgeInitiationEvents(l1SnxAddress, monitoredEoa, undefined, searchConfig)
+        await snxBridge.queryL1BridgeInitiationEvents(l1SnxAddress, monitoredEoa, monitoredEoa, searchConfig)
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
       // For the SnxBridge, only the `toAddress` is indexed on the L2 event so we treat the `fromAddress` as the
@@ -202,7 +202,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await snxBridgeContract.emitDepositFinalized(monitoredEoa, 1);
 
       const events = (
-        await snxBridge.queryL2BridgeFinalizationEvents(l1SnxAddress, monitoredEoa, undefined, searchConfig)
+        await snxBridge.queryL2BridgeFinalizationEvents(l1SnxAddress, monitoredEoa, monitoredEoa, searchConfig)
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
       expect(events[0].to).to.equal(monitoredEoa);
