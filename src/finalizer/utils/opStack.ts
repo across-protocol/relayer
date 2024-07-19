@@ -61,7 +61,8 @@ export async function opStackFinalizer(
   // - Don't submit proofs for finalizations older than 1 day
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const redis = await getRedisCache(logger);
-  const latestBlockToProve = await getBlockForTimestamp(chainId, getCurrentTime() - 7 * 60 * 60 * 24, undefined, redis);
+  const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
+  const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
       (e) =>

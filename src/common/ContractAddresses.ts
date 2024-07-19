@@ -24,6 +24,8 @@ import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
+import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
+import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -102,9 +104,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
-    weth: {
-      abi: WETH_ABI,
-    },
     VotingV2: {
       address: "0x004395edb43EFca9885CEdad51EC9fAf93Bd34ac",
       abi: VOTING_V2_ABI,
@@ -120,6 +119,10 @@ export const CONTRACT_ADDRESSES: {
     scrollRelayMessenger: {
       address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
       abi: SCROLL_RELAY_MESSENGER_ABI,
+    },
+    scrollGatewayRouter: {
+      address: "0xF8B1378579659D8F7EE5f3C929c2f3E332E41Fd6",
+      abi: SCROLL_GATEWAY_ROUTER_L1_ABI,
     },
     hubPool: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
@@ -142,10 +145,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -181,19 +180,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
-    weth: {
-      address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
-      abi: WETH_ABI,
-    },
   },
   1135: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -203,10 +194,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -225,10 +212,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
-    },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
@@ -237,10 +220,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4300000000000000000000000000000000000004",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -253,10 +232,6 @@ export const CONTRACT_ADDRESSES: {
   42161: {
     erc20Gateway: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
-    },
-    weth: {
-      address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-      abi: WETH_ABI,
     },
     outbox: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
@@ -284,10 +259,20 @@ export const CONTRACT_ADDRESSES: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
       abi: LINEA_TOKEN_BRIDGE_ABI,
     },
-    weth: {
-      address: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
-      abi: WETH_ABI,
+    eth: {
+      address: "0x0000000000000000000000000000000000000000",
     },
+  },
+  534352: {
+    scrollGatewayRouter: {
+      address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
+      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    },
+    // The Scroll canonical bridge will send WETH on a WETH deposit,
+    // so the dataworker will never use this address to wrap eth in
+    // the spoke pool. However, the relayer may need to wrap eth on
+    // the L2; therefore, we need to define an address here so the
+    // dataworker won't error.
     eth: {
       address: "0x0000000000000000000000000000000000000000",
     },
