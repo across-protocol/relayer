@@ -203,7 +203,7 @@ export class Relayer {
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
-    if (!ignoreLimits) {
+    if (!ignoreLimits && !deposit.fromLiteChain) {
       const { inputAmount } = deposit;
       const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
       if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
@@ -554,7 +554,7 @@ export class Relayer {
       }
     });
 
-    // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
+    // If during the execution run we had shortfalls or unprofitable fills then handle it by producing associated logs.
     if (tokenClient.anyCapturedShortFallFills()) {
       this.handleTokenShortfall();
     }
