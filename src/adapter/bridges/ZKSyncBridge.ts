@@ -1,4 +1,12 @@
-import { Contract, BigNumber, paginatedEventQuery, Signer, EventSearchConfig, Provider } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  Signer,
+  EventSearchConfig,
+  Provider,
+  isContractDeployedToAddress,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -15,6 +23,7 @@ import { zkSync as zkSyncUtils } from "../../utils/chains";
  */
 export class ZKSyncBridge extends BaseBridgeAdapter {
   protected zkSyncMailbox: Contract;
+  protected hubPoolAddress: string;
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
   private readonly l2GasLimit = BigNumber.from(2_000_000); // We should dynamically define this.
@@ -40,6 +49,9 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
 
     const { address: mailboxAddress, abi: mailboxAbi } = CONTRACT_ADDRESSES[hubChainId].zkSyncMailbox;
     this.zkSyncMailbox = new Contract(mailboxAddress, mailboxAbi, l1Signer);
+
+    // Set the hub address so that the bridge can be aware of transfers between Hub -> Spoke
+    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId].hubPool.address;
   }
 
   async constructL1ToL2Txn(
@@ -87,12 +99,21 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // TODO: This still needs work. The bridge is unable to track cross chain transfers for Hub -> Spoke relays.
-    const events = await paginatedEventQuery(
-      this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress),
-      eventConfig
-    );
+    const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
+    // If the monitored address is the hub pool address, then we automatically assume that
+    // we are tracking a Hub -> Spoke transfer; therefore, we manually set the toAddress.
+    // Otherwise, we make no assumptions of the tracking and make the associated query.
+    const events = isSpokePool
+      ? await paginatedEventQuery(
+          this.getL1Bridge(),
+          this.getL1Bridge().filters.DepositInitiated(undefined, this.hubPoolAddress, toAddress),
+          eventConfig
+        )
+      : await paginatedEventQuery(
+          this.getL1Bridge(),
+          this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress, toAddress),
+          eventConfig
+        );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "from")),
     };
@@ -105,13 +126,23 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l2Token = this.resolveL2TokenAddress(l1Token);
-    const events = await paginatedEventQuery(
-      this.getL2Bridge(),
-      this.getL2Bridge().filters.FinalizeDeposit(fromAddress, toAddress, l2Token),
-      eventConfig
-    );
+    // Similar to the query, if we are sending to the spoke pool, we must assume that the sender is the hubPool,
+    // so we add a special case for this reason.
+    const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
+    const events = isSpokePool
+      ? await paginatedEventQuery(
+          this.getL2Bridge(),
+          this.getL2Bridge().filters.FinalizeDeposit(this.hubPoolAddress, toAddress, l2Token),
+          eventConfig
+        )
+      : await paginatedEventQuery(
+          this.getL2Bridge(),
+          this.getL2Bridge().filters.FinalizeDeposit(fromAddress, toAddress, l2Token),
+          eventConfig
+        );
+
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender")),
+      [l2Token]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender")),
     };
   }
 

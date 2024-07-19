@@ -45,6 +45,10 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   public setAtomicDepositor(address: string, depositor: Contract) {
     this.bridges[address].atomicDepositor = depositor;
   }
+
+  public setHubPool(address: string, hubPool: string) {
+    this.bridges[address].hubPoolAddress = hubPool;
+  }
 }
 
 class TestZkSyncWethBridge extends ZKSyncWethBridge {
@@ -139,6 +143,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     adapter.setL2Eth(l1Weth, l2Eth);
     adapter.setL2Weth(l1Weth, l2Weth);
     adapter.setAtomicDepositor(l1Weth, atomicDepositor);
+    adapter.setHubPool(l1Token, hubPool.address);
 
     depositAmount = toBN(Math.round(Math.random() * 1e18));
     l2Token = adapter.bridges[l1Token].resolveL2TokenAddress(l1Token);
