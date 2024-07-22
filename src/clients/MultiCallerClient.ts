@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { BigNumber } from "ethers";
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
   winston,
   bnZero,
@@ -70,7 +70,7 @@ export class MultiCallerClient {
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   constructor(
     readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
+    readonly chunkSize: { [chainId: number]: number } = {},
     readonly baseSigner?: Signer
   ) {
     this.txnClient = new TransactionClient(logger);

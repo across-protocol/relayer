@@ -13,7 +13,7 @@ import {
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
-import * as zksync from "zksync-web3";
+import * as zksync from "zksync-ethers";
 import { CONTRACT_ADDRESSES } from "../src/common";
 import { gasPriceOracle } from "@across-protocol/sdk";
 const args = minimist(process.argv.slice(2), {

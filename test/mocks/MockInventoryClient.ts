@@ -5,7 +5,7 @@ import { BigNumber } from "ethers";
 import winston from "winston";
 export class MockInventoryClient extends InventoryClient {
   possibleRebalances: Rebalance[] = [];
-  balanceOnChain: BigNumber = BigNumber.from(0);
+  balanceOnChain: BigNumber | undefined = BigNumber.from(0);
   excessRunningBalancePcts: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
 
   constructor(
@@ -57,11 +57,11 @@ export class MockInventoryClient extends InventoryClient {
     return this.possibleRebalances;
   }
 
-  setBalanceOnChainForL1Token(newBalance: BigNumber): void {
+  setBalanceOnChainForL1Token(newBalance: BigNumber | undefined): void {
     this.balanceOnChain = newBalance;
   }
 
-  override getBalanceOnChain(): BigNumber {
-    return this.balanceOnChain;
+  override getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
+    return this.balanceOnChain ?? super.getBalanceOnChain(chainId, l1Token, l2Token);
   }
 }
