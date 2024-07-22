@@ -680,7 +680,7 @@ export class Relayer {
     const chainId = deposit.destinationChainId;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
 
-    this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
+    this.setFillStatus(deposit, FillStatus.Filled);
   }
 
   /**
