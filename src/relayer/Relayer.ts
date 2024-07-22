@@ -105,7 +105,7 @@ export class Relayer {
     if (!isDefined(fillAmountUsd)) {
       this.logger.debug({
         at: "Relayer::evaluateFill",
-        message: `Skipping ${srcChain} deposit due to unresolved output token fill amount.`,
+        message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
         destinationChainId,
         outputToken: deposit.outputToken,
         transactionHash: deposit.transactionHash,
