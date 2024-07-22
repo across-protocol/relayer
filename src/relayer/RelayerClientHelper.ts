@@ -11,7 +11,6 @@ import {
   TryMulticallClient,
 } from "../clients";
 import { IndexedSpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
-import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
   Clients,
   constructClients,
@@ -23,6 +22,9 @@ import {
 import { SpokePoolClientsByChain } from "../interfaces";
 import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
+
+import { GenericAdapterManager } from "../adapter/AdapterManager";
+import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
@@ -143,7 +145,8 @@ export async function constructRelayerClients(
   await profitClient.update();
 
   const monitoredAddresses = [signerAddr];
-  const adapterManager = new AdapterManager(
+  const adapterManagerConstructor = config.useGenericAdapter ? GenericAdapterManager : AdapterManager;
+  const adapterManager = new adapterManagerConstructor(
     logger,
     spokePoolClients,
     hubPoolClient,
