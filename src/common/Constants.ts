@@ -1,4 +1,23 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider } from "../utils";
+import {
+  BaseBridgeAdapter,
+  OpStackDefaultERC20Bridge,
+  SnxOptimismBridge,
+  DaiOptimismBridge,
+  UsdcTokenSplitterBridge,
+  OpStackWethBridge,
+  PolygonWethBridge,
+  PolygonERC20Bridge,
+  ZKSyncBridge,
+  ZKSyncWethBridge,
+  ArbitrumOneBridge,
+  LineaBridge,
+  LineaUSDCBridge,
+  LineaWethBridge,
+  BlastBridge,
+  ScrollERC20Bridge,
+  ScrollWethBridge,
+} from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 
 /**
@@ -290,6 +309,7 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON_AMOY]: 7,
 };
 
+// A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
@@ -328,6 +348,85 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
   ],
 };
 
+// Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
+// case, it is the default bridge for the given chain.
+export const CANONICAL_BRIDGE: {
+  [chainId: number]: {
+    new (
+      l2chainId: number,
+      hubChainId: number,
+      l1Signer: Signer,
+      l2SignerOrProvider: Signer | Provider,
+      l1Token: string
+    ): BaseBridgeAdapter;
+  };
+} = {
+  [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
+  [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.LINEA]: LineaBridge,
+  [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
+  [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
+  [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
+};
+
+// Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
+// In addition to mapping a chain to the custom bridges, we also need to specify which token the bridge supports.
+export const CUSTOM_BRIDGE: {
+  [chainId: number]: {
+    [tokenAddress: string]: {
+      new (
+        l2chainId: number,
+        hubChainId: number,
+        l1Signer: Signer,
+        l2SignerOrProvider: Signer | Provider,
+        l1Token: string
+      ): BaseBridgeAdapter;
+    };
+  };
+} = {
+  [CHAIN_IDs.ARBITRUM]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+  },
+  [CHAIN_IDs.BASE]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.BLAST]: {
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: BlastBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.LINEA]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: LineaUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
+  },
+  [CHAIN_IDs.LISK]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.MODE]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.OPTIMISM]: {
+    [TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]]: SnxOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.POLYGON]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+  },
+  [CHAIN_IDs.SCROLL]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ScrollWethBridge,
+  },
+  [CHAIN_IDs.ZK_SYNC]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKSyncWethBridge,
+  },
+};
+
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.
 export const RELAYER_DEFAULT_SPOKEPOOL_INDEXER = "./dist/src/libexec/RelayerSpokePoolIndexer.js";
 
@@ -338,6 +437,25 @@ export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol
 // This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case which could cause the
 // relayer to unintentionally overdraw the HubPool's available reserves.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM, CHAIN_IDs.BLAST];
+
+export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { l1: string; l2: string } } = {
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
+    l2: "0x096760F208390250649E3e8763348E783AEF5562",
+  },
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
+    l2: "0x096760F208390250649E3e8763348E783AEF5562", // If we want to bridge to USDC.e, we need to specify a unique Arbitrum Gateway.
+  },
+  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
+    l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
+  },
+  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
+    l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
+  },
+};
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
@@ -388,4 +506,10 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+};
+
+export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
+  [CHAIN_IDs.OPTIMISM]: 1.5,
+  [CHAIN_IDs.BASE]: 1.5,
+  [CHAIN_IDs.MODE]: 1.5,
 };
