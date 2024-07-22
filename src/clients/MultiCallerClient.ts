@@ -517,7 +517,7 @@ export class MultiCallerClient {
 export class TryMulticallClient extends MultiCallerClient {
   constructor(
     readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
+    readonly chunkSize: { [chainId: number]: number } = {},
     readonly baseSigner?: Signer
   ) {
     super(logger, chunkSize, baseSigner);
@@ -595,7 +595,7 @@ export class TryMulticallClient extends MultiCallerClient {
       }
     });
 
-    if (!txnCalldataToRebuild.length) {
+    if (txnCalldataToRebuild.length !== 0) {
       // At this point, every transaction here will be aimed at the same spoke pool, so we only need to chunk based on
       // chunk size.
       const txnChunks = lodash.chunk(txnCalldataToRebuild, this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE);
