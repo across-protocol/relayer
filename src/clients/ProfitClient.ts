@@ -17,6 +17,7 @@ import {
   BigNumber,
   formatFeePct,
   getCurrentTime,
+  getNetworkName,
   isDefined,
   min,
   winston,
@@ -390,16 +391,26 @@ export class ProfitClient {
   }
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
-  getFillAmountInUsd(deposit: Deposit, fillAmount = deposit.outputAmount): BigNumber {
-    const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    if (!l1TokenInfo) {
-      const { inputToken } = deposit;
-      throw new Error(
-        `ProfitClient#getFillAmountInUsd missing l1TokenInfo for deposit with origin token: ${inputToken}`
-      );
+  getFillAmountInUsd(
+    deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">
+  ): BigNumber | undefined {
+    const { destinationChainId, outputToken, outputAmount } = deposit;
+    let l1Token: L1Token;
+
+    try {
+      l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId);
+    } catch {
+      this.logger.info({
+        at: "ProfitClient#getFillAmountInUsd",
+        message: `Cannot resolve output token ${outputToken} on ${getNetworkName(destinationChainId)}.`,
+      });
+      return undefined;
     }
-    const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.symbol);
-    return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
+
+    const tokenPriceInUsd = this.getPriceOfToken(l1Token.symbol);
+
+    // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
+    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(l1Token.decimals));
   }
 
   async getFillProfitability(
