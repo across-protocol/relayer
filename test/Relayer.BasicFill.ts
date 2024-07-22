@@ -1,7 +1,8 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { FillStatus } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";
+import { bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -224,6 +225,28 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         expect((await receipts).length).to.equal(0);
       }
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
+    });
+
+    it("Internally tracks fill status", async function () {
+      const deposit = await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+
+      await updateAllClients();
+      const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+
+      // Force the fillStatus -> filled; the relayer should not try to fill the deposit.
+      relayerInstance.fillStatus[depositHash] = FillStatus.Filled;
+      expect(relayerInstance.fillStatus[depositHash]).to.equal(FillStatus.Filled);
+      let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+
+      // Force the fillStatus -> unfilled; the relayer should try to fill the deposit.
+      relayerInstance.fillStatus[depositHash] = FillStatus.Unfilled;
+      expect(relayerInstance.fillStatus[depositHash]).to.equal(FillStatus.Unfilled);
+      txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+
+      // Verify that the relayer updated the fill status.
+      expect(relayerInstance.fillStatus[depositHash]).to.equal(FillStatus.Filled);
     });
 
     it("Shouldn't double fill a deposit", async function () {
