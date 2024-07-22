@@ -78,7 +78,7 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
         bytes4 whitelistedFuncSelector = ovmChainIdToBridge[bridge];
         if (whitelistedFuncSelector != bytes4(bridgeCallData)) revert InvalidBridgeFunction();
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory result) = bridge.call(bridgeCallData);
+        (bool success, bytes memory result) = bridge.call{ value: value }(bridgeCallData);
         require(success, string(result));
         emit AtomicWethDepositInitiated(msg.sender, bridge, value);
     }
