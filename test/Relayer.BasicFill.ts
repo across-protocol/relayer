@@ -228,7 +228,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Internally tracks fill status", async function () {
-      const deposit = await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
 
       await updateAllClients();
       const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
@@ -413,7 +421,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       deposits.forEach((deposit) => {
-        let depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+        const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
         const status = deposit.exclusiveRelayer === relayerAddress ? FillStatus.Filled : FillStatus.Unfilled;
         expect(fillStatus[depositHash] ?? FillStatus.Unfilled).to.equal(status);
       });
@@ -431,7 +439,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       deposits.forEach((deposit) => {
-        let depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+        const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
         expect(fillStatus[depositHash]).to.equal(FillStatus.Filled);
       });
     });
