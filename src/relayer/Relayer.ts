@@ -672,7 +672,6 @@ export class Relayer {
           latestBlockSearched - mdcPerChain[chainId],
         ])
       );
-
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
       if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
