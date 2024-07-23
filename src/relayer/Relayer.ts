@@ -457,7 +457,7 @@ export class Relayer {
           const originChain = getNetworkName(originChainId);
           this.logger.debug({
             at: "Relayer::evaluateFill",
-            message: `Skipping ${originChain} deposit ${depositId} due to subsequent origin chain overcommitment.`,
+            message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
             fillAmountUsd,
             limit: fillLimits[limitIdx]?.limit,
             transactionHash: deposit.transactionHash,
