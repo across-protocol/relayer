@@ -301,10 +301,9 @@ export class RelayerConfig extends CommonConfig {
           assert(
             mdc >= prevMDC,
             `Non-incrementing deposit confirmation specified for USD threshold ${usdFormatted} (${prevMDC} > ${mdc})`
-          )
+          );
         });
       });
-
     }
 
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
