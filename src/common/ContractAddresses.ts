@@ -24,6 +24,8 @@ import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
+import BLAST_ETH_YIELD_ABI from "./abi/BlastYield.json";
+import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 
@@ -136,6 +138,14 @@ export const CONTRACT_ADDRESSES: {
     blastBridge: {
       address: "0x3a05E5d33d7Ab3864D53aaEc93c8301C1Fa49115",
       abi: BLAST_BRIDGE_ABI,
+    },
+    blastEthYieldManager: {
+      address: "0x98078db053902644191f93988341E31289E1C8FE",
+      abi: BLAST_ETH_YIELD_ABI,
+    },
+    blastOptimismPortal: {
+      address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
+      abi: BLAST_OPTIMISM_PORTAL_ABI,
     },
   },
   10: {
