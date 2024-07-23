@@ -270,7 +270,7 @@ export class Relayer {
   }
 
   computeOriginChainCommitment(chainId: number, fromBlock: number, toBlock: number): BigNumber {
-    const { hubPoolClient, profitClient, spokePoolClients } = this.clients;
+    const { profitClient, spokePoolClients } = this.clients;
     const originSpoke = spokePoolClients[chainId];
 
     const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
@@ -280,9 +280,7 @@ export class Relayer {
         return acc;
       }
 
-      // @todo: Requires an update to support arbitrary outputTokens.
-      const outputToken = hubPoolClient.getL1TokenInfoForL2Token(deposit.outputToken, deposit.destinationChainId);
-      const tokenPrice = profitClient.getPriceOfToken(outputToken.symbol);
+      const tokenPrice = profitClient.getFillAmountInUsd(deposit);
       const amount = deposit.outputAmount.mul(tokenPrice).div(fixedPointAdjustment);
       return acc.add(amount);
     }, bnZero);
