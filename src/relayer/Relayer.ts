@@ -349,6 +349,7 @@ export class Relayer {
     return limits;
   }
 
+  // @node: This method is flagged for removal after computeFillLimits() has been proven.
   computeRequiredDepositConfirmations(
     deposits: V3Deposit[],
     destinationChainId: number
