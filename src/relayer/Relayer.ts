@@ -469,8 +469,8 @@ export class Relayer {
       if (!isDefined(repaymentChainId)) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       } else {
-        const fillLimits = this.fillLimits[originChainId];
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+        const fillLimits = this.fillLimits[originChainId];
         const limitIdx = fillLimits.findIndex(({ limit }) => limit.gte(fillAmountUsd));
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
