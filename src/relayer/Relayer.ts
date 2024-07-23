@@ -291,9 +291,8 @@ export class Relayer {
         return acc;
       }
 
-      const tokenPrice = profitClient.getFillAmountInUsd(deposit);
-      const amount = deposit.outputAmount.mul(tokenPrice).div(fixedPointAdjustment);
-      return acc.add(amount);
+      const fillAmount = profitClient.getFillAmountInUsd(deposit);
+      return acc.add(fillAmount);
     }, bnZero);
 
     return commitment;
@@ -447,18 +446,18 @@ export class Relayer {
       const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
       if (isDefined(repaymentChainId)) {
         const fillLimits = this.fillLimits[originChainId];
-        const fillLimit = fillLimits.find(({ fromBlock }) => fromBlock > deposit.blockNumber);
-        const tokenPrice = profitClient.getPriceOfToken(l1Token.symbol);
-        const outputAmountUsd = outputAmount.mul(tokenPrice).div(fixedPointAdjustment);
-        if (outputAmountUsd.gt(fillLimit.limit)) {
+        const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+        const fillLimit = fillLimits.find(({ limit }) => limit.gte(fillAmountUsd));
+        if (!isDefined(fillLimit) || deposit.blockNumber > fillLimit.fromBlock) {
           const originChain = getNetworkName(originChainId);
           this.logger.debug({
             at: "Relayer::evaluateFill",
             message: `Skipping ${originChain} deposit ${depositId} due to subsequent origin chain overcommitment.`,
-            outputAmountUsd,
-            limit: fillLimit.limit,
+            fillAmountUsd,
+            limit: fillLimit?.limit,
             transactionHash: deposit.transactionHash,
           });
+          return;
         }
 
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
@@ -466,7 +465,7 @@ export class Relayer {
 
         // Update local balances & limits to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
-        fillLimit.limit = fillLimit.limit.sub(outputAmountUsd);
+        fillLimit.limit = fillLimit.limit.sub(fillAmountUsd);
       } else {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       }
@@ -637,9 +636,7 @@ export class Relayer {
           // Track the fill status for faster filtering on subsequent loops.
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
-          if (fillStatus === FillStatus.Filled) {
-            return false;
-          }
+          return fillStatus !== FillStatus.Filled;
         });
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
