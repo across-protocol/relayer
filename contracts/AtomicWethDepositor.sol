@@ -22,7 +22,7 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
     /**
      * @notice Mapping of function selectors to whitelisted bridge addresses that can be called by this contract.
      */
-    mapping(address => bytes4) public ovmChainIdToBridge;
+    mapping(address => bytes4) public whitelistedBridgeFunctions;
 
     ///////////////////////////////
     //          Events           //
@@ -57,7 +57,7 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
      * @notice Whitelists function selector for bridge contract.
      */
     function whitelistBridge(address bridge, bytes4 funcSelector) public onlyOwner {
-        ovmChainIdToBridge[bridge] = funcSelector;
+        whitelistedBridgeFunctions[bridge] = funcSelector;
     }
 
     ///////////////////////////////
@@ -75,7 +75,7 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
      */
     function bridgeWeth(uint256 value, address bridge, bytes calldata bridgeCallData) public nonReentrant {
         _withdrawWeth(value);
-        bytes4 whitelistedFuncSelector = ovmChainIdToBridge[bridge];
+        bytes4 whitelistedFuncSelector = whitelistedBridgeFunctions[bridge];
         if (whitelistedFuncSelector != bytes4(bridgeCallData)) revert InvalidBridgeFunction();
         // solhint-disable-next-line avoid-low-level-calls
         (bool success, bytes memory result) = bridge.call{ value: value }(bridgeCallData);
