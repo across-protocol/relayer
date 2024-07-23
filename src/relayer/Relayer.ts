@@ -280,9 +280,18 @@ export class Relayer {
     return true;
   }
 
-  computeOriginChainCommitment(chainId: number, fromBlock: number, toBlock: number): BigNumber {
+  /**
+   * For a given origin chain block range, sum the USD value of any fills made by this relayer.
+   * @param chainId Origin chain ID to inspect.
+   * @param fromBlock Optional origin chain block number lower bound.
+   * @param toBlock Optional origin chain block number upper bound.
+   * @returns The cumulative USD value of fills made by this relayer for deposits within the specified block range.
+   */
+  computeOriginChainCommitment(chainId: number, fromBlock?: number, toBlock?: number): BigNumber {
     const { profitClient, spokePoolClients } = this.clients;
     const originSpoke = spokePoolClients[chainId];
+    fromBlock ??= originSpoke.deploymentBlock;
+    toBlock ??= originSpoke.latestBlockSearched;
 
     const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
     const commitment = deposits.reduce((acc, deposit) => {
@@ -298,6 +307,12 @@ export class Relayer {
     return commitment;
   }
 
+  /**
+   * For a given origin chain, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
+   * filled by this relayer.
+   * @param chainId Origin chain ID to inspect.
+   * @returns An array of origin chain fill limits in USD, ordered by origin chain block range.
+   */
   computeOriginChainLimits(chainId: number): { fromBlock: number; limit: BigNumber }[] {
     const mdcs = this.config.minDepositConfirmations[chainId];
     const originSpoke = this.clients.spokePoolClients[chainId];
@@ -336,6 +351,11 @@ export class Relayer {
     return limits;
   }
 
+  /**
+   * For all origin chains chains, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
+   * filled by this relayer.
+   * @returns A mapping of chain ID to an array of origin chain fill limits in USD, ordered by origin chain block range.
+   */
   computeFillLimits(): { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] } {
     // For each SpokePool reduce the amount available for fills by the amount
     // previously committed within the origin chain's finality window.
