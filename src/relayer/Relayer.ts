@@ -581,6 +581,17 @@ export class Relayer {
     return txnReceipts;
   }
 
+  /*
+   * Manually update the fill status for a given deposit.
+   * @note This protects against repeated attempts to fill on chains with longer confirmation times.
+   * @param deposit Deposit object.
+   * @param status Fill status (Unfilled, Filled, RequestedSlowFill).
+   */
+  protected setFillStatus(deposit: V3Deposit, status: number): void {
+    const depositHash = this.clients.spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+    this.fillStatus[depositHash] = status;
+  }
+
   requestSlowFill(deposit: V3Deposit): void {
     // don't request slow fill if origin/destination chain is a lite chain
     if (deposit.fromLiteChain || deposit.toLiteChain) {
@@ -636,6 +647,8 @@ export class Relayer {
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
+
+    this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
@@ -677,6 +690,8 @@ export class Relayer {
       ? this.clients.tryMulticallClient
       : this.clients.multiCallerClient;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+
+    this.setFillStatus(deposit, FillStatus.Filled);
   }
 
   /**

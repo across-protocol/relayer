@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider, ZERO_ADDRESS } from "../utils";
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -19,6 +19,7 @@ import {
   ScrollWethBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
+import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 
 /**
  * Note: When adding new chains, it's preferred to retain alphabetical ordering of CHAIN_IDs in Object mappings.
@@ -476,14 +477,14 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
       L1CrossDomainMessenger: "0x5D4472f31Bd9385709ec61305AFc749F0fA8e9d0",
-      L1StandardBridge: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
-      StateCommitmentChain: "0x0000000000000000000000000000000000000000",
-      CanonicalTransactionChain: "0x0000000000000000000000000000000000000000",
-      BondManager: "0x0000000000000000000000000000000000000000",
-      OptimismPortal: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_81457.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].blastOptimismPortal.address,
       L2OutputOracle: "0x826D1B0D4111Ad9146Eb8941D7Ca2B6a44215c76",
-      OptimismPortal2: "0x0000000000000000000000000000000000000000",
-      DisputeGameFactory: "0x0000000000000000000000000000000000000000",
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: ZERO_ADDRESS,
     },
     // https://github.com/blast-io/blast/blob/master/blast-optimism/op-bindings/predeploys/addresses.go
     l2: {
@@ -495,14 +496,14 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0x2dF7057d3F25212E51aFEA8dA628668229Ea423f",
       L1CrossDomainMessenger: "0x31B72D76FB666844C41EdF08dF0254875Dbb7edB",
-      L1StandardBridge: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
-      StateCommitmentChain: "0x0000000000000000000000000000000000000000",
-      CanonicalTransactionChain: "0x0000000000000000000000000000000000000000",
-      BondManager: "0x0000000000000000000000000000000000000000",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_1135.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
       OptimismPortal: "0x26dB93F8b8b4f7016240af62F7730979d353f9A7",
       L2OutputOracle: "0x113cB99283AF242Da0A0C54347667edF531Aa7d6",
-      OptimismPortal2: "0x0000000000000000000000000000000000000000",
-      DisputeGameFactory: "0x0000000000000000000000000000000000000000",
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: ZERO_ADDRESS,
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
