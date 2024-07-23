@@ -565,7 +565,6 @@ export class TryMulticallClient extends MultiCallerClient {
     const bundledSimResults = await this.txnClient.simulate(bundledTxns);
 
     bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
-
       if (succeed) {
         const succeededTxnCalldata: string[] = [];
         // Go through each transaction result of the txns batched in tryMulticall.
@@ -610,7 +609,9 @@ export class TryMulticallClient extends MultiCallerClient {
         txns.forEach((txn, idx) => {
           mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
           if (txn.contract !== contract) {
-            throw new Error(`There was an error when rebuilding a tryMulticall Bundle. Expected to send txn to ${txn.contract} but was sending txn to ${contract}`);
+            throw new Error(
+              `There was an error when rebuilding a tryMulticall Bundle. Expected to send txn to ${txn.contract} but was sending txn to ${contract}`
+            );
           }
         });
         return {
