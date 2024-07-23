@@ -336,7 +336,8 @@ export class Relayer {
     for (let i = limits.length - 1; i >= 0; --i) {
       const { limit, fromBlock } = limits[i];
       if (limit.lt(bnZero)) {
-        this.logger.warn({
+        const log = this.config.sendingRelaysEnabled ? this.logger.warn : this.logger.debug;
+        log({
           at: "Relayer::computeOriginChainlimits",
           message: `Relayer has overcommitted funds to ${getNetworkName(chainId)}.`,
           overCommitment: limit.abs(),
