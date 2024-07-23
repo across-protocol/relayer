@@ -402,7 +402,7 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, outputAmount } = deposit;
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
     const { hubPoolClient, profitClient, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
 
