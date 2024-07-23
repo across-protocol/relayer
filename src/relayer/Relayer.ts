@@ -489,7 +489,7 @@ export class Relayer {
         // Decrement the applicable limit and all subsequent limits.
         fillLimits.forEach((fillLimit) => (fillLimit.limit = fillLimit.limit.sub(fillAmountUsd)));
 
-        // Update local balances & limits to account for the enqueued fill.
+        // Update local balance to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
 
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
