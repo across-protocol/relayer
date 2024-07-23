@@ -444,30 +444,34 @@ export class Relayer {
         lpFees
       );
       const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
-      if (isDefined(repaymentChainId)) {
+      if (!isDefined(repaymentChainId)) {
+        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+      } else {
         const fillLimits = this.fillLimits[originChainId];
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
-        const fillLimit = fillLimits.find(({ limit }) => limit.gte(fillAmountUsd));
-        if (!isDefined(fillLimit) || deposit.blockNumber > fillLimit.fromBlock) {
+        const limitIdx = fillLimits.findIndex(({ limit }) => limit.gte(fillAmountUsd));
+
+        // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
+        if (limitIdx === -1 || fillLimits.slice(limitIdx).some(({ limit }) => limit.sub(fillAmountUsd).lt(bnZero))) {
           const originChain = getNetworkName(originChainId);
           this.logger.debug({
             at: "Relayer::evaluateFill",
             message: `Skipping ${originChain} deposit ${depositId} due to subsequent origin chain overcommitment.`,
             fillAmountUsd,
-            limit: fillLimit?.limit,
+            limit: fillLimits[limitIdx]?.limit,
             transactionHash: deposit.transactionHash,
           });
           return;
         }
 
-        const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+        // Decrement the applicable limit and all subsequent limits.
+        Object.values(fillLimits).forEach((fillLimit) => (fillLimit.limit = fillLimit.limit.sub(fillAmountUsd)));
 
         // Update local balances & limits to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
-        fillLimit.limit = fillLimit.limit.sub(fillAmountUsd);
-      } else {
-        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+
+        const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
+        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
       }
     } else if (selfRelay) {
       // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
