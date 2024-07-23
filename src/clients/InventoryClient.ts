@@ -26,12 +26,12 @@ import {
   getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { V3Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
+import { AdapterManager, CrossChainTransferClient } from "./bridges";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -1127,7 +1127,7 @@ export class InventoryClient {
     }
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
+    await this.adapterManager.setL1TokenApprovals(l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {

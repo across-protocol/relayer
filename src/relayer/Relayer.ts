@@ -103,6 +103,17 @@ export class Relayer {
 
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+    if (!isDefined(fillAmountUsd)) {
+      this.logger.debug({
+        at: "Relayer::evaluateFill",
+        message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
+        destinationChainId,
+        outputToken: deposit.outputToken,
+        transactionHash: deposit.transactionHash,
+      });
+      return false;
+    }
+
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
     );
@@ -657,6 +668,17 @@ export class Relayer {
     return txnReceipts;
   }
 
+  /*
+   * Manually update the fill status for a given deposit.
+   * @note This protects against repeated attempts to fill on chains with longer confirmation times.
+   * @param deposit Deposit object.
+   * @param status Fill status (Unfilled, Filled, RequestedSlowFill).
+   */
+  protected setFillStatus(deposit: V3Deposit, status: number): void {
+    const depositHash = this.clients.spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+    this.fillStatus[depositHash] = status;
+  }
+
   requestSlowFill(deposit: V3Deposit): void {
     // don't request slow fill if origin/destination chain is a lite chain
     if (deposit.fromLiteChain || deposit.toLiteChain) {
@@ -709,6 +731,8 @@ export class Relayer {
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
+
+    this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
@@ -747,6 +771,8 @@ export class Relayer {
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+
+    this.setFillStatus(deposit, FillStatus.Filled);
   }
 
   /**
