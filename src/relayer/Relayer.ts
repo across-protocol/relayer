@@ -615,6 +615,7 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
+      allUnfilledDeposits,
     });
     if (allUnfilledDeposits.length === 0) {
       return txnReceipts;
