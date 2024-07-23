@@ -487,7 +487,7 @@ export class Relayer {
         }
 
         // Decrement the applicable limit and all subsequent limits.
-        Object.values(fillLimits).forEach((fillLimit) => (fillLimit.limit = fillLimit.limit.sub(fillAmountUsd)));
+        fillLimits.forEach((fillLimit) => (fillLimit.limit = fillLimit.limit.sub(fillAmountUsd)));
 
         // Update local balances & limits to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
