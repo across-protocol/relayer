@@ -21,9 +21,12 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
   chainIsProd,
+  Contract,
+  ethers,
 } from "../../utils";
-import { Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
+import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
+const { utils } = ethers;
 
 interface CrossChainMessageWithEvent {
   event: TokensBridged;
@@ -234,11 +237,75 @@ async function finalizeOptimismMessage(
   message: CrossChainMessageWithStatus,
   logIndex = 0
 ): Promise<Multicall2Call> {
-  const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
+  if (_chainId !== CHAIN_IDs.BLAST) {
+    const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
+      message.message as optimismSDK.MessageLike,
+      undefined,
+      logIndex
+    );
+    return {
+      callData: callData.data,
+      target: callData.to,
+    };
+  }
+
+  // Blast OptimismPortal has a custom interface so we can't use the SDK to construct the calldata.
+  // Instead, we need to locate the L1 Proof log that was emitted when we proved the L2 transaction
+  // to finalize, inside of which contains a `requestId` we need to use to find the `hintId` parameter
+  // we need to submit when finalizing the withdrawal. Note that the `hintId` can be hard-coded to 0
+  // for non-ETH withdrawals.
+  const { blastOptimismPortal, blastEthYieldManager } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET];
+  const blastPortal = new Contract(
+    blastOptimismPortal.address,
+    blastOptimismPortal.abi,
+    crossChainMessenger.l1Provider
+  );
+
+  const resolvedMessage = await crossChainMessenger.toCrossChainMessage(
     message.message as optimismSDK.MessageLike,
-    undefined,
     logIndex
   );
+  const withdrawalStruct = await crossChainMessenger.toLowLevelMessage(resolvedMessage, logIndex);
+  const l2WithdrawalParams = [
+    withdrawalStruct.messageNonce,
+    withdrawalStruct.sender,
+    withdrawalStruct.target,
+    withdrawalStruct.value,
+    withdrawalStruct.minGasLimit,
+    withdrawalStruct.message,
+  ];
+
+  let hintId = 0;
+  if (withdrawalStruct.value.gt(0)) {
+    const withdrawalHash = utils.keccak256(
+      utils.defaultAbiCoder.encode(["uint256", "address", "address", "uint256", "uint256", "bytes"], l2WithdrawalParams)
+    );
+    const blastEthYield = new Contract(
+      blastEthYieldManager.address,
+      blastEthYieldManager.abi,
+      crossChainMessenger.l1Provider
+    );
+
+    // @dev The withdrawal hash should be unique for the L2 withdrawal so there should be exactly 1 event for this query.
+    // If the withdrawal hasn't been proven yet then this will error.
+    const [proofReceipt, latestCheckpointId] = await Promise.all([
+      blastPortal.queryFilter(blastPortal.filters.WithdrawalProven(withdrawalHash)),
+      blastEthYield.getLastCheckpointId(),
+    ]);
+    if (proofReceipt.length !== 1) {
+      throw new Error(`Failed to find Proof receipt matching Blast withdrawal ${message.event.transactionHash}`);
+    }
+    const requestId = proofReceipt[0].args?.requestId;
+    if (requestId === undefined || requestId === 0) {
+      throw new Error(`Found invalid requestId ${requestId} for Blast withdrawal ${message.event.transactionHash}`);
+    }
+    // @dev The hintId parameter plays a role in our insurance mechanism that kicks in in the rare event that
+    // ETH yield goes negative. The `findCheckpointHint` function runs a binary search in solidity to find the
+    // correct hint so we naively set the starting point to 1, the first index, and set the latest to the last
+    // queried value. The request ID for an already proven withdrawal should always be found by the following function.
+    hintId = await blastEthYield.findCheckpointHint(requestId, 1, latestCheckpointId);
+  }
+  const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
   return {
     callData: callData.data,
     target: callData.to,
