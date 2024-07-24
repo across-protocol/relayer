@@ -338,10 +338,10 @@ async function multicallOptimismFinalizations(
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
-  const allMessages = await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
-  const finalizableMessages = (
-    allMessages
-  ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]);
+  const allMessages = await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger);
+  const finalizableMessages = allMessages.filter(
+    (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
+  );
   const callData = await Promise.all(
     finalizableMessages.map((message) =>
       finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex)
@@ -363,7 +363,7 @@ async function multicallOptimismFinalizations(
   // Blast USDB withdrawals have a two step withdrawal process involving a separate claim.
   if (chainId === CHAIN_IDs.BLAST) {
     const claimableMessages = allMessages.filter(
-      (message) => 
+      (message) =>
         message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[CHAIN_IDs.BLAST] &&
         message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
     );
@@ -382,12 +382,14 @@ async function multicallOptimismFinalizations(
     );
     const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
     const lastCheckpointId = await usdYieldManager.getLastCheckpointId();
+    // @dev Hints are only queried here for logging purposes. In final form of this PR they will be removed as they
+    // are dynamically calculated by the DaiRetriever contract.
     const hintIds = await Promise.all(
       withdrawalRequestIds.map((requestId) => usdYieldManager.findCheckpointHint(requestId, 1, lastCheckpointId))
     );
     console.log("Withdrawal request IDs: ", withdrawalRequestIds);
     console.log("Hint IDs: ", hintIds);
-    console.log(withdrawalRequests)
+    console.log(withdrawalRequests);
     assert(withdrawalRequestIds.length === hintIds.length);
     assert(withdrawalRequestIds.length === claimableMessages.length);
     console.log(
@@ -401,42 +403,49 @@ async function multicallOptimismFinalizations(
       crossChainMessenger.l1Provider
     );
     const claimMessages: CrossChainMessage[] = [];
-    const claimCallData = (await Promise.all(
-      claimableMessages.map(async (message, i) => {
-        // @dev These claims might revert if the admin hasn't finalized them yet in the USDYieldManager.
-        try {
-          await tokenRetriever.callStatic.claimUSDB(withdrawalRequestIds[i], hintIds[i], { from: hubPoolClient.hubPool.address });
-          const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
-          claimMessages.push(
-            {
+    const claimCallData = (
+      await Promise.all(
+        claimableMessages.map(async (message, i) => {
+          // @dev These claims might revert if the admin hasn't finalized them yet in the USDYieldManager.
+          try {
+            await tokenRetriever.callStatic.retrieve(withdrawalRequestIds[i], {
+              from: hubPoolClient.hubPool.address,
+            });
+            const amountFromWei = convertFromWei(
+              message.event.amountToReturn.toString(),
+              TOKEN_SYMBOLS_MAP.USDB.decimals
+            );
+            claimMessages.push({
               originationChainId: chainId,
               l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
               amount: amountFromWei,
               type: "misc",
               miscReason: "claimUSDB",
               destinationChainId: hubPoolClient.chainId,
-            }
-          );
-          const claimCallData = await tokenRetriever.populateTransaction.claimUSDB(withdrawalRequestIds[i], hintIds[i]);
-          return {
-            callData: claimCallData.data,
-            target: claimCallData.to,
-          };
-        } catch (err) {
-          console.error(err)
-          logger.debug({
-            at: "Finalizer#multicallOptimismFinalizations",
-            message: `Claim failed for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]} and hint Id ${hintIds[i]}`,
-          })
-          return undefined;
-        }
-      })
-    )).filter((call) => call !== undefined);
+            });
+            const claimCallData = await tokenRetriever.populateTransaction.retrieve(
+              withdrawalRequestIds[i]
+            );
+            return {
+              callData: claimCallData.data,
+              target: claimCallData.to,
+            };
+          } catch (err) {
+            console.error(err);
+            logger.debug({
+              at: "Finalizer#multicallOptimismFinalizations",
+              message: `Claim failed for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
+            });
+            return undefined;
+          }
+        })
+      )
+    ).filter((call) => call !== undefined);
 
     return {
       callData: [...callData, ...claimCallData],
       withdrawals: [...withdrawals, ...claimMessages],
-    }
+    };
   }
 
   return {
