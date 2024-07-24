@@ -115,7 +115,7 @@ export class Relayer {
 
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
-    ) ?? { minConfirmations: Number.MAX_SAFE_INTEGER };
+    );
     const { latestBlockSearched } = spokePoolClients[originChainId];
     if (latestBlockSearched - blockNumber < minConfirmations) {
       this.logger.debug({
