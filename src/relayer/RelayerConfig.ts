@@ -285,11 +285,11 @@ export class RelayerConfig extends CommonConfig {
       // Append default thresholds as a safe upper-bound.
       Object.keys(this.minDepositConfirmations).forEach((chainId) => {
         const depositConfirmations = this.minDepositConfirmations[chainId];
-        const prevMDC = depositConfirmations.at(-1).minConfirmations;
-        if (prevMDC < Number.MAX_SAFE_INTEGER) {
+        const { usdThreshold: threshold, minConfirmations: mdc } = depositConfirmations.at(-1);
+        if (threshold.lt(bnUint256Max)) {
           depositConfirmations.push({
             usdThreshold: bnUint256Max,
-            minConfirmations: prevMDC + 1,
+            minConfirmations: Math.max(mdc + 1, Number.MAX_SAFE_INTEGER),
           });
         }
       });
