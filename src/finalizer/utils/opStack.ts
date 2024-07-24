@@ -436,7 +436,7 @@ async function multicallOptimismFinalizations(
           console.log(
             await usdYieldManager.callStatic.claimWithdrawal(withdrawalRequestIds[i], hintIds[i], {
               from: hubPoolClient.hubPool.address,
-            });
+            })
           );
           const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i]);
           return {
