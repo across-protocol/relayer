@@ -48,6 +48,7 @@ type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 const BLAST_CLAIM_NOT_READY = 0;
+export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean => [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
 
 export async function opStackFinalizer(
   logger: winston.Logger,
@@ -241,7 +242,7 @@ async function finalizeOptimismMessage(
   message: CrossChainMessageWithStatus,
   logIndex = 0
 ): Promise<Multicall2Call> {
-  if (_chainId !== CHAIN_IDs.BLAST) {
+  if (!chainIsBlast(_chainId)) {
     const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
       message.message as optimismSDK.MessageLike,
       undefined,
@@ -363,14 +364,14 @@ async function multicallOptimismFinalizations(
   });
 
   // Blast USDB withdrawals have a two step withdrawal process involving a separate claim.
-  if (chainId === CHAIN_IDs.BLAST) {
+  if (chainIsBlast(chainId)) {
     const claimableMessages = allMessages.filter(
       (message) =>
-        message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[CHAIN_IDs.BLAST] &&
+        message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[chainId] &&
         message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
     );
 
-    const { blastUsdYieldManager, blastDaiRetriever } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET];
+    const { blastUsdYieldManager, blastDaiRetriever } = CONTRACT_ADDRESSES[hubPoolClient.chainId];
     const usdYieldManager = new Contract(
       blastUsdYieldManager.address,
       blastUsdYieldManager.abi,
