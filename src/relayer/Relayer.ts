@@ -321,7 +321,7 @@ export class Relayer {
     let toBlock = originSpoke.latestBlockSearched;
 
     // For each deposit confirmation tier (lookback), sum all outstanding commitments back to head.
-    const limits = Object.values(mdcs).map(({ minConfirmations, usdThreshold }) => {
+    const limits = Object.values(mdcs).map(({ usdThreshold, minConfirmations }) => {
       const fromBlock = Math.max(toBlock - minConfirmations, originSpoke.deploymentBlock);
       const commitment = this.computeOriginChainCommitment(chainId, fromBlock, toBlock);
 
@@ -348,6 +348,9 @@ export class Relayer {
         break;
       }
     }
+
+    // Safety belt: limits should descending by fromBlock (i.e. most recent block first).
+    assert(limits.slice(1).every(({ fromBlock }, idx) => limits[idx].fromBlock > fromBlock));
 
     return limits;
   }
@@ -471,7 +474,7 @@ export class Relayer {
       } else {
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
         const fillLimits = this.fillLimits[originChainId];
-        const limitIdx = fillLimits.findIndex(({ limit }) => limit.gte(fillAmountUsd));
+        const limitIdx = fillLimits.findIndex(({ fromBlock }) => fromBlock >= deposit.blockNumber);
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
         if (limitIdx === -1 || fillLimits.slice(limitIdx).some(({ limit }) => limit.sub(fillAmountUsd).lt(bnZero))) {
