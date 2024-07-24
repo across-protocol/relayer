@@ -367,6 +367,7 @@ export class Relayer {
         return [originChainId, limits];
       })
     );
+    this.logger.debug({ at: "Relayer::computeFillLimits", message: "Computed origin chain fill limits.", limits });
 
     return limits;
   }
