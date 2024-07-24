@@ -47,6 +47,8 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
+const BLAST_CLAIM_NOT_READY = 0;
+
 export async function opStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
@@ -377,13 +379,15 @@ async function multicallOptimismFinalizations(
     // All withdrawal requests we are interested in finalizing either have the HubPool or the Blast_Retriever address
     // as the recipient. HubPool as recipient is actually a leftover from leftover code and all recipients going
     // forward should be the Blast_Retriever address.
-    const withdrawalRequests = await usdYieldManager.queryFilter(
-      usdYieldManager.filters.WithdrawalRequested(null, null, [hubPoolClient.hubPool.address, ZERO_ADDRESS])
-    );
+    const [withdrawalRequests, lastCheckpointId] = await Promise.all([
+      usdYieldManager.queryFilter(
+        usdYieldManager.filters.WithdrawalRequested(null, null, [hubPoolClient.hubPool.address, ZERO_ADDRESS])
+      ),
+      usdYieldManager.getLastCheckpointId(),
+    ]);
     const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
-    const lastCheckpointId = await usdYieldManager.getLastCheckpointId();
-    // @dev Hints are only queried here for logging purposes. In final form of this PR they will be removed as they
-    // are dynamically calculated by the DaiRetriever contract.
+    // @dev Hints are not strictly required to get DaiRetriever.retrieve to work, however if a hint for requestId
+    // is zero, then the claim is not ready yet so we can use them as a filter.
     const hintIds = await Promise.all(
       withdrawalRequestIds.map((requestId) => usdYieldManager.findCheckpointHint(requestId, 1, lastCheckpointId))
     );
@@ -406,38 +410,36 @@ async function multicallOptimismFinalizations(
     const claimCallData = (
       await Promise.all(
         claimableMessages.map(async (message, i) => {
-          // @dev These claims might revert if the admin hasn't finalized them yet in the USDYieldManager.
-          try {
-            await tokenRetriever.callStatic.retrieve(withdrawalRequestIds[i], {
-              from: hubPoolClient.hubPool.address,
-            });
-            const amountFromWei = convertFromWei(
-              message.event.amountToReturn.toString(),
-              TOKEN_SYMBOLS_MAP.USDB.decimals
-            );
-            claimMessages.push({
-              originationChainId: chainId,
-              l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
-              amount: amountFromWei,
-              type: "misc",
-              miscReason: "claimUSDB",
-              destinationChainId: hubPoolClient.chainId,
-            });
-            const claimCallData = await tokenRetriever.populateTransaction.retrieve(
-              withdrawalRequestIds[i]
-            );
-            return {
-              callData: claimCallData.data,
-              target: claimCallData.to,
-            };
-          } catch (err) {
-            console.error(err);
+          const hintId = hintIds[i];
+          if (hintId === BLAST_CLAIM_NOT_READY) {
             logger.debug({
               at: "Finalizer#multicallOptimismFinalizations",
-              message: `Claim failed for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
+              message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
             });
             return undefined;
           }
+          const amountFromWei = convertFromWei(
+            message.event.amountToReturn.toString(),
+            TOKEN_SYMBOLS_MAP.USDB.decimals
+          );
+          claimMessages.push({
+            originationChainId: chainId,
+            l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
+            amount: amountFromWei,
+            type: "misc",
+            miscReason: "claimUSDB",
+            destinationChainId: hubPoolClient.chainId,
+          });
+          console.log(
+            await usdYieldManager.callStatic.claimWithdrawal(withdrawalRequestIds[i], hintIds[i], {
+              from: hubPoolClient.hubPool.address,
+            });
+          );
+          const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i]);
+          return {
+            callData: claimCallData.data,
+            target: claimCallData.to,
+          };
         })
       )
     ).filter((call) => call !== undefined);
