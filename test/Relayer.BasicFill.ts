@@ -490,7 +490,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       for (const receipts of Object.values(txnReceipts)) {
         expect((await receipts).length).to.equal(0);
       }
-      expect(spyLogIncludes(spy, -2, "due to insufficient deposit confirmations.")).to.be.true;
+      expect(spyLogIncludes(spy, -3, "due to insufficient deposit confirmations.")).to.be.true;
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found.")).to.be.true;
     });
 
