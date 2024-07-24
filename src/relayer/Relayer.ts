@@ -283,15 +283,13 @@ export class Relayer {
   /**
    * For a given origin chain block range, sum the USD value of any fills made by this relayer.
    * @param chainId Origin chain ID to inspect.
-   * @param fromBlock Optional origin chain block number lower bound.
-   * @param toBlock Optional origin chain block number upper bound.
+   * @param fromBlock Origin chain block number lower bound.
+   * @param toBlock Origin chain block number upper bound.
    * @returns The cumulative USD value of fills made by this relayer for deposits within the specified block range.
    */
-  computeOriginChainCommitment(chainId: number, fromBlock?: number, toBlock?: number): BigNumber {
+  computeOriginChainCommitment(chainId: number, fromBlock: number, toBlock: number): BigNumber {
     const { profitClient, spokePoolClients } = this.clients;
     const originSpoke = spokePoolClients[chainId];
-    fromBlock ??= originSpoke.deploymentBlock;
-    toBlock ??= originSpoke.latestBlockSearched;
 
     const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
     const commitment = deposits.reduce((acc, deposit) => {
