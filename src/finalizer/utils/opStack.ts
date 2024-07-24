@@ -50,7 +50,8 @@ type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 const BLAST_CLAIM_NOT_READY = 0;
 // Start ID used to query hint ID's on Blast L1 yield manager, this should never change.
 const BLAST_YIELD_MANAGER_STARTING_REQUEST_ID = 1;
-export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean => [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
+export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean =>
+  [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
 
 export async function opStackFinalizer(
   logger: winston.Logger,
@@ -310,7 +311,11 @@ async function finalizeOptimismMessage(
     // ETH yield goes negative. The `findCheckpointHint` function runs a binary search in solidity to find the
     // correct hint so we naively set the starting point to 1, the first index, and set the latest to the last
     // queried value. The request ID for an already proven withdrawal should always be found by the following function.
-    hintId = await blastEthYield.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, latestCheckpointId);
+    hintId = await blastEthYield.findCheckpointHint(
+      requestId,
+      BLAST_YIELD_MANAGER_STARTING_REQUEST_ID,
+      latestCheckpointId
+    );
   }
   const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
   return {
@@ -392,16 +397,27 @@ async function multicallOptimismFinalizations(
     // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
     // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
     const hintIds = await Promise.all(
-      withdrawalRequestIds.map((requestId) => usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId))
+      withdrawalRequestIds.map((requestId) =>
+        usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
+      )
     );
-    console.log("Withdrawal request IDs: ", withdrawalRequestIds);
-    console.log("Hint IDs: ", hintIds);
-    console.log(withdrawalRequests);
-    assert(withdrawalRequestIds.length === hintIds.length);
+
+    // Filter out already claimed withdrawals:
+    const withdrawalClaims = await Promise.all(
+      withdrawalRequestIds.map((requestId) =>
+        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId))
+      )
+    );
+    const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
+    assert(withdrawalRequests.length === hintIds.length);
     assert(withdrawalRequestIds.length === claimableMessages.length);
+
     console.log(
       "Claimable messages: ",
-      claimableMessages.map((message, i) => `${message.event.transactionHash}-${withdrawalRequestIds[i]}-${hintIds[i]}`)
+      claimableMessages.map(
+        (message, i) =>
+          `${message.event.transactionHash}-${withdrawalRequestIds[i]}-${hintIds[i]}-claimed:${withdrawalRequestIsClaimed[i]}`
+      )
     );
 
     const tokenRetriever = new Contract(
@@ -413,8 +429,15 @@ async function multicallOptimismFinalizations(
     const claimCallData = (
       await Promise.all(
         claimableMessages.map(async (message, i) => {
+          if (withdrawalRequestIsClaimed[i]) {
+            logger.debug({
+              at: "Finalizer#multicallOptimismFinalizations",
+              message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} already claimed`,
+            });
+            return undefined;
+          }
           const hintId = hintIds[i];
-          if (hintId === BLAST_CLAIM_NOT_READY) {
+          if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
             logger.debug({
               at: "Finalizer#multicallOptimismFinalizations",
               message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,

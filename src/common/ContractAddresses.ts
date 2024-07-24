@@ -149,8 +149,8 @@ export const CONTRACT_ADDRESSES: {
       abi: BLAST_YIELD_MANAGER_ABI,
     },
     blastDaiRetriever: {
-      address: "0xa230285d5683C74935aD14c446e137c8c8828438",
-      abi: BLAST_YIELD_MANAGER_ABI,
+      address: "0x98Dd57048d7d5337e92D9102743528ea4Fea64aB",
+      abi: BLAST_DAI_RETRIEVER_ABI,
     },
     blastOptimismPortal: {
       address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
