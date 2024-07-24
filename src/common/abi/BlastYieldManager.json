@@ -16,5 +16,16 @@
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "anonymous":false,
+    "inputs":[
+      {"indexed":true,"internalType":"uint256","name":"requestId","type":"uint256"},
+      {"indexed":true,"internalType":"address","name":"requestor","type":"address"},
+      {"indexed":true,"internalType":"address","name":"recipient","type":"address"},
+      {"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}
+    ],
+    "name":"WithdrawalRequested",
+    "type":"event"
   }
 ]
