@@ -48,6 +48,8 @@ type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 const BLAST_CLAIM_NOT_READY = 0;
+// Start ID used to query hint ID's on Blast L1 yield manager, this should never change.
+const BLAST_YIELD_MANAGER_STARTING_REQUEST_ID = 1;
 export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean => [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
 
 export async function opStackFinalizer(
@@ -308,7 +310,7 @@ async function finalizeOptimismMessage(
     // ETH yield goes negative. The `findCheckpointHint` function runs a binary search in solidity to find the
     // correct hint so we naively set the starting point to 1, the first index, and set the latest to the last
     // queried value. The request ID for an already proven withdrawal should always be found by the following function.
-    hintId = await blastEthYield.findCheckpointHint(requestId, 1, latestCheckpointId);
+    hintId = await blastEthYield.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, latestCheckpointId);
   }
   const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
   return {
@@ -390,7 +392,7 @@ async function multicallOptimismFinalizations(
     // @dev Hints are not strictly required to get DaiRetriever.retrieve to work, however if a hint for requestId
     // is zero, then the claim is not ready yet so we can use them as a filter.
     const hintIds = await Promise.all(
-      withdrawalRequestIds.map((requestId) => usdYieldManager.findCheckpointHint(requestId, 1, lastCheckpointId))
+      withdrawalRequestIds.map((requestId) => usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId))
     );
     console.log("Withdrawal request IDs: ", withdrawalRequestIds);
     console.log("Hint IDs: ", hintIds);
