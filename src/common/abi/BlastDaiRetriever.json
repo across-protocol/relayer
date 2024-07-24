@@ -5,6 +5,11 @@
             "internalType": "uint256",
             "name": "_requestId",
             "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "_hintId",
+            "type": "uint256"
           }
         ],
         "name": "retrieve",

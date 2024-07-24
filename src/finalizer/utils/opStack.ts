@@ -389,8 +389,8 @@ async function multicallOptimismFinalizations(
       usdYieldManager.getLastCheckpointId(),
     ]);
     const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
-    // @dev Hints are not strictly required to get DaiRetriever.retrieve to work, however if a hint for requestId
-    // is zero, then the claim is not ready yet so we can use them as a filter.
+    // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
+    // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
     const hintIds = await Promise.all(
       withdrawalRequestIds.map((requestId) => usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId))
     );
@@ -438,7 +438,7 @@ async function multicallOptimismFinalizations(
               from: hubPoolClient.hubPool.address,
             })
           );
-          const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i]);
+          const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i], hintIds[i]);
           return {
             callData: claimCallData.data,
             target: claimCallData.to,
