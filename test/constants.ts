@@ -73,10 +73,10 @@ export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 export const defaultMinDepositConfirmations = {
   [originChainId]: [
     { usdThreshold: bnUint256Max.sub(bnOne), minConfirmations: 0 },
-    { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER }
+    { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER },
   ],
   [destinationChainId]: [
     { usdThreshold: bnUint256Max.sub(bnOne), minConfirmations: 0 },
-    { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER }
+    { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER },
   ],
 };

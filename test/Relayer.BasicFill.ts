@@ -189,8 +189,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const getFillAmount = (relayData: V3RelayData, tokenPrice: BigNumber): BigNumber =>
       relayData.outputAmount.mul(tokenPrice).div(fixedPoint);
 
-    const findOriginChainLimitIdx = (limits: { fromBlock: number, limit: BigNumber }[], blockNumber: number): number => {
-      return limits.findIndex(({ fromBlock }) => fromBlock <= blockNumber)
+    const findOriginChainLimitIdx = (
+      limits: { fromBlock: number; limit: BigNumber }[],
+      blockNumber: number
+    ): number => {
+      return limits.findIndex(({ fromBlock }) => fromBlock <= blockNumber);
     };
 
     // Helper for verifying relayer deposit confirmation logic.
@@ -517,7 +520,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(fillAmount).to.exist;
 
       // Simple escalating confirmation requirements; cap off with a default upper limit.
-      const originChainConfirmations = [1, 4, 8].map((n) => ({ usdThreshold: fillAmount.mul(100).div(100), minConfirmations: n }));
+      const originChainConfirmations = [1, 4, 8].map((n) => ({
+        usdThreshold: fillAmount.mul(100).div(100),
+        minConfirmations: n,
+      }));
       originChainConfirmations.push({
         usdThreshold: bnUint256Max,
         minConfirmations: originChainConfirmations.length + 1,
@@ -567,7 +573,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Identify the residual limit for the origin chain.
       let limitIdx = findOriginChainLimitIdx(originChainLimits, deposit1.blockNumber);
-      let { limit } = originChainLimits[limitIdx];
+      const { limit } = originChainLimits[limitIdx];
       expect(limit.gte(bnZero)).to.be.true;
 
       // Make another fill -> overcommit by `fillAmount`.
@@ -589,7 +595,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       limitIdx = findOriginChainLimitIdx(originChainLimits, deposit1.blockNumber);
       expect(limitIdx).to.not.equal(-1);
-      let { fromBlock } = originChainLimits[limitIdx];
+      const { fromBlock } = originChainLimits[limitIdx];
       expect(fromBlock).to.be.lessThan(Number.MAX_SAFE_INTEGER);
 
       while (isChainOvercommitted(relayerInstance.computeOriginChainLimits(originChainId))) {
