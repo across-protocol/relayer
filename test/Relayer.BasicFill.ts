@@ -189,11 +189,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const getFillAmount = (relayData: V3RelayData, tokenPrice: BigNumber): BigNumber =>
       relayData.outputAmount.mul(tokenPrice).div(fixedPoint);
 
-    // Helper for verifying relayer deposit confirmation logic.
-    const isChainOvercommitted = (fromBlock: number, limits: { fromBlock: number; limit: BigNumber }[]): boolean => {
-      const { limit } = limits.find(({ fromBlock: _fromBlock }) => _fromBlock < fromBlock) ?? { limit: bnZero };
-      return limit.lt(bnZero);
+    const findOriginChainLimitIdx = (limits: { fromBlock: number, limit: BigNumber }[], blockNumber: number): number => {
+      return limits.findIndex(({ fromBlock }) => fromBlock <= blockNumber)
     };
+
+    // Helper for verifying relayer deposit confirmation logic.
+    const isChainOvercommitted = (limits: { limit: BigNumber }[]): boolean =>
+      limits.some(({ limit }) => limit.lt(bnZero));
 
     const randomNumber = (ceil = 1_000_000) => Math.floor(Math.random() * ceil);
 
@@ -515,7 +517,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(fillAmount).to.exist;
 
       // Simple escalating confirmation requirements; cap off with a default upper limit.
-      const originChainConfirmations = [1, 4, 8].map((n) => ({ usdThreshold: fillAmount.mul(n), minConfirmations: n }));
+      const originChainConfirmations = [1, 4, 8].map((n) => ({ usdThreshold: fillAmount.mul(100).div(100), minConfirmations: n }));
       originChainConfirmations.push({
         usdThreshold: bnUint256Max,
         minConfirmations: originChainConfirmations.length + 1,
@@ -561,35 +563,36 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(originChainCommitment.eq(getFillAmount(deposit1, tokenPrice))).to.be.true;
 
       let originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
-      expect(isChainOvercommitted(deposit1.blockNumber, originChainLimits)).to.be.false;
+      expect(isChainOvercommitted(originChainLimits)).to.be.false;
 
       // Identify the residual limit for the origin chain.
-      const originChainLimit = originChainLimits.find(({ fromBlock }) => fromBlock < deposit1.blockNumber);
-      const { limit } = originChainLimit ?? { limit: bnZero };
-      expect(limit.gt(bnZero)).to.be.true;
+      let limitIdx = findOriginChainLimitIdx(originChainLimits, deposit1.blockNumber);
+      let { limit } = originChainLimits[limitIdx];
+      expect(limit.gte(bnZero)).to.be.true;
 
-      // Make another fill -> overcommit by 1 unit.
+      // Make another fill -> overcommit by `fillAmount`.
       const limitAmount = limit.mul(fixedPoint).div(tokenPrice); // Convert back from USD to token units.
       const deposit2 = await depositV3(
         spokePool_1,
         destinationChainId,
         depositor,
         inputToken,
-        limitAmount.add(bnOne),
+        limitAmount.add(fillAmount),
         outputToken,
-        limitAmount.add(bnOne)
+        limitAmount.add(fillAmount)
       );
       await fillV3Relay(spokePool_2, deposit2, relayer);
       await updateAllClients();
 
       originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
-      expect(isChainOvercommitted(deposit1.blockNumber, originChainLimits)).to.be.true;
-      const { fromBlock } = originChainLimits.find(({ fromBlock }) => deposit1.blockNumber > fromBlock) ?? {
-        fromBlock: Number.MAX_SAFE_INTEGER,
-      };
+      expect(isChainOvercommitted(originChainLimits)).to.be.true;
+
+      limitIdx = findOriginChainLimitIdx(originChainLimits, deposit1.blockNumber);
+      expect(limitIdx).to.not.equal(-1);
+      let { fromBlock } = originChainLimits[limitIdx];
       expect(fromBlock).to.be.lessThan(Number.MAX_SAFE_INTEGER);
 
-      while (isChainOvercommitted(deposit1.blockNumber, relayerInstance.computeOriginChainLimits(originChainId))) {
+      while (isChainOvercommitted(relayerInstance.computeOriginChainLimits(originChainId))) {
         // Make a deposit to crank the chain forward.
         await depositV3(spokePool_1, destinationChainId, depositor, inputToken, bnZero, outputToken, bnZero);
         await updateAllClients();
@@ -610,10 +613,23 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Verify that the limits are correctly formatted and passed back via fillLimits().
       originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
-      expect(originChainLimits.find(({ limit }) => limit.lt(bnZero))).to.exist;
-
       const fillLimits = relayerInstance.computeFillLimits();
       expect(fillLimits[originChainId]).to.deep.equal(originChainLimits);
+
+      // Make a large fill and verify that the relevant fillLimits go negative.
+      const deposit3 = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        fillAmount.mul(4),
+        outputToken,
+        fillAmount.mul(4)
+      );
+      await fillV3Relay(spokePool_2, deposit3, relayer);
+      await updateAllClients();
+      originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
+      expect(originChainLimits.slice(0, -1).every(({ limit }) => limit.lt(bnZero))).to.be.true;
     });
 
     it("Ignores deposits with quote times in future", async function () {

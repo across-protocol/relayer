@@ -281,6 +281,32 @@ export class Relayer {
   }
 
   /**
+   * For a given origin chain, find the relevant fill limit based on a deposit block number.
+   * @param originChainId Chain ID of origin chain.
+   * @param blockNumber Block number for the deposit to be filled.
+   * @returns An index into the limits array.
+   */
+  findOriginChainLimitIdx(originChainId: number, blockNumber: number): number {
+    return this.fillLimits[originChainId].findIndex(({ fromBlock }) => fromBlock <= blockNumber);
+  }
+
+  /**
+   * For a given origin chain, reduce its origin chain limits by `amount`.
+   * @param originChainId Chain ID of origin chain.
+   * @param blockNumber Block number for the deposit to be filled.
+   * @param amount USD amount to reduce the limit by.
+   */
+  reduceOriginChainLimit(originChainId: number, blockNumber: number, amount: BigNumber): void {
+    const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
+    assert(limitIdx !== -1, `No limit identified for ${getNetworkName(originChainId)} block ${blockNumber}`);
+
+    const limits = this.fillLimits[originChainId];
+    for (let i = limitIdx; i < limits.length; ++i) {
+      limits[i].limit = limits[i].limit.sub(amount);
+    }
+  }
+
+  /**
    * For a given origin chain block range, sum the USD value of any fills made by this relayer.
    * @param chainId Origin chain ID to inspect.
    * @param fromBlock Origin chain block number lower bound.
@@ -497,8 +523,8 @@ export class Relayer {
           return;
         }
 
-        // Decrement the applicable limit and all subsequent limits.
-        fillLimits.forEach((fillLimit) => (fillLimit.limit = fillLimit.limit.sub(fillAmountUsd)));
+        // Update the origin chain limits in anticipation of committing tokens to a fill.
+        this.reduceOriginChainLimit(originChainId, deposit.blockNumber, fillAmountUsd);
 
         // Update local balance to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
