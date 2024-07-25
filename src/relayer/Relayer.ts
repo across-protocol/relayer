@@ -709,7 +709,22 @@ export class Relayer {
 
     const start = performance.now();
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
-    assert(preferredChainIds.length > 0, `No preferred repayment chains found for deposit ${depositId}.`);
+    if (preferredChainIds.length === 0) {
+      this.logger.info({
+        at: "Relayer::resolveRepaymentChain",
+        message: `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
+        deposit,
+      });
+      return {
+        repaymentChainProfitability: {
+          gasLimit: bnZero,
+          gasCost: bnUint256Max,
+          relayerFeePct: bnZero,
+          lpFeePct: bnUint256Max,
+        },
+      };
+    }
+
     this.logger.debug({
       at: "Relayer::resolveRepaymentChain",
       message: `Determined eligible repayment chains ${JSON.stringify(
