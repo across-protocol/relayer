@@ -51,7 +51,7 @@ export type Rebalance = {
 
 const { CHAIN_IDs } = constants;
 
-// In anticipation of most Lite chains tending to be exit-heavy, drop the default buffer to 1.2x.
+// In anticipation of most Lite chains tending to be exit-heavy, define a lower default overage.
 const DEFAULT_CHAIN_OVERAGE = toBNWei("1.5");
 const LITE_CHAIN_OVERAGE = toBNWei("1.1");
 
