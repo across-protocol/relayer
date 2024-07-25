@@ -291,15 +291,24 @@ export class Relayer {
   }
 
   /**
+   * For a given origin chain, determine whether a new fill will overcommit the chain.
+   * @param originChainId Chain ID of origin chain.
+   * @param amount USD amount to evaluate.
+   * @param limitIdx Optional index into fillLimits to narrow the evaluation.
+   * @returns An index into the limits array.
+   */
+  originChainOvercommitted(originChainId: number, amount = bnZero, limitIdx = 0): boolean {
+    const fillLimits = this.fillLimits[originChainId].slice(limitIdx);
+    return fillLimits?.some(({ limit }) => limit.sub(amount).lt(bnZero)) ?? true;
+  }
+
+  /**
    * For a given origin chain, reduce its origin chain limits by `amount`.
    * @param originChainId Chain ID of origin chain.
-   * @param blockNumber Block number for the deposit to be filled.
    * @param amount USD amount to reduce the limit by.
+   * @param limitIdx Optional index into fillLimits to narrow the update.
    */
-  reduceOriginChainLimit(originChainId: number, blockNumber: number, amount: BigNumber): void {
-    const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
-    assert(limitIdx !== -1, `No limit identified for ${getNetworkName(originChainId)} block ${blockNumber}`);
-
+  reduceOriginChainLimit(originChainId: number, amount: BigNumber, limitIdx = 0): void {
     const limits = this.fillLimits[originChainId];
     for (let i = limitIdx; i < limits.length; ++i) {
       limits[i].limit = limits[i].limit.sub(amount);
@@ -506,28 +515,30 @@ export class Relayer {
       if (!isDefined(repaymentChainId)) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       } else {
+        const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
-        const fillLimits = this.fillLimits[originChainId];
-        const limitIdx = fillLimits.findIndex(({ fromBlock }) => fromBlock >= deposit.blockNumber);
+        const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
-        if (limitIdx === -1 || fillLimits.slice(limitIdx).some(({ limit }) => limit.sub(fillAmountUsd).lt(bnZero))) {
+        if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
           const originChain = getNetworkName(originChainId);
+          const limits = this.fillLimits[originChainId].slice(limitIdx);
           this.logger.debug({
             at: "Relayer::evaluateFill",
             message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
+            blockNumber,
             fillAmountUsd,
-            limit: fillLimits[limitIdx]?.limit,
+            limits,
             transactionHash: deposit.transactionHash,
           });
           return;
         }
 
         // Update the origin chain limits in anticipation of committing tokens to a fill.
-        this.reduceOriginChainLimit(originChainId, deposit.blockNumber, fillAmountUsd);
+        this.reduceOriginChainLimit(originChainId, fillAmountUsd, limitIdx);
 
         // Update local balance to account for the enqueued fill.
-        tokenClient.decrementLocalBalance(destinationChainId, deposit.outputToken, deposit.outputAmount);
+        tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
 
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
