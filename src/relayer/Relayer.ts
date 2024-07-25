@@ -354,7 +354,7 @@ export class Relayer {
     let toBlock = originSpoke.latestBlockSearched;
 
     // For each deposit confirmation tier (lookback), sum all outstanding commitments back to head.
-    const limits = Object.values(mdcs).map(({ usdThreshold, minConfirmations }) => {
+    const limits = mdcs.map(({ usdThreshold, minConfirmations }) => {
       const fromBlock = Math.max(toBlock - minConfirmations, originSpoke.deploymentBlock);
       const commitment = this.computeOriginChainCommitment(chainId, fromBlock, toBlock);
 
