@@ -534,7 +534,6 @@ export class InventoryClient {
       // destined for that chain in order to offload its excess.
       let { targetOverageBuffer } = tokenConfig;
       targetOverageBuffer ??= liteChainIds.includes(chainId) ? LITE_CHAIN_OVERAGE : DEFAULT_CHAIN_OVERAGE;
-
       const effectiveTargetPct = tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
 
       this.log(
