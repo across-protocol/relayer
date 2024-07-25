@@ -351,10 +351,13 @@ export class Relayer {
     // Safety belt: limits should descending by fromBlock (i.e. most recent block first).
     // Equality is permitted if the lookback is bounded by the SpokePool deployment block,
     // or if the origin spoke has not yet updated.
-    const badIdx = limits.slice(1).findIndex(({ fromBlock }, idx) =>
-      fromBlock >= limits[idx].fromBlock && fromBlock !== originSpoke.deploymentBlock
-    );
-    assert(badIdx === -1, `${chainId} commitment limits inconsistency`);
+    limits.slice(1).forEach(({ fromBlock }, idx) => {
+      const { fromBlock: prevFromBlock } = limits[idx];
+      assert(
+        prevFromBlock > fromBlock || fromBlock === originSpoke.deploymentBlock,
+        `${chainId} fill limits inconsistency (${fromBlock} >= ${prevFromBlock})`
+      );
+    });
 
     return limits;
   }
