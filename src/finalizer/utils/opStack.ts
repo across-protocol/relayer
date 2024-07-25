@@ -394,6 +394,7 @@ async function multicallOptimismFinalizations(
       usdYieldManager.getLastCheckpointId(),
     ]);
     const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
+
     // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
     // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
     const hintIds = await Promise.all(
@@ -401,6 +402,10 @@ async function multicallOptimismFinalizations(
         usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
       )
     );
+
+    // @dev Alternatively, another way to throw out requestIds that aren't ready yet is to query the
+    // `getLastFinalizedRequestId` and ignore any requestIds > this value.
+    const lastFinalizedRequestId = await usdYieldManager.getLastFinalizedRequestId();
 
     // Filter out already claimed withdrawals:
     const withdrawalClaims = await Promise.all(
@@ -412,13 +417,18 @@ async function multicallOptimismFinalizations(
     assert(withdrawalRequests.length === hintIds.length);
     assert(withdrawalRequestIds.length === claimableMessages.length);
 
-    console.log(
-      "Claimable messages: ",
-      claimableMessages.map(
-        (message, i) =>
-          `${message.event.transactionHash}-${withdrawalRequestIds[i]}-${hintIds[i]}-claimed:${withdrawalRequestIsClaimed[i]}`
-      )
-    );
+    logger.debug({
+      at: "Finalizer#multicallOptimismFinalizations",
+      message: "Blast USDB claimable message statuses",
+      claims: claimableMessages.map((message, i) => {
+        return {
+          withdrawalHash: message.event.transactionHash,
+          withdrawRequestId: withdrawalRequestIds[i],
+          usdYieldManagerHintId: hintIds[i],
+          isClaimed: withdrawalRequestIsClaimed[i],
+        };
+      }),
+    });
 
     const tokenRetriever = new Contract(
       blastDaiRetriever.address,
@@ -441,6 +451,17 @@ async function multicallOptimismFinalizations(
             logger.debug({
               at: "Finalizer#multicallOptimismFinalizations",
               message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
+              lastFinalizedRequestId,
+            });
+            return undefined;
+          }
+          const recipient = withdrawalRequests[i].args.recipient;
+          if (recipient !== tokenRetriever.address) {
+            logger.warn({
+              at: "Finalizer#multicallOptimismFinalizations",
+              message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`,
+              hintId: hintIds[i],
+              recipient,
             });
             return undefined;
           }
@@ -456,11 +477,6 @@ async function multicallOptimismFinalizations(
             miscReason: "claimUSDB",
             destinationChainId: hubPoolClient.chainId,
           });
-          console.log(
-            await usdYieldManager.callStatic.claimWithdrawal(withdrawalRequestIds[i], hintIds[i], {
-              from: hubPoolClient.hubPool.address,
-            })
-          );
           const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i], hintIds[i]);
           return {
             callData: claimCallData.data,
