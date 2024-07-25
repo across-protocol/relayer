@@ -213,7 +213,7 @@ async function run(argv: string[]): Promise<void> {
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, lookback = "5400", relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainId, finality = 32, lookback, relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(finality), "finality must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
@@ -230,17 +230,19 @@ async function run(argv: string[]): Promise<void> {
   const latestBlock = await quorumProvider.getBlock("latest");
 
   const deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
-  let startBlock: number;
+  let startBlock = latestBlock.number;
   if (/^@[0-9]+$/.test(lookback)) {
     // Lookback to a specific block (lookback = @<block-number>).
     startBlock = Number(lookback.slice(1));
-  } else {
+  } else if (isDefined(lookback)) {
     // Resolve `lookback` seconds from head to a specific block.
     assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
     startBlock = Math.max(
       deploymentBlock,
       await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
     );
+  } else {
+    logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Skipping lookback on ${chain}.` });
   }
 
   const opts = {
@@ -274,7 +276,7 @@ async function run(argv: string[]): Promise<void> {
     oldestTime = (await spokePool.getCurrentTime({ blockTag })).toNumber();
   };
 
-  if (lookback > 0) {
+  if (latestBlock.number > startBlock) {
     const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     const _spokePool = spokePool.connect(quorumProvider);
     await Promise.all([
