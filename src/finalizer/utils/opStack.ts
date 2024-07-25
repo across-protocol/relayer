@@ -371,130 +371,134 @@ async function multicallOptimismFinalizations(
   });
 
   // Blast USDB withdrawals have a two step withdrawal process involving a separate claim.
-  if (chainIsBlast(chainId)) {
-    const claimableMessages = allMessages.filter(
-      (message) =>
-        message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[chainId] &&
-        message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
-    );
-
-    const { blastUsdYieldManager, blastDaiRetriever } = CONTRACT_ADDRESSES[hubPoolClient.chainId];
-    const usdYieldManager = new Contract(
-      blastUsdYieldManager.address,
-      blastUsdYieldManager.abi,
-      crossChainMessenger.l1Provider
-    );
-    // All withdrawal requests we are interested in finalizing either have the HubPool or the Blast_Retriever address
-    // as the recipient. HubPool as recipient is actually a leftover from leftover code and all recipients going
-    // forward should be the Blast_Retriever address.
-    const [withdrawalRequests, lastCheckpointId] = await Promise.all([
-      usdYieldManager.queryFilter(
-        usdYieldManager.filters.WithdrawalRequested(null, null, [hubPoolClient.hubPool.address, ZERO_ADDRESS])
-      ),
-      usdYieldManager.getLastCheckpointId(),
-    ]);
-    const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
-
-    // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
-    // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
-    const hintIds = await Promise.all(
-      withdrawalRequestIds.map((requestId) =>
-        usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
-      )
-    );
-
-    // @dev Alternatively, another way to throw out requestIds that aren't ready yet is to query the
-    // `getLastFinalizedRequestId` and ignore any requestIds > this value.
-    const lastFinalizedRequestId = await usdYieldManager.getLastFinalizedRequestId();
-
-    // Filter out already claimed withdrawals:
-    const withdrawalClaims = await Promise.all(
-      withdrawalRequestIds.map((requestId) =>
-        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId))
-      )
-    );
-    const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
-    assert(withdrawalRequests.length === hintIds.length);
-    assert(withdrawalRequestIds.length === claimableMessages.length);
-
-    logger.debug({
-      at: "Finalizer#multicallOptimismFinalizations",
-      message: "Blast USDB claimable message statuses",
-      claims: claimableMessages.map((message, i) => {
-        return {
-          withdrawalHash: message.event.transactionHash,
-          withdrawRequestId: withdrawalRequestIds[i],
-          usdYieldManagerHintId: hintIds[i],
-          isClaimed: withdrawalRequestIsClaimed[i],
-        };
-      }),
-    });
-
-    const tokenRetriever = new Contract(
-      blastDaiRetriever.address,
-      blastDaiRetriever.abi,
-      crossChainMessenger.l1Provider
-    );
-    const claimMessages: CrossChainMessage[] = [];
-    const claimCallData = (
-      await Promise.all(
-        claimableMessages.map(async (message, i) => {
-          if (withdrawalRequestIsClaimed[i]) {
-            logger.debug({
-              at: "Finalizer#multicallOptimismFinalizations",
-              message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} already claimed`,
-            });
-            return undefined;
-          }
-          const hintId = hintIds[i];
-          if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
-            logger.debug({
-              at: "Finalizer#multicallOptimismFinalizations",
-              message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
-              lastFinalizedRequestId,
-            });
-            return undefined;
-          }
-          const recipient = withdrawalRequests[i].args.recipient;
-          if (recipient !== tokenRetriever.address) {
-            logger.warn({
-              at: "Finalizer#multicallOptimismFinalizations",
-              message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`,
-              hintId: hintIds[i],
-              recipient,
-            });
-            return undefined;
-          }
-          const amountFromWei = convertFromWei(
-            message.event.amountToReturn.toString(),
-            TOKEN_SYMBOLS_MAP.USDB.decimals
-          );
-          claimMessages.push({
-            originationChainId: chainId,
-            l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
-            amount: amountFromWei,
-            type: "misc",
-            miscReason: "claimUSDB",
-            destinationChainId: hubPoolClient.chainId,
-          });
-          const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i], hintIds[i]);
-          return {
-            callData: claimCallData.data,
-            target: claimCallData.to,
-          };
-        })
-      )
-    ).filter((call) => call !== undefined);
-
+  if (!chainIsBlast(chainId)) {
     return {
-      callData: [...callData, ...claimCallData],
-      withdrawals: [...withdrawals, ...claimMessages],
+      callData,
+      withdrawals,
     };
   }
 
+  // For each RELAYED (e.g. Finalized in the normal OPStack context) USDB message there should be
+  // one WithdrawRequest with a unique requestId.
+  const claimableMessages = allMessages.filter(
+    (message) =>
+      message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[chainId] &&
+      message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
+  );
+  if (claimableMessages.length === 0) {
+    return {
+      callData,
+      withdrawals,
+    };
+  }
+
+  const { blastUsdYieldManager, blastDaiRetriever } = CONTRACT_ADDRESSES[hubPoolClient.chainId];
+  const usdYieldManager = new Contract(
+    blastUsdYieldManager.address,
+    blastUsdYieldManager.abi,
+    crossChainMessenger.l1Provider
+  );
+  // All withdrawal requests we are interested in finalizing either have the HubPool or the Blast_Retriever address
+  // as the recipient. HubPool as recipient is actually a leftover from leftover code and all recipients going
+  // forward should be the Blast_Retriever address. We include it here so that this finalizer can catch any
+  // leftover finalizations with HubPool as the recipient that we can manually retrieve.
+  const [withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
+    usdYieldManager.queryFilter(
+      usdYieldManager.filters.WithdrawalRequested(null, null, [hubPoolClient.hubPool.address, ZERO_ADDRESS])
+    ),
+    usdYieldManager.getLastCheckpointId(),
+    // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
+    // logging information as to why a withdrawal request is not ready to be claimed.
+    usdYieldManager.getLastFinalizedRequestId(),
+  ]);
+  const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
+
+  // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
+  // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
+  // @dev Alternatively, another way to throw out requestIds that aren't ready yet is to query the
+  // `getLastFinalizedRequestId` and ignore any requestIds > this value.
+  const [hintIds, withdrawalClaims] = await Promise.all([
+    Promise.all(
+      withdrawalRequestIds.map((requestId) =>
+        usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
+      )
+    ),
+    Promise.all(
+      withdrawalRequestIds.map((requestId) =>
+        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId))
+      )
+    ),
+  ]);
+  const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
+  assert(withdrawalRequestIds.length === hintIds.length);
+  assert(withdrawalRequestIds.length === claimableMessages.length);
+  assert(withdrawalClaims.length === claimableMessages.length);
+
+  logger.debug({
+    at: "Finalizer#multicallOptimismFinalizations",
+    message: "Blast USDB claimable message statuses",
+    claims: claimableMessages.map((message, i) => {
+      return {
+        withdrawalHash: message.event.transactionHash,
+        withdrawRequestId: withdrawalRequestIds[i],
+        usdYieldManagerHintId: hintIds[i],
+        isClaimed: withdrawalRequestIsClaimed[i],
+      };
+    }),
+  });
+
+  const tokenRetriever = new Contract(blastDaiRetriever.address, blastDaiRetriever.abi, crossChainMessenger.l1Provider);
+  const claimMessages: CrossChainMessage[] = [];
+  const claimCallData = (
+    await Promise.all(
+      claimableMessages.map(async (message, i) => {
+        if (withdrawalRequestIsClaimed[i]) {
+          logger.debug({
+            at: "Finalizer#multicallOptimismFinalizations",
+            message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} already claimed`,
+          });
+          return undefined;
+        }
+        const hintId = hintIds[i];
+        if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
+          logger.debug({
+            at: "Finalizer#multicallOptimismFinalizations",
+            message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
+            lastFinalizedRequestId,
+          });
+          return undefined;
+        }
+        const recipient = withdrawalRequests[i].args.recipient;
+        if (recipient !== tokenRetriever.address) {
+          logger.warn({
+            at: "Finalizer#multicallOptimismFinalizations",
+            message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`,
+            hintId: hintIds[i],
+            recipient,
+          });
+          return undefined;
+        }
+        const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
+        claimMessages.push({
+          originationChainId: chainId,
+          l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
+          amount: amountFromWei,
+          type: "misc",
+          miscReason: "claimUSDB",
+          destinationChainId: hubPoolClient.chainId,
+        });
+        const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i], hintIds[i]);
+        return {
+          callData: claimCallData.data,
+          target: claimCallData.to,
+        };
+      })
+    )
+  ).filter((call) => call !== undefined);
+
   return {
-    callData,
-    withdrawals,
+    callData: [...callData, ...claimCallData],
+    withdrawals: [...withdrawals, ...claimMessages],
   };
 }
 
