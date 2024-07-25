@@ -529,8 +529,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         minConfirmations: originChainConfirmations.length + 1,
       });
 
-      // Set MDC such that the deposit is ignored. The profit client will return a fill USD amount of $0,
-      // so we need to set the MDC for the `0` threshold to be large enough such that the deposit would be ignored.
       relayerInstance = new Relayer(
         relayer.address,
         spyLogger,
