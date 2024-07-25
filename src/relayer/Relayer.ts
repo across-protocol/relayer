@@ -331,13 +331,14 @@ export class Relayer {
     });
 
     // Warn on the highest overcommitment, if any.
+    const chain = getNetworkName(chainId);
     for (let i = limits.length - 1; i >= 0; --i) {
       const { limit, fromBlock } = limits[i];
       if (limit.lt(bnZero)) {
         const log = this.config.sendingRelaysEnabled ? this.logger.warn : this.logger.debug;
         log({
           at: "Relayer::computeOriginChainlimits",
-          message: `Relayer has overcommitted funds to ${getNetworkName(chainId)}.`,
+          message: `Relayer has overcommitted funds to ${chain}.`,
           overCommitment: limit.abs(),
           usdThreshold: mdcs[i].usdThreshold,
           fromBlock,
@@ -348,7 +349,12 @@ export class Relayer {
     }
 
     // Safety belt: limits should descending by fromBlock (i.e. most recent block first).
-    assert(limits.slice(1).every(({ fromBlock }, idx) => limits[idx].fromBlock > fromBlock));
+    // Equality is permitted if the lookback is bounded by the SpokePool deployment block,
+    // or if the origin spoke has not yet updated.
+    const badIdx = limits.slice(1).findIndex(({ fromBlock }, idx) =>
+      fromBlock >= limits[idx].fromBlock && fromBlock !== originSpoke.deploymentBlock
+    );
+    assert(badIdx === -1, `${chainId} commitment limits inconsistency`);
 
     return limits;
   }
