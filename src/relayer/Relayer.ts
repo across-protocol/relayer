@@ -721,8 +721,8 @@ export class Relayer {
           gasCost: bnUint256Max,
           relayerFeePct: bnZero,
           lpFeePct: bnUint256Max,
-        }
-      }
+        },
+      };
     }
 
     this.logger.debug({
