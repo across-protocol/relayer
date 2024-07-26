@@ -1,3 +1,4 @@
+import { utils as ethersUtils } from "ethers";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import WETH_ABI from "../common/abi/Weth.json";
 import {
@@ -49,8 +50,7 @@ export type Rebalance = {
 };
 
 const { CHAIN_IDs } = constants;
-const LITE_CHAIN_OVERAGE = toBNWei("1");
-const DEFAULT_CHAIN_OVERAGE = toBNWei("1.5");
+const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
 
 export class InventoryClient {
   private logDisabledManagement = false;
@@ -479,8 +479,6 @@ export class InventoryClient {
       chainsToEvaluate.push(originChainId);
     }
 
-    const liteChainIds = this.hubPoolClient.configStoreClient.getLiteChainIdIndicesForBlock();
-
     const eligibleRefundChains: number[] = [];
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
@@ -528,17 +526,15 @@ export class InventoryClient {
       );
 
       // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
-      // destined for that chain in order to offload its excess. In anticipation of most Lite chains tending to be
-      // exit-heavy, drop the default buffer to 1x.
-      const targetOverage =
-        tokenConfig.targetOverageBuffer ?? liteChainIds.includes(chainId) ? LITE_CHAIN_OVERAGE : DEFAULT_CHAIN_OVERAGE;
-      const thresholdPct = tokenConfig.targetPct.mul(targetOverage).div(fixedPointAdjustment);
+      // destined for that chain in order to offload its excess.
+      const { targetOverageBuffer = DEFAULT_TOKEN_OVERAGE } = tokenConfig;
+      const effectiveTargetPct = tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
 
       this.log(
         `Evaluated taking repayment on ${
           chainId === originChainId ? "origin" : chainId === destinationChainId ? "destination" : "slow withdrawal"
         } chain ${chainId} for deposit ${deposit.depositId}: ${
-          expectedPostRelayAllocation.lte(thresholdPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
+          expectedPostRelayAllocation.lte(effectiveTargetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
         }`,
         {
           l1Token,
@@ -551,12 +547,14 @@ export class InventoryClient {
           cumulativeVirtualBalance,
           cumulativeVirtualBalanceWithShortfall,
           cumulativeVirtualBalanceWithShortfallPostRefunds,
-          thresholdPct,
+          targetPct: ethersUtils.formatUnits(tokenConfig.targetPct, 18),
+          targetOverage: ethersUtils.formatUnits(targetOverageBuffer, 18),
+          effectiveTargetPct: ethersUtils.formatUnits(effectiveTargetPct, 18),
           expectedPostRelayAllocation,
           chainsToEvaluate,
         }
       );
-      if (expectedPostRelayAllocation.lte(thresholdPct)) {
+      if (expectedPostRelayAllocation.lte(effectiveTargetPct)) {
         eligibleRefundChains.push(chainId);
       }
     }
