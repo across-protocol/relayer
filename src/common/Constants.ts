@@ -16,7 +16,6 @@ import {
   LineaWethBridge,
   BlastBridge,
   ScrollERC20Bridge,
-  ScrollWethBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
@@ -419,9 +418,6 @@ export const CUSTOM_BRIDGE: {
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
-  },
-  [CHAIN_IDs.SCROLL]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ScrollWethBridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKSyncWethBridge,
