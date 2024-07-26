@@ -17,7 +17,7 @@ interface Weth {
  * @dev This contract is ownable so that the owner can update whitelisted bridge addresses and function selectors.
  */
 contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
-    // The Bridge used to send ETH to another chain. Only the function selector can be used when 
+    // The Bridge used to send ETH to another chain. Only the function selector can be used when
     // calling the bridge contract.
     struct Bridge {
         address bridge;
