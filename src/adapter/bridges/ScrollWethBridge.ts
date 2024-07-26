@@ -1,11 +1,22 @@
-import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Provider } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  EventSearchConfig,
+  Signer,
+  Provider,
+  toWei,
+  fixedPointAdjustment,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
 export class ScrollWethBridge extends BaseBridgeAdapter {
-  protected atomicDepositor: Contract;
-  protected l2Gas = 20000;
+  // Gas limit obtained here: https://docs.scroll.io/en/developers/l1-and-l2-bridging/eth-and-erc20-token-bridge
+  protected l2Gas = 170000;
+  protected feeMultiplier = toWei(1.5);
+  protected readonly scrollGasPriceOracle: Contract;
 
   constructor(
     l2chainId: number,
@@ -18,12 +29,13 @@ export class ScrollWethBridge extends BaseBridgeAdapter {
     _l1Token;
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].scrollGatewayRouter;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].scrollGatewayRouter;
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
+    const { address: gasPriceOracleAddress, abi: gasPriceOracleAbi } =
+      CONTRACT_ADDRESSES[hubChainId].scrollGasPriceOracle;
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
-    this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+    this.scrollGasPriceOracle = new Contract(gasPriceOracleAddress, gasPriceOracleAbi, l1Signer);
   }
 
   async constructL1ToL2Txn(
@@ -32,10 +44,13 @@ export class ScrollWethBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    const baseFee = await this.getScrollGasPriceOracle().estimateCrossDomainMessageFee(this.l2Gas);
+    const bufferedFee = baseFee.mul(this.feeMultiplier).div(fixedPointAdjustment);
     return Promise.resolve({
-      contract: this.atomicDepositor,
-      method: "bridgeWethToScroll",
+      contract: this.getL1Bridge(),
+      method: "depositETH",
       args: [toAddress, amount, this.l2Gas],
+      value: amount.add(bufferedFee),
     });
   }
 
@@ -71,5 +86,9 @@ export class ScrollWethBridge extends BaseBridgeAdapter {
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "to", "from")),
     };
+  }
+
+  protected getScrollGasPriceOracle(): Contract {
+    return this.scrollGasPriceOracle;
   }
 }
