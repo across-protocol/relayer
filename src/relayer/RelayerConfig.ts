@@ -288,7 +288,7 @@ export class RelayerConfig extends CommonConfig {
         if (maxThreshold.lt(bnUint256Max)) {
           depositConfirmations.push({
             usdThreshold: bnUint256Max,
-            minConfirmations: Math.max(maxConfirmations + 1, Number.MAX_SAFE_INTEGER),
+            minConfirmations: maxConfirmations + 1,
           });
         }
       });
