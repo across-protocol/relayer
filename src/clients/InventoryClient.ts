@@ -465,8 +465,8 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     if (
       !chainsToEvaluate.includes(originChainId) &&
-      deposit.toLiteChain &&
-      this._l1TokenEnabledForChain(l1Token, Number(originChainId))
+      this._l1TokenEnabledForChain(l1Token, Number(originChainId)) &&
+      deposit.toLiteChain
     ) {
       chainsToEvaluate.push(originChainId);
     }
