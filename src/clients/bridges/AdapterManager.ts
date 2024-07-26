@@ -3,7 +3,7 @@ import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constan
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter } from "./";
+import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, ScrollAdapter } from "./";
 import { CHAIN_IDs } from "@across-protocol/constants";
 
 import { BaseChainAdapter } from "../../adapter";
@@ -39,7 +39,7 @@ export class AdapterManager {
       );
     };
 
-    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST } = CHAIN_IDs;
+    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, SCROLL } = CHAIN_IDs;
     if (this.spokePoolClients[OPTIMISM] !== undefined) {
       this.adapters[OPTIMISM] = new OpStackAdapter(
         OPTIMISM,
@@ -96,6 +96,9 @@ export class AdapterManager {
         spokePoolClients,
         filterMonitoredAddresses(BLAST)
       );
+    }
+    if (this.spokePoolClients[SCROLL] !== undefined) {
+      this.adapters[SCROLL] = new ScrollAdapter(logger, spokePoolClients, filterMonitoredAddresses(SCROLL));
     }
 
     logger.debug({
