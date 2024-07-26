@@ -460,7 +460,7 @@ export class InventoryClient {
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
     // Add origin chain to take higher priority than destination chain if the destination chain
-    // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because 
+    // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
     // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
     // we should take repayment away from the lite chain where possible.
     if (
