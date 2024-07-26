@@ -17,18 +17,26 @@ interface Weth {
  * @dev This contract is ownable so that the owner can update whitelisted bridge addresses and function selectors.
  */
 contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
+    // The Bridge used to send ETH to another chain. Only the function selector can be used when 
+    // calling the bridge contract.
+    struct Bridge {
+        address bridge;
+        bytes4 funcSelector;
+    }
+
     Weth public immutable WETH = Weth(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
 
     /**
-     * @notice Mapping of function selectors to whitelisted bridge addresses that can be called by this contract.
+     * @notice Mapping of chain ID to whitelisted bridge addresses and function selectors
+     * that can be called by this contract.
      */
-    mapping(address => bytes4) public whitelistedBridgeFunctions;
+    mapping(uint256 => Bridge) public whitelistedBridgeFunctions;
 
     ///////////////////////////////
     //          Events           //
     ///////////////////////////////
 
-    event AtomicWethDepositInitiated(address indexed from, address indexed bridge, uint256 amount);
+    event AtomicWethDepositInitiated(address indexed from, uint256 indexed chainId, uint256 amount);
 
     ///////////////////////////////
     //          Errors           //
@@ -54,10 +62,13 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
     ///////////////////////////////
 
     /**
-     * @notice Whitelists function selector for bridge contract.
+     * @notice Whitelists function selector and bridge contract for chain.
+     * @param chainId The chain ID of the bridge.
+     * @param bridge The address of the bridge contract to call to bridge ETH to the chain.
+     * @param funcSelector The function selector of the bridge contract.
      */
-    function whitelistBridge(address bridge, bytes4 funcSelector) public onlyOwner {
-        whitelistedBridgeFunctions[bridge] = funcSelector;
+    function whitelistBridge(uint256 chainId, address bridge, bytes4 funcSelector) public onlyOwner {
+        whitelistedBridgeFunctions[chainId] = Bridge({ bridge: bridge, funcSelector: funcSelector });
     }
 
     ///////////////////////////////
@@ -65,22 +76,22 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
     ///////////////////////////////
 
     /**
-     * @notice Initiates a WETH deposit to a whitelisted bridge with user calldata.
+     * @notice Initiates a WETH deposit to a whitelisted bridge for a specified chain with user calldata.
      * @dev Requires that the owner of this contract has whitelisted the bridge contract and function
-     * selector that the user wants to call.
+     * selector for the chainId that the user wants to send ETH to.
      * @param value The amount of WETH to deposit.
-     * @param bridge The address of the bridge contract to call.
+     * @param chainId The chain to send ETH to.
      * @param bridgeCallData The calldata to pass to the bridge contract. The first 4 bytes should be equal
      * to the whitelisted function selector of the bridge contract.
      */
-    function bridgeWeth(uint256 value, address bridge, bytes calldata bridgeCallData) public nonReentrant {
+    function bridgeWeth(uint256 chainId, uint256 value, bytes calldata bridgeCallData) public nonReentrant {
         _withdrawWeth(value);
-        bytes4 whitelistedFuncSelector = whitelistedBridgeFunctions[bridge];
-        if (whitelistedFuncSelector != bytes4(bridgeCallData)) revert InvalidBridgeFunction();
+        Bridge memory bridge = whitelistedBridgeFunctions[chainId];
+        if (bridge.funcSelector != bytes4(bridgeCallData)) revert InvalidBridgeFunction();
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory result) = bridge.call{ value: value }(bridgeCallData);
+        (bool success, bytes memory result) = bridge.bridge.call{ value: value }(bridgeCallData);
         require(success, string(result));
-        emit AtomicWethDepositInitiated(msg.sender, bridge, value);
+        emit AtomicWethDepositInitiated(msg.sender, chainId, value);
     }
 
     ///////////////////////////////
