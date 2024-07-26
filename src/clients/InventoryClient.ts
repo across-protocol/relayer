@@ -460,23 +460,23 @@ export class InventoryClient {
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
     // Add destination and origin chain if they are not already added.
-    // Prioritize destination chain repayment over origin chain repayment but prefer both over
+    // Prioritize origin chain repayment over destination chain repayment but prefer both over
     // hub chain repayment if they are under allocated. We don't include hub chain
     // since its the fallback chain if both destination and origin chain are over allocated.
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
-    if (
-      !chainsToEvaluate.includes(destinationChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
-      !deposit.fromLiteChain
-    ) {
-      chainsToEvaluate.push(destinationChainId);
-    }
     if (
       !chainsToEvaluate.includes(originChainId) &&
       originChainId !== hubChainId &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
       chainsToEvaluate.push(originChainId);
+    }
+    if (
+      !chainsToEvaluate.includes(destinationChainId) &&
+      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
+      !deposit.fromLiteChain
+    ) {
+      chainsToEvaluate.push(destinationChainId);
     }
 
     const eligibleRefundChains: number[] = [];
