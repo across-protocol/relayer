@@ -173,7 +173,9 @@ export class EventManager {
    */
   tick(blockNumber: number): Event[] {
     this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
-    const blockNumbers = Object.keys(this.events).map(Number).sort((x, y) => x - y);
+    const blockNumbers = Object.keys(this.events)
+      .map(Number)
+      .sort((x, y) => x - y);
     const quorumEvents: QuorumEvent[] = [];
 
     // Sort events that have reached quorum for propagation.
