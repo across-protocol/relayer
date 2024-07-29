@@ -297,7 +297,7 @@ export class Relayer {
     }
 
     // If no config applies to the blockNumber (i.e. because it's too old), just return the uppermost limit.
-    return Math.min(idx, limits.length - 1);
+    return Math.max(0, idx - 1);
   }
 
   /**
