@@ -115,7 +115,7 @@ export class Relayer {
     // If the operator configured a minimum fill time for a destination chain, ensure that the deposit
     // is at least that old before filling it. This is mainly useful on chains with long block times,
     // where there is a high chance of fill collisions in the first blocks after a deposit is made.
-    const minFillTime = this.config.minFillTime[destinationChainId] ?? 0;
+    const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
     if (minFillTime > 0 && !isExclusive) {
       const originSpoke = spokePoolClients[originChainId];
       const timeDelta = originSpoke.getCurrentTime() - originSpoke.getOldestTime();
