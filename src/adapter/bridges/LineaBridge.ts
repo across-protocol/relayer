@@ -42,7 +42,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.BridgingInitiatedV2(undefined, fromAddress, l1Token),
+      this.getL1Bridge().filters.BridgingInitiatedV2(undefined, toAddress, l1Token),
       eventConfig
     );
     return {
@@ -60,7 +60,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.BridgingFinalizedV2(l1Token, undefined, undefined, fromAddress),
+      this.getL2Bridge().filters.BridgingFinalizedV2(l1Token, undefined, undefined, toAddress),
       eventConfig
     );
     // There is no "from" field in this event, so we set it to the L2 token received.
