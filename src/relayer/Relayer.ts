@@ -101,6 +101,40 @@ export class Relayer {
       return false;
     }
 
+    // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
+    const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
+    if (deposit.fillDeadline <= currentTime) {
+      return false;
+    }
+
+    const isExclusive = getAddress(deposit.exclusiveRelayer) === this.relayerAddress;
+    if (deposit.exclusivityDeadline > currentTime && !isExclusive) {
+      return false;
+    }
+
+    // If the operator configured a minimum fill time for a destination chain, ensure that the deposit
+    // is at least that old before filling it. This is mainly useful on chains with long block times,
+    // where there is a high chance of fill collisions in the first blocks after a deposit is made.
+    const minFillTime = this.config.minFillTime[destinationChainId] ?? 0;
+    if (minFillTime > 0 && !isExclusive) {
+      const originSpoke = spokePoolClients[originChainId];
+      const timeDelta = originSpoke.getCurrentTime() - originSpoke.getOldestTime();
+      const blockDelta = originSpoke.latestBlockSearched - originSpoke.deploymentBlock;
+      const avgBlockTime = timeDelta / blockDelta;
+      const depositAge = Math.floor(avgBlockTime * (originSpoke.latestBlockSearched - blockNumber));
+
+      if (minFillTime > depositAge) {
+        this.logger.debug({
+          at: "Relayer::evaluateFill",
+          message: `Skipping ${srcChain} deposit due to insufficient fill time for ${dstChain}.`,
+          depositAge,
+          minFillTime,
+          transactionHash: deposit.transactionHash,
+        });
+        return false;
+      }
+    }
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -165,16 +199,6 @@ export class Relayer {
         deposit,
         l1Token,
       });
-      return false;
-    }
-
-    // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-    const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
-    if (deposit.fillDeadline <= currentTime) {
-      return false;
-    }
-
-    if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
       return false;
     }
 
