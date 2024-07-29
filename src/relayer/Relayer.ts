@@ -292,7 +292,7 @@ export class Relayer {
     // Find the uppermost USD threshold compatible with the age of the origin chain deposit.
     // @todo: Swap out for Array.findLastIndex() when available.
     let idx = 0;
-    while (idx < limits.length && limits[idx].fromBlock <= blockNumber) {
+    while (idx < limits.length && limits[idx].fromBlock > blockNumber) {
       ++idx;
     }
 
