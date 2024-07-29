@@ -287,7 +287,11 @@ export class Relayer {
    * @returns An index into the limits array.
    */
   findOriginChainLimitIdx(originChainId: number, blockNumber: number): number {
-    return this.fillLimits[originChainId].findIndex(({ fromBlock }) => fromBlock <= blockNumber);
+    const limits = this.fillLimits[originChainId];
+    const idx = limits.findIndex(({ fromBlock }) => fromBlock <= blockNumber);
+
+    // If no config applies to the blockNumber (i.e. because it's too old), just return the uppermost limit.
+    return idx !== -1 ? idx : limits.length - 1;
   }
 
   /**
