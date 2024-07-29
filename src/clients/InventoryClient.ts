@@ -459,6 +459,17 @@ export class InventoryClient {
         .map(([chainId]) => Number(chainId));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
+    // Add origin chain to take higher priority than destination chain if the destination chain
+    // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
+    // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
+    // we should take repayment away from the lite chain where possible.
+    if (
+      deposit.toLiteChain &&
+      !chainsToEvaluate.includes(originChainId) &&
+      this._l1TokenEnabledForChain(l1Token, Number(originChainId))
+    ) {
+      chainsToEvaluate.push(originChainId);
+    }
     // Add destination and origin chain if they are not already added.
     // Prioritize destination chain repayment over origin chain repayment but prefer both over
     // hub chain repayment if they are under allocated. We don't include hub chain
