@@ -52,6 +52,8 @@ export function getUniqueLogIndex(events: { transactionHash: string }[]): number
   return logIndexesForMessage;
 }
 
+type QuorumEvent = Event & { providers: string[] };
+
 /**
  * EventManager can be used to obtain basic quorum validation of events emitted by multiple providers.
  * This can be useful with WebSockets, where events are emitted asynchronously.
@@ -59,7 +61,7 @@ export function getUniqueLogIndex(events: { transactionHash: string }[]): number
  */
 export class EventManager {
   public readonly chain: string;
-  public readonly events: { [blockNumber: number]: (Event & { providers: string[] })[] } = {};
+  public readonly events: { [blockNumber: number]: QuorumEvent[] } = {};
   public readonly finality: number;
 
   private blockNumber: number;
@@ -83,7 +85,7 @@ export class EventManager {
    * @param event Event to search for.
    * @returns The matching event, or undefined.
    */
-  findEvent(event: Event): (Event & { providers: string[] }) | undefined {
+  findEvent(event: Event): QuorumEvent | undefined {
     return this.events[event.blockNumber]?.find(
       (storedEvent) =>
         storedEvent.logIndex === event.logIndex &&
@@ -142,7 +144,7 @@ export class EventManager {
   remove(event: Event, provider: string): void {
     assert(event.removed);
 
-    const events = this.events[event.blockNumber] ?? [];
+    const events = (this.events[event.blockNumber] ??= []);
 
     // Filter coarsely on transactionHash, since a reorg should invalidate multiple events within a single transaction hash.
     const eventIdxs = events
@@ -171,31 +173,24 @@ export class EventManager {
    */
   tick(blockNumber: number): Event[] {
     this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
+    const blockNumbers = Object.keys(this.events).map(Number).sort((x, y) => x - y);
+    const quorumEvents: QuorumEvent[] = [];
 
-    // After `finality` blocks behind head, events for a block are considered finalised.
-    // This is configurable and will almost always be less than chain finality guarantees.
-    const finalised = blockNumber - this.finality;
-
-    // Collect the events that met quorum, stripping out the provider information; drop any that didn't.
-    // This can be brittle when finality is low (i.e. 1). @todo: Support querying back over multiple blocks
-    // to account for RPC notification delays.
-    const events = (this.events[finalised] ?? [])
-      .filter((event) => {
+    // Sort events that have reached quorum for propagation.
+    blockNumbers.forEach((blockNumber) => {
+      const pendingEvents: QuorumEvent[] = [];
+      const _events = this.events[blockNumber];
+      _events.forEach((event) => {
         const eventQuorum = this.getEventQuorum(event);
-        if (this.quorum > eventQuorum) {
-          this.logger.debug({
-            at: "EventManager::tick",
-            message: `Dropped ${this.chain} ${event.event} event due to insufficient quorum.`,
-          });
-        }
-        return eventQuorum >= this.quorum;
-      })
-      .map(({ providers, ...event }) => event);
+        (this.quorum > eventQuorum ? pendingEvents : quorumEvents).push(event);
+      });
 
-    // Flush the events that were just submitted.
-    delete this.events[finalised];
+      // Retain the events that have not yet reached quorum.
+      this.events[blockNumber] = pendingEvents;
+    });
 
-    return events;
+    // Strip out the quorum information before returning.
+    return quorumEvents.map(({ providers, ...event }) => event);
   }
 
   /**
