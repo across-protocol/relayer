@@ -141,7 +141,7 @@ export class EventManager {
   remove(event: Event, provider: string): void {
     assert(event.removed);
 
-    const events = (this.events[event.blockNumber] ??= []);
+    const events = this.events[event.blockNumber] ?? [];
 
     // Filter coarsely on transactionHash, since a reorg should invalidate multiple events within a single transaction hash.
     const eventIdxs = events
@@ -177,15 +177,14 @@ export class EventManager {
 
     blockNumbers.forEach((blockNumber) => {
       // Filter out events that have reached quorum for propagation.
-      this.events[blockNumber] = this.events[blockNumber]
-        .filter((event) => {
-          if (this.quorum > this.getEventQuorum(event)) {
-            return true; // No quorum; retain for next time.
-          }
+      this.events[blockNumber] = this.events[blockNumber].filter((event) => {
+        if (this.quorum > this.getEventQuorum(event)) {
+          return true; // No quorum; retain for next time.
+        }
 
-          quorumEvents.push(event);
-          return false;
-        });
+        quorumEvents.push(event);
+        return false;
+      });
     });
 
     // Strip out the quorum information before returning.
