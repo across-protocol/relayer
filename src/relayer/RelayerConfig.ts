@@ -334,8 +334,8 @@ export class RelayerConfig extends CommonConfig {
       });
     }
 
-    chainIds.forEach((chainId) =>
-      this.minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0)
+    chainIds.forEach(
+      (chainId) => (this.minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0))
     );
 
     // Only validate config for chains that the relayer cares about.
