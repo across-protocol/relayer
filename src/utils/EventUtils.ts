@@ -176,7 +176,7 @@ export class EventManager {
     const quorumEvents: QuorumEvent[] = [];
 
     blockNumbers.forEach((blockNumber) => {
-      // Sort events that have reached quorum for propagation.
+      // Filter out events that have reached quorum for propagation.
       this.events[blockNumber] = this.events[blockNumber]
         .filter((event) => {
           if (this.quorum > this.getEventQuorum(event)) {
