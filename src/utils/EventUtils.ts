@@ -62,19 +62,16 @@ type QuorumEvent = Event & { providers: string[] };
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [blockNumber: number]: QuorumEvent[] } = {};
-  public readonly finality: number;
 
   private blockNumber: number;
 
   constructor(
     private readonly logger: winston.Logger,
     public readonly chainId: number,
-    finality: number,
     public readonly quorum: number
   ) {
     this.chain = getNetworkName(chainId);
     this.blockNumber = 0;
-    this.finality = Math.max(finality, 1);
   }
 
   /**
@@ -165,8 +162,8 @@ export class EventManager {
   }
 
   /**
-   * Record a new block. This function triggers the existing queue of pending events to be evaluated for basic finality.
-   * Events meeting finality criteria are submitted to the parent process (if defined). Events submitted are
+   * Record a new block. This function triggers the existing queue of pending events to be evaluated for quorum.
+   * Events meeting quorum criteria are submitted to the parent process (if defined). Events submitted are
    * subsequently flushed from this class.
    * @param blockNumber Number of the latest block.
    * @returns void
