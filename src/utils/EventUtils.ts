@@ -175,17 +175,17 @@ export class EventManager {
       .sort((x, y) => x - y);
     const quorumEvents: QuorumEvent[] = [];
 
-    // Sort events that have reached quorum for propagation.
     blockNumbers.forEach((blockNumber) => {
-      const pendingEvents: QuorumEvent[] = [];
-      const _events = this.events[blockNumber];
-      _events.forEach((event) => {
-        const eventQuorum = this.getEventQuorum(event);
-        (this.quorum > eventQuorum ? pendingEvents : quorumEvents).push(event);
-      });
+      // Sort events that have reached quorum for propagation.
+      this.events[blockNumber] = this.events[blockNumber]
+        .filter((event) => {
+          if (this.quorum > this.getEventQuorum(event)) {
+            quorumEvents.push(event);
+            return false;
+          }
 
-      // Retain the events that have not yet reached quorum.
-      this.events[blockNumber] = pendingEvents;
+          return true;
+        });
     });
 
     // Strip out the quorum information before returning.
