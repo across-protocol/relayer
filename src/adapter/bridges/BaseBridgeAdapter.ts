@@ -7,6 +7,7 @@ import {
   getTranslatedTokenAddress,
   assert,
   isDefined,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 
@@ -59,7 +60,12 @@ export abstract class BaseBridgeAdapter {
   ): Promise<BridgeEvents>;
 
   protected resolveL2TokenAddress(l1Token: string): string {
-    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false);
+    return getTranslatedTokenAddress(
+      l1Token,
+      this.hubChainId,
+      this.l2chainId,
+      isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
+    );
   }
 
   protected getL1Bridge(): Contract {

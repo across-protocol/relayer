@@ -454,6 +454,16 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { l1: string; l2: st
   },
 };
 
+// We currently support WBTC, USDT, USDC, and WETH as routes on scroll. WBTC, USDT, and USDC transfer events can all be queried from the standard ERC20
+// gateway, WETH has its own custom gateways, and other ERC20s may also have their own gateway, so it is very important to define unique gateways (ones
+// which are NOT the standard ERC20 gateway) if/when we add new deposit routes.
+export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: string } } = {
+  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0x7AC440cAe8EB6328de4fA621163a792c1EA9D4fE",
+    l2: "0x7003E7B7186f0E6601203b99F7B8DECBfA391cf9",
+  },
+};
+
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.ARBITRUM]: 20 * 60,
