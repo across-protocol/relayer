@@ -292,6 +292,18 @@ export class RelayerConfig extends CommonConfig {
           });
         }
       });
+
+      // Verify that each successive USD threshold has an increasing deposit confirmation config.
+      Object.values(this.minDepositConfirmations).forEach((chainMDC) => {
+        chainMDC.slice(1).forEach(({ usdThreshold, minConfirmations: mdc }, idx) => {
+          const usdFormatted = ethersUtils.formatEther(usdThreshold);
+          const prevMDC = chainMDC[idx].minConfirmations;
+          assert(
+            mdc >= prevMDC,
+            `Non-incrementing deposit confirmation specified for USD threshold ${usdFormatted} (${prevMDC} > ${mdc})`
+          );
+        });
+      });
     }
 
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
