@@ -180,7 +180,7 @@ export class EventManager {
       this.events[blockNumber] = this.events[blockNumber]
         .filter((event) => {
           if (this.quorum > this.getEventQuorum(event)) {
-            return true;
+            return true; // No quorum; retain for next time.
           }
 
           quorumEvents.push(event);
