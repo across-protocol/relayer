@@ -8,6 +8,7 @@ import {
   toWei,
   fixedPointAdjustment,
   isContractDeployedToAddress,
+  bnZero,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, SCROLL_CUSTOM_GATEWAY } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
@@ -90,7 +91,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     // Take all events which are sending an amount greater than 0.
     const processedEvents = events
       .map((event) => processEvent(event, "amount", "to", "from"))
-      .filter(({ amount }) => amount > BigNumber.from(0));
+      .filter(({ amount }) => amount > bnZero);
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to === toAddress), // Only return the events which match to the toAddress
     };
@@ -113,7 +114,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     );
     const processedEvents = events
       .map((event) => processEvent(event, "amount", "to", "from"))
-      .filter(({ amount }) => amount > BigNumber.from(0));
+      .filter(({ amount }) => amount > bnZero);
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to === toAddress),
     };
