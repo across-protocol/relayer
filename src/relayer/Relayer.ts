@@ -293,10 +293,11 @@ export class Relayer {
     // If no config applies to the blockNumber (i.e. because it's too old), just return the uppermost limit.
     // @todo: Swap out for Array.findLastIndex() when available.
     let idx = 0;
-    while (idx < limits.length && limits[idx].fromBlock <= blockNumber) {
+    while (limits[idx].fromBlock <= blockNumber && idx < limits.length) {
       ++idx;
     }
-    return idx;
+
+    return Math.min(idx, limits.length - 1);
   }
 
   /**
