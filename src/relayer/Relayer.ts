@@ -287,7 +287,17 @@ export class Relayer {
    * @returns An index into the limits array.
    */
   findOriginChainLimitIdx(originChainId: number, blockNumber: number): number {
-    return this.fillLimits[originChainId].findIndex(({ fromBlock }) => fromBlock <= blockNumber);
+    const limits = this.fillLimits[originChainId];
+
+    // Find the uppermost USD threshold compatible with the age of the origin chain deposit.
+    // @todo: Swap out for Array.findLastIndex() when available.
+    let idx = 0;
+    while (idx < limits.length && limits[idx].fromBlock > blockNumber) {
+      ++idx;
+    }
+
+    // If no config applies to the blockNumber (i.e. because it's too old), just return the uppermost limit.
+    return Math.min(idx, limits.length - 1);
   }
 
   /**
