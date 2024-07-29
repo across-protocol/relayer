@@ -400,7 +400,7 @@ export class ProfitClient {
     try {
       l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId);
     } catch {
-      this.logger.info({
+      this.logger.debug({
         at: "ProfitClient#getFillAmountInUsd",
         message: `Cannot resolve output token ${outputToken} on ${getNetworkName(destinationChainId)}.`,
       });
