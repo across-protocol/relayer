@@ -462,6 +462,10 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
     l1: "0x7AC440cAe8EB6328de4fA621163a792c1EA9D4fE",
     l2: "0x7003E7B7186f0E6601203b99F7B8DECBfA391cf9",
   },
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
+    l1: "0xf1AF3b23DE0A5Ca3CAb7261cb0061C0D779A5c7B",
+    l2: "0x33B60d5Dd260d453cAC3782b0bDC01ce84672142",
+  },
 };
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
