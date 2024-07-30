@@ -41,7 +41,7 @@ export class GenericAdapterManager extends AdapterManager {
 
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-          const bridgeConstructor = CUSTOM_BRIDGE[chainId][l1Token] ?? CANONICAL_BRIDGE[chainId];
+          const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
 
           bridges[l1Token] = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
         });
