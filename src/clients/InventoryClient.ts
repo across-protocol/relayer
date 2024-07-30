@@ -537,11 +537,16 @@ export class InventoryClient {
       // Consider configured buffer for target to allow relayer to support slight overages.
       const tokenConfig = this.getTokenConfig(l1Token, chainId, repaymentToken);
       if (!isDefined(tokenConfig)) {
+        const repaymentChain = getNetworkName(chainId);
         this.logger.debug({
           at: "InventoryClient#determineRefundChainId",
-          message: `No token config for ${repaymentToken} on ${getNetworkName(chainId)}.`,
+          message: `No token config for ${repaymentToken} on ${repaymentChain}.`,
         });
         if (chainId === destinationChainId) {
+          this.logger.debug({
+            at: "InventoryClient#determineRefundChainId",
+            message: `Defaulting to repayment on ${repaymentChain}.`
+          });
           eligibleRefundChains.push(chainId);
         }
         continue;
