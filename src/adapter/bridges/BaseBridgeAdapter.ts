@@ -60,6 +60,9 @@ export abstract class BaseBridgeAdapter {
   ): Promise<BridgeEvents>;
 
   protected resolveL2TokenAddress(l1Token: string): string {
+    // @todo: Fix call to `getTranslatedTokenAddress()` such that it does not require
+    // ifDefined(...). This is incompatible with remote chains where both native and
+    // bridged USDC are defined.
     return getTranslatedTokenAddress(
       l1Token,
       this.hubChainId,
