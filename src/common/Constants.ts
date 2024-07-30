@@ -375,6 +375,8 @@ export const CANONICAL_BRIDGE: {
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
 // In addition to mapping a chain to the custom bridges, we also need to specify which token the bridge supports.
+// Note: All chains which have a native USDC entry should have a UsdcTokenSplitterBridge defined, as this bridge 
+// will then route USDC through the canonical or, if available, CCTP routes.
 export const CUSTOM_BRIDGE: {
   [chainId: number]: {
     [tokenAddress: string]: {
@@ -417,6 +419,9 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+  },
+  [CHAIN_IDs.SCROLL]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {

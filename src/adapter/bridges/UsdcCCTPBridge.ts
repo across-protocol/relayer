@@ -1,7 +1,7 @@
 import { BigNumber, Contract, Signer } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
+import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert, isDefined } from "../../utils";
 import { processEvent } from "../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
 
@@ -14,8 +14,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].cctpMessageTransmitter;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].cctpMessageTransmitter ?? {};
+    if (isDefined(l2Address)) { this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider); }
   }
 
   private get l2DestinationDomain(): number {
@@ -26,11 +26,6 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     return TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
   }
 
-  protected resolveL2TokenAddress(l1Token: string): string {
-    l1Token;
-    return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
-  }
-
   async constructL1ToL2Txn(
     toAddress: string,
     _l1Token: string,
@@ -38,6 +33,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     assert(compareAddressesSimple(_l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(this.isCCTPEnabled());
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",
@@ -52,6 +48,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    if (!this.isCCTPEnabled()) { return Promise.resolve({}); }
     const events = await retrieveOutstandingCCTPBridgeUSDCTransfers(
       this.getL1Bridge(),
       this.getL2Bridge(),
@@ -83,5 +80,16 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // The function queryL1BridgeInitiationEvents already comuptes outstanding CCTP Bridge transfers,
     // so we can return nothing here.
     return Promise.resolve({});
+  }
+
+  // There will always be a message transmitter on L1, so we know that CCTP is enabled for L2 if there exists
+  // a message transmitter for L2.
+  isCCTPEnabled(): boolean {
+    return isDefined(this.l2Bridge);
+  }
+
+  override resolveL2TokenAddress(l1Token: string): string {
+    l1Token;
+    return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
   }
 }

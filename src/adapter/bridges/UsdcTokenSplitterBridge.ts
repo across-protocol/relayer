@@ -5,7 +5,7 @@ import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./Bas
 import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
-  protected cctpBridge: BaseBridgeAdapter;
+  protected cctpBridge: UsdcCCTPBridge;
   protected canonicalBridge: BaseBridgeAdapter;
 
   constructor(
@@ -33,7 +33,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   }
 
   private getRouteForL2Token(l2Token: string): BaseBridgeAdapter {
-    return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
+    return (compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]) && this.cctpBridge.isCCTPEnabled())
       ? this.cctpBridge
       : this.canonicalBridge;
   }
@@ -86,5 +86,9 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
       });
       return acc;
     }, {});
+  }
+
+  protected override resolveL2TokenAddress(l1Token: string) {
+    return this.cctpBridge.resolveL2TokenAddress(l1Token);
   }
 }
