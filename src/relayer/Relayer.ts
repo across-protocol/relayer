@@ -3,6 +3,7 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
 import {
+  averageBlockTime,
   BigNumber,
   bnZero,
   bnUint256Max,
@@ -481,15 +482,15 @@ export class Relayer {
     sendSlowRelays: boolean
   ): Promise<void> {
     const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
-    const { hubPoolClient, profitClient, tokenClient } = this.clients;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
 
     // If the deposit does not meet the minimum number of block confirmations, skip it.
+    const originChain = getNetworkName(originChainId);
     if (deposit.blockNumber > maxBlockNumber) {
-      const chain = getNetworkName(originChainId);
       this.logger.debug({
         at: "Relayer::evaluateFill",
-        message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
+        message: `Skipping ${originChain} deposit ${depositId} due to insufficient deposit confirmations.`,
         depositId,
         blockNumber: deposit.blockNumber,
         maxBlockNumber,
@@ -513,6 +514,28 @@ export class Relayer {
       return;
     }
 
+    // If the operator configured a minimum fill time for a destination chain, ensure that the deposit
+    // is at least that old before filling it. This is mainly useful on chains with long block times,
+    // where there is a high chance of fill collisions in the first blocks after a deposit is made.
+    const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
+    if (minFillTime > 0 && deposit.exclusiveRelayer !== this.relayerAddress) {
+      const originSpoke = spokePoolClients[originChainId];
+      const { average: avgBlockTime } = await averageBlockTime(originSpoke.spokePool.provider);
+      const depositAge = Math.floor(avgBlockTime * (originSpoke.latestBlockSearched - deposit.blockNumber));
+
+      if (minFillTime > depositAge) {
+        const dstChain = getNetworkName(destinationChainId);
+        this.logger.debug({
+          at: "Relayer::evaluateFill",
+          message: `Skipping ${originChain} deposit due to insufficient fill time for ${dstChain}.`,
+          depositAge,
+          minFillTime,
+          transactionHash: deposit.transactionHash,
+        });
+        return;
+      }
+    }
+
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
     const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
     if (tokenClient.hasBalanceForFill(deposit) && !selfRelay) {
@@ -531,7 +554,6 @@ export class Relayer {
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
         if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
-          const originChain = getNetworkName(originChainId);
           const limits = this.fillLimits[originChainId].slice(limitIdx);
           this.logger.debug({
             at: "Relayer::evaluateFill",
