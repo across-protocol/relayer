@@ -545,7 +545,7 @@ export class InventoryClient {
         if (chainId === destinationChainId) {
           this.logger.debug({
             at: "InventoryClient#determineRefundChainId",
-            message: `Defaulting to repayment on ${repaymentChain}.`,
+            message: `Will consider to repayment on ${repaymentChain} as destination chain.`,
           });
           eligibleRefundChains.push(chainId);
         }
