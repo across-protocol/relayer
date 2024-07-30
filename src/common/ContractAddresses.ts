@@ -28,6 +28,7 @@ import BLAST_ETH_YIELD_ABI from "./abi/BlastYield.json";
 import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
+import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -146,6 +147,10 @@ export const CONTRACT_ADDRESSES: {
     blastOptimismPortal: {
       address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
       abi: BLAST_OPTIMISM_PORTAL_ABI,
+    },
+    scrollGasPriceOracle: {
+      address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
+      abi: SCROLL_GAS_PRICE_ORACLE_ABI,
     },
   },
   10: {
