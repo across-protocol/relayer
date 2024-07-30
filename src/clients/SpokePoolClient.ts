@@ -118,7 +118,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       at: "SpokePoolClient#childExit",
       message: `${this.chain} SpokePool listener exited.`,
       code,
-      signal
+      signal,
     });
 
     // Flush all ingested deposits to protect against re-org.
