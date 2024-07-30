@@ -64,13 +64,9 @@ export abstract class BaseBridgeAdapter {
     // @todo: Fix call to `getTranslatedTokenAddress()` such that it does not require
     // ifDefined(...). This is incompatible with remote chains where both native and
     // bridged USDC are defined.
-    const isNativeUSDC = this.l2chainId === CHAIN_IDs.SCROLL && isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
-    return getTranslatedTokenAddress(
-      l1Token,
-      this.hubChainId,
-      this.l2chainId,
-      isNativeUSDC,
-    );
+    const isNativeUSDC =
+      this.l2chainId === CHAIN_IDs.SCROLL && isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
+    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, isNativeUSDC);
   }
 
   protected getL1Bridge(): Contract {
