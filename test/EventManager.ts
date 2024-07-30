@@ -103,22 +103,22 @@ describe("EventManager: Event Handling ", async function () {
     const removed = true;
     expect(quorum).to.equal(2);
 
-    const [provider] = providers;
+    const [provider1, provider2] = providers;
 
     // Add the event once (not finalised).
-    eventMgr.add(eventTemplate, provider);
+    eventMgr.add(eventTemplate, provider1);
     let events = eventMgr.tick(eventTemplate.blockNumber + 1);
     expect(events.length).to.equal(0);
     let eventQuorum = eventMgr.getEventQuorum(eventTemplate);
     expect(eventQuorum).to.equal(1);
 
     // Remove the event after notification by the same provider.
-    eventMgr.remove({ ...eventTemplate, removed }, provider);
+    eventMgr.remove({ ...eventTemplate, removed }, provider1);
     eventQuorum = eventMgr.getEventQuorum(eventTemplate);
     expect(eventQuorum).to.equal(0);
 
     // Re-add the same event.
-    eventMgr.add(eventTemplate, provider);
+    eventMgr.add(eventTemplate, provider1);
     events = eventMgr.tick(eventTemplate.blockNumber + 1);
     expect(events.length).to.equal(0);
     eventQuorum = eventMgr.getEventQuorum(eventTemplate);
@@ -128,5 +128,10 @@ describe("EventManager: Event Handling ", async function () {
     eventMgr.remove({ ...eventTemplate, removed }, "randomProvider");
     eventQuorum = eventMgr.getEventQuorum(eventTemplate);
     expect(eventQuorum).to.equal(0);
+
+    // Add the same event from provider2. There should be no quorum.
+    eventMgr.add(eventTemplate, provider2);
+    events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    expect(events.length).to.equal(0);
   });
 });
