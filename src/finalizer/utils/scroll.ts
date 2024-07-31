@@ -4,17 +4,17 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../utils";
+import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston, BigNumber } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 type ScrollClaimInfo = {
   from: string;
   to: string;
-  value: string;
-  nonce: string;
+  value: BigNumber;
+  nonce: BigNumber;
   message: string;
   proof: string;
-  batch_index: string;
+  batch_index: BigNumber;
 };
 
 type ScrollClaimInfoWithL1Token = ScrollClaimInfo & {
@@ -39,15 +39,12 @@ export async function scrollFinalizer(
   // Why are we breaking with the existing pattern--is it faster?
   // Scroll takes up to 4 hours with finalize a withdrawal so lets search
   // up to 12 hours for withdrawals.
-  const lookback = getCurrentTime() - 12 * 60 * 60 * 24;
   const redis = await getRedisCache(logger);
-  const fromBlock = await getBlockForTimestamp(l2ChainId, lookback, undefined, redis);
   logger.debug({
     at: "Finalizer#ScrollFinalizer",
     message: "Scroll TokensBridged event filter",
-    fromBlock,
   });
-  const outstandingClaims = await findOutstandingClaims(targetAddress, fromBlock);
+  const outstandingClaims = await findOutstandingClaims(targetAddress);
 
   logger.debug({
     at: "Finalizer#ScrollFinalizer",
@@ -68,36 +65,34 @@ export async function scrollFinalizer(
  * Resolves all outstanding claims from Scroll -> Mainnet. This is done by
  * querying the Scroll API for all outstanding claims.
  * @param targetAddress The address to query for outstanding claims
- * @param latestBlockToFinalize The first block to finalize
  * @returns A list of all outstanding claims
  */
-async function findOutstandingClaims(targetAddress: string, latestBlockToFinalize: number) {
+async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaimInfoWithL1Token[]> {
   // By default, the URL link is to the mainnet API. If we want to
   // test on a testnet, we can change the URL to the testnet API.
   // I.e. Switch to https://sepolia-api-bridge.scroll.io/api/claimable
-  const apiUrl = "https://mainnet-api-bridge.scroll.io/api/claimable";
+  const apiUrl = "https://mainnet-api-bridge-v2.scroll.io/api/l2/unclaimed/withdrawals";
   const claimList = (
     (
       await axios.get<{
         data: {
-          result: {
-            claimInfo: ScrollClaimInfo;
-            l1Token: string;
-            blockNumber: number;
+          results: {
+            claim_info: ScrollClaimInfo;
+            l1_token_address: string;
           }[];
         };
       }>(apiUrl, {
         params: {
           address: targetAddress,
+          page_size: 10,
+          page: 1,
         },
       })
-    ).data.data?.result ?? []
-  )
-    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
-    .map(({ claimInfo, l1Token }) => ({
-      ...claimInfo,
-      l1Token,
-    }));
+    ).data.data?.results ?? []
+  ).map(({ claim_info, l1_token_address }) => ({
+    ...claim_info,
+    l1Token: l1_token_address,
+  }));
   return claimList;
 }
 
@@ -152,7 +147,7 @@ function populateClaimWithdrawal(
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,
-    amount: claim.value,
+    amount: claim.value.toString(),
     type: "withdrawal",
     destinationChainId: hubPoolClient.chainId, // Always on L1
   };
