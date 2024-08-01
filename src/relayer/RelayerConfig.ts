@@ -46,6 +46,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerGasMultiplier: BigNumber;
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
+  readonly minFillTime: { [chainId: number]: number } = {};
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
@@ -332,6 +333,10 @@ export class RelayerConfig extends CommonConfig {
         ignoredChainIds,
       });
     }
+
+    chainIds.forEach(
+      (chainId) => (this.minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0))
+    );
 
     // Only validate config for chains that the relayer cares about.
     super.validate(relayerChainIds, logger);
