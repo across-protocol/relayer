@@ -7,6 +7,8 @@ import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
+// The highest amount of pending finalizations the scroll API can return.
+const MAX_PAGE_SIZE = 100;
 // The value in ScrollClaimInfo is 0 unless it is a Weth withdrawal, in which case, value === token_amount. Essentially, `token_amount` is used to format messages properly, while
 // `value` is used to construct valid withdrawal proofs.
 type ScrollClaimInfo = {
@@ -93,7 +95,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
       }>(apiUrl, {
         params: {
           address: targetAddress,
-          page_size: 10,
+          page_size: MAX_PAGE_SIZE,
           page: 1,
         },
       })
