@@ -9,7 +9,7 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 
 // The highest amount of pending finalizations the scroll API can return.
 const MAX_PAGE_SIZE = 100;
-// The value in ScrollClaimInfo is 0 unless it is a Weth withdrawal, in which case, value === token_amount. Essentially, `token_amount` is used to format messages properly, while
+// The value in ScrollClaimInfo is 0 unless it is a Weth withdrawal, in which case, value === tokenAmount. Essentially, `tokenAmount` is used to format messages properly, while
 // `value` is used to construct valid withdrawal proofs.
 type ScrollClaimInfo = {
   from: string;
@@ -19,7 +19,7 @@ type ScrollClaimInfo = {
   message: string;
   proof: Proof;
   claimable: boolean;
-  token_amount: string;
+  tokenAmount: string;
 };
 
 type Proof = {
@@ -82,31 +82,39 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
   // test on a testnet, we can change the URL to the testnet API.
   // I.e. Switch to https://sepolia-api-bridge.scroll.io/api/claimable
   const apiUrl = "https://mainnet-api-bridge-v2.scroll.io/api/l2/unclaimed/withdrawals";
-  const claimList = (
-    (
-      await axios.get<{
-        data: {
-          results: {
-            claim_info: ScrollClaimInfo;
-            l1_token_address: string;
-            token_amounts: string[];
-          }[];
-        };
-      }>(apiUrl, {
-        params: {
-          address: targetAddress,
-          page_size: MAX_PAGE_SIZE,
-          page: 1,
-        },
-      })
-    ).data.data?.results ?? []
-  )
-    .filter(({ claim_info }) => claim_info?.claimable)
-    .map(({ claim_info, l1_token_address, token_amounts }) => ({
-      ...claim_info,
-      token_amount: token_amounts[0],
-      l1Token: l1_token_address,
-    }));
+  const claimList: ScrollClaimInfoWithL1Token[] = [];
+  let currentPage = 1;
+  let requestResponse = [];
+  do {
+    requestResponse =
+      (
+        await axios.get<{
+          data: {
+            results: {
+              claim_info: ScrollClaimInfo;
+              l1_token_address: string;
+              token_amounts: string[];
+            }[];
+          };
+        }>(apiUrl, {
+          params: {
+            address: targetAddress,
+            page_size: MAX_PAGE_SIZE,
+            page: currentPage,
+          },
+        })
+      ).data.data?.results ?? [];
+    claimList.push(
+      ...requestResponse
+        .filter(({ claim_info }) => claim_info?.claimable)
+        .map(({ claim_info, l1_token_address, token_amounts }) => ({
+          ...claim_info,
+          tokenAmount: token_amounts[0],
+          l1Token: l1_token_address,
+        }))
+    );
+    currentPage++;
+  } while (requestResponse.length !== 0);
   return claimList;
 }
 
@@ -161,7 +169,7 @@ function populateClaimWithdrawal(
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,
-    amount: claim.token_amount,
+    amount: claim.tokenAmount,
     type: "withdrawal",
     destinationChainId: hubPoolClient.chainId, // Always on L1
   };
