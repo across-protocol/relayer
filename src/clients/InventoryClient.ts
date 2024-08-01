@@ -85,7 +85,9 @@ export class InventoryClient {
    */
   getTokenConfig(l1Token: string, chainId: number, l2Token?: string): TokenBalanceConfig | undefined {
     const tokenConfig = this.inventoryConfig.tokenConfig[l1Token];
-    assert(isDefined(tokenConfig), `getTokenConfig: No token config found for ${l1Token}.`);
+    if (!isDefined(tokenConfig)) {
+      return;
+    }
 
     if (isAliasConfig(tokenConfig)) {
       assert(isDefined(l2Token), `Cannot resolve ambiguous ${getNetworkName(chainId)} token config for ${l1Token}`);
@@ -215,6 +217,9 @@ export class InventoryClient {
     }
 
     const tokenConfig = this.inventoryConfig.tokenConfig[l1Token];
+    if (!isDefined(tokenConfig)) {
+      return [];
+    }
 
     if (isAliasConfig(tokenConfig)) {
       return Object.keys(tokenConfig).filter((k) => isDefined(tokenConfig[k][chainId]));
@@ -531,10 +536,21 @@ export class InventoryClient {
 
       // Consider configured buffer for target to allow relayer to support slight overages.
       const tokenConfig = this.getTokenConfig(l1Token, chainId, repaymentToken);
-      assert(
-        isDefined(tokenConfig),
-        `No ${outputToken} tokenConfig for ${l1Token} on ${chainId} with a repaymentToken ${repaymentToken}.`
-      );
+      if (!isDefined(tokenConfig)) {
+        const repaymentChain = getNetworkName(chainId);
+        this.logger.debug({
+          at: "InventoryClient#determineRefundChainId",
+          message: `No token config for ${repaymentToken} on ${repaymentChain}.`,
+        });
+        if (chainId === destinationChainId) {
+          this.logger.debug({
+            at: "InventoryClient#determineRefundChainId",
+            message: `Will consider to repayment on ${repaymentChain} as destination chain.`,
+          });
+          eligibleRefundChains.push(chainId);
+        }
+        continue;
+      }
 
       // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
       // destined for that chain in order to offload its excess.
@@ -763,8 +779,11 @@ export class InventoryClient {
         l2Tokens.forEach((l2Token) => {
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
-          const { thresholdPct, targetPct } = tokenConfig;
+          if (!isDefined(tokenConfig)) {
+            return;
+          }
 
+          const { thresholdPct, targetPct } = tokenConfig;
           if (currentAllocPct.gte(thresholdPct)) {
             return;
           }
@@ -956,13 +975,15 @@ export class InventoryClient {
         this.getEnabledChains()
           .map((chainId) => {
             const tokenConfig = this.getTokenConfig(l1Weth, chainId);
-            assert(isDefined(tokenConfig));
+            if (!isDefined(tokenConfig)) {
+              return;
+            }
 
             const { unwrapWethThreshold, unwrapWethTarget } = tokenConfig;
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
             if (chainId === CHAIN_IDs.POLYGON || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
-              return null;
+              return;
             }
             const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
             assert(isDefined(weth), `No WETH definition for ${getNetworkName(chainId)}`);
