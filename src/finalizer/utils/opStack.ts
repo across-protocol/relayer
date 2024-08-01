@@ -4,7 +4,6 @@ import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
 import {
-  BigNumber,
   CHAIN_IDs,
   chainIsOPStack,
   compareAddressesSimple,
@@ -26,7 +25,6 @@ import {
 } from "../../utils";
 import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import { ZERO_ADDRESS } from "@uma/common";
 const { utils } = ethers;
 
 interface CrossChainMessageWithEvent {
@@ -208,24 +206,7 @@ async function getOptimismFinalizableMessages(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
   const crossChainMessages = await getCrossChainMessages(chainId, tokensBridged, crossChainMessenger);
-  // Temporary fix until we're well past the bedrock upgrade. Remove non Bedrock messages.
-  // Example way to detect whether message is bedrock:
-  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/sdk/src/cross-chain-messenger.ts#L332
-  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/core-utils/src/optimism/encoding.ts#L34
-  const bedrockMessages = (
-    await Promise.all(
-      crossChainMessages.map(async (crossChainMessage) => {
-        const resolved = await crossChainMessenger.toCrossChainMessage(crossChainMessage.message);
-        const version = BigNumber.from(resolved.messageNonce).shr(240).toNumber();
-        if (version !== 1) {
-          return undefined;
-        } else {
-          return crossChainMessage;
-        }
-      })
-    )
-  ).filter((m) => m !== undefined);
-  const messageStatuses = await getMessageStatuses(chainId, bedrockMessages, crossChainMessenger);
+  const messageStatuses = await getMessageStatuses(chainId, crossChainMessages, crossChainMessenger);
   logger.debug({
     at: `${getNetworkName(chainId)}Finalizer`,
     message: `${getNetworkName(chainId)} message statuses`,
@@ -404,7 +385,10 @@ async function multicallOptimismFinalizations(
   // leftover finalizations with HubPool as the recipient that we can manually retrieve.
   const [withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
     usdYieldManager.queryFilter(
-      usdYieldManager.filters.WithdrawalRequested(null, null, [hubPoolClient.hubPool.address, ZERO_ADDRESS])
+      usdYieldManager.filters.WithdrawalRequested(null, null, [
+        hubPoolClient.hubPool.address,
+        blastDaiRetriever.address,
+      ])
     ),
     usdYieldManager.getLastCheckpointId(),
     // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
