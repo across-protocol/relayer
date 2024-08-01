@@ -594,7 +594,7 @@ export class Monitor {
           lastFullyExecutedBundleTime,
           currentTime,
         });
-        return;
+        continue;
       }
 
       // If chain wasn't active in latest bundle, then skip it.
