@@ -46,6 +46,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
   [CHAIN_IDs.OPTIMISM]: 172800, // 1 block every 2 seconds after bedrock
   [CHAIN_IDs.POLYGON]: 138240,
+  [CHAIN_IDs.REDSTONE]: 172800, // OP stack
   [CHAIN_IDs.SCROLL]: 115200, // 4 * 24 * 20 * 60,
   [CHAIN_IDs.ZK_SYNC]: 345600, // 4 * 24 * 60 * 60,
 };
@@ -81,6 +82,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 120,
     [CHAIN_IDs.OPTIMISM]: 120,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
+    [CHAIN_IDs.REDSTONE]: 120,
     [CHAIN_IDs.SCROLL]: 30,
     [CHAIN_IDs.ZK_SYNC]: 120,
   },
@@ -94,6 +96,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.OPTIMISM]: 60,
     [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
+    [CHAIN_IDs.REDSTONE]: 60,
     [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
@@ -107,6 +110,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MODE]: 60,
     [CHAIN_IDs.OPTIMISM]: 60,
     [CHAIN_IDs.POLYGON]: 80,
+    [CHAIN_IDs.REDSTONE]: 60,
     [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
@@ -130,6 +134,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.MODE]: 10000,
   [CHAIN_IDs.OPTIMISM]: 10000, // Quick
   [CHAIN_IDs.POLYGON]: 10000,
+  [CHAIN_IDs.REDSTONE]: 10000, // xxx verify
   [CHAIN_IDs.SCROLL]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
   // Testnets:
@@ -158,6 +163,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
+  [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   // Testnets:
@@ -200,6 +206,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 120,
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.POLYGON]: 256,
+  [CHAIN_IDs.REDSTONE]: 120,
   [CHAIN_IDs.SCROLL]: 100,
   [CHAIN_IDs.ZK_SYNC]: 512,
   // Testnets:
@@ -227,6 +234,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.OPTIMISM]: 86400,
   [CHAIN_IDs.POLYGON]: 86400,
+  [CHAIN_IDs.REDSTONE]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.ZK_SYNC]: 172800,
 };
@@ -241,6 +249,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
+  [CHAIN_IDs.REDSTONE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -261,6 +270,7 @@ export const multicall3Addresses = {
   [CHAIN_IDs.MODE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.OPTIMISM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.POLYGON]: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  [CHAIN_IDs.REDSTONE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.ZK_SYNC]: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   // Testnet:
@@ -286,6 +296,7 @@ export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.LISK,
   CHAIN_IDs.MODE,
   CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.REDSTONE,
   CHAIN_IDs.SCROLL,
   CHAIN_IDs.ZK_SYNC,
 ];
@@ -319,6 +330,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
+  [CHAIN_IDs.OPTIMISM]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
 
@@ -369,6 +381,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
+  [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
 };
@@ -413,6 +426,9 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]]: SnxOptimismBridge,
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.REDSTONE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.POLYGON]: {
@@ -478,6 +494,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.MODE]: 20 * 60,
   [CHAIN_IDs.OPTIMISM]: 20 * 60,
   [CHAIN_IDs.POLYGON]: 60 * 60,
+  [CHAIN_IDs.REDSTONE]: 20 * 60,
   [CHAIN_IDs.SCROLL]: 60 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,
 };
@@ -517,10 +534,27 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.REDSTONE]: {
+    l1: {
+      AddressManager: "0xFe27f187A9E46104a932189dDF229871E06B22F8",
+      L1CrossDomainMessenger: "0x592C1299e0F8331D81A28C0FC7352Da24eDB444a",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_690.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0xC7bCb0e8839a28A1cFadd1CF716de9016CdA51ae",
+      L2OutputOracle: "0xa426A052f657AEEefc298b3B5c35a470e4739d69",
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: ZERO_ADDRESS,
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
 };
 
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 1.5,
   [CHAIN_IDs.BASE]: 1.5,
+  [CHAIN_IDs.LISK]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
+  [CHAIN_IDs.REDSTONE]: 1.5,
 };
