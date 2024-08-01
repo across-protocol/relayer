@@ -524,12 +524,14 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           multiCallerClient,
           inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
+          tryMulticallClient,
         },
         {
           minFillTime: { [destinationChainId]: minFillTime },
           relayerTokens: [],
           minDepositConfirmations: defaultMinDepositConfirmations,
           sendingRelaysEnabled: true,
+          tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
 
@@ -610,6 +612,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           multiCallerClient,
           inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
+          tryMulticallClient,
         },
         {
           relayerTokens: [],
@@ -618,6 +621,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 1 }],
           },
           sendingRelaysEnabled: true,
+          tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
 
@@ -733,6 +737,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           multiCallerClient,
           inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
+          tryMulticallClient,
         },
         {
           relayerTokens: [],
@@ -741,6 +746,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 1 }],
           },
           sendingRelaysEnabled: true,
+          tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
 
