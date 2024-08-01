@@ -4,17 +4,25 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston, BigNumber } from "../../utils";
+import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
+// The value in ScrollClaimInfo is 0 unless it is a Weth withdrawal, in which case, value === token_amount. Essentially, `token_amount` is used to format messages properly, while
+// `value` is used to construct valid withdrawal proofs.
 type ScrollClaimInfo = {
   from: string;
   to: string;
-  value: BigNumber;
-  nonce: BigNumber;
+  value: string;
+  nonce: string;
   message: string;
-  proof: string;
-  batch_index: BigNumber;
+  proof: Proof;
+  claimable: boolean;
+  token_amount: string;
+};
+
+type Proof = {
+  batch_index: string;
+  merkle_proof: string;
 };
 
 type ScrollClaimInfoWithL1Token = ScrollClaimInfo & {
@@ -79,6 +87,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
           results: {
             claim_info: ScrollClaimInfo;
             l1_token_address: string;
+            token_amounts: string[];
           }[];
         };
       }>(apiUrl, {
@@ -89,10 +98,13 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
         },
       })
     ).data.data?.results ?? []
-  ).map(({ claim_info, l1_token_address }) => ({
-    ...claim_info,
-    l1Token: l1_token_address,
-  }));
+  )
+    .filter(({ claim_info }) => claim_info?.claimable)
+    .map(({ claim_info, l1_token_address, token_amounts }) => ({
+      ...claim_info,
+      token_amount: token_amounts[0],
+      l1Token: l1_token_address,
+    }));
   return claimList;
 }
 
@@ -114,17 +126,17 @@ function getScrollRelayContract(l1ChainId: number, signer: Signer) {
  * @returns A populated transaction able to be passed into a Multicall2 call
  */
 async function populateClaimTransaction(claim: ScrollClaimInfo, relayContract: Contract): Promise<Multicall2Call> {
-  const { to, data } = (await relayContract.populateTransaction.relayMessageWithProof(
+  const { to, data } = await relayContract.populateTransaction.relayMessageWithProof(
     claim.from,
     claim.to,
     claim.value,
     claim.nonce,
     claim.message,
     {
-      batchIndex: claim.batch_index,
-      merkleProof: claim.proof,
+      batchIndex: claim.proof.batch_index,
+      merkleProof: claim.proof.merkle_proof,
     }
-  )) as TransactionRequest;
+  );
   return {
     callData: data,
     target: to,
@@ -147,7 +159,7 @@ function populateClaimWithdrawal(
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,
-    amount: claim.value.toString(),
+    amount: claim.token_amount,
     type: "withdrawal",
     destinationChainId: hubPoolClient.chainId, // Always on L1
   };
