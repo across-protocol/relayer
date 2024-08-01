@@ -46,6 +46,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerGasMultiplier: BigNumber;
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
+  readonly minFillTime: { [chainId: number]: number } = {};
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
@@ -294,9 +295,21 @@ export class RelayerConfig extends CommonConfig {
         if (maxThreshold.lt(bnUint256Max)) {
           depositConfirmations.push({
             usdThreshold: bnUint256Max,
-            minConfirmations: Math.max(maxConfirmations + 1, Number.MAX_SAFE_INTEGER),
+            minConfirmations: maxConfirmations + 1,
           });
         }
+      });
+
+      // Verify that each successive USD threshold has an increasing deposit confirmation config.
+      Object.values(this.minDepositConfirmations).forEach((chainMDC) => {
+        chainMDC.slice(1).forEach(({ usdThreshold, minConfirmations: mdc }, idx) => {
+          const usdFormatted = ethersUtils.formatEther(usdThreshold);
+          const prevMDC = chainMDC[idx].minConfirmations;
+          assert(
+            mdc >= prevMDC,
+            `Non-incrementing deposit confirmation specified for USD threshold ${usdFormatted} (${prevMDC} > ${mdc})`
+          );
+        });
       });
     }
 
@@ -326,6 +339,10 @@ export class RelayerConfig extends CommonConfig {
         ignoredChainIds,
       });
     }
+
+    chainIds.forEach(
+      (chainId) => (this.minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0))
+    );
 
     // Only validate config for chains that the relayer cares about.
     super.validate(relayerChainIds, logger);

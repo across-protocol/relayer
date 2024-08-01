@@ -15,7 +15,7 @@ export class ScrollAdapter extends BaseChainAdapter {
     const l1Signer = spokePoolClients[MAINNET].spokePool.signer;
     SUPPORTED_TOKENS[SCROLL]?.map((symbol) => {
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[MAINNET];
-      const bridgeConstructor = CUSTOM_BRIDGE[SCROLL][l1Token] ?? CANONICAL_BRIDGE[SCROLL];
+      const bridgeConstructor = CUSTOM_BRIDGE[SCROLL]?.[l1Token] ?? CANONICAL_BRIDGE[SCROLL];
       bridges[l1Token] = new bridgeConstructor(SCROLL, MAINNET, l1Signer, l2Signer, l1Token);
     });
     super(

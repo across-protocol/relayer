@@ -1,4 +1,13 @@
-import { Contract, BigNumber, paginatedEventQuery, Signer, EventSearchConfig, Provider, toBN } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  Signer,
+  EventSearchConfig,
+  Provider,
+  toBN,
+  toWei,
+} from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -15,6 +24,7 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
   private readonly l2GasLimit = toBN(150000);
   private readonly l2GasPrice = toBN(20e9);
+  private readonly l1SubmitValue = toWei(0.013);
 
   constructor(
     l2chainId: number,
@@ -40,10 +50,12 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    const { l1Gateway, l2GasLimit, l2GasPrice, transactionSubmissionData, l1SubmitValue } = this;
     return Promise.resolve({
-      contract: this.l1Gateway,
+      contract: l1Gateway,
       method: "outboundTransfer",
-      args: [l1Token, toAddress, amount, this.l2GasLimit, this.l2GasPrice, this.transactionSubmissionData],
+      args: [l1Token, toAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
+      value: l1SubmitValue,
     });
   }
 
