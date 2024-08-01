@@ -454,6 +454,8 @@ async function multicallOptimismFinalizations(
         }
         const recipient = withdrawalRequests[i].args.recipient;
         if (recipient !== tokenRetriever.address) {
+          // This should never happen since we filter our WithdrawalRequested query on the `recipient`
+          // but in case it happens, this log should help us debug.
           logger.warn({
             at: "Finalizer#multicallOptimismFinalizations",
             message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`,
