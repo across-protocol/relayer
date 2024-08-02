@@ -8,6 +8,7 @@ import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { bnZero } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getProvider } from "./ProviderUtils";
+import { getRedisCache } from "./RedisUtils";
 
 export type DecodedCCTPMessage = {
   messageHash: string;
@@ -269,9 +270,14 @@ async function _resolveCCTPRelatedTxns(
  * @link https://developers.circle.com/stablecoins/reference/getattestation
  */
 async function generateCCTPAttestationProof(messageHash: string, isMainnet: boolean): Promise<Attestation> {
-  const httpResponse = await axios.get<Attestation>(
-    `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
-  );
-  const attestationResponse = httpResponse.data;
+  const redisCache = await getRedisCache();
+  let attestationResponse = await redisCache.get<Attestation>(messageHash);
+  if (!isDefined(attestationResponse)) {
+    const httpResponse = await axios.get<Attestation>(
+      `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
+    );
+    attestationResponse = httpResponse.data;
+    await redisCache.set(messageHash, attestationResponse, 60 * 60 * 24); // Key expires after one day.
+  }
   return attestationResponse;
 }
