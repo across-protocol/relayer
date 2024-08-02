@@ -286,12 +286,7 @@ class CacheProvider extends RateLimitedProvider {
       // If the block is old enough to cache, cache the call.
       return this.cacheTypeForBlock(blockNumber);
     } else if (method === "eth_getTransactionReceipt") {
-      // It's possible to be rate-limited by RPCs during finalization runs, specifically for chains which require
-      // L1 -> L2 finalizations (e.g. Linea). For those runs, we match a transaction receipt on L1 with their status
-      // on L2. This means eth_getTransactionReceipt is called often, so we should cache the responses over runs to
-      // prevent rate limits. While this method does not have a block number in its parameters, we optimistically return
-      // the WITH_TTL cache type since L1 -> L2 message time is short, and we are caching a data for all L1 -> L2 messages,
-      // which may be a significant amount of data.
+      // The RPC method `eth_getTransactionReceipt` has no block range in its parameters, so we cannot assign a cache type based off of how far back the request looks. Here, we assume that there should be a TTL, which means that we will primarily reap the benefits of caching when this method is called to query recent transactions.
       return CacheType.WITH_TTL;
     } else {
       return CacheType.NONE;
