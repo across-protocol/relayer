@@ -14,6 +14,7 @@ import {
   Signer,
   getMultisender,
   getProvider,
+  assert,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient, RawTransaction } from "./TransactionClient";
 import lodash from "lodash";
@@ -565,15 +566,23 @@ export class TryMulticallClient extends MultiCallerClient {
     const bundledSimResults = await this.txnClient.simulate(bundledTxns);
 
     bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
-      if (succeed) {
+      // TryMulticall _should_ always succeed, but either way, we need the return data to be defined so that we can properly
+      // filter out the transactions which failed.
+      if (succeed && isDefined(data.length)) {
         const succeededTxnCalldata: string[] = [];
+        // We also need to assert that the number of calls which returned data matches the number of calls made in the transaction.
+        assert(transaction.args.length === data.length);
         // Go through each transaction result of the txns batched in tryMulticall.
         // If a transaction succeeded, we take note by adding it to succeededTxnCalldata.
-        data?.filter(({ success }) => success).forEach((calldata) => succeededTxnCalldata.push(calldata));
+        data.forEach(({ success }, idx) => {
+          if (success) {
+            succeededTxnCalldata.push(transaction.args[idx]);
+          }
+        });
 
         // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
         // some txns in the bundle must have failed. We take note only of the ones which succeeded.
-        if (succeededTxnCalldata.length != (data?.length ?? 0)) {
+        if (succeededTxnCalldata.length !== data.length) {
           txnCalldataToRebuild.push(
             ...succeededTxnCalldata.map((calldata) => buildRawTransaction(transaction.contract, calldata))
           );
@@ -591,7 +600,7 @@ export class TryMulticallClient extends MultiCallerClient {
           // If txn succeeded or the revert reason is known to be benign, then log at debug level.
           this.logger.debug({
             at: "tryMulticallClient#executeChainTxnQueue",
-            message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
+            message: `Successfully simulated ${networkName} transaction batch!`,
             batchTxn: { ...transaction, contract: transaction.contract.address },
             reason,
           });
@@ -601,7 +610,9 @@ export class TryMulticallClient extends MultiCallerClient {
 
     if (txnCalldataToRebuild.length !== 0) {
       // At this point, every transaction here will be aimed at the same spoke pool, so we only need to chunk based on
-      // chunk size.
+      // chunk size. Every transaction should be aimed at the same spoke pool since 1. The tryMulticall client is only
+      // instantiated for the relayer, which uses this client only for interfacing with the spoke pool, and 2. This function
+      // is called after filtering transactions by chainId, so each individual transaction is a call to a chainId's spoke pool.
       const txnChunks = lodash.chunk(txnCalldataToRebuild, this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE);
       const rebuildTryMulticall = (txns: RawTransaction[]) => {
         const mrkdwn: string[] = [];
@@ -619,7 +630,7 @@ export class TryMulticallClient extends MultiCallerClient {
           contract,
           method: "tryMulticall",
           args: [...txns.map((txn) => txn.data)],
-          message: "Across multicall transaction",
+          message: "Across tryMulticall transaction",
           mrkdwn: mrkdwn.join(""),
         } as AugmentedTransaction;
       };
