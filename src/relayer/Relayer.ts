@@ -672,9 +672,7 @@ export class Relayer {
   }
 
   protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
-    const multiCallerClient = this.config.tryMulticallChains.includes(chainId)
-      ? this.clients.tryMulticallClient
-      : this.clients.multiCallerClient;
+    const multiCallerClient = this.getMulticaller(chainId);
     const { pendingTxnReceipts } = this;
 
     if (isDefined(pendingTxnReceipts[chainId])) {
@@ -756,10 +754,8 @@ export class Relayer {
       );
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
-      const pendingTxnAmount = this.config.tryMulticallChains.includes(destinationChainId)
-        ? tryMulticallClient.getQueuedTransactions(destinationChainId).length
-        : multiCallerClient.getQueuedTransactions(destinationChainId).length;
-      if (pendingTxnAmount > 0) {
+      const pendingTxnCount = this.getMulticaller(destinationChainId).getQueuedTransactions(destinationChainId).length;
+      if (pendingTxnCount > 0) {
         txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
       }
     });
@@ -810,9 +806,7 @@ export class Relayer {
 
     const { hubPoolClient, spokePoolClients } = this.clients;
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
-    const multiCallerClient = this.config.tryMulticallChains.includes(destinationChainId)
-      ? this.clients.tryMulticallClient
-      : this.clients.multiCallerClient;
+    const multiCallerClient = this.getMulticaller(destinationChainId);
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
@@ -880,9 +874,7 @@ export class Relayer {
     const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct);
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
-    const multiCallerClient = this.config.tryMulticallChains.includes(chainId)
-      ? this.clients.tryMulticallClient
-      : this.clients.multiCallerClient;
+    const multiCallerClient = this.getMulticaller(chainId);
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
 
     this.setFillStatus(deposit, FillStatus.Filled);
@@ -1244,5 +1236,11 @@ export class Relayer {
       ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
 
     return msg;
+  }
+
+  private getMulticaller(chainId: number) {
+    return this.config.tryMulticallChains.includes(chainId)
+      ? this.clients.tryMulticallClient
+      : this.clients.multiCallerClient;
   }
 }

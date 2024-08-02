@@ -516,14 +516,6 @@ export class MultiCallerClient {
 }
 
 export class TryMulticallClient extends MultiCallerClient {
-  constructor(
-    readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = {},
-    readonly baseSigner?: Signer
-  ) {
-    super(logger, chunkSize, baseSigner);
-  }
-
   override _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     const txn = super._buildMultiCallBundle(transactions);
     txn.method = "tryMulticall";
@@ -559,52 +551,58 @@ export class TryMulticallClient extends MultiCallerClient {
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
     const txnCalldataToRebuild: RawTransaction[] = [];
 
-    // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
-    // need to simulate transactions individually. If the batch failed, then we need to
-    // simulate the transactions individually and pick out the successful ones.
+    // The goal is to simulate the transactions as a batch and pick out those which succeed.
     const bundledTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
     const bundledSimResults = await this.txnClient.simulate(bundledTxns);
 
     bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
       // TryMulticall _should_ always succeed, but either way, we need the return data to be defined so that we can properly
       // filter out the transactions which failed.
-      if (succeed && isDefined(data?.length)) {
-        const succeededTxnCalldata: string[] = [];
-        // We also need to assert that the number of calls which returned data matches the number of calls made in the transaction.
-        assert(transaction.args.length === data.length);
-        // Go through each transaction result of the txns batched in tryMulticall.
-        // If a transaction succeeded, we take note by adding it to succeededTxnCalldata.
-        data.forEach(({ success }, idx) => {
-          if (success) {
-            succeededTxnCalldata.push(transaction.args[idx]);
-          }
-        });
-
-        // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
-        // some txns in the bundle must have failed. We take note only of the ones which succeeded.
-        if (succeededTxnCalldata.length !== data.length) {
-          txnCalldataToRebuild.push(
-            ...succeededTxnCalldata.map((calldata) => buildRawTransaction(transaction.contract, calldata))
-          );
-          this.logger.warn({
-            at: "tryMulticallClient#executeChainTxnQueue",
-            message: `Some calls in ${networkName} transaction batch failed!`,
-            batchTxn: { ...transaction, contract: transaction.contract.address },
-            reason,
-          });
-        } else {
-          // Otherwise, none of the transactions failed, so we can add the bundle to txnRequestsToSubmit.
-          bundledTxns[idx].gasLimit = transaction.gasLimit;
-          txnRequestsToSubmit.push(bundledTxns[idx]);
-
-          // If txn succeeded or the revert reason is known to be benign, then log at debug level.
-          this.logger.debug({
-            at: "tryMulticallClient#executeChainTxnQueue",
-            message: `Successfully simulated ${networkName} transaction batch!`,
-            batchTxn: { ...transaction, contract: transaction.contract.address },
-            reason,
-          });
+      if (!succeed || !isDefined(data?.length)) {
+        return;
+      }
+      // Address the case where we just call fillV3Relay(), and therefore the data field is empty. 
+      if (succeed && transaction.method !== "tryMulticall") {
+        console.log("HERE");
+        txnRequestsToSubmit.push(transaction);
+        return;
+      }
+      // If we make it here, then tryMulticall was simulated and there is a defined return data.
+      const succeededTxnCalldata: string[] = [];
+      // We also need to assert that the number of calls which returned data matches the number of calls made in the transaction.
+      assert(transaction.args.length === data.length);
+      // Go through each transaction result of the txns batched in tryMulticall.
+      // If a transaction succeeded, we take note by adding it to succeededTxnCalldata.
+      data.forEach(({ success }, idx) => {
+        if (success) {
+          succeededTxnCalldata.push(transaction.args[idx]);
         }
+      });
+
+      // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
+      // some txns in the bundle must have failed. We take note only of the ones which succeeded.
+      if (succeededTxnCalldata.length !== data.length) {
+        txnCalldataToRebuild.push(
+          ...succeededTxnCalldata.map((calldata) => buildRawTransaction(transaction.contract, calldata))
+        );
+        this.logger.debug({
+          at: "tryMulticallClient#executeChainTxnQueue",
+          message: `Some calls in ${networkName} transaction batch failed!`,
+          batchTxn: { ...transaction, contract: transaction.contract.address },
+          reason,
+        });
+      } else {
+        // Otherwise, none of the transactions failed, so we can add the bundle to txnRequestsToSubmit.
+        bundledTxns[idx].gasLimit = transaction.gasLimit;
+        txnRequestsToSubmit.push(bundledTxns[idx]);
+
+        // If txn succeeded or the revert reason is known to be benign, then log at debug level.
+        this.logger.debug({
+          at: "tryMulticallClient#executeChainTxnQueue",
+          message: `Successfully simulated ${networkName} transaction batch!`,
+          batchTxn: { ...transaction, contract: transaction.contract.address },
+          reason,
+        });
       }
     });
 
@@ -619,11 +617,7 @@ export class TryMulticallClient extends MultiCallerClient {
         const contract = txns[0].contract;
         txns.forEach((txn, idx) => {
           mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
-          if (txn.contract !== contract) {
-            throw new Error(
-              `There was an error when rebuilding a tryMulticall Bundle. Expected to send txn to ${txn.contract} but was sending txn to ${contract}`
-            );
-          }
+          assert(contract === txn.contract);
         });
         return {
           chainId,
@@ -632,7 +626,7 @@ export class TryMulticallClient extends MultiCallerClient {
           args: [...txns.map((txn) => txn.data)],
           message: "Across tryMulticall transaction",
           mrkdwn: mrkdwn.join(""),
-        } as AugmentedTransaction;
+        };
       };
       txnRequestsToSubmit.push(...txnChunks.map(rebuildTryMulticall));
     }
