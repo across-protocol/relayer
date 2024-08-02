@@ -165,6 +165,7 @@ class CacheProvider extends RateLimitedProvider {
   public readonly getBlockByNumberPrefix: string;
   public readonly getLogsCachePrefix: string;
   public readonly callCachePrefix: string;
+  public readonly getTransactionReceiptPrefix: string;
   public readonly baseTTL: number;
 
   constructor(
@@ -185,6 +186,7 @@ class CacheProvider extends RateLimitedProvider {
     this.getBlockByNumberPrefix = `${cachePrefix}:getBlockByNumber,`;
     this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
     this.callCachePrefix = `${cachePrefix}:eth_call,`;
+    this.getTransactionReceiptPrefix = `${cachePrefix}:eth_getTransactionReceipt,`;
 
     const _ttlVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
     const _ttl = Number(_ttlVar);
@@ -242,6 +244,8 @@ class CacheProvider extends RateLimitedProvider {
         return this.getLogsCachePrefix + JSON.stringify(params);
       case "eth_call":
         return this.callCachePrefix + JSON.stringify(params);
+      case "eth_getTransactionReceipt":
+        return this.getTransactionReceiptPrefix + JSON.stringify(params);
       default:
         throw new Error(`CacheProvider::buildRedisKey: invalid JSON-RPC method ${method}`);
     }
@@ -281,6 +285,14 @@ class CacheProvider extends RateLimitedProvider {
 
       // If the block is old enough to cache, cache the call.
       return this.cacheTypeForBlock(blockNumber);
+    } else if (method === "eth_getTransactionReceipt") {
+      // It's possible to be rate-limited by RPCs during finalization runs, specifically for chains which require
+      // L1 -> L2 finalizations (e.g. Linea). For those runs, we match a transaction receipt on L1 with their status
+      // on L2. This means eth_getTransactionReceipt is called often, so we should cache the responses over runs to
+      // prevent rate limits. While this method does not have a block number in its parameters, we optimistically return
+      // the WITH_TTL cache type since L1 -> L2 message time is short, and we are caching a data for all L1 -> L2 messages,
+      // which may be a significant amount of data.
+      return CacheType.WITH_TTL;
     } else {
       return CacheType.NONE;
     }
