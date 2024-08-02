@@ -277,7 +277,8 @@ async function generateCCTPAttestationProof(messageHash: string, isMainnet: bool
       `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
     );
     attestationResponse = httpResponse.data;
-    await redisCache.set(messageHash, attestationResponse, 60 * 60 * 24); // Key expires after one day.
+    const randomInterval = () => Math.floor(Math.random() * (4 * 86400)) + 4 * 86400; // 60 * 60 * 4 = 86400 = 1 day.
+    await redisCache.set(messageHash, attestationResponse, randomInterval()); // Cache expires at random second anywhere between 4-7 days.
   }
   return attestationResponse;
 }
