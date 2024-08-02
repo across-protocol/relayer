@@ -561,9 +561,8 @@ export class TryMulticallClient extends MultiCallerClient {
       if (!succeed || !isDefined(data?.length)) {
         return;
       }
-      // Address the case where we just call fillV3Relay(), and therefore the data field is empty. 
+      // Address the case where we just call fillV3Relay(), and therefore the data field is empty.
       if (succeed && transaction.method !== "tryMulticall") {
-        console.log("HERE");
         txnRequestsToSubmit.push(transaction);
         return;
       }
@@ -601,7 +600,6 @@ export class TryMulticallClient extends MultiCallerClient {
           at: "tryMulticallClient#executeChainTxnQueue",
           message: `Successfully simulated ${networkName} transaction batch!`,
           batchTxn: { ...transaction, contract: transaction.contract.address },
-          reason,
         });
       }
     });
