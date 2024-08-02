@@ -565,7 +565,7 @@ export class Monitor {
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
     const { currentTime, latestBlockSearched } = hubPoolClient;
-    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockSearched);
+    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestBlockSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
@@ -581,6 +581,10 @@ export class Monitor {
       // Exit early if there were no pool rebalance leaves for this chain executed in the last bundle.
       const poolRebalanceLeaf = poolRebalanceLeaves.find((leaf) => leaf.chainId === chainId);
       if (!poolRebalanceLeaf) {
+        this.logger.debug({
+          at: "Monitor#checkStuckRebalances",
+          message: `No pool rebalance leaves for ${getNetworkName(chainId)} in last bundle`,
+        })
         continue;
       }
       const gracePeriod = EXPECTED_L1_TO_L2_MESSAGE_TIME[chainId] ?? REBALANCE_FINALIZE_GRACE_PERIOD;
