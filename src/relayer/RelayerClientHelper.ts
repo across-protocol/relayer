@@ -91,9 +91,7 @@ export async function constructRelayerClients(
   if (config.externalIndexer) {
     spokePoolClients = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChains ?? configStoreClient.getEnabledChains(), async (chainId) => {
-        const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
         const opts = {
-          finality,
           lookback: config.maxRelayerLookBack,
           blockRange: config.maxBlockLookBack[chainId],
         };
