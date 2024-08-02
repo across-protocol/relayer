@@ -568,7 +568,7 @@ export class TryMulticallClient extends MultiCallerClient {
     bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
       // TryMulticall _should_ always succeed, but either way, we need the return data to be defined so that we can properly
       // filter out the transactions which failed.
-      if (succeed && isDefined(data.length)) {
+      if (succeed && isDefined(data?.length)) {
         const succeededTxnCalldata: string[] = [];
         // We also need to assert that the number of calls which returned data matches the number of calls made in the transaction.
         assert(transaction.args.length === data.length);
