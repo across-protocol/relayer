@@ -287,6 +287,7 @@ class CacheProvider extends RateLimitedProvider {
       return this.cacheTypeForBlock(blockNumber);
     } else if (method === "eth_getTransactionReceipt") {
       // The RPC method `eth_getTransactionReceipt` has no block range in its parameters, so we cannot assign a cache type based off of how far back the request looks. Here, we assume that there should be a TTL, which means that we will primarily reap the benefits of caching when this method is called to query recent transactions.
+      // The only parameter is `hash` which is the transaction hash to get a receipt for.
       return CacheType.WITH_TTL;
     } else {
       return CacheType.NONE;
