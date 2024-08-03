@@ -351,7 +351,9 @@ async function multicallOptimismFinalizations(
     return withdrawal;
   });
 
-  // Blast USDB withdrawals have a two step withdrawal process involving a separate claim.
+  // Blast USDB withdrawals have a two step withdrawal process involving a separate claim that can be made
+  // after the withdrawal request is finalized by a Blast admin. This roughly takes ~24 hours after the OpMessager
+  // has been "Finalized" on L1.
   if (!chainIsBlast(chainId)) {
     return {
       callData,
