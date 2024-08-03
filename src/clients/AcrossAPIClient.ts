@@ -55,7 +55,7 @@ export class AcrossApiClient {
 
     const { hubPoolClient } = this;
 
-    // Note: Skip tokens are not currently enabled in HubPool as we won't be able to relay them.
+    // Note: Skip tokens not currently enabled in HubPool as we won't be able to relay them.
     if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient must be updated before AcrossAPIClient");
     }
