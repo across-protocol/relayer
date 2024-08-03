@@ -379,23 +379,37 @@ async function multicallOptimismFinalizations(
     blastUsdYieldManager.abi,
     crossChainMessenger.l1Provider
   );
-  // All withdrawal requests we are interested in finalizing either have the HubPool or the Blast_Retriever address
-  // as the recipient. HubPool as recipient is actually a leftover from leftover code and all recipients going
-  // forward should be the Blast_Retriever address. We include it here so that this finalizer can catch any
-  // leftover finalizations with HubPool as the recipient that we can manually retrieve.
-  const [withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
+  // Reduce the query by only querying events that were emitted after the earliest TokenBridged event we saw. This
+  // is an easy optimization as we know that WithdrawalRequested events are only emitted after the TokenBridged event.
+  const fromBlock = tokensBridgedEvents[0].blockNumber;
+  const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
     usdYieldManager.queryFilter(
-      usdYieldManager.filters.WithdrawalRequested(null, null, [
-        hubPoolClient.hubPool.address,
-        blastDaiRetriever.address,
-      ])
+      usdYieldManager.filters.WithdrawalRequested(
+        null,
+        null,
+        // All withdrawal requests we are interested in finalizing either have the HubPool or the
+        // Blast_Retriever address as the recipient. HubPool as recipient is actually a leftover artifact from a
+        // deprecated SpokePool code and all recipients going
+        // forward should be the Blast_Retriever address. We include it here so that this finalizer can catch any
+        // leftover finalizations with HubPool as the recipient that we can manually retrieve.
+        // @dev We should replace this filter with a single blastDaiRetriever address once the finalizer lookback
+        // stops querying TokensBridged/L2 Withdrawal events that have the HubPool as the recipient.
+        [hubPoolClient.hubPool.address, blastDaiRetriever.address]
+      ),
+      fromBlock
     ),
     usdYieldManager.getLastCheckpointId(),
     // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
     // logging information as to why a withdrawal request is not ready to be claimed.
     usdYieldManager.getLastFinalizedRequestId(),
   ]);
+
+  // The claimableMessages (i.e. the TokensBridged events) should fall out of the lookback window sooner than
+  // the WithdrawalRequested events will, but we want a 1:1 mapping between them. Therefore, if we have N
+  // WithdrawalRequested events, we should keep the last N claimableMessages.
+  const withdrawalRequests = [..._withdrawalRequests].slice(-claimableMessages.length);
   const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
+  assert(withdrawalRequestIds.length === claimableMessages.length);
 
   // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
   // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
@@ -409,13 +423,12 @@ async function multicallOptimismFinalizations(
     ),
     Promise.all(
       withdrawalRequestIds.map((requestId) =>
-        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId))
+        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), fromBlock)
       )
     ),
   ]);
   const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
   assert(withdrawalRequestIds.length === hintIds.length);
-  assert(withdrawalRequestIds.length === claimableMessages.length);
   assert(withdrawalClaims.length === claimableMessages.length);
 
   logger.debug({
