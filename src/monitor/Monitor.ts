@@ -584,7 +584,7 @@ export class Monitor {
         this.logger.debug({
           at: "Monitor#checkStuckRebalances",
           message: `No pool rebalance leaves for ${getNetworkName(chainId)} in last bundle`,
-        })
+        });
         continue;
       }
       const gracePeriod = EXPECTED_L1_TO_L2_MESSAGE_TIME[chainId] ?? REBALANCE_FINALIZE_GRACE_PERIOD;
