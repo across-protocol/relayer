@@ -1228,7 +1228,7 @@ export class Dataworker {
             });
           }
 
-          // Assume we don't need to add balance in the BalanceAllocator to the HubPool because the slow fill's
+          // Assume we don't need to add balance in the BalanceAllocator to the HubPool because the slow fills
           // recipient wouldn't be the HubPool in normal circumstances.
           return success ? slowFill : undefined;
         })
