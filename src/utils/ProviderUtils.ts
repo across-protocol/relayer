@@ -196,43 +196,43 @@ class CacheProvider extends RateLimitedProvider {
     this.baseTTL = _ttl;
   }
   override async send(method: string, params: Array<any>): Promise<any> {
-    const cacheType = this.redisClient ? await this.cacheType(method, params) : CacheType.NONE;
+    // Attempt to build a redis key. If there is no key, for the associated method, then
+    // we do not cache the method, and we can just query the RPC directly.
+    const redisKey = this.buildRedisKey(method, params);
+    if (!redisKey) {
+      return super.send(method, params);
+    }
+    // Attempt to pull the result from the cache.
+    const redisResult = await this.redisClient.get(redisKey);
 
-    if (cacheType !== CacheType.NONE) {
-      const redisKey = this.buildRedisKey(method, params);
-
-      // Attempt to pull the result from the cache.
-      const redisResult = await this.redisClient.get(redisKey);
-
-      // If cache has the result, parse the json and return it.
-      if (redisResult) {
-        return JSON.parse(redisResult);
-      }
-
-      // Cache does not have the result. Query it directly and cache.
-      const result = await super.send(method, params);
-
-      // Note: use swtich to ensure all enum cases are handled.
-      switch (cacheType) {
-        case CacheType.WITH_TTL:
-          {
-            // Apply a random margin to spread expiry over a larger time window.
-            const ttl = this.baseTTL + Math.ceil(lodash.random(-ttl_modifier, ttl_modifier, true) * this.baseTTL);
-            await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, ttl);
-          }
-          break;
-        case CacheType.NO_TTL:
-          await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, Number.POSITIVE_INFINITY);
-          break;
-        default:
-          throw new Error(`Unexpected Cache type: ${cacheType}`);
-      }
-
-      // Return the cached result.
-      return result;
+    // If cache has the result, parse the json and return it.
+    if (redisResult) {
+      return JSON.parse(redisResult);
     }
 
-    return await super.send(method, params);
+    // Cache does not have the result. Query it directly and cache.
+    const result = await super.send(method, params);
+
+    const cacheType = this.redisClient ? await this.cacheType(method, params, result) : CacheType.NONE;
+    // Note: use swtich to ensure all enum cases are handled.
+    switch (cacheType) {
+      case CacheType.WITH_TTL:
+        {
+          // Apply a random margin to spread expiry over a larger time window.
+          const ttl = this.baseTTL + Math.ceil(lodash.random(-ttl_modifier, ttl_modifier, true) * this.baseTTL);
+          await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, ttl);
+        }
+        break;
+      case CacheType.NO_TTL:
+        await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, Number.POSITIVE_INFINITY);
+        break;
+      case CacheType.NONE:
+        break;
+      default:
+        throw new Error(`Unexpected Cache type: ${cacheType}`);
+    }
+    // Return the result.
+    return result;
   }
 
   private buildRedisKey(method: string, params: Array<any>) {
@@ -247,11 +247,11 @@ class CacheProvider extends RateLimitedProvider {
       case "eth_getTransactionReceipt":
         return this.getTransactionReceiptPrefix + JSON.stringify(params);
       default:
-        throw new Error(`CacheProvider::buildRedisKey: invalid JSON-RPC method ${method}`);
+        return undefined;
     }
   }
 
-  private async cacheType(method: string, params: Array<any>): Promise<CacheType> {
+  private async cacheType(method: string, params: Array<any>, result: Array<any>): Promise<CacheType> {
     // Today, we only cache eth_getLogs and eth_call.
     if (method === "eth_getLogs") {
       const [{ fromBlock, toBlock }] = params;
@@ -286,9 +286,12 @@ class CacheProvider extends RateLimitedProvider {
       // If the block is old enough to cache, cache the call.
       return this.cacheTypeForBlock(blockNumber);
     } else if (method === "eth_getTransactionReceipt") {
-      // The RPC method `eth_getTransactionReceipt` has no block range in its parameters, so we cannot assign a cache type based off of how far back the request looks. Here, we assume that there should be a TTL, which means that we will primarily reap the benefits of caching when this method is called to query recent transactions.
+      // The RPC method `eth_getTransactionReceipt` has no block range in its parameters, so we cannot assign a cache type based off of how far back the request looks. Instead,
+      // We look at which block the transaction was mined. This should allow us to not cache a transaction which may be susceptible to a reorg.
       // The only parameter is `hash` which is the transaction hash to get a receipt for.
-      return CacheType.WITH_TTL;
+      const { blockNumber } = result;
+      const minedBlock = parseInt(blockNumber, 16);
+      return this.cacheTypeForBlock(minedBlock);
     } else {
       return CacheType.NONE;
     }
