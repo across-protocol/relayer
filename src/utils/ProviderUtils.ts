@@ -251,7 +251,7 @@ class CacheProvider extends RateLimitedProvider {
     }
   }
 
-  private async cacheType(method: string, params: Array<any>, result: Array<any>): Promise<CacheType> {
+  private async cacheType(method: string, params: Array<any>, result: any): Promise<CacheType> {
     // Today, we only cache eth_getLogs and eth_call.
     if (method === "eth_getLogs") {
       const [{ fromBlock, toBlock }] = params;
@@ -289,7 +289,7 @@ class CacheProvider extends RateLimitedProvider {
       // The RPC method `eth_getTransactionReceipt` has no block range in its parameters, so we cannot assign a cache type based off of how far back the request looks. Instead,
       // We look at which block the transaction was mined. This should allow us to not cache a transaction which may be susceptible to a reorg.
       // The only parameter is `hash` which is the transaction hash to get a receipt for.
-      const [{ blockNumber }] = result;
+      const { blockNumber } = result;
       const minedBlock = parseInt(blockNumber, 16);
       return this.cacheTypeForBlock(minedBlock);
     } else {
