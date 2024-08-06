@@ -534,21 +534,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
-  [CHAIN_IDs.ZORA]: {
-    l1: {
-      AddressManager: "0xEF8115F2733fb2033a7c756402Fc1deaa56550Ef",
-      L1CrossDomainMessenger: "0x363B4B1ADa52E50353f746999bd9E94395190d2C",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_7777777.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x1a0ad011913A150f69f6A19DF447A0CfD9551054",
-      L2OutputOracle: "0x89336159Edd615260a95309e46343602D6b6489e",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
 };
 
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
