@@ -48,6 +48,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 138240,
   [CHAIN_IDs.SCROLL]: 115200, // 4 * 24 * 20 * 60,
   [CHAIN_IDs.ZK_SYNC]: 345600, // 4 * 24 * 60 * 60,
+  [CHAIN_IDs.ZORA]: 172800, // OP stack
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -83,6 +84,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
     [CHAIN_IDs.SCROLL]: 30,
     [CHAIN_IDs.ZK_SYNC]: 120,
+    [CHAIN_IDs.ZORA]: 120,
   },
   1000: {
     [CHAIN_IDs.ARBITRUM]: 0,
@@ -96,6 +98,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
+    [CHAIN_IDs.ZORA]: 60,
   },
   100: {
     [CHAIN_IDs.ARBITRUM]: 0,
@@ -109,6 +112,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 80,
     [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
+    [CHAIN_IDs.ZORA]: 60,
   },
 };
 
@@ -132,6 +136,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.POLYGON]: 10000,
   [CHAIN_IDs.SCROLL]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
+  [CHAIN_IDs.ZORA]: 10000,
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
   [CHAIN_IDs.BASE_SEPOLIA]: 10000,
@@ -160,6 +165,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  [CHAIN_IDs.ZORA]: 60, // 2s/block
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
@@ -202,6 +208,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 256,
   [CHAIN_IDs.SCROLL]: 100,
   [CHAIN_IDs.ZK_SYNC]: 512,
+  [CHAIN_IDs.ZORA]: 120,
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
@@ -229,6 +236,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.ZK_SYNC]: 172800,
+  [CHAIN_IDs.ZORA]: 86400,
 };
 
 // Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
@@ -241,6 +249,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
+  [CHAIN_IDs.ZORA]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -263,6 +272,7 @@ export const multicall3Addresses = {
   [CHAIN_IDs.POLYGON]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.ZK_SYNC]: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
+  [CHAIN_IDs.ZORA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   // Testnet:
   [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BASE_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -288,6 +298,7 @@ export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.SCROLL,
   CHAIN_IDs.ZK_SYNC,
+  CHAIN_IDs.ZORA,
 ];
 
 /**
@@ -321,6 +332,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
@@ -371,6 +383,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
+  [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -421,6 +434,9 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKSyncWethBridge,
+  },
+  [CHAIN_IDs.ZORA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
 };
 
@@ -480,6 +496,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.POLYGON]: 60 * 60,
   [CHAIN_IDs.SCROLL]: 60 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,
+  [CHAIN_IDs.ZORA]: 20 * 60,
 };
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
@@ -517,10 +534,26 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.ZORA]: {
+    l1: {
+      AddressManager: "0xEF8115F2733fb2033a7c756402Fc1deaa56550Ef",
+      L1CrossDomainMessenger: "0x363B4B1ADa52E50353f746999bd9E94395190d2C",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_7777777.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x1a0ad011913A150f69f6A19DF447A0CfD9551054",
+      L2OutputOracle: "0x89336159Edd615260a95309e46343602D6b6489e",
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: ZERO_ADDRESS,
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
 };
 
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 1.5,
   [CHAIN_IDs.BASE]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
+  [CHAIN_IDs.ZORA]: 1.5,
 };
