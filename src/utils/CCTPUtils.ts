@@ -221,23 +221,25 @@ async function _resolveCCTPRelatedTxns(
             return undefined;
           }
 
-          // Generate the attestation proof for the message. This is required to finalize the message.
-          const attestation = await generateCCTPAttestationProof(messageHash, utils.chainIsProd(destinationChainId));
+          // Check to see if the message has already been processed
+          const destinationProvider = await getProvider(destinationChainId);
+          const destinationMessageTransmitterContract = CONTRACT_ADDRESSES[destinationChainId].cctpMessageTransmitter;
+          const destinationMessageTransmitter = new ethers.Contract(
+            destinationMessageTransmitterContract.address,
+            destinationMessageTransmitterContract.abi,
+            destinationProvider
+          );
+          const processed = await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter);
 
           let status: CCTPMessageStatus;
-          if (attestation.status === "pending_confirmations") {
-            status = "pending";
+          let attestation: Attestation | undefined = undefined;
+          if (processed) {
+            status = "finalized";
           } else {
-            // attestation proof is available so now check if its already been processed
-            const destinationProvider = await getProvider(destinationChainId);
-            const destinationMessageTransmitterContract = CONTRACT_ADDRESSES[destinationChainId].cctpMessageTransmitter;
-            const destinationMessageTransmitter = new ethers.Contract(
-              destinationMessageTransmitterContract.address,
-              destinationMessageTransmitterContract.abi,
-              destinationProvider
-            );
-            const processed = await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter);
-            status = processed ? "finalized" : "ready";
+            // Generate the attestation proof for the message. This is required to finalize the message.
+            attestation = await generateCCTPAttestationProof(messageHash, utils.chainIsProd(destinationChainId));
+            // If the attestation proof is pending, we can't finalize the message yet.
+            status = attestation.status === "pending_confirmations" ? "pending" : "ready";
           }
 
           return {

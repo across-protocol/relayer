@@ -7,6 +7,7 @@ export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
 export const {
+  averageBlockTime,
   bnZero,
   bnOne,
   bnUint32Max,
