@@ -205,6 +205,15 @@ export const CONTRACT_ADDRESSES: {
       abi: WETH_ABI,
     },
   },
+  690: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
   1135: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
