@@ -117,9 +117,9 @@ function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, r
   return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
 }
 
-function createSendErrorWithMessage(message: string, sendError: unknown) {
+function createSendErrorWithMessage(message: string, sendError: Record<string, unknown>) {
   const error = new Error(message);
-  return { ...(sendError as Record<string, unknown>), ...error };
+  return { ...sendError, ...error };
 }
 
 function compareRpcResults(method: string, rpcResultA: unknown, rpcResultB: unknown): boolean {
