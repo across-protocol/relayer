@@ -134,8 +134,8 @@ function compareRpcResults(method: string, rpcResultA: unknown, rpcResultB: unkn
         "size", // Alchemy/Arbitrum (temporary)
         "totalDifficulty", // Quicknode/Alchemy (sometimes)
       ],
-      rpcResultA,
-      rpcResultB
+      rpcResultA as Record<string, unknown>,
+      rpcResultB as Record<string, unknown>
     );
   } else if (method === "eth_getLogs") {
     // We've seen some RPC's like QuickNode add in transactionLogIndex which isn't in the
