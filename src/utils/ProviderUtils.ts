@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ethers } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
@@ -26,8 +25,8 @@ interface RateLimitTask {
 
   // These are the promise callbacks that will cause the initial send call made by the user to either return a result
   // or fail.
-  resolve: (result: any) => void;
-  reject: (err: any) => void;
+  resolve: (result: unknown) => void;
+  reject: (err: unknown) => void;
 }
 
 // StaticJsonRpcProvider is used in place of JsonRpcProvider to avoid redundant eth_chainId queries prior to each
@@ -59,7 +58,7 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
     }, maxConcurrency);
   }
 
-  async wrapSendWithLog(method: string, params: Array<any>) {
+  async wrapSendWithLog(method: string, params: Array<unknown>) {
     if (this.pctRpcCallsLogged <= 0 || Math.random() > this.pctRpcCallsLogged / 100) {
       // Non sample path: no logging or timing, just issue the request.
       return super.send(method, params);
@@ -99,9 +98,9 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
     }
   }
 
-  override async send(method: string, params: Array<any>): Promise<any> {
+  override async send(method: string, params: Array<unknown>): Promise<unknown> {
     // This simply creates a promise and adds the arguments and resolve and reject handlers to the task.
-    return new Promise<any>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const task: RateLimitTask = {
         sendArgs: [method, params],
         resolve,
@@ -118,12 +117,12 @@ function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, r
   return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
 }
 
-function createSendErrorWithMessage(message: string, sendError: any) {
+function createSendErrorWithMessage(message: string, sendError: unknown) {
   const error = new Error(message);
-  return { ...sendError, ...error };
+  return { ...(sendError as Record<string, unknown>), ...error };
 }
 
-function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): boolean {
+function compareRpcResults(method: string, rpcResultA: unknown, rpcResultB: unknown): boolean {
   if (method === "eth_getBlockByNumber") {
     // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
     // led alchemy and quicknode to disagree on the miner field's value.
@@ -147,8 +146,8 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
     // 2024-07-11 Added blockTimestamp after zkSync rolled out a new node release.
     return compareArrayResultsWithIgnoredKeys(
       ["blockTimestamp", "transactionLogIndex", "l1BatchNumber", "logType"],
-      rpcResultA,
-      rpcResultB
+      rpcResultA as unknown[],
+      rpcResultB as unknown[]
     );
   } else {
     return lodash.isEqual(rpcResultA, rpcResultB);
@@ -193,7 +192,7 @@ class CacheProvider extends RateLimitedProvider {
     }
     this.baseTTL = _ttl;
   }
-  override async send(method: string, params: Array<any>): Promise<any> {
+  override async send(method: string, params: Array<unknown>): Promise<unknown> {
     const cacheType = this.redisClient ? await this.cacheType(method, params) : CacheType.NONE;
 
     if (cacheType !== CacheType.NONE) {
@@ -233,7 +232,7 @@ class CacheProvider extends RateLimitedProvider {
     return await super.send(method, params);
   }
 
-  private buildRedisKey(method: string, params: Array<any>) {
+  private buildRedisKey(method: string, params: Array<unknown>) {
     // Only handles eth_getLogs and eth_call right now.
     switch (method) {
       case "eth_getBlockByNumber":
@@ -247,15 +246,15 @@ class CacheProvider extends RateLimitedProvider {
     }
   }
 
-  private async cacheType(method: string, params: Array<any>): Promise<CacheType> {
+  private async cacheType(method: string, params: Array<unknown>): Promise<CacheType> {
     // Today, we only cache eth_getLogs and eth_call.
     if (method === "eth_getLogs") {
-      const [{ fromBlock, toBlock }] = params;
+      const [{ fromBlock, toBlock }] = params as { toBlock: number; fromBlock: number }[];
 
       // Handle odd cases where the ordering is flipped, etc.
       // toBlock/fromBlock is in hex, so it must be parsed before being compared to the first unsafe block.
-      const fromBlockNumber = parseInt(fromBlock, 16);
-      const toBlockNumber = parseInt(toBlock, 16);
+      const fromBlockNumber = parseInt(String(fromBlock), 16);
+      const toBlockNumber = parseInt(String(toBlock), 16);
 
       // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
       // This would result in the result of the above being NaN.
@@ -272,7 +271,7 @@ class CacheProvider extends RateLimitedProvider {
       // Pull out the block tag from params. Its position in params is dependent on the method.
       // We are only interested in numeric block tags, which would be hex-encoded strings.
       const idx = method === "eth_getBlockByNumber" ? 0 : 1;
-      const blockNumber = parseInt(params[idx], 16);
+      const blockNumber = parseInt(String(params[idx]), 16);
 
       // If the block number isn't present or is a text string, this will be NaN and we return false.
       if (Number.isNaN(blockNumber)) {
@@ -358,7 +357,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     }
   }
 
-  override async send(method: string, params: Array<any>): Promise<any> {
+  override async send(method: string, params: Array<unknown>): Promise<unknown> {
     const quorumThreshold = this._getQuorum(method, params);
     const requiredProviders = this.providers.slice(0, quorumThreshold);
     const fallbackProviders = this.providers.slice(quorumThreshold);
@@ -370,9 +369,9 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     // considered responses come from unique providers.
     const tryWithFallback = (
       provider: ethers.providers.StaticJsonRpcProvider
-    ): Promise<[ethers.providers.StaticJsonRpcProvider, any]> => {
+    ): Promise<[ethers.providers.StaticJsonRpcProvider, unknown]> => {
       return this._trySend(provider, method, params)
-        .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
+        .then((result): [ethers.providers.StaticJsonRpcProvider, unknown] => [provider, result])
         .catch((err) => {
           // Append the provider and error to the error array.
           errors.push([provider, err?.stack || err?.toString()]);
@@ -433,7 +432,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     const fallbackResults = await Promise.allSettled(
       fallbackProviders.map((provider) =>
         this._trySend(provider, method, params)
-          .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
+          .then((result): [ethers.providers.StaticJsonRpcProvider, unknown] => [provider, result])
           .catch((err) => {
             errors.push([provider, err?.stack || err?.toString()]);
             throw new Error("No fallbacks during quorum search");
@@ -462,7 +461,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         // Return the same acc object because it was modified in place.
         return acc;
       },
-      [[undefined, 0]] as [any, number][] // Initialize with [undefined, 0] as the first element so something is always returned.
+      [[undefined, 0]] as [unknown, number][] // Initialize with [undefined, 0] as the first element so something is always returned.
     );
 
     // Sort so the result with the highest count is first.
@@ -501,7 +500,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     return quorumResult;
   }
 
-  _validateResponse(method: string, params: Array<any>, response: any): boolean {
+  _validateResponse(method: string, params: Array<unknown>, response: unknown): boolean {
     // Basic validation logic to start.
     // Note: eth_getTransactionReceipt is ignored here because null responses are expected in the case that ethers is
     // polling for the transaction receipt and receiving null until it does.
@@ -511,8 +510,8 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   async _sendAndValidate(
     provider: ethers.providers.StaticJsonRpcProvider,
     method: string,
-    params: Array<any>
-  ): Promise<any> {
+    params: Array<unknown>
+  ): Promise<unknown> {
     const response = await provider.send(method, params);
     if (!this._validateResponse(method, params, response)) {
       // Not a warning to avoid spam since this could trigger a lot.
@@ -529,7 +528,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     return response;
   }
 
-  _trySend(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
+  _trySend(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<unknown>): Promise<unknown> {
     let promise = this._sendAndValidate(provider, method, params);
     for (let i = 0; i < this.retries; i++) {
       promise = promise.catch(() => delay(this.delay).then(() => this._sendAndValidate(provider, method, params)));
@@ -537,7 +536,7 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     return promise;
   }
 
-  _getQuorum(method: string, params: Array<any>): number {
+  _getQuorum(method: string, params: Array<unknown>): number {
     // Only use quorum if this is a historical query that doesn't depend on the current block number.
 
     // All logs queries should use quorum.
