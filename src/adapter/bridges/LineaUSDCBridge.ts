@@ -58,7 +58,7 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.ReceivedFromOtherLayer(toAddress, undefined),
+      this.getL2Bridge().filters.ReceivedFromOtherLayer(toAddress),
       eventConfig
     );
     // There is no "from" address in this event.

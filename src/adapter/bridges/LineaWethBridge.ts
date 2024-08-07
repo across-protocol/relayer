@@ -46,7 +46,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.MessageSent(undefined, toAddress, undefined),
+      this.getL1Bridge().filters.MessageSent(undefined, toAddress),
       eventConfig
     );
     return {
@@ -66,7 +66,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     // queryL1BridgeInitiationEvents in the BaseChainAdapter class.
     const initiatedQueryResult = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.MessageSent(undefined, toAddress, undefined),
+      this.getL1Bridge().filters.MessageSent(undefined, toAddress),
       eventConfig
     );
 
