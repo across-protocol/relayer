@@ -7,6 +7,7 @@ import {
   Provider,
   toBN,
   toWei,
+  bnZero,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -67,11 +68,13 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress),
+      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress, toAddress),
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events
+        .map((event) => processEvent(event, "_amount", "_to", "_from"))
+        .filter(({ amount }) => amount.gt(bnZero)),
     };
   }
 
@@ -83,11 +86,13 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(l1Token, fromAddress, undefined),
+      this.getL2Bridge().filters.DepositFinalized(l1Token, fromAddress, toAddress),
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: events
+        .map((event) => processEvent(event, "amount", "to", "from"))
+        .filter(({ amount }) => amount.gt(bnZero)),
     };
   }
 }
