@@ -611,18 +611,24 @@ export class ProfitClient {
     };
 
     // Pre-fetch total gas costs for relays on enabled chains.
-    await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
-      const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
-      const hubToken = TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId];
-      const outputToken =
-        destinationChainId === hubPoolClient.chainId
-          ? hubToken
-          : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
-      assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
+    const { totalGasCosts } = this;
+    await sdkUtils.mapAsync(
+      enabledChainIds.filter(
+        (chainId) => !isDefined(totalGasCosts[chainId]) || totalGasCosts[chainId].nativeGasCost.eq(uint256Max)
+      ),
+      async (destinationChainId) => {
+        const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
+        const hubToken = TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId];
+        const outputToken =
+          destinationChainId === hubPoolClient.chainId
+            ? hubToken
+            : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
+        assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
-      const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-      this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
-    });
+        const deposit = { ...sampleDeposit, destinationChainId, outputToken };
+        totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
+      }
+    );
 
     this.logger.debug({
       at: "ProfitClient",

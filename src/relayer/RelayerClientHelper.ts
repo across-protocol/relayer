@@ -137,7 +137,6 @@ export async function constructRelayerClients(
     config.relayerMessageGasMultiplier,
     config.relayerGasPadding
   );
-  await profitClient.update();
 
   const monitoredAddresses = [signerAddr];
   const adapterManagerConstructor = config.useGenericAdapter ? GenericAdapterManager : AdapterManager;
@@ -181,22 +180,27 @@ export async function constructRelayerClients(
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-  const { spokePoolClients } = clients;
+  const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = clients;
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
-  // having a "first run" update and then a "normal" update that considers this. see previous implementation here
+  // having a "first run" update and then a "normal" update that considers this. See previous implementation here
   // https://github.com/across-protocol/relayer/pull/37/files#r883371256 as a reference.
-  await updateSpokePoolClients(spokePoolClients, [
+  const spokePoolEvents = [
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
     "FilledV3Relay",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
-  ]);
+  ];
 
-  // Update the token client first so that inventory client has latest balances.
-  await clients.tokenClient.update();
+  // Start updates w/ no dependencies first, and wait on them last.
+  const profitClientUpdate = profitClient.update();
+  const inputTokenApprovals = config.sendingRelaysEnabled ? tokenClient.setOriginTokenApprovals() : Promise.resolve();
+  const apiClientUpdate = acrossApiClient.update(config.ignoreLimits);
+
+  // InventoryClient updates depend on the tokenClient and SpokePoolClients.
+  await Promise.all([clients.tokenClient.update(), updateSpokePoolClients(spokePoolClients, spokePoolEvents)]);
 
   // We can update the inventory client in parallel with checking for eth wrapping as these do not depend on each other.
   // Cross-chain deposit tracking produces duplicates in looping mode, so in that case don't attempt it. This does not
@@ -205,11 +209,12 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // correctly to avoid repeat rebalances.
   const inventoryChainIds =
     config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
+
   await Promise.all([
-    clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(inventoryChainIds),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),
-    config.sendingRelaysEnabled ? clients.tokenClient.setOriginTokenApprovals() : Promise.resolve(),
   ]);
+
+  await Promise.all([profitClientUpdate, inputTokenApprovals, apiClientUpdate]);
 }
