@@ -30,5 +30,18 @@
     ],
     "name": "NewDepositBlock",
     "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "depositEtherFor",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
   }
 ]

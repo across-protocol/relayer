@@ -31,10 +31,11 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("sendMessage", [toAddress, bnZero, "0x"]);
     return Promise.resolve({
       contract: this.atomicDepositor,
-      method: "bridgeWethToLinea",
-      args: [toAddress, amount],
+      method: "bridgeWeth",
+      args: [this.l2chainId, amount, bridgeCalldata],
     });
   }
 

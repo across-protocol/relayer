@@ -29,7 +29,6 @@ type WebSocketProvider = ethersProviders.WebSocketProvider;
 type EventSearchConfig = sdkUtils.EventSearchConfig;
 type ScraperOpts = {
   lookback?: number; // Event lookback (in seconds).
-  finality?: number; // Event finality (in blocks).
   deploymentBlock: number; // SpokePool deployment block
   maxBlockRange?: number; // Maximum block range for paginated getLogs queries.
   filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
@@ -213,9 +212,8 @@ async function run(argv: string[]): Promise<void> {
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, lookback, relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainId, lookback, relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
-  assert(Number.isInteger(finality), "finality must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
@@ -246,7 +244,6 @@ async function run(argv: string[]): Promise<void> {
   }
 
   const opts = {
-    finality,
     quorum,
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
@@ -290,7 +287,7 @@ async function run(argv: string[]): Promise<void> {
 
   // Events to listen for.
   const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
-  const eventMgr = new EventManager(logger, chainId, finality, quorum);
+  const eventMgr = new EventManager(logger, chainId, quorum);
   do {
     let providers: WebSocketProvider[] = [];
     try {

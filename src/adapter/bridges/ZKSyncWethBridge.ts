@@ -43,9 +43,11 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
 
     const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
+    const { address: l1MailboxAddress, abi: l1MailboxAbi } = CONTRACT_ADDRESSES[hubChainId].zkSyncMailbox;
     this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], l2EthAbi, l2SignerOrProvider);
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+    this.l1Bridge = new Contract(l1MailboxAddress, l1MailboxAbi, l1Signer);
   }
 
   async constructL1ToL2Txn(
@@ -77,10 +79,20 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         )
       : BigNumber.from(2_000_000);
 
+    // TODO: Verify that there does/does not need to be modifications to the `amount` field to ensure that the atomic depositor has enough value to send fund the gas on ZkSync.
+    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2Transaction", [
+      toAddress,
+      amount,
+      "0x",
+      l2GasLimit,
+      this.gasPerPubdataLimit,
+      [],
+      toAddress,
+    ]);
     return Promise.resolve({
       contract: this.atomicDepositor,
-      method: "bridgeWethToZkSync",
-      args: [toAddress, amount, l2GasLimit.toString(), this.gasPerPubdataLimit, toAddress],
+      method: "bridgeWeth",
+      args: [this.l2chainId, amount, bridgeCalldata],
     });
   }
 
@@ -107,7 +119,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       isL2Contract ? hubPool : this.atomicDepositor,
       isL2Contract
         ? hubPool.filters.TokensRelayed()
-        : this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, toAddress),
+        : this.atomicDepositor.filters.AtomicWethDepositInitiated(fromAddress, this.l2chainId),
       eventConfig
     );
     const processedEvents = events.map((event) =>

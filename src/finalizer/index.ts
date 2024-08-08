@@ -393,15 +393,23 @@ export async function constructFinalizerClients(
   const commonClients = await constructClients(_logger, config, baseSigner, hubPoolLookBack);
   await updateFinalizerClients(commonClients);
 
-  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
-  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
+  // Make sure we have at least one chain to finalize and that we include the mainnet chain if it's not already
+  // included. Note, we deep copy so that we don't modify config.chainsToFinalize accidentally.
+  const configuredChainIds = [...config.chainsToFinalize];
+  if (configuredChainIds.length === 0) {
+    throw new Error("No chains configured for finalizer");
+  }
+  if (!configuredChainIds.includes(CHAIN_IDs.MAINNET)) {
+    configuredChainIds.push(CHAIN_IDs.MAINNET);
+  }
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.hubPoolClient,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback
+    config.maxFinalizerLookback,
+    configuredChainIds
   );
 
   return {

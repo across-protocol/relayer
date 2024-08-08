@@ -25,10 +25,23 @@
   },
   {
     "inputs": [
-      { "internalType": "uint32", "name": "_l2Gas", "type": "uint32" },
-      { "internalType": "bytes", "name": "_data", "type": "bytes" }
+      {
+        "internalType": "address",
+        "name": "_to",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "_minGasLimit",
+        "type": "uint32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "_extraData",
+        "type": "bytes"
+      }
     ],
-    "name": "depositETH",
+    "name": "depositETHTo",
     "outputs": [],
     "stateMutability": "payable",
     "type": "function"

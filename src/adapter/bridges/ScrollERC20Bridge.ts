@@ -9,6 +9,8 @@ import {
   fixedPointAdjustment,
   isContractDeployedToAddress,
   bnZero,
+  compareAddressesSimple,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, SCROLL_CUSTOM_GATEWAY } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
@@ -126,5 +128,12 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
 
   protected getScrollGatewayRouter(): Contract {
     return this.scrollGatewayRouter;
+  }
+
+  protected override resolveL2TokenAddress(l1Token: string): string {
+    if (compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId], l1Token)) {
+      return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]; // Scroll only has one USDC token type.
+    }
+    return super.resolveL2TokenAddress(l1Token);
   }
 }

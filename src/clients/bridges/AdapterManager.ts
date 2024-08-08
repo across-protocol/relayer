@@ -39,7 +39,7 @@ export class AdapterManager {
       );
     };
 
-    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, SCROLL } = CHAIN_IDs;
+    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL } = CHAIN_IDs;
     if (this.spokePoolClients[OPTIMISM] !== undefined) {
       this.adapters[OPTIMISM] = new OpStackAdapter(
         OPTIMISM,
@@ -77,6 +77,15 @@ export class AdapterManager {
         SUPPORTED_TOKENS[MODE],
         spokePoolClients,
         filterMonitoredAddresses(MODE)
+      );
+    }
+    if (this.spokePoolClients[REDSTONE] !== undefined) {
+      this.adapters[REDSTONE] = new OpStackAdapter(
+        REDSTONE,
+        logger,
+        SUPPORTED_TOKENS[REDSTONE],
+        spokePoolClients,
+        filterMonitoredAddresses(REDSTONE)
       );
     }
     if (this.spokePoolClients[LISK] !== undefined) {

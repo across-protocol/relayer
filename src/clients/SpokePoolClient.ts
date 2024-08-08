@@ -9,7 +9,6 @@ import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUti
 export type SpokePoolClient = clients.SpokePoolClient;
 
 export type IndexerOpts = {
-  finality: number;
   path?: string;
 };
 
@@ -37,7 +36,6 @@ export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolE
 
 export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   public readonly chain: string;
-  public readonly finality: number;
   public readonly indexerPath: string;
 
   private worker: ChildProcess;
@@ -63,7 +61,6 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     super(logger, spokePool, hubPoolClient, chainId, deploymentBlock, eventSearchConfig);
 
     this.chain = getNetworkName(chainId);
-    this.finality = opts.finality;
     this.indexerPath = opts.path ?? RELAYER_DEFAULT_SPOKEPOOL_INDEXER;
 
     this.pendingBlockNumber = deploymentBlock;
@@ -80,10 +77,9 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    */
   protected startWorker(): void {
     const {
-      finality,
       eventSearchConfig: { fromBlock, maxBlockLookBack: blockRange },
     } = this;
-    const opts = { finality, blockRange, lookback: `@${fromBlock}` };
+    const opts = { blockRange, lookback: `@${fromBlock}` };
 
     const args = Object.entries(opts)
       .map(([k, v]) => [`--${k}`, `${v}`])

@@ -49,10 +49,11 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("depositEtherFor", [toAddress]);
     return Promise.resolve({
       contract: this.atomicDepositor,
-      method: "bridgeWethToPolygon",
-      args: [toAddress, amount.toString()],
+      method: "bridgeWeth",
+      args: [this.l2chainId, amount, bridgeCalldata],
     });
   }
 
@@ -64,7 +65,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.LockedEther(undefined, fromAddress),
+      this.getL1Bridge().filters.LockedEther(undefined, toAddress), // Undefined since the depositor is the atomic depositor address.
       eventConfig
     );
     return {
@@ -82,7 +83,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, fromAddress),
+      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress),
       eventConfig
     );
     return {

@@ -100,7 +100,7 @@ export function count3DDictionaryValues(
  * @param obj
  * @returns Objects with ignored keys removed
  */
-function deleteIgnoredKeys(ignoredKeys: string[], obj: any) {
+function deleteIgnoredKeys(ignoredKeys: string[], obj: Record<string, unknown>) {
   if (!isDefined(obj)) {
     return;
   }
@@ -111,7 +111,11 @@ function deleteIgnoredKeys(ignoredKeys: string[], obj: any) {
   return newObj;
 }
 
-export function compareResultsAndFilterIgnoredKeys(ignoredKeys: string[], _objA: any, _objB: any): boolean {
+export function compareResultsAndFilterIgnoredKeys(
+  ignoredKeys: string[],
+  _objA: Record<string, unknown>,
+  _objB: Record<string, unknown>
+): boolean {
   // Remove ignored keys from copied objects.
   const filteredA = deleteIgnoredKeys(ignoredKeys, _objA);
   const filteredB = deleteIgnoredKeys(ignoredKeys, _objB);
@@ -120,10 +124,10 @@ export function compareResultsAndFilterIgnoredKeys(ignoredKeys: string[], _objA:
   return lodash.isEqual(filteredA, filteredB);
 }
 
-export function compareArrayResultsWithIgnoredKeys(ignoredKeys: string[], objA: any[], objB: any[]): boolean {
+export function compareArrayResultsWithIgnoredKeys(ignoredKeys: string[], objA: unknown[], objB: unknown[]): boolean {
   // Remove ignored keys from each element of copied arrays.
-  const filteredA = objA?.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
-  const filteredB = objB?.map((obj) => deleteIgnoredKeys(ignoredKeys, obj));
+  const filteredA = objA?.map((obj) => deleteIgnoredKeys(ignoredKeys, obj as Record<string, unknown>));
+  const filteredB = objB?.map((obj) => deleteIgnoredKeys(ignoredKeys, obj as Record<string, unknown>));
 
   // Compare objects without the ignored keys.
   return isDefined(filteredA) && isDefined(filteredB) && lodash.isEqual(filteredA, filteredB);
