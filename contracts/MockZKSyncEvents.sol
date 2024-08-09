@@ -43,6 +43,22 @@ contract zkSync_L1Bridge {
         emit DepositInitiated(l2TxHash, l1Sender, l2Receiver, l1Token, amount);
         return l2TxHash;
     }
+
+    function l2TransactionBaseCost(uint256, uint256, uint256) public view returns (uint256) {
+        return 1;
+    }
+
+    function requestL2Transaction(
+        address,
+        uint256,
+        bytes calldata,
+        uint256,
+        uint256,
+        bytes[] calldata,
+        address
+    ) public payable returns (bytes32) {
+        return bytes32(0);
+    }
 }
 
 contract zkSync_L2Bridge {

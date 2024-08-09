@@ -10,7 +10,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   assert,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, DEFAULT_GAS_MULTIPLIER } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -79,7 +79,16 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         )
       : BigNumber.from(2_000_000);
 
-    // TODO: Verify that there does/does not need to be modifications to the `amount` field to ensure that the atomic depositor has enough value to send fund the gas on ZkSync.
+    // Calling this function requires knowledge of the l1 gas price. In the past, this task was deferred to the atomic depositor, which would use tx.gasprice to
+    // obtain the effective_gas_price = block.base_fee_per_gas + priority_fee_per_gas. In general, this info is unknown to these bridges, since they just construct
+    // the transaction and perform no simulation or priority fee adjustment. Here, we just estimate the gas price and multiply by a small amount to simulate priority fee
+    // scaling.
+    const currentGasPrice = await l1Provider.getGasPrice();
+    const l2TransactionBaseCost = await this.getL1Bridge().l2TransactionBaseCost(
+      currentGasPrice.mul(DEFAULT_GAS_MULTIPLIER[this.l2chainId] ?? 1),
+      l2GasLimit,
+      this.gasPerPubdataLimit
+    );
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2Transaction", [
       toAddress,
       amount,
@@ -89,10 +98,11 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       [],
       toAddress,
     ]);
+    // To fund the l2 transaction, we withdraw `amount + gasCost` worth of WETH, but only specify `amount` to bridge in bridgeCalldata.
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",
-      args: [this.l2chainId, amount, bridgeCalldata],
+      args: [this.l2chainId, amount + l2TransactionBaseCost, bridgeCalldata],
     });
   }
 
@@ -122,8 +132,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         : this.atomicDepositor.filters.AtomicWethDepositInitiated(fromAddress, this.l2chainId),
       eventConfig
     );
+    // We have no way of knowing the recipient of the atomic depositor, however, we know the depositor is an EOA, so we assume that from === to.
     const processedEvents = events.map((event) =>
-      isL2Contract ? processEvent(event, "amount", "to", "l2Token") : processEvent(event, "_amount", "_to", "from")
+      isL2Contract ? processEvent(event, "amount", "to", "l2Token") : processEvent(event, "amount", "from", "from")
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,

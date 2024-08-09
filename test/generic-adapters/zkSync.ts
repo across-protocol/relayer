@@ -77,7 +77,7 @@ class TestZkSyncBridge extends ZKSyncBridge {
   }
 }
 
-describe("Cross Chain Adapter: zkSync", async function () {
+describe("Generic Cross Chain Adapter: zkSync", async function () {
   const logger = createSpyLogger().spyLogger;
   const l2TxGasLimit = bnZero;
   const l2TxGasPerPubdataByte = bnZero;
@@ -140,6 +140,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     atomicDepositor = await (await getContractFactory("MockAtomicWethDepositor", depositor)).deploy();
     adapter.setL1Bridge(l1Token, l1Bridge);
     adapter.setL2Bridge(l1Token, l2Bridge);
+    adapter.setL1Bridge(l1Weth, l1Bridge);
     adapter.setL2Eth(l1Weth, l2Eth);
     adapter.setL2Weth(l1Weth, l2Weth);
     adapter.setAtomicDepositor(l1Weth, atomicDepositor);
@@ -151,7 +152,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
   describe("WETH bridge", function () {
     it("Get L1 deposits: EOA", async function () {
-      await atomicDepositor.bridgeWethToZkSync(monitoredEoa, depositAmount, 0, 0, ZERO_ADDRESS);
+      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, "0x");
 
       const result = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
@@ -217,10 +218,10 @@ describe("Cross Chain Adapter: zkSync", async function () {
       });
 
       // Make a single l1 -> l2 deposit.
-      await atomicDepositor.bridgeWethToZkSync(monitoredEoa, depositAmount, 0, 0, ZERO_ADDRESS);
+      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, "0x");
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
-        null,
+        monitoredEoa,
         monitoredEoa,
         searchConfig
       );
