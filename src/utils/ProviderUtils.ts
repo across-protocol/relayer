@@ -1,11 +1,10 @@
 import { ethers } from "ethers";
 import winston from "winston";
-import { getRedis } from "./RedisUtils";
+import { getRedisCache } from "./RedisUtils";
 import { CHAIN_CACHE_FOLLOW_DISTANCE, DEFAULT_NO_TTL_DISTANCE } from "../common";
 import { delay, getOriginFromURL } from "./";
 import { MAINNET_CHAIN_IDs } from "@across-protocol/constants";
 import { providers as sdkProviders } from "@across-protocol/sdk";
-import { RedisCache } from "../caching/RedisCache";
 
 export class RetryProvider extends sdkProviders.RetryProvider {}
 
@@ -49,7 +48,7 @@ export async function getProvider(
   logger?: winston.Logger,
   useCache = true
 ): Promise<sdkProviders.RetryProvider> {
-  const redisClient = await getRedis(logger);
+  const redisClient = await getRedisCache(logger);
   if (useCache) {
     const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
     if (cachedProvider) {
@@ -66,6 +65,7 @@ export async function getProvider(
     NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS,
     NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING,
     NODE_PCT_RPC_CALLS_LOGGED,
+    PROVIDER_CACHE_TTL,
   } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || sdkProviders.defaultTimeout);
@@ -81,6 +81,8 @@ export async function getProvider(
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "25");
 
   const disableNoTtlCaching = NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING === "true";
+
+  const providerCacheTtl = PROVIDER_CACHE_TTL ? Number(PROVIDER_CACHE_TTL) : undefined;
 
   // Note: if there is no env var override _and_ no default, this will remain undefined and
   // effectively disable indefinite caching of old blocks/keys.
@@ -166,10 +168,10 @@ export async function getProvider(
     nodeMaxConcurrency,
     providerCacheNamespace,
     pctRpcCallsLogged,
-    redisClient ? new RedisCache(redisClient) : undefined,
+    redisClient,
     disableProviderCache ? undefined : standardTtlBlockDistance,
     disableNoTtlCaching ? undefined : noTtlBlockDistance,
-    process.env.PROVIDER_CACHE_TTL ? Number(process.env.PROVIDER_CACHE_TTL) : undefined
+    providerCacheTtl
   );
 
   if (useCache) {
