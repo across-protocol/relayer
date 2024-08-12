@@ -13,7 +13,9 @@ export function getL2TokenAddresses(l1TokenAddress: string): { [chainId: number]
   })?.addresses;
 }
 
-export function getEthAddressForChain(chainId: number): string {
+// TODO: This should be renamed to getNative/GasTokenAddressForChain to align closer with this function's usage.
+// It's typically used to query the native token for a chain.
+export function getNativeTokenAddressForChain(chainId: number): string {
   return CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
 }
 

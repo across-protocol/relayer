@@ -21,7 +21,7 @@ import {
   fillStatusArray,
   blockExplorerLink,
   blockExplorerLinks,
-  getEthAddressForChain,
+  getNativeTokenAddressForChain,
   getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
@@ -34,6 +34,8 @@ import {
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
   CHAIN_IDs,
+  WETH9,
+  runTransaction,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -402,9 +404,9 @@ export class Monitor {
               trippedThreshold = { level: "error", threshold: errorThreshold };
             }
             if (trippedThreshold !== null) {
-              const ethAddressForChain = getEthAddressForChain(chainId);
+              const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
               const symbol =
-                token === ethAddressForChain
+                token === gasTokenAddressForChain
                   ? getNativeTokenSymbol(chainId)
                   : await new Contract(
                       token,
@@ -471,12 +473,48 @@ export class Monitor {
           // Fill balance back to target, not trigger.
           const balanceTarget = ethers.utils.parseUnits(target.toString(), decimals);
           const deficit = balanceTarget.sub(currentBalance);
-          const canRefill = await this.balanceAllocator.requestBalanceAllocation(
+          let canRefill = await this.balanceAllocator.requestBalanceAllocation(
             chainId,
             [token],
             signerAddress,
             deficit
           );
+          // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
+          // We use this only on Mainnet for now since we're most likely to refill balances on mainnet and we
+          // want to test this in production before rolling it out to all chains.
+          if (!canRefill && chainId === CHAIN_IDs.MAINNET && token === getNativeTokenAddressForChain(chainId)) {
+            const weth = new Contract(
+              TOKEN_SYMBOLS_MAP["WETH"].addresses[chainId],
+              WETH9.abi,
+              this.clients.spokePoolClients[chainId].spokePool.signer
+            );
+            const wethBalance = await weth.balanceOf(signerAddress);
+            if (wethBalance.gte(deficit)) {
+              const txn = await (await runTransaction(this.logger, weth, "withdraw", [deficit])).wait();
+              this.logger.info({
+                at: "Monitor#refillBalances",
+                message: `Unwrapped WETH from ${signerAddress} to refill ETH in ${account} 🎁!`,
+                chainId,
+                requiredUnwrapAmount: deficit.toString(),
+                wethBalance,
+                ethBalance: currentBalance.toString(),
+                transactionHash: blockExplorerLink(txn.transactionHash, chainId),
+              });
+              canRefill = true;
+            } else {
+              this.logger.warn({
+                at: "Monitor#refillBalances",
+                message: "Trying to unwrap WETH balance to use for refilling ETH but not enough WETH to unwrap",
+                from: signerAddress,
+                to: account,
+                balanceTrigger,
+                balanceTarget,
+                requiredUnwrapAmount: deficit.toString(),
+                token,
+                chainId,
+              });
+            }
+          }
           if (canRefill) {
             this.logger.debug({
               at: "Monitor#refillBalances",
@@ -922,9 +960,9 @@ export class Monitor {
         if (this.balanceCache[chainId]?.[token]?.[account]) {
           return this.balanceCache[chainId][token][account];
         }
-        const ethAddressForChain = getEthAddressForChain(chainId);
+        const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         const balance =
-          token === ethAddressForChain
+          token === gasTokenAddressForChain
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
             : // Use the latest block number the SpokePoolClient is aware of to query balances.
               // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
@@ -949,8 +987,8 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        const ethAddressForChain = getEthAddressForChain(chainId);
-        if (token === ethAddressForChain) {
+        const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
+        if (token === gasTokenAddressForChain) {
           return 18;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token]) {
