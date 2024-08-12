@@ -394,7 +394,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           // case there MIGHT be a relayer refund root. Its hard to figure out otherwise if there was a refund root
           // so there might be a false negative here where we don't subtract the refund leaf amount because we
           // can't find it and it legitimately wasn't relayed over yet.
-          if (leaf.transactionHash === "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" && leaf.chainId === 690) {
+          if (
+            leaf.transactionHash === "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
+            leaf.chainId === 690
+          ) {
             // Note: This bundle never made it to Redstone due to a configuration error when deploying the Redstone
             // SpokePool.
             continue;
