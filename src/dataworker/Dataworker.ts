@@ -83,7 +83,6 @@ type ProposeRootBundleReturnType = {
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
   slowFillLeaves: V3SlowFillLeaf[];
   slowFillTree: MerkleTree<V3SlowFillLeaf>;
-  dataToPersistToDALayer: BundleDataToPersistToDALayerType;
 };
 
 export type PoolRebalanceRoot = {
@@ -358,7 +357,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<BundleDataToPersistToDALayerType> {
+  ): Promise<void> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -467,7 +466,6 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return rootBundleData.dataToPersistToDALayer;
   }
 
   async _proposeRootBundle(
@@ -480,18 +478,6 @@ export class Dataworker {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
       await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
-    // Prepare information about what we need to store to
-    // Arweave for the bundle. We will be doing this at a
-    // later point so that we can confirm that this data is
-    // worth storing.
-    const dataToPersistToDALayer = {
-      bundleBlockRanges: blockRangesForProposal,
-      bundleDepositsV3,
-      expiredDepositsToRefundV3,
-      bundleFillsV3,
-      unexecutableSlowFills,
-      bundleSlowFillsV3,
-    };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
     const poolRebalanceRoot = await this._getPoolRebalanceRoot(
@@ -546,7 +532,6 @@ export class Dataworker {
       relayerRefundTree: relayerRefundRoot.tree,
       slowFillLeaves: slowRelayRoot.leaves,
       slowFillTree: slowRelayRoot.tree,
-      dataToPersistToDALayer,
     };
   }
 
