@@ -554,7 +554,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
-    persistBundleData = false,
+    persistBundleData = false
   ): Promise<void> {
     if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");

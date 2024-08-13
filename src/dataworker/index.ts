@@ -112,7 +112,12 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       const dataworkerFunctionLoopTimerStart = performance.now();
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
-        await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks, config.persistingBundleData);
+        await dataworker.validatePendingRootBundle(
+          spokePoolClients,
+          config.sendingDisputesEnabled,
+          fromBlocks,
+          config.persistingBundleData
+        );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
       }
