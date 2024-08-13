@@ -35,6 +35,7 @@ import {
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
+  persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
@@ -552,7 +553,8 @@ export class Dataworker {
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    persistBundleData = false,
   ): Promise<void> {
     if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
@@ -591,7 +593,7 @@ export class Dataworker {
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
       nextBundleMainnetStartBlock
     );
-    const { valid, reason } = await this.validateRootBundle(
+    const { valid, reason, bundleData } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
@@ -624,6 +626,16 @@ export class Dataworker {
         }
       }
     }
+
+    // Root bundle is valid, attempt to persist it to DA layer if not already there.
+    if (persistBundleData && isDefined(bundleData)) {
+      await persistDataToArweave(
+        this.clients.arweaveClient,
+        bundleData,
+        this.logger,
+        `bundles-${bundleData.bundleBlockRanges}`
+      );
+    }
   }
 
   async validateRootBundle(
@@ -652,6 +664,7 @@ export class Dataworker {
             leaves: V3SlowFillLeaf[];
           };
         };
+        bundleData?: BundleDataToPersistToDALayerType;
       }
     // If valid is true, we don't get a reason, and we always get expected trees.
     | {
@@ -671,6 +684,7 @@ export class Dataworker {
             leaves: V3SlowFillLeaf[];
           };
         };
+        bundleData: BundleDataToPersistToDALayerType;
       }
   > {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
@@ -919,6 +933,7 @@ export class Dataworker {
         valid: true,
         expectedTrees,
         reason: undefined,
+        bundleData: rootBundleData.dataToPersistToDALayer,
       };
     }
 
