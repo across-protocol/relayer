@@ -484,7 +484,7 @@ export class Monitor {
           // want to test this in production before rolling it out to all chains.
           if (!canRefill && chainId === CHAIN_IDs.MAINNET && token === getNativeTokenAddressForChain(chainId)) {
             const weth = new Contract(
-              TOKEN_SYMBOLS_MAP["WETH"].addresses[chainId],
+              TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
               WETH9.abi,
               this.clients.spokePoolClients[chainId].spokePool.signer
             );
