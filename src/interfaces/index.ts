@@ -7,6 +7,7 @@ export * from "./Token";
 export * from "./Error";
 export * from "./Report";
 export * from "./Arweave";
+export * from "./BundleData";
 
 // Bridge interfaces
 export interface OutstandingTransfers {
