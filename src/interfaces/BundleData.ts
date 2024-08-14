@@ -45,3 +45,7 @@ export type LoadDataReturnValue = {
   unexecutableSlowFills: BundleExcessSlowFills;
   bundleSlowFillsV3: BundleSlowFills;
 };
+
+export interface BundleData extends LoadDataReturnValue {
+  bundleBlockRanges: number[][];
+}

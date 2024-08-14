@@ -1,6 +1,14 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Signer, disconnectRedisClients, isDefined } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Signer,
+  disconnectRedisClients,
+  isDefined,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
-import { BundleDataToPersistToDALayerType, Dataworker } from "./Dataworker";
+import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
@@ -9,7 +17,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { PendingRootBundle } from "../interfaces";
+import { PendingRootBundle, BundleData } from "../interfaces";
 
 config();
 let logger: winston.Logger;
@@ -53,7 +61,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     message: `Time to update non-spoke clients: ${(performance.now() - loopStart) / 1000}s`,
   });
   loopStart = performance.now();
-  let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
+  let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
@@ -116,7 +124,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       if (config.proposerEnabled) {
-        bundleDataToPersist = await dataworker.proposeRootBundle(
+        // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
+        proposedBundleData = await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
@@ -162,7 +171,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // leaves to be executed but the proposed bundle was already executed, then exit early.
       const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
 
-      const proposalCollision = isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
+      const proposalCollision = isDefined(proposedBundleData) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
       // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
       // does not match the number of leaves the executor wants to execute, or the pending root bundle's
       // challenge period timestamp is in the future. This latter case is rarer but it can
