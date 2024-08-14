@@ -48,7 +48,8 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
-export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
+export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain, parseWinston, formatWinston } =
+  utils;
 import { any } from "superstruct";
 
 export function getEndBlockBuffers(
@@ -589,7 +590,11 @@ export async function persistDataToArweave(
   const startTime = performance.now();
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
-  const matchingTxns = await client.getByTopic(tag, any());
+  const [matchingTxns, address, balance] = await Promise.all([
+    client.getByTopic(tag, any()),
+    client.getAddress(),
+    client.getBalance(),
+  ]);
   if (matchingTxns.length > 0) {
     logger.debug({
       at: "DataworkerUtils#persistDataToArweave",
@@ -597,18 +602,26 @@ export async function persistDataToArweave(
       hash: matchingTxns.map((txn) => txn.hash),
     });
   } else {
-    const [hashTxn, address, balance] = await Promise.all([
-      client.set(data, tag),
-      client.getAddress(),
-      client.getBalance(),
-    ]);
+    const MINIMUM_AR_BALANCE = parseWinston("1");
+    if (balance.lte(MINIMUM_AR_BALANCE)) {
+      logger.error({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: "Arweave balance is insufficient to persist data",
+        address,
+        balance: formatWinston(balance),
+        minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+      });
+    }
+    const hashTxn = await client.set(data, tag);
     logger.info({
       at: "DataworkerUtils#persistDataToArweave",
       message: "Persisted data to Arweave! 💾",
+      tag,
       receipt: `https://arweave.app/tx/${hashTxn}`,
       rawData: `https://arweave.net/${hashTxn}`,
       address,
-      balance,
+      balance: formatWinston(balance),
+      notificationPath: "across-arweave",
     });
     const endTime = performance.now();
     logger.debug({
