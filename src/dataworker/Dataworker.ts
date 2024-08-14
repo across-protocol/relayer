@@ -545,7 +545,7 @@ export class Dataworker {
       relayerRefundTree: relayerRefundRoot.tree,
       slowFillLeaves: slowRelayRoot.leaves,
       slowFillTree: slowRelayRoot.tree,
-      dataToPersistToDALayer
+      dataToPersistToDALayer,
     };
   }
 
