@@ -622,7 +622,7 @@ export class Dataworker {
     if (persistBundleData && isDefined(bundleData)) {
       await persistDataToArweave(
         this.clients.arweaveClient,
-        bundleData as unknown as Record<string, unknown>,
+        bundleData,
         this.logger,
         `bundles-${bundleData.bundleBlockRanges}`
       );
