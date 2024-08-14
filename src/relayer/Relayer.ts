@@ -1238,7 +1238,7 @@ export class Relayer {
     return msg;
   }
 
-  private getMulticaller(chainId: number) {
+  private getMulticaller(chainId: number): MultiCallerClient {
     return this.config.tryMulticallChains.includes(chainId)
       ? this.clients.tryMulticallClient
       : this.clients.multiCallerClient;

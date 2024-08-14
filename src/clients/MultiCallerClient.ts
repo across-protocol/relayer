@@ -528,8 +528,7 @@ export class TryMulticallClient extends MultiCallerClient {
     _valueTxns: AugmentedTransaction[] = [],
     simulate = false
   ): Promise<TransactionResponse[]> {
-    // Lint Appeasement
-    _valueTxns;
+    assert(_valueTxns.length === 0);
     const nTxns = txns.length;
     if (nTxns === 0) {
       return [];
@@ -541,12 +540,7 @@ export class TryMulticallClient extends MultiCallerClient {
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
     });
 
-    const buildRawTransaction = (contract: Contract, data: string) => {
-      return {
-        contract,
-        data,
-      } as RawTransaction;
-    };
+    const buildRawTransaction = (contract: Contract, data: string): RawTransaction => {{ contract, data });
 
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
     const txnCalldataToRebuild: RawTransaction[] = [];
@@ -567,16 +561,11 @@ export class TryMulticallClient extends MultiCallerClient {
         return;
       }
       // If we make it here, then tryMulticall was simulated and there is a defined return data.
-      const succeededTxnCalldata: string[] = [];
-      // We also need to assert that the number of calls which returned data matches the number of calls made in the transaction.
+      // Verify that the number of calls which returned data matches the number of calls made in the transaction.
       assert(transaction.args.length === data.length);
-      // Go through each transaction result of the txns batched in tryMulticall.
-      // If a transaction succeeded, we take note by adding it to succeededTxnCalldata.
-      data.forEach(({ success }, idx) => {
-        if (success) {
-          succeededTxnCalldata.push(transaction.args[idx]);
-        }
-      });
+
+      // Filter the calldata array by whether it succeeded in tryMulticall().
+      const succeededTxnCalldata = transaction.args.filter((_, idx) => data[idx].success);
 
       // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.
@@ -643,8 +632,8 @@ export class TryMulticallClient extends MultiCallerClient {
       return [];
     }
 
-    const txnResponses: TransactionResponse[] =
-      txnRequestsToSubmit.length > 0 ? await this.txnClient.submit(chainId, txnRequestsToSubmit) : [];
+    const txnResponses =
+      txnRequestsToSubmit.length > 0 ? this.txnClient.submit(chainId, txnRequestsToSubmit) : Promise.resolve([]);
 
     return txnResponses;
   }
