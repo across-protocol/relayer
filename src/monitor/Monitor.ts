@@ -513,6 +513,7 @@ export class Monitor {
                 token,
                 chainId,
               });
+              return;
             }
           }
           if (canRefill) {
