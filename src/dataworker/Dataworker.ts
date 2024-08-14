@@ -353,12 +353,15 @@ export class Dataworker {
     );
   }
 
+  /**
+   * @returns bundle data if new proposal transaction is enqueued, else undefined
+   */
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<void> {
+  ): Promise<BundleDataToPersistToDALayerType> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -467,6 +470,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
+    return rootBundleData.dataToPersistToDALayer;
   }
 
   async _proposeRootBundle(
