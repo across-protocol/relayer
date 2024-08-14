@@ -83,6 +83,7 @@ type ProposeRootBundleReturnType = {
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
   slowFillLeaves: V3SlowFillLeaf[];
   slowFillTree: MerkleTree<V3SlowFillLeaf>;
+  dataToPersistToDALayer: BundleDataToPersistToDALayerType;
 };
 
 export type PoolRebalanceRoot = {
