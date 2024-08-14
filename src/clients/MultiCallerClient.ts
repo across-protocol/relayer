@@ -540,7 +540,7 @@ export class TryMulticallClient extends MultiCallerClient {
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
     });
 
-    const buildRawTransaction = (contract: Contract, data: string): RawTransaction => {{ contract, data });
+    const buildRawTransaction = (contract: Contract, data: string): RawTransaction => ({ contract, data });
 
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
     const txnCalldataToRebuild: RawTransaction[] = [];
