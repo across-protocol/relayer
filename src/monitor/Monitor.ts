@@ -480,9 +480,11 @@ export class Monitor {
             deficit
           );
           // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
-          // We use this only on Mainnet for now since we're most likely to refill balances on mainnet and we
-          // want to test this in production before rolling it out to all chains.
-          if (!canRefill && chainId === CHAIN_IDs.MAINNET && token === getNativeTokenAddressForChain(chainId)) {
+          if (
+            !canRefill &&
+            token === getNativeTokenAddressForChain(chainId) &&
+            getNativeTokenSymbol(chainId) === "ETH"
+          ) {
             const weth = new Contract(
               TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
               WETH9.abi,
@@ -497,6 +499,7 @@ export class Monitor {
                 chainId,
                 requiredUnwrapAmount: deficit.toString(),
                 wethBalance,
+                wethAddress: weth.address,
                 ethBalance: currentBalance.toString(),
                 transactionHash: blockExplorerLink(txn.transactionHash, chainId),
               });
@@ -504,14 +507,12 @@ export class Monitor {
             } else {
               this.logger.warn({
                 at: "Monitor#refillBalances",
-                message: "Trying to unwrap WETH balance to use for refilling ETH but not enough WETH to unwrap",
-                from: signerAddress,
-                to: account,
-                balanceTrigger,
-                balanceTarget,
-                requiredUnwrapAmount: deficit.toString(),
-                token,
+                message: `Trying to unwrap WETH balance from ${signerAddress} to use for refilling ETH in ${account} but not enough WETH to unwrap`,
                 chainId,
+                requiredUnwrapAmount: deficit.toString(),
+                wethBalance,
+                wethAddress: weth.address,
+                ethBalance: currentBalance.toString(),
               });
               return;
             }
