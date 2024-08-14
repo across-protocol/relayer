@@ -595,6 +595,27 @@ export async function persistDataToArweave(
     client.getAddress(),
     client.getBalance(),
   ]);
+
+  // Check balance. Maybe move this to Monitor function.
+  const MINIMUM_AR_BALANCE = parseWinston("1");
+  if (balance.lte(MINIMUM_AR_BALANCE)) {
+    logger.error({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is below minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  } else {
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is above minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  }
+
   if (matchingTxns.length > 0) {
     logger.debug({
       at: "DataworkerUtils#persistDataToArweave",
@@ -602,16 +623,6 @@ export async function persistDataToArweave(
       hash: matchingTxns.map((txn) => txn.hash),
     });
   } else {
-    const MINIMUM_AR_BALANCE = parseWinston("1");
-    if (balance.lte(MINIMUM_AR_BALANCE)) {
-      logger.error({
-        at: "DataworkerUtils#persistDataToArweave",
-        message: "Arweave balance is below minimum target balance",
-        address,
-        balance: formatWinston(balance),
-        minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
-      });
-    }
     const hashTxn = await client.set(data, tag);
     logger.info({
       at: "DataworkerUtils#persistDataToArweave",
