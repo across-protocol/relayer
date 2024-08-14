@@ -13,7 +13,7 @@ export function getL2TokenAddresses(l1TokenAddress: string): { [chainId: number]
   })?.addresses;
 }
 
-export function getEthAddressForChain(chainId: number): string {
+export function getNativeTokenAddressForChain(chainId: number): string {
   return CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
 }
 

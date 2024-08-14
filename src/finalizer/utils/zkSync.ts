@@ -8,7 +8,7 @@ import {
   convertFromWei,
   getBlockForTimestamp,
   getCurrentTime,
-  getEthAddressForChain,
+  getNativeTokenAddressForChain,
   getL1TokenInfo,
   getRedisCache,
   getUniqueLogIndex,
@@ -204,7 +204,7 @@ async function prepareFinalizations(
 ): Promise<Multicall2Call[]> {
   const l1Mailbox = getMailbox(l1ChainId);
   const l1ERC20Bridge = getL1ERC20Bridge(l1ChainId);
-  const ethAddr = getEthAddressForChain(l2ChainId);
+  const ethAddr = getNativeTokenAddressForChain(l2ChainId);
 
   return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal) =>
     prepareFinalization(withdrawal, ethAddr, l1Mailbox, l1ERC20Bridge)
