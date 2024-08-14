@@ -606,7 +606,7 @@ export async function persistDataToArweave(
     if (balance.lte(MINIMUM_AR_BALANCE)) {
       logger.error({
         at: "DataworkerUtils#persistDataToArweave",
-        message: "Arweave balance is insufficient to persist data",
+        message: "Arweave balance is below minimum comfortable balance",
         address,
         balance: formatWinston(balance),
         minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
