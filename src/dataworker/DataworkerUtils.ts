@@ -591,8 +591,8 @@ export async function persistDataToArweave(
   // If so, we don't need to persist it again.
   const matchingTxns = await client.getByTopic(tag, any());
   if (matchingTxns.length > 0) {
-    logger.info({
-      at: "Dataworker#index",
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
       message: `Data already exists on Arweave with tag: ${tag}`,
       hash: matchingTxns.map((txn) => txn.hash),
     });
@@ -603,17 +603,17 @@ export async function persistDataToArweave(
       client.getBalance(),
     ]);
     logger.info({
-      at: "Dataworker#index",
+      at: "DataworkerUtils#persistDataToArweave",
       message: "Persisted data to Arweave! 💾",
       receipt: `https://arweave.app/tx/${hashTxn}`,
       rawData: `https://arweave.net/${hashTxn}`,
       address,
       balance,
     });
+    const endTime = performance.now();
+    logger.debug({
+      at: "Dataworker#index",
+      message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
+    });
   }
-  const endTime = performance.now();
-  logger.debug({
-    at: "Dataworker#index",
-    message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
-  });
 }

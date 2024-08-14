@@ -208,6 +208,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0x9daF8c91AEFAE50b9c0E69629D3F6Ca40cA3B3FE",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
+    // The "eth" entries in this dictionary should be renamed to gasToken/nativeToken to make it more clear
+    // how they are used in the code. For now, set this address to the MATIC address on Polygon. This address
+    // is used in TokenUtils/getEthAddress() and should be set if the native token address is not 0x0.
+    eth: {
+      address: "0x0000000000000000000000000000000000001010",
+    },
   },
   324: {
     zkSyncDefaultErc20Bridge: {
