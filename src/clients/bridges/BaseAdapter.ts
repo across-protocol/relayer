@@ -157,7 +157,7 @@ export class BaseAdapter extends BaseChainAdapter {
       .map((allowance, idx) => {
         const token = l1TokenContracts[idx];
         const bridge = l1Bridges[idx];
-        if (token && bridge && allowance.lt(MAX_SAFE_ALLOWANCE)) {
+        if (token && bridge && allowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
           return { token, bridge };
         }
       })
