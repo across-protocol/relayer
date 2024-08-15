@@ -585,6 +585,7 @@ export class ProfitClient {
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
+      [CHAIN_IDs.ZORA]: "USDzC",
     };
     const [defaultTestSymbol, relayer] =
       this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
