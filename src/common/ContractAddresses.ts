@@ -1,3 +1,4 @@
+import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
@@ -72,7 +73,7 @@ export const CONTRACT_ADDRESSES: {
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xCDE73483E965371cB1D1ffA99931400F123DD8D5",
+      address: "0xE48278aD2b9b402A8E3C2E0ffbaD7EEe3905bf94",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
@@ -99,6 +100,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_81457: {
       address: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_7777777: {
+      address: "0x3e2Ea9B92B7E48A52296fD261dc26fd995284631",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     polygonRootChainManager: {
@@ -323,6 +328,15 @@ export const CONTRACT_ADDRESSES: {
     // dataworker won't error.
     eth: {
       address: "0x0000000000000000000000000000000000000000",
+    },
+  },
+  [CHAIN_IDs.ZORA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   // Testnets
