@@ -562,10 +562,11 @@ export class TryMulticallClient extends MultiCallerClient {
       }
       // If we make it here, then tryMulticall was simulated and there is a defined return data.
       // Verify that the number of calls which returned data matches the number of calls made in the transaction.
-      assert(transaction.args.length === data.length);
+      // It is transaction.args[0], since `tryMulticall` only accepts a single argument of bytes[].
+      assert(transaction.args[0].length === data.length);
 
       // Filter the calldata array by whether it succeeded in tryMulticall().
-      const succeededTxnCalldata = transaction.args.filter((_, idx) => data[idx].success);
+      const succeededTxnCalldata = transaction.args[0].filter((_, idx) => data[idx].success);
 
       // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.
