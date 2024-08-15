@@ -44,13 +44,11 @@ type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
 
-// @todo Upstream the PROD_RELAYER switch to 0x07a.
 const {
   EMPTY_MESSAGE,
-  // DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
+  DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
 } = sdkConsts;
-const PROD_RELAYER = "0x07aE8551Be970cB1cCa11Dd7a11F47Ae82e70E67";
 
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
@@ -590,8 +588,9 @@ export class ProfitClient {
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
     };
+    const prodRelayer = process.env.RELAYER_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
+      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
 
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.
