@@ -31,8 +31,7 @@ import {
   getTranslatedTokenAddress,
 } from "../../utils";
 import { approveTokens, getAllowanceCacheKey, getTokenAllowanceFromCache, setTokenAllowanceInCache } from "./utils";
-
-import { BaseChainAdapter } from "../../adapter";
+import { BaseChainAdapter, aboveAllowanceThreshold } from "../../adapter";
 
 export interface DepositEvent extends SortableEvent {
   amount: BigNumber;
@@ -157,7 +156,7 @@ export class BaseAdapter extends BaseChainAdapter {
       .map((allowance, idx) => {
         const token = l1TokenContracts[idx];
         const bridge = l1Bridges[idx];
-        if (token && bridge && allowance.lt(MAX_SAFE_ALLOWANCE)) {
+        if (token && bridge && !aboveAllowanceThreshold(allowance)) {
           return { token, bridge };
         }
       })
