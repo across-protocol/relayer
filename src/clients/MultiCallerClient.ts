@@ -607,14 +607,15 @@ export class TryMulticallClient extends MultiCallerClient {
           mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
           assert(contract === txn.contract);
         });
+        const callData = txns.map((txn) => txn.data);
         return {
           chainId,
           contract,
           method: "tryMulticall",
-          args: [...txns.map((txn) => txn.data)],
+          args: [callData],
           message: "Across tryMulticall transaction",
           mrkdwn: mrkdwn.join(""),
-        };
+        } as AugmentedTransaction;
       };
       txnRequestsToSubmit.push(...txnChunks.map(rebuildTryMulticall));
     }
