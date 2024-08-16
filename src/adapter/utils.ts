@@ -22,8 +22,8 @@ export {
   setTokenAllowanceInCache,
 } from "../clients/bridges/utils";
 
-export function isMaxAllowance(allowance: BigNumber): boolean {
-  return allowance.gte(toBN(MAX_SAFE_ALLOWANCE));
+export function aboveAllowanceThreshold(allowance: BigNumber): boolean {
+  return allowance.gte(toBN(MAX_SAFE_ALLOWANCE).div(2));
 }
 
 export async function approveTokens(
