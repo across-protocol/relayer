@@ -12,7 +12,7 @@ export class LineaAdapter extends BaseChainAdapter {
     const { LINEA, MAINNET } = CHAIN_IDs;
     const l2Signer = spokePoolClients[LINEA].spokePool.signer;
     const l1Signer = spokePoolClients[MAINNET].spokePool.signer;
-    
+
     const bridges = Object.fromEntries(
       SUPPORTED_TOKENS[LINEA]?.map((symbol) => {
         const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[MAINNET];
