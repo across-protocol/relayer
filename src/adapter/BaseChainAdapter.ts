@@ -25,7 +25,7 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
-import { approveTokens, getTokenAllowanceFromCache, isMaxAllowance, setTokenAllowanceInCache } from "./utils";
+import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
 import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
@@ -119,10 +119,10 @@ export class BaseChainAdapter {
             const senderAddress = await erc20.signer.getAddress();
             const cachedResult = await getTokenAllowanceFromCache(l1Token, senderAddress, bridge);
             const allowance = cachedResult ?? (await erc20.allowance(senderAddress, bridge));
-            if (!isDefined(cachedResult) && isMaxAllowance(allowance)) {
+            if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
               await setTokenAllowanceInCache(l1Token, senderAddress, bridge, allowance);
             }
-            return !isMaxAllowance(allowance);
+            return !aboveAllowanceThreshold(allowance);
           });
           return { token: erc20, bridges: bridgesToApprove };
         }
