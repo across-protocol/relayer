@@ -1,10 +1,10 @@
 import { TransactionResponse } from "@ethersproject/abstract-provider";
 import { SpokePoolClient } from "../src/clients";
-import { BaseAdapter, DepositEvent } from "../src/clients/bridges";
+import { BaseChainAdapter, DepositEvent } from "../src/adapter";
 import { OutstandingTransfers } from "../src/interfaces";
 import { createSpyLogger, expect, toBN } from "./utils";
 
-class TestAdapter extends BaseAdapter {
+class TestAdapter extends BaseChainAdapter {
   constructor() {
     super(
       {

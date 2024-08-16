@@ -32,7 +32,7 @@ import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interface
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
-import { AdapterManager, CrossChainTransferClient } from "./bridges";
+import { AdapterManager, CrossChainTransferClient } from "../adapter";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };

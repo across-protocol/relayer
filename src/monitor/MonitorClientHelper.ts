@@ -17,9 +17,7 @@ export interface MonitorClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
   tokenTransferClient: TokenTransferClient;
 }
-
-import { GenericAdapterManager } from "../adapter/AdapterManager";
-import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+import { AdapterManager, CrossChainTransferClient } from "../adapter";
 
 export async function constructMonitorClients(
   config: MonitorConfig,
@@ -56,8 +54,7 @@ export async function constructMonitorClients(
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
-  const adapterManagerConstructor = config.useGenericAdapter ? GenericAdapterManager : AdapterManager;
-  const adapterManager = new adapterManagerConstructor(logger, spokePoolClients, hubPoolClient, [
+  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
     signerAddr,
     hubPoolClient.hubPool.address,
     ...spokePoolAddresses,

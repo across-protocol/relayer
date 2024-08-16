@@ -10,17 +10,56 @@ import {
   blockExplorerLink,
   mapAsync,
   winston,
+  getRedisCache,
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
 import { SortableEvent } from "../interfaces";
 import { ExpandedERC20 } from "@across-protocol/contracts";
 
-export {
-  matchL2EthDepositAndWrapEvents,
-  getAllowanceCacheKey,
-  getTokenAllowanceFromCache,
-  setTokenAllowanceInCache,
-} from "../clients/bridges/utils";
+export function matchL2EthDepositAndWrapEvents(l2EthDepositEvents: Event[], _l2WrapEvents: Event[]): Event[] {
+  const l2WrapEvents = [..._l2WrapEvents]; // deep-copy because we're going to modify this in-place.
+  return l2EthDepositEvents.filter((l2EthDepositEvent: Event) => {
+    // Search from left to right to find the first following wrap event.
+    const followingWrapEventIndex = l2WrapEvents.findIndex(
+      (wrapEvent) => wrapEvent.blockNumber >= l2EthDepositEvent.blockNumber
+    );
+    // Delete the wrap event from the l2 wrap events array to avoid duplicate processing.
+    if (followingWrapEventIndex >= 0) {
+      l2WrapEvents.splice(followingWrapEventIndex, 1);
+      return true;
+    }
+    return false;
+  });
+}
+
+export function getAllowanceCacheKey(l1Token: string, targetContract: string, userAddress: string): string {
+  return `l1CanonicalTokenBridgeAllowance_${l1Token}_${userAddress}_targetContract:${targetContract}`;
+}
+
+export async function getTokenAllowanceFromCache(
+  l1Token: string,
+  userAddress: string,
+  contractAddress: string
+): Promise<BigNumber | undefined> {
+  const redis = await getRedisCache();
+  const key = getAllowanceCacheKey(l1Token, contractAddress, userAddress);
+  const allowance = await redis?.get<string>(key);
+  if (allowance === null) {
+    return undefined;
+  }
+  return toBN(allowance);
+}
+
+export async function setTokenAllowanceInCache(
+  l1Token: string,
+  userAddress: string,
+  contractAddress: string,
+  allowance: BigNumber
+): Promise<void> {
+  const redis = await getRedisCache();
+  const key = getAllowanceCacheKey(l1Token, contractAddress, userAddress);
+  await redis?.set(key, allowance.toString());
+}
 
 export function aboveAllowanceThreshold(allowance: BigNumber): boolean {
   return allowance.gte(toBN(MAX_SAFE_ALLOWANCE).div(2));

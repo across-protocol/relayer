@@ -1,6 +1,6 @@
 import { Deposit, InventoryConfig } from "../../src/interfaces";
 import { BundleDataClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
-import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
+import { AdapterManager, CrossChainTransferClient } from "../../src/adapter";
 import { BigNumber } from "ethers";
 import winston from "winston";
 export class MockInventoryClient extends InventoryClient {

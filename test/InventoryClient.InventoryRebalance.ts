@@ -17,7 +17,7 @@ import {
 } from "./utils";
 
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
-import { CrossChainTransferClient } from "../src/clients/bridges";
+import { CrossChainTransferClient } from "../src/adapter";
 import { InventoryConfig } from "../src/interfaces";
 import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
 import {

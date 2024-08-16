@@ -7,7 +7,7 @@ import {
   SpokePoolClient,
   TokenTransferClient,
 } from "../src/clients";
-import { CrossChainTransferClient } from "../src/clients/bridges";
+import { CrossChainTransferClient } from "../src/adapter";
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { BalanceType, L1Token, V3DepositWithBlock } from "../src/interfaces";

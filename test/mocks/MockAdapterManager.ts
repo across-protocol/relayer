@@ -1,4 +1,4 @@
-import { AdapterManager } from "../../src/clients/bridges";
+import { AdapterManager } from "../../src/adapter";
 import { BigNumber, TransactionResponse, getTranslatedTokenAddress } from "../../src/utils";
 
 import { createRandomBytes32 } from "../utils";

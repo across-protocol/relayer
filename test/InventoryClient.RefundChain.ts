@@ -17,7 +17,7 @@ import {
 } from "./utils";
 
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
-import { CrossChainTransferClient } from "../src/clients/bridges";
+import { CrossChainTransferClient } from "../src/adapter";
 import { V3Deposit, InventoryConfig } from "../src/interfaces";
 import { CHAIN_IDs, ZERO_ADDRESS, bnZero, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import {

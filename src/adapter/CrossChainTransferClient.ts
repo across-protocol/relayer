@@ -1,6 +1,6 @@
-import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject } from "../../utils";
+import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject } from "../utils";
 import { AdapterManager } from "./AdapterManager";
-import { OutstandingTransfers } from "../../interfaces";
+import { OutstandingTransfers } from "../interfaces";
 
 export class CrossChainTransferClient {
   private outstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
