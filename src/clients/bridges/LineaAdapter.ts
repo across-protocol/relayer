@@ -12,14 +12,13 @@ export class LineaAdapter extends BaseChainAdapter {
     const { LINEA, MAINNET } = CHAIN_IDs;
     const l2Signer = spokePoolClients[LINEA].spokePool.signer;
     const l1Signer = spokePoolClients[MAINNET].spokePool.signer;
+    const bridges = {};
+    SUPPORTED_TOKENS[LINEA]?.forEach((symbol) => {
+      const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[MAINNET];
+      const bridgeConstructor = CUSTOM_BRIDGE[LINEA]?.[l1Token] ?? CANONICAL_BRIDGE[LINEA];
+      bridges[l1Token] = new bridgeConstructor(LINEA, MAINNET, l1Signer, l2Signer, l1Token);
+    });
 
-    const bridges = Object.fromEntries(
-      SUPPORTED_TOKENS[LINEA]?.map((symbol) => {
-        const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[MAINNET];
-        const bridgeConstructor = CUSTOM_BRIDGE[LINEA]?.[l1Token] ?? CANONICAL_BRIDGE[LINEA];
-        return [l1Token, new bridgeConstructor(LINEA, MAINNET, l1Signer, l2Signer, l1Token)];
-      })
-    );
     super(
       spokePoolClients,
       LINEA,
