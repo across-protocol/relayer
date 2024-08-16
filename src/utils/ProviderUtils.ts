@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
+import { providers as sdkProviders } from "@across-protocol/sdk";
 import { isDefined, isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
@@ -740,8 +741,16 @@ export function getNodeUrlList(chainId: number, quorum = 1, protocol: "https" | 
     }
 
     const nodeUrls = providers.split(",").map((provider) => {
+      const providerKey = process.env[`RPC_PROVIDER_KEY_${provider}`];
+
+      // If no specific RPC endpoint is identified for this provider, try to
+      // to infer the endpoint name based on predefined chain definitions.
       const envVar = `${providerPrefix}_${provider}_${chainId}`;
-      const url = process.env[envVar];
+      let url = process.env[envVar];
+      if (!isDefined(url) && isDefined(providerKey) && sdkProviders.isSupportedProvider(provider)) {
+        url = sdkProviders.getURL(provider, chainId, providerKey);
+      }
+
       if (url === undefined) {
         throw new Error(`Missing RPC provider URL for chain ${chainId} (${envVar})`);
       }
