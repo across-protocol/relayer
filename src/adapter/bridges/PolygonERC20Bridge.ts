@@ -65,12 +65,12 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.LockedERC20(undefined, fromAddress, l1Token),
+      this.getL1Bridge().filters.LockedERC20(undefined, toAddress, l1Token),
       eventConfig
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "depositorReceiver", "depositor")
+        processEvent(event, "amount", "depositReceiver", "depositor")
       ),
     };
   }
@@ -83,7 +83,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, fromAddress),
+      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress),
       eventConfig
     );
     return {
