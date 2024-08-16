@@ -68,11 +68,12 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, fromAddress, toAddress),
+      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress),
       eventConfig
     );
+    const filteredEvents = events.filter(({ args }) => args.l1Token === l1Token);
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events
+      [this.resolveL2TokenAddress(l1Token)]: filteredEvents
         .map((event) => processEvent(event, "_amount", "_to", "_from"))
         .filter(({ amount }) => amount.gt(bnZero)),
     };
@@ -86,7 +87,7 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(l1Token, fromAddress, toAddress),
+      this.getL2Bridge().filters.DepositFinalized(l1Token, undefined, toAddress),
       eventConfig
     );
     return {

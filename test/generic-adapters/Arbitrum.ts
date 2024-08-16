@@ -98,8 +98,8 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     });
 
     it("get DepositFinalized events from L2", async () => {
-      await erc20BridgeContract.emitDepositFinalized(l1Token, randomAddress(), monitoredEoa, 1);
       await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, monitoredEoa, 1);
+      await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, randomAddress(), 1);
 
       const depositFinalizedEvents = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
         l1Token,
@@ -129,11 +129,9 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       );
 
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
-
-      expect(outstandingTransfers[monitoredEoa][l1Token][l2Token]).to.deep.equal({
-        totalAmount: toBN(1),
-        depositTxHashes: [outstandingDepositEvent.hash],
-      });
+      const transferObject = outstandingTransfers[monitoredEoa][l1Token][l2Token];
+      expect(transferObject.totalAmount).to.equal(toBN(1));
+      expect(transferObject.depositTxHashes).to.deep.equal([outstandingDepositEvent.hash]);
     });
   });
 
