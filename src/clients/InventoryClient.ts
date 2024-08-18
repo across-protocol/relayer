@@ -520,13 +520,13 @@ export class InventoryClient {
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
-      const cumulativeVirtualBalancePostRelay = cumulativeVirtualBalance.add(cumulativeRefunds);
+      const cumulativeVirtualBalancePostRefunds = cumulativeVirtualBalance.add(cumulativeRefunds);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
       const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
         .mul(this.scalar)
-        .div(cumulativeVirtualBalancePostRelay);
+        .div(cumulativeVirtualBalancePostRefunds);
 
       // Consider configured buffer for target to allow relayer to support slight overages.
       const tokenConfig = this.getTokenConfig(l1Token, chainId, repaymentToken);
@@ -564,11 +564,10 @@ export class InventoryClient {
           chainShortfall,
           chainVirtualBalance,
           chainVirtualBalanceWithShortfall,
-          chainVirtualBalanceWithShortfallPostRelay,
+          cumulativeVirtualBalancePostRefunds,
           cumulativeVirtualBalance,
           cumulativeVirtualBalancePostRelay,
           cumulativeVirtualBalanceWithShortfallPostRefunds,
-          thresholdPct,
           targetPct: ethersUtils.formatUnits(tokenConfig.targetPct, 18),
           targetOverage: ethersUtils.formatUnits(targetOverageBuffer, 18),
           effectiveTargetPct: ethersUtils.formatUnits(effectiveTargetPct, 18),
