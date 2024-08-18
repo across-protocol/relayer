@@ -7,9 +7,10 @@ import {
   InventoryClient,
   ProfitClient,
   TokenClient,
+  MultiCallerClient,
+  TryMulticallClient,
 } from "../clients";
 import { IndexedSpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
-import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
   Clients,
   constructClients,
@@ -22,12 +23,16 @@ import { SpokePoolClientsByChain } from "../interfaces";
 import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
+import { GenericAdapterManager } from "../adapter/AdapterManager";
+import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
   acrossApiClient: AcrossApiClient;
+  tryMulticallClient: MultiCallerClient;
 }
 
 async function indexedSpokePoolClient(
@@ -73,7 +78,7 @@ export async function constructRelayerClients(
   // almost all cases. Look back to genesis on testnets.
   const hubPoolLookBack = sdkUtils.chainIsProd(config.hubPoolChainId) ? 3600 * 8 : Number.POSITIVE_INFINITY;
   const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookBack);
-  const { configStoreClient, hubPoolClient } = commonClients;
+  const { configStoreClient, hubPoolClient, multiCallerClient } = commonClients;
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
@@ -89,9 +94,7 @@ export async function constructRelayerClients(
   if (config.externalIndexer) {
     spokePoolClients = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChains ?? configStoreClient.getEnabledChains(), async (chainId) => {
-        const finality = config.minDepositConfirmations[chainId].at(0)?.minConfirmations ?? 1024;
         const opts = {
-          finality,
           lookback: config.maxRelayerLookBack,
           blockRange: config.maxBlockLookBack[chainId],
         };
@@ -140,7 +143,8 @@ export async function constructRelayerClients(
   await profitClient.update();
 
   const monitoredAddresses = [signerAddr];
-  const adapterManager = new AdapterManager(
+  const adapterManagerConstructor = config.useGenericAdapter ? GenericAdapterManager : AdapterManager;
+  const adapterManager = new adapterManagerConstructor(
     logger,
     spokePoolClients,
     hubPoolClient,
@@ -175,7 +179,17 @@ export async function constructRelayerClients(
     !config.sendingRebalancesEnabled
   );
 
-  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
+  const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);
+
+  return {
+    ...commonClients,
+    spokePoolClients,
+    tokenClient,
+    profitClient,
+    inventoryClient,
+    acrossApiClient,
+    tryMulticallClient,
+  };
 }
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {

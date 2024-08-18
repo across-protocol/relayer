@@ -25,6 +25,7 @@ import {
   groupObjectCountsByTwoProps,
   isDefined,
   MerkleTree,
+  TOKEN_SYMBOLS_MAP,
   winston,
 } from "../utils";
 import { PoolRebalanceRoot } from "./Dataworker";
@@ -47,7 +48,8 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
-export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
+export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain, parseWinston, formatWinston } =
+  utils;
 import { any } from "superstruct";
 
 export function getEndBlockBuffers(
@@ -542,8 +544,9 @@ export async function _buildPoolRebalanceRoot(
  * @param chainId chain to check for WETH and ETH addresses
  * @returns WETH and ETH addresses.
  */
-function getWethAndEth(chainId): string[] {
-  const wethAndEth = [CONTRACT_ADDRESSES[chainId].weth.address, CONTRACT_ADDRESSES[chainId].eth.address];
+function getWethAndEth(chainId: number): string[] {
+  // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
+  const wethAndEth = [TOKEN_SYMBOLS_MAP.WETH.addresses[chainId], CONTRACT_ADDRESSES[chainId].eth.address];
   if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
     throw new Error(`WETH or ETH address not defined for chain ${chainId}`);
   }
@@ -587,31 +590,54 @@ export async function persistDataToArweave(
   const startTime = performance.now();
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
-  const matchingTxns = await client.getByTopic(tag, any());
+  const [matchingTxns, address, balance] = await Promise.all([
+    client.getByTopic(tag, any()),
+    client.getAddress(),
+    client.getBalance(),
+  ]);
+
+  // Check balance. Maybe move this to Monitor function.
+  const MINIMUM_AR_BALANCE = parseWinston("1");
+  if (balance.lte(MINIMUM_AR_BALANCE)) {
+    logger.error({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is below minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  } else {
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is above minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  }
+
   if (matchingTxns.length > 0) {
-    logger.info({
-      at: "Dataworker#index",
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
       message: `Data already exists on Arweave with tag: ${tag}`,
       hash: matchingTxns.map((txn) => txn.hash),
     });
   } else {
-    const [hashTxn, address, balance] = await Promise.all([
-      client.set(data, tag),
-      client.getAddress(),
-      client.getBalance(),
-    ]);
+    const hashTxn = await client.set(data, tag);
     logger.info({
-      at: "Dataworker#index",
+      at: "DataworkerUtils#persistDataToArweave",
       message: "Persisted data to Arweave! 💾",
+      tag,
       receipt: `https://arweave.app/tx/${hashTxn}`,
       rawData: `https://arweave.net/${hashTxn}`,
       address,
-      balance,
+      balance: formatWinston(balance),
+      notificationPath: "across-arweave",
+    });
+    const endTime = performance.now();
+    logger.debug({
+      at: "Dataworker#index",
+      message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
     });
   }
-  const endTime = performance.now();
-  logger.debug({
-    at: "Dataworker#index",
-    message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
-  });
 }

@@ -21,7 +21,7 @@ import {
   fillStatusArray,
   blockExplorerLink,
   blockExplorerLinks,
-  getEthAddressForChain,
+  getNativeTokenAddressForChain,
   getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
@@ -34,6 +34,8 @@ import {
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
   CHAIN_IDs,
+  WETH9,
+  runTransaction,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -402,9 +404,9 @@ export class Monitor {
               trippedThreshold = { level: "error", threshold: errorThreshold };
             }
             if (trippedThreshold !== null) {
-              const ethAddressForChain = getEthAddressForChain(chainId);
+              const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
               const symbol =
-                token === ethAddressForChain
+                token === gasTokenAddressForChain
                   ? getNativeTokenSymbol(chainId)
                   : await new Contract(
                       token,
@@ -471,12 +473,50 @@ export class Monitor {
           // Fill balance back to target, not trigger.
           const balanceTarget = ethers.utils.parseUnits(target.toString(), decimals);
           const deficit = balanceTarget.sub(currentBalance);
-          const canRefill = await this.balanceAllocator.requestBalanceAllocation(
+          let canRefill = await this.balanceAllocator.requestBalanceAllocation(
             chainId,
             [token],
             signerAddress,
             deficit
           );
+          // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
+          if (
+            !canRefill &&
+            token === getNativeTokenAddressForChain(chainId) &&
+            getNativeTokenSymbol(chainId) === "ETH"
+          ) {
+            const weth = new Contract(
+              TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+              WETH9.abi,
+              this.clients.spokePoolClients[chainId].spokePool.signer
+            );
+            const wethBalance = await weth.balanceOf(signerAddress);
+            if (wethBalance.gte(deficit)) {
+              const txn = await (await runTransaction(this.logger, weth, "withdraw", [deficit])).wait();
+              this.logger.info({
+                at: "Monitor#refillBalances",
+                message: `Unwrapped WETH from ${signerAddress} to refill ETH in ${account} 🎁!`,
+                chainId,
+                requiredUnwrapAmount: deficit.toString(),
+                wethBalance,
+                wethAddress: weth.address,
+                ethBalance: currentBalance.toString(),
+                transactionHash: blockExplorerLink(txn.transactionHash, chainId),
+              });
+              canRefill = true;
+            } else {
+              this.logger.warn({
+                at: "Monitor#refillBalances",
+                message: `Trying to unwrap WETH balance from ${signerAddress} to use for refilling ETH in ${account} but not enough WETH to unwrap`,
+                chainId,
+                requiredUnwrapAmount: deficit.toString(),
+                wethBalance,
+                wethAddress: weth.address,
+                ethBalance: currentBalance.toString(),
+              });
+              return;
+            }
+          }
           if (canRefill) {
             this.logger.debug({
               at: "Monitor#refillBalances",
@@ -564,8 +604,8 @@ export class Monitor {
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
-    const { currentTime } = hubPoolClient;
-    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockSearched);
+    const { currentTime, latestBlockSearched } = hubPoolClient;
+    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestBlockSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
@@ -573,7 +613,20 @@ export class Monitor {
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    const poolRebalanceLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
+      lastFullyExecutedBundle,
+      latestBlockSearched
+    );
     for (const chainId of this.crossChainAdapterSupportedChains) {
+      // Exit early if there were no pool rebalance leaves for this chain executed in the last bundle.
+      const poolRebalanceLeaf = poolRebalanceLeaves.find((leaf) => leaf.chainId === chainId);
+      if (!poolRebalanceLeaf) {
+        this.logger.debug({
+          at: "Monitor#checkStuckRebalances",
+          message: `No pool rebalance leaves for ${getNetworkName(chainId)} in last bundle`,
+        });
+        continue;
+      }
       const gracePeriod = EXPECTED_L1_TO_L2_MESSAGE_TIME[chainId] ?? REBALANCE_FINALIZE_GRACE_PERIOD;
       // If we're still within the grace period, skip looking for any stuck rebalances.
       // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
@@ -585,7 +638,7 @@ export class Monitor {
           lastFullyExecutedBundleTime,
           currentTime,
         });
-        return;
+        continue;
       }
 
       // If chain wasn't active in latest bundle, then skip it.
@@ -909,9 +962,9 @@ export class Monitor {
         if (this.balanceCache[chainId]?.[token]?.[account]) {
           return this.balanceCache[chainId][token][account];
         }
-        const ethAddressForChain = getEthAddressForChain(chainId);
+        const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         const balance =
-          token === ethAddressForChain
+          token === gasTokenAddressForChain
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
             : // Use the latest block number the SpokePoolClient is aware of to query balances.
               // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
@@ -936,8 +989,8 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        const ethAddressForChain = getEthAddressForChain(chainId);
-        if (token === ethAddressForChain) {
+        const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
+        if (token === gasTokenAddressForChain) {
           return 18;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token]) {

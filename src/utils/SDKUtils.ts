@@ -7,18 +7,22 @@ export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
 export const {
+  averageBlockTime,
   bnZero,
   bnOne,
   bnUint32Max,
   bnUint256Max,
   chainIsOPStack,
-  chainIsMatic,
+  chainIsArbitrum,
   chainIsProd,
+  chainIsMatic,
+  chainIsLinea,
   dedupArray,
   fillStatusArray,
   fixedPointAdjustment,
   forEachAsync,
   mapAsync,
+  filterAsync,
   toBN,
   bnToHex,
   toWei,
@@ -33,6 +37,7 @@ export const {
   createFormatFunction,
   fromWei,
   blockExplorerLink,
+  isContractDeployedToAddress,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
 } = sdk.utils;

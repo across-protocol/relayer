@@ -17,6 +17,7 @@ import {
   BigNumber,
   formatFeePct,
   getCurrentTime,
+  getNetworkName,
   isDefined,
   min,
   winston,
@@ -42,11 +43,13 @@ type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
+
 const {
   EMPTY_MESSAGE,
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
 } = sdkConsts;
+
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
 const bn10 = toBN(10);
@@ -390,16 +393,26 @@ export class ProfitClient {
   }
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
-  getFillAmountInUsd(deposit: Deposit, fillAmount = deposit.outputAmount): BigNumber {
-    const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    if (!l1TokenInfo) {
-      const { inputToken } = deposit;
-      throw new Error(
-        `ProfitClient#getFillAmountInUsd missing l1TokenInfo for deposit with origin token: ${inputToken}`
-      );
+  getFillAmountInUsd(
+    deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">
+  ): BigNumber | undefined {
+    const { destinationChainId, outputToken, outputAmount } = deposit;
+    let l1Token: L1Token;
+
+    try {
+      l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId);
+    } catch {
+      this.logger.debug({
+        at: "ProfitClient#getFillAmountInUsd",
+        message: `Cannot resolve output token ${outputToken} on ${getNetworkName(destinationChainId)}.`,
+      });
+      return undefined;
     }
-    const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.symbol);
-    return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
+
+    const tokenPriceInUsd = this.getPriceOfToken(l1Token.symbol);
+
+    // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
+    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(l1Token.decimals));
   }
 
   async getFillProfitability(
@@ -573,9 +586,11 @@ export class ProfitClient {
     const testSymbols = {
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
+      [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
     };
+    const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
+      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
 
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.

@@ -277,7 +277,8 @@ export class PolygonAdapter extends CCTPAdapter {
     }
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
+    const address = await this.getSigner(this.hubChainId).getAddress();
     const l1TokenListToApprove = [];
 
     const associatedL1Bridges = l1Tokens
@@ -335,6 +336,6 @@ export class PolygonAdapter extends CCTPAdapter {
   }
 
   async wrapEthIfAboveThreshold(): Promise<TransactionResponse | null> {
-    throw new Error("Unneccessary to wrap ETH on Polygon");
+    throw new Error("Unnecessary to wrap ETH on Polygon");
   }
 }

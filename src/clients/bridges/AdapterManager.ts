@@ -1,13 +1,15 @@
-import { CHAIN_IDs } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, BaseAdapter } from "./";
+import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, ScrollAdapter } from "./";
+import { CHAIN_IDs } from "@across-protocol/constants";
+
+import { BaseChainAdapter } from "../../adapter";
 
 export class AdapterManager {
-  public adapters: { [chainId: number]: BaseAdapter } = {};
+  public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -37,7 +39,7 @@ export class AdapterManager {
       );
     };
 
-    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST } = CHAIN_IDs;
+    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL, ZORA } = CHAIN_IDs;
     if (this.spokePoolClients[OPTIMISM] !== undefined) {
       this.adapters[OPTIMISM] = new OpStackAdapter(
         OPTIMISM,
@@ -77,6 +79,15 @@ export class AdapterManager {
         filterMonitoredAddresses(MODE)
       );
     }
+    if (this.spokePoolClients[REDSTONE] !== undefined) {
+      this.adapters[REDSTONE] = new OpStackAdapter(
+        REDSTONE,
+        logger,
+        SUPPORTED_TOKENS[REDSTONE],
+        spokePoolClients,
+        filterMonitoredAddresses(REDSTONE)
+      );
+    }
     if (this.spokePoolClients[LISK] !== undefined) {
       this.adapters[LISK] = new OpStackAdapter(
         LISK,
@@ -93,6 +104,18 @@ export class AdapterManager {
         SUPPORTED_TOKENS[BLAST],
         spokePoolClients,
         filterMonitoredAddresses(BLAST)
+      );
+    }
+    if (this.spokePoolClients[SCROLL] !== undefined) {
+      this.adapters[SCROLL] = new ScrollAdapter(logger, spokePoolClients, filterMonitoredAddresses(SCROLL));
+    }
+    if (this.spokePoolClients[ZORA] !== undefined) {
+      this.adapters[ZORA] = new OpStackAdapter(
+        ZORA,
+        logger,
+        SUPPORTED_TOKENS[ZORA],
+        spokePoolClients,
+        filterMonitoredAddresses(ZORA)
       );
     }
 
@@ -192,14 +215,14 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
+  async setL1TokenApprovals(l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     for (const chainId of this.supportedChains()) {
       const adapter = this.adapters[chainId];
       if (isDefined(adapter)) {
         const hubTokens = l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, chainId));
-        await adapter.checkTokenApprovals(address, hubTokens);
+        await adapter.checkTokenApprovals(hubTokens);
       }
     }
   }

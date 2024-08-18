@@ -1,3 +1,4 @@
+import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
@@ -6,10 +7,10 @@ import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
-import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
-import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
 import SNX_OPTIMISM_BRIDGE_L2_ABI from "./abi/SnxOptimismBridgeL2.json";
+import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
+import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
 import POLYGON_ROOT_CHAIN_MANAGER_ABI from "./abi/PolygonRootChainManager.json";
 import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json";
@@ -24,6 +25,12 @@ import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
+import BLAST_YIELD_MANAGER_ABI from "./abi/BlastYieldManager.json";
+import BLAST_DAI_RETRIEVER_ABI from "./abi/BlastDaiRetriever.json";
+import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
+import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
+import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
+import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -63,16 +70,20 @@ export const CONTRACT_ADDRESSES: {
       address: "0x39Ea01a0298C315d149a490E34B59Dbf2EC7e48F",
       abi: SNX_OPTIMISM_BRIDGE_L1_ABI,
     },
-    // OVM, ZkSync, Linea, and Polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+    // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xfa52a9DCF51695EA2777E6908d6401481850c391",
+      address: "0xE48278aD2b9b402A8E3C2E0ffbaD7EEe3905bf94",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
     // Stack chain to the name to differentiate. This one is for Optimism.
     ovmStandardBridge_10: {
       address: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_690: {
+      address: "0xc473ca7E02af24c129c2eEf51F2aDf0411c1Df69",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_1135: {
@@ -91,19 +102,25 @@ export const CONTRACT_ADDRESSES: {
       address: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_7777777: {
+      address: "0x3e2Ea9B92B7E48A52296fD261dc26fd995284631",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     polygonRootChainManager: {
       address: "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77",
       abi: POLYGON_ROOT_CHAIN_MANAGER_ABI,
     },
     polygonBridge: {
+      address: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+      abi: POLYGON_BRIDGE_ABI,
+    },
+    polygonWethBridge: {
+      address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
       abi: POLYGON_BRIDGE_ABI,
     },
     arbitrumErc20GatewayRouter: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
-    },
-    weth: {
-      abi: WETH_ABI,
     },
     VotingV2: {
       address: "0x004395edb43EFca9885CEdad51EC9fAf93Bd34ac",
@@ -121,6 +138,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
       abi: SCROLL_RELAY_MESSENGER_ABI,
     },
+    scrollGatewayRouter: {
+      address: "0xF8B1378579659D8F7EE5f3C929c2f3E332E41Fd6",
+      abi: SCROLL_GATEWAY_ROUTER_L1_ABI,
+    },
     hubPool: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       abi: HUB_POOL_ABI,
@@ -128,6 +149,26 @@ export const CONTRACT_ADDRESSES: {
     blastBridge: {
       address: "0x3a05E5d33d7Ab3864D53aaEc93c8301C1Fa49115",
       abi: BLAST_BRIDGE_ABI,
+    },
+    blastEthYieldManager: {
+      address: "0x98078db053902644191f93988341E31289E1C8FE",
+      abi: BLAST_YIELD_MANAGER_ABI,
+    },
+    blastUsdYieldManager: {
+      address: "0xa230285d5683C74935aD14c446e137c8c8828438",
+      abi: BLAST_YIELD_MANAGER_ABI,
+    },
+    blastDaiRetriever: {
+      address: "0x98Dd57048d7d5337e92D9102743528ea4Fea64aB",
+      abi: BLAST_DAI_RETRIEVER_ABI,
+    },
+    blastOptimismPortal: {
+      address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
+      abi: BLAST_OPTIMISM_PORTAL_ABI,
+    },
+    scrollGasPriceOracle: {
+      address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
+      abi: SCROLL_GAS_PRICE_ORACLE_ABI,
     },
   },
   10: {
@@ -142,10 +183,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -171,6 +208,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0x9daF8c91AEFAE50b9c0E69629D3F6Ca40cA3B3FE",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
+    // The "eth" entries in this dictionary should be renamed to gasToken/nativeToken to make it more clear
+    // how they are used in the code. For now, set this address to the MATIC address on Polygon. This address
+    // is used in TokenUtils/getEthAddress() and should be set if the native token address is not 0x0.
+    eth: {
+      address: "0x0000000000000000000000000000000000001010",
+    },
   },
   324: {
     zkSyncDefaultErc20Bridge: {
@@ -181,19 +224,20 @@ export const CONTRACT_ADDRESSES: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
-    weth: {
-      address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
-      abi: WETH_ABI,
+  },
+  690: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   1135: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -203,10 +247,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -225,10 +265,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    weth: {
-      address: "0x4200000000000000000000000000000000000006",
-      abi: WETH_ABI,
-    },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
@@ -237,10 +273,6 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    weth: {
-      address: "0x4300000000000000000000000000000000000004",
-      abi: WETH_ABI,
     },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
@@ -253,10 +285,6 @@ export const CONTRACT_ADDRESSES: {
   42161: {
     erc20Gateway: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
-    },
-    weth: {
-      address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-      abi: WETH_ABI,
     },
     outbox: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
@@ -284,12 +312,31 @@ export const CONTRACT_ADDRESSES: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
       abi: LINEA_TOKEN_BRIDGE_ABI,
     },
-    weth: {
-      address: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
-      abi: WETH_ABI,
-    },
     eth: {
       address: "0x0000000000000000000000000000000000000000",
+    },
+  },
+  534352: {
+    scrollGatewayRouter: {
+      address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
+      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    },
+    // The Scroll canonical bridge will send WETH on a WETH deposit,
+    // so the dataworker will never use this address to wrap eth in
+    // the spoke pool. However, the relayer may need to wrap eth on
+    // the L2; therefore, we need to define an address here so the
+    // dataworker won't error.
+    eth: {
+      address: "0x0000000000000000000000000000000000000000",
+    },
+  },
+  [CHAIN_IDs.ZORA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   // Testnets

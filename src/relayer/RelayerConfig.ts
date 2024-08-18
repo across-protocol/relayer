@@ -14,6 +14,7 @@ import {
   toBN,
   replaceAddressCase,
   ethers,
+  TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
@@ -45,6 +46,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerGasMultiplier: BigNumber;
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
+  readonly minFillTime: { [chainId: number]: number } = {};
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
@@ -55,6 +57,12 @@ export class RelayerConfig extends CommonConfig {
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
+  // Set to all chain ids where the relayer should use tryMulticall over multicall on the associated spoke pool.
+  // It is up to the user to ensure that the spoke pool on the target chain has tryMulticall in its active implementation.
+  readonly tryMulticallChains: number[];
+
+  // TODO: Remove this config item once we fully move to generic chain adapters.
+  readonly useGenericAdapter: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -80,8 +88,12 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
       RELAYER_SPOKEPOOL_INDEXER_PATH,
+      RELAYER_TRY_MULTICALL_CHAINS,
+      RELAYER_USE_GENERIC_ADAPTER,
     } = env;
     super(env);
+
+    this.useGenericAdapter = RELAYER_USE_GENERIC_ADAPTER === "true";
 
     // External indexing is dependent on looping mode being configured.
     this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";
@@ -100,6 +112,8 @@ export class RelayerConfig extends CommonConfig {
       : [];
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
+
+    this.tryMulticallChains = JSON.parse(RELAYER_TRY_MULTICALL_CHAINS ?? "[]");
 
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
@@ -247,36 +261,57 @@ export class RelayerConfig extends CommonConfig {
     // Transform deposit confirmation requirements into an array of ascending
     // deposit confirmations, sorted by the corresponding threshold in USD.
     this.minDepositConfirmations = {};
-    Object.keys(minDepositConfirmations)
-      .map((_threshold) => {
-        const threshold = Number(_threshold);
-        assert(!isNaN(threshold) && threshold >= 0, `Invalid deposit confirmation threshold (${_threshold})`);
-        return Number(threshold);
-      })
-      .sort((x, y) => x - y)
-      .forEach((usdThreshold) => {
-        const config = minDepositConfirmations[usdThreshold];
+    if (this.hubPoolChainId !== CHAIN_IDs.MAINNET) {
+      // Sub in permissive defaults for testnet.
+      const standardConfig = { usdThreshold: toBNWei(Number.MAX_SAFE_INTEGER), minConfirmations: 1 };
+      Object.values(TESTNET_CHAIN_IDs).forEach((chainId) => (this.minDepositConfirmations[chainId] = [standardConfig]));
+    } else {
+      Object.keys(minDepositConfirmations)
+        .map((_threshold) => {
+          const threshold = Number(_threshold);
+          assert(!isNaN(threshold) && threshold >= 0, `Invalid deposit confirmation threshold (${_threshold})`);
+          return threshold;
+        })
+        .sort((x, y) => x - y)
+        .forEach((usdThreshold) => {
+          const config = minDepositConfirmations[usdThreshold];
 
-        Object.entries(config).forEach(([chainId, _minConfirmations]) => {
-          const minConfirmations = Number(_minConfirmations);
-          assert(
-            !isNaN(minConfirmations) && minConfirmations >= 0,
-            `${getNetworkName(chainId)} deposit confirmations for` +
-              ` ${usdThreshold} threshold missing or invalid (${_minConfirmations}).`
-          );
+          Object.entries(config).forEach(([chainId, _minConfirmations]) => {
+            const minConfirmations = Number(_minConfirmations);
+            assert(
+              !isNaN(minConfirmations) && minConfirmations >= 0,
+              `${getNetworkName(chainId)} deposit confirmations for` +
+                ` ${usdThreshold} threshold missing or invalid (${_minConfirmations}).`
+            );
 
-          this.minDepositConfirmations[chainId] ??= [];
-          this.minDepositConfirmations[chainId].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
+            this.minDepositConfirmations[chainId] ??= [];
+            this.minDepositConfirmations[chainId].push({ usdThreshold: toBNWei(usdThreshold), minConfirmations });
+          });
         });
+
+      // Ensure that there is always a deposit confirmation config for the maximum theoretical value of a fill.
+      Object.values(this.minDepositConfirmations).forEach((depositConfirmations) => {
+        const { usdThreshold: maxThreshold, minConfirmations: maxConfirmations } = depositConfirmations.at(-1);
+        if (maxThreshold.lt(bnUint256Max)) {
+          depositConfirmations.push({
+            usdThreshold: bnUint256Max,
+            minConfirmations: maxConfirmations + 1,
+          });
+        }
       });
 
-    // Append default thresholds as a safe upper-bound.
-    Object.keys(this.minDepositConfirmations).forEach((chainId) =>
-      this.minDepositConfirmations[chainId].push({
-        usdThreshold: bnUint256Max,
-        minConfirmations: Number.MAX_SAFE_INTEGER,
-      })
-    );
+      // Verify that each successive USD threshold has an increasing deposit confirmation config.
+      Object.values(this.minDepositConfirmations).forEach((chainMDC) => {
+        chainMDC.slice(1).forEach(({ usdThreshold, minConfirmations: mdc }, idx) => {
+          const usdFormatted = ethersUtils.formatEther(usdThreshold);
+          const prevMDC = chainMDC[idx].minConfirmations;
+          assert(
+            mdc >= prevMDC,
+            `Non-incrementing deposit confirmation specified for USD threshold ${usdFormatted} (${prevMDC} > ${mdc})`
+          );
+        });
+      });
+    }
 
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
   }
@@ -304,6 +339,10 @@ export class RelayerConfig extends CommonConfig {
         ignoredChainIds,
       });
     }
+
+    chainIds.forEach(
+      (chainId) => (this.minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0))
+    );
 
     // Only validate config for chains that the relayer cares about.
     super.validate(relayerChainIds, logger);

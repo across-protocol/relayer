@@ -10,7 +10,7 @@ import {
   refundProposalLiveness,
   randomAddress,
 } from "@across-protocol/contracts/dist/test-utils";
-import { bnUint256Max, toWei, ZERO_ADDRESS } from "../src/utils";
+import { bnOne, bnUint256Max, toWei, ZERO_ADDRESS } from "../src/utils";
 
 export {
   amountToDeposit,
@@ -71,6 +71,12 @@ export const IMPOSSIBLE_BLOCK_RANGE = DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) 
 export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 
 export const defaultMinDepositConfirmations = {
-  [originChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 0 }],
-  [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 0 }],
+  [originChainId]: [
+    { usdThreshold: bnUint256Max.sub(bnOne), minConfirmations: 0 },
+    { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER },
+  ],
+  [destinationChainId]: [
+    { usdThreshold: bnUint256Max.sub(bnOne), minConfirmations: 0 },
+    { usdThreshold: bnUint256Max, minConfirmations: Number.MAX_SAFE_INTEGER },
+  ],
 };

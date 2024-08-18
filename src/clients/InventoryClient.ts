@@ -1,4 +1,6 @@
+import { utils as ethersUtils } from "ethers";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
+import WETH_ABI from "../common/abi/Weth.json";
 import {
   bnZero,
   BigNumber,
@@ -25,12 +27,12 @@ import {
   getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { V3Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
-import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
+import { AdapterManager, CrossChainTransferClient } from "./bridges";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -48,6 +50,7 @@ export type Rebalance = {
 };
 
 const { CHAIN_IDs } = constants;
+const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
 
 export class InventoryClient {
   private logDisabledManagement = false;
@@ -82,7 +85,9 @@ export class InventoryClient {
    */
   getTokenConfig(l1Token: string, chainId: number, l2Token?: string): TokenBalanceConfig | undefined {
     const tokenConfig = this.inventoryConfig.tokenConfig[l1Token];
-    assert(isDefined(tokenConfig), `getTokenConfig: No token config found for ${l1Token}.`);
+    if (!isDefined(tokenConfig)) {
+      return;
+    }
 
     if (isAliasConfig(tokenConfig)) {
       assert(isDefined(l2Token), `Cannot resolve ambiguous ${getNetworkName(chainId)} token config for ${l1Token}`);
@@ -212,6 +217,9 @@ export class InventoryClient {
     }
 
     const tokenConfig = this.inventoryConfig.tokenConfig[l1Token];
+    if (!isDefined(tokenConfig)) {
+      return [];
+    }
 
     if (isAliasConfig(tokenConfig)) {
       return Object.keys(tokenConfig).filter((k) => isDefined(tokenConfig[k][chainId]));
@@ -404,7 +412,7 @@ export class InventoryClient {
    * to lowest priority.
    */
   async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
-    const { originChainId, destinationChainId, inputToken, outputToken, outputAmount, inputAmount } = deposit;
+    const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
     if (!this.isInventoryManagementEnabled()) {
@@ -456,6 +464,17 @@ export class InventoryClient {
         .map(([chainId]) => Number(chainId));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
+    // Add origin chain to take higher priority than destination chain if the destination chain
+    // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
+    // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
+    // we should take repayment away from the lite chain where possible.
+    if (
+      deposit.toLiteChain &&
+      !chainsToEvaluate.includes(originChainId) &&
+      this._l1TokenEnabledForChain(l1Token, Number(originChainId))
+    ) {
+      chainsToEvaluate.push(originChainId);
+    }
     // Add destination and origin chain if they are not already added.
     // Prioritize destination chain repayment over origin chain repayment but prefer both over
     // hub chain repayment if they are under allocated. We don't include hub chain
@@ -479,12 +498,12 @@ export class InventoryClient {
     const eligibleRefundChains: number[] = [];
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
-    for (const _chain of chainsToEvaluate) {
-      assert(this._l1TokenEnabledForChain(l1Token, _chain), `Token ${l1Token} not enabled for chain ${_chain}`);
+    for (const chainId of chainsToEvaluate) {
+      assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
       // Destination chain:
-      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, _chain);
-      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(_chain, repaymentToken);
-      const chainVirtualBalance = this.getBalanceOnChain(_chain, l1Token, repaymentToken);
+      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
+      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken);
+      const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       // @dev No need to factor in outputAmount when computing origin chain balance since funds only leave relayer
       // on destination chain
@@ -492,14 +511,14 @@ export class InventoryClient {
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
       let chainVirtualBalanceWithShortfallPostRelay =
-        _chain === destinationChainId &&
+        chainId === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
-          ? chainVirtualBalanceWithShortfall.sub(outputAmount)
-          : chainVirtualBalanceWithShortfall;
+          ? chainVirtualBalanceWithShortfall
+          : chainVirtualBalanceWithShortfall.add(inputAmount);
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[_chain] ?? bnZero
+        totalRefundsPerChain[chainId] ?? bnZero
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
@@ -512,23 +531,36 @@ export class InventoryClient {
         .div(cumulativeVirtualBalancePostRelay);
 
       // Consider configured buffer for target to allow relayer to support slight overages.
-      const tokenConfig = this.getTokenConfig(l1Token, _chain, repaymentToken);
-      assert(
-        isDefined(tokenConfig),
-        `No ${outputToken} tokenConfig in the Inventory Config for ${l1Token} on ${_chain} with a repaymentToken of ${repaymentToken}.`
-      );
-      const thresholdPct = toBN(tokenConfig.targetPct)
-        .mul(tokenConfig.targetOverageBuffer ?? toBNWei("1"))
-        .div(fixedPointAdjustment);
+      const tokenConfig = this.getTokenConfig(l1Token, chainId, repaymentToken);
+      if (!isDefined(tokenConfig)) {
+        const repaymentChain = getNetworkName(chainId);
+        this.logger.debug({
+          at: "InventoryClient#determineRefundChainId",
+          message: `No token config for ${repaymentToken} on ${repaymentChain}.`,
+        });
+        if (chainId === destinationChainId) {
+          this.logger.debug({
+            at: "InventoryClient#determineRefundChainId",
+            message: `Will consider to repayment on ${repaymentChain} as destination chain.`,
+          });
+          eligibleRefundChains.push(chainId);
+        }
+        continue;
+      }
+
+      // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
+      // destined for that chain in order to offload its excess.
+      const { targetOverageBuffer = DEFAULT_TOKEN_OVERAGE } = tokenConfig;
+      const effectiveTargetPct = tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
+
       this.log(
         `Evaluated taking repayment on ${
-          _chain === originChainId ? "origin" : _chain === destinationChainId ? "destination" : "slow withdrawal"
-        } chain ${_chain} for deposit ${deposit.depositId}: ${
-          expectedPostRelayAllocation.lte(thresholdPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
+          chainId === originChainId ? "origin" : chainId === destinationChainId ? "destination" : "slow withdrawal"
+        } chain ${chainId} for deposit ${deposit.depositId}: ${
+          expectedPostRelayAllocation.lte(effectiveTargetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
         }`,
         {
           l1Token,
-          outputAmount,
           originChainId,
           destinationChainId,
           chainShortfall,
@@ -537,13 +569,17 @@ export class InventoryClient {
           chainVirtualBalanceWithShortfallPostRelay,
           cumulativeVirtualBalance,
           cumulativeVirtualBalancePostRelay,
+          cumulativeVirtualBalanceWithShortfallPostRefunds,
           thresholdPct,
+          targetPct: ethersUtils.formatUnits(tokenConfig.targetPct, 18),
+          targetOverage: ethersUtils.formatUnits(targetOverageBuffer, 18),
+          effectiveTargetPct: ethersUtils.formatUnits(effectiveTargetPct, 18),
           expectedPostRelayAllocation,
           chainsToEvaluate,
         }
       );
-      if (expectedPostRelayAllocation.lte(thresholdPct)) {
-        eligibleRefundChains.push(_chain);
+      if (expectedPostRelayAllocation.lte(effectiveTargetPct)) {
+        eligibleRefundChains.push(chainId);
       }
     }
 
@@ -740,8 +776,11 @@ export class InventoryClient {
         l2Tokens.forEach((l2Token) => {
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
-          const { thresholdPct, targetPct } = tokenConfig;
+          if (!isDefined(tokenConfig)) {
+            return;
+          }
 
+          const { thresholdPct, targetPct } = tokenConfig;
           if (currentAllocPct.gte(thresholdPct)) {
             return;
           }
@@ -936,13 +975,15 @@ export class InventoryClient {
         this.getEnabledChains()
           .map((chainId) => {
             const tokenConfig = this.getTokenConfig(l1Weth, chainId);
-            assert(isDefined(tokenConfig));
+            if (!isDefined(tokenConfig)) {
+              return;
+            }
 
             const { unwrapWethThreshold, unwrapWethTarget } = tokenConfig;
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
             if (chainId === CHAIN_IDs.POLYGON || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
-              return null;
+              return;
             }
             const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
             assert(isDefined(weth), `No WETH definition for ${getNetworkName(chainId)}`);
@@ -1105,7 +1146,7 @@ export class InventoryClient {
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
-    const l2Weth = new Contract(_l2Weth, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
+    const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
@@ -1116,7 +1157,7 @@ export class InventoryClient {
     }
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
+    await this.adapterManager.setL1TokenApprovals(l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {

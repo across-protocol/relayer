@@ -29,7 +29,6 @@ type WebSocketProvider = ethersProviders.WebSocketProvider;
 type EventSearchConfig = sdkUtils.EventSearchConfig;
 type ScraperOpts = {
   lookback?: number; // Event lookback (in seconds).
-  finality?: number; // Event finality (in blocks).
   deploymentBlock: number; // SpokePool deployment block
   maxBlockRange?: number; // Maximum block range for paginated getLogs queries.
   filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
@@ -213,9 +212,8 @@ async function run(argv: string[]): Promise<void> {
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, lookback = "5400", relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainId, lookback, relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
-  assert(Number.isInteger(finality), "finality must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
@@ -230,21 +228,22 @@ async function run(argv: string[]): Promise<void> {
   const latestBlock = await quorumProvider.getBlock("latest");
 
   const deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
-  let startBlock: number;
+  let startBlock = latestBlock.number;
   if (/^@[0-9]+$/.test(lookback)) {
     // Lookback to a specific block (lookback = @<block-number>).
     startBlock = Number(lookback.slice(1));
-  } else {
+  } else if (isDefined(lookback)) {
     // Resolve `lookback` seconds from head to a specific block.
     assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
     startBlock = Math.max(
       deploymentBlock,
       await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
     );
+  } else {
+    logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Skipping lookback on ${chain}.` });
   }
 
   const opts = {
-    finality,
     quorum,
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
@@ -274,7 +273,7 @@ async function run(argv: string[]): Promise<void> {
     oldestTime = (await spokePool.getCurrentTime({ blockTag })).toNumber();
   };
 
-  if (lookback > 0) {
+  if (latestBlock.number > startBlock) {
     const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     const _spokePool = spokePool.connect(quorumProvider);
     await Promise.all([
@@ -288,7 +287,7 @@ async function run(argv: string[]): Promise<void> {
 
   // Events to listen for.
   const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
-  const eventMgr = new EventManager(logger, chainId, finality, quorum);
+  const eventMgr = new EventManager(logger, chainId, quorum);
   do {
     let providers: WebSocketProvider[] = [];
     try {

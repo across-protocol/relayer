@@ -1,6 +1,6 @@
 import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, getEthAddressForChain } from "../utils";
+import { ethers, getNativeTokenAddressForChain } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -40,6 +40,9 @@ export class MonitorConfig extends CommonConfig {
     token: string;
   }[] = [];
 
+  // TODO: Remove this config once we fully migrate to generic adapters.
+  readonly useGenericAdapter: boolean;
+
   constructor(env: ProcessEnv) {
     super(env);
 
@@ -59,6 +62,7 @@ export class MonitorConfig extends CommonConfig {
       REFILL_BALANCES,
       REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
+      MONITOR_USE_GENERIC_ADAPTER,
     } = env;
 
     this.botModes = {
@@ -69,6 +73,8 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
     };
+
+    this.useGenericAdapter = MONITOR_USE_GENERIC_ADAPTER === "true";
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
@@ -100,7 +106,7 @@ export class MonitorConfig extends CommonConfig {
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
             // Fields that are always set to defaults:
-            token: getEthAddressForChain(chainId),
+            token: getNativeTokenAddressForChain(chainId),
           };
         }
       );
@@ -148,9 +154,9 @@ export class MonitorConfig extends CommonConfig {
             parsedWarnThreshold = Number(warnThreshold);
           }
 
-          const isNativeToken = !token || token === "0x0" || token === getEthAddressForChain(chainId);
+          const isNativeToken = !token || token === getNativeTokenAddressForChain(chainId);
           return {
-            token: isNativeToken ? getEthAddressForChain(chainId) : token,
+            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : token,
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
             account: ethers.utils.getAddress(account),
