@@ -307,7 +307,7 @@ export class ProfitClient {
       this.minRelayerFees[routeKey] = minRelayerFeePct;
     }
 
-    return minRelayerFeePct as BigNumber;
+    return minRelayerFeePct;
   }
 
   /**
