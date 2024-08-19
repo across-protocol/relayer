@@ -5,13 +5,7 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { L1Token } from "../interfaces";
 const { ZERO_ADDRESS } = constants;
 
-export const { fetchTokenInfo } = utils;
-
-export function getL2TokenAddresses(l1TokenAddress: string): { [chainId: number]: string } {
-  return Object.values(TOKEN_SYMBOLS_MAP).find((details) => {
-    return details.addresses[CHAIN_IDs.MAINNET] === l1TokenAddress;
-  })?.addresses;
-}
+export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
 export function getNativeTokenAddressForChain(chainId: number): string {
   return CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
