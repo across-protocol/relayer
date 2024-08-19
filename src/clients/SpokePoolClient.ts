@@ -96,7 +96,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     });
   }
 
-  bonkWorker(): void {
+  stopWorker(): void {
     this.worker.disconnect();
     this.worker.kill("SIGKILL");
   }
