@@ -33,6 +33,7 @@ export interface AugmentedTransaction {
 export interface RawTransaction {
   contract: Contract;
   data: string;
+  gasLimit: BigNumber;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;

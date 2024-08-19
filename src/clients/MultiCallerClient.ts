@@ -540,7 +540,7 @@ export class TryMulticallClient extends MultiCallerClient {
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
     });
 
-    const buildRawTransaction = (contract: Contract, data: string): RawTransaction => ({ contract, data });
+    const buildRawTransaction = (contract: Contract, data: string, gasLimit: BigNumber): RawTransaction => ({ contract, data, gasLimit });
 
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
     const txnCalldataToRebuild: RawTransaction[] = [];
@@ -572,7 +572,7 @@ export class TryMulticallClient extends MultiCallerClient {
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.
       if (succeededTxnCalldata.length !== data.length) {
         txnCalldataToRebuild.push(
-          ...succeededTxnCalldata.map((calldata) => buildRawTransaction(transaction.contract, calldata))
+          ...succeededTxnCalldata.map((calldata) => buildRawTransaction(transaction.contract, calldata, transaction.gasLimit))
         );
         this.logger.debug({
           at: "tryMulticallClient#executeChainTxnQueue",
@@ -603,19 +603,22 @@ export class TryMulticallClient extends MultiCallerClient {
       const rebuildTryMulticall = (txns: RawTransaction[]) => {
         const mrkdwn: string[] = [];
         const contract = txns[0].contract;
+        let gasLimit = txns[0].gasLimit;
         txns.forEach((txn, idx) => {
           mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
+          gasLimit = txn.gasLimit > gasLimit ? txn.gasLimit : gasLimit;
           assert(contract === txn.contract);
         });
         const callData = txns.map((txn) => txn.data);
         return {
           chainId,
           contract,
+          gasLimit,
           method: "tryMulticall",
           args: [callData],
           message: "Across tryMulticall transaction",
           mrkdwn: mrkdwn.join(""),
-        } as AugmentedTransaction;
+        };
       };
       txnRequestsToSubmit.push(...txnChunks.map(rebuildTryMulticall));
     }
