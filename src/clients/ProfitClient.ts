@@ -292,7 +292,7 @@ export class ProfitClient {
 
     if (!minRelayerFeePct) {
       const prefix = "MIN_RELAYER_FEE_PCT";
-      const _minRelayerFeePct = process.env[`${prefix}_{routeKey}`] ?? process.env[`${prefix}_{symbol.toUpperCase()}`];
+      const _minRelayerFeePct = process.env[`${prefix}_{routeKey}`] ?? process.env[`${prefix}_${symbol}`];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
