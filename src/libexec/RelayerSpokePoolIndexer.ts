@@ -294,9 +294,14 @@ async function run(argv: string[]): Promise<void> {
       providers = getWSProviders(chainId, quorum);
       assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
       providers.forEach((provider) => {
-        provider._websocket.on("error", (err) =>
-          logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Caught ${chain} provider error.`, err })
-        );
+        provider._websocket.on("error", (err) => {
+          logger.debug({
+            at: "RelayerSpokePoolIndexer::run",
+            message: `Caught ${chain} provider error.`,
+            provider: getOriginFromURL(provider.connection.url),
+            err
+          });
+        });
 
         provider._websocket.on("close", () => {
           logger.debug({
