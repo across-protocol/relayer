@@ -443,11 +443,17 @@ describe("ProfitClient: Consider relay profit", () => {
   });
 
   it("Allows per-route and per-token fee configuration", () => {
-    // Setup custom USDC pricing to Optimism.
+    // Setup custom USDC pricing to Optimism and Arbitrum.
     chainIds.forEach((srcChainId) => {
       process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toFixed(10).toString();
       process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_42161`] = "0.00005";
     });
+
+    // Also set a default fee for USDC.
+    const minUSDC = "0.00001";
+    const minUSDCKey = "MIN_RELAYER_FEE_PCT_USDC";
+    const initialMinUSDC = process.env[minUSDCKey];
+    process.env[minUSDCKey] = minUSDC;
 
     const envPrefix = "MIN_RELAYER_FEE_PCT";
     ["USDC", "DAI", "WETH", "WBTC"].forEach((symbol) => {
@@ -455,9 +461,14 @@ describe("ProfitClient: Consider relay profit", () => {
         chainIds
           .filter((chainId) => chainId !== srcChainId)
           .forEach((dstChainId) => {
-            const envVar = `${envPrefix}_${symbol}_${srcChainId}_${dstChainId}`;
-            const routeFee = process.env[envVar];
+            const tokenEnvVar = `${envPrefix}_${symbol}`;
+            const routeEnvVar = `${tokenEnvVar}_${srcChainId}_${dstChainId}`;
+            const routeFee = process.env[routeEnvVar] ?? process.env[tokenEnvVar];
             const routeMinRelayerFeePct = routeFee ? toBNWei(routeFee) : minRelayerFeePct;
+            if (!routeFee && symbol === "USDC") {
+              expect(routeMinRelayerFeePct.eq(toBNWei(minUSDC))).to.be.true;
+            }
+
             const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
             spyLogger.debug({
               message: `Expect relayerFeePct === ${routeMinRelayerFeePct}`,
@@ -469,14 +480,15 @@ describe("ProfitClient: Consider relay profit", () => {
             });
 
             // Cleanup env as we go.
-            if (routeFee) {
-              process.env[envVar] = undefined;
+            if (routeEnvVar) {
+              process.env[routeEnvVar] = undefined;
             }
 
             expect(computedMinRelayerFeePct.eq(routeMinRelayerFeePct)).to.be.true;
           });
       });
     });
+    process.env[minUSDCKey] = initialMinUSDC;
   });
 
   it("Considers updated deposits", async () => {
