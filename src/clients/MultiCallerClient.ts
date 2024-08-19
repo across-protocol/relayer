@@ -540,7 +540,11 @@ export class TryMulticallClient extends MultiCallerClient {
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
     });
 
-    const buildRawTransaction = (contract: Contract, data: string, gasLimit: BigNumber): RawTransaction => ({ contract, data, gasLimit });
+    const buildRawTransaction = (contract: Contract, data: string, gasLimit: BigNumber): RawTransaction => ({
+      contract,
+      data,
+      gasLimit,
+    });
 
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
     const txnCalldataToRebuild: RawTransaction[] = [];
@@ -572,7 +576,9 @@ export class TryMulticallClient extends MultiCallerClient {
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.
       if (succeededTxnCalldata.length !== data.length) {
         txnCalldataToRebuild.push(
-          ...succeededTxnCalldata.map((calldata) => buildRawTransaction(transaction.contract, calldata, transaction.gasLimit))
+          ...succeededTxnCalldata.map((calldata) =>
+            buildRawTransaction(transaction.contract, calldata, transaction.gasLimit)
+          )
         );
         this.logger.debug({
           at: "tryMulticallClient#executeChainTxnQueue",
