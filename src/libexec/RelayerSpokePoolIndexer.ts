@@ -299,7 +299,7 @@ async function run(argv: string[]): Promise<void> {
             at: "RelayerSpokePoolIndexer::run",
             message: `Caught ${chain} provider error.`,
             provider: getOriginFromURL(provider.connection.url),
-            err
+            err,
           });
         });
 
