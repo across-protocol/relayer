@@ -88,6 +88,9 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
 
+    // Don't permit the worker to keep the parent alive.
+    this.worker.unref();
+
     this.worker.on("message", (message) => this.indexerUpdate(message));
     this.logger.debug({
       at: "SpokePoolClient#startWorker",
