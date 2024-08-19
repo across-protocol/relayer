@@ -295,12 +295,13 @@ export class ProfitClient {
   minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
     const effectiveSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
 
-    const routeKey = `${effectiveSymbol}_${srcChainId}_${dstChainId}`;
-    let minRelayerFeePct = this.minRelayerFees[routeKey];
+    const prefix = "MIN_RELAYER_FEE_PCT";
+    const tokenKey = `${prefix}_${effectiveSymbol}`;
+    const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
-      const prefix = "MIN_RELAYER_FEE_PCT";
-      const _minRelayerFeePct = process.env[`${prefix}_{routeKey}`] ?? process.env[`${prefix}_${effectiveSymbol}`];
+      const _minRelayerFeePct = process.env[routeKey] ?? process.env[tokenKey];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
