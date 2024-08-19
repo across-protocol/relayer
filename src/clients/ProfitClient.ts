@@ -295,8 +295,7 @@ export class ProfitClient {
   minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
     const effectiveSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
 
-    const prefix = "MIN_RELAYER_FEE_PCT";
-    const tokenKey = `${prefix}_${effectiveSymbol}`;
+    const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
     const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
     let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
