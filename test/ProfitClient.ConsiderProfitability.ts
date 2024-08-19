@@ -461,8 +461,8 @@ describe("ProfitClient: Consider relay profit", () => {
         chainIds
           .filter((chainId) => chainId !== srcChainId)
           .forEach((dstChainId) => {
-            const routeEnvVar = `${envPrefix}_${symbol}_${srcChainId}_${dstChainId}`;
             const tokenEnvVar = `${envPrefix}_${symbol}`;
+            const routeEnvVar = `${tokenEnvVar}_${srcChainId}_${dstChainId}`;
             const routeFee = process.env[routeEnvVar] ?? process.env[tokenEnvVar];
             const routeMinRelayerFeePct = routeFee ? toBNWei(routeFee) : minRelayerFeePct;
             if (!routeFee && symbol === "USDC") {
