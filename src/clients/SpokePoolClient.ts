@@ -96,6 +96,11 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     });
   }
 
+  stopWorker(): void {
+    this.worker.disconnect();
+    this.worker.kill("SIGKILL");
+  }
+
   /**
    * Receive an update from the external indexer process.
    * @param rawMessage Message to be parsed.
