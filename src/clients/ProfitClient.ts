@@ -291,7 +291,7 @@ export class ProfitClient {
     let minRelayerFeePct = this.minRelayerFees[routeKey];
 
     if (!minRelayerFeePct) {
-      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`];
+      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`] ?? process.env[`MIN_RELAYER_FEE_PCT_${symbol.toUpperCase()}`];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
