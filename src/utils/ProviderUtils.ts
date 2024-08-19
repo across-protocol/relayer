@@ -730,10 +730,10 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
   return urls.map((url) => new ethers.providers.WebSocketProvider(url));
 }
 
-export function getNodeUrlList(chainId: number, quorum = 1, protocol: "https" | "wss" = "https"): string[] {
+export function getNodeUrlList(chainId: number, quorum = 1, transport: sdkProviders.RPCTransport = "https"): string[] {
   const resolveUrls = (): string[] => {
     const [envPrefix, providerPrefix] =
-      protocol === "https" ? ["RPC_PROVIDERS", "RPC_PROVIDER"] : ["RPC_WS_PROVIDERS", "RPC_WS_PROVIDER"];
+      transport === "https" ? ["RPC_PROVIDERS", "RPC_PROVIDER"] : ["RPC_WS_PROVIDERS", "RPC_WS_PROVIDER"];
 
     const providers = process.env[`${envPrefix}_${chainId}`] ?? process.env[envPrefix];
     if (providers === undefined) {
@@ -748,7 +748,7 @@ export function getNodeUrlList(chainId: number, quorum = 1, protocol: "https" | 
       const envVar = `${providerPrefix}_${provider}_${chainId}`;
       let url = process.env[envVar];
       if (!isDefined(url) && isDefined(providerKey) && sdkProviders.isSupportedProvider(provider)) {
-        url = sdkProviders.getURL(provider, chainId, providerKey);
+        url = sdkProviders.getURL(provider, chainId, providerKey, transport);
       }
 
       if (url === undefined) {
