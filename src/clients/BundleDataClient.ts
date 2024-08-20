@@ -21,7 +21,7 @@ import {
   isDefined,
   toBN,
 } from "../utils";
-import { Clients } from "../common";
+import { Clients, INFINITE_FILL_DEADLINE } from "../common";
 import {
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
@@ -869,7 +869,9 @@ export class BundleDataClient {
 
             // Since there was no deposit matching the relay hash, we need to do a historical query for an
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
-            if (fill.blockNumber >= destinationChainBlockRange[0]) {
+            // We can skip this step if the fill's fill deadline is not infinite, because we can assume that the
+            // spoke pool clients have loaded deposits old enough to cover all fills with a non-infinite fill deadline.
+            if (INFINITE_FILL_DEADLINE.eq(fill.fillDeadline) && fill.blockNumber >= destinationChainBlockRange[0]) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
               if (!historicalDeposit.found) {
                 bundleInvalidFillsV3.push(fill);
@@ -963,7 +965,12 @@ export class BundleDataClient {
 
             // Since there was no deposit matching the relay hash, we need to do a historical query for an
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
-            if (slowFillRequest.blockNumber >= destinationChainBlockRange[0]) {
+            // We can skip this step if the deposit's fill deadline is not infinite, because we can assume that the
+            // spoke pool clients have loaded deposits old enough to cover all fills with a non-infinite fill deadline.
+            if (
+              INFINITE_FILL_DEADLINE.eq(slowFillRequest.fillDeadline) &&
+              slowFillRequest.blockNumber >= destinationChainBlockRange[0]
+            ) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
               if (!historicalDeposit.found) {
                 // TODO: Invalid slow fill request. Maybe worth logging.
