@@ -105,12 +105,14 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
         message: `Skipped disconnecting on ${this.chain} SpokePool listener (already disconnected).`
       });
     }
-    if (this.worker.exitCode === null) {
+    const { exitCode } = this.worker;
+    if (exitCode === null) {
       this.worker.kill("SIGKILL");
     } else {
       this.logger.warn({
         at: "SpokePoolClient#stopWorker",
-        message: `Skipped SIGKILL on ${this.chain} SpokePool listener (already exited).`
+        message: `Skipped SIGKILL on ${this.chain} SpokePool listener (already exited).`,
+        exitCode,
       });
     }
   }
