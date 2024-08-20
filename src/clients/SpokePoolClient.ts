@@ -97,8 +97,12 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   }
 
   stopWorker(): void {
-    this.worker.disconnect();
-    this.worker.kill("SIGKILL");
+    if (this.worker.connected) {
+      this.worker.disconnect();
+    }
+    if (this.worker.exitCode === null) {
+      this.worker.kill("SIGKILL");
+    }
   }
 
   /**
