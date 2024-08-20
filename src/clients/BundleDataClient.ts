@@ -871,7 +871,14 @@ export class BundleDataClient {
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
             // We can skip this step if the fill's fill deadline is not infinite, because we can assume that the
             // spoke pool clients have loaded deposits old enough to cover all fills with a non-infinite fill deadline.
-            if (INFINITE_FILL_DEADLINE.eq(fill.fillDeadline) && fill.blockNumber >= destinationChainBlockRange[0]) {
+            if (fill.blockNumber >= destinationChainBlockRange[0]) {
+              // Fill has a non-infinite expiry, and we can assume our spoke pool clients have old enough deposits
+              // to conclude that this fill is invalid if we haven't found a matching deposit in memory, so
+              // skip the historical query.
+              if (!INFINITE_FILL_DEADLINE.eq(fill.fillDeadline)) {
+                bundleInvalidFillsV3.push(fill);
+                return;
+              }
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
               if (!historicalDeposit.found) {
                 bundleInvalidFillsV3.push(fill);
