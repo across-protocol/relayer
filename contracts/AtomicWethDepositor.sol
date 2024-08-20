@@ -94,10 +94,6 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
         emit AtomicWethDepositInitiated(msg.sender, chainId, value);
     }
 
-    ///////////////////////////////
-    //          Fallback         //
-    ///////////////////////////////
-
     fallback() external payable {}
 
     // Included to remove a compilation warning.

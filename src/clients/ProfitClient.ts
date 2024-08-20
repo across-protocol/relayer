@@ -43,11 +43,13 @@ type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
+
 const {
   EMPTY_MESSAGE,
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
 } = sdkConsts;
+
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
 const bn10 = toBN(10);
@@ -281,22 +283,31 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
-  // Allow the minimum relayer fee to be overridden per token/route:
-  // 0.1bps on USDC from Optimism to Arbitrum:
-  //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+  /**
+   * Allow the minimum relayer fee to be overridden per token/route:
+   * 0.1bps on USDC from Optimism to Arbitrum:
+   *   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+   * @param symbol Token symbol to query.
+   * @param symbol srcChainId Origin chain for deposit.
+   * @param symbol dstChainId Destination chain for deposit.
+   * @returns The minimum required fee multiplier for the specified token/route combination.
+   */
   minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
-    const routeKey = `${symbol}_${srcChainId}_${dstChainId}`;
-    let minRelayerFeePct = this.minRelayerFees[routeKey];
+    const effectiveSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+
+    const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
+    const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
-      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`];
+      const _minRelayerFeePct = process.env[routeKey] ?? process.env[tokenKey];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
       this.minRelayerFees[routeKey] = minRelayerFeePct;
     }
 
-    return minRelayerFeePct as BigNumber;
+    return minRelayerFeePct;
   }
 
   /**
@@ -584,9 +595,11 @@ export class ProfitClient {
     const testSymbols = {
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
+      [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
     };
+    const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
+      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
 
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.

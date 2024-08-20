@@ -1,6 +1,6 @@
 import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, getEthAddressForChain } from "../utils";
+import { ethers, getNativeTokenAddressForChain } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -106,7 +106,7 @@ export class MonitorConfig extends CommonConfig {
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
             // Fields that are always set to defaults:
-            token: getEthAddressForChain(chainId),
+            token: getNativeTokenAddressForChain(chainId),
           };
         }
       );
@@ -154,9 +154,9 @@ export class MonitorConfig extends CommonConfig {
             parsedWarnThreshold = Number(warnThreshold);
           }
 
-          const isNativeToken = !token || token === "0x0" || token === getEthAddressForChain(chainId);
+          const isNativeToken = !token || token === getNativeTokenAddressForChain(chainId);
           return {
-            token: isNativeToken ? getEthAddressForChain(chainId) : token,
+            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : token,
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
             account: ethers.utils.getAddress(account),

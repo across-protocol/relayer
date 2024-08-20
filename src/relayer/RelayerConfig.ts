@@ -46,6 +46,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerGasMultiplier: BigNumber;
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
+  readonly minFillTime: { [chainId: number]: number } = {};
   readonly acceptInvalidFills: boolean;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: string[];
@@ -56,6 +57,9 @@ export class RelayerConfig extends CommonConfig {
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
+  // Set to all chain ids where the relayer should use tryMulticall over multicall on the associated spoke pool.
+  // It is up to the user to ensure that the spoke pool on the target chain has tryMulticall in its active implementation.
+  readonly tryMulticallChains: number[];
 
   // TODO: Remove this config item once we fully move to generic chain adapters.
   readonly useGenericAdapter: boolean;
@@ -84,6 +88,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
       RELAYER_SPOKEPOOL_INDEXER_PATH,
+      RELAYER_TRY_MULTICALL_CHAINS,
       RELAYER_USE_GENERIC_ADAPTER,
     } = env;
     super(env);
@@ -107,6 +112,8 @@ export class RelayerConfig extends CommonConfig {
       : [];
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
+
+    this.tryMulticallChains = JSON.parse(RELAYER_TRY_MULTICALL_CHAINS ?? "[]");
 
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
@@ -332,6 +339,10 @@ export class RelayerConfig extends CommonConfig {
         ignoredChainIds,
       });
     }
+
+    chainIds.forEach(
+      (chainId) => (this.minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0))
+    );
 
     // Only validate config for chains that the relayer cares about.
     super.validate(relayerChainIds, logger);

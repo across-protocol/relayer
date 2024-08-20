@@ -1,5 +1,4 @@
 import {
-  CHAIN_IDs,
   Contract,
   BigNumber,
   EventSearchConfig,
@@ -8,7 +7,6 @@ import {
   getTranslatedTokenAddress,
   assert,
   isDefined,
-  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 
@@ -61,12 +59,7 @@ export abstract class BaseBridgeAdapter {
   ): Promise<BridgeEvents>;
 
   protected resolveL2TokenAddress(l1Token: string): string {
-    // @todo: Fix call to `getTranslatedTokenAddress()` such that it does not require
-    // ifDefined(...). This is incompatible with remote chains where both native and
-    // bridged USDC are defined.
-    const isNativeUSDC =
-      this.l2chainId === CHAIN_IDs.SCROLL && isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
-    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, isNativeUSDC);
+    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false);
   }
 
   protected getL1Bridge(): Contract {

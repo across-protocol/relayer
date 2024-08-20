@@ -3,6 +3,7 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
 import {
+  averageBlockTime,
   BigNumber,
   bnZero,
   bnUint256Max,
@@ -20,6 +21,7 @@ import {
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
+import { MultiCallerClient } from "../clients";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -481,15 +483,15 @@ export class Relayer {
     sendSlowRelays: boolean
   ): Promise<void> {
     const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
-    const { hubPoolClient, profitClient, tokenClient } = this.clients;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
 
     // If the deposit does not meet the minimum number of block confirmations, skip it.
+    const originChain = getNetworkName(originChainId);
     if (deposit.blockNumber > maxBlockNumber) {
-      const chain = getNetworkName(originChainId);
       this.logger.debug({
         at: "Relayer::evaluateFill",
-        message: `Skipping ${chain} deposit ${depositId} due to insufficient deposit confirmations.`,
+        message: `Skipping ${originChain} deposit ${depositId} due to insufficient deposit confirmations.`,
         depositId,
         blockNumber: deposit.blockNumber,
         maxBlockNumber,
@@ -513,6 +515,28 @@ export class Relayer {
       return;
     }
 
+    // If the operator configured a minimum fill time for a destination chain, ensure that the deposit
+    // is at least that old before filling it. This is mainly useful on chains with long block times,
+    // where there is a high chance of fill collisions in the first blocks after a deposit is made.
+    const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
+    if (minFillTime > 0 && deposit.exclusiveRelayer !== this.relayerAddress) {
+      const originSpoke = spokePoolClients[originChainId];
+      const { average: avgBlockTime } = await averageBlockTime(originSpoke.spokePool.provider);
+      const depositAge = Math.floor(avgBlockTime * (originSpoke.latestBlockSearched - deposit.blockNumber));
+
+      if (minFillTime > depositAge) {
+        const dstChain = getNetworkName(destinationChainId);
+        this.logger.debug({
+          at: "Relayer::evaluateFill",
+          message: `Skipping ${originChain} deposit due to insufficient fill time for ${dstChain}.`,
+          depositAge,
+          minFillTime,
+          transactionHash: deposit.transactionHash,
+        });
+        return;
+      }
+    }
+
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
     const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
     if (tokenClient.hasBalanceForFill(deposit) && !selfRelay) {
@@ -531,7 +555,6 @@ export class Relayer {
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
         if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
-          const originChain = getNetworkName(originChainId);
           const limits = this.fillLimits[originChainId].slice(limitIdx);
           this.logger.debug({
             at: "Relayer::evaluateFill",
@@ -650,10 +673,8 @@ export class Relayer {
   }
 
   protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
-    const {
-      pendingTxnReceipts,
-      clients: { multiCallerClient },
-    } = this;
+    const multiCallerClient = this.getMulticaller(chainId);
+    const { pendingTxnReceipts } = this;
 
     if (isDefined(pendingTxnReceipts[chainId])) {
       this.logger.info({
@@ -674,7 +695,8 @@ export class Relayer {
     sendSlowRelays = true,
     simulate = false
   ): Promise<{ [chainId: number]: Promise<string[]> }> {
-    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient } = this.clients;
+    const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
+      this.clients;
 
     // Fetch the average block time for mainnet, for later use in evaluating quoteTimestamps.
     this.hubPoolBlockBuffer ??= Math.ceil(
@@ -683,6 +705,7 @@ export class Relayer {
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
+    tryMulticallClient.clearTransactionQueue();
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
       Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
     );
@@ -732,7 +755,8 @@ export class Relayer {
       );
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
-      if (multiCallerClient.getQueuedTransactions(destinationChainId).length > 0) {
+      const pendingTxnCount = this.getMulticaller(destinationChainId).getQueuedTransactions(destinationChainId).length;
+      if (pendingTxnCount > 0) {
         txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
       }
     });
@@ -781,8 +805,9 @@ export class Relayer {
       return;
     }
 
-    const { hubPoolClient, spokePoolClients, multiCallerClient } = this.clients;
+    const { hubPoolClient, spokePoolClients } = this.clients;
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
+    const multiCallerClient = this.getMulticaller(destinationChainId);
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
@@ -816,7 +841,7 @@ export class Relayer {
   }
 
   fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
-    const { spokePoolClients, multiCallerClient } = this.clients;
+    const { spokePoolClients } = this.clients;
     this.logger.debug({
       at: "Relayer::fillRelay",
       message: `Filling v3 deposit ${deposit.depositId} with repayment on ${repaymentChainId}.`,
@@ -850,6 +875,7 @@ export class Relayer {
     const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct);
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
+    const multiCallerClient = this.getMulticaller(chainId);
     multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
 
     this.setFillStatus(deposit, FillStatus.Filled);
@@ -1211,5 +1237,11 @@ export class Relayer {
       ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
 
     return msg;
+  }
+
+  private getMulticaller(chainId: number): MultiCallerClient {
+    return this.config.tryMulticallChains.includes(chainId)
+      ? this.clients.tryMulticallClient
+      : this.clients.multiCallerClient;
   }
 }
