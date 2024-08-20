@@ -235,11 +235,13 @@ export class BaseChainAdapter {
     await forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
         const bridge = this.bridges[l1Token];
-        const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
-          bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
-          bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
-        ]);
-
+        const [depositInitiatedResults, depositFinalizedResults] = await bridge.queryL1AndL2BridgeTransferEvents(
+          l1Token,
+          monitoredAddress,
+          monitoredAddress,
+          l1SearchConfig,
+          l2SearchConfig
+        );
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
           const finalizedAmounts = depositFinalizedResults?.[l2Token]?.map((event) => event.amount.toString()) ?? [];
           const outstandingInitiatedEvents = depositInitiatedEvents.filter((event) => {

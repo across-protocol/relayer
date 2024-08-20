@@ -130,6 +130,7 @@ describe("Cross Chain Adapter: Linea", async function () {
         l1WETHToken,
         undefined,
         monitoredEoa,
+        searchConfig,
         searchConfig
       );
 

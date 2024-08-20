@@ -58,6 +58,19 @@ export abstract class BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
 
+  public async queryL1AndL2BridgeTransferEvents(
+    l1Token: string,
+    fromAddress: string,
+    toAddress: string,
+    l1SearchConfig: EventSearchConfig,
+    l2SearchConfig: EventSearchConfig
+  ): Promise<[BridgeEvents, BridgeEvents]> {
+    return Promise.all([
+      this.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, l1SearchConfig),
+      this.queryL2BridgeFinalizationEvents(l1Token, fromAddress, toAddress, l2SearchConfig),
+    ]);
+  }
+
   protected resolveL2TokenAddress(l1Token: string): string {
     return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false);
   }

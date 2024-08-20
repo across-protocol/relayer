@@ -1,4 +1,14 @@
-import { Contract, BigNumber, paginatedEventQuery, bnZero, Signer, EventSearchConfig, Provider } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  bnZero,
+  Signer,
+  EventSearchConfig,
+  Provider,
+  isDefined,
+  assert,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -38,6 +48,21 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     });
   }
 
+  // Getting L2 finalization events on Linea is tricky since we need knowledge of the L1 message hash, *and* the L2 event gives no information
+  // about the L1 transfer (such as the depositor address or amount), so we need to manually figure this out.
+  override async queryL1AndL2BridgeTransferEvents(
+    l1Token: string,
+    fromAddress: string,
+    toAddress: string,
+    l1SearchConfig: EventSearchConfig,
+    l2SearchConfig: EventSearchConfig
+  ): Promise<[BridgeEvents, BridgeEvents]> {
+    return Promise.all([
+      this.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, l1SearchConfig),
+      this.queryL2BridgeFinalizationEvents(l1Token, fromAddress, toAddress, l1SearchConfig, l2SearchConfig),
+    ]);
+  }
+
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
@@ -56,18 +81,23 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     };
   }
 
+  // Here, we need knowledge of the l1Search config since otherwise we would have no information about
+  // the value and depositor/recipient addresses. This is because the l2 MessageClaimed event contains no
+  // information about the amount received nor the recipient.
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
-    eventConfig: EventSearchConfig
+    l1SearchConfig: EventSearchConfig,
+    l2SearchConfig?: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // TODO: This can probably be refactored to save an RPC call since this is called in parallel with
-    // queryL1BridgeInitiationEvents in the BaseChainAdapter class.
+    // @dev L2SearchConfig must be defined for this call. It is only an optional argument so it can conform to the
+    // BaseBridgeAdapter class.
+    assert(isDefined(l2SearchConfig));
     const initiatedQueryResult = await paginatedEventQuery(
       this.getL1Bridge(),
       this.getL1Bridge().filters.MessageSent(undefined, toAddress),
-      eventConfig
+      l1SearchConfig
     );
 
     // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
@@ -78,7 +108,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
       this.getL2Bridge().filters.MessageClaimed(internalMessageHashes),
-      eventConfig
+      l2SearchConfig
     );
     const finalizedHashes = events.map(({ args }) => args._messageHash);
     return {
