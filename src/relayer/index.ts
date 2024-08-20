@@ -107,6 +107,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     }
   } finally {
     await disconnectRedisClients(logger);
+
+    if (config.externalIndexer) {
+      Object.values(relayerClients.spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
+    }
   }
 
   const runtime = getCurrentTime() - startTime;
