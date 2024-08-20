@@ -584,7 +584,7 @@ export class Dataworker {
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
       nextBundleMainnetStartBlock
     );
-    const { valid, reason, bundleData } = await this.validateRootBundle(
+    const { valid, reason, bundleData, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
@@ -618,14 +618,46 @@ export class Dataworker {
       }
     }
 
-    // Root bundle is valid, attempt to persist it to DA layer if not already there.
+    // Root bundle is valid, attempt to persist the raw bundle data and the merkle leaf data to DA layer
+    // if not already there.
     if (persistBundleData && isDefined(bundleData)) {
-      await persistDataToArweave(
-        this.clients.arweaveClient,
-        bundleData,
-        this.logger,
-        `bundles-${bundleData.bundleBlockRanges}`
-      );
+      await Promise.all([
+        persistDataToArweave(
+          this.clients.arweaveClient,
+          bundleData,
+          this.logger,
+          `bundles-${bundleData.bundleBlockRanges}`
+        ),
+        persistDataToArweave(
+          this.clients.arweaveClient,
+          {
+            poolRebalanceLeaves: expectedTrees.poolRebalanceTree.leaves.map((leaf) => {
+              return {
+                ...leaf,
+                proof: expectedTrees.poolRebalanceTree.tree.getHexProof(leaf),
+              };
+            }),
+            poolRebalanceRoot: expectedTrees.poolRebalanceTree.tree.getHexRoot(),
+            relayerRefundLeaves: expectedTrees.relayerRefundTree.leaves.map((leaf) => {
+              return {
+                ...leaf,
+                proof: expectedTrees.relayerRefundTree.tree.getHexProof(leaf),
+              };
+            }),
+            relayerRefundRoot: expectedTrees.relayerRefundTree.tree.getHexRoot(),
+            slowRelayLeaves: expectedTrees.slowRelayTree.leaves.map((leaf) => {
+              const { relayData, chainId, updatedOutputAmount } = leaf;
+              return {
+                ...leaf,
+                proof: expectedTrees.slowRelayTree.tree.getHexProof({ relayData, chainId, updatedOutputAmount }),
+              };
+            }),
+            slowRelayRoot: expectedTrees.slowRelayTree.tree.getHexRoot(),
+          },
+          this.logger,
+          `merkletree-${bundleData.bundleBlockRanges}`
+        ),
+      ]);
     }
   }
 
