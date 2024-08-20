@@ -741,10 +741,9 @@ export function getNodeUrlList(chainId: number, quorum = 1, transport: sdkProvid
     }
 
     const nodeUrls = providers.split(",").map((provider) => {
-      const apiKey = process.env[`RPC_PROVIDER_KEY_${provider}`];
-
       // If no specific RPC endpoint is identified for this provider, try to
       // to infer the endpoint name based on predefined chain definitions.
+      const apiKey = process.env[`RPC_PROVIDER_KEY_${provider}`];
       const envVar = `${providerPrefix}_${provider}_${chainId}`;
       let url = process.env[envVar];
       if (!isDefined(url) && isDefined(apiKey) && sdkProviders.isSupportedProvider(provider)) {
