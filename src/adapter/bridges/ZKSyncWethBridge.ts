@@ -9,6 +9,7 @@ import {
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
   assert,
+  compareAddressesSimple,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
@@ -92,7 +93,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const hubPool = this.getHubPool();
-    if (fromAddress === hubPool.address) {
+    if (compareAddressesSimple(fromAddress, hubPool.address)) {
       return Promise.resolve({});
     }
     const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
@@ -111,7 +112,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     );
     if (isL2Contract) {
       // The TokensRelayed event does not distinguish between chain or l1Token, so we filter it here.
-      events = events.filter((e) => e.args.to === toAddress && e.args.l1Token === wethAddress);
+      events = events.filter(
+        (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, wethAddress)
+      );
     }
     const processedEvents = events.map((event) =>
       isL2Contract ? processEvent(event, "amount", "to", "to") : processEvent(event, "_amount", "_to", "from")
@@ -131,7 +134,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const hubPool = this.getHubPool();
-    if (fromAddress === hubPool.address) {
+    if (compareAddressesSimple(fromAddress, hubPool.address)) {
       return Promise.resolve({});
     }
 
