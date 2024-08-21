@@ -35,6 +35,7 @@ import {
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
+  persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
@@ -46,6 +47,7 @@ import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk";
 import {
+  BundleData,
   BundleDepositsV3,
   BundleExcessSlowFills,
   BundleFillsV3,
@@ -66,15 +68,6 @@ type SlowRootBundle = {
   tree: MerkleTree<V3SlowFillLeaf>;
 };
 
-export type BundleDataToPersistToDALayerType = {
-  bundleBlockRanges: number[][];
-  bundleDepositsV3: BundleDepositsV3;
-  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
-  bundleFillsV3: BundleFillsV3;
-  unexecutableSlowFills: BundleExcessSlowFills;
-  bundleSlowFillsV3: BundleSlowFills;
-};
-
 type ProposeRootBundleReturnType = {
   poolRebalanceLeaves: PoolRebalanceLeaf[];
   poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
@@ -82,7 +75,7 @@ type ProposeRootBundleReturnType = {
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
   slowFillLeaves: V3SlowFillLeaf[];
   slowFillTree: MerkleTree<V3SlowFillLeaf>;
-  dataToPersistToDALayer: BundleDataToPersistToDALayerType;
+  bundleData: BundleData;
 };
 
 export type PoolRebalanceRoot = {
@@ -352,12 +345,15 @@ export class Dataworker {
     );
   }
 
+  /**
+   * @returns bundle data if new proposal transaction is enqueued, else undefined
+   */
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<BundleDataToPersistToDALayerType> {
+  ): Promise<BundleData> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -466,7 +462,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return rootBundleData.dataToPersistToDALayer;
+    return rootBundleData.bundleData;
   }
 
   async _proposeRootBundle(
@@ -479,11 +475,7 @@ export class Dataworker {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
       await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
-    // Prepare information about what we need to store to
-    // Arweave for the bundle. We will be doing this at a
-    // later point so that we can confirm that this data is
-    // worth storing.
-    const dataToPersistToDALayer = {
+    const bundleData = {
       bundleBlockRanges: blockRangesForProposal,
       bundleDepositsV3,
       expiredDepositsToRefundV3,
@@ -545,14 +537,15 @@ export class Dataworker {
       relayerRefundTree: relayerRefundRoot.tree,
       slowFillLeaves: slowRelayRoot.leaves,
       slowFillTree: slowRelayRoot.tree,
-      dataToPersistToDALayer,
+      bundleData,
     };
   }
 
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    persistBundleData = false
   ): Promise<void> {
     if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
@@ -591,7 +584,7 @@ export class Dataworker {
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
       nextBundleMainnetStartBlock
     );
-    const { valid, reason } = await this.validateRootBundle(
+    const { valid, reason, bundleData } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
@@ -624,6 +617,16 @@ export class Dataworker {
         }
       }
     }
+
+    // Root bundle is valid, attempt to persist it to DA layer if not already there.
+    if (persistBundleData && isDefined(bundleData)) {
+      await persistDataToArweave(
+        this.clients.arweaveClient,
+        bundleData,
+        this.logger,
+        `bundles-${bundleData.bundleBlockRanges}`
+      );
+    }
   }
 
   async validateRootBundle(
@@ -652,6 +655,7 @@ export class Dataworker {
             leaves: V3SlowFillLeaf[];
           };
         };
+        bundleData?: BundleData;
       }
     // If valid is true, we don't get a reason, and we always get expected trees.
     | {
@@ -671,6 +675,7 @@ export class Dataworker {
             leaves: V3SlowFillLeaf[];
           };
         };
+        bundleData: BundleData;
       }
   > {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
@@ -919,6 +924,7 @@ export class Dataworker {
         valid: true,
         expectedTrees,
         reason: undefined,
+        bundleData: rootBundleData.bundleData,
       };
     }
 

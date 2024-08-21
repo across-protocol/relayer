@@ -1,3 +1,4 @@
+import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
@@ -24,7 +25,8 @@ import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
-import BLAST_ETH_YIELD_ABI from "./abi/BlastYield.json";
+import BLAST_YIELD_MANAGER_ABI from "./abi/BlastYieldManager.json";
+import BLAST_DAI_RETRIEVER_ABI from "./abi/BlastDaiRetriever.json";
 import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
@@ -71,13 +73,17 @@ export const CONTRACT_ADDRESSES: {
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xfa52a9DCF51695EA2777E6908d6401481850c391",
+      address: "0xE48278aD2b9b402A8E3C2E0ffbaD7EEe3905bf94",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
     // Stack chain to the name to differentiate. This one is for Optimism.
     ovmStandardBridge_10: {
       address: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_690: {
+      address: "0xc473ca7E02af24c129c2eEf51F2aDf0411c1Df69",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_1135: {
@@ -94,6 +100,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_81457: {
       address: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_7777777: {
+      address: "0x3e2Ea9B92B7E48A52296fD261dc26fd995284631",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     polygonRootChainManager: {
@@ -142,7 +152,15 @@ export const CONTRACT_ADDRESSES: {
     },
     blastEthYieldManager: {
       address: "0x98078db053902644191f93988341E31289E1C8FE",
-      abi: BLAST_ETH_YIELD_ABI,
+      abi: BLAST_YIELD_MANAGER_ABI,
+    },
+    blastUsdYieldManager: {
+      address: "0xa230285d5683C74935aD14c446e137c8c8828438",
+      abi: BLAST_YIELD_MANAGER_ABI,
+    },
+    blastDaiRetriever: {
+      address: "0x98Dd57048d7d5337e92D9102743528ea4Fea64aB",
+      abi: BLAST_DAI_RETRIEVER_ABI,
     },
     blastOptimismPortal: {
       address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
@@ -190,6 +208,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0x9daF8c91AEFAE50b9c0E69629D3F6Ca40cA3B3FE",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
+    // The "eth" entries in this dictionary should be renamed to gasToken/nativeToken to make it more clear
+    // how they are used in the code. For now, set this address to the MATIC address on Polygon. This address
+    // is used in TokenUtils/getEthAddress() and should be set if the native token address is not 0x0.
+    eth: {
+      address: "0x0000000000000000000000000000000000001010",
+    },
   },
   324: {
     zkSyncDefaultErc20Bridge: {
@@ -199,6 +223,15 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+  },
+  690: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   1135: {
@@ -295,6 +328,15 @@ export const CONTRACT_ADDRESSES: {
     // dataworker won't error.
     eth: {
       address: "0x0000000000000000000000000000000000000000",
+    },
+  },
+  [CHAIN_IDs.ZORA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   // Testnets
