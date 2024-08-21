@@ -214,6 +214,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
       });
 
       // Make a single l1 -> l2 deposit.
@@ -256,6 +264,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
       });
 
       // Finalise the ongoing deposit on the destination chain.
@@ -283,6 +299,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
           },
         },
         [spokePool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
           [l1Weth]: {
             [l2Weth.address]: {
               depositTxHashes: [],
@@ -353,6 +377,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
       });
 
       // Make a single l1 -> l2 deposit.
@@ -395,6 +427,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [deposits[l2Weth.address][0].transactionHash],
+              totalAmount: deposits[l2Weth.address][0].amount,
+            },
+          },
+        },
       });
 
       // Finalise the ongoing deposit on the destination chain.
@@ -428,6 +468,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
       });
     });
 
@@ -445,6 +493,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
           },
         },
         [spokePool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
           [l1Weth]: {
             [l2Weth.address]: {
               depositTxHashes: [],
@@ -478,6 +534,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
           },
         },
         [spokePool.address]: {
+          [l1Weth]: {
+            [l2Weth.address]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
           [l1Weth]: {
             [l2Weth.address]: {
               depositTxHashes: [],

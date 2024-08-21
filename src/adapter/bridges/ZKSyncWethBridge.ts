@@ -90,11 +90,6 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // This fn will only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
-    // and any L2 contracts that are not the SpokePool.
-    if (fromAddress === this.getHubPool().address) {
-      return Promise.resolve({});
-    }
     const isL2Contract = await this.isL2ChainContract(toAddress);
     const hubPool = this.getHubPool();
 
@@ -111,8 +106,11 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       eventConfig
     );
     const processedEvents = events.map((event) =>
-      isL2Contract ? processEvent(event, "amount", "to", "l2Token") : processEvent(event, "_amount", "_to", "from")
+      isL2Contract ? processEvent(event, "amount", "to", "to") : processEvent(event, "_amount", "_to", "from")
     );
+    if (isL2Contract) {
+      Object.values(processedEvents).forEach((event) => (event.from = hubPool.address));
+    }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,
     };
@@ -124,14 +122,10 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // This fn will also only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
-    // and any L2 contracts that are not the SpokePool.
-    if (fromAddress === this.getHubPool().address) {
-      return Promise.resolve({});
-    }
-
     const isL2Contract = await this.isL2ChainContract(toAddress);
     const hubPool = this.getHubPool();
+
+    fromAddress = isL2Contract ? hubPool.address : fromAddress;
     const events = await paginatedEventQuery(
       this.l2Eth,
       this.l2Eth.filters.Transfer(
