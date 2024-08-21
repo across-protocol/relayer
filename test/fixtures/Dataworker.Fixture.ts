@@ -54,7 +54,7 @@ async function _constructSpokePoolClientsWithLookback(
     );
   });
 }
-// Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
+// Sets up all contracts necessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
 export async function setupDataworker(
   ethers: EthersTestLibrary,
