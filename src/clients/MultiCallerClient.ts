@@ -618,7 +618,7 @@ export class TryMulticallClient extends MultiCallerClient {
           // multiple multicall bundles into a single one.
           if (!uniqueGasLimits.includes(txn.gasLimit)) {
             uniqueGasLimits.push(txn.gasLimit);
-            gasLimit += txn.gasLimit;
+            gasLimit = gasLimit.add(txn.gasLimit);
           }
         });
         const callData = txns.map((txn) => txn.data);
