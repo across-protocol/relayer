@@ -614,9 +614,12 @@ export class TryMulticallClient extends MultiCallerClient {
         txns.forEach((txn, idx) => {
           mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
           assert(contract === txn.contract);
-          // Sum up all the unique gasLimits. The only time gasLimit != txns[0].gasLimit is when we are consolidating 
+          // Sum up all the unique gasLimits. The only time gasLimit != txns[0].gasLimit is when we are consolidating
           // multiple multicall bundles into a single one.
-          gasLimit = uniqueGasLimits.includes(txn.gasLimit) ? gasLimit + txn.gasLimit : gasLimit;
+          if (!uniqueGasLimits.includes(txn.gasLimit)) {
+            uniqueGasLimits.push(txn.gasLimit);
+            gasLimit += txn.gasLimit;
+          }
         });
         const callData = txns.map((txn) => txn.data);
         return {
