@@ -147,7 +147,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       );
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "from")),
     };
   }
 
