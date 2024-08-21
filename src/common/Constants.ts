@@ -275,11 +275,11 @@ export const multicall3Addresses = {
   [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BOBA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.LINEA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  [CHAIN_IDs.LISK]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.MAINNET]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.MODE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.OPTIMISM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.POLYGON]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.REDSTONE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.ZK_SYNC]: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
   [CHAIN_IDs.ZORA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -314,7 +314,7 @@ export const spokesThatHoldEthAndWeth = [
 
 /**
  * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
- * and is an internal mappinng maintained by Circle.
+ * and is an internal mapping maintained by Circle.
  * @link https://developers.circle.com/stablecoins/docs/supported-domains
  */
 export const chainIdsToCctpDomains: { [chainId: number]: number } = {

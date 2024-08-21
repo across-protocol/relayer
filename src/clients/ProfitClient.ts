@@ -283,22 +283,31 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
-  // Allow the minimum relayer fee to be overridden per token/route:
-  // 0.1bps on USDC from Optimism to Arbitrum:
-  //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+  /**
+   * Allow the minimum relayer fee to be overridden per token/route:
+   * 0.1bps on USDC from Optimism to Arbitrum:
+   *   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+   * @param symbol Token symbol to query.
+   * @param symbol srcChainId Origin chain for deposit.
+   * @param symbol dstChainId Destination chain for deposit.
+   * @returns The minimum required fee multiplier for the specified token/route combination.
+   */
   minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
-    const routeKey = `${symbol}_${srcChainId}_${dstChainId}`;
-    let minRelayerFeePct = this.minRelayerFees[routeKey];
+    const effectiveSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+
+    const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
+    const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
-      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`];
+      const _minRelayerFeePct = process.env[routeKey] ?? process.env[tokenKey];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
       this.minRelayerFees[routeKey] = minRelayerFeePct;
     }
 
-    return minRelayerFeePct as BigNumber;
+    return minRelayerFeePct;
   }
 
   /**
