@@ -314,7 +314,7 @@ export const spokesThatHoldEthAndWeth = [
 
 /**
  * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
- * and is an internal mappinng maintained by Circle.
+ * and is an internal mapping maintained by Circle.
  * @link https://developers.circle.com/stablecoins/docs/supported-domains
  */
 export const chainIdsToCctpDomains: { [chainId: number]: number } = {
