@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
+import { providers as sdkProviders } from "@across-protocol/sdk";
 import { isDefined, isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
@@ -729,10 +730,10 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
   return urls.map((url) => new ethers.providers.WebSocketProvider(url));
 }
 
-export function getNodeUrlList(chainId: number, quorum = 1, protocol: "https" | "wss" = "https"): string[] {
+export function getNodeUrlList(chainId: number, quorum = 1, transport: sdkProviders.RPCTransport = "https"): string[] {
   const resolveUrls = (): string[] => {
     const [envPrefix, providerPrefix] =
-      protocol === "https" ? ["RPC_PROVIDERS", "RPC_PROVIDER"] : ["RPC_WS_PROVIDERS", "RPC_WS_PROVIDER"];
+      transport === "https" ? ["RPC_PROVIDERS", "RPC_PROVIDER"] : ["RPC_WS_PROVIDERS", "RPC_WS_PROVIDER"];
 
     const providers = process.env[`${envPrefix}_${chainId}`] ?? process.env[envPrefix];
     if (providers === undefined) {
@@ -740,8 +741,15 @@ export function getNodeUrlList(chainId: number, quorum = 1, protocol: "https" | 
     }
 
     const nodeUrls = providers.split(",").map((provider) => {
+      // If no specific RPC endpoint is identified for this provider, try to
+      // to infer the endpoint name based on predefined chain definitions.
+      const apiKey = process.env[`RPC_PROVIDER_KEY_${provider}`];
       const envVar = `${providerPrefix}_${provider}_${chainId}`;
-      const url = process.env[envVar];
+      let url = process.env[envVar];
+      if (!isDefined(url) && isDefined(apiKey) && sdkProviders.isSupportedProvider(provider)) {
+        url = sdkProviders.getURL(provider, chainId, apiKey, transport);
+      }
+
       if (url === undefined) {
         throw new Error(`Missing RPC provider URL for chain ${chainId} (${envVar})`);
       }
