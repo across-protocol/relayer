@@ -590,12 +590,8 @@ export class InventoryClient {
     // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
+    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainid].
     if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
-      this.logger.warn({
-        at: "InventoryClient#determineRefundChainId",
-        message: `Deposit ${deposit.depositId} originated on lite chain ${originChainId} and origin chain is over-allocated. Refusing to fill deposit.`,
-        eligibleRefundChains,
-      });
       return [];
     }
 
