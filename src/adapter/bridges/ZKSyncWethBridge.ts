@@ -103,24 +103,22 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     // is the NewPriorityRequest event which doesn't have any parameters about the 'to' or 'amount' sent.
     // Therefore, we must track the HubPool and assume any transfers we are tracking from contracts are
     // being sent by the HubPool.
-    let events = await paginatedEventQuery(
-      isL2Contract ? hubPool : this.atomicDepositor,
-      isL2Contract
-        ? hubPool.filters.TokensRelayed()
-        : this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, toAddress),
-      eventConfig
-    );
+    let events, processedEvents;
     if (isL2Contract) {
-      // The TokensRelayed event does not distinguish between chain or l1Token, so we filter it here.
-      events = events.filter(
-        (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, wethAddress)
+      events = await paginatedEventQuery(hubPool, hubPool.filters.TokensRelayed(), eventConfig);
+      processedEvents = events
+        .filter(
+          (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, wethAddress)
+        )
+        .map((e) => processEvent(e, "amount", "to", "to"));
+      processedEvents.forEach((e) => (e.from = hubPool.address));
+    } else {
+      events = await paginatedEventQuery(
+        this.atomicDepositor,
+        this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, toAddress),
+        eventConfig
       );
-    }
-    const processedEvents = events.map((event) =>
-      isL2Contract ? processEvent(event, "amount", "to", "to") : processEvent(event, "_amount", "_to", "from")
-    );
-    if (isL2Contract) {
-      Object.values(processedEvents).forEach((event) => (event.from = hubPool.address));
+      processedEvents = events.map((e) => processEvent(e, "_amount", "_to", "from"));
     }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,
@@ -139,25 +137,26 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     }
 
     const isL2Contract = await this.isL2ChainContract(toAddress);
-    let events = await paginatedEventQuery(
-      this.l2Eth,
-      this.l2Eth.filters.Transfer(
-        zksync.utils.applyL1ToL2Alias(isL2Contract ? hubPool.address : this.atomicDepositor.address),
-        toAddress
-      ),
-      eventConfig
-    );
-    // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
-    if (!isL2Contract) {
-      const wrapEvents = await paginatedEventQuery(
-        this.l2Weth,
-        this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress),
+    let processedEvents;
+    if (isL2Contract) {
+      processedEvents = await paginatedEventQuery(
+        this.l2Eth,
+        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), toAddress),
         eventConfig
       );
-      events = matchL2EthDepositAndWrapEvents(events, wrapEvents);
+    } else {
+      const [events, wrapEvents] = await Promise.all([
+        paginatedEventQuery(
+          this.l2Eth,
+          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address), toAddress),
+          eventConfig
+        ),
+        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
+      ]);
+      processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
     };
   }
 
