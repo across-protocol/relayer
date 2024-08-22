@@ -553,7 +553,7 @@ export class TryMulticallClient extends MultiCallerClient {
     const bundledTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
     const bundledSimResults = await this.txnClient.simulate(bundledTxns);
 
-    bundledSimResults.forEach(({ succeed, transaction, reason, data }, idx) => {
+    bundledSimResults.forEach(({ succeed, transaction, reason, data }) => {
       // TryMulticall _should_ always succeed, but either way, we need the return data to be defined so that we can properly
       // filter out the transactions which failed.
       if (!succeed || !isDefined(data?.length)) {
@@ -607,7 +607,7 @@ export class TryMulticallClient extends MultiCallerClient {
       const rebuildTryMulticall = (txns: RawTransaction[]) => {
         const mrkdwn: string[] = [];
         const contract = txns[0].contract;
-        let gasLimit = txns[0].gasLimit;
+        const gasLimit = txns[0].gasLimit;
         txns.forEach((txn, idx) => {
           mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
           assert(contract === txn.contract);
