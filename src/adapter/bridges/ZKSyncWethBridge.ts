@@ -113,8 +113,8 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         .map((e) => {
           return {
             ...processEvent(e, "amount", "to", "to"),
-            from: hubPool.address
-          }
+            from: hubPool.address,
+          };
         });
     } else {
       events = await paginatedEventQuery(
