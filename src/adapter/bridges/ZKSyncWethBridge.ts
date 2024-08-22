@@ -9,6 +9,7 @@ import {
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
   assert,
+  compareAddressesSimple,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
@@ -16,6 +17,7 @@ import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./Bas
 import { processEvent } from "../utils";
 import * as zksync from "zksync-ethers";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
+import { matchL2EthDepositAndWrapEvents } from "../../clients/bridges/utils";
 
 /* For both the canonical bridge and the ZkSync Weth bridge (this
  * bridge), we need to assume that the l1 and l2 signers contain
@@ -90,29 +92,38 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // This fn will only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
-    // and any L2 contracts that are not the SpokePool.
-    if (fromAddress === this.getHubPool().address) {
+    const hubPool = this.getHubPool();
+    if (compareAddressesSimple(fromAddress, hubPool.address)) {
       return Promise.resolve({});
     }
+    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
     const isL2Contract = await this.isL2ChainContract(toAddress);
-    const hubPool = this.getHubPool();
-
     // If sending WETH from EOA, we can assume the EOA is unwrapping ETH and sending it through the
     // AtomicDepositor. If sending WETH from a contract, then the only event we can track from a ZkSync contract
     // is the NewPriorityRequest event which doesn't have any parameters about the 'to' or 'amount' sent.
     // Therefore, we must track the HubPool and assume any transfers we are tracking from contracts are
     // being sent by the HubPool.
-    const events = await paginatedEventQuery(
-      isL2Contract ? hubPool : this.atomicDepositor,
-      isL2Contract
-        ? hubPool.filters.TokensRelayed()
-        : this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, toAddress),
-      eventConfig
-    );
-    const processedEvents = events.map((event) =>
-      isL2Contract ? processEvent(event, "amount", "to", "l2Token") : processEvent(event, "_amount", "_to", "from")
-    );
+    let events, processedEvents;
+    if (isL2Contract) {
+      events = await paginatedEventQuery(hubPool, hubPool.filters.TokensRelayed(), eventConfig);
+      processedEvents = events
+        .filter(
+          (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, wethAddress)
+        )
+        .map((e) => {
+          return {
+            ...processEvent(e, "amount", "to", "to"),
+            from: hubPool.address,
+          };
+        });
+    } else {
+      events = await paginatedEventQuery(
+        this.atomicDepositor,
+        this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, toAddress),
+        eventConfig
+      );
+      processedEvents = events.map((e) => processEvent(e, "_amount", "_to", "from"));
+    }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,
     };
@@ -124,30 +135,32 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // This fn will also only work to track EOA's or the SpokePool's transfers, so exclude the hub pool
-    // and any L2 contracts that are not the SpokePool.
-    if (fromAddress === this.getHubPool().address) {
+    const hubPool = this.getHubPool();
+    if (compareAddressesSimple(fromAddress, hubPool.address)) {
       return Promise.resolve({});
     }
 
     const isL2Contract = await this.isL2ChainContract(toAddress);
-    const hubPool = this.getHubPool();
-    const events = await paginatedEventQuery(
-      this.l2Eth,
-      this.l2Eth.filters.Transfer(
-        zksync.utils.applyL1ToL2Alias(isL2Contract ? hubPool.address : this.atomicDepositor.address),
-        toAddress
-      ),
-      eventConfig
-    );
-    // For WETH transfers involving an EOA, only count them if a wrap txn followed the L2 deposit finalization.
+    let processedEvents;
     if (isL2Contract) {
-      events.concat(
-        await paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, fromAddress), eventConfig)
+      processedEvents = await paginatedEventQuery(
+        this.l2Eth,
+        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), toAddress),
+        eventConfig
       );
+    } else {
+      const [events, wrapEvents] = await Promise.all([
+        paginatedEventQuery(
+          this.l2Eth,
+          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address), toAddress),
+          eventConfig
+        ),
+        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
+      ]);
+      processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
     };
   }
 
