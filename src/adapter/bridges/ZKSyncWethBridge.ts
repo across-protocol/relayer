@@ -110,8 +110,12 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         .filter(
           (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, wethAddress)
         )
-        .map((e) => processEvent(e, "amount", "to", "to"));
-      processedEvents.forEach((e) => (e.from = hubPool.address));
+        .map((e) => {
+          return {
+            ...processEvent(e, "amount", "to", "to"),
+            from: hubPool.address
+          }
+        });
     } else {
       events = await paginatedEventQuery(
         this.atomicDepositor,
