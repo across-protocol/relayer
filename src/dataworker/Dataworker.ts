@@ -646,10 +646,9 @@ export class Dataworker {
             }),
             relayerRefundRoot: expectedTrees.relayerRefundTree.tree.getHexRoot(),
             slowRelayLeaves: expectedTrees.slowRelayTree.leaves.map((leaf) => {
-              const { relayData, chainId, updatedOutputAmount } = leaf;
               return {
                 ...leaf,
-                proof: expectedTrees.slowRelayTree.tree.getHexProof({ relayData, chainId, updatedOutputAmount }),
+                proof: expectedTrees.slowRelayTree.tree.getHexProof(leaf),
               };
             }),
             slowRelayRoot: expectedTrees.slowRelayTree.tree.getHexRoot(),
@@ -1318,10 +1317,8 @@ export class Dataworker {
     rootBundleId: number,
     leaf: V3SlowFillLeaf
   ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
-    const { relayData, chainId, updatedOutputAmount } = leaf;
-
     const method = "executeV3SlowRelayLeaf";
-    const proof = slowRelayTree.getHexProof({ relayData, chainId, updatedOutputAmount });
+    const proof = slowRelayTree.getHexProof(leaf);
     const args = [leaf, rootBundleId, proof];
 
     return { method, args };
