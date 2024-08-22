@@ -913,7 +913,9 @@ export class Relayer {
       // it is a special edge case the relayer should be aware of.
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
-        message: deposit.fromLiteChain ? `Deposit ${depositId} originated from over-allocated lite chain` : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
+        message: deposit.fromLiteChain
+          ? `Deposit ${depositId} originated from over-allocated lite chain`
+          : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
         deposit,
       });
       return {
