@@ -1190,6 +1190,7 @@ export class Relayer {
         at: "Relayer::handleUnprofitableFill",
         message: "Not relaying unprofitable deposits 🙅‍♂️!",
         mrkdwn,
+        notificationPath: "across-unprofitable-fills",
       });
     }
   }
