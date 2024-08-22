@@ -547,7 +547,7 @@ export class TryMulticallClient extends MultiCallerClient {
     });
 
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
-    const txnCalldataToRebuild: RawTransaction[] = [];
+    const txnCalldataToRebuild: RawTransaction[][] = [];
 
     // The goal is to simulate the transactions as a batch and pick out those which succeed.
     const bundledTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
@@ -576,7 +576,7 @@ export class TryMulticallClient extends MultiCallerClient {
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.
       if (succeededTxnCalldata.length !== data.length) {
         txnCalldataToRebuild.push(
-          ...succeededTxnCalldata.map((calldata) =>
+          succeededTxnCalldata.map((calldata) =>
             buildRawTransaction(transaction.contract, calldata, transaction.gasLimit)
           )
         );
@@ -588,8 +588,7 @@ export class TryMulticallClient extends MultiCallerClient {
         });
       } else {
         // Otherwise, none of the transactions failed, so we can add the bundle to txnRequestsToSubmit.
-        bundledTxns[idx].gasLimit = transaction.gasLimit;
-        txnRequestsToSubmit.push(bundledTxns[idx]);
+        txnRequestsToSubmit.push(transaction);
 
         // If txn succeeded or the revert reason is known to be benign, then log at debug level.
         this.logger.debug({
@@ -605,21 +604,13 @@ export class TryMulticallClient extends MultiCallerClient {
       // chunk size. Every transaction should be aimed at the same spoke pool since 1. The tryMulticall client is only
       // instantiated for the relayer, which uses this client only for interfacing with the spoke pool, and 2. This function
       // is called after filtering transactions by chainId, so each individual transaction is a call to a chainId's spoke pool.
-      const txnChunks = lodash.chunk(txnCalldataToRebuild, this.chunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE);
       const rebuildTryMulticall = (txns: RawTransaction[]) => {
         const mrkdwn: string[] = [];
         const contract = txns[0].contract;
         let gasLimit = txns[0].gasLimit;
-        const uniqueGasLimits = [gasLimit];
         txns.forEach((txn, idx) => {
           mrkdwn.push(`\n *txn. ${idx + 1}:* ${txn.data ?? "No calldata"}`);
           assert(contract === txn.contract);
-          // Sum up all the unique gasLimits. The only time gasLimit != txns[0].gasLimit is when we are consolidating
-          // multiple multicall bundles into a single one.
-          if (!uniqueGasLimits.includes(txn.gasLimit)) {
-            uniqueGasLimits.push(txn.gasLimit);
-            gasLimit = gasLimit.add(txn.gasLimit);
-          }
         });
         const callData = txns.map((txn) => txn.data);
         return {
@@ -632,7 +623,7 @@ export class TryMulticallClient extends MultiCallerClient {
           mrkdwn: mrkdwn.join(""),
         };
       };
-      txnRequestsToSubmit.push(...txnChunks.map(rebuildTryMulticall));
+      txnRequestsToSubmit.push(...txnCalldataToRebuild.map(rebuildTryMulticall));
     }
 
     if (simulate) {

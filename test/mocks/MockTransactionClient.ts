@@ -87,8 +87,9 @@ export class MockedTransactionClient extends TransactionClient {
         data: result,
       };
     });
+    const gasLimit = this.gasLimit ?? this.randomGasLimit();
     return {
-      transaction: { ...txn },
+      transaction: { ...txn, gasLimit },
       succeed: true,
       data: returnData,
     };
