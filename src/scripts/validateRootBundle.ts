@@ -22,15 +22,16 @@ import {
   getDisputeForTimestamp,
   disconnectRedisClients,
   Signer,
+  getEndBlockBuffers,
+  getWidestPossibleExpectedBlockRange,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
 } from "../dataworker/DataworkerClientHelper";
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
-import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
-import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { getBlockForChain } from "../dataworker/DataworkerUtils";
 
 config();
 let logger: winston.Logger;

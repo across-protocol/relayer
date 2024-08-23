@@ -15,6 +15,9 @@ import {
   ZERO_ADDRESS,
   chainIsMatic,
   CHAIN_IDs,
+  getWidestPossibleExpectedBlockRange,
+  getEndBlockBuffers,
+  _buildPoolRebalanceRoot,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -37,12 +40,7 @@ import {
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
-import {
-  getEndBlockBuffers,
-  _buildPoolRebalanceRoot,
-  _buildRelayerRefundRoot,
-  _buildSlowRelayRoot,
-} from "./DataworkerUtils";
+import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk";
@@ -2280,16 +2278,18 @@ export class Dataworker {
     //        root cache rebalancing bug.
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
-      this.rootCache[key] = _buildPoolRebalanceRoot(
-        latestMainnetBlock,
-        mainnetBundleEndBlock,
-        bundleV3Deposits,
-        bundleV3Fills,
-        bundleSlowFills,
-        unexecutableSlowFills,
-        expiredDepositsToRefundV3,
-        this.clients,
-        this.maxL1TokenCountOverride
+      this.rootCache[key] = Promise.resolve(
+        _buildPoolRebalanceRoot(
+          latestMainnetBlock,
+          mainnetBundleEndBlock,
+          bundleV3Deposits,
+          bundleV3Fills,
+          bundleSlowFills,
+          unexecutableSlowFills,
+          expiredDepositsToRefundV3,
+          this.clients,
+          this.maxL1TokenCountOverride
+        )
       );
     }
 
@@ -2368,7 +2368,7 @@ export class Dataworker {
     mainnetBundleStartBlock: number
   ): number[][] {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
-    return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+    return getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
       chainIds,
       spokePoolClients,

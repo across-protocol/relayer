@@ -28,7 +28,7 @@ export type MessageWithStatus = Message & {
   txHash: string;
 };
 
-export const lineaAdapterIface = Linea_Adapter__factory.createInterface();
+export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as ethers.utils.Interface;
 
 export function initLineaSdk(l1ChainId: number, l2ChainId: number): LineaSDK {
   return new LineaSDK({
