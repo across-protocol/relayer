@@ -28,9 +28,6 @@ export class MockedTransactionClient extends TransactionClient {
   }
 
   protected override async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
-    if (txn.method === "tryMulticall") {
-      return this.checkIndividualTransactions(txn);
-    }
     const fail = this.txnFailure(txn);
 
     this.logger.debug({
@@ -57,16 +54,10 @@ export class MockedTransactionClient extends TransactionClient {
     }
 
     const _nonce = nonce ?? 1;
-    // For testing the TryMulticallClient, we need to know how many transactions there were in the multicall bundle, so
-    // we construct the hash a bit differently.
-    const hash =
-      txn.method === "tryMulticall"
-        ? ethers.utils.id(`Across-v2-${txn.contract.address}-${txn.method}-${txn.args[0].length}`)
-        : ethers.utils.id(`Across-v2-${txn.contract.address}-${txn.method}-${_nonce}`);
     const txnResponse = {
       chainId: txn.chainId,
       nonce: _nonce,
-      hash,
+      hash: ethers.utils.id(`Across-v2-${txn.contract.address}-${txn.method}-${_nonce}`),
       gasLimit: txn.gasLimit ?? this.randomGasLimit(),
     } as TransactionResponse;
 
@@ -77,21 +68,5 @@ export class MockedTransactionClient extends TransactionClient {
     });
 
     return txnResponse;
-  }
-
-  checkIndividualTransactions(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
-    // We know it's tryMulticall so there is only one argument.
-    const returnData = txn.args[0].map(([result]) => {
-      return {
-        success: result === txnClientPassResult,
-        data: result,
-      };
-    });
-    const gasLimit = this.gasLimit ?? this.randomGasLimit();
-    return {
-      transaction: { ...txn, gasLimit },
-      succeed: true,
-      data: returnData,
-    };
   }
 }
