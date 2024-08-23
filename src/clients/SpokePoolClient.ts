@@ -131,7 +131,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       return;
     }
 
-    this.logger.warn({
+    this.logger[signal === "SIGKILL" ? "debug" : "warn"]({
       at: "SpokePoolClient#childExit",
       message: `${this.chain} SpokePool listener exited.`,
       code,
