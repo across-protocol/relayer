@@ -555,8 +555,7 @@ export class InventoryClient {
       // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
       // destined for that chain in order to offload its excess.
       const { targetOverageBuffer = DEFAULT_TOKEN_OVERAGE } = tokenConfig;
-      const isLiteChain = (deposit.toLiteChain && chainId === destinationChainId) || (deposit.fromLiteChain && chainId === originChainId);
-      const ignoreOverageBuffer = isLiteChain && chainId != originChainId;
+      const ignoreOverageBuffer = (deposit.toLiteChain && chainId === destinationChainId) && chainId != originChainId;
       const effectiveTargetPct = ignoreOverageBuffer ? tokenConfig.targetPct : tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
 
       this.log(
