@@ -101,7 +101,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
             } else {
               logger.debug({
                 at: "Relayer#run",
-                message: `Handing over to ${botIdentifier} instance ${activeRelayer}.`
+                message: `Handing over to ${botIdentifier} instance ${activeRelayer}.`,
               });
               stop = true;
             }
