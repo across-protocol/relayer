@@ -5,6 +5,7 @@ import {
   disconnectRedisClients,
   getCurrentTime,
   getNetworkName,
+  getRedisCache,
   Signer,
   startupLogLevel,
   winston,
@@ -15,6 +16,7 @@ import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHe
 config();
 let logger: winston.Logger;
 
+const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
@@ -33,6 +35,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     });
     stop = true;
   });
+
+  const redis = await getRedisCache(logger);
+  let setActiveRelayer = false;
 
   // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
   const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
@@ -84,6 +89,24 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           at: "Relayer#run",
           message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
         });
+
+        // Signal to any existing relayer that a handover is underway, or alternatively
+        // check for a handover initiated by another (newer) relayer instance.
+        if (botIdentifier && runIdentifier) {
+          const activeRelayer = await redis.get(botIdentifier);
+          if (activeRelayer !== runIdentifier) {
+            if (!setActiveRelayer) {
+              await redis.set(botIdentifier, runIdentifier);
+              setActiveRelayer = true;
+            } else {
+              logger.debug({
+                at: "Relayer#run",
+                message: `Handing over to ${botIdentifier} instance ${activeRelayer}.`
+              });
+              stop = true;
+            }
+          }
+        }
 
         if (!stop && runTime < config.pollingDelay) {
           const delta = config.pollingDelay - runTime;
