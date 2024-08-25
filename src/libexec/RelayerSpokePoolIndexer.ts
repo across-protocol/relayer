@@ -301,7 +301,7 @@ async function run(argv: string[]): Promise<void> {
     let interval: NodeJS.Timer | undefined;
     let timeout: NodeJS.Timeout | undefined;
 
-    const cleanup = () => {
+    const closeProvider = () => {
       if (interval) {
         clearInterval(interval);
         interval = undefined;
@@ -310,6 +310,16 @@ async function run(argv: string[]): Promise<void> {
       if (timeout) {
         clearTimeout(timeout);
         timeout = undefined;
+      }
+
+      if (!stop && --nProviders < quorum) {
+        stop = true;
+        logger.warn({
+          at: "RelayerSpokePoolIndexer::run",
+          message: `Insufficient ${chain} providers to continue.`,
+          quorum,
+          nProviders,
+        });
       }
     };
 
@@ -339,24 +349,19 @@ async function run(argv: string[]): Promise<void> {
     // Oops, something went wrong.
     ws.on("error", (err) => {
       const at = "RelayerSpokePoolIndexer::run";
-      let message = `Caught ${chain} provider error.`;
-      let log = logger.debug;
-      if (--nProviders < quorum) {
-        stop = true;
-        log = logger.warn;
-        message += " Insufficient providers to continue.";
-      }
-      log({ at, message, provider: _provider, quorum, nProviders, err });
+      const message = `Caught ${chain} provider error.`;
+      logger.debug({ at, message, provider: _provider, quorum, nProviders, err });
+      closeProvider();
     });
 
     // Websocket is gone.
     ws.on("close", () => {
-      cleanup();
       logger.debug({
         at: "RelayerSpokePoolIndexer::run",
         message: `${chain} provider connection closed.`,
         provider: _provider,
       });
+      closeProvider();
     });
   });
 
