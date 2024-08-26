@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils, interfaces, caching } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
-import { spokesThatHoldEthAndWeth } from "../common/Constants";
+import { CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS, spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
@@ -132,8 +132,8 @@ export async function blockRangesAreInvalidForSpokeClients(
       // In this case, we have all the information for this SpokePool possible so there are no older deposits
       // that might have expired that we might miss.
       const conservativeBundleFrequencySeconds = Number(
-        process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? 3 * 60 * 60
-      ); // 3 hours.
+        process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS
+      );
       if (
         spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
         // @dev The maximum lookback window we need to evaluate expired deposits is the max fill deadline buffer,
