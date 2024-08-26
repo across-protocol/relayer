@@ -75,7 +75,7 @@ const redisClients: { [url: string]: RedisClient } = {};
 export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient | undefined> {
   if (!redisClients[url]) {
     let redisClient: _RedisClient | undefined = undefined;
-    const reconnectStrategy = (retries: number): false | number | Error => {
+    const reconnectStrategy = (retries: number): number | Error => {
       // Just implement the default reconnection strategy:
       // https://github.com/redis/node-redis/blob/HEAD/docs/client-configuration.md#reconnect-strategy
       const delay = Math.min(retries * 50, 500);
