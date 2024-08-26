@@ -30,6 +30,7 @@ import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from ".
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
+import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -404,7 +405,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
-      // Send a deposit.
+      // Send a legacy deposit.
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -412,7 +413,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit
+        amountToDeposit,
+        {
+          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+        }
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -442,7 +446,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
-      // Send a deposit.
+      // Send a legacy deposit where the fill deadline is infinite, so we can test the bundle data client uses
+      // queryHistoricalDepositForFill to find the deposit.
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -450,7 +455,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit
+        amountToDeposit,
+        {
+          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+        }
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -499,7 +507,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
-      // Send a deposit.
+      // Send a legacy deposit.
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -507,7 +515,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit
+        amountToDeposit,
+        {
+          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+        }
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
