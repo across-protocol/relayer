@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils, interfaces, caching } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
-import { spokesThatHoldEthAndWeth } from "../common/Constants";
+import { CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS, spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
@@ -131,9 +131,19 @@ export async function blockRangesAreInvalidForSpokeClients(
       // Skip this check if the spokePoolClient.fromBlock is less than or equal to the spokePool deployment block.
       // In this case, we have all the information for this SpokePool possible so there are no older deposits
       // that might have expired that we might miss.
+      const conservativeBundleFrequencySeconds = Number(
+        process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS
+      );
       if (
         spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
-        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange
+        // @dev The maximum lookback window we need to evaluate expired deposits is the max fill deadline buffer,
+        // which captures all deposits that newly expired, plus the bundle time (e.g. 1 hour) to account for the
+        // maximum time it takes for a newly expired deposit to be included in a bundle. A conservative value for
+        // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
+        // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
+        // is sent pretty late into the deposit's expiry period.
+        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() <
+          maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds
       ) {
         return true;
       }
