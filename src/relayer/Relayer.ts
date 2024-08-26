@@ -914,8 +914,9 @@ export class Relayer {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
         message: deposit.fromLiteChain
-          ? `Deposit ${depositId} originated from over-allocated lite chain`
+          ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
           : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
+        txn: blockExplorerLink(transactionHash, originChainId),
         notificationPath: "across-unprofitable-fills",
       });
       return {
