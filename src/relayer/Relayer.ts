@@ -916,7 +916,7 @@ export class Relayer {
         message: deposit.fromLiteChain
           ? `Deposit ${depositId} originated from over-allocated lite chain`
           : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
-        deposit,
+        notificationPath: "across-unprofitable-fills",
       });
       return {
         repaymentChainProfitability: {
