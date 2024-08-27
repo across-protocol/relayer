@@ -6,7 +6,6 @@ import {
   getCurrentTime,
   getNetworkName,
   Signer,
-  startupLogLevel,
   winston,
 } from "../utils";
 import { Relayer } from "./Relayer";
