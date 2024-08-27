@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider, ZERO_ADDRESS } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -30,6 +30,9 @@ import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 export const CONFIG_STORE_VERSION = 4;
 
 export const RELAYER_MIN_FEE_PCT = 0.0001;
+
+// max(uint256) - 1
+export const INFINITE_FILL_DEADLINE = bnUint32Max;
 
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
@@ -576,3 +579,5 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.ZORA]: 1.5,
 };
+
+export const CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS = 3 * 60 * 60; // 3 hours is a safe assumption for the time
