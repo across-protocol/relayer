@@ -20,7 +20,7 @@ import * as utils from "./utils";
 
 type Log = ethers.providers.Log;
 
-type relayerFeeQuery = {
+type RelayerFeeQuery = {
   originChainId: number;
   destinationChainId: number;
   token: string;
@@ -35,16 +35,16 @@ const { ACROSS_API_HOST = "across.to" } = process.env;
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
-const { MaxUint256, Zero } = ethers.constants;
+const { AddressZero } = ethers.constants;
 const { isAddress } = ethers.utils;
 
-function printDeposit(log: LogDescription): void {
-  const { originChainId, originToken } = log.args;
+function printDeposit(originChainId: number, log: LogDescription): void {
+  const { inputToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
   const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([originToken], originChainId)[0],
+    tokenSymbol: resolveTokenSymbols([inputToken], originChainId)[0],
     ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
   };
   console.log(
@@ -57,13 +57,12 @@ function printDeposit(log: LogDescription): void {
 }
 
 function printFill(log: LogDescription): void {
-  const { originChainId, destinationChainId, destinationToken, amount, totalFilledAmount } = log.args;
+  const { originChainId, destinationChainId, outputToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
   const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([destinationToken], destinationChainId)[0],
-    totalFilledPct: `${totalFilledAmount.mul(100).div(amount)} %`,
+    tokenSymbol: resolveTokenSymbols([outputToken], destinationChainId)[0],
     ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
   };
   console.log(
@@ -75,23 +74,7 @@ function printFill(log: LogDescription): void {
   );
 }
 
-async function getRelayerFeePct(params: relayerFeeQuery, timeout = 5000): Promise<BigNumber> {
-  const quoteData = await getSuggestedFees(params, timeout);
-  if (!isDefined(quoteData["relayFeePct"])) {
-    throw new Error("relayFeePct missing from suggested-fees response");
-  }
-  return toBN(quoteData["relayFeePct"]);
-}
-
-async function getLpFeePct(params: relayerFeeQuery, timeout = 5000): Promise<BigNumber> {
-  const quoteData = await getSuggestedFees(params, timeout);
-  if (!isDefined(quoteData?.["lpFee"]?.["pct"])) {
-    throw new Error("lpFeePct missing from suggested-fees response");
-  }
-  return toBN(quoteData["lpFee"]["pct"]);
-}
-
-async function getSuggestedFees(params: relayerFeeQuery, timeout: number) {
+async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
   const path = "api/suggested-fees";
   const url = `https://${ACROSS_API_HOST}/${path}`;
 
@@ -113,33 +96,79 @@ async function getRelayerQuote(
   amount: BigNumber,
   recipient?: string,
   message?: string
-): Promise<BigNumber> {
+): Promise<{
+  outputAmount: BigNumber;
+  exclusiveRelayer: string;
+  exclusivityDeadline: number;
+  quoteTimestamp: number;
+}> {
   const tokenFormatter = sdkUtils.createFormatFunction(2, 4, false, token.decimals);
-  let relayerFeePct = Zero;
   let quoteAccepted = false;
-  do {
-    relayerFeePct = await getRelayerFeePct({
-      token: token.address,
-      originChainId: fromChainId,
-      destinationChainId: toChainId,
-      amount: amount.toString(),
-      recipientAddress: recipient,
-      message,
+
+  const params = {
+    token: token.address,
+    originChainId: fromChainId,
+    destinationChainId: toChainId,
+    amount: amount.toString(),
+    recipientAddress: recipient,
+    message,
+  };
+  const timeout = 5000;
+
+  const suggestedFees = async () => {
+    const quoteData = await getSuggestedFees(params, timeout);
+    const {
+      totalRelayFee: { total: totalRelayFee },
+      exclusiveRelayer,
+      exclusivityDeadline,
+      timestamp: quoteTimestamp,
+      estimatedFillTimeSec: estimatedFillTime
+    } = quoteData;
+
+    [totalRelayFee, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, estimatedFillTime].forEach((field) => {
+      if (!isDefined(field)) {
+        throw new Error("Incomplete suggested-fees response");
+      }
     });
 
-    const feeAmount = amount.mul(relayerFeePct).div(fixedPoint);
+    return {
+      totalRelayFee: toBN(totalRelayFee),
+      exclusiveRelayer,
+      exclusivityDeadline: Number(exclusivityDeadline),
+      estimatedFillTime: Number(estimatedFillTime),
+      quoteTimestamp: Number(quoteTimestamp),
+    };
+  };
+
+  let outputAmount: BigNumber;
+  let exclusiveRelayer: string;
+  let exclusivityDeadline: number;
+  let quoteTimestamp: number;
+  do {
+    let totalRelayFee: BigNumber;
+    let estimatedFillTime: number;
+    ({
+      totalRelayFee,
+      exclusivityDeadline,
+      exclusiveRelayer,
+      quoteTimestamp,
+      estimatedFillTime,
+    } = await suggestedFees());
+
+    outputAmount = amount.sub(totalRelayFee);
     const quote =
-      `Relayer fee quote for ${tokenFormatter(amount)} ${token.symbol} ${fromChainId} -> ${toChainId}:` +
-      ` ${formatFeePct(relayerFeePct)} % (${tokenFormatter(feeAmount)} ${token.symbol})`;
+      `Quote for ${tokenFormatter(amount)} ${token.symbol} ${fromChainId} -> ${toChainId}:` +
+      ` ${formatFeePct(totalRelayFee)} ${token.symbol} (${formatFeePct(totalRelayFee.mul(fixedPoint).div(amount))} %)` +
+      ` (ETA ${estimatedFillTime} s)`;
     quoteAccepted = await utils.askYesNoQuestion(quote);
   } while (!quoteAccepted);
 
-  return relayerFeePct;
+  return { outputAmount, exclusiveRelayer, exclusivityDeadline, quoteTimestamp };
 }
 
 async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const depositor = await signer.getAddress();
-  const [fromChainId, toChainId, baseAmount] = [Number(args.from), Number(args.to), Number(args.amount)];
+  const [fromChainId, toChainId, baseAmount] = [args.from, args.to, args.amount].map(Number);
   const recipient = (args.recipient as string) ?? depositor;
   const message = (args.message as string) ?? sdkConsts.EMPTY_MESSAGE;
 
@@ -171,21 +200,25 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     await approval.wait();
     console.log("Approval complete...");
   }
-  const maxCount = MaxUint256;
-  const relayerFeePct = isDefined(args.relayerFeePct)
-    ? toBN(args.relayerFeePct)
-    : await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
-  const quoteTimestamp = await spokePool.getCurrentTime();
+  const [depositQuote, currentTime, fillDeadlineBuffer] = await Promise.all([
+    getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message),
+    spokePool.getCurrentTime(),
+    spokePool.fillDeadlineBuffer(),
+  ]);
 
-  const deposit = await spokePool.deposit(
+  const deposit = await spokePool.depositV3(
+    depositor,
     recipient,
     token.address,
+    AddressZero, // outputToken
     amount,
+    depositQuote.outputAmount,
     toChainId,
-    relayerFeePct,
-    quoteTimestamp,
+    depositQuote.exclusiveRelayer,
+    depositQuote.quoteTimestamp,
+    Number(currentTime) + Number(fillDeadlineBuffer),
+    depositQuote.exclusivityDeadline,
     message,
-    maxCount
   );
   const { hash: transactionHash } = deposit;
   console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}.`);
@@ -193,26 +226,10 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
 
   receipt.logs
     .filter((log) => log.address === spokePool.address)
-    .forEach((log) => printDeposit(spokePool.interface.parseLog(log)));
+    .forEach((log) => printDeposit(fromChainId, spokePool.interface.parseLog(log)));
 
   return true;
 }
-
-// Just a convenience constant to help with printing the fill that's about to be sent.
-const FILL_ARG_NAMES = [
-  "depositor",
-  "recipient",
-  "destinationToken",
-  "amount",
-  "maxTokensToSend",
-  "repaymentChainId",
-  "originChainId",
-  "realizedLpFeePct",
-  "relayerFeePct",
-  "depositId",
-  "message",
-  "maxCount",
-];
 
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
   const { txnHash, depositId: depositIdArg, execute } = args;
@@ -237,62 +254,57 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     throw new Error("No deposits found in txn");
   }
 
-  let deposit: ethers.utils.LogDescription;
+  let depositArgs: ethers.utils.Result;
   if (depositIdArg === undefined) {
     if (depositLogs.length > 1) {
       throw new Error("Multiple deposits in transaction. Must provide depositId");
     }
 
-    deposit = depositLogs[0];
+    [{ args: depositArgs }] = depositLogs;
   } else {
-    const foundDeposit = depositLogs.find((log) => log.args["depositId"] === depositId);
+    const foundDeposit = depositLogs.find((log) => log.args["depositId"] === depositIdArg);
     if (foundDeposit === undefined) {
       throw new Error(`No deposit found for id ${args["depositId"]}`);
     }
-    deposit = foundDeposit;
+    ({ args: depositArgs } = foundDeposit);
   }
 
-  const { depositId, relayerFeePct, originToken, quoteTimestamp, amount, depositor, recipient, message } = deposit.args;
-  const originChainId = Number(deposit.args.originChainId.toString());
-  const destinationChainId = Number(deposit.args.destinationChainId.toString());
+  const originChainId = Number(depositArgs.originChainId.toString());
+  const destinationChainId = Number(depositArgs.destinationChainId.toString());
   const destSpokePool = spokePools[destinationChainId] ?? (await utils.getSpokePoolContract(destinationChainId));
 
-  const originTokenInfo = utils.resolveToken(originToken, originChainId);
-  const destinationTokenInfo = utils.resolveToken(originTokenInfo.symbol, destinationChainId);
-  const destinationToken = destinationTokenInfo.address;
-  const realizedLpFeePct = await getLpFeePct({
+  const { symbol } = utils.resolveToken(depositArgs.originToken, originChainId);
+  const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
+  const outputToken = depositArgs.outputToken === AddressZero
+    ? destinationTokenInfo.address
+    : depositArgs.outputToken;
+  const outputAmount = toBN(depositArgs.outputAmount);
+
+  const relayer = await signer.getAddress();
+  const deposit = {
+    depositId: depositArgs.depositId,
     originChainId,
     destinationChainId,
-    token: originToken,
-    amount: amount.toString(),
-    skipAmountLimit: "true",
-    timestamp: Number(quoteTimestamp.toString()),
-  });
-
-  const fill = [
-    depositor, // depositor
-    recipient, // recipient
-    destinationToken, // destinationToken
-    amount, // amount
-    amount, // maxTokensToSend
-    destinationChainId, // repaymentChainId
-    originChainId, // originChainId
-    realizedLpFeePct, // realizedLpFeePct
-    relayerFeePct, // relayerFeePct
-    depositId, // depositId
-    message, // message
-    MaxUint256.toString(), // maxCount
-  ];
-
-  const txnToSend = await destSpokePool.populateTransaction.fillRelay(...fill);
-  console.group("Fill Arguments");
-  fill.forEach((e, i) => console.log(`${FILL_ARG_NAMES[i]}: ${e.toString()}`));
-  console.groupEnd();
+    depositor: depositArgs.depositor,
+    recipient: depositArgs.recipient,
+    inputToken: depositArgs.inputToken,
+    inputAmount: depositArgs.inputAmount,
+    outputToken,
+    outputAmount,
+    message: depositArgs.message,
+    quoteTimestamp: depositArgs.quoteTimestamp,
+    fillDeadline: depositArgs.fillDeadline,
+    exclusivityDeadline: depositArgs.exclusivityDeadline,
+    exclusiveRelayer: depositArgs.exclusiveRelayer,
+    fromLiteChain: false, // Not relevant
+    toLiteChain: false, // Not relevant
+  };
+  const fill = await sdkUtils.populateV3Relay(destSpokePool, deposit, relayer);
 
   console.group("Fill Txn Info");
-  console.log(`to: ${txnToSend.to}`);
-  console.log(`value: ${txnToSend.value || "0"}`);
-  console.log(`data: ${txnToSend.data}`);
+  console.log(`to: ${fill.to}`);
+  console.log(`value: ${fill.value || "0"}`);
+  console.log(`data: ${fill.data}`);
   console.groupEnd();
 
   if (execute) {
@@ -306,17 +318,17 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     const destProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(destinationChainId));
     const destSigner = signer.connect(destProvider);
 
-    const erc20 = new Contract(destinationToken, ERC20.abi, destSigner);
+    const erc20 = new Contract(outputToken, ERC20.abi, destSigner);
     const allowance = await erc20.allowance(sender, destSpokePool.address);
-    if (amount.gt(allowance)) {
-      const approvalAmount = amount.mul(5);
+    if (outputAmount.gt(allowance)) {
+      const approvalAmount = outputAmount.mul(5);
       const approval = await erc20.approve(destSpokePool.address, approvalAmount);
-      console.log(`Approving SpokePool for ${approvalAmount} ${originTokenInfo.symbol}: ${approval.hash}.`);
+      console.log(`Approving SpokePool for ${approvalAmount} ${symbol}: ${approval.hash}.`);
       await approval.wait();
       console.log("Approval complete...");
     }
 
-    const fillTxn = await destSigner.sendTransaction(txnToSend);
+    const fillTxn = await destSigner.sendTransaction(fill);
     const receipt = await fillTxn.wait();
     console.log(`Tx hash: ${receipt.transactionHash}`);
   }
@@ -430,7 +442,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
   }
 
   deposits.forEach((deposit) => {
-    printDeposit(spokePool.interface.parseLog(deposit));
+    printDeposit(chainId, spokePool.interface.parseLog(deposit));
   });
 
   fills.forEach((fill) => {
