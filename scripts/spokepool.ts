@@ -122,7 +122,7 @@ async function getRelayerQuote(
       exclusiveRelayer,
       exclusivityDeadline,
       timestamp: quoteTimestamp,
-      estimatedFillTimeSec: estimatedFillTime
+      estimatedFillTimeSec: estimatedFillTime,
     } = quoteData;
 
     [totalRelayFee, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, estimatedFillTime].forEach((field) => {
@@ -147,13 +147,8 @@ async function getRelayerQuote(
   do {
     let totalRelayFee: BigNumber;
     let estimatedFillTime: number;
-    ({
-      totalRelayFee,
-      exclusivityDeadline,
-      exclusiveRelayer,
-      quoteTimestamp,
-      estimatedFillTime,
-    } = await suggestedFees());
+    ({ totalRelayFee, exclusivityDeadline, exclusiveRelayer, quoteTimestamp, estimatedFillTime } =
+      await suggestedFees());
 
     outputAmount = amount.sub(totalRelayFee);
     const quote =
@@ -218,7 +213,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     depositQuote.quoteTimestamp,
     Number(currentTime) + Number(fillDeadlineBuffer),
     depositQuote.exclusivityDeadline,
-    message,
+    message
   );
   const { hash: transactionHash } = deposit;
   console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}.`);
@@ -275,9 +270,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
 
   const { symbol } = utils.resolveToken(depositArgs.originToken, originChainId);
   const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
-  const outputToken = depositArgs.outputToken === AddressZero
-    ? destinationTokenInfo.address
-    : depositArgs.outputToken;
+  const outputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
   const relayer = await signer.getAddress();
