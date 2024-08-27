@@ -1,13 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import {
-  config,
-  delay,
-  disconnectRedisClients,
-  getCurrentTime,
-  getNetworkName,
-  Signer,
-  winston,
-} from "../utils";
+import { config, delay, disconnectRedisClients, getCurrentTime, getNetworkName, Signer, winston } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
