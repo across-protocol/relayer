@@ -134,6 +134,7 @@ function compareRpcResults(method: string, rpcResultA: unknown, rpcResultB: unkn
         "l1BatchTimestamp", // zkSync
         "size", // Alchemy/Arbitrum (temporary)
         "totalDifficulty", // Quicknode/Alchemy (sometimes)
+        "logsBloom", // zkSync
       ],
       rpcResultA as Record<string, unknown>,
       rpcResultB as Record<string, unknown>
