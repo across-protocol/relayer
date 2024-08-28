@@ -1299,7 +1299,7 @@ export class Relayer {
   }
 
   private getDepositHash(deposit: { depositId: number; originChainId: number }): string {
-    return `${deposit.depositId}-${deposit.originChainId}`;
+    return this.clients.spokePoolClients[deposit.originChainId].getDepositHash(deposit);
   }
 
   private shouldLogDeposit(deposit: { depositId: number; originChainId: number }): boolean {

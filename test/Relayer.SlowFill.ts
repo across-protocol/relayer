@@ -228,10 +228,11 @@ describe("Relayer: Initiates slow fill requests", async function () {
       getRelayDataHash(deposit, deposit.destinationChainId)
     );
 
+    // On the second run of the same relayer, the deposit with a shortfall should be marked as LogType.LoggedShortfall, so we don't expect the last spy log to include the same warn as the run above.
     const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     for (const receipts of Object.values(txnReceipts)) {
       expect((await receipts).length).to.equal(0);
     }
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Handling token shortfall")).to.be.true;
   });
 });

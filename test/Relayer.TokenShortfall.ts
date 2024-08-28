@@ -231,8 +231,20 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(method).to.equal("fillV3Relay");
     expect(args[0].depositId).to.equal(0); // depositId 0
 
-    expect(spyLogIncludes(spy, -5, `${await l1Token.symbol()} cumulative shortfall of 190.00`)).to.be.true;
-    expect(spyLogIncludes(spy, -5, "blocking deposits: 1,2")).to.be.true;
+    // Since there were no new deposits between this relayer.checkForUnfilledDepositsAndFill and the previous run, we should not log the shortfall message. In order to check that these shortfalls are still acknowledged, however, we look for details about handling the shortfalls for deposits 1 and 2.
+    // No "Insufficient balance to fill all deposits" logged.
+    expect(spyLogIncludes(spy, -5, "cumulative shortfall")).to.be.false;
+    expect(spyLogIncludes(spy, -5, "blocking deposits")).to.be.false;
+    // Deposit 2, unfilled.
+    expect(spyLogIncludes(spy, -6, '"depositId":2')).to.be.true;
+    expect(spyLogIncludes(spy, -6, "Handling token shortfall")).to.be.true;
+    // Deposit 1, unfilled.
+    expect(spyLogIncludes(spy, -7, '"depositId":1')).to.be.true;
+    expect(spyLogIncludes(spy, -7, "Handling token shortfall")).to.be.true;
+    // Deposit 0, filled this run.
+    expect(spyLogIncludes(spy, -8, "Filling v3 deposit 0")).to.be.true;
+    expect(spyLogIncludes(spy, -8, "Handling token shortfall")).to.be.false;
+    expect(spyLogIncludes(spy, -8, "Relayer::fillRelay")).to.be.true;
   });
 
   it("Produces expected logs based on insufficient multiple token balance", async function () {
