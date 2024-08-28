@@ -164,8 +164,12 @@ async function getRelayerQuote(
 async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [args.from, args.to, args.amount].map(Number);
-  const recipient = (args.recipient as string) ?? depositor;
-  const message = (args.message as string) ?? sdkConsts.EMPTY_MESSAGE;
+  const [recipient, message] = [
+    args.recipient ?? depositor,
+    args.message ?? sdkConsts.EMPTY_MESSAGE,
+  ].map(String);
+  let exclusiveRelayer = args.exclusiveRelayer;
+  let exclusivityDeadline = Number(args.exclusivityDeadline);
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
@@ -201,7 +205,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     spokePool.fillDeadlineBuffer(),
   ]);
 
-  const deposit = await spokePool.depositV3(
+  const deposit = await spokePool.depositExclusive(
     depositor,
     recipient,
     token.address,
@@ -209,10 +213,10 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     amount,
     depositQuote.outputAmount,
     toChainId,
-    depositQuote.exclusiveRelayer,
+    exclusiveRelayer ?? depositQuote.exclusiveRelayer,
     depositQuote.quoteTimestamp,
     Number(currentTime) + Number(fillDeadlineBuffer),
-    depositQuote.exclusivityDeadline,
+    exclusivityDeadline ?? depositQuote.exclusivityDeadline,
     message
   );
   const { hash: transactionHash } = deposit;
@@ -450,7 +454,10 @@ function usage(badInput?: string): boolean {
   const walletOpts = "mnemonic|privateKey";
   const depositArgs =
     "--from <originChainId> --to <destinationChainId>" +
-    " --token <tokenSymbol> --amount <amount> [--recipient <recipient>] [--decimals]";
+    " --token <tokenSymbol> --amount <amount>" +
+    " [--recipient <recipient>] [--decimals]" +
+    " [--relayer <exclusiveRelayer> --exclusivityDeadline <exclusivityDeadline>]";
+
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
   const fillArgs = "--chainId <originChainId> --txnHash <depositHash> [--depositId <depositId>] [--execute]";
@@ -470,7 +477,16 @@ function usage(badInput?: string): boolean {
 
 async function run(argv: string[]): Promise<number> {
   const configOpts = ["chainId"];
-  const depositOpts = ["from", "to", "token", "amount", "recipient", "relayerFeePct", "message"];
+  const depositOpts = [
+    "from",
+    "to",
+    "token",
+    "amount",
+    "recipient",
+    "message",
+    "exclusiveRelayer",
+    "exclusivityDeadline"
+  ];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
   const fillOpts = ["txnHash", "chainId", "depositId"];
   const fetchDepositOpts = ["chainId", "depositId"];
