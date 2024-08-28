@@ -30,6 +30,7 @@ import { getCurrentTime, Event, toBNWei, assert, ZERO_ADDRESS } from "../src/uti
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
+import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 describe("BundleDataClient: Slow fill handling & validation", async function () {
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -372,7 +373,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     // For this test, we need to actually send a deposit on the spoke pool
     // because queryHistoricalDepositForFill eth_call's the contract.
 
-    // Send a deposit.
+    // Send a legacy deposit.
     const depositObject = await depositV3(
       spokePool_1,
       destinationChainId,
@@ -380,7 +381,10 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -469,7 +473,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     // For this test, we need to actually send a deposit on the spoke pool
     // because queryHistoricalDepositForFill eth_call's the contract.
 
-    // Send a deposit.
+    // Send a legacy deposit.
     const depositObject = await depositV3(
       spokePool_1,
       destinationChainId,
@@ -477,7 +481,10 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -507,7 +514,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     // For this test, we need to actually send a deposit on the spoke pool
     // because queryHistoricalDepositForFill eth_call's the contract.
 
-    // Send a deposit. We'll set output token to a random token to invalidate the slow fill request (e.g.
+    // Send a legacy deposit. We'll set output token to a random token to invalidate the slow fill request (e.g.
     // input and output are not "equivalent" tokens)
     const invalidOutputToken = erc20_1;
     const depositObject = await depositV3(
@@ -517,7 +524,10 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
       erc20_1.address,
       amountToDeposit,
       invalidOutputToken.address,
-      amountToDeposit
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -656,7 +666,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     await mockConfigStore.update();
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
-    // Send a deposit.
+    // Send a legacy deposit.
     const depositObject = await depositV3(
       spokePool_1,
       destinationChainId,
@@ -664,7 +674,10 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -701,7 +714,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     await mockConfigStore.update();
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
-    // Send a deposit.
+    // Send a legacy deposit.
     const depositObject = await depositV3(
       spokePool_1,
       destinationChainId,
@@ -709,7 +722,10 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 

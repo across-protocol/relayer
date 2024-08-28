@@ -1,14 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import {
-  config,
-  delay,
-  disconnectRedisClients,
-  getCurrentTime,
-  getNetworkName,
-  Signer,
-  startupLogLevel,
-  winston,
-} from "../utils";
+import { config, delay, disconnectRedisClients, getCurrentTime, getNetworkName, Signer, winston } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -34,7 +25,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     stop = true;
   });
 
-  logger[startupLogLevel(config)]({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", config, relayerRun });
+  // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
+  const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
+  logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
