@@ -59,8 +59,8 @@ function printDeposit(originChainId: number, log: LogDescription): void {
   );
 }
 
-function printFill(log: LogDescription): void {
-  const { originChainId, destinationChainId, outputToken } = log.args;
+function printFill(destinationChainId: number, log: LogDescription): void {
+  const { originChainId, outputToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
   const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
@@ -442,7 +442,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
   });
 
   fills.forEach((fill) => {
-    printFill(spokePool.interface.parseLog(fill));
+    printFill(chainId, spokePool.interface.parseLog(fill));
   });
 
   return true;
