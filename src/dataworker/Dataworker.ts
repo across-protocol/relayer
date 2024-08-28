@@ -187,7 +187,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    return await this._getPoolRebalanceRoot(
+    return this._getPoolRebalanceRoot(
       blockRangesForChains,
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
