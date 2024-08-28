@@ -40,7 +40,6 @@ const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for 
 const WS_PING_INTERVAL = 20_000; // ms
 const WS_PONG_TIMEOUT = WS_PING_INTERVAL / 2;
 
-
 let logger: winston.Logger;
 let chain: string;
 let stop = false;
