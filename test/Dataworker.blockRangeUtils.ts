@@ -10,6 +10,7 @@ import { getDeployedBlockNumber } from "@across-protocol/contracts";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
 import { assert, Contract, getEndBlockBuffers, getWidestPossibleExpectedBlockRange } from "../src/utils";
+import { CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS } from "../src/common";
 
 let dataworkerClients: DataworkerClients;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -313,8 +314,9 @@ describe("Dataworker block range-related utility methods", async function () {
     ).to.equal(false);
 
     // Set oldest time older such that fill deadline buffer now exceeds the time between the end block and the oldest
-    // time. Block ranges should now be valid.
-    const oldestBlockTimestampOverride = endBlockTimestamps[originChainId] - fillDeadlineOverride - 1;
+    // time plus the conservative bundle time. Block ranges should now be valid.
+    const oldestBlockTimestampOverride =
+      endBlockTimestamps[originChainId] - fillDeadlineOverride - CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS - 1;
     assert(oldestBlockTimestampOverride > 0, "unrealistic oldest block timestamp");
     mockSpokePoolClient.setOldestBlockTimestampOverride(oldestBlockTimestampOverride);
     expect(

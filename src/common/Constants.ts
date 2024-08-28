@@ -579,3 +579,5 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.ZORA]: 1.5,
 };
+
+export const CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS = 3 * 60 * 60; // 3 hours is a safe assumption for the time

@@ -666,6 +666,23 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data2.bundleDepositsV3).to.deep.equal({});
       expect(data2.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
     });
+    it("Handles when deposit is greater than origin bundle end block but fill is within range", async function () {
+      // Send deposit after origin chain block range.
+      const blockRanges = getDefaultBlockRange(5);
+      const futureDeposit = generateV3Deposit();
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      blockRanges[originChainIndex] = [blockRanges[0][0], futureDeposit.blockNumber - 1];
+
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+
+      generateV3FillFromDepositEvent(futureDeposit);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(blockRanges, spokePoolClients);
+      expect(data1.bundleDepositsV3).to.deep.equal({});
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.false;
+    });
     it("Does not count prior bundle expired deposits that were filled", async function () {
       // Send deposit that expires in this bundle.
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
