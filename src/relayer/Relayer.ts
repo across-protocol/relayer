@@ -908,10 +908,16 @@ export class Relayer {
     const start = performance.now();
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     if (preferredChainIds.length === 0) {
-      this.logger.info({
+      // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
+      // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
+      // it is a special edge case the relayer should be aware of.
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
-        message: `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
-        deposit,
+        message: deposit.fromLiteChain
+          ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
+          : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
+        txn: blockExplorerLink(transactionHash, originChainId),
+        notificationPath: "across-unprofitable-fills",
       });
       return {
         repaymentChainProfitability: {
@@ -1190,6 +1196,7 @@ export class Relayer {
         at: "Relayer::handleUnprofitableFill",
         message: "Not relaying unprofitable deposits 🙅‍♂️!",
         mrkdwn,
+        notificationPath: "across-unprofitable-fills",
       });
     }
   }

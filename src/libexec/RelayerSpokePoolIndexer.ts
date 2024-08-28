@@ -288,39 +288,34 @@ async function run(argv: string[]): Promise<void> {
   // Events to listen for.
   const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
-  do {
-    let providers: WebSocketProvider[] = [];
-    try {
-      providers = getWSProviders(chainId, quorum);
-      assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
-      providers.forEach((provider) => {
-        provider._websocket.on("error", (err) =>
-          logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Caught ${chain} provider error.`, err })
-        );
+  const providers = getWSProviders(chainId, quorum);
+  let nProviders = providers.length;
+  assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
+  providers.forEach((provider) => {
+    provider._websocket.on("error", (err) => {
+      const _provider = getOriginFromURL(provider.connection.url);
+      const at = "RelayerSpokePoolIndexer::run";
+      let message = `Caught ${chain} provider error.`;
+      let log = logger.debug;
+      if (--nProviders < quorum) {
+        stop = true;
+        log = logger.warn;
+        message += " Insufficient providers to continue.";
+      }
+      log({ at, message, provider: _provider, quorum, nProviders, err });
+    });
 
-        provider._websocket.on("close", () => {
-          logger.debug({
-            at: "RelayerSpokePoolIndexer::run",
-            message: `${chain} provider connection closed.`,
-            provider: getOriginFromURL(provider.connection.url),
-          });
-        });
-      });
-
-      logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} listener.`, events, opts });
-      await listen(eventMgr, spokePool, events, providers, opts);
-    } catch (err) {
-      providers.forEach((provider) => provider.removeAllListeners());
-
-      // @todo: What to do if the websocket drops? Should be able to reconnect?
-      logger.warn({
+    provider._websocket.on("close", () => {
+      logger.debug({
         at: "RelayerSpokePoolIndexer::run",
-        message: "Caught runtime error.",
-        err,
+        message: `${chain} provider connection closed.`,
+        provider: getOriginFromURL(provider.connection.url),
       });
-      throw err;
-    }
-  } while (!stop);
+    });
+  });
+
+  logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} listener.`, events, opts });
+  await listen(eventMgr, spokePool, events, providers, opts);
 }
 
 if (require.main === module) {

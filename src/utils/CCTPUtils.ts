@@ -3,9 +3,8 @@ import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { BigNumber, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
-import { compareAddressesSimple } from "./AddressUtils";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
-import { bnZero } from "./SDKUtils";
+import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getProvider } from "./ProviderUtils";
 

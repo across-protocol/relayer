@@ -40,4 +40,8 @@ export const {
   isContractDeployedToAddress,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
+  compareAddressesSimple,
+  getTokenInfo,
+  getL1TokenInfo,
+  getUsdcSymbol,
 } = sdk.utils;
