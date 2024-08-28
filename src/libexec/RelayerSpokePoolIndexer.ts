@@ -36,7 +36,10 @@ type ScraperOpts = {
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
-const INDEXER_POLLING_PERIOD = 2000; // ms; time to sleep between checking for exit request via SIGHUP.
+const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
+const WS_PING_INTERVAL = 20_000; // ms
+const WS_PONG_TIMEOUT = WS_PING_INTERVAL / 2;
+
 
 let logger: winston.Logger;
 let chain: string;
@@ -291,9 +294,6 @@ async function run(argv: string[]): Promise<void> {
   const providers = getWSProviders(chainId, quorum);
   let nProviders = providers.length;
   assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
-
-  const WS_PING_INTERVAL = 20000; // ms
-  const WS_PONG_TIMEOUT = WS_PING_INTERVAL / 2;
 
   providers.forEach((provider) => {
     const { _websocket: ws } = provider;
