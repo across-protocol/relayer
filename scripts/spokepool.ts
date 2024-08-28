@@ -38,6 +38,9 @@ const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { AddressZero } = ethers.constants;
 const { isAddress } = ethers.utils;
 
+const DEPOSIT_EVENT = "V3FundsDeposited";
+const FILL_EVENT = "FilledV3Relay";
+
 function printDeposit(originChainId: number, log: LogDescription): void {
   const { inputToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
@@ -164,12 +167,9 @@ async function getRelayerQuote(
 async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [args.from, args.to, args.amount].map(Number);
-  const [recipient, message] = [
-    args.recipient ?? depositor,
-    args.message ?? sdkConsts.EMPTY_MESSAGE,
-  ].map(String);
-  let exclusiveRelayer = args.exclusiveRelayer;
-  let exclusivityDeadline = Number(args.exclusivityDeadline);
+  const [recipient, message] = [args.recipient ?? depositor, args.message ?? sdkConsts.EMPTY_MESSAGE].map(String);
+  const exclusiveRelayer = args.exclusiveRelayer;
+  const exclusivityDeadline = Number(args.exclusivityDeadline);
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
@@ -232,19 +232,19 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
 
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
   const { txnHash, depositId: depositIdArg, execute } = args;
-  const chainId = Number(args.chainId);
+  const originChainId = Number(args.chainId);
 
   if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
   }
 
-  const originProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
-  const originSpokePool = await utils.getSpokePoolContract(chainId);
+  const originProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(originChainId));
+  const originSpokePool = await utils.getSpokePoolContract(originChainId);
   const spokePools: { [chainId: number]: Contract } = {};
 
   const txn = await originProvider.getTransactionReceipt(txnHash);
 
-  const fundsDeposited = originSpokePool.interface.getEventTopic("FundsDeposited");
+  const fundsDeposited = originSpokePool.interface.getEventTopic(DEPOSIT_EVENT);
   const depositLogs = txn.logs
     .filter(({ topics, address }) => topics[0] === fundsDeposited && address === originSpokePool.address)
     .map((log) => originSpokePool.interface.parseLog(log));
@@ -268,11 +268,10 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     ({ args: depositArgs } = foundDeposit);
   }
 
-  const originChainId = Number(depositArgs.originChainId.toString());
   const destinationChainId = Number(depositArgs.destinationChainId.toString());
   const destSpokePool = spokePools[destinationChainId] ?? (await utils.getSpokePoolContract(destinationChainId));
 
-  const { symbol } = utils.resolveToken(depositArgs.originToken, originChainId);
+  const { symbol } = utils.resolveToken(depositArgs.inputToken, originChainId);
   const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
   const outputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
@@ -388,7 +387,7 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
   const deploymentBlockNumber = getDeploymentBlockNumber("SpokePool", chainId);
   const latestBlockNumber = await spokePool.provider.getBlockNumber();
   console.log(`Searching for depositId ${depositId} between ${deploymentBlockNumber} and ${latestBlockNumber}.`);
-  const filter = spokePool.filters.FundsDeposited(null, null, null, null, depositId);
+  const filter = spokePool.filters.V3FundsDeposited(null, null, null, null, null, depositId);
 
   // @note: Querying over such a large block range typically only works on top-tier providers.
   // @todo: Narrow the block range for the depositId, subject to this PR:
@@ -402,8 +401,8 @@ async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposi
   }
 
   const txn = await spokePool.provider.getTransactionReceipt(txnHash);
-  const fundsDeposited = spokePool.interface.getEventTopic("FundsDeposited");
-  const filledRelay = spokePool.interface.getEventTopic("FilledRelay");
+  const fundsDeposited = spokePool.interface.getEventTopic(DEPOSIT_EVENT);
+  const filledRelay = spokePool.interface.getEventTopic(FILL_EVENT);
   const logs = txn.logs.filter(({ address }) => address === spokePool.address);
   const { deposits = [], fills = [] } = groupBy(logs, ({ topics }) => {
     switch (topics[0]) {
@@ -485,7 +484,7 @@ async function run(argv: string[]): Promise<number> {
     "recipient",
     "message",
     "exclusiveRelayer",
-    "exclusivityDeadline"
+    "exclusivityDeadline",
   ];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
   const fillOpts = ["txnHash", "chainId", "depositId"];
