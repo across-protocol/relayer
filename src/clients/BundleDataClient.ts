@@ -762,43 +762,40 @@ export class BundleDataClient {
           continue;
         }
 
-        originClient
-          .getDepositsForDestinationChain(destinationChainId)
-          .filter((deposit) => deposit.blockNumber <= originChainBlockRange[1])
-          .forEach((deposit) => {
-            depositCounter++;
-            const relayDataHash = this.getRelayHashFromEvent(deposit);
-            if (v3RelayHashes[relayDataHash]) {
-              // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
-              // gives us bad data.
-              return;
-            }
-            // Even if deposit is not in bundle block range, store all deposits we can see in memory in this
-            // convenient dictionary.
-            v3RelayHashes[relayDataHash] = {
-              deposit: deposit,
-              fill: undefined,
-              slowFillRequest: undefined,
-            };
+        originClient.getDepositsForDestinationChain(destinationChainId).forEach((deposit) => {
+          depositCounter++;
+          const relayDataHash = this.getRelayHashFromEvent(deposit);
+          if (v3RelayHashes[relayDataHash]) {
+            // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
+            // gives us bad data.
+            return;
+          }
+          // Even if deposit is not in bundle block range, store all deposits we can see in memory in this
+          // convenient dictionary.
+          v3RelayHashes[relayDataHash] = {
+            deposit: deposit,
+            fill: undefined,
+            slowFillRequest: undefined,
+          };
 
-            // If deposit block is within origin chain bundle block range, then save as bundle deposit.
-            // If deposit is in bundle and it has expired, additionally save it as an expired deposit.
-            // If deposit is not in the bundle block range, then save it as an older deposit that
-            // may have expired.
-            if (deposit.blockNumber >= originChainBlockRange[0]) {
-              // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
-              updateBundleDepositsV3(bundleDepositsV3, deposit);
-              // We don't check that fillDeadline >= bundleBlockTimestamps[destinationChainId][0] because
-              // that would eliminate any deposits in this bundle with a very low fillDeadline like equal to 0
-              // for example. Those should be impossible to create but technically should be included in this
-              // bundle of refunded deposits.
-              if (deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1]) {
-                expiredBundleDepositHashes.add(relayDataHash);
-              }
-            } else {
-              olderDepositHashes.add(relayDataHash);
+          // If deposit block is within origin chain bundle block range, then save as bundle deposit.
+          // If deposit is in bundle and it has expired, additionally save it as an expired deposit.
+          // If deposit is not in the bundle block range, then save it as an older deposit that
+          // may have expired.
+          if (deposit.blockNumber >= originChainBlockRange[0] && deposit.blockNumber <= originChainBlockRange[1]) {
+            // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
+            updateBundleDepositsV3(bundleDepositsV3, deposit);
+            // We don't check that fillDeadline >= bundleBlockTimestamps[destinationChainId][0] because
+            // that would eliminate any deposits in this bundle with a very low fillDeadline like equal to 0
+            // for example. Those should be impossible to create but technically should be included in this
+            // bundle of refunded deposits.
+            if (deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1]) {
+              expiredBundleDepositHashes.add(relayDataHash);
             }
-          });
+          } else if (deposit.blockNumber < originChainBlockRange[0]) {
+            olderDepositHashes.add(relayDataHash);
+          }
+        });
       }
     }
     this.logger.debug({
