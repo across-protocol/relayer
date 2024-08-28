@@ -83,7 +83,7 @@ export type PoolRebalanceRoot = {
   tree: MerkleTree<PoolRebalanceLeaf>;
 };
 
-type PoolRebalanceRootCache = Record<string, Promise<PoolRebalanceRoot>>;
+type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -483,7 +483,7 @@ export class Dataworker {
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
-    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -2262,7 +2262,7 @@ export class Dataworker {
     }
   }
 
-  async _getPoolRebalanceRoot(
+  _getPoolRebalanceRoot(
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
@@ -2271,29 +2271,27 @@ export class Dataworker {
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
     expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
-  ): Promise<PoolRebalanceRoot> {
+  ): PoolRebalanceRoot {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
-      this.rootCache[key] = Promise.resolve(
-        _buildPoolRebalanceRoot(
-          latestMainnetBlock,
-          mainnetBundleEndBlock,
-          bundleV3Deposits,
-          bundleV3Fills,
-          bundleSlowFills,
-          unexecutableSlowFills,
-          expiredDepositsToRefundV3,
-          this.clients,
-          this.maxL1TokenCountOverride
-        )
+      this.rootCache[key] = _buildPoolRebalanceRoot(
+        latestMainnetBlock,
+        mainnetBundleEndBlock,
+        bundleV3Deposits,
+        bundleV3Fills,
+        bundleSlowFills,
+        unexecutableSlowFills,
+        expiredDepositsToRefundV3,
+        this.clients,
+        this.maxL1TokenCountOverride
       );
     }
 
-    return _.cloneDeep(await this.rootCache[key]);
+    return _.cloneDeep(this.rootCache[key]);
   }
 
   _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): BigNumber {
