@@ -7,7 +7,6 @@ import {
   Provider,
   toBN,
   toWei,
-  bnZero,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -73,9 +72,9 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
     );
     const filteredEvents = events.filter(({ args }) => args.l1Token === l1Token);
     return {
-      [this.resolveL2TokenAddress(l1Token)]: filteredEvents
-        .map((event) => processEvent(event, "_amount", "_to", "_from"))
-        .filter(({ amount }) => amount.gt(bnZero)),
+      [this.resolveL2TokenAddress(l1Token)]: filteredEvents.map((event) =>
+        processEvent(event, "_amount", "_to", "_from")
+      ),
     };
   }
 
@@ -91,9 +90,7 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events
-        .map((event) => processEvent(event, "amount", "to", "from"))
-        .filter(({ amount }) => amount.gt(bnZero)),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "to", "from")),
     };
   }
 }
