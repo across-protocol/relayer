@@ -41,6 +41,7 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
+  private lastLogTime: number = 0;
 
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
@@ -694,7 +695,7 @@ export class Relayer {
   async checkForUnfilledDepositsAndFill(
     sendSlowRelays = true,
     simulate = false,
-    run: number
+    currentTime: number
   ): Promise<{ [chainId: number]: Promise<string[]> }> {
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
@@ -762,10 +763,12 @@ export class Relayer {
       }
     });
 
-    if (tokenClient.anyCapturedShortFallFills() && !(run % this.config.loggingInterval)) {
+    const logDeposits = this.config.loggingInterval < currentTime - this.lastLogTime;
+    this.lastLogTime = logDeposits ? currentTime : this.lastLogTime;
+    if (tokenClient.anyCapturedShortFallFills() && logDeposits) {
       this.handleTokenShortfall();
     }
-    if (profitClient.anyCapturedUnprofitableFills() && !(run % this.config.loggingInterval)) {
+    if (profitClient.anyCapturedUnprofitableFills() && logDeposits) {
       this.handleUnprofitableFill();
     }
 
