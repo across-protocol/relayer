@@ -1036,10 +1036,11 @@ export class BundleDataClient {
             fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill,
             "Fill type should be ReplacedSlowFill."
           );
-          // slow fill requests for deposits from or to lite chains are considered invalid
-          if (deposit.fromLiteChain || deposit.toLiteChain) {
-            return;
-          }
+          // We should never push fast fills involving lite chains here because slow fill requests for them are invalid:
+          assert(
+            !deposit.fromLiteChain && !deposit.toLiteChain,
+            "fastFillsReplacingSlowFills should not contain lite chain deposits"
+          );
           const destinationBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
           if (
             // If the slow fill request that was replaced by this fill was in an older bundle, then we don't
