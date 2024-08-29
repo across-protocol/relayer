@@ -31,7 +31,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
 
-  let run = 1;
+  let run = 0;
   let txnReceipts: { [chainId: number]: Promise<string[]> };
   try {
     do {
@@ -40,7 +40,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       const tLoopStart = performance.now();
-      if (run !== 1) {
+      if (run) {
         await relayerClients.configStoreClient.update();
         await relayerClients.hubPoolClient.update();
       }
@@ -51,7 +51,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         relayerClients.tokenClient.clearTokenData();
         await relayerClients.tokenClient.update();
         const simulate = !config.sendingRelaysEnabled;
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate, run);
       }
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing

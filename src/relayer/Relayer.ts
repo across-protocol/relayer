@@ -37,23 +37,10 @@ type RepaymentChainProfitability = {
   lpFeePct: BigNumber;
 };
 
-// A deposit can be in 6 different states: it can either fall into any of the below categories, in which case, it has been observed
-// by the relayer and will either log the deposit (if it is a shortfall or unprofitable fill) or ignore it, or it can be undefined, in which
-// case it may be logged for anything other than a shortfall/unprofitable fill. A deposit is marked as observed at the end of an execution loop
-// so that we do not overwrite a shortfall or unprofitable deposit as observed.
-enum LogType {
-  Shortfall,
-  LoggedShortfall,
-  UnprofitableFill,
-  LoggedUnprofitableFill,
-  Observed,
-}
-
 export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
-  private depositLogType: { [depositHash: string]: LogType } = {};
 
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
@@ -193,9 +180,8 @@ export class Relayer {
       return false;
     }
 
-    const logDeposit = this.shouldLogDeposit(deposit);
     if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger[logDeposit ? "warn" : "debug"]({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
         deposit,
@@ -205,7 +191,7 @@ export class Relayer {
 
     // Skip deposit with message if sending fills with messages is not supported.
     if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
-      this.logger[logDeposit ? "warn" : "debug"]({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
@@ -561,12 +547,7 @@ export class Relayer {
       );
       const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
       if (!isDefined(repaymentChainId)) {
-        const depositHash = this.getDepositHash(deposit);
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-        // If this is the first time we observe this deposit, then mark it as loggable.
-        if (!isDefined(this.depositLogType[depositHash])) {
-          this.depositLogType[depositHash] = LogType.UnprofitableFill;
-        }
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
@@ -618,11 +599,6 @@ export class Relayer {
       tokenClient.captureTokenShortfallForFill(deposit);
       if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
         this.requestSlowFill(deposit);
-      }
-      // If this is the first time we observe the deposit, mark it as loggable.
-      const depositHash = this.getDepositHash(deposit);
-      if (!isDefined(this.depositLogType[depositHash])) {
-        this.depositLogType[depositHash] = LogType.Shortfall;
       }
     }
   }
@@ -717,7 +693,8 @@ export class Relayer {
 
   async checkForUnfilledDepositsAndFill(
     sendSlowRelays = true,
-    simulate = false
+    simulate = false,
+    run: number
   ): Promise<{ [chainId: number]: Promise<string[]> }> {
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
@@ -785,34 +762,12 @@ export class Relayer {
       }
     });
 
-    // If during the execution run we had shortfalls or unprofitable fills then handle it by producing associated logs.
-    const loggableShortfalls = Object.entries(this.depositLogType).filter(
-      ([, logType]) => logType === LogType.Shortfall
-    );
-    if (tokenClient.anyCapturedShortFallFills() && loggableShortfalls.length !== 0) {
+    if (tokenClient.anyCapturedShortFallFills() && !(run % this.config.loggingInterval)) {
       this.handleTokenShortfall();
-      // Now mark the shortfall deposits as logged.
-      loggableShortfalls.forEach(([depositHash]) => {
-        this.depositLogType[depositHash] = LogType.LoggedShortfall;
-      });
     }
-    const loggableUnprofitableFills = Object.entries(this.depositLogType).filter(
-      ([, logType]) => logType === LogType.UnprofitableFill
-    );
-    if (profitClient.anyCapturedUnprofitableFills() && loggableUnprofitableFills.length !== 0) {
+    if (profitClient.anyCapturedUnprofitableFills() && !(run % this.config.loggingInterval)) {
       this.handleUnprofitableFill();
-      // Mark the unprofitable fill as logged.
-      loggableUnprofitableFills.forEach(([depositHash]) => {
-        this.depositLogType[depositHash] = LogType.LoggedUnprofitableFill;
-      });
     }
-    // Otherwise, mark all other deposits as observed so that we don't log them again on any of the other warn logs.
-    allUnfilledDeposits.forEach((deposit) => {
-      const depositHash = this.getDepositHash(deposit);
-      if (!isDefined(this.depositLogType[depositHash])) {
-        this.depositLogType[depositHash] = LogType.Observed;
-      }
-    });
 
     return txnReceipts;
   }
@@ -953,11 +908,10 @@ export class Relayer {
     const start = performance.now();
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     if (preferredChainIds.length === 0) {
-      const logDeposit = this.shouldLogDeposit(deposit);
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
       // it is a special edge case the relayer should be aware of.
-      this.logger[logDeposit ? "warn" : "debug"]({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
         message: deposit.fromLiteChain
           ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
@@ -1296,14 +1250,5 @@ export class Relayer {
     return this.config.tryMulticallChains.includes(chainId)
       ? this.clients.tryMulticallClient
       : this.clients.multiCallerClient;
-  }
-
-  private getDepositHash(deposit: { depositId: number; originChainId: number }): string {
-    return this.clients.spokePoolClients[deposit.originChainId].getDepositHash(deposit);
-  }
-
-  private shouldLogDeposit(deposit: { depositId: number; originChainId: number }): boolean {
-    const depositHash = this.getDepositHash(deposit);
-    return !isDefined(this.depositLogType[depositHash]) && this.config.sendingRelaysEnabled;
   }
 }
