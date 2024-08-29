@@ -844,7 +844,12 @@ export class BundleDataClient {
                   // If fill replaced a slow fill request, then mark it as one that might have created an
                   // unexecutable slow fill. We can't know for sure until we check the slow fill request
                   // events.
-                  if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
+                  // slow fill requests for deposits from or to lite chains are considered invalid
+                  if (
+                    fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill &&
+                    !v3RelayHashes[relayDataHash].deposit.fromLiteChain &&
+                    !v3RelayHashes[relayDataHash].deposit.toLiteChain
+                  ) {
                     fastFillsReplacingSlowFills.push(relayDataHash);
                   }
                 }
@@ -891,7 +896,12 @@ export class BundleDataClient {
                   quoteTimestamp: matchedDeposit.quoteTimestamp,
                 });
                 v3RelayHashes[relayDataHash].deposit = matchedDeposit;
-                if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
+                // slow fill requests for deposits from or to lite chains are considered invalid
+                if (
+                  fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill &&
+                  !matchedDeposit.fromLiteChain &&
+                  !matchedDeposit.toLiteChain
+                ) {
                   fastFillsReplacingSlowFills.push(relayDataHash);
                 }
               }
@@ -1026,6 +1036,10 @@ export class BundleDataClient {
             fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill,
             "Fill type should be ReplacedSlowFill."
           );
+          // slow fill requests for deposits from or to lite chains are considered invalid
+          if (deposit.fromLiteChain || deposit.toLiteChain) {
+            return;
+          }
           const destinationBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
           if (
             // If the slow fill request that was replaced by this fill was in an older bundle, then we don't
@@ -1104,7 +1118,8 @@ export class BundleDataClient {
         // If fill status is RequestedSlowFill, then we might need to mark down an unexecutable
         // slow fill that we're going to replace with an expired deposit refund.
         // If deposit cannot be slow filled, then exit early.
-        if (fillStatus !== FillStatus.RequestedSlowFill) {
+        // slow fill requests for deposits from or to lite chains are considered invalid
+        if (fillStatus !== FillStatus.RequestedSlowFill || deposit.fromLiteChain || deposit.toLiteChain) {
           return;
         }
         // Now, check if there was a slow fill created for this deposit in a previous bundle which would now be
