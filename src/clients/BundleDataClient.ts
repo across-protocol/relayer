@@ -1102,7 +1102,7 @@ export class BundleDataClient {
           updateExpiredDepositsV3(expiredDepositsToRefundV3, deposit);
         }
         // If fill status is RequestedSlowFill and the deposit did not originate on a lite chain, then we might need to
-        // mark down an unexecutable slow fill that we're going to replace with an expired deposit refund. 
+        // mark down an unexecutable slow fill that we're going to replace with an expired deposit refund.
         // If deposit cannot be slow filled, then exit early.
         if (fillStatus !== FillStatus.RequestedSlowFill || deposit.fromLiteChain) {
           return;
