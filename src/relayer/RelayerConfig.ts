@@ -75,7 +75,6 @@ export class RelayerConfig extends CommonConfig {
       SEND_RELAYS,
       SEND_REBALANCES,
       SEND_MESSAGE_RELAYS,
-      SKIP_REBALANCING,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
