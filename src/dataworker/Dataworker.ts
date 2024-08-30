@@ -2291,6 +2291,13 @@ export class Dataworker {
       );
     }
 
+    this.logger.debug({
+      at: "Dataworker#_getPoolRebalanceRoot",
+      message: "Constructed new pool rebalance root",
+      key,
+      root: this.rootCache[key],
+    });
+
     return _.cloneDeep(this.rootCache[key]);
   }
 
