@@ -1,6 +1,9 @@
 import assert from "assert";
 import { groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
+import * as viem from "viem";
+import * as viemChains from "viem/chains";
+import { publicActionsL1, publicActionsL2, getWithdrawals } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
 import {
@@ -42,6 +45,18 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
  * (typeof OP_STACK_CHAINS)[number] then takes all elements in this array and "unions" their type (i.e. 10 | 8453 | 3443 | ... ).
  * https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-1.html#keyof-and-lookup-types
  */
+
+// We might want to export this mapping of chain ID to viem chain object out of a constant
+// file once we start using Viem elsewhere in the repo:
+const VIEM_OP_STACK_CHAINS = {
+  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
+  // [CHAIN_IDs.BASE]: viemChains.base,
+  // [CHAIN_IDs.BLAST]: viemChains.blast,
+  // [CHAIN_IDs.REDSTONE]: viemChains.redstone,
+  // [CHAIN_IDs.LISK]: viemChains.lisk,
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: viemChains.optimismSepolia,
+};
+
 type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
@@ -93,6 +108,68 @@ export async function opStackFinalizer(
     message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
     latestBlockToProve,
   });
+
+  // @dev Experimental: try using Viem if its available for this chain. Eventually we should
+  // fully migrate from SDK to Viem. Note, the Viem "provider" is not easily translateable from the ethers.js provider,
+  // so any RPC requests sent from the Viem client will likely not inherit benefits of our custom RetryProvider such
+  // as quorum, caching, fallbacks, etc. This is workable for now if we isolate viem usage.
+  if (VIEM_OP_STACK_CHAINS[chainId]) {
+    const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
+    const publicClientL1 = viem
+      .createPublicClient({
+        chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
+        transport: viem.http(getCachedProvider(hubChainId, true).providers[0].connection.url),
+      })
+      .extend(publicActionsL1() as any) as any;
+    const publicClientL2 = viem
+      .createPublicClient({
+        chain: VIEM_OP_STACK_CHAINS[chainId],
+        transport: viem.http(getCachedProvider(chainId, true).providers[0].connection.url),
+      })
+      .extend(publicActionsL2() as any) as any;
+    const uniqueTokenhashes = {};
+    const logIndexesForMessage = [];
+    const events = spokePoolClient
+      .getTokensBridged()
+      .filter((e) => !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]));
+    for (const event of events) {
+      uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
+      const logIndex = uniqueTokenhashes[event.transactionHash];
+      logIndexesForMessage.push(logIndex);
+      uniqueTokenhashes[event.transactionHash] += 1;
+    }
+
+    events.map(async (event, i) => {
+      const receipt = await (publicClientL2 as viem.PublicClient).getTransactionReceipt({
+        hash: event.transactionHash as `0x${string}`,
+      });
+      const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
+      if (logIndexesForMessage[i] !== 0) {
+        console.warn(
+          "Multiple events in the same transaction are not supported by Viem yet, cannot finalize withdrawal",
+          withdrawal
+        );
+        return;
+      }
+      const withdrawalStatus = await publicClientL1.getWithdrawalStatus({
+        receipt,
+        targetChain: VIEM_OP_STACK_CHAINS[chainId],
+      });
+      if (withdrawalStatus === "ready-to-prove") {
+        const l2Output = await publicClientL1.getL2Output({
+          // [!code hl]
+          l2BlockNumber: event.blockNumber, // [!code hl]
+          targetChain: VIEM_OP_STACK_CHAINS[chainId], // [!code hl]
+        }); //
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await (publicClientL2 as any).buildProveWithdrawal({
+          withdrawal,
+          output: l2Output,
+        });
+        const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
+        console.log(`Withdrawal ${event.transactionHash} is ready to prove: `, proofArgs);
+      }
+    });
+  }
 
   const proofs = await multicallOptimismL1Proofs(
     chainId,
