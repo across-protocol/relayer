@@ -436,6 +436,7 @@ export class ProfitClient {
     if (!fill.profitable || this.debugProfitability) {
       const { depositId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
+
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${l1Token.symbol} v3 deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
