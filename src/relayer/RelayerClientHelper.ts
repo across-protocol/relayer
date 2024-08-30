@@ -209,7 +209,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   ]);
 
   // Update the token client first so that inventory client has latest balances.
-  clients.tokenClient.clearTokenData();
   await clients.tokenClient.update();
 
   // We can update the inventory client in parallel with checking for eth wrapping as these do not depend on each other.
