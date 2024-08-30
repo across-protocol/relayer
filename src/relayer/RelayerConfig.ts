@@ -114,7 +114,7 @@ export class RelayerConfig extends CommonConfig {
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     this.tryMulticallChains = JSON.parse(RELAYER_TRY_MULTICALL_CHAINS ?? "[]");
-    this.loggingInterval = Number(RELAYER_LOGGING_INTERVAL ?? 25);
+    this.loggingInterval = Number(RELAYER_LOGGING_INTERVAL ?? 30);
 
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
