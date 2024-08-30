@@ -217,6 +217,7 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         deposit,
+        notificationPath: "across-unprofitable-fills",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max };
     }
@@ -436,7 +437,6 @@ export class ProfitClient {
     if (!fill.profitable || this.debugProfitability) {
       const { depositId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
-
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${l1Token.symbol} v3 deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
@@ -459,7 +459,6 @@ export class ProfitClient {
         netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
         minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
         profitable: fill.profitable,
-        notificationPath: profitable ? undefined : "across-unprofitable-fills",
       });
     }
 
