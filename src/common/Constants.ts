@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider, ZERO_ADDRESS } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -31,6 +31,9 @@ export const CONFIG_STORE_VERSION = 4;
 
 export const RELAYER_MIN_FEE_PCT = 0.0001;
 
+// max(uint256) - 1
+export const INFINITE_FILL_DEADLINE = bnUint32Max;
+
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
@@ -49,6 +52,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   [CHAIN_IDs.REDSTONE]: 172800, // OP stack
   [CHAIN_IDs.SCROLL]: 115200, // 4 * 24 * 20 * 60,
   [CHAIN_IDs.ZK_SYNC]: 345600, // 4 * 24 * 60 * 60,
+  [CHAIN_IDs.ZORA]: 172800, // OP stack
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
@@ -85,6 +89,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.REDSTONE]: 120,
     [CHAIN_IDs.SCROLL]: 30,
     [CHAIN_IDs.ZK_SYNC]: 120,
+    [CHAIN_IDs.ZORA]: 120,
   },
   1000: {
     [CHAIN_IDs.ARBITRUM]: 0,
@@ -99,6 +104,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.REDSTONE]: 60,
     [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
+    [CHAIN_IDs.ZORA]: 60,
   },
   100: {
     [CHAIN_IDs.ARBITRUM]: 0,
@@ -113,6 +119,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.REDSTONE]: 60,
     [CHAIN_IDs.SCROLL]: 1,
     [CHAIN_IDs.ZK_SYNC]: 0,
+    [CHAIN_IDs.ZORA]: 60,
   },
 };
 
@@ -137,6 +144,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.REDSTONE]: 10000, // xxx verify
   [CHAIN_IDs.SCROLL]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
+  [CHAIN_IDs.ZORA]: 10000,
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
   [CHAIN_IDs.BASE_SEPOLIA]: 10000,
@@ -166,6 +174,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
+  [CHAIN_IDs.ZORA]: 60, // 2s/block
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
@@ -209,6 +218,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.REDSTONE]: 120,
   [CHAIN_IDs.SCROLL]: 100,
   [CHAIN_IDs.ZK_SYNC]: 512,
+  [CHAIN_IDs.ZORA]: 120,
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
@@ -237,6 +247,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.REDSTONE]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.ZK_SYNC]: 172800,
+  [CHAIN_IDs.ZORA]: 86400,
 };
 
 // Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
@@ -250,6 +261,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.REDSTONE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
+  [CHAIN_IDs.ZORA]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -266,13 +278,14 @@ export const multicall3Addresses = {
   [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BOBA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.LINEA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  [CHAIN_IDs.LISK]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.MAINNET]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.MODE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.OPTIMISM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.POLYGON]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.REDSTONE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.ZK_SYNC]: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
+  [CHAIN_IDs.ZORA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   // Testnet:
   [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BASE_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -299,11 +312,12 @@ export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.REDSTONE,
   CHAIN_IDs.SCROLL,
   CHAIN_IDs.ZK_SYNC,
+  CHAIN_IDs.ZORA,
 ];
 
 /**
  * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
- * and is an internal mappinng maintained by Circle.
+ * and is an internal mapping maintained by Circle.
  * @link https://developers.circle.com/stablecoins/docs/supported-domains
  */
 export const chainIdsToCctpDomains: { [chainId: number]: number } = {
@@ -333,6 +347,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
@@ -384,6 +399,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
+  [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -437,6 +453,9 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKSyncWethBridge,
+  },
+  [CHAIN_IDs.ZORA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
 };
 
@@ -497,6 +516,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.REDSTONE]: 20 * 60,
   [CHAIN_IDs.SCROLL]: 60 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,
+  [CHAIN_IDs.ZORA]: 20 * 60,
 };
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
@@ -557,4 +577,7 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.LISK]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
   [CHAIN_IDs.REDSTONE]: 1.5,
+  [CHAIN_IDs.ZORA]: 1.5,
 };
+
+export const CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS = 3 * 60 * 60; // 3 hours is a safe assumption for the time

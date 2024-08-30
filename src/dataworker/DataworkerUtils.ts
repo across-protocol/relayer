@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils, interfaces, caching } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
-import { spokesThatHoldEthAndWeth } from "../common/Constants";
+import { CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS, spokesThatHoldEthAndWeth } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
@@ -48,7 +48,8 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
-export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain } = utils;
+export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain, parseWinston, formatWinston } =
+  utils;
 import { any } from "superstruct";
 
 export function getEndBlockBuffers(
@@ -130,9 +131,19 @@ export async function blockRangesAreInvalidForSpokeClients(
       // Skip this check if the spokePoolClient.fromBlock is less than or equal to the spokePool deployment block.
       // In this case, we have all the information for this SpokePool possible so there are no older deposits
       // that might have expired that we might miss.
+      const conservativeBundleFrequencySeconds = Number(
+        process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS
+      );
       if (
         spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
-        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() < maxFillDeadlineBufferInBlockRange
+        // @dev The maximum lookback window we need to evaluate expired deposits is the max fill deadline buffer,
+        // which captures all deposits that newly expired, plus the bundle time (e.g. 1 hour) to account for the
+        // maximum time it takes for a newly expired deposit to be included in a bundle. A conservative value for
+        // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
+        // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
+        // is sent pretty late into the deposit's expiry period.
+        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() <
+          maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds
       ) {
         return true;
       }
@@ -589,31 +600,54 @@ export async function persistDataToArweave(
   const startTime = performance.now();
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
-  const matchingTxns = await client.getByTopic(tag, any());
+  const [matchingTxns, address, balance] = await Promise.all([
+    client.getByTopic(tag, any()),
+    client.getAddress(),
+    client.getBalance(),
+  ]);
+
+  // Check balance. Maybe move this to Monitor function.
+  const MINIMUM_AR_BALANCE = parseWinston("1");
+  if (balance.lte(MINIMUM_AR_BALANCE)) {
+    logger.error({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is below minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  } else {
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is above minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  }
+
   if (matchingTxns.length > 0) {
-    logger.info({
-      at: "Dataworker#index",
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
       message: `Data already exists on Arweave with tag: ${tag}`,
       hash: matchingTxns.map((txn) => txn.hash),
     });
   } else {
-    const [hashTxn, address, balance] = await Promise.all([
-      client.set(data, tag),
-      client.getAddress(),
-      client.getBalance(),
-    ]);
+    const hashTxn = await client.set(data, tag);
     logger.info({
-      at: "Dataworker#index",
+      at: "DataworkerUtils#persistDataToArweave",
       message: "Persisted data to Arweave! 💾",
+      tag,
       receipt: `https://arweave.app/tx/${hashTxn}`,
       rawData: `https://arweave.net/${hashTxn}`,
       address,
-      balance,
+      balance: formatWinston(balance),
+      notificationPath: "across-arweave",
+    });
+    const endTime = performance.now();
+    logger.debug({
+      at: "Dataworker#index",
+      message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
     });
   }
-  const endTime = performance.now();
-  logger.debug({
-    at: "Dataworker#index",
-    message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
-  });
 }

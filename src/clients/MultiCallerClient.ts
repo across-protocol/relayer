@@ -14,6 +14,7 @@ import {
   Signer,
   getMultisender,
   getProvider,
+  assert,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
@@ -63,6 +64,16 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 //      gasLimit. This can admittedly pad the gasLimit by a lot more than is required.
 //      See also https://community.optimism.io/docs/developers/bedrock/differences/
 const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.5;
+
+// The below interface is used by the TryMulticallClient to store information about successfully simulated transactions.
+// A tryMulticall call returns information about whether or not each individual transaction within the bundle succeeds.
+// If some but not all individual transactions in the bundle succeed, then we store that information in this interface
+// so that we may rebuild a tryMulticall bundle without having to perform further simulations.
+export interface TryMulticallTransaction {
+  contract: Contract;
+  calldata: string[];
+  gasLimit: BigNumber;
+}
 
 export class MultiCallerClient {
   protected txnClient: TransactionClient;
@@ -511,5 +522,137 @@ export class MultiCallerClient {
         notificationPath: "across-error",
       });
     }
+  }
+}
+
+export class TryMulticallClient extends MultiCallerClient {
+  override _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+    const txn = super._buildMultiCallBundle(transactions);
+    txn.method = "tryMulticall";
+    return txn;
+  }
+
+  protected override async _executeTxnQueue(
+    chainId: number,
+    txns: AugmentedTransaction[] = [],
+    _valueTxns: AugmentedTransaction[] = [],
+    simulate = false
+  ): Promise<TransactionResponse[]> {
+    assert(_valueTxns.length === 0);
+    const nTxns = txns.length;
+    if (nTxns === 0) {
+      return [];
+    }
+
+    const networkName = getNetworkName(chainId);
+    this.logger.debug({
+      at: "TryMulticallClient#executeTxnQueue",
+      message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
+    });
+
+    const buildTryMulticallTransaction = (
+      contract: Contract,
+      calldata: string[],
+      gasLimit: BigNumber
+    ): TryMulticallTransaction => ({
+      contract,
+      calldata,
+      gasLimit,
+    });
+
+    const txnRequestsToSubmit: AugmentedTransaction[] = [];
+    const txnCalldataToRebuild: TryMulticallTransaction[] = [];
+
+    // The goal is to simulate the transactions as a batch and pick out those which succeed.
+    const bundledTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
+    const bundledSimResults = await this.txnClient.simulate(bundledTxns);
+
+    bundledSimResults.forEach(({ succeed, transaction, reason, data }) => {
+      // TryMulticall _should_ always succeed, but either way, we need the return data to be defined so that we can properly
+      // filter out the transactions which failed.
+      if (!succeed || !isDefined(data?.length)) {
+        return;
+      }
+      // Address the case where we just call fillV3Relay(), and therefore the data field is empty.
+      if (succeed && transaction.method !== "tryMulticall") {
+        txnRequestsToSubmit.push(transaction);
+        return;
+      }
+      // If we make it here, then tryMulticall was simulated and there is a defined return data.
+      // Verify that the number of calls which returned data matches the number of calls made in the transaction.
+      // It is transaction.args[0], since `tryMulticall` only accepts a single argument of bytes[].
+      assert(transaction.args[0].length === data.length);
+
+      // Filter the calldata array by whether it succeeded in tryMulticall().
+      const succeededTxnCalldata = transaction.args[0].filter((_, idx) => data[idx].success);
+
+      // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
+      // some txns in the bundle must have failed. We take note only of the ones which succeeded.
+      if (succeededTxnCalldata.length !== data.length) {
+        txnCalldataToRebuild.push(
+          buildTryMulticallTransaction(transaction.contract, succeededTxnCalldata, transaction.gasLimit)
+        );
+        this.logger.debug({
+          at: "tryMulticallClient#executeChainTxnQueue",
+          message: `Some calls in ${networkName} transaction batch failed!`,
+          batchTxn: { ...transaction, contract: transaction.contract.address },
+          reason,
+        });
+      } else {
+        // Otherwise, none of the transactions failed, so we can add the bundle to txnRequestsToSubmit.
+        txnRequestsToSubmit.push(transaction);
+
+        // If txn succeeded or the revert reason is known to be benign, then log at debug level.
+        this.logger.debug({
+          at: "tryMulticallClient#executeChainTxnQueue",
+          message: `Successfully simulated ${networkName} transaction batch!`,
+          batchTxn: { ...transaction, contract: transaction.contract.address },
+        });
+      }
+    });
+
+    if (txnCalldataToRebuild.length !== 0) {
+      // At this point, every transaction here will be aimed at the same spoke pool, so we only need to chunk based on
+      // chunk size. Every transaction should be aimed at the same spoke pool since 1. The tryMulticall client is only
+      // instantiated for the relayer, which uses this client only for interfacing with the spoke pool, and 2. This function
+      // is called after filtering transactions by chainId, so each individual transaction is a call to a chainId's spoke pool.
+      const rebuildTryMulticall = (txn: TryMulticallTransaction) => {
+        const mrkdwn: string[] = [];
+        const contract = txn.contract;
+        const gasLimit = txn.gasLimit;
+        txn.calldata.forEach((data, idx) => {
+          mrkdwn.push(`\n *txn. ${idx + 1}:* ${data}`);
+        });
+        return {
+          chainId,
+          contract,
+          gasLimit,
+          method: "tryMulticall",
+          args: [txn.calldata],
+          message: "Across tryMulticall transaction",
+          mrkdwn: mrkdwn.join(""),
+        };
+      };
+      txnRequestsToSubmit.push(...txnCalldataToRebuild.map(rebuildTryMulticall));
+    }
+
+    if (simulate) {
+      let mrkdwn = "";
+      txnRequestsToSubmit.forEach((txn, idx) => {
+        mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+      });
+      this.logger.debug({
+        at: "TryMulticallClient#executeTxnQueue",
+        message: `${txnRequestsToSubmit.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
+        mrkdwn,
+      });
+      this.logger.debug({ at: "TryMulticallClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      return [];
+    }
+
+    const txnResponses =
+      txnRequestsToSubmit.length > 0 ? this.txnClient.submit(chainId, txnRequestsToSubmit) : Promise.resolve([]);
+
+    return txnResponses;
   }
 }

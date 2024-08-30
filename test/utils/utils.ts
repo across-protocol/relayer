@@ -18,6 +18,7 @@ import {
   sampleRateModel,
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
+import { INFINITE_FILL_DEADLINE } from "../../src/common";
 
 export {
   SpyTransport,
@@ -286,27 +287,42 @@ export async function depositV3(
   const quoteTimestamp = opts.quoteTimestamp ?? spokePoolTime;
   const message = opts.message ?? constants.EMPTY_MESSAGE;
   const fillDeadline = opts.fillDeadline ?? spokePoolTime + fillDeadlineBuffer;
+  const isLegacyDeposit = INFINITE_FILL_DEADLINE.eq(fillDeadline);
   const exclusivityDeadline = opts.exclusivityDeadline ?? 0;
   const exclusiveRelayer = opts.exclusiveRelayer ?? ZERO_ADDRESS;
 
   const [originChainId, txnResponse] = await Promise.all([
     spokePool.chainId(),
-    spokePool
-      .connect(signer)
-      .depositV3(
-        depositor,
-        recipient,
-        inputToken,
-        outputToken,
-        inputAmount,
-        outputAmount,
-        destinationChainId,
-        exclusiveRelayer,
-        quoteTimestamp,
-        fillDeadline,
-        exclusivityDeadline,
-        message
-      ),
+    isLegacyDeposit
+      ? spokePool
+          .connect(signer)
+          .depositFor(
+            depositor,
+            recipient,
+            inputToken,
+            inputAmount,
+            destinationChainId,
+            inputAmount.sub(outputAmount).mul(toWei(1)).div(inputAmount),
+            quoteTimestamp,
+            message,
+            0
+          )
+      : spokePool
+          .connect(signer)
+          .depositV3(
+            depositor,
+            recipient,
+            inputToken,
+            outputToken,
+            inputAmount,
+            outputAmount,
+            destinationChainId,
+            exclusiveRelayer,
+            quoteTimestamp,
+            fillDeadline,
+            exclusivityDeadline,
+            message
+          ),
   ]);
   const txnReceipt = await txnResponse.wait();
 
@@ -317,7 +333,7 @@ export async function depositV3(
   const { blockNumber, transactionHash, transactionIndex } = txnReceipt;
   const { logIndex } = eventLog;
 
-  return {
+  const depositObject = {
     originChainId: Number(originChainId),
     blockNumber,
     transactionHash,
@@ -325,6 +341,10 @@ export async function depositV3(
     logIndex,
     ...spreadEvent(args),
   };
+  if (isLegacyDeposit) {
+    depositObject.outputToken = outputToken;
+  }
+  return depositObject;
 }
 
 export async function updateDeposit(
