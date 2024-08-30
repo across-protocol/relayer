@@ -765,11 +765,11 @@ export class Relayer {
     const currentTime = getCurrentTime();
     const logDeposits = this.config.loggingInterval < currentTime - this.lastLogTime;
     if (logDeposits) {
-      if (tokenClient.anyCapturedShortFallFills() && logDeposits) {
+      if (tokenClient.anyCapturedShortFallFills()) {
         this.handleTokenShortfall();
         this.lastLogTime = currentTime;
       }
-      if (profitClient.anyCapturedUnprofitableFills() && logDeposits) {
+      if (profitClient.anyCapturedUnprofitableFills()) {
         this.handleUnprofitableFill();
         this.lastLogTime = currentTime;
       }
