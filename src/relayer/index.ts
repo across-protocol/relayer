@@ -30,6 +30,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
+  const simulate = !config.sendingRelaysEnabled;
+  const enableSlowFills = config.sendingSlowRelaysEnabled;
 
   let run = 1;
   let txnReceipts: { [chainId: number]: Promise<string[]> };
@@ -46,22 +48,20 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
       await updateRelayerClients(relayerClients, config);
 
-      if (!config.skipRelays) {
-        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
-        relayerClients.tokenClient.clearTokenData();
-        await relayerClients.tokenClient.update();
-        const simulate = !config.sendingRelaysEnabled;
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
-      }
+      // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
+      relayerClients.tokenClient.clearTokenData();
+      await relayerClients.tokenClient.update();
+      txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
       // any tokens so rebalancing can take into account unwrapped WETH balances.
       await relayerClients.inventoryClient.unwrapWeth();
 
-      if (!config.skipRebalancing) {
+      if (config.sendingRebalancesEnabled) {
         // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
         relayerClients.tokenClient.clearTokenData();
         await relayerClients.tokenClient.update();
+        await relayerClients.inventoryClient.setL1TokenApprovals();
         await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
       }
 
