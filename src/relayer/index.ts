@@ -61,6 +61,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
         relayerClients.tokenClient.clearTokenData();
         await relayerClients.tokenClient.update();
+        await relayerClients.inventoryClient.setL1TokenApprovals();
         await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
       }
 
