@@ -163,6 +163,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
         slowDepositors: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         tryMulticallChains: [],
+        loggingInterval: -1,
       } as unknown as RelayerConfig
     );
 
@@ -232,6 +233,6 @@ describe("Relayer: Initiates slow fill requests", async function () {
     for (const receipts of Object.values(txnReceipts)) {
       expect((await receipts).length).to.equal(0);
     }
-    expect(lastSpyLogIncludes(spy, "Handling token shortfall")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
   });
 });
