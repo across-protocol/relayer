@@ -41,7 +41,7 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
-  private lastLogTime: number = 0;
+  private lastLogTime = 0;
 
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
