@@ -51,11 +51,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
       relayerClients.tokenClient.clearTokenData();
       await relayerClients.tokenClient.update();
-      txnReceipts = await relayer.checkForUnfilledDepositsAndFill(
-        enableSlowFills,
-        simulate,
-        Math.round(tLoopStart / 1000)
-      );
+      txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
       // any tokens so rebalancing can take into account unwrapped WETH balances.

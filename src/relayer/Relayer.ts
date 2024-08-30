@@ -694,8 +694,7 @@ export class Relayer {
 
   async checkForUnfilledDepositsAndFill(
     sendSlowRelays = true,
-    simulate = false,
-    currentTime: number
+    simulate = false
   ): Promise<{ [chainId: number]: Promise<string[]> }> {
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
@@ -763,13 +762,17 @@ export class Relayer {
       }
     });
 
+    const currentTime = getCurrentTime();
     const logDeposits = this.config.loggingInterval < currentTime - this.lastLogTime;
-    this.lastLogTime = logDeposits ? currentTime : this.lastLogTime;
-    if (tokenClient.anyCapturedShortFallFills() && logDeposits) {
-      this.handleTokenShortfall();
-    }
-    if (profitClient.anyCapturedUnprofitableFills() && logDeposits) {
-      this.handleUnprofitableFill();
+    if (logDeposits) {
+      if (tokenClient.anyCapturedShortFallFills() && logDeposits) {
+        this.handleTokenShortfall();
+        this.lastLogTime = currentTime;
+      }
+      if (profitClient.anyCapturedUnprofitableFills() && logDeposits) {
+        this.handleUnprofitableFill();
+        this.lastLogTime = currentTime;
+      }
     }
 
     return txnReceipts;
