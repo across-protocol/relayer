@@ -31,7 +31,6 @@ export class RelayerConfig extends CommonConfig {
   readonly indexerPath: string;
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
-  readonly skipRebalancing: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingRebalancesEnabled: boolean;
   readonly sendingMessageRelaysEnabled: boolean;
@@ -79,7 +78,6 @@ export class RelayerConfig extends CommonConfig {
       SEND_RELAYS,
       SEND_REBALANCES,
       SEND_MESSAGE_RELAYS,
-      SKIP_REBALANCING,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
@@ -250,7 +248,6 @@ export class RelayerConfig extends CommonConfig {
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
     this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
-    this.skipRebalancing = SKIP_REBALANCING === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
 
