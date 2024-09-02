@@ -70,11 +70,10 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
       this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress),
       eventConfig
     );
-    const filteredEvents = events.filter(({ args }) => args.l1Token === l1Token);
     return {
-      [this.resolveL2TokenAddress(l1Token)]: filteredEvents.map((event) =>
-        processEvent(event, "_amount", "_to", "_from")
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events
+        .filter(({ args }) => args.l1Token === l1Token)
+        .map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
   }
 
