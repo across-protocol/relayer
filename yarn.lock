@@ -50,10 +50,10 @@
     axios "^1.6.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@^3.1.23":
-  version "3.1.23"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.23.tgz#12db8040dfe0ec4d19ea7262b5cabaa3b18dfad9"
-  integrity sha512-qBGrsYbiMQrKu4zcbOMvmJsVURpUpjLmwKU8hzDHHjGomIzECEtW4pyWmgD3pri8x+X90wh07pw7yw8I5FsClw==
+"@across-protocol/sdk@^3.1.27":
+  version "3.1.27"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.27.tgz#97f7b4d55a9079d4b6a3aa0426d703e06e518076"
+  integrity sha512-n1RZwpgPjLmqkCnbMjdqy+aNVtiu4kRlJ3L9yTR/F3E5RQkN52c22xZeKGvsT+lSfvcmWwH18YzsDeBoVqhVyg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.14"
@@ -61,7 +61,6 @@
     "@eth-optimism/sdk" "^3.3.1"
     "@pinata/sdk" "^2.1.0"
     "@types/mocha" "^10.0.1"
-    "@uma/logger" "^1.3.0"
     "@uma/sdk" "^0.34.1"
     arweave "^1.14.4"
     async "^3.2.5"

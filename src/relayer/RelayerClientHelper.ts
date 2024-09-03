@@ -222,7 +222,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(inventoryChainIds),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
-    clients.inventoryClient.setL1TokenApprovals(),
     config.sendingRelaysEnabled ? clients.tokenClient.setOriginTokenApprovals() : Promise.resolve(),
   ]);
 }

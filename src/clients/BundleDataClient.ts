@@ -21,7 +21,7 @@ import {
   isDefined,
   toBN,
 } from "../utils";
-import { Clients } from "../common";
+import { Clients, INFINITE_FILL_DEADLINE } from "../common";
 import {
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
@@ -762,43 +762,40 @@ export class BundleDataClient {
           continue;
         }
 
-        originClient
-          .getDepositsForDestinationChain(destinationChainId)
-          .filter((deposit) => deposit.blockNumber <= originChainBlockRange[1])
-          .forEach((deposit) => {
-            depositCounter++;
-            const relayDataHash = this.getRelayHashFromEvent(deposit);
-            if (v3RelayHashes[relayDataHash]) {
-              // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
-              // gives us bad data.
-              return;
-            }
-            // Even if deposit is not in bundle block range, store all deposits we can see in memory in this
-            // convenient dictionary.
-            v3RelayHashes[relayDataHash] = {
-              deposit: deposit,
-              fill: undefined,
-              slowFillRequest: undefined,
-            };
+        originClient.getDepositsForDestinationChain(destinationChainId).forEach((deposit) => {
+          depositCounter++;
+          const relayDataHash = this.getRelayHashFromEvent(deposit);
+          if (v3RelayHashes[relayDataHash]) {
+            // If we've seen this deposit before, then skip this deposit. This can happen if our RPC provider
+            // gives us bad data.
+            return;
+          }
+          // Even if deposit is not in bundle block range, store all deposits we can see in memory in this
+          // convenient dictionary.
+          v3RelayHashes[relayDataHash] = {
+            deposit: deposit,
+            fill: undefined,
+            slowFillRequest: undefined,
+          };
 
-            // If deposit block is within origin chain bundle block range, then save as bundle deposit.
-            // If deposit is in bundle and it has expired, additionally save it as an expired deposit.
-            // If deposit is not in the bundle block range, then save it as an older deposit that
-            // may have expired.
-            if (deposit.blockNumber >= originChainBlockRange[0]) {
-              // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
-              updateBundleDepositsV3(bundleDepositsV3, deposit);
-              // We don't check that fillDeadline >= bundleBlockTimestamps[destinationChainId][0] because
-              // that would eliminate any deposits in this bundle with a very low fillDeadline like equal to 0
-              // for example. Those should be impossible to create but technically should be included in this
-              // bundle of refunded deposits.
-              if (deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1]) {
-                expiredBundleDepositHashes.add(relayDataHash);
-              }
-            } else {
-              olderDepositHashes.add(relayDataHash);
+          // If deposit block is within origin chain bundle block range, then save as bundle deposit.
+          // If deposit is in bundle and it has expired, additionally save it as an expired deposit.
+          // If deposit is not in the bundle block range, then save it as an older deposit that
+          // may have expired.
+          if (deposit.blockNumber >= originChainBlockRange[0] && deposit.blockNumber <= originChainBlockRange[1]) {
+            // Deposit is a V3 deposit in this origin chain's bundle block range and is not a duplicate.
+            updateBundleDepositsV3(bundleDepositsV3, deposit);
+            // We don't check that fillDeadline >= bundleBlockTimestamps[destinationChainId][0] because
+            // that would eliminate any deposits in this bundle with a very low fillDeadline like equal to 0
+            // for example. Those should be impossible to create but technically should be included in this
+            // bundle of refunded deposits.
+            if (deposit.fillDeadline < bundleBlockTimestamps[destinationChainId][1]) {
+              expiredBundleDepositHashes.add(relayDataHash);
             }
-          });
+          } else if (deposit.blockNumber < originChainBlockRange[0]) {
+            olderDepositHashes.add(relayDataHash);
+          }
+        });
       }
     }
     this.logger.debug({
@@ -847,7 +844,12 @@ export class BundleDataClient {
                   // If fill replaced a slow fill request, then mark it as one that might have created an
                   // unexecutable slow fill. We can't know for sure until we check the slow fill request
                   // events.
-                  if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
+                  // slow fill requests for deposits from or to lite chains are considered invalid
+                  if (
+                    fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill &&
+                    !v3RelayHashes[relayDataHash].deposit.fromLiteChain &&
+                    !v3RelayHashes[relayDataHash].deposit.toLiteChain
+                  ) {
                     fastFillsReplacingSlowFills.push(relayDataHash);
                   }
                 }
@@ -869,7 +871,16 @@ export class BundleDataClient {
 
             // Since there was no deposit matching the relay hash, we need to do a historical query for an
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
+            // We can skip this step if the fill's fill deadline is not infinite, because we can assume that the
+            // spoke pool clients have loaded deposits old enough to cover all fills with a non-infinite fill deadline.
             if (fill.blockNumber >= destinationChainBlockRange[0]) {
+              // Fill has a non-infinite expiry, and we can assume our spoke pool clients have old enough deposits
+              // to conclude that this fill is invalid if we haven't found a matching deposit in memory, so
+              // skip the historical query.
+              if (!INFINITE_FILL_DEADLINE.eq(fill.fillDeadline)) {
+                bundleInvalidFillsV3.push(fill);
+                return;
+              }
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, fill);
               if (!historicalDeposit.found) {
                 bundleInvalidFillsV3.push(fill);
@@ -885,7 +896,12 @@ export class BundleDataClient {
                   quoteTimestamp: matchedDeposit.quoteTimestamp,
                 });
                 v3RelayHashes[relayDataHash].deposit = matchedDeposit;
-                if (fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill) {
+                // slow fill requests for deposits from or to lite chains are considered invalid
+                if (
+                  fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill &&
+                  !matchedDeposit.fromLiteChain &&
+                  !matchedDeposit.toLiteChain
+                ) {
                   fastFillsReplacingSlowFills.push(relayDataHash);
                 }
               }
@@ -963,7 +979,12 @@ export class BundleDataClient {
 
             // Since there was no deposit matching the relay hash, we need to do a historical query for an
             // older deposit in case the spoke pool client's lookback isn't old enough to find the matching deposit.
-            if (slowFillRequest.blockNumber >= destinationChainBlockRange[0]) {
+            // We can skip this step if the deposit's fill deadline is not infinite, because we can assume that the
+            // spoke pool clients have loaded deposits old enough to cover all fills with a non-infinite fill deadline.
+            if (
+              INFINITE_FILL_DEADLINE.eq(slowFillRequest.fillDeadline) &&
+              slowFillRequest.blockNumber >= destinationChainBlockRange[0]
+            ) {
               const historicalDeposit = await queryHistoricalDepositForFill(originClient, slowFillRequest);
               if (!historicalDeposit.found) {
                 // TODO: Invalid slow fill request. Maybe worth logging.
@@ -1014,6 +1035,11 @@ export class BundleDataClient {
           assert(
             fill.relayExecutionInfo.fillType === FillType.ReplacedSlowFill,
             "Fill type should be ReplacedSlowFill."
+          );
+          // We should never push fast fills involving lite chains here because slow fill requests for them are invalid:
+          assert(
+            !deposit.fromLiteChain && !deposit.toLiteChain,
+            "fastFillsReplacingSlowFills should not contain lite chain deposits"
           );
           const destinationBlockRange = getBlockRangeForChain(blockRangesForChains, destinationChainId, chainIds);
           if (
@@ -1093,7 +1119,8 @@ export class BundleDataClient {
         // If fill status is RequestedSlowFill, then we might need to mark down an unexecutable
         // slow fill that we're going to replace with an expired deposit refund.
         // If deposit cannot be slow filled, then exit early.
-        if (fillStatus !== FillStatus.RequestedSlowFill) {
+        // slow fill requests for deposits from or to lite chains are considered invalid
+        if (fillStatus !== FillStatus.RequestedSlowFill || deposit.fromLiteChain || deposit.toLiteChain) {
           return;
         }
         // Now, check if there was a slow fill created for this deposit in a previous bundle which would now be
