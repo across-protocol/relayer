@@ -41,6 +41,7 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
+  private lastLogTime = 0;
 
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
@@ -717,8 +718,6 @@ export class Relayer {
       .flat()
       .map(({ deposit }) => deposit);
 
-    this.fillLimits = this.computeFillLimits();
-
     this.logger.debug({
       at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
@@ -726,6 +725,8 @@ export class Relayer {
     if (allUnfilledDeposits.length === 0) {
       return txnReceipts;
     }
+
+    this.fillLimits = this.computeFillLimits();
 
     const lpFees = await this.batchComputeLpFees(allUnfilledDeposits);
     await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, _deposits]) => {
@@ -761,12 +762,17 @@ export class Relayer {
       }
     });
 
-    // If during the execution run we had shortfalls or unprofitable fills then handle it by producing associated logs.
-    if (tokenClient.anyCapturedShortFallFills()) {
-      this.handleTokenShortfall();
-    }
-    if (profitClient.anyCapturedUnprofitableFills()) {
-      this.handleUnprofitableFill();
+    const currentTime = getCurrentTime();
+    const logDeposits = this.config.loggingInterval < currentTime - this.lastLogTime;
+    if (logDeposits) {
+      if (tokenClient.anyCapturedShortFallFills()) {
+        this.handleTokenShortfall();
+        this.lastLogTime = currentTime;
+      }
+      if (profitClient.anyCapturedUnprofitableFills()) {
+        this.handleUnprofitableFill();
+        this.lastLogTime = currentTime;
+      }
     }
 
     return txnReceipts;
@@ -908,10 +914,16 @@ export class Relayer {
     const start = performance.now();
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     if (preferredChainIds.length === 0) {
-      this.logger.info({
+      // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
+      // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
+      // it is a special edge case the relayer should be aware of.
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
-        message: `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
-        deposit,
+        message: deposit.fromLiteChain
+          ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
+          : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
+        txn: blockExplorerLink(transactionHash, originChainId),
+        notificationPath: "across-unprofitable-fills",
       });
       return {
         repaymentChainProfitability: {
@@ -1190,6 +1202,7 @@ export class Relayer {
         at: "Relayer::handleUnprofitableFill",
         message: "Not relaying unprofitable deposits 🙅‍♂️!",
         mrkdwn,
+        notificationPath: "across-unprofitable-fills",
       });
     }
   }
