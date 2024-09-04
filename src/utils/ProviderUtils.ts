@@ -135,6 +135,7 @@ function compareRpcResults(method: string, rpcResultA: unknown, rpcResultB: unkn
         "size", // Alchemy/Arbitrum (temporary)
         "totalDifficulty", // Quicknode/Alchemy (sometimes)
         "logsBloom", // zkSync (third-party providers return 0x0..0)
+        "transactions", // Polygon yParity field in transactions[]
       ],
       rpcResultA as Record<string, unknown>,
       rpcResultB as Record<string, unknown>
