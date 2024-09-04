@@ -135,6 +135,7 @@ function compareRpcResults(method: string, rpcResultA: unknown, rpcResultB: unkn
         "size", // Alchemy/Arbitrum (temporary)
         "totalDifficulty", // Quicknode/Alchemy (sometimes)
         "logsBloom", // zkSync (third-party providers return 0x0..0)
+        "transactions", // Polygon yParity field in transactions[]
       ],
       rpcResultA as Record<string, unknown>,
       rpcResultB as Record<string, unknown>
@@ -341,6 +342,19 @@ export class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
           ...inputs
         )
     );
+
+    // This is added for interim testing to see whether relayer fill performance improves.
+    // @todo: Upstream this to the SDK where the relayer's implementation will be relocated.
+    this.providers.forEach((provider) => {
+      const url = getOriginFromURL(provider.connection.url);
+      const { pollingInterval } = provider;
+      provider.pollingInterval = 1000;
+      logger?.debug({
+        at: "RetryProvider",
+        message: `Dropped ${url} pollingInterval ${pollingInterval} -> ${provider.pollingInterval}.`,
+      });
+    });
+
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold)) {
       throw new Error(
         `nodeQuorum,Threshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
