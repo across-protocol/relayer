@@ -50,17 +50,39 @@ export class LineaWethBridge extends BaseBridgeAdapter {
 
   // Getting L2 finalization events on Linea is tricky since we need knowledge of the L1 message hash, *and* the L2 event gives no information
   // about the L1 transfer (such as the depositor address or amount), so we need to manually figure this out.
-  override async queryL1AndL2BridgeTransferEvents(
+  override async queryL1AndL2BridgeEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
     l1SearchConfig: EventSearchConfig,
     l2SearchConfig: EventSearchConfig
   ): Promise<[BridgeEvents, BridgeEvents]> {
-    return Promise.all([
-      this.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, l1SearchConfig),
-      this.queryL2BridgeFinalizationEvents(l1Token, fromAddress, toAddress, l1SearchConfig, l2SearchConfig),
-    ]);
+    const queryEvents = await this.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, l1SearchConfig);
+    const initiatedHashes = Object.values(queryEvents)
+      .flat()
+      .map((e) => e["_messageHash"])
+      .filter((hash) => isDefined(hash));
+
+    const finalizationEvents = await this.queryL2BridgeFinalizationEvents(
+      l1Token,
+      fromAddress,
+      toAddress,
+      l2SearchConfig,
+      initiatedHashes
+    );
+    const finalizedHashes = Object.values(finalizationEvents)
+      .flat()
+      .map((e) => e["_messageHash"])
+      .filter((hash) => isDefined(hash));
+
+    // The finalized events are all the query events which have a finalized message hash on L2.
+    const finalizedEvents = Object.fromEntries(
+      Object.entries(queryEvents).map(([l2Token, events]) => [
+        l2Token,
+        events.filter((e) => finalizedHashes.includes(e["_messageHash"])),
+      ])
+    );
+    return [queryEvents, finalizedEvents];
   }
 
   async queryL1BridgeInitiationEvents(
@@ -74,6 +96,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       this.getL1Bridge().filters.MessageSent(undefined, toAddress),
       eventConfig
     );
+    // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
+    // those with 0 value.
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
         .map((event) => processEvent(event, "_value", "_to", "_from"))
@@ -81,40 +105,27 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     };
   }
 
-  // Here, we need knowledge of the l1Search config since otherwise we would have no information about
-  // the value and depositor/recipient addresses. This is because the l2 MessageClaimed event contains no
-  // information about the amount received nor the recipient.
+  // The Linea Weth bridge finalization events contain no information about the amount bridged nor the
+  // recipient address. Additionally, the only indexed event is the `messageHash` field, which is obtained
+  // by querying the L1 bridge initiation event. Therefore, if we want to calculate outstanding transfers for Linea,
+  // we need to first have knowledge of bridge initiation events, then check whether each initiation event
+  // has a corresponding finalization event, and finally filter out events from the initiation query which do
+  // not have a finalization event and mark it as outstanding.
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
-    l1SearchConfig: EventSearchConfig,
-    l2SearchConfig?: EventSearchConfig
+    l2SearchConfig: EventSearchConfig,
+    messageHashes?: string[]
   ): Promise<BridgeEvents> {
-    // @dev L2SearchConfig must be defined for this call. It is only an optional argument so it can conform to the
-    // BaseBridgeAdapter class.
-    assert(isDefined(l2SearchConfig));
-    const initiatedQueryResult = await paginatedEventQuery(
-      this.getL1Bridge(),
-      this.getL1Bridge().filters.MessageSent(undefined, toAddress),
-      l1SearchConfig
-    );
-
-    // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
-    // those with 0 value.
-    const internalMessageHashes = initiatedQueryResult
-      .filter(({ args }) => args._value.gt(0))
-      .map(({ args }) => args._messageHash);
+    assert(isDefined(messageHashes));
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.MessageClaimed(internalMessageHashes),
+      this.getL2Bridge().filters.MessageClaimed(messageHashes),
       l2SearchConfig
     );
-    const finalizedHashes = events.map(({ args }) => args._messageHash);
     return {
-      [this.resolveL2TokenAddress(l1Token)]: initiatedQueryResult
-        .filter(({ args }) => finalizedHashes.includes(args._messageHash))
-        .map((event) => processEvent(event, "_value", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_value", "_to", "_from")),
     };
   }
 }

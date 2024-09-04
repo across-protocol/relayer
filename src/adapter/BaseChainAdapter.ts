@@ -235,7 +235,7 @@ export class BaseChainAdapter {
     await forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
         const bridge = this.bridges[l1Token];
-        const [depositInitiatedResults, depositFinalizedResults] = await bridge.queryL1AndL2BridgeTransferEvents(
+        const [depositInitiatedResults, depositFinalizedResults] = await bridge.queryL1AndL2BridgeEvents(
           l1Token,
           monitoredAddress,
           monitoredAddress,

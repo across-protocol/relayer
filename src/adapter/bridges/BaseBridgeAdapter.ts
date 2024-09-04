@@ -58,7 +58,7 @@ export abstract class BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
 
-  public async queryL1AndL2BridgeTransferEvents(
+  public async queryL1AndL2BridgeEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
