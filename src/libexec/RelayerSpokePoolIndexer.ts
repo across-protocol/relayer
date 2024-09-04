@@ -1,6 +1,5 @@
 import assert from "assert";
 import minimist from "minimist";
-import { setTimeout as delay } from "node:timers/promises";
 import { Contract, Event, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
@@ -201,7 +200,7 @@ async function listen(
   });
 
   do {
-    await delay(INDEXER_POLLING_PERIOD);
+    await sdkUtils.delay(INDEXER_POLLING_PERIOD);
   } while (!stop);
 }
 
