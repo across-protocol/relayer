@@ -17,7 +17,6 @@ import {
   constructSpokePoolClientsWithLookback,
   resolveSpokePoolActivationBlock,
   updateClients,
-  updateSpokePoolClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
