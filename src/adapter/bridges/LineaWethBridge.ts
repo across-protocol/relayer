@@ -1,4 +1,14 @@
-import { Contract, BigNumber, paginatedEventQuery, bnZero, Signer, EventSearchConfig, Provider } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  bnZero,
+  Signer,
+  EventSearchConfig,
+  Provider,
+  getBlockForTimestamp,
+  BlockFinder,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -62,12 +72,27 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // TODO: This can probably be refactored to save an RPC call since this is called in parallel with
-    // queryL1BridgeInitiationEvents in the BaseChainAdapter class.
+    const l2Provider = this.getL2Bridge().provider;
+    const l1Provider = this.getL1Bridge().provider;
+
+    const [fromBlock, toBlock] = await Promise.all([
+      l2Provider.getBlock(eventConfig.fromBlock),
+      l2Provider.getBlock(eventConfig.toBlock),
+    ]);
+
+    const blockFinder = new BlockFinder(l1Provider);
+    const [l1FromBlock, l1ToBlock] = await Promise.all([
+      getBlockForTimestamp(this.hubChainId, fromBlock.timestamp, blockFinder),
+      getBlockForTimestamp(this.hubChainId, toBlock.timestamp, blockFinder),
+    ]);
+    const l1SearchConfig = {
+      fromBlock: l1FromBlock,
+      toBlock: l1ToBlock,
+    };
     const initiatedQueryResult = await paginatedEventQuery(
       this.getL1Bridge(),
       this.getL1Bridge().filters.MessageSent(undefined, toAddress),
-      eventConfig
+      l1SearchConfig
     );
 
     // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove

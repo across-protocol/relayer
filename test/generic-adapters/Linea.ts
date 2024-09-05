@@ -125,6 +125,9 @@ describe("Cross Chain Adapter: Linea", async function () {
       await wethBridgeContract.emitMessageClaimed(expectedMessageHash);
       await wethBridgeContract.emitMessageClaimed(otherMessageHash);
 
+      await adapter.updateSpokePoolClients();
+      searchConfig = adapter.getUpdatedSearchConfigs().l2SearchConfig;
+
       const wethBridge = adapter.bridges[l1WETHToken];
       const result = await wethBridge.queryL2BridgeFinalizationEvents(
         l1WETHToken,
