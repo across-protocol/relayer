@@ -88,11 +88,54 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
 
+    this.worker.on("exit", (code, signal) => this.childExit(code, signal));
     this.worker.on("message", (message) => this.indexerUpdate(message));
     this.logger.debug({
       at: "SpokePoolClient#startWorker",
       message: `Spawned ${this.chain} SpokePool indexer.`,
       args: this.worker.spawnargs,
+    });
+  }
+
+  stopWorker(): void {
+    if (this.worker.connected) {
+      this.worker.disconnect();
+    } else {
+      this.logger.warn({
+        at: "SpokePoolClient#stopWorker",
+        message: `Skipped disconnecting on ${this.chain} SpokePool listener (already disconnected).`,
+      });
+    }
+
+    const { exitCode } = this.worker;
+    if (exitCode === null) {
+      this.worker.kill("SIGKILL");
+    } else {
+      this.logger.warn({
+        at: "SpokePoolClient#stopWorker",
+        message: `Skipped SIGKILL on ${this.chain} SpokePool listener (already exited).`,
+        exitCode,
+      });
+    }
+  }
+
+  /**
+   * The worker process has exited. Future: Optionally restart it based on the exit code.
+   * See also: https://nodejs.org/api/child_process.html#event-exit
+   * @param code Optional exit code.
+   * @param signal Optional signal resulting in termination.
+   * @returns void
+   */
+  protected childExit(code?: number, signal?: string): void {
+    if (code === 0) {
+      return;
+    }
+
+    this.logger[signal === "SIGKILL" ? "debug" : "warn"]({
+      at: "SpokePoolClient#childExit",
+      message: `${this.chain} SpokePool listener exited.`,
+      code,
+      signal,
     });
   }
 

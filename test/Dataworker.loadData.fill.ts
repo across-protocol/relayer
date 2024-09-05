@@ -30,6 +30,7 @@ import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from ".
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
+import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -404,7 +405,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
-      // Send a deposit.
+      // Send a legacy deposit.
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -412,7 +413,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit
+        amountToDeposit,
+        {
+          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+        }
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -442,7 +446,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
-      // Send a deposit.
+      // Send a legacy deposit where the fill deadline is infinite, so we can test the bundle data client uses
+      // queryHistoricalDepositForFill to find the deposit.
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -450,7 +455,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit
+        amountToDeposit,
+        {
+          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+        }
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
       // Construct a spoke pool client with a small search range that would not include the deposit.
@@ -499,7 +507,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
-      // Send a deposit.
+      // Send a legacy deposit.
       const depositObject = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -507,7 +515,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit
+        amountToDeposit,
+        {
+          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+        }
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -654,6 +665,23 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Now, there is no bundle deposit but still an expired deposit to refund.
       expect(data2.bundleDepositsV3).to.deep.equal({});
       expect(data2.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
+    it("Handles when deposit is greater than origin bundle end block but fill is within range", async function () {
+      // Send deposit after origin chain block range.
+      const blockRanges = getDefaultBlockRange(5);
+      const futureDeposit = generateV3Deposit();
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      blockRanges[originChainIndex] = [blockRanges[0][0], futureDeposit.blockNumber - 1];
+
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+
+      generateV3FillFromDepositEvent(futureDeposit);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(blockRanges, spokePoolClients);
+      expect(data1.bundleDepositsV3).to.deep.equal({});
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.false;
     });
     it("Does not count prior bundle expired deposits that were filled", async function () {
       // Send deposit that expires in this bundle.

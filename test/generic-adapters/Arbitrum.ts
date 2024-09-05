@@ -25,20 +25,20 @@ let cctpMessageTransmitterContract: Contract;
 let adapter: ArbitrumAdapter;
 
 class ArbitrumAdapterTest extends ArbitrumAdapter {
-  protected override getL1Bridge(): Contract {
-    return erc20BridgeContract;
+  setL1Bridge(address: string, bridge: Contract) {
+    this.bridges[address].l1Bridge = bridge;
   }
 
-  protected override getL2Bridge(): Contract {
-    return erc20BridgeContract;
+  setL2Bridge(address: string, bridge: Contract) {
+    this.bridges[address].l2Bridge = bridge;
   }
 
-  protected override getL1CCTPTokenMessengerBridge(): Contract {
-    return cctpBridgeContract;
+  setCCTPL1Bridge(address: string, bridge: Contract) {
+    this.bridges[address].cctpBridge.l1Bridge = bridge;
   }
 
-  protected override getL2CCTPMessageTransmitter(): Contract {
-    return cctpMessageTransmitterContract;
+  setCCTPL2Bridge(address: string, bridge: Contract) {
+    this.bridges[address].cctpBridge.l2Bridge = bridge;
   }
 }
 
@@ -68,6 +68,12 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       [monitoredEoa]
     );
 
+    // Set the adapter bridges to appropriate contracts.
+    adapter.setL1Bridge(l1Token, erc20BridgeContract);
+    adapter.setL2Bridge(l1Token, erc20BridgeContract);
+    adapter.setCCTPL1Bridge(l1UsdcAddress, cctpBridgeContract);
+    adapter.setCCTPL2Bridge(l1UsdcAddress, cctpMessageTransmitterContract);
+
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
     l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
     l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
@@ -75,44 +81,57 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
 
   describe("ERC20", () => {
     it("get DepositInitiated events from L1", async () => {
-      await erc20BridgeContract.emitDepositInitiated(l1Token, randomAddress(), monitoredEoa, 0, 1);
+      await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, monitoredEoa, 0, 1);
       await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, randomAddress(), 1, 1);
 
-      const depositInitiatedEvents = await adapter.getL1DepositInitiatedEvents(l1Token, monitoredEoa, searchConfig);
-      expect(depositInitiatedEvents).to.have.lengthOf(1);
-      expect(depositInitiatedEvents[0].args?._sequenceNumber.toNumber()).to.equal(1);
-      expect(depositInitiatedEvents[0].args?._amount.toNumber()).to.equal(1);
-      expect(depositInitiatedEvents[0].args?._from).to.equal(monitoredEoa);
+      const depositInitiatedEvents = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        l1Token,
+        monitoredEoa,
+        monitoredEoa,
+        searchConfig
+      );
+      expect(depositInitiatedEvents[l2Token]).to.have.lengthOf(1);
+      expect(depositInitiatedEvents[l2Token][0]._sequenceNumber.toNumber()).to.equal(0);
+      expect(depositInitiatedEvents[l2Token][0]._amount.toNumber()).to.equal(1);
+      expect(depositInitiatedEvents[l2Token][0].from).to.equal(monitoredEoa);
+      expect(depositInitiatedEvents[l2Token][0].to).to.equal(monitoredEoa);
     });
 
     it("get DepositFinalized events from L2", async () => {
-      await erc20BridgeContract.emitDepositFinalized(l1Token, randomAddress(), monitoredEoa, 1);
+      await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, monitoredEoa, 1);
       await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, randomAddress(), 1);
 
-      const depositFinalizedEvents = await adapter.getL2DepositFinalizedEvents(l1Token, monitoredEoa, searchConfig);
-      expect(depositFinalizedEvents).to.have.lengthOf(1);
-      expect(depositFinalizedEvents[0].args?.amount.toNumber()).to.equal(1);
-      expect(depositFinalizedEvents[0].args?.from).to.equal(monitoredEoa);
+      const depositFinalizedEvents = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
+        l1Token,
+        monitoredEoa,
+        monitoredEoa,
+        searchConfig
+      );
+      expect(depositFinalizedEvents[l2Token]).to.have.lengthOf(1);
+      expect(depositFinalizedEvents[l2Token][0].amount.toNumber()).to.equal(1);
+      expect(depositFinalizedEvents[l2Token][0].from).to.equal(monitoredEoa);
     });
 
     it("get outstanding cross-chain transfers", async () => {
       // Deposits that do not originate from monitoredEoa should be ignored
-      await erc20BridgeContract.emitDepositInitiated(l1Token, randomAddress(), monitoredEoa, 0, 1);
-      await erc20BridgeContract.emitDepositFinalized(l1Token, randomAddress(), monitoredEoa, 1);
+      await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, monitoredEoa, 0, 1);
+      await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, monitoredEoa, 1);
       // Finalized deposits that should not be considered as outstanding
-      await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, randomAddress(), 1, 1);
-      await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, randomAddress(), 1);
+      await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, monitoredEoa, 1, 1);
+      await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, monitoredEoa, 1);
       // Outstanding deposits
-      await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, randomAddress(), 2, 1);
+      const outstandingDepositEvent = await erc20BridgeContract.emitDepositInitiated(
+        l1Token,
+        monitoredEoa,
+        monitoredEoa,
+        2,
+        1
+      );
 
-      const depositEvents = await adapter.getL1DepositInitiatedEvents(l1Token, monitoredEoa, searchConfig);
-      const outstandingDepositEvent = depositEvents.find((e) => e.args?._sequenceNumber.toNumber() === 2);
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
-
-      expect(outstandingTransfers[monitoredEoa][l1Token][l2Token]).to.deep.equal({
-        totalAmount: toBN(1),
-        depositTxHashes: [outstandingDepositEvent?.transactionHash],
-      });
+      const transferObject = outstandingTransfers[monitoredEoa][l1Token][l2Token];
+      expect(transferObject.totalAmount).to.equal(toBN(1));
+      expect(transferObject.depositTxHashes).to.deep.equal([outstandingDepositEvent.hash]);
     });
   });
 
