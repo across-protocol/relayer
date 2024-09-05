@@ -1,8 +1,9 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
+import { updateSpokePoolClients } from "../common";
 import { config, delay, disconnectRedisClients, getCurrentTime, getNetworkName, Signer, winston } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
@@ -35,6 +36,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   let run = 1;
   let txnReceipts: { [chainId: number]: Promise<string[]> };
+  const { acrossApiClient, inventoryClient, spokePoolClients, tokenClient } = relayerClients;
   try {
     do {
       if (loop) {
@@ -46,9 +48,37 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         await relayerClients.configStoreClient.update();
         await relayerClients.hubPoolClient.update();
       }
-      await updateRelayerClients(relayerClients, config);
+      // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+      // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
+      // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
+      // having a "first run" update and then a "normal" update that considers this. see previous implementation here
+      // https://github.com/across-protocol/relayer/pull/37/files#r883371256 as a reference.
+      await updateSpokePoolClients(spokePoolClients, [
+        "V3FundsDeposited",
+        "RequestedSpeedUpV3Deposit",
+        "FilledV3Relay",
+        "RelayedRootBundle",
+        "ExecutedRelayerRefundRoot",
+      ]);
 
-      // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
+      // Update the token client first so that inventory client has latest balances.
+      await tokenClient.update();
+
+      // We can update the inventory client in parallel with checking for eth wrapping as these do not depend on each other.
+      // Cross-chain deposit tracking produces duplicates in looping mode, so in that case don't attempt it. This does not
+      // disable inventory management, but does make it ignorant of in-flight cross-chain transfers. The rebalancer is
+      // assumed to run separately from the relayer and with pollingDelay 0, so it doesn't loop and will track transfers
+      // correctly to avoid repeat rebalances.
+      const inventoryChainIds =
+        config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
+      await Promise.all([
+        acrossApiClient.update(config.ignoreLimits),
+        inventoryClient.update(inventoryChainIds),
+        inventoryClient.wrapL2EthIfAboveThreshold(),
+        config.sendingRelaysEnabled ? tokenClient.setOriginTokenApprovals() : Promise.resolve(),
+      ]);
+
+      // Since the above spoke pool updates are slow, refresh token client before sending rebalances now.
       relayerClients.tokenClient.clearTokenData();
       await relayerClients.tokenClient.update();
       txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
