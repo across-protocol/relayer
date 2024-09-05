@@ -7,6 +7,7 @@ import { delay, getOriginFromURL } from "./";
 import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
 
+export const defaultTimeout = 60 * 1000;
 export class RetryProvider extends sdkProviders.RetryProvider {}
 
 // Global provider cache to avoid creating multiple providers for the same chain.
@@ -65,7 +66,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     PROVIDER_CACHE_TTL,
   } = process.env;
 
-  const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || sdkProviders.defaultTimeout);
+  const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
 
   // Default to 2 retries.
   const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "2");
