@@ -10,7 +10,7 @@ import { isDefined } from "./TypeGuards";
 export class RetryProvider extends sdkProviders.RetryProvider {}
 
 // Global provider cache to avoid creating multiple providers for the same chain.
-const providerCache: { [chainId: number]: sdkProviders.RetryProvider } = {};
+const providerCache: { [chainId: number]: RetryProvider } = {};
 
 function getProviderCacheKey(chainId: number, redisEnabled: boolean) {
   return `${chainId}_${redisEnabled ? "cache" : "nocache"}`;
@@ -23,7 +23,7 @@ function getProviderCacheKey(chainId: number, redisEnabled: boolean) {
  * @param redisEnabled
  * @returns ethers.provider
  */
-export function getCachedProvider(chainId: number, redisEnabled = true): sdkProviders.RetryProvider {
+export function getCachedProvider(chainId: number, redisEnabled = true): RetryProvider {
   if (!providerCache[getProviderCacheKey(chainId, redisEnabled)]) {
     throw new Error(`No cached provider for chainId ${chainId} and redisEnabled ${redisEnabled}`);
   }
@@ -44,11 +44,7 @@ export function getChainQuorum(chainId: number): number {
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
  * "provider cache" if this function was called once before with the same chain ID.
  */
-export async function getProvider(
-  chainId: number,
-  logger?: winston.Logger,
-  useCache = true
-): Promise<sdkProviders.RetryProvider> {
+export async function getProvider(chainId: number, logger?: winston.Logger, useCache = true): Promise<RetryProvider> {
   const redisClient = await getRedisCache(logger);
   if (useCache) {
     const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
@@ -160,7 +156,7 @@ export async function getProvider(
     ]
   );
 
-  const provider = new sdkProviders.RetryProvider(
+  const provider = new RetryProvider(
     constructorArgumentLists,
     chainId,
     nodeQuorumThreshold,
