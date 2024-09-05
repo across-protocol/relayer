@@ -489,11 +489,11 @@ async function run(argv: string[]): Promise<number> {
     "exclusivityDeadline",
   ];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
-  const fillOpts = ["txnHash", "chainId", "depositId", "slow"];
+  const fillOpts = ["txnHash", "chainId", "depositId"];
   const fetchDepositOpts = ["chainId", "depositId"];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
-    boolean: ["decimals", "execute"], // @dev tbd whether this is good UX or not...may need to change.
+    boolean: ["decimals", "execute", "slow"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "secret",
       decimals: false,
