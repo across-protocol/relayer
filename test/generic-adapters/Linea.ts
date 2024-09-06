@@ -6,6 +6,7 @@ import { ethers, getContractFactory, Contract, randomAddress, expect, createRand
 import { utils } from "@across-protocol/sdk";
 import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
+import { BlockFinder } from "../../src/utils/SDKUtils";
 
 describe("Cross Chain Adapter: Linea", async function () {
   let adapter: BaseChainAdapter;
@@ -129,13 +130,13 @@ describe("Cross Chain Adapter: Linea", async function () {
       searchConfig = adapter.getUpdatedSearchConfigs().l2SearchConfig;
 
       const wethBridge = adapter.bridges[l1WETHToken];
+      wethBridge.blockFinder = new BlockFinder(wethBridgeContract.provider);
       const result = await wethBridge.queryL2BridgeFinalizationEvents(
         l1WETHToken,
         undefined,
         monitoredEoa,
         searchConfig
       );
-
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2WETHToken][0].amount).to.equal(1);
     });
@@ -151,6 +152,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
       await wethBridgeContract.emitMessageClaimed(messageHash);
       await adapter.updateSpokePoolClients();
+      adapter.bridges[l1WETHToken].blockFinder = new BlockFinder(wethBridgeContract.provider);
       const result = await adapter.getOutstandingCrossChainTransfers([l1WETHToken]);
 
       // There should be one outstanding transfer, since there are two deposit events and one

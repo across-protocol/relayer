@@ -15,6 +15,7 @@ import { processEvent } from "../utils";
 
 export class LineaWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
+  protected blockFinder: BlockFinder;
 
   constructor(
     l2chainId: number,
@@ -59,6 +60,9 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       this.getL1Bridge().filters.MessageSent(undefined, toAddress),
       eventConfig
     );
+
+    // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
+    // those with 0 value.
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
         .map((event) => processEvent(event, "_value", "_to", "_from"))
@@ -73,17 +77,15 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l2Provider = this.getL2Bridge().provider;
-    const l1Provider = this.getL1Bridge().provider;
 
     const [fromBlock, toBlock] = await Promise.all([
       l2Provider.getBlock(eventConfig.fromBlock),
       l2Provider.getBlock(eventConfig.toBlock),
     ]);
 
-    const blockFinder = new BlockFinder(l1Provider);
     const [l1FromBlock, l1ToBlock] = [
-      await getBlockForTimestamp(this.hubChainId, fromBlock.timestamp, blockFinder),
-      await getBlockForTimestamp(this.hubChainId, toBlock.timestamp, blockFinder),
+      await getBlockForTimestamp(this.hubChainId, fromBlock.timestamp, this.blockFinder),
+      await getBlockForTimestamp(this.hubChainId, toBlock.timestamp, this.blockFinder),
     ];
     const l1SearchConfig = {
       fromBlock: l1FromBlock,
@@ -95,8 +97,6 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       l1SearchConfig
     );
 
-    // @dev There will be a MessageSent to the SpokePool address for each RelayedRootBundle so remove
-    // those with 0 value.
     const internalMessageHashes = initiatedQueryResult
       .filter(({ args }) => args._value.gt(0))
       .map(({ args }) => args._messageHash);
@@ -105,11 +105,20 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       this.getL2Bridge().filters.MessageClaimed(internalMessageHashes),
       eventConfig
     );
-    const finalizedHashes = events.map(({ args }) => args._messageHash);
+    const matchedEvents = events.map((finalized) => {
+      const queryEvent = initiatedQueryResult.find(
+        (initiated) => initiated.args._messageHash === finalized.args._messageHash
+      );
+      return {
+        ...processEvent(queryEvent, "_value", "_to", "_from"),
+        blockNumber: finalized.blockNumber,
+        transactionIndex: finalized.transactionIndex,
+        logIndex: finalized.logIndex,
+        transactionHash: finalized.transactionHash,
+      };
+    });
     return {
-      [this.resolveL2TokenAddress(l1Token)]: initiatedQueryResult
-        .filter(({ args }) => finalizedHashes.includes(args._messageHash))
-        .map((event) => processEvent(event, "_value", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: matchedEvents,
     };
   }
 }
