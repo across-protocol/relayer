@@ -41,6 +41,7 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
+  private lastLogTime = 0;
 
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
@@ -65,6 +66,27 @@ export class Relayer {
     });
 
     this.relayerAddress = getAddress(relayerAddress);
+  }
+
+  /**
+   * @description Perform one-time relayer init. Handle (for example) token approvals.
+   */
+  async init(): Promise<void> {
+    const { inventoryClient, tokenClient } = this.clients;
+    await tokenClient.update();
+
+    if (this.config.sendingRelaysEnabled) {
+      await tokenClient.setOriginTokenApprovals();
+    }
+
+    if (this.config.sendingRebalancesEnabled) {
+      await inventoryClient.setL1TokenApprovals();
+    }
+
+    this.logger.debug({
+      at: "Relayer::init",
+      message: "Completed one-time init.",
+    });
   }
 
   /**
@@ -717,8 +739,6 @@ export class Relayer {
       .flat()
       .map(({ deposit }) => deposit);
 
-    this.fillLimits = this.computeFillLimits();
-
     this.logger.debug({
       at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
@@ -726,6 +746,8 @@ export class Relayer {
     if (allUnfilledDeposits.length === 0) {
       return txnReceipts;
     }
+
+    this.fillLimits = this.computeFillLimits();
 
     const lpFees = await this.batchComputeLpFees(allUnfilledDeposits);
     await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, _deposits]) => {
@@ -761,12 +783,17 @@ export class Relayer {
       }
     });
 
-    // If during the execution run we had shortfalls or unprofitable fills then handle it by producing associated logs.
-    if (tokenClient.anyCapturedShortFallFills()) {
-      this.handleTokenShortfall();
-    }
-    if (profitClient.anyCapturedUnprofitableFills()) {
-      this.handleUnprofitableFill();
+    const currentTime = getCurrentTime();
+    const logDeposits = this.config.loggingInterval < currentTime - this.lastLogTime;
+    if (logDeposits) {
+      if (tokenClient.anyCapturedShortFallFills()) {
+        this.handleTokenShortfall();
+        this.lastLogTime = currentTime;
+      }
+      if (profitClient.anyCapturedUnprofitableFills()) {
+        this.handleUnprofitableFill();
+        this.lastLogTime = currentTime;
+      }
     }
 
     return txnReceipts;
