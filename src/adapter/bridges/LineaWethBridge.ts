@@ -8,6 +8,7 @@ import {
   Provider,
   getBlockForTimestamp,
   BlockFinder,
+  isDefined,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -97,6 +98,12 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       l1SearchConfig
     );
 
+    // If there are no initiations, then exit early, since there will be no finalized events to match.
+    // This can happen if the from/toAddress is the hub pool.
+    if (initiatedQueryResult.length === 0) {
+      return Promise.resolve({});
+    }
+
     const internalMessageHashes = initiatedQueryResult
       .filter(({ args }) => args._value.gt(0))
       .map(({ args }) => args._messageHash);
@@ -105,18 +112,24 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       this.getL2Bridge().filters.MessageClaimed(internalMessageHashes),
       eventConfig
     );
-    const matchedEvents = events.map((finalized) => {
-      const queryEvent = initiatedQueryResult.find(
-        (initiated) => initiated.args._messageHash === finalized.args._messageHash
-      );
-      return {
-        ...processEvent(queryEvent, "_value", "_to", "_from"),
-        blockNumber: finalized.blockNumber,
-        transactionIndex: finalized.transactionIndex,
-        logIndex: finalized.logIndex,
-        transactionHash: finalized.transactionHash,
-      };
-    });
+    const matchedEvents = events
+      .map((finalized) => {
+        const queryEvent = initiatedQueryResult.find(
+          (initiated) => initiated.args._messageHash === finalized.args._messageHash
+        );
+        // It is possible for a finalized event to be observed without the corresponding initiation event
+        // when the finalization event approaches the max look back value. In this case, we filter those out.
+        return isDefined(queryEvent)
+          ? {
+              ...processEvent(queryEvent, "_value", "_to", "_from"),
+              blockNumber: finalized.blockNumber,
+              transactionIndex: finalized.transactionIndex,
+              logIndex: finalized.logIndex,
+              transactionHash: finalized.transactionHash,
+            }
+          : undefined;
+      })
+      .filter(isDefined);
     return {
       [this.resolveL2TokenAddress(l1Token)]: matchedEvents,
     };
