@@ -40,7 +40,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   let txnReceipts: { [chainId: number]: Promise<string[]> };
   let run = 1;
-  
+
   try {
     do {
       if (loop) {
