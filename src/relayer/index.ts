@@ -31,6 +31,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
+  await relayer.init();
+
   const simulate = !config.sendingRelaysEnabled;
   const enableSlowFills = config.sendingSlowRelaysEnabled;
 
@@ -47,6 +49,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (run !== 1) {
         await relayerClients.configStoreClient.update();
         await relayerClients.hubPoolClient.update();
+        await tokenClient.update();
       }
       // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
       // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
@@ -61,9 +64,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         "ExecutedRelayerRefundRoot",
       ]);
 
-      // Update the token client first so that inventory client has latest balances.
-      await tokenClient.update();
-
       // We can update the inventory client in parallel with checking for eth wrapping as these do not depend on each other.
       // Cross-chain deposit tracking produces duplicates in looping mode, so in that case don't attempt it. This does not
       // disable inventory management, but does make it ignorant of in-flight cross-chain transfers. The rebalancer is
@@ -75,7 +75,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         acrossApiClient.update(config.ignoreLimits),
         inventoryClient.update(inventoryChainIds),
         inventoryClient.wrapL2EthIfAboveThreshold(),
-        config.sendingRelaysEnabled ? tokenClient.setOriginTokenApprovals() : Promise.resolve(),
       ]);
 
       // Since the above spoke pool updates are slow, refresh token client before sending rebalances now.

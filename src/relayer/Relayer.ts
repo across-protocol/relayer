@@ -69,6 +69,23 @@ export class Relayer {
   }
 
   /**
+   * @description Perform one-time relayer init. Handle (for example) token approvals.
+   */
+  async init(): Promise<void> {
+    const { tokenClient } = this.clients;
+    await tokenClient.update();
+
+    if (this.config.sendingRelaysEnabled) {
+      await tokenClient.setOriginTokenApprovals();
+    }
+
+    this.logger.debug({
+      at: "Relayer::init",
+      message: "Completed one-time init."
+    });
+  }
+
+  /**
    * @description For a given deposit, apply relayer-specific filtering to determine whether it should be filled.
    * @param deposit Deposit object.
    * @param version Version identified for this deposit.
