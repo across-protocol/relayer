@@ -81,7 +81,7 @@ export class Relayer {
 
     this.logger.debug({
       at: "Relayer::init",
-      message: "Completed one-time init."
+      message: "Completed one-time init.",
     });
   }
 
