@@ -51,6 +51,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         await relayerClients.hubPoolClient.update();
         await tokenClient.update();
       }
+
       // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
       // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
       // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
