@@ -167,6 +167,12 @@ export async function opStackFinalizer(
         });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         console.log(`Withdrawal ${event.transactionHash} is ready to prove: `, proofArgs);
+      } else if (withdrawalStatus === "waiting-to-finalize") {
+        const { seconds } = await publicClientL1.getTimeToFinalize({
+          withdrawalHash: withdrawal.withdrawalHash,
+          targetChain: VIEM_OP_STACK_CHAINS[chainId],
+        });
+        console.log(`Withdrawal ${event.transactionHash} in in challenge period for ${seconds / 60 / 60} hours`);
       }
     });
   }
