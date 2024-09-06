@@ -81,10 +81,10 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     ]);
 
     const blockFinder = new BlockFinder(l1Provider);
-    const [l1FromBlock, l1ToBlock] = await Promise.all([
-      getBlockForTimestamp(this.hubChainId, fromBlock.timestamp, blockFinder),
-      getBlockForTimestamp(this.hubChainId, toBlock.timestamp, blockFinder),
-    ]);
+    const [l1FromBlock, l1ToBlock] = [
+      await getBlockForTimestamp(this.hubChainId, fromBlock.timestamp, blockFinder),
+      await getBlockForTimestamp(this.hubChainId, toBlock.timestamp, blockFinder),
+    ];
     const l1SearchConfig = {
       fromBlock: l1FromBlock,
       toBlock: l1ToBlock,
