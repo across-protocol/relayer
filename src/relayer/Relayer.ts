@@ -72,11 +72,15 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { tokenClient } = this.clients;
+    const { inventoryClient, tokenClient } = this.clients;
     await tokenClient.update();
 
     if (this.config.sendingRelaysEnabled) {
       await tokenClient.setOriginTokenApprovals();
+    }
+
+    if (this.config.sendingRebalancesEnabled) {
+      await inventoryClient.setL1TokenApprovals();
     }
 
     this.logger.debug({
