@@ -34,12 +34,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const simulate = !config.sendingRelaysEnabled;
   const enableSlowFills = config.sendingSlowRelaysEnabled;
 
-  const { acrossApiClient, inventoryClient, spokePoolClients, tokenClient } = relayerClients;
+  const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = relayerClients;
   const inventoryChainIds =
     config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
 
   let txnReceipts: { [chainId: number]: Promise<string[]> };
   let run = 1;
+  
   try {
     do {
       if (loop) {
@@ -77,24 +78,25 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       ]);
 
       // Since the above spoke pool updates are slow, refresh token client before sending rebalances now.
-      relayerClients.tokenClient.clearTokenData();
-      await relayerClients.tokenClient.update();
+      tokenClient.clearTokenData();
+      await tokenClient.update();
+
       txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
       // any tokens so rebalancing can take into account unwrapped WETH balances.
-      await relayerClients.inventoryClient.unwrapWeth();
+      await inventoryClient.unwrapWeth();
 
       if (config.sendingRebalancesEnabled) {
         // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
-        relayerClients.tokenClient.clearTokenData();
-        await relayerClients.tokenClient.update();
-        await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+        tokenClient.clearTokenData();
+        await tokenClient.update();
+        await inventoryClient.rebalanceInventoryIfNeeded();
       }
 
       // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
-      relayerClients.profitClient.clearUnprofitableFills();
-      relayerClients.tokenClient.clearTokenShortfall();
+      profitClient.clearUnprofitableFills();
+      tokenClient.clearTokenShortfall();
 
       if (loop) {
         const runTime = Math.round((performance.now() - tLoopStart) / 1000);
@@ -129,7 +131,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     await disconnectRedisClients(logger);
 
     if (config.externalIndexer) {
-      Object.values(relayerClients.spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
+      Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
     }
   }
 
