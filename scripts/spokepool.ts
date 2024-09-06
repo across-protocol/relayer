@@ -231,7 +231,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
 }
 
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
-  const { txnHash, depositId: depositIdArg, execute } = args;
+  const { txnHash, depositId: depositIdArg, execute, slow } = args;
   const originChainId = Number(args.chainId);
 
   if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
@@ -295,7 +295,9 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     fromLiteChain: false, // Not relevant
     toLiteChain: false, // Not relevant
   };
-  const fill = await sdkUtils.populateV3Relay(destSpokePool, deposit, relayer);
+  const fill = isDefined(slow)
+    ? await destSpokePool.populateTransaction.requestV3SlowFill(deposit)
+    : await sdkUtils.populateV3Relay(destSpokePool, deposit, relayer);
 
   console.group("Fill Txn Info");
   console.log(`to: ${fill.to}`);
@@ -459,7 +461,7 @@ function usage(badInput?: string): boolean {
 
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
-  const fillArgs = "--chainId <originChainId> --txnHash <depositHash> [--depositId <depositId>] [--execute]";
+  const fillArgs = "--chainId <originChainId> --txnHash <depositHash> [--depositId <depositId>] [--slow] [--execute]";
 
   const pad = "deposit".length;
   usageStr += `
@@ -491,7 +493,7 @@ async function run(argv: string[]): Promise<number> {
   const fetchDepositOpts = ["chainId", "depositId"];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
-    boolean: ["decimals", "execute"], // @dev tbd whether this is good UX or not...may need to change.
+    boolean: ["decimals", "execute", "slow"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "secret",
       decimals: false,
