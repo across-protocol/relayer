@@ -173,6 +173,8 @@ export async function opStackFinalizer(
           targetChain: VIEM_OP_STACK_CHAINS[chainId],
         });
         console.log(`Withdrawal ${event.transactionHash} in in challenge period for ${seconds / 60 / 60} hours`);
+      } else if (withdrawalStatus === "ready-to-finalize"){
+        console.log(`Withdrawal ${event.transactionHash} is ready to finalize with args: `, withdrawal);
       }
     });
   }
