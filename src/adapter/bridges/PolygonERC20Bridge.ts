@@ -7,7 +7,6 @@ import {
   Provider,
   bnToHex,
   ZERO_ADDRESS,
-  getL2TokenAddresses,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
