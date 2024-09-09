@@ -34,9 +34,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const simulate = !config.sendingRelaysEnabled;
   const enableSlowFills = config.sendingSlowRelaysEnabled;
 
-  let run = 1;
-  let txnReceipts: { [chainId: number]: Promise<string[]> };
   const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = relayerClients;
+  const inventoryChainIds =
+    config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
+
+  let txnReceipts: { [chainId: number]: Promise<string[]> };
+  let run = 1;
+
   try {
     do {
       if (loop) {
@@ -67,8 +71,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       // disable inventory management, but does make it ignorant of in-flight cross-chain transfers. The rebalancer is
       // assumed to run separately from the relayer and with pollingDelay 0, so it doesn't loop and will track transfers
       // correctly to avoid repeat rebalances.
-      const inventoryChainIds =
-        config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
       await Promise.all([
         acrossApiClient.update(config.ignoreLimits),
         inventoryClient.update(inventoryChainIds),
