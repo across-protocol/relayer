@@ -48,6 +48,7 @@ export class Relayer {
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected inventoryChainIds: number[];
+  protected updated = 0;
 
   constructor(
     relayerAddress: string,
@@ -108,12 +109,15 @@ export class Relayer {
       tokenClient,
     } = this.clients;
 
-    // Clear state from profit and token clients. These should start fresh on each iteration.
-    profitClient.clearUnprofitableFills();
-    tokenClient.clearTokenShortfall();
+    // Some steps can be skipped on the first run.
+    if (this.updated++ > 0) {
+      // Clear state from profit and token clients. These should start fresh on each iteration.
+      profitClient.clearUnprofitableFills();
+      tokenClient.clearTokenShortfall();
 
-    await configStoreClient.update();
-    await hubPoolClient.update();
+      await configStoreClient.update();
+      await hubPoolClient.update();
+    }
 
     await updateSpokePoolClients(spokePoolClients, [
       "V3FundsDeposited",
@@ -133,7 +137,7 @@ export class Relayer {
   /**
    * @description Perform inventory management as needed. This is capped to 1/minute in looping mode.
    */
-  async manageInventory(): Promise<void> {
+  async runMaintenance(): Promise<void> {
     const { inventoryClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
@@ -154,6 +158,8 @@ export class Relayer {
 
     // Unwrap WETH after filling deposits, but before rebalancing.
     await inventoryClient.unwrapWeth();
+
+    // Placeholder: flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)
 
     // May be less than maintenanceInterval if these blocking calls are slow.
     this.lastMaintenance = currentTime;
