@@ -152,6 +152,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
         allowGzip: true,
         throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
         throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
+        errorPassThrough: true,
       },
       chainId,
     ]

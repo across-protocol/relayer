@@ -51,3 +51,13 @@ export const {
   getL1TokenInfo,
   getUsdcSymbol,
 } = sdk.utils;
+
+export const {
+  getRefundsFromBundle,
+  isChainDisabled,
+  getWidestPossibleExpectedBlockRange,
+  getEndBlockBuffers,
+  buildPoolRebalanceLeafTree,
+  getNetSendAmountForL1Token,
+  _buildPoolRebalanceRoot,
+} = sdk.clients.BundleDataClient;
