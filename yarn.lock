@@ -50,10 +50,10 @@
     axios "^1.6.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@^3.1.27":
-  version "3.1.27"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.27.tgz#97f7b4d55a9079d4b6a3aa0426d703e06e518076"
-  integrity sha512-n1RZwpgPjLmqkCnbMjdqy+aNVtiu4kRlJ3L9yTR/F3E5RQkN52c22xZeKGvsT+lSfvcmWwH18YzsDeBoVqhVyg==
+"@across-protocol/sdk@^3.1.33":
+  version "3.1.33"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.1.33.tgz#39ccc6df69f8568d77f7dc913632c7e9f4db73ef"
+  integrity sha512-7qS4MZZ7MHtpFvorSSXOdatTzXMIBLDc8uiKLX0TYhPhtYq9z2tBK+UdstMJ+pzds7JUqOdUasjbWvb837CzmQ==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.14"
@@ -2816,13 +2816,6 @@
   resolved "https://registry.yarnpkg.com/@types/async-eventemitter/-/async-eventemitter-0.2.1.tgz#f8e6280e87e8c60b2b938624b0a3530fb3e24712"
   integrity sha512-M2P4Ng26QbAeITiH7w1d7OxtldgfAe0wobpyJzVK/XOb0cUGKU2R4pfAhqcJBXAe2ife5ZOhSv4wk7p+ffURtg==
 
-"@types/async-retry@^1.4.5":
-  version "1.4.5"
-  resolved "https://registry.yarnpkg.com/@types/async-retry/-/async-retry-1.4.5.tgz#02680eb366739a327550f6ad38bb898a5571a095"
-  integrity sha512-YrdjSD+yQv7h6d5Ip+PMxh3H6ZxKyQk0Ts+PvaNRInxneG9PFVZjFg77ILAN+N6qYf7g4giSJ1l+ZjQ1zeegvA==
-  dependencies:
-    "@types/retry" "*"
-
 "@types/bignumber.js@^5.0.0":
   version "5.0.0"
   resolved "https://registry.yarnpkg.com/@types/bignumber.js/-/bignumber.js-5.0.0.tgz#d9f1a378509f3010a3255e9cc822ad0eeb4ab969"
@@ -3068,11 +3061,6 @@
   integrity sha512-85Y2BjiufFzaMIlvJDvTTB8Fxl2xfLo4HgmHzVBz08w4wDePCTjYw66PdrolO0kzli3yam/YCgRufyo1DdQVTA==
   dependencies:
     "@types/node" "*"
-
-"@types/retry@*":
-  version "0.12.1"
-  resolved "https://registry.yarnpkg.com/@types/retry/-/retry-0.12.1.tgz#d8f1c0d0dc23afad6dc16a9e993a0865774b4065"
-  integrity sha512-xoDlM2S4ortawSWORYqsdU+2rxdh4LRW9ytc3zmT37RIKQh6IHyKwwtKhKis9ah8ol07DCkZxPt8BBvPjC6v4g==
 
 "@types/rimraf@^3.0.2":
   version "3.0.2"
@@ -3945,7 +3933,7 @@ async@^2.0.1, async@^2.1.2, async@^2.4.0, async@^2.5.0:
   dependencies:
     lodash "^4.17.14"
 
-async@^3.2.3, async@^3.2.4:
+async@^3.2.3:
   version "3.2.4"
   resolved "https://registry.yarnpkg.com/async/-/async-3.2.4.tgz#2d22e00f8cddeb5fde5dd33522b56d1cf569a81c"
   integrity sha512-iAB+JbDEGXhyIUavoDl9WP/Jj106Kz9DEn1DPgYw5ruDn0e3Wgi3sKFm55sASdGBNOQB8F59d9qQ7deqrHA8wQ==

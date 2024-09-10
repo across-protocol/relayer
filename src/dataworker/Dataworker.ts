@@ -15,6 +15,9 @@ import {
   ZERO_ADDRESS,
   chainIsMatic,
   CHAIN_IDs,
+  getWidestPossibleExpectedBlockRange,
+  getEndBlockBuffers,
+  _buildPoolRebalanceRoot,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -37,12 +40,7 @@ import {
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
-import {
-  getEndBlockBuffers,
-  _buildPoolRebalanceRoot,
-  _buildRelayerRefundRoot,
-  _buildSlowRelayRoot,
-} from "./DataworkerUtils";
+import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk";
@@ -85,7 +83,7 @@ export type PoolRebalanceRoot = {
   tree: MerkleTree<PoolRebalanceLeaf>;
 };
 
-type PoolRebalanceRootCache = Record<string, Promise<PoolRebalanceRoot>>;
+type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -189,7 +187,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    return await this._getPoolRebalanceRoot(
+    return this._getPoolRebalanceRoot(
       blockRangesForChains,
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -485,7 +483,7 @@ export class Dataworker {
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
-    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -2264,7 +2262,7 @@ export class Dataworker {
     }
   }
 
-  async _getPoolRebalanceRoot(
+  _getPoolRebalanceRoot(
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
@@ -2273,7 +2271,7 @@ export class Dataworker {
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
     expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
-  ): Promise<PoolRebalanceRoot> {
+  ): PoolRebalanceRoot {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
@@ -2293,7 +2291,14 @@ export class Dataworker {
       );
     }
 
-    return _.cloneDeep(await this.rootCache[key]);
+    this.logger.debug({
+      at: "Dataworker#_getPoolRebalanceRoot",
+      message: "Constructed new pool rebalance root",
+      key,
+      root: this.rootCache[key],
+    });
+
+    return _.cloneDeep(this.rootCache[key]);
   }
 
   _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): BigNumber {
@@ -2368,7 +2373,7 @@ export class Dataworker {
     mainnetBundleStartBlock: number
   ): number[][] {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
-    return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+    return getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
       chainIds,
       spokePoolClients,
