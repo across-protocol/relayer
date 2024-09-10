@@ -137,7 +137,7 @@ export class Relayer {
     const { inventoryClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
-    if (currentTime < this.lastMaintenance + 60) {
+    if (currentTime < this.lastMaintenance + this.config.maintenanceInterval) {
       return; // Nothing to do.
     }
 
