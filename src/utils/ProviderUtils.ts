@@ -3,7 +3,7 @@ import { providers as sdkProviders } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import winston from "winston";
 import { CHAIN_CACHE_FOLLOW_DISTANCE, DEFAULT_NO_TTL_DISTANCE } from "../common";
-import { delay, getOriginFromURL } from "./";
+import { delay, getOriginFromURL, Logger } from "./";
 import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
 
@@ -45,7 +45,11 @@ export function getChainQuorum(chainId: number): number {
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
  * "provider cache" if this function was called once before with the same chain ID.
  */
-export async function getProvider(chainId: number, logger?: winston.Logger, useCache = true): Promise<RetryProvider> {
+export async function getProvider(
+  chainId: number,
+  logger: winston.Logger = Logger,
+  useCache = true
+): Promise<RetryProvider> {
   const redisClient = await getRedisCache(logger);
   if (useCache) {
     const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
@@ -170,7 +174,8 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     redisClient,
     disableProviderCache ? undefined : standardTtlBlockDistance,
     disableNoTtlCaching ? undefined : noTtlBlockDistance,
-    providerCacheTtl
+    providerCacheTtl,
+    logger
   );
 
   if (useCache) {
