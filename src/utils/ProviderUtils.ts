@@ -169,7 +169,8 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     redisClient,
     disableProviderCache ? undefined : standardTtlBlockDistance,
     disableNoTtlCaching ? undefined : noTtlBlockDistance,
-    providerCacheTtl
+    providerCacheTtl,
+    logger
   );
 
   if (useCache) {
