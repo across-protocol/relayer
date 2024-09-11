@@ -15,7 +15,7 @@ import { constructRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
-const ACTIVE_RELAYER_EXPIRY = 120; // 2 minutes.
+const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
 const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
@@ -38,7 +38,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   });
 
   const redis = await getRedisCache(logger);
-  let setActiveRelayer = false;
+  let activeRelayerUpdated = false;
 
   // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
   const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
@@ -70,14 +70,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         continue;
       }
 
-      // Signal to any existing relayer that a handover is underway, or alternatively check for a handover initiated by
-      // another (newer) relayer instance. The active relayer can also be expired, in which case this relayer should
-      // reconfirm its status as the active relayer.
+      // Signal to any existing relayer that a handover is underway, or alternatively
+      // check for handover initiated by another (newer) relayer instance.
       if (loop && botIdentifier && runIdentifier) {
         if (activeRelayer !== runIdentifier) {
-          if (!setActiveRelayer && activeRelayer) {
+          if (!activeRelayerUpdated) {
             await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
-            setActiveRelayer = true;
+            activeRelayerUpdated = true;
           } else {
             logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
             stop = true;
