@@ -46,6 +46,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const simulate = !config.sendingRelaysEnabled;
   const enableSlowFills = config.sendingSlowRelaysEnabled;
 
+  const { spokePoolClients } = relayerClients;
   let txnReceipts: { [chainId: number]: Promise<string[]> };
   let run = 1;
 
@@ -57,7 +58,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       const tLoopStart = performance.now();
 
-      await relayer.update();
+      const allUpdated = await relayer.update();
       txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
       await relayer.runMaintenance();
 
@@ -70,7 +71,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
         // Signal to any existing relayer that a handover is underway, or alternatively
         // check for a handover initiated by another (newer) relayer instance.
-        if (botIdentifier && runIdentifier) {
+        if (botIdentifier && runIdentifier && allUpdated) {
           const activeRelayer = await redis.get(botIdentifier);
           if (activeRelayer !== runIdentifier) {
             if (!setActiveRelayer) {
@@ -112,7 +113,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     await disconnectRedisClients(logger);
 
     if (config.externalIndexer) {
-      Object.values(relayerClients.spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
+      Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
     }
   }
 
