@@ -214,7 +214,7 @@ export class Relayer {
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
       this.logger.debug({
-        at: "Relayer::evaluateFill",
+        at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
         destinationChainId,
         outputToken: deposit.outputToken,
@@ -589,9 +589,21 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken } = deposit;
+    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, transactionHash } = deposit;
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
+    const dstChain = getNetworkName(destinationChainId);
+
+    if (isDefined(this.pendingTxnReceipts[destinationChainId])) {
+      this.logger.info({
+        at: "Relayer::evaluateFill",
+        message: `${dstChain} transaction queue has pending fills; skipping...`,
+        originChainId,
+        depositId,
+        transactionHash,
+      });
+      return;
+    }
 
     // If the deposit does not meet the minimum number of block confirmations, skip it.
     const originChain = getNetworkName(originChainId);
@@ -602,7 +614,7 @@ export class Relayer {
         depositId,
         blockNumber: deposit.blockNumber,
         maxBlockNumber,
-        transactionHash: deposit.transactionHash,
+        transactionHash,
       });
       // If we're in simulation mode, skip this early exit so that the user can evaluate
       // the full simulation run.
@@ -632,13 +644,12 @@ export class Relayer {
       const depositAge = Math.floor(avgBlockTime * (originSpoke.latestBlockSearched - deposit.blockNumber));
 
       if (minFillTime > depositAge) {
-        const dstChain = getNetworkName(destinationChainId);
         this.logger.debug({
           at: "Relayer::evaluateFill",
           message: `Skipping ${originChain} deposit due to insufficient fill time for ${dstChain}.`,
           depositAge,
           minFillTime,
-          transactionHash: deposit.transactionHash,
+          transactionHash,
         });
         return;
       }
@@ -669,7 +680,7 @@ export class Relayer {
             blockNumber,
             fillAmountUsd,
             limits,
-            transactionHash: deposit.transactionHash,
+            transactionHash,
           });
           return;
         }
