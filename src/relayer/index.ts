@@ -45,10 +45,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
-  const simulate = !sendingRelaysEnabled;
+  await relayer.init();
 
   const { spokePoolClients } = relayerClients;
-  let txnReceipts: { [chainId: number]: Promise<string[]> };
+  const simulate = !sendingRelaysEnabled;
+  let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
 
   try {
     for (let run = 1; !stop; ++run) {
