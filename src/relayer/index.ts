@@ -11,7 +11,7 @@ import {
 } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
@@ -43,9 +43,12 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
+  const simulate = !config.sendingRelaysEnabled;
+  const enableSlowFills = config.sendingSlowRelaysEnabled;
 
-  let run = 1;
   let txnReceipts: { [chainId: number]: Promise<string[]> };
+  let run = 1;
+
   try {
     do {
       if (loop) {
@@ -53,34 +56,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       const tLoopStart = performance.now();
-      if (run !== 1) {
-        await relayerClients.configStoreClient.update();
-        await relayerClients.hubPoolClient.update();
-      }
-      await updateRelayerClients(relayerClients, config);
 
-      if (!config.skipRelays) {
-        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
-        relayerClients.tokenClient.clearTokenData();
-        await relayerClients.tokenClient.update();
-        const simulate = !config.sendingRelaysEnabled;
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
-      }
-
-      // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
-      // any tokens so rebalancing can take into account unwrapped WETH balances.
-      await relayerClients.inventoryClient.unwrapWeth();
-
-      if (!config.skipRebalancing) {
-        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
-        relayerClients.tokenClient.clearTokenData();
-        await relayerClients.tokenClient.update();
-        await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
-      }
-
-      // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
-      relayerClients.profitClient.clearUnprofitableFills();
-      relayerClients.tokenClient.clearTokenShortfall();
+      await relayer.update();
+      txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
+      await relayer.runMaintenance();
 
       if (loop) {
         const runTime = Math.round((performance.now() - tLoopStart) / 1000);

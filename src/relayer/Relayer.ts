@@ -2,6 +2,7 @@ import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
+import { updateSpokePoolClients } from "../common";
 import {
   averageBlockTime,
   BigNumber,
@@ -41,9 +42,13 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
+  private lastLogTime = 0;
+  private lastMaintenance = 0;
 
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
+  protected inventoryChainIds: number[];
+  protected updated = 0;
 
   constructor(
     relayerAddress: string,
@@ -65,6 +70,105 @@ export class Relayer {
     });
 
     this.relayerAddress = getAddress(relayerAddress);
+    this.inventoryChainIds =
+      this.config.pollingDelay === 0 ? Object.values(clients.spokePoolClients).map(({ chainId }) => chainId) : [];
+  }
+
+  /**
+   * @description Perform one-time relayer init. Handle (for example) token approvals.
+   */
+  async init(): Promise<void> {
+    const { inventoryClient, tokenClient } = this.clients;
+    await tokenClient.update();
+
+    if (this.config.sendingRelaysEnabled) {
+      await tokenClient.setOriginTokenApprovals();
+    }
+
+    if (this.config.sendingRebalancesEnabled) {
+      await inventoryClient.setL1TokenApprovals();
+    }
+
+    this.logger.debug({
+      at: "Relayer::init",
+      message: "Completed one-time init.",
+    });
+  }
+
+  /**
+   * @description Perform per-loop updates.
+   */
+  async update(): Promise<void> {
+    const {
+      acrossApiClient,
+      configStoreClient,
+      hubPoolClient,
+      inventoryClient,
+      profitClient,
+      spokePoolClients,
+      tokenClient,
+    } = this.clients;
+
+    // Some steps can be skipped on the first run.
+    if (this.updated++ > 0) {
+      // Clear state from profit and token clients. These should start fresh on each iteration.
+      profitClient.clearUnprofitableFills();
+      tokenClient.clearTokenShortfall();
+      tokenClient.clearTokenData();
+
+      await configStoreClient.update();
+      await hubPoolClient.update();
+    }
+
+    await updateSpokePoolClients(spokePoolClients, [
+      "V3FundsDeposited",
+      "RequestedSpeedUpV3Deposit",
+      "FilledV3Relay",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]);
+
+    await Promise.all([
+      acrossApiClient.update(this.config.ignoreLimits),
+      inventoryClient.update(this.inventoryChainIds),
+      tokenClient.update(),
+    ]);
+  }
+
+  /**
+   * @description Perform inventory management as needed. This is capped to 1/minute in looping mode.
+   */
+  async runMaintenance(): Promise<void> {
+    const { inventoryClient, tokenClient } = this.clients;
+
+    const currentTime = getCurrentTime();
+    if (currentTime < this.lastMaintenance + this.config.maintenanceInterval) {
+      return; // Nothing to do.
+    }
+
+    tokenClient.clearTokenData();
+    await tokenClient.update();
+    await inventoryClient.wrapL2EthIfAboveThreshold();
+
+    if (this.config.sendingRebalancesEnabled) {
+      // It's necessary to update token balances in case WETH was wrapped.
+      tokenClient.clearTokenData();
+      await tokenClient.update();
+      await inventoryClient.rebalanceInventoryIfNeeded();
+    }
+
+    // Unwrap WETH after filling deposits, but before rebalancing.
+    await inventoryClient.unwrapWeth();
+
+    // Placeholder: flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)
+
+    // May be less than maintenanceInterval if these blocking calls are slow.
+    this.lastMaintenance = currentTime;
+
+    this.logger.debug({
+      at: "Relayer::runMaintenance",
+      message: "Completed relayer maintenance.",
+    });
   }
 
   /**
@@ -717,8 +821,6 @@ export class Relayer {
       .flat()
       .map(({ deposit }) => deposit);
 
-    this.fillLimits = this.computeFillLimits();
-
     this.logger.debug({
       at: "Relayer::checkForUnfilledDepositsAndFill",
       message: `${allUnfilledDeposits.length} unfilled deposits found.`,
@@ -726,6 +828,8 @@ export class Relayer {
     if (allUnfilledDeposits.length === 0) {
       return txnReceipts;
     }
+
+    this.fillLimits = this.computeFillLimits();
 
     const lpFees = await this.batchComputeLpFees(allUnfilledDeposits);
     await sdkUtils.forEachAsync(Object.entries(unfilledDeposits), async ([chainId, _deposits]) => {
@@ -761,12 +865,17 @@ export class Relayer {
       }
     });
 
-    // If during the execution run we had shortfalls or unprofitable fills then handle it by producing associated logs.
-    if (tokenClient.anyCapturedShortFallFills()) {
-      this.handleTokenShortfall();
-    }
-    if (profitClient.anyCapturedUnprofitableFills()) {
-      this.handleUnprofitableFill();
+    const currentTime = getCurrentTime();
+    const logDeposits = this.config.loggingInterval < currentTime - this.lastLogTime;
+    if (logDeposits) {
+      if (tokenClient.anyCapturedShortFallFills()) {
+        this.handleTokenShortfall();
+        this.lastLogTime = currentTime;
+      }
+      if (profitClient.anyCapturedUnprofitableFills()) {
+        this.handleUnprofitableFill();
+        this.lastLogTime = currentTime;
+      }
     }
 
     return txnReceipts;
