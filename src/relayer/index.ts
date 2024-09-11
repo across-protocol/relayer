@@ -1,5 +1,4 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { updateSpokePoolClients } from "../common";
 import { config, delay, disconnectRedisClients, getCurrentTime, getNetworkName, Signer, winston } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
@@ -34,10 +33,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const simulate = !config.sendingRelaysEnabled;
   const enableSlowFills = config.sendingSlowRelaysEnabled;
 
-  const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = relayerClients;
-  const inventoryChainIds =
-    config.pollingDelay === 0 ? Object.values(spokePoolClients).map(({ chainId }) => chainId) : [];
-
   let txnReceipts: { [chainId: number]: Promise<string[]> };
   let run = 1;
 
@@ -48,55 +43,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       const tLoopStart = performance.now();
-      if (run !== 1) {
-        await relayerClients.configStoreClient.update();
-        await relayerClients.hubPoolClient.update();
-        await tokenClient.update();
-      }
-      // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-      // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
-      // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
-      // having a "first run" update and then a "normal" update that considers this. see previous implementation here
-      // https://github.com/across-protocol/relayer/pull/37/files#r883371256 as a reference.
-      await updateSpokePoolClients(spokePoolClients, [
-        "V3FundsDeposited",
-        "RequestedSpeedUpV3Deposit",
-        "FilledV3Relay",
-        "RelayedRootBundle",
-        "ExecutedRelayerRefundRoot",
-      ]);
 
-      // We can update the inventory client in parallel with checking for eth wrapping as these do not depend on each other.
-      // Cross-chain deposit tracking produces duplicates in looping mode, so in that case don't attempt it. This does not
-      // disable inventory management, but does make it ignorant of in-flight cross-chain transfers. The rebalancer is
-      // assumed to run separately from the relayer and with pollingDelay 0, so it doesn't loop and will track transfers
-      // correctly to avoid repeat rebalances.
-      await Promise.all([
-        acrossApiClient.update(config.ignoreLimits),
-        inventoryClient.update(inventoryChainIds),
-        inventoryClient.wrapL2EthIfAboveThreshold(),
-      ]);
-
-      // Since the above spoke pool updates are slow, refresh token client before sending rebalances now.
-      tokenClient.clearTokenData();
-      await tokenClient.update();
-
+      await relayer.update();
       txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
-
-      // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
-      // any tokens so rebalancing can take into account unwrapped WETH balances.
-      await inventoryClient.unwrapWeth();
-
-      if (config.sendingRebalancesEnabled) {
-        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
-        tokenClient.clearTokenData();
-        await tokenClient.update();
-        await inventoryClient.rebalanceInventoryIfNeeded();
-      }
-
-      // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
-      profitClient.clearUnprofitableFills();
-      tokenClient.clearTokenShortfall();
+      await relayer.runMaintenance();
 
       if (loop) {
         const runTime = Math.round((performance.now() - tLoopStart) / 1000);
@@ -131,7 +81,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     await disconnectRedisClients(logger);
 
     if (config.externalIndexer) {
-      Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
+      Object.values(relayerClients.spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
     }
   }
 
