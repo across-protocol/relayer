@@ -260,7 +260,6 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   }
 
   protected async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {
-
     if (this.pendingBlockNumber === this.deploymentBlock) {
       return { success: false, reason: clients.UpdateFailureReason.AlreadyUpdated }; // @todo: Update reason
     }

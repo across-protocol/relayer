@@ -15,6 +15,7 @@ import { constructRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
+const ACTIVE_RELAYER_EXPIRY = 120; // 2 minutes.
 const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
@@ -24,8 +25,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
+  const { pollingDelay } = config;
 
-  const loop = config.pollingDelay > 0;
+  const loop = pollingDelay > 0;
   let stop = !loop;
   process.on("SIGHUP", () => {
     logger.debug({
@@ -48,18 +50,46 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   const { spokePoolClients } = relayerClients;
   let txnReceipts: { [chainId: number]: Promise<string[]> };
-  let run = 1;
 
   try {
-    do {
+    for (let run = 1; !stop; ++run) {
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
 
       const tLoopStart = performance.now();
+      const ready = await relayer.update();
+      const activeRelayer = await redis.get(botIdentifier);
 
-      const allUpdated = await relayer.update();
-      if (allUpdated) {
+      // If there is another active relayer, allow up to 10 update cycles for this instance to be ready,
+      // then proceed unconditionally to protect against any RPC outages blocking the relayer.
+      if (!ready && activeRelayer && run < 10) {
+        const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+        const delta = pollingDelay - runTime;
+        logger.debug({ at: "Relayer#run", message: `Not ready to relay, waiting ${delta} seconds.` });
+        await delay(delta);
+        continue;
+      }
+
+      // Signal to any existing relayer that a handover is underway, or alternatively check for a handover initiated by
+      // another (newer) relayer instance. The active relayer can also be expired, in which case this relayer should
+      // reconfirm its status as the active relayer.
+      if (loop && botIdentifier && runIdentifier) {
+        if (activeRelayer !== runIdentifier) {
+          if (!setActiveRelayer && activeRelayer) {
+            await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
+            setActiveRelayer = true;
+          } else {
+            logger.debug({
+              at: "Relayer#run",
+              message: `Handing over to ${botIdentifier} instance ${activeRelayer}.`,
+            });
+            stop = true;
+          }
+        }
+      }
+
+      if (!stop) {
         txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
         await relayer.runMaintenance();
       }
@@ -68,29 +98,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         const runTime = Math.round((performance.now() - tLoopStart) / 1000);
         logger.debug({
           at: "Relayer#run",
-          message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
+          message: `Completed relayer execution loop ${run} in ${runTime} seconds.`,
         });
 
-        // Signal to any existing relayer that a handover is underway, or alternatively
-        // check for a handover initiated by another (newer) relayer instance.
-        if (botIdentifier && runIdentifier && allUpdated) {
-          const activeRelayer = await redis.get(botIdentifier);
-          if (activeRelayer !== runIdentifier) {
-            if (!setActiveRelayer) {
-              await redis.set(botIdentifier, runIdentifier);
-              setActiveRelayer = true;
-            } else {
-              logger.debug({
-                at: "Relayer#run",
-                message: `Handing over to ${botIdentifier} instance ${activeRelayer}.`,
-              });
-              stop = true;
-            }
-          }
-        }
-
         if (!stop && runTime < config.pollingDelay) {
-          const delta = config.pollingDelay - runTime;
+          const delta = pollingDelay - runTime;
           logger.debug({
             at: "relayer#run",
             message: `Waiting ${delta} s before next loop.`,
@@ -98,7 +110,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           await delay(delta);
         }
       }
-    } while (!stop);
+    }
 
     // Before exiting, wait for transaction submission to complete.
     for (const [chainId, submission] of Object.entries(txnReceipts)) {
