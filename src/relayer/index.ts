@@ -59,8 +59,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       const tLoopStart = performance.now();
 
       const allUpdated = await relayer.update();
-      txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
-      await relayer.runMaintenance();
+      if (allUpdated) {
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
+        await relayer.runMaintenance();
+      }
 
       if (loop) {
         const runTime = Math.round((performance.now() - tLoopStart) / 1000);
