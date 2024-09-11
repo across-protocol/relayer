@@ -592,12 +592,12 @@ export class Relayer {
     const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, transactionHash } = deposit;
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
-    const dstChain = getNetworkName(destinationChainId);
+    const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
     if (isDefined(this.pendingTxnReceipts[destinationChainId])) {
       this.logger.info({
         at: "Relayer::evaluateFill",
-        message: `${dstChain} transaction queue has pending fills; skipping...`,
+        message: `${destChain} transaction queue has pending fills; skipping ${originChain} deposit ${depositId}...`,
         originChainId,
         depositId,
         transactionHash,
@@ -606,7 +606,6 @@ export class Relayer {
     }
 
     // If the deposit does not meet the minimum number of block confirmations, skip it.
-    const originChain = getNetworkName(originChainId);
     if (deposit.blockNumber > maxBlockNumber) {
       this.logger.debug({
         at: "Relayer::evaluateFill",
@@ -646,7 +645,7 @@ export class Relayer {
       if (minFillTime > depositAge) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
-          message: `Skipping ${originChain} deposit due to insufficient fill time for ${dstChain}.`,
+          message: `Skipping ${originChain} deposit due to insufficient fill time for ${destChain}.`,
           depositAge,
           minFillTime,
           transactionHash,
