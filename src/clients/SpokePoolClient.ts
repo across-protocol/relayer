@@ -260,6 +260,10 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   }
 
   protected async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {
+    if (this.pendingBlockNumber === this.deploymentBlock) {
+      return { success: false, reason: clients.UpdateFailureReason.NotReady };
+    }
+
     // If any events have been removed upstream, remove them first.
     this.pendingEventsRemoved = this.pendingEventsRemoved.filter((event) => !this.removeEvent(event));
 

@@ -97,8 +97,9 @@ export class Relayer {
 
   /**
    * @description Perform per-loop updates.
+   * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
-  async update(): Promise<void> {
+  async update(): Promise<boolean> {
     const {
       acrossApiClient,
       configStoreClient,
@@ -133,6 +134,8 @@ export class Relayer {
       inventoryClient.update(this.inventoryChainIds),
       tokenClient.update(),
     ]);
+
+    return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
 
   /**
