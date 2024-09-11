@@ -123,7 +123,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       await wethBridgeContract.emitMessageSentWithMessageHash(randomAddress(), monitoredEoa, 2, unfinalizedMessageHash);
       await wethBridgeContract.emitMessageSentWithMessageHash(monitoredEoa, randomAddress(), 1, otherMessageHash);
 
-      await wethBridgeContract.emitMessageClaimed(expectedMessageHash);
+      const expectedTxn = await wethBridgeContract.emitMessageClaimed(expectedMessageHash);
       await wethBridgeContract.emitMessageClaimed(otherMessageHash);
 
       await adapter.updateSpokePoolClients();
@@ -139,6 +139,9 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2WETHToken][0].amount).to.equal(1);
+
+      // The transaction hash should correspond to the L2 finalization call.
+      expect(result[l2WETHToken][0].transactionHash).to.equal(expectedTxn.hash);
     });
     it("Matches L1 and L2 events", async function () {
       const messageHash = createRandomBytes32();
