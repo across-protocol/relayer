@@ -25,7 +25,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  const { pollingDelay } = config;
+  const { externalIndexer, pollingDelay, sendingRelaysEnabled, sendingSlowRelaysEnabled } = config;
 
   const loop = pollingDelay > 0;
   let stop = !loop;
@@ -45,8 +45,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
-  const simulate = !config.sendingRelaysEnabled;
-  const enableSlowFills = config.sendingSlowRelaysEnabled;
+  const simulate = !sendingRelaysEnabled;
 
   const { spokePoolClients } = relayerClients;
   let txnReceipts: { [chainId: number]: Promise<string[]> };
@@ -80,17 +79,14 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
             await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
             setActiveRelayer = true;
           } else {
-            logger.debug({
-              at: "Relayer#run",
-              message: `Handing over to ${botIdentifier} instance ${activeRelayer}.`,
-            });
+            logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
             stop = true;
           }
         }
       }
 
       if (!stop) {
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
 
@@ -101,7 +97,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           message: `Completed relayer execution loop ${run} in ${runTime} seconds.`,
         });
 
-        if (!stop && runTime < config.pollingDelay) {
+        if (!stop && runTime < pollingDelay) {
           const delta = pollingDelay - runTime;
           logger.debug({
             at: "relayer#run",
@@ -126,7 +122,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   } finally {
     await disconnectRedisClients(logger);
 
-    if (config.externalIndexer) {
+    if (externalIndexer) {
       Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
     }
   }
