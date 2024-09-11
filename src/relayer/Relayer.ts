@@ -97,6 +97,7 @@ export class Relayer {
 
   /**
    * @description Perform per-loop updates.
+   * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
     const {
