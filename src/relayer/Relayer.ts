@@ -114,6 +114,7 @@ export class Relayer {
       // Clear state from profit and token clients. These should start fresh on each iteration.
       profitClient.clearUnprofitableFills();
       tokenClient.clearTokenShortfall();
+      tokenClient.clearTokenData();
 
       await configStoreClient.update();
       await hubPoolClient.update();
