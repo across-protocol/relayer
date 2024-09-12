@@ -176,7 +176,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     return l2Gas;
   }
 
-  protected getMailboxContract() {
+  protected getMailboxContract(): Contract {
     return this.zkSyncMailbox;
   }
 }

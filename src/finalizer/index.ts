@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
-import { BigNumber, Contract, constants } from "ethers";
+import { Contract } from "ethers";
 import { getAddress } from "ethers/lib/utils";
 import { groupBy, uniq } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
@@ -17,6 +17,8 @@ import {
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
+  BigNumber,
+  bnZero,
   Signer,
   blockExplorerLink,
   config,
@@ -253,7 +255,7 @@ export async function finalize(
 
   const txnClient = new TransactionClient(logger);
 
-  let gasEstimation = constants.Zero;
+  let gasEstimation = bnZero;
   const batchGasLimit = BigNumber.from(10_000_000);
   // @dev To avoid running into block gas limit in case the # of finalizations gets too high, keep a running
   // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.

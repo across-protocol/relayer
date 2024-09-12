@@ -1,10 +1,10 @@
 import { utils } from "@across-protocol/sdk";
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import axios from "axios";
-import { BigNumber, ethers } from "ethers";
+import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
-import { bnZero, compareAddressesSimple } from "./SDKUtils";
+import { BigNumber, bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getProvider } from "./ProviderUtils";
 

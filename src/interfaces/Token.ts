@@ -1,5 +1,5 @@
-import { BigNumber } from "ethers";
 import { SortableEvent } from ".";
+import { BigNumber } from "../utils";
 
 export interface TokenTransfer extends SortableEvent {
   value: BigNumber;

@@ -1,4 +1,4 @@
-import { BigNumber } from "ethers";
+import { BigNumber } from "./SDKUtils";
 
 export function bnComparatorDescending(a: BigNumber, b: BigNumber): -1 | 0 | 1 {
   if (b.gt(a)) {

@@ -3,14 +3,14 @@ import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
-import { BigNumber, Contract, providers } from "ethers";
+import { Contract, providers } from "ethers";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { V3Deposit, V3DepositWithBlock, V3FillWithBlock, V3SlowFillLeaf } from "../../src/interfaces";
-import { isDefined, spreadEvent, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
+import { BigNumber, isDefined, spreadEvent, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
