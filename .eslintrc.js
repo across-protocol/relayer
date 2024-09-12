@@ -41,8 +41,8 @@ module.exports = {
     "no-restricted-imports": [
       "error",
       {
-        patterns: [{ group: ["@ethersproject/bignumber"], message: "Use 'src/utils/SDKUtils' instead" }],
-        paths: [{ name: "ethers", importNames: ["BigNumber"], message: "Use 'src/utils/SDKUtils' instead" }],
+        patterns: [{ group: ["@ethersproject/bignumber"], message: "Use 'src/utils/BNUtils' instead" }],
+        paths: [{ name: "ethers", importNames: ["BigNumber"], message: "Use 'src/utils/BNUtils' instead" }],
       },
     ],
   },
