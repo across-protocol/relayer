@@ -9,7 +9,6 @@ import {
   TransactionResponse,
   Event,
   checkAddressChecksum,
-  ethers,
   spreadEventWithBlockNumber,
   assign,
   winston,
