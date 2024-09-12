@@ -52,7 +52,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
 
   try {
-    for (let run = 1; !stop; ++run) {
+    for (let run = 1; !stop || run === 1; ++run) {
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
