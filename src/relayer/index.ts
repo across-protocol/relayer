@@ -28,7 +28,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const { externalIndexer, pollingDelay, sendingRelaysEnabled, sendingSlowRelaysEnabled } = config;
 
   const loop = pollingDelay > 0;
-  let stop = !loop;
+  let stop = false;
   process.on("SIGHUP", () => {
     logger.debug({
       at: "Relayer#run",
@@ -52,7 +52,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
 
   try {
-    for (let run = 1; !stop || run === 1; ++run) {
+    for (let run = 1; !stop; ++run) {
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
@@ -85,12 +85,14 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         }
       }
 
-      if (!stop || run === 1) {
+      if (!stop) {
         txnReceipts = await relayer.checkForUnfilledDepositsAndFill(sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
 
-      if (loop) {
+      if (!loop) {
+        stop = true;
+      } else {
         const runTime = Math.round((performance.now() - tLoopStart) / 1000);
         logger.debug({
           at: "Relayer#run",
