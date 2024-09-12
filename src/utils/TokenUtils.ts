@@ -1,7 +1,8 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants, utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
-import { BigNumberish, formatUnits } from "./SDKUtils";
+import { BigNumberish } from "./BNUtils";
+import { formatUnits } from "./SDKUtils";
 
 const { ZERO_ADDRESS } = constants;
 

@@ -4,7 +4,8 @@ import axios from "axios";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
-import { BigNumber, bnZero, compareAddressesSimple } from "./SDKUtils";
+import { BigNumber } from "./BNUtils";
+import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getProvider } from "./ProviderUtils";
 

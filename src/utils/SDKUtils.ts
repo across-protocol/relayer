@@ -1,8 +1,5 @@
 import * as sdk from "@across-protocol/sdk";
 
-export type BigNumberish = sdk.utils.BigNumberish;
-export class BigNumber extends sdk.utils.BigNumber {}
-
 export class BlockFinder extends sdk.utils.BlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
 export class PriceClient extends sdk.priceClient.PriceClient {}
