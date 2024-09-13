@@ -1,9 +1,9 @@
 import { HubPoolClient } from "../clients";
-import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
+import { Fill, FillStatus, SpokePoolClientsByChain, DepositWithBlock } from "../interfaces";
 import { bnZero } from "../utils";
 
 export type RelayerUnfilledDeposit = {
-  deposit: V3DepositWithBlock;
+  deposit: DepositWithBlock;
   version: number;
   invalidFills: Fill[];
 };

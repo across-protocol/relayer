@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
-import { FillStatus, L1Token, V3Deposit, V3DepositWithBlock } from "../interfaces";
+import { FillStatus, L1Token, Deposit, DepositWithBlock } from "../interfaces";
 import { updateSpokePoolClients } from "../common";
 import {
   averageBlockTime,
@@ -536,10 +536,7 @@ export class Relayer {
   }
 
   // @node: This method is flagged for removal after computeFillLimits() has been proven.
-  computeRequiredDepositConfirmations(
-    deposits: V3Deposit[],
-    destinationChainId: number
-  ): { [chainId: number]: number } {
+  computeRequiredDepositConfirmations(deposits: Deposit[], destinationChainId: number): { [chainId: number]: number } {
     const { profitClient, tokenClient } = this.clients;
     const { minDepositConfirmations } = this.config;
 
@@ -583,7 +580,7 @@ export class Relayer {
   // If all hold true then complete the fill. If there is insufficient balance to complete the fill and slow fills are
   // enabled then request a slow fill instead.
   async evaluateFill(
-    deposit: V3DepositWithBlock,
+    deposit: DepositWithBlock,
     fillStatus: number,
     lpFees: RepaymentFee[],
     maxBlockNumber: number,
@@ -725,7 +722,7 @@ export class Relayer {
    * @param relayData An object consisting of an originChainId, inputToken, inputAmount and quoteTimestamp.
    * @returns A string identifying the deposit in a BatchLPFees object.
    */
-  getLPFeeKey(relayData: Pick<V3Deposit, "originChainId" | "inputToken" | "inputAmount" | "quoteTimestamp">): string {
+  getLPFeeKey(relayData: Pick<Deposit, "originChainId" | "inputToken" | "inputAmount" | "quoteTimestamp">): string {
     return `${relayData.originChainId}-${relayData.inputToken}-${relayData.inputAmount}-${relayData.quoteTimestamp}`;
   }
 
@@ -737,7 +734,7 @@ export class Relayer {
    * @returns void
    */
   async evaluateFills(
-    deposits: (V3DepositWithBlock & { fillStatus: number })[],
+    deposits: (DepositWithBlock & { fillStatus: number })[],
     lpFees: BatchLPFees,
     maxBlockNumbers: { [chainId: number]: number },
     sendSlowRelays: boolean
@@ -761,7 +758,7 @@ export class Relayer {
    * @param deposits An array of deposits.
    * @returns A BatchLPFees object uniquely identifying LP fees per unique input deposit.
    */
-  async batchComputeLpFees(deposits: V3DepositWithBlock[]): Promise<BatchLPFees> {
+  async batchComputeLpFees(deposits: DepositWithBlock[]): Promise<BatchLPFees> {
     const { hubPoolClient, inventoryClient } = this.clients;
 
     // We need to compute LP fees for any possible repayment chain the inventory client could select
@@ -900,12 +897,12 @@ export class Relayer {
    * @param deposit Deposit object.
    * @param status Fill status (Unfilled, Filled, RequestedSlowFill).
    */
-  protected setFillStatus(deposit: V3Deposit, status: number): void {
+  protected setFillStatus(deposit: Deposit, status: number): void {
     const depositHash = this.clients.spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
     this.fillStatus[depositHash] = status;
   }
 
-  requestSlowFill(deposit: V3Deposit): void {
+  requestSlowFill(deposit: Deposit): void {
     // don't request slow fill if origin/destination chain is a lite chain
     if (deposit.fromLiteChain || deposit.toLiteChain) {
       this.logger.debug({
@@ -962,7 +959,7 @@ export class Relayer {
     this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
 
-  fillRelay(deposit: V3Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
+  fillRelay(deposit: Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
     const { spokePoolClients } = this.clients;
     this.logger.debug({
       at: "Relayer::fillRelay",
@@ -1014,7 +1011,7 @@ export class Relayer {
    * or the profitability data of the most preferred repayment chain otherwise.
    */
   protected async resolveRepaymentChain(
-    deposit: V3DepositWithBlock,
+    deposit: DepositWithBlock,
     hubPoolToken: L1Token,
     repaymentFees: RepaymentFee[]
   ): Promise<{
@@ -1323,11 +1320,7 @@ export class Relayer {
     }
   }
 
-  private constructRelayFilledMrkdwn(
-    deposit: V3Deposit,
-    repaymentChainId: number,
-    realizedLpFeePct: BigNumber
-  ): string {
+  private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber): string {
     let mrkdwn =
       this.constructBaseFillMarkdown(deposit, realizedLpFeePct) +
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
@@ -1344,7 +1337,7 @@ export class Relayer {
     return mrkdwn;
   }
 
-  private constructBaseFillMarkdown(deposit: V3Deposit, _realizedLpFeePct: BigNumber): string {
+  private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);

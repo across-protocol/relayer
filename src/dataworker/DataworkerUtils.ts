@@ -8,7 +8,7 @@ import {
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
   RunningBalances,
-  V3SlowFillLeaf,
+  SlowFillLeaf,
 } from "../interfaces";
 import {
   BigNumber,
@@ -120,10 +120,10 @@ export async function blockRangesAreInvalidForSpokeClients(
 }
 
 export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
-  leaves: V3SlowFillLeaf[];
-  tree: MerkleTree<V3SlowFillLeaf>;
+  leaves: SlowFillLeaf[];
+  tree: MerkleTree<SlowFillLeaf>;
 } {
-  const slowRelayLeaves: V3SlowFillLeaf[] = [];
+  const slowRelayLeaves: SlowFillLeaf[] = [];
 
   // Append V3 slow fills to the V2 leaf list
   Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
@@ -152,7 +152,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   };
 }
 
-function buildV3SlowFillLeaf(deposit: interfaces.Deposit, lpFeePct: BigNumber): V3SlowFillLeaf {
+function buildV3SlowFillLeaf(deposit: interfaces.Deposit, lpFeePct: BigNumber): SlowFillLeaf {
   const lpFee = deposit.inputAmount.mul(lpFeePct).div(fixedPointAdjustment);
 
   return {

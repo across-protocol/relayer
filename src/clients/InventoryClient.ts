@@ -27,7 +27,7 @@ import {
   getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { V3Deposit } from "../interfaces";
+import { Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -340,10 +340,10 @@ export class InventoryClient {
    * so that it can batch compute LP fees for all possible repayment chains. By locating this function
    * here it ensures that the relayer and the inventory client are in sync as to which chains are possible
    * repayment chains for a given deposit.
-   * @param deposit V3Deposit
+   * @param deposit Deposit
    * @returns list of chain IDs that are possible repayment chains for the deposit.
    */
-  getPossibleRepaymentChainIds(deposit: V3Deposit): number[] {
+  getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Destination and Origin chain are always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = [originChainId, destinationChainId];
@@ -364,7 +364,7 @@ export class InventoryClient {
    * @returns boolean True if output and input tokens are equivalent or if input token is USDC and output token
    * is Bridged USDC.
    */
-  validateOutputToken(deposit: V3Deposit): boolean {
+  validateOutputToken(deposit: Deposit): boolean {
     const { inputToken, outputToken, originChainId, destinationChainId } = deposit;
 
     // Return true if input and output tokens are mapped to the same L1 token via PoolRebalanceRoutes
@@ -411,7 +411,7 @@ export class InventoryClient {
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
    */
-  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
+  async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
