@@ -18,7 +18,7 @@ import {
 
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
-import { V3Deposit, InventoryConfig } from "../src/interfaces";
+import { Deposit, InventoryConfig } from "../src/interfaces";
 import { CHAIN_IDs, ZERO_ADDRESS, bnZero, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import {
   MockAdapterManager,
@@ -38,7 +38,7 @@ describe("InventoryClient: Refund chain selection", async function () {
   let bundleDataClient: MockBundleDataClient;
   let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
   let inventoryClient: InventoryClient; // tested
-  let sampleDepositData: V3Deposit;
+  let sampleDepositData: Deposit;
   let crossChainTransferClient: CrossChainTransferClient;
 
   // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
@@ -94,7 +94,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
   };
 
-  const computeOutputAmount = async (deposit: V3Deposit) => {
+  const computeOutputAmount = async (deposit: Deposit) => {
     return deposit.inputAmount;
   };
 
