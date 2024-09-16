@@ -1,7 +1,6 @@
 import assert from "assert";
 import winston from "winston";
 import {
-  CHAIN_IDs,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -340,12 +339,7 @@ export async function constructClients(
     config.timeToCache
   );
 
-  // Force chunk size 1 on Polygon to avoid stuck executions.
-  const multiCallerClient = new MultiCallerClient(
-    logger,
-    { ...config.multiCallChunkSize, [CHAIN_IDs.POLYGON]: 1 },
-    hubSigner
-  );
+  const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
 
   // Define the Arweave client as "read-only" to prevent any accidental writes to the Arweave network.
   // Only the dataworker should have write access to the Arweave network - we will define that in
