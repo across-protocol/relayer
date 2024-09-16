@@ -8,8 +8,8 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { CHAIN_IDs, PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
-import { BundleDataClient, HubPoolClient, MultiCallerClient, TokenClient } from "../clients";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
+import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
@@ -29,13 +29,6 @@ export async function constructDataworkerClients(
   const signerAddr = await baseSigner.getAddress();
   const commonClients = await constructClients(logger, config, baseSigner);
   const { hubPoolClient, configStoreClient } = commonClients;
-
-  // Relayer refund leaves must not be multicalled on Polygon, so force chunk size 1.
-  commonClients.multiCallerClient = new MultiCallerClient(
-    logger,
-    { ...config.multiCallChunkSize, [CHAIN_IDs.POLYGON]: 1 },
-    baseSigner
-  );
 
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
