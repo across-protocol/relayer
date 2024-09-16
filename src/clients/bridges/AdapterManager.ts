@@ -49,7 +49,7 @@ export class AdapterManager {
     const hubChainId = hubPoolClient.chainId;
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
     const constructBridges = (chainId: number) => {
-      return Object.fromEntries([
+      return Object.fromEntries(
         SUPPORTED_TOKENS[chainId].map((symbol) => {
           const l2Signer = spokePoolClients[chainId].spokePool.signer;
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
@@ -57,7 +57,7 @@ export class AdapterManager {
           const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
           return [l1Token, bridge];
         }),
-      ]);
+      );
     };
     if (this.spokePoolClients[OPTIMISM] !== undefined) {
       this.adapters[OPTIMISM] = new OpStackAdapter(
