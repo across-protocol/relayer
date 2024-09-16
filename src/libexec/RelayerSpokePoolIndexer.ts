@@ -1,5 +1,7 @@
 import assert from "assert";
 import minimist from "minimist";
+import { Account, Chain, createPublicClient, extractChain, http, PublicClient, Transport, webSocket } from "viem";
+import * as chains from "viem/chains";
 import { Contract, Event, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
@@ -13,6 +15,7 @@ import {
   getChainQuorum,
   getDeploymentBlockNumber,
   getNetworkName,
+  getNodeUrlList,
   getOriginFromURL,
   getProvider,
   getRedisCache,
@@ -149,6 +152,8 @@ async function scrapeEvents(spokePool: Contract, eventName: string, opts: Scrape
   postEvents(toBlock, currentTime, events);
 }
 
+type CrazyClient = PublicClient<Transport, Chain>;
+
 /**
  * Given a SpokePool contract instance and an array of event names, subscribe to all future event emissions.
  * Periodically transmit received events to the parent process (if defined).
@@ -162,6 +167,7 @@ async function listen(
   spokePool: Contract,
   eventNames: string[],
   providers: WebSocketProvider[],
+  viemProviders: CrazyClient[],
   opts: ScraperOpts
 ): Promise<void> {
   assert(providers.length > 0);
@@ -197,6 +203,16 @@ async function listen(
         }
       });
     });
+  });
+
+  viemProviders.forEach((provider) => {
+    provider.watchContractEvent({
+      address: spokePool.address as `0x${string}`,
+      abi: spokePool.contract.abi,
+      onLogs: (logs) => {
+        console.log(`XXX caught logs! ${JSON.stringify(logs)}.`);
+      },
+    })
   });
 
   do {
@@ -290,6 +306,13 @@ async function run(argv: string[]): Promise<void> {
   const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
   const providers = getWSProviders(chainId, quorum);
+
+  const urls = getNodeUrlList(chainId, quorum, "wss");
+  const viemProviders = urls.map((url) => createPublicClient({
+    chain: extractChain({ chains: Object.values(chains), id: chainId }),
+    transport: http(url, { name: getOriginFromURL(url) }),
+  }));
+
   let nProviders = providers.length;
   assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
@@ -364,7 +387,7 @@ async function run(argv: string[]): Promise<void> {
   });
 
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} listener.`, events, opts });
-  await listen(eventMgr, spokePool, events, providers, opts);
+  await listen(eventMgr, spokePool, events, providers, viemProviders, opts);
 
   // Cleanup where possible.
   providers.forEach((provider) => provider._websocket.terminate());
