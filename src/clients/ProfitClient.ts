@@ -17,6 +17,7 @@ import {
   BigNumber,
   formatFeePct,
   getCurrentTime,
+  getNetworkName,
   isDefined,
   min,
   winston,
@@ -28,25 +29,20 @@ import {
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
 } from "../utils";
-import {
-  Deposit,
-  DepositWithBlock,
-  L1Token,
-  SpokePoolClientsByChain,
-  V3Deposit,
-  V3DepositWithBlock,
-} from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from ".";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
+
 const {
   EMPTY_MESSAGE,
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
 } = sdkConsts;
+
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
 const bn10 = toBN(10);
@@ -204,7 +200,7 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(deposit: V3Deposit, relayer: string): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<TransactionCostEstimate> {
     try {
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
@@ -214,12 +210,13 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         deposit,
+        notificationPath: "across-unprofitable-fills",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max };
     }
   }
 
-  async getTotalGasCost(deposit: V3Deposit): Promise<TransactionCostEstimate> {
+  async getTotalGasCost(deposit: Deposit): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
@@ -233,7 +230,7 @@ export class ProfitClient {
 
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
-    deposit: V3Deposit
+    deposit: Deposit
   ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
 
@@ -280,32 +277,41 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
-  // Allow the minimum relayer fee to be overridden per token/route:
-  // 0.1bps on USDC from Optimism to Arbitrum:
-  //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+  /**
+   * Allow the minimum relayer fee to be overridden per token/route:
+   * 0.1bps on USDC from Optimism to Arbitrum:
+   *   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+   * @param symbol Token symbol to query.
+   * @param symbol srcChainId Origin chain for deposit.
+   * @param symbol dstChainId Destination chain for deposit.
+   * @returns The minimum required fee multiplier for the specified token/route combination.
+   */
   minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
-    const routeKey = `${symbol}_${srcChainId}_${dstChainId}`;
-    let minRelayerFeePct = this.minRelayerFees[routeKey];
+    const effectiveSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+
+    const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
+    const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
-      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`];
+      const _minRelayerFeePct = process.env[routeKey] ?? process.env[tokenKey];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
       this.minRelayerFees[routeKey] = minRelayerFeePct;
     }
 
-    return minRelayerFeePct as BigNumber;
+    return minRelayerFeePct;
   }
 
   /**
-   * @param deposit V3Deposit object.
+   * @param deposit Deposit object.
    * @param lpFeePct Predetermined LP fee as a multiplier of the deposit inputAmount.
    * @param minRelayerFeePct Relayer minimum fee requirements.
    * @returns FillProfit object detailing the profitability breakdown.
    */
   async calculateFillProfitability(
-    deposit: V3Deposit,
+    deposit: Deposit,
     lpFeePct: BigNumber,
     minRelayerFeePct: BigNumber
   ): Promise<FillProfit> {
@@ -390,20 +396,30 @@ export class ProfitClient {
   }
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
-  getFillAmountInUsd(deposit: Deposit, fillAmount = deposit.outputAmount): BigNumber {
-    const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    if (!l1TokenInfo) {
-      const { inputToken } = deposit;
-      throw new Error(
-        `ProfitClient#getFillAmountInUsd missing l1TokenInfo for deposit with origin token: ${inputToken}`
-      );
+  getFillAmountInUsd(
+    deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">
+  ): BigNumber | undefined {
+    const { destinationChainId, outputToken, outputAmount } = deposit;
+    let l1Token: L1Token;
+
+    try {
+      l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId);
+    } catch {
+      this.logger.debug({
+        at: "ProfitClient#getFillAmountInUsd",
+        message: `Cannot resolve output token ${outputToken} on ${getNetworkName(destinationChainId)}.`,
+      });
+      return undefined;
     }
-    const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.symbol);
-    return fillAmount.mul(tokenPriceInUsd).div(bn10.pow(l1TokenInfo.decimals));
+
+    const tokenPriceInUsd = this.getPriceOfToken(l1Token.symbol);
+
+    // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
+    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(l1Token.decimals));
   }
 
   async getFillProfitability(
-    deposit: V3Deposit,
+    deposit: Deposit,
     lpFeePct: BigNumber,
     l1Token: L1Token,
     repaymentChainId: number
@@ -444,7 +460,7 @@ export class ProfitClient {
   }
 
   async isFillProfitable(
-    deposit: V3Deposit,
+    deposit: Deposit,
     lpFeePct: BigNumber,
     l1Token: L1Token,
     repaymentChainId: number
@@ -478,7 +494,7 @@ export class ProfitClient {
   }
 
   captureUnprofitableFill(
-    deposit: V3DepositWithBlock,
+    deposit: DepositWithBlock,
     lpFeePct: BigNumber,
     relayerFeePct: BigNumber,
     gasCost: BigNumber
@@ -573,9 +589,11 @@ export class ProfitClient {
     const testSymbols = {
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
+      [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
     };
+    const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", PROD_RELAYER] : ["WETH", TEST_RELAYER];
+      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
 
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.

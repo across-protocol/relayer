@@ -8,7 +8,7 @@ import {
   isDefined,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
-import { BundleDataToPersistToDALayerType, Dataworker } from "./Dataworker";
+import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
@@ -17,8 +17,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { persistDataToArweave } from "./DataworkerUtils";
-import { PendingRootBundle } from "../interfaces";
+import { PendingRootBundle, BundleData } from "../interfaces";
 
 config();
 let logger: winston.Logger;
@@ -62,7 +61,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     message: `Time to update non-spoke clients: ${(performance.now() - loopStart) / 1000}s`,
   });
   loopStart = performance.now();
-  let bundleDataToPersist: BundleDataToPersistToDALayerType | undefined = undefined;
+  let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
@@ -112,13 +111,21 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       const dataworkerFunctionLoopTimerStart = performance.now();
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
-        await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
+        await dataworker.validatePendingRootBundle(
+          spokePoolClients,
+          config.sendingDisputesEnabled,
+          fromBlocks,
+          // @dev Opportunistically publish bundle data to external storage layer since we're reconstructing it in this
+          // process, if user has configured it so.
+          config.persistingBundleData
+        );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
       }
 
       if (config.proposerEnabled) {
-        bundleDataToPersist = await dataworker.proposeRootBundle(
+        // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
+        proposedBundleData = await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
@@ -164,62 +171,25 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // leaves to be executed but the proposed bundle was already executed, then exit early.
       const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
 
-      // Define a helper function to persist the bundle data to the DALayer.
-      const persistBundle = async () => {
-        // Submit the bundle data to persist to the DALayer if persistingBundleData is enabled.
-        // Note: The check for `bundleDataToPersist` is necessary for TSC to be happy.
-        if (
-          config.persistingBundleData &&
-          isDefined(bundleDataToPersist) &&
-          pendingProposal.unclaimedPoolRebalanceLeafCount === 0
-        ) {
-          await persistDataToArweave(
-            clients.arweaveClient,
-            bundleDataToPersist,
-            logger,
-            `bundles-${bundleDataToPersist.bundleBlockRanges}`
-          );
-        }
-      };
-
-      const executeDataworkerTransactions = async () => {
-        const proposalCollision = isDefined(bundleDataToPersist) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
-        // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
-        // does not match the number of leaves the executor wants to execute, or the pending root bundle's
-        // challenge period timestamp is in the future. This latter case is rarer but it can
-        // happen if a proposal in addition to the root bundle execution happens in the middle of this executor run.
-        const executorCollision =
-          poolRebalanceLeafExecutionCount > 0 &&
-          (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
-            pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
-        if (proposalCollision || executorCollision) {
-          logger[startupLogLevel(config)]({
-            at: "Dataworker#index",
-            message: "Exiting early due to dataworker function collision",
-            proposalCollision,
-            executorCollision,
-            pendingProposal,
-          });
-        } else {
-          await clients.multiCallerClient.executeTxnQueues();
-        }
-      };
-
-      // We want to persist the bundle data to the DALayer *AND* execute the multiCall transaction queue
-      // in parallel. We want to have both of these operations complete, even if one of them fails.
-      const [persistResult, multiCallResult] = await Promise.allSettled([
-        persistBundle(),
-        executeDataworkerTransactions(),
-      ]);
-
-      // If either of the operations failed, log the error.
-      if (persistResult.status === "rejected" || multiCallResult.status === "rejected") {
-        logger.error({
+      const proposalCollision = isDefined(proposedBundleData) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
+      // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
+      // does not match the number of leaves the executor wants to execute, or the pending root bundle's
+      // challenge period timestamp is in the future. This latter case is rarer but it can
+      // happen if a proposal in addition to the root bundle execution happens in the middle of this executor run.
+      const executorCollision =
+        poolRebalanceLeafExecutionCount > 0 &&
+        (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
+          pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
+      if (proposalCollision || executorCollision) {
+        logger[startupLogLevel(config)]({
           at: "Dataworker#index",
-          message: "Failed to persist bundle data to the DALayer or execute the multiCall transaction queue",
-          persistResult: persistResult.status === "rejected" ? persistResult.reason : undefined,
-          multiCallResult: multiCallResult.status === "rejected" ? multiCallResult.reason : undefined,
+          message: "Exiting early due to dataworker function collision",
+          proposalCollision,
+          executorCollision,
+          pendingProposal,
         });
+      } else {
+        await clients.multiCallerClient.executeTxnQueues();
       }
 
       const dataworkerFunctionLoopTimerEnd = performance.now();

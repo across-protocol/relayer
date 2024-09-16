@@ -53,7 +53,7 @@ describe("Relayer: Unfilled Deposits", async function () {
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
   let spokePoolClients: Record<number, SpokePoolClient>;
-  let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
+  let multiCallerClient: MultiCallerClient, tryMulticallClient: MultiCallerClient, tokenClient: TokenClient;
   let profitClient: MockProfitClient;
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
@@ -119,6 +119,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
+    tryMulticallClient = new MockedMultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     await profitClient.initToken(l1Token);
@@ -136,11 +137,13 @@ describe("Relayer: Unfilled Deposits", async function () {
         multiCallerClient,
         inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
+        tryMulticallClient,
       },
       {
         relayerTokens: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
+        tryMulticallChains: [],
       } as unknown as RelayerConfig
     );
 

@@ -15,6 +15,9 @@ import {
   ZERO_ADDRESS,
   chainIsMatic,
   CHAIN_IDs,
+  getWidestPossibleExpectedBlockRange,
+  getEndBlockBuffers,
+  _buildPoolRebalanceRoot,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -24,7 +27,7 @@ import {
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
-  V3SlowFillLeaf,
+  SlowFillLeaf,
   FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -35,17 +38,14 @@ import {
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
+  persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
-import {
-  getEndBlockBuffers,
-  _buildPoolRebalanceRoot,
-  _buildRelayerRefundRoot,
-  _buildSlowRelayRoot,
-} from "./DataworkerUtils";
+import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk";
 import {
+  BundleData,
   BundleDepositsV3,
   BundleExcessSlowFills,
   BundleFillsV3,
@@ -62,17 +62,8 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
-  leaves: V3SlowFillLeaf[];
-  tree: MerkleTree<V3SlowFillLeaf>;
-};
-
-export type BundleDataToPersistToDALayerType = {
-  bundleBlockRanges: number[][];
-  bundleDepositsV3: BundleDepositsV3;
-  expiredDepositsToRefundV3: ExpiredDepositsToRefundV3;
-  bundleFillsV3: BundleFillsV3;
-  unexecutableSlowFills: BundleExcessSlowFills;
-  bundleSlowFillsV3: BundleSlowFills;
+  leaves: SlowFillLeaf[];
+  tree: MerkleTree<SlowFillLeaf>;
 };
 
 type ProposeRootBundleReturnType = {
@@ -80,9 +71,9 @@ type ProposeRootBundleReturnType = {
   poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
   relayerRefundLeaves: RelayerRefundLeaf[];
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
-  slowFillLeaves: V3SlowFillLeaf[];
-  slowFillTree: MerkleTree<V3SlowFillLeaf>;
-  dataToPersistToDALayer: BundleDataToPersistToDALayerType;
+  slowFillLeaves: SlowFillLeaf[];
+  slowFillTree: MerkleTree<SlowFillLeaf>;
+  bundleData: BundleData;
 };
 
 export type PoolRebalanceRoot = {
@@ -92,7 +83,7 @@ export type PoolRebalanceRoot = {
   tree: MerkleTree<PoolRebalanceLeaf>;
 };
 
-type PoolRebalanceRootCache = Record<string, Promise<PoolRebalanceRoot>>;
+type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -196,7 +187,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    return await this._getPoolRebalanceRoot(
+    return this._getPoolRebalanceRoot(
       blockRangesForChains,
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -352,12 +343,15 @@ export class Dataworker {
     );
   }
 
+  /**
+   * @returns bundle data if new proposal transaction is enqueued, else undefined
+   */
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<BundleDataToPersistToDALayerType> {
+  ): Promise<BundleData> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -466,7 +460,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return rootBundleData.dataToPersistToDALayer;
+    return rootBundleData.bundleData;
   }
 
   async _proposeRootBundle(
@@ -479,11 +473,7 @@ export class Dataworker {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
       await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
-    // Prepare information about what we need to store to
-    // Arweave for the bundle. We will be doing this at a
-    // later point so that we can confirm that this data is
-    // worth storing.
-    const dataToPersistToDALayer = {
+    const bundleData = {
       bundleBlockRanges: blockRangesForProposal,
       bundleDepositsV3,
       expiredDepositsToRefundV3,
@@ -493,7 +483,7 @@ export class Dataworker {
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
-    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -545,14 +535,15 @@ export class Dataworker {
       relayerRefundTree: relayerRefundRoot.tree,
       slowFillLeaves: slowRelayRoot.leaves,
       slowFillTree: slowRelayRoot.tree,
-      dataToPersistToDALayer,
+      bundleData,
     };
   }
 
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    persistBundleData = false
   ): Promise<void> {
     if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
@@ -591,7 +582,7 @@ export class Dataworker {
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
       nextBundleMainnetStartBlock
     );
-    const { valid, reason } = await this.validateRootBundle(
+    const { valid, reason, bundleData, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
@@ -624,6 +615,47 @@ export class Dataworker {
         }
       }
     }
+
+    // Root bundle is valid, attempt to persist the raw bundle data and the merkle leaf data to DA layer
+    // if not already there.
+    if (persistBundleData && isDefined(bundleData)) {
+      await Promise.all([
+        persistDataToArweave(
+          this.clients.arweaveClient,
+          bundleData,
+          this.logger,
+          `bundles-${bundleData.bundleBlockRanges}`
+        ),
+        persistDataToArweave(
+          this.clients.arweaveClient,
+          {
+            poolRebalanceLeaves: expectedTrees.poolRebalanceTree.leaves.map((leaf) => {
+              return {
+                ...leaf,
+                proof: expectedTrees.poolRebalanceTree.tree.getHexProof(leaf),
+              };
+            }),
+            poolRebalanceRoot: expectedTrees.poolRebalanceTree.tree.getHexRoot(),
+            relayerRefundLeaves: expectedTrees.relayerRefundTree.leaves.map((leaf) => {
+              return {
+                ...leaf,
+                proof: expectedTrees.relayerRefundTree.tree.getHexProof(leaf),
+              };
+            }),
+            relayerRefundRoot: expectedTrees.relayerRefundTree.tree.getHexRoot(),
+            slowRelayLeaves: expectedTrees.slowRelayTree.leaves.map((leaf) => {
+              return {
+                ...leaf,
+                proof: expectedTrees.slowRelayTree.tree.getHexProof(leaf),
+              };
+            }),
+            slowRelayRoot: expectedTrees.slowRelayTree.tree.getHexRoot(),
+          },
+          this.logger,
+          `merkletree-${bundleData.bundleBlockRanges}`
+        ),
+      ]);
+    }
   }
 
   async validateRootBundle(
@@ -648,10 +680,11 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<V3SlowFillLeaf>;
-            leaves: V3SlowFillLeaf[];
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
           };
         };
+        bundleData?: BundleData;
       }
     // If valid is true, we don't get a reason, and we always get expected trees.
     | {
@@ -667,10 +700,11 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<V3SlowFillLeaf>;
-            leaves: V3SlowFillLeaf[];
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
           };
         };
+        bundleData: BundleData;
       }
   > {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
@@ -919,6 +953,7 @@ export class Dataworker {
         valid: true,
         expectedTrees,
         reason: undefined,
+        bundleData: rootBundleData.bundleData,
       };
     }
 
@@ -1099,10 +1134,10 @@ export class Dataworker {
   }
 
   async _executeSlowFillLeaf(
-    _leaves: V3SlowFillLeaf[],
+    _leaves: SlowFillLeaf[],
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
-    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
@@ -1115,7 +1150,7 @@ export class Dataworker {
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
-        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
@@ -1250,7 +1285,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
-        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,
@@ -1275,15 +1310,13 @@ export class Dataworker {
     });
   }
 
-  encodeV3SlowFillLeaf(
-    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
+  encodeSlowFillLeaf(
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
-    leaf: V3SlowFillLeaf
-  ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
-    const { relayData, chainId, updatedOutputAmount } = leaf;
-
+    leaf: SlowFillLeaf
+  ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
     const method = "executeV3SlowRelayLeaf";
-    const proof = slowRelayTree.getHexProof({ relayData, chainId, updatedOutputAmount });
+    const proof = slowRelayTree.getHexProof(leaf);
     const args = [leaf, rootBundleId, proof];
 
     return { method, args };
@@ -2174,7 +2207,7 @@ export class Dataworker {
     poolRebalanceRoot: string,
     relayerRefundLeaves: RelayerRefundLeaf[],
     relayerRefundRoot: string,
-    slowRelayLeaves: V3SlowFillLeaf[],
+    slowRelayLeaves: SlowFillLeaf[],
     slowRelayRoot: string
   ): void {
     try {
@@ -2229,7 +2262,7 @@ export class Dataworker {
     }
   }
 
-  async _getPoolRebalanceRoot(
+  _getPoolRebalanceRoot(
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
@@ -2238,7 +2271,7 @@ export class Dataworker {
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
     expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
-  ): Promise<PoolRebalanceRoot> {
+  ): PoolRebalanceRoot {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
@@ -2258,7 +2291,14 @@ export class Dataworker {
       );
     }
 
-    return _.cloneDeep(await this.rootCache[key]);
+    this.logger.debug({
+      at: "Dataworker#_getPoolRebalanceRoot",
+      message: "Constructed new pool rebalance root",
+      key,
+      root: this.rootCache[key],
+    });
+
+    return _.cloneDeep(this.rootCache[key]);
   }
 
   _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): BigNumber {
@@ -2333,7 +2373,7 @@ export class Dataworker {
     mainnetBundleStartBlock: number
   ): number[][] {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
-    return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+    return getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
       chainIds,
       spokePoolClients,

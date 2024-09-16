@@ -1,4 +1,4 @@
-import * as zksync from "zksync-web3";
+import * as zksync from "zksync-ethers";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../src/common";
@@ -256,18 +256,18 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.wbtc, // token
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.wbtc].l2GasLimit, // maxGas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.wbtc].l2GasPrice, // gasPriceBid
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.wbtc].transactionSubmissionData // data
     );
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.dai, amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens.dai, // token
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.dai].l2GasLimit, // maxGas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.dai].l2GasPrice, // gasPriceBid
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.dai].transactionSubmissionData // data
     );
     // Weth can be bridged like a standard ERC20 token to arbitrum.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
@@ -275,9 +275,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.weth, // token
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2GasLimit, // maxGas
-      addAttrib(adapterManager.adapters[chainId]).l2GasPrice, // gasPriceBid
-      addAttrib(adapterManager.adapters[chainId]).transactionSubmissionData // data
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.weth].l2GasLimit, // maxGas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.weth].l2GasPrice, // gasPriceBid
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.weth].transactionSubmissionData // data
     );
   });
 

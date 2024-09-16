@@ -52,6 +52,8 @@ export function getUniqueLogIndex(events: { transactionHash: string }[]): number
   return logIndexesForMessage;
 }
 
+type QuorumEvent = Event & { providers: string[] };
+
 /**
  * EventManager can be used to obtain basic quorum validation of events emitted by multiple providers.
  * This can be useful with WebSockets, where events are emitted asynchronously.
@@ -59,20 +61,17 @@ export function getUniqueLogIndex(events: { transactionHash: string }[]): number
  */
 export class EventManager {
   public readonly chain: string;
-  public readonly events: { [blockNumber: number]: (Event & { providers: string[] })[] } = {};
-  public readonly finality: number;
+  public readonly events: { [blockNumber: number]: QuorumEvent[] } = {};
 
   private blockNumber: number;
 
   constructor(
     private readonly logger: winston.Logger,
     public readonly chainId: number,
-    finality: number,
     public readonly quorum: number
   ) {
     this.chain = getNetworkName(chainId);
     this.blockNumber = 0;
-    this.finality = Math.max(finality, 1);
   }
 
   /**
@@ -83,7 +82,7 @@ export class EventManager {
    * @param event Event to search for.
    * @returns The matching event, or undefined.
    */
-  findEvent(event: Event): (Event & { providers: string[] }) | undefined {
+  findEvent(event: Event): QuorumEvent | undefined {
     return this.events[event.blockNumber]?.find(
       (storedEvent) =>
         storedEvent.logIndex === event.logIndex &&
@@ -163,39 +162,33 @@ export class EventManager {
   }
 
   /**
-   * Record a new block. This function triggers the existing queue of pending events to be evaluated for basic finality.
-   * Events meeting finality criteria are submitted to the parent process (if defined). Events submitted are
+   * Record a new block. This function triggers the existing queue of pending events to be evaluated for quorum.
+   * Events meeting quorum criteria are submitted to the parent process (if defined). Events submitted are
    * subsequently flushed from this class.
    * @param blockNumber Number of the latest block.
    * @returns void
    */
   tick(blockNumber: number): Event[] {
     this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
+    const blockNumbers = Object.keys(this.events)
+      .map(Number)
+      .sort((x, y) => x - y);
+    const quorumEvents: QuorumEvent[] = [];
 
-    // After `finality` blocks behind head, events for a block are considered finalised.
-    // This is configurable and will almost always be less than chain finality guarantees.
-    const finalised = blockNumber - this.finality;
-
-    // Collect the events that met quorum, stripping out the provider information; drop any that didn't.
-    // This can be brittle when finality is low (i.e. 1). @todo: Support querying back over multiple blocks
-    // to account for RPC notification delays.
-    const events = (this.events[finalised] ?? [])
-      .filter((event) => {
-        const eventQuorum = this.getEventQuorum(event);
-        if (this.quorum > eventQuorum) {
-          this.logger.debug({
-            at: "EventManager::tick",
-            message: `Dropped ${this.chain} ${event.event} event due to insufficient quorum.`,
-          });
+    blockNumbers.forEach((blockNumber) => {
+      // Filter out events that have reached quorum for propagation.
+      this.events[blockNumber] = this.events[blockNumber].filter((event) => {
+        if (this.quorum > this.getEventQuorum(event)) {
+          return true; // No quorum; retain for next time.
         }
-        return eventQuorum >= this.quorum;
-      })
-      .map(({ providers, ...event }) => event);
 
-    // Flush the events that were just submitted.
-    delete this.events[finalised];
+        quorumEvents.push(event);
+        return false;
+      });
+    });
 
-    return events;
+    // Strip out the quorum information before returning.
+    return quorumEvents.map(({ providers, ...event }) => event);
   }
 
   /**

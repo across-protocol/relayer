@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
-import { CachingMechanismInterface, L1Token, V3Deposit } from "../interfaces";
+import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -64,7 +64,7 @@ export class TokenClient {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
 
-  hasBalanceForFill(deposit: V3Deposit): boolean {
+  hasBalanceForFill(deposit: Deposit): boolean {
     return this.getBalance(deposit.destinationChainId, deposit.outputToken).gte(deposit.outputAmount);
   }
 
@@ -79,7 +79,7 @@ export class TokenClient {
     assign(this.tokenShortfall, [chainId, token], { deposits, totalRequirement });
   }
 
-  captureTokenShortfallForFill(deposit: V3Deposit): void {
+  captureTokenShortfallForFill(deposit: Deposit): void {
     const { outputAmount: unfilledAmount } = deposit;
     this.logger.debug({ at: "TokenBalanceClient", message: "Handling token shortfall", deposit, unfilledAmount });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.outputToken, deposit.depositId, unfilledAmount);

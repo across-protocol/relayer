@@ -4,7 +4,6 @@ import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
 import {
-  BigNumber,
   CHAIN_IDs,
   chainIsOPStack,
   compareAddressesSimple,
@@ -21,9 +20,12 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
   chainIsProd,
+  Contract,
+  ethers,
 } from "../../utils";
-import { Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
+import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
+const { utils } = ethers;
 
 interface CrossChainMessageWithEvent {
   event: TokensBridged;
@@ -42,6 +44,12 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
  */
 type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
+
+const BLAST_CLAIM_NOT_READY = 0;
+// Start ID used to query hint ID's on Blast L1 yield manager, this should never change.
+const BLAST_YIELD_MANAGER_STARTING_REQUEST_ID = 1;
+export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean =>
+  [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
 
 export async function opStackFinalizer(
   logger: winston.Logger,
@@ -198,24 +206,7 @@ async function getOptimismFinalizableMessages(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
   const crossChainMessages = await getCrossChainMessages(chainId, tokensBridged, crossChainMessenger);
-  // Temporary fix until we're well past the bedrock upgrade. Remove non Bedrock messages.
-  // Example way to detect whether message is bedrock:
-  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/sdk/src/cross-chain-messenger.ts#L332
-  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/core-utils/src/optimism/encoding.ts#L34
-  const bedrockMessages = (
-    await Promise.all(
-      crossChainMessages.map(async (crossChainMessage) => {
-        const resolved = await crossChainMessenger.toCrossChainMessage(crossChainMessage.message);
-        const version = BigNumber.from(resolved.messageNonce).shr(240).toNumber();
-        if (version !== 1) {
-          return undefined;
-        } else {
-          return crossChainMessage;
-        }
-      })
-    )
-  ).filter((m) => m !== undefined);
-  const messageStatuses = await getMessageStatuses(chainId, bedrockMessages, crossChainMessenger);
+  const messageStatuses = await getMessageStatuses(chainId, crossChainMessages, crossChainMessenger);
   logger.debug({
     at: `${getNetworkName(chainId)}Finalizer`,
     message: `${getNetworkName(chainId)} message statuses`,
@@ -224,6 +215,7 @@ async function getOptimismFinalizableMessages(
   return messageStatuses.filter(
     (message) =>
       message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY] ||
+      message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED] ||
       message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_TO_PROVE]
   );
 }
@@ -234,11 +226,79 @@ async function finalizeOptimismMessage(
   message: CrossChainMessageWithStatus,
   logIndex = 0
 ): Promise<Multicall2Call> {
-  const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
+  if (!chainIsBlast(_chainId)) {
+    const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
+      message.message as optimismSDK.MessageLike,
+      undefined,
+      logIndex
+    );
+    return {
+      callData: callData.data,
+      target: callData.to,
+    };
+  }
+
+  // Blast OptimismPortal has a custom interface so we can't use the SDK to construct the calldata.
+  // Instead, we need to locate the L1 Proof log that was emitted when we proved the L2 transaction
+  // to finalize, inside of which contains a `requestId` we need to use to find the `hintId` parameter
+  // we need to submit when finalizing the withdrawal. Note that the `hintId` can be hard-coded to 0
+  // for non-ETH withdrawals.
+  const { blastOptimismPortal, blastEthYieldManager } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET];
+  const blastPortal = new Contract(
+    blastOptimismPortal.address,
+    blastOptimismPortal.abi,
+    crossChainMessenger.l1Provider
+  );
+
+  const resolvedMessage = await crossChainMessenger.toCrossChainMessage(
     message.message as optimismSDK.MessageLike,
-    undefined,
     logIndex
   );
+  const withdrawalStruct = await crossChainMessenger.toLowLevelMessage(resolvedMessage, logIndex);
+  const l2WithdrawalParams = [
+    withdrawalStruct.messageNonce,
+    withdrawalStruct.sender,
+    withdrawalStruct.target,
+    withdrawalStruct.value,
+    withdrawalStruct.minGasLimit,
+    withdrawalStruct.message,
+  ];
+
+  let hintId = 0;
+  if (withdrawalStruct.value.gt(0)) {
+    const withdrawalHash = utils.keccak256(
+      utils.defaultAbiCoder.encode(["uint256", "address", "address", "uint256", "uint256", "bytes"], l2WithdrawalParams)
+    );
+    const blastEthYield = new Contract(
+      blastEthYieldManager.address,
+      blastEthYieldManager.abi,
+      crossChainMessenger.l1Provider
+    );
+
+    // @dev The withdrawal hash should be unique for the L2 withdrawal so there should be exactly 1 event for this query.
+    // If the withdrawal hasn't been proven yet then this will error.
+    const [proofReceipt, latestCheckpointId] = await Promise.all([
+      blastPortal.queryFilter(blastPortal.filters.WithdrawalProven(withdrawalHash)),
+      blastEthYield.getLastCheckpointId(),
+    ]);
+    if (proofReceipt.length !== 1) {
+      throw new Error(`Failed to find Proof receipt matching Blast withdrawal ${message.event.transactionHash}`);
+    }
+    const requestId = proofReceipt[0].args?.requestId;
+    if (requestId === undefined || requestId === 0) {
+      throw new Error(`Found invalid requestId ${requestId} for Blast withdrawal ${message.event.transactionHash}`);
+    }
+    // @dev The hintId parameter plays a role in our insurance mechanism that kicks in in the rare event that
+    // ETH yield goes negative. The `findCheckpointHint` function runs a binary search in solidity to find the
+    // correct hint so we naively set the starting point to 1, the first index, and set the latest to the last
+    // queried value. The request ID for an already proven withdrawal should always be found by the following function.
+    hintId = await blastEthYield.findCheckpointHint(
+      requestId,
+      BLAST_YIELD_MANAGER_STARTING_REQUEST_ID,
+      latestCheckpointId
+    );
+  }
+  const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
   return {
     callData: callData.data,
     target: callData.to,
@@ -269,9 +329,10 @@ async function multicallOptimismFinalizations(
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
-  const finalizableMessages = (
-    await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
-  ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]);
+  const allMessages = await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger);
+  const finalizableMessages = allMessages.filter(
+    (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
+  );
   const callData = await Promise.all(
     finalizableMessages.map((message) =>
       finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex)
@@ -290,9 +351,155 @@ async function multicallOptimismFinalizations(
     return withdrawal;
   });
 
+  // Blast USDB withdrawals have a two step withdrawal process involving a separate claim that can be made
+  // after the withdrawal request is finalized by a Blast admin. This roughly takes ~24 hours after the OpMessager
+  // has been "Finalized" on L1.
+  if (!chainIsBlast(chainId)) {
+    return {
+      callData,
+      withdrawals,
+    };
+  }
+
+  // For each RELAYED (e.g. Finalized in the normal OPStack context) USDB message there should be
+  // one WithdrawRequest with a unique requestId.
+  const claimableMessages = allMessages.filter(
+    (message) =>
+      message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[chainId] &&
+      message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
+  );
+  if (claimableMessages.length === 0) {
+    return {
+      callData,
+      withdrawals,
+    };
+  }
+
+  const { blastUsdYieldManager, blastDaiRetriever } = CONTRACT_ADDRESSES[hubPoolClient.chainId];
+  const usdYieldManager = new Contract(
+    blastUsdYieldManager.address,
+    blastUsdYieldManager.abi,
+    crossChainMessenger.l1Provider
+  );
+  // Reduce the query by only querying events that were emitted after the earliest TokenBridged event we saw. This
+  // is an easy optimization as we know that WithdrawalRequested events are only emitted after the TokenBridged event.
+  const fromBlock = tokensBridgedEvents[0].blockNumber;
+  const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
+    usdYieldManager.queryFilter(
+      usdYieldManager.filters.WithdrawalRequested(
+        null,
+        null,
+        // All withdrawal requests we are interested in finalizing either have the HubPool or the
+        // Blast_Retriever address as the recipient. HubPool as recipient is actually a leftover artifact from a
+        // deprecated SpokePool code and all recipients going
+        // forward should be the Blast_Retriever address. We include it here so that this finalizer can catch any
+        // leftover finalizations with HubPool as the recipient that we can manually retrieve.
+        // @dev We should replace this filter with a single blastDaiRetriever address once the finalizer lookback
+        // stops querying TokensBridged/L2 Withdrawal events that have the HubPool as the recipient.
+        [hubPoolClient.hubPool.address, blastDaiRetriever.address]
+      ),
+      fromBlock
+    ),
+    usdYieldManager.getLastCheckpointId(),
+    // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
+    // logging information as to why a withdrawal request is not ready to be claimed.
+    usdYieldManager.getLastFinalizedRequestId(),
+  ]);
+
+  // The claimableMessages (i.e. the TokensBridged events) should fall out of the lookback window sooner than
+  // the WithdrawalRequested events will, but we want a 1:1 mapping between them. Therefore, if we have N
+  // WithdrawalRequested events, we should keep the last N claimableMessages.
+  const withdrawalRequests = [..._withdrawalRequests].slice(-claimableMessages.length);
+  const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
+  assert(withdrawalRequestIds.length === claimableMessages.length);
+
+  // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
+  // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
+  // @dev Alternatively, another way to throw out requestIds that aren't ready yet is to query the
+  // `getLastFinalizedRequestId` and ignore any requestIds > this value.
+  const [hintIds, withdrawalClaims] = await Promise.all([
+    Promise.all(
+      withdrawalRequestIds.map((requestId) =>
+        usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
+      )
+    ),
+    Promise.all(
+      withdrawalRequestIds.map((requestId) =>
+        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), fromBlock)
+      )
+    ),
+  ]);
+  const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
+  assert(withdrawalRequestIds.length === hintIds.length);
+  assert(withdrawalClaims.length === claimableMessages.length);
+
+  logger.debug({
+    at: "Finalizer#multicallOptimismFinalizations",
+    message: "Blast USDB claimable message statuses",
+    claims: claimableMessages.map((message, i) => {
+      return {
+        withdrawalHash: message.event.transactionHash,
+        withdrawRequestId: withdrawalRequestIds[i],
+        usdYieldManagerHintId: hintIds[i],
+        isClaimed: withdrawalRequestIsClaimed[i],
+      };
+    }),
+  });
+
+  const tokenRetriever = new Contract(blastDaiRetriever.address, blastDaiRetriever.abi, crossChainMessenger.l1Provider);
+  const claimMessages: CrossChainMessage[] = [];
+  const claimCallData = (
+    await Promise.all(
+      claimableMessages.map(async (message, i) => {
+        if (withdrawalRequestIsClaimed[i]) {
+          logger.debug({
+            at: "Finalizer#multicallOptimismFinalizations",
+            message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} already claimed`,
+          });
+          return undefined;
+        }
+        const hintId = hintIds[i];
+        if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
+          logger.debug({
+            at: "Finalizer#multicallOptimismFinalizations",
+            message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
+            lastFinalizedRequestId,
+          });
+          return undefined;
+        }
+        const recipient = withdrawalRequests[i].args.recipient;
+        if (recipient !== tokenRetriever.address) {
+          // This should never happen since we filter our WithdrawalRequested query on the `recipient`
+          // but in case it happens, this log should help us debug.
+          logger.warn({
+            at: "Finalizer#multicallOptimismFinalizations",
+            message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`,
+            hintId: hintIds[i],
+            recipient,
+          });
+          return undefined;
+        }
+        const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
+        claimMessages.push({
+          originationChainId: chainId,
+          l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
+          amount: amountFromWei,
+          type: "misc",
+          miscReason: "claimUSDB",
+          destinationChainId: hubPoolClient.chainId,
+        });
+        const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i], hintIds[i]);
+        return {
+          callData: claimCallData.data,
+          target: claimCallData.to,
+        };
+      })
+    )
+  ).filter((call) => call !== undefined);
+
   return {
-    callData,
-    withdrawals,
+    callData: [...callData, ...claimCallData],
+    withdrawals: [...withdrawals, ...claimMessages],
   };
 }
 

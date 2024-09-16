@@ -6,3 +6,4 @@ export * from "./PolygonAdapter";
 export * from "./CrossChainTransferClient";
 export * from "./ZKSyncAdapter";
 export * from "./LineaAdapter";
+export * from "./ScrollAdapter";

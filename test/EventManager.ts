@@ -49,13 +49,12 @@ describe("EventManager: Event Handling ", async function () {
 
   let logger: winston.Logger;
   let eventMgr: EventManager;
-  let finality: number, quorum: number;
+  let quorum: number;
 
   beforeEach(async function () {
     ({ spyLogger: logger } = createSpyLogger());
-    quorum = 1;
-    finality = 5;
-    eventMgr = new EventManager(logger, chainId, finality, quorum);
+    quorum = 2;
+    eventMgr = new EventManager(logger, chainId, quorum);
   });
 
   it("Correctly applies quorum on added events", async function () {
@@ -76,74 +75,50 @@ describe("EventManager: Event Handling ", async function () {
     });
   });
 
-  it("Waits for finality before confirming events", async function () {
-    const [provider] = providers;
-    expect(quorum).to.equal(1);
+  it("Waits for quorum before relaying events", async function () {
+    const [provider1, provider2] = providers;
+    expect(quorum).to.equal(2);
 
-    expect(finality).to.be.greaterThan(1);
-    const finalisedBlock = eventTemplate.blockNumber + finality;
+    eventMgr.add(eventTemplate, provider1);
 
-    eventMgr.add(eventTemplate, provider);
-
-    // The added event should not be returned when the blockNumber is less than `finalisedBlock`.
-    for (let blockNumber = 0; blockNumber < finalisedBlock; ++blockNumber) {
+    // The added event should not be returned despite the blockNumber increasing.
+    let blockNumber: number;
+    for (blockNumber = 0; blockNumber < 10; ++blockNumber) {
       const events = eventMgr.tick(blockNumber);
       expect(events.length).to.equal(0);
     }
 
     // At `finalisedBlock` the event should be returned.
-    let events = eventMgr.tick(finalisedBlock);
+    eventMgr.add(eventTemplate, provider2);
+    let events = eventMgr.tick(blockNumber);
     expect(events.length).to.equal(1);
     expect(events[0]).to.deep.equal(eventTemplate);
 
-    // After `finalisedBlock`, no further events are available.
-    events = eventMgr.tick(finalisedBlock + 1);
+    // No further events are available.
+    events = eventMgr.tick(++blockNumber);
     expect(events.length).to.equal(0);
   });
 
-  it("Only emits finalised events that met quorum", async function () {
-    quorum = 2;
-    eventMgr = new EventManager(logger, chainId, finality, quorum);
-
-    expect(finality).to.be.greaterThan(1);
-    const finalisedBlock = eventTemplate.blockNumber + finality;
-
-    // Add an event from the first provider.
-    eventMgr.add(eventTemplate, providers[0]);
-    const eventQuorum = eventMgr.getEventQuorum(eventTemplate);
-    expect(eventQuorum).to.equal(1);
-
-    // Simulate finality on the event with insufficient quorum. It should be suppressed.
-    let events = eventMgr.tick(finalisedBlock);
-    expect(events.length).to.equal(0);
-
-    // Add the same event from the 2nd provider. It shouldn't ever be
-    // confirmed because the block height is now ahead of the event.
-    eventMgr.add(eventTemplate, providers[1]);
-    events = eventMgr.tick(finalisedBlock);
-    expect(events.length).to.equal(0);
-  });
-
-  it("Drops removed events before finality", async function () {
+  it("Drops removed events before quorum", async function () {
     const removed = true;
-    expect(quorum).to.equal(1);
+    expect(quorum).to.equal(2);
 
-    const [provider] = providers;
+    const [provider1, provider2] = providers;
 
     // Add the event once (not finalised).
-    eventMgr.add(eventTemplate, provider);
+    eventMgr.add(eventTemplate, provider1);
     let events = eventMgr.tick(eventTemplate.blockNumber + 1);
     expect(events.length).to.equal(0);
     let eventQuorum = eventMgr.getEventQuorum(eventTemplate);
     expect(eventQuorum).to.equal(1);
 
     // Remove the event after notification by the same provider.
-    eventMgr.remove({ ...eventTemplate, removed }, provider);
+    eventMgr.remove({ ...eventTemplate, removed }, provider1);
     eventQuorum = eventMgr.getEventQuorum(eventTemplate);
     expect(eventQuorum).to.equal(0);
 
     // Re-add the same event.
-    eventMgr.add(eventTemplate, provider);
+    eventMgr.add(eventTemplate, provider1);
     events = eventMgr.tick(eventTemplate.blockNumber + 1);
     expect(events.length).to.equal(0);
     eventQuorum = eventMgr.getEventQuorum(eventTemplate);
@@ -153,5 +128,10 @@ describe("EventManager: Event Handling ", async function () {
     eventMgr.remove({ ...eventTemplate, removed }, "randomProvider");
     eventQuorum = eventMgr.getEventQuorum(eventTemplate);
     expect(eventQuorum).to.equal(0);
+
+    // Add the same event from provider2. There should be no quorum.
+    eventMgr.add(eventTemplate, provider2);
+    events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    expect(events.length).to.equal(0);
   });
 });

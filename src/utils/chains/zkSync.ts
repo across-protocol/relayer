@@ -1,6 +1,6 @@
 import assert from "assert";
 import { providers as ethersProviders } from "ethers";
-import { Provider as ZKSyncProvider } from "zksync-web3";
+import { Provider as ZKSyncProvider } from "zksync-ethers";
 import { RetryProvider } from "../ProviderUtils";
 import { isDefined } from "../TypeGuards";
 

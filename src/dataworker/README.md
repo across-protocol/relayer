@@ -39,7 +39,7 @@ An L2's "canonical bridge" is one that is secured by the same trusted agents tha
 
 When an L2's SpokePool doesn't have a canonical bridge connected to Ethereum, Across has a few ways to overcome this.
 
-One, it could use a third party bridge, but this is strongly avoided because it exposes LP capital to additional trust assumptions. Across historically has avoided supporting networks without canonical bridges for this reason, and moreover its been unnecessary as the most popular L2 networks have proven to be those that have spent the time to build out an effective canonical bridge.
+One, it could use a third party bridge, but this is strongly avoided because it exposes LP capital to additional trust assumptions. Across historically has avoided supporting networks without canonical bridges for this reason, and moreover it's been unnecessary as the most popular L2 networks have proven to be those that have spent the time to build out an effective canonical bridge.
 
 Secondly, it could try to incentivize depositors to send capital to the SpokePool that Across can use to refund relayers and execute slow fills. Depositors obviously are incentivized by profit so they must have a reason to deposit on a SpokePool.
 

@@ -1,6 +1,5 @@
 import assert from "assert";
 import minimist from "minimist";
-import { setTimeout } from "node:timers/promises";
 import { Contract, Event, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
@@ -29,7 +28,6 @@ type WebSocketProvider = ethersProviders.WebSocketProvider;
 type EventSearchConfig = sdkUtils.EventSearchConfig;
 type ScraperOpts = {
   lookback?: number; // Event lookback (in seconds).
-  finality?: number; // Event finality (in blocks).
   deploymentBlock: number; // SpokePool deployment block
   maxBlockRange?: number; // Maximum block range for paginated getLogs queries.
   filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
@@ -37,7 +35,9 @@ type ScraperOpts = {
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
-const INDEXER_POLLING_PERIOD = 2000; // ms; time to sleep between checking for exit request via SIGHUP.
+const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
+const WS_PING_INTERVAL = 20_000; // ms
+const WS_PONG_TIMEOUT = WS_PING_INTERVAL / 2;
 
 let logger: winston.Logger;
 let chain: string;
@@ -200,7 +200,7 @@ async function listen(
   });
 
   do {
-    await setTimeout(INDEXER_POLLING_PERIOD);
+    await sdkUtils.delay(INDEXER_POLLING_PERIOD);
   } while (!stop);
 }
 
@@ -213,9 +213,8 @@ async function run(argv: string[]): Promise<void> {
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, finality = 32, lookback = "5400", relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainId, lookback, relayer = null, maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
-  assert(Number.isInteger(finality), "finality must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
@@ -230,21 +229,22 @@ async function run(argv: string[]): Promise<void> {
   const latestBlock = await quorumProvider.getBlock("latest");
 
   const deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
-  let startBlock: number;
+  let startBlock = latestBlock.number;
   if (/^@[0-9]+$/.test(lookback)) {
     // Lookback to a specific block (lookback = @<block-number>).
     startBlock = Number(lookback.slice(1));
-  } else {
+  } else if (isDefined(lookback)) {
     // Resolve `lookback` seconds from head to a specific block.
     assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
     startBlock = Math.max(
       deploymentBlock,
       await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
     );
+  } else {
+    logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Skipping lookback on ${chain}.` });
   }
 
   const opts = {
-    finality,
     quorum,
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
@@ -274,7 +274,7 @@ async function run(argv: string[]): Promise<void> {
     oldestTime = (await spokePool.getCurrentTime({ blockTag })).toNumber();
   };
 
-  if (lookback > 0) {
+  if (latestBlock.number > startBlock) {
     const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     const _spokePool = spokePool.connect(quorumProvider);
     await Promise.all([
@@ -288,40 +288,86 @@ async function run(argv: string[]): Promise<void> {
 
   // Events to listen for.
   const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
-  const eventMgr = new EventManager(logger, chainId, finality, quorum);
-  do {
-    let providers: WebSocketProvider[] = [];
-    try {
-      providers = getWSProviders(chainId, quorum);
-      assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
-      providers.forEach((provider) => {
-        provider._websocket.on("error", (err) =>
-          logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Caught ${chain} provider error.`, err })
-        );
+  const eventMgr = new EventManager(logger, chainId, quorum);
+  const providers = getWSProviders(chainId, quorum);
+  let nProviders = providers.length;
+  assert(providers.length > 0, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
-        provider._websocket.on("close", () => {
-          logger.debug({
-            at: "RelayerSpokePoolIndexer::run",
-            message: `${chain} provider connection closed.`,
-            provider: getOriginFromURL(provider.connection.url),
-          });
+  providers.forEach((provider) => {
+    const { _websocket: ws } = provider;
+    const _provider = getOriginFromURL(provider.connection.url);
+    let interval: NodeJS.Timer | undefined;
+    let timeout: NodeJS.Timeout | undefined;
+
+    const closeProvider = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = undefined;
+      }
+
+      if (!stop && --nProviders < quorum) {
+        stop = true;
+        logger.warn({
+          at: "RelayerSpokePoolIndexer::run",
+          message: `Insufficient ${chain} providers to continue.`,
+          quorum,
+          nProviders,
         });
-      });
+      }
+    };
 
-      logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} listener.`, events, opts });
-      await listen(eventMgr, spokePool, events, providers, opts);
-    } catch (err) {
-      providers.forEach((provider) => provider.removeAllListeners());
+    // On connection, start an interval timer to periodically ping the remote end.
+    ws.on("open", () => {
+      interval = setInterval(() => {
+        ws.ping();
+        timeout = setTimeout(() => {
+          logger.warn({
+            at: "RelayerSpokePoolIndexer::run",
+            message: `Timed out on ${chain} provider.`,
+            provider: _provider,
+          });
+          ws.terminate();
+        }, WS_PONG_TIMEOUT);
+      }, WS_PING_INTERVAL);
+    });
 
-      // @todo: What to do if the websocket drops? Should be able to reconnect?
-      logger.warn({
+    // Pong received; cancel the timeout.
+    ws.on("pong", () => {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = undefined;
+      }
+    });
+
+    // Oops, something went wrong.
+    ws.on("error", (err) => {
+      const at = "RelayerSpokePoolIndexer::run";
+      const message = `Caught ${chain} provider error.`;
+      logger.debug({ at, message, provider: _provider, quorum, nProviders, err });
+      closeProvider();
+    });
+
+    // Websocket is gone.
+    ws.on("close", () => {
+      logger.debug({
         at: "RelayerSpokePoolIndexer::run",
-        message: "Caught runtime error.",
-        err,
+        message: `${chain} provider connection closed.`,
+        provider: _provider,
       });
-      throw err;
-    }
-  } while (!stop);
+      closeProvider();
+    });
+  });
+
+  logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} listener.`, events, opts });
+  await listen(eventMgr, spokePool, events, providers, opts);
+
+  // Cleanup where possible.
+  providers.forEach((provider) => provider._websocket.terminate());
 }
 
 if (require.main === module) {

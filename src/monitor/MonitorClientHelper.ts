@@ -1,7 +1,6 @@
 import { MonitorConfig } from "./MonitorConfig";
 import { Signer, winston } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
-import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
   Clients,
   updateClients,
@@ -18,6 +17,9 @@ export interface MonitorClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
   tokenTransferClient: TokenTransferClient;
 }
+
+import { GenericAdapterManager } from "../adapter/AdapterManager";
+import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
 export async function constructMonitorClients(
   config: MonitorConfig,
@@ -54,7 +56,8 @@ export async function constructMonitorClients(
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
-  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
+  const adapterManagerConstructor = config.useGenericAdapter ? GenericAdapterManager : AdapterManager;
+  const adapterManager = new adapterManagerConstructor(logger, spokePoolClients, hubPoolClient, [
     signerAddr,
     hubPoolClient.hubPool.address,
     ...spokePoolAddresses,

@@ -1,4 +1,4 @@
-import { delay } from "./TimeUtils";
+import { delay } from "./SDKUtils";
 
 export function retryAsync<T, U extends unknown[]>(
   fn: (...args: U) => Promise<T>,
