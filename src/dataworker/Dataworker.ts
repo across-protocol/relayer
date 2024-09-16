@@ -27,7 +27,7 @@ import {
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
-  V3SlowFillLeaf,
+  SlowFillLeaf,
   FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -62,8 +62,8 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
-  leaves: V3SlowFillLeaf[];
-  tree: MerkleTree<V3SlowFillLeaf>;
+  leaves: SlowFillLeaf[];
+  tree: MerkleTree<SlowFillLeaf>;
 };
 
 type ProposeRootBundleReturnType = {
@@ -71,8 +71,8 @@ type ProposeRootBundleReturnType = {
   poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
   relayerRefundLeaves: RelayerRefundLeaf[];
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
-  slowFillLeaves: V3SlowFillLeaf[];
-  slowFillTree: MerkleTree<V3SlowFillLeaf>;
+  slowFillLeaves: SlowFillLeaf[];
+  slowFillTree: MerkleTree<SlowFillLeaf>;
   bundleData: BundleData;
 };
 
@@ -680,8 +680,8 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<V3SlowFillLeaf>;
-            leaves: V3SlowFillLeaf[];
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
           };
         };
         bundleData?: BundleData;
@@ -700,8 +700,8 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<V3SlowFillLeaf>;
-            leaves: V3SlowFillLeaf[];
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
           };
         };
         bundleData: BundleData;
@@ -1134,10 +1134,10 @@ export class Dataworker {
   }
 
   async _executeSlowFillLeaf(
-    _leaves: V3SlowFillLeaf[],
+    _leaves: SlowFillLeaf[],
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
-    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
@@ -1150,7 +1150,7 @@ export class Dataworker {
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
-        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
@@ -1285,7 +1285,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
-        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,
@@ -1310,11 +1310,11 @@ export class Dataworker {
     });
   }
 
-  encodeV3SlowFillLeaf(
-    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
+  encodeSlowFillLeaf(
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
-    leaf: V3SlowFillLeaf
-  ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
+    leaf: SlowFillLeaf
+  ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
     const method = "executeV3SlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
     const args = [leaf, rootBundleId, proof];
@@ -2207,7 +2207,7 @@ export class Dataworker {
     poolRebalanceRoot: string,
     relayerRefundLeaves: RelayerRefundLeaf[],
     relayerRefundRoot: string,
-    slowRelayLeaves: V3SlowFillLeaf[],
+    slowRelayLeaves: SlowFillLeaf[],
     slowRelayRoot: string
   ): void {
     try {

@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient } from "../clients";
-import { PendingRootBundle, PoolRebalanceLeaf, RelayerRefundLeaf, V3SlowFillLeaf } from "../interfaces";
+import { PendingRootBundle, PoolRebalanceLeaf, RelayerRefundLeaf, SlowFillLeaf } from "../interfaces";
 import {
   bnZero,
   BigNumber,
@@ -99,7 +99,7 @@ export function generateMarkdownForRootBundle(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   relayerRefundLeaves: any[],
   relayerRefundRoot: string,
-  slowRelayLeaves: V3SlowFillLeaf[],
+  slowRelayLeaves: SlowFillLeaf[],
   slowRelayRoot: string
 ): string {
   // Create helpful logs to send to slack transport
@@ -211,8 +211,8 @@ export function generateMarkdownForRootBundle(
 
 export function prettyPrintLeaves(
   logger: winston.Logger,
-  tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<V3SlowFillLeaf>,
-  leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | V3SlowFillLeaf[],
+  tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<SlowFillLeaf>,
+  leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | SlowFillLeaf[],
   logType = "Pool rebalance"
 ): void {
   leaves.forEach((leaf, index) => {

@@ -59,6 +59,7 @@ export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
 export type SlowFillRequest = interfaces.SlowFillRequest;
 export type SlowFillRequestWithBlock = interfaces.SlowFillRequestWithBlock;
+export type SlowFillLeaf = interfaces.SlowFillLeaf;
 export type RootBundleRelay = interfaces.RootBundleRelay;
 export type RootBundleRelayWithBlock = interfaces.RootBundleRelayWithBlock;
 export type RelayerRefundExecution = interfaces.RelayerRefundExecution;
@@ -69,12 +70,3 @@ export type TokensBridged = interfaces.TokensBridged;
 export const { FillType, FillStatus } = interfaces;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
-
-// V3 shims (to be removed later)
-export type V3RelayData = interfaces.RelayData;
-export type V3Deposit = interfaces.Deposit;
-export type V3DepositWithBlock = interfaces.DepositWithBlock;
-export type V3SpeedUp = interfaces.SpeedUp;
-export type V3Fill = interfaces.Fill;
-export type V3FillWithBlock = interfaces.FillWithBlock;
-export type V3SlowFillLeaf = interfaces.SlowFillLeaf;
