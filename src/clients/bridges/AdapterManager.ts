@@ -1,10 +1,16 @@
 import { utils } from "@across-protocol/sdk";
-import { spokesThatHoldEthAndWeth, SUPPORTED_TOKENS } from "../../common/Constants";
+import {
+  spokesThatHoldEthAndWeth,
+  SUPPORTED_TOKENS,
+  CUSTOM_BRIDGE,
+  CANONICAL_BRIDGE,
+  DEFAULT_GAS_MULTIPLIER,
+} from "../../common/Constants";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, ScrollAdapter } from "./";
-import { CHAIN_IDs } from "@across-protocol/constants";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 
 import { BaseChainAdapter } from "../../adapter";
 
@@ -40,6 +46,19 @@ export class AdapterManager {
     };
 
     const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL, ZORA } = CHAIN_IDs;
+    const hubChainId = hubPoolClient.chainId;
+    const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
+    const constructBridges = (chainId: number) => {
+      return Object.fromEntries([
+        SUPPORTED_TOKENS[chainId].map((symbol) => {
+          const l2Signer = spokePoolClients[chainId].spokePool.signer;
+          const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+          const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
+          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
+          return [l1Token, bridge];
+        }),
+      ]);
+    };
     if (this.spokePoolClients[OPTIMISM] !== undefined) {
       this.adapters[OPTIMISM] = new OpStackAdapter(
         OPTIMISM,
@@ -71,51 +90,71 @@ export class AdapterManager {
       this.adapters[LINEA] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(LINEA));
     }
     if (this.spokePoolClients[MODE] !== undefined) {
-      this.adapters[MODE] = new OpStackAdapter(
+      const bridges = constructBridges(MODE);
+      this.adapters[MODE] = new BaseChainAdapter(
+        spokePoolClients,
         MODE,
+        hubChainId,
+        filterMonitoredAddresses(MODE),
         logger,
         SUPPORTED_TOKENS[MODE],
-        spokePoolClients,
-        filterMonitoredAddresses(MODE)
+        bridges,
+        DEFAULT_GAS_MULTIPLIER[MODE] ?? 1
       );
     }
     if (this.spokePoolClients[REDSTONE] !== undefined) {
-      this.adapters[REDSTONE] = new OpStackAdapter(
+      const bridges = constructBridges(REDSTONE);
+      this.adapters[REDSTONE] = new BaseChainAdapter(
+        spokePoolClients,
         REDSTONE,
+        hubChainId,
+        filterMonitoredAddresses(REDSTONE),
         logger,
         SUPPORTED_TOKENS[REDSTONE],
-        spokePoolClients,
-        filterMonitoredAddresses(REDSTONE)
+        bridges,
+        DEFAULT_GAS_MULTIPLIER[REDSTONE] ?? 1
       );
     }
     if (this.spokePoolClients[LISK] !== undefined) {
-      this.adapters[LISK] = new OpStackAdapter(
+      const bridges = constructBridges(LISK);
+      this.adapters[LISK] = new BaseChainAdapter(
+        spokePoolClients,
         LISK,
+        hubChainId,
+        filterMonitoredAddresses(LISK),
         logger,
         SUPPORTED_TOKENS[LISK],
-        spokePoolClients,
-        filterMonitoredAddresses(LISK)
+        bridges,
+        DEFAULT_GAS_MULTIPLIER[LISK] ?? 1
       );
     }
     if (this.spokePoolClients[BLAST] !== undefined) {
-      this.adapters[BLAST] = new OpStackAdapter(
+      const bridges = constructBridges(BLAST);
+      this.adapters[BLAST] = new BaseChainAdapter(
+        spokePoolClients,
         BLAST,
+        hubChainId,
+        filterMonitoredAddresses(BLAST),
         logger,
         SUPPORTED_TOKENS[BLAST],
-        spokePoolClients,
-        filterMonitoredAddresses(BLAST)
+        bridges,
+        DEFAULT_GAS_MULTIPLIER[BLAST] ?? 1
       );
     }
     if (this.spokePoolClients[SCROLL] !== undefined) {
       this.adapters[SCROLL] = new ScrollAdapter(logger, spokePoolClients, filterMonitoredAddresses(SCROLL));
     }
     if (this.spokePoolClients[ZORA] !== undefined) {
-      this.adapters[ZORA] = new OpStackAdapter(
+      const bridges = constructBridges(ZORA);
+      this.adapters[ZORA] = new BaseChainAdapter(
+        spokePoolClients,
         ZORA,
+        hubChainId,
+        filterMonitoredAddresses(ZORA),
         logger,
         SUPPORTED_TOKENS[ZORA],
-        spokePoolClients,
-        filterMonitoredAddresses(ZORA)
+        bridges,
+        DEFAULT_GAS_MULTIPLIER[BLAST] ?? 1
       );
     }
 
