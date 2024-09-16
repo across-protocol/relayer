@@ -154,7 +154,7 @@ export class AdapterManager {
         logger,
         SUPPORTED_TOKENS[ZORA],
         bridges,
-        DEFAULT_GAS_MULTIPLIER[BLAST] ?? 1
+        DEFAULT_GAS_MULTIPLIER[ZORA] ?? 1
       );
     }
 
