@@ -138,7 +138,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       )
         // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
         // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
-        .filter((event) => event.args._to === fromAddress);
+        .filter((event) => event.args._to === toAddress);
 
       // We only care about WETH finalization events initiated by the relayer running this rebalancer logic, so only
       // filter on Deposit events sent from the provided signer. We can't simply filter on `fromAddress` because
