@@ -56,7 +56,7 @@ export class AdapterManager {
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
           const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
           return [l1Token, bridge];
-        }),
+        })
       );
     };
     if (this.spokePoolClients[OPTIMISM] !== undefined) {
