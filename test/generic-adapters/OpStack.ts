@@ -165,14 +165,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       // For EOA's, weth transfer from address should be atomic depositor address
       await wethBridgeContract.emitDepositFinalized(atomicDepositorAddress, monitoredEoa, 1);
       const emptyResult = (
-        await wethBridge.queryL2BridgeFinalizationEvents(l1WethAddress, monitoredEoa, undefined, searchConfig)
+        await wethBridge.queryL2BridgeFinalizationEvents(l1WethAddress, monitoredEoa, monitoredEoa, searchConfig)
       )[l2WethAddress];
       expect(emptyResult.length).to.equal(0);
 
       // Mine Deposit event now.
       await wethContract.connect(monitoredEoaAccount).deposit({ value: 0 });
       const result = (
-        await wethBridge.queryL2BridgeFinalizationEvents(l1WethAddress, monitoredEoa, undefined, searchConfig)
+        await wethBridge.queryL2BridgeFinalizationEvents(l1WethAddress, monitoredEoa, monitoredEoa, searchConfig)
       )[l2WethAddress];
       expect(result.length).to.equal(1);
       expect(result[0].from).to.equal(atomicDepositorAddress);
