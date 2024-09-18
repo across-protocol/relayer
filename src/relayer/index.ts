@@ -16,7 +16,7 @@ config();
 let logger: winston.Logger;
 
 const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
-const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
+const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer" } = process.env;
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
@@ -59,7 +59,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       const tLoopStart = performance.now();
       const ready = await relayer.update();
-      const activeRelayer = await redis.get(botIdentifier);
+      const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
       // If there is another active relayer, allow up to 10 update cycles for this instance to be ready,
       // then proceed unconditionally to protect against any RPC outages blocking the relayer.
@@ -73,7 +73,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       // Signal to any existing relayer that a handover is underway, or alternatively
       // check for handover initiated by another (newer) relayer instance.
-      if (loop && botIdentifier && runIdentifier) {
+      if (loop && runIdentifier && redis) {
         if (activeRelayer !== runIdentifier) {
           if (!activeRelayerUpdated) {
             await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
