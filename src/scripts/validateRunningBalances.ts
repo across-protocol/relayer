@@ -56,7 +56,7 @@ import {
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getBlockForChain } from "../dataworker/DataworkerUtils";
-import { ProposedRootBundle, SpokePoolClientsByChain, V3SlowFillLeaf } from "../interfaces";
+import { ProposedRootBundle, SpokePoolClientsByChain, SlowFillLeaf } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
 
@@ -470,7 +470,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
     bundle: ProposedRootBundle,
     olderBundle: ProposedRootBundle,
     futureBundle: ProposedRootBundle
-  ): Promise<{ slowFills: V3SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
+  ): Promise<{ slowFills: SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to build slow roots.
     const spokeClientFromBlocks = Object.fromEntries(
       dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
