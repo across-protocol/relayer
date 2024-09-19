@@ -633,7 +633,8 @@ export class TryMulticallClient extends MultiCallerClient {
           mrkdwn: mrkdwn.join(""),
         };
       };
-      txnRequestsToSubmit.push(...txnCalldataToRebuild.map(rebuildTryMulticall));
+      const tryMulticallTxns = txnCalldataToRebuild.filter((txn) => txn.calldata.length !== 0).map(rebuildTryMulticall);
+      txnRequestsToSubmit.push(...tryMulticallTxns);
     }
 
     if (simulate) {
