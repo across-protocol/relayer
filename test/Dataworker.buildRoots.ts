@@ -5,7 +5,6 @@ import { assert, bnZero, fixedPointAdjustment } from "../src/utils";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
-  BigNumber,
   Contract,
   SignerWithAddress,
   buildV3SlowRelayLeaves,
@@ -279,7 +278,7 @@ describe("Dataworker: Build merkle roots", async function () {
     const expectedRunningBalances: RunningBalances = {
       // Note: There should be no origin chain entry here since there were no deposits.
       [originChainId]: {
-        [l1Token_1.address]: BigNumber.from(0),
+        [l1Token_1.address]: bnZero,
       },
     };
     expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);

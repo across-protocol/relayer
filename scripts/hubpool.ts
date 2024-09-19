@@ -1,14 +1,12 @@
 import minimist from "minimist";
 import { WETH9__factory as WETH9 } from "@across-protocol/contracts";
 import { constants as sdkConsts } from "@across-protocol/sdk";
-import { BigNumber, ethers, Signer } from "ethers";
+import { ethers, Signer } from "ethers";
 import { config } from "dotenv";
-import { getNetworkName, getSigner } from "../src/utils";
+import { BigNumber, bnOne, bnUint256Max, formatEther, formatUnits, getNetworkName, getSigner } from "../src/utils";
 import * as utils from "./utils";
 
 const { PROTOCOL_DEFAULT_CHAIN_ID_INDICES } = sdkConsts;
-const { MaxUint256, One: bnOne } = ethers.constants;
-const { formatEther, formatUnits } = ethers.utils;
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 
@@ -99,7 +97,7 @@ async function dispute(args: Record<string, number | string>, signer: Signer): P
 
   if (allowance.lt(bondAmount)) {
     console.log(`Approving ${network} HubPool @ ${hubPool.address} to transfer ${symbol}.`);
-    const approval = await bondToken.connect(signer).approve(hubPool.address, MaxUint256);
+    const approval = await bondToken.connect(signer).approve(hubPool.address, bnUint256Max);
     console.log(`Approval: ${approval.hash}...`);
     await approval.wait();
   }

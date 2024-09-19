@@ -221,6 +221,6 @@ export function getTarget(targetAddress: string):
   }
 }
 
-function scaleByNumber(amount: ethers.BigNumber, scaling: number) {
+function scaleByNumber(amount: BigNumber, scaling: number) {
   return amount.mul(toBNWei(scaling)).div(fixedPoint);
 }

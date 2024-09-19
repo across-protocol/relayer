@@ -14,8 +14,6 @@ export {
   providers,
   utils,
   BaseContract,
-  BigNumber,
-  BigNumberish,
   Contract,
   ContractFactory,
   Event,
