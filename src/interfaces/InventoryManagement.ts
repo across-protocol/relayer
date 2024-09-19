@@ -1,5 +1,5 @@
-import { BigNumber, utils as ethersUtils } from "ethers";
-import { TOKEN_SYMBOLS_MAP } from "../utils";
+import { utils as ethersUtils } from "ethers";
+import { BigNumber, TOKEN_SYMBOLS_MAP } from "../utils";
 
 export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.

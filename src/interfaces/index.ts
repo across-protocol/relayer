@@ -1,5 +1,5 @@
-import { BigNumber } from "ethers";
 import { interfaces } from "@across-protocol/sdk";
+import { BigNumber } from "../utils";
 
 export * from "./InventoryManagement";
 export * from "./SpokePool";

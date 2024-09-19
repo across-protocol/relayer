@@ -1,6 +1,7 @@
-import { BigNumber, Event } from "ethers";
+import { Event } from "ethers";
 import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../common";
 import {
+  BigNumber,
   spreadEventWithBlockNumber,
   toBN,
   MAX_SAFE_ALLOWANCE,

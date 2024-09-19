@@ -5,10 +5,10 @@ import {
   Contract,
   BigNumber,
   BigNumberish,
+  bnZero,
   TransactionResponse,
   Event,
   checkAddressChecksum,
-  ethers,
   spreadEventWithBlockNumber,
   assign,
   winston,
@@ -146,7 +146,7 @@ export class OpStackAdapter extends BaseAdapter {
       method,
       args,
       gasLimitMultiplier,
-      ethers.constants.Zero,
+      bnZero,
       simMode
     );
   }

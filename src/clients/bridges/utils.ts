@@ -1,6 +1,7 @@
-import { BigNumber, Contract, Event } from "ethers";
+import { Contract, Event } from "ethers";
 import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
 import {
+  BigNumber,
   MAX_SAFE_ALLOWANCE,
   blockExplorerLink,
   bnZero,

@@ -1,7 +1,7 @@
-import { BigNumber, ethers } from "ethers";
+import { ethers } from "ethers";
 import { random } from "lodash";
 import { AugmentedTransaction, TransactionClient } from "../../src/clients";
-import { TransactionResponse, TransactionSimulationResult } from "../../src/utils";
+import { BigNumber, TransactionResponse, TransactionSimulationResult } from "../../src/utils";
 import { toBNWei, winston } from "../utils";
 
 export const txnClientPassResult = "pass";
