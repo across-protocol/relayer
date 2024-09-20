@@ -1,12 +1,5 @@
 import { Log } from "../../../interfaces";
-import {
-  Contract,
-  BigNumber,
-  EventSearchConfig,
-  Signer,
-  Provider,
-  getTranslatedTokenAddress,
-} from "../../../utils";
+import { Contract, BigNumber, EventSearchConfig, Signer, Provider, getTranslatedTokenAddress } from "../../../utils";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;

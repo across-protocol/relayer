@@ -16,7 +16,6 @@ export {
   BaseContract,
   Contract,
   ContractFactory,
-  Event,
   EventFilter,
   Signer,
   Transaction,

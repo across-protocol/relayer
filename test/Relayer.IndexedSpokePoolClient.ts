@@ -1,4 +1,4 @@
-import { Contract, providers, utils as ethersUtils } from "ethers";
+import { Contract, utils as ethersUtils } from "ethers";
 import winston from "winston";
 import { Result } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
