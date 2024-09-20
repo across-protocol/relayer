@@ -22,6 +22,7 @@ export interface OutstandingTransfers {
 }
 
 // Common interfaces
+export type Log = interfaces.Log;
 export type SortableEvent = interfaces.SortableEvent;
 export type BigNumberForToken = interfaces.BigNumberForToken;
 
