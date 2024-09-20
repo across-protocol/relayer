@@ -386,11 +386,14 @@ describe("TryMulticallClient", async function () {
           } as AugmentedTransaction;
           multiCaller.enqueueTransaction(txn);
         }
+        const nBundles = nSucceed === 0 ? 0 : 1;
         expect(multiCaller.transactionCount()).to.equal(nTxns);
         const results = await multiCaller.executeTxnQueue(chainId, false);
-        expect(results.length).to.equal(1);
-        const returnData = results[0];
-        expect(returnData.length).to.equal(nSucceed);
+        expect(results.length).to.equal(nBundles);
+        if (nBundles !== 0) {
+          const returnData = results[0];
+          expect(returnData.length).to.equal(nSucceed);
+        }
       }
     });
     it("Does not combine separate multicall bundles together", async function () {
@@ -403,6 +406,7 @@ describe("TryMulticallClient", async function () {
         multiCaller.chunkSize[chainId] = chunkSize;
         let nSucceed = 0;
         const nTxns = 20;
+        const queueCopy = [];
         for (let j = 0; j < nTxns; ++j) {
           const succeed = Math.floor(Math.random() * 2); // 0 is fail, 1 is pass.
           nSucceed += succeed;
@@ -417,10 +421,21 @@ describe("TryMulticallClient", async function () {
             mrkdwn: `This transaction is expected to ${succeed === 0 ? "fail" : "pass"} simulation.`,
           } as AugmentedTransaction;
           multiCaller.enqueueTransaction(txn);
+          queueCopy.push(succeed);
+        }
+        // Determine if all 5 transactions in a bundle failed. This assumes chunkSize | nTxns.
+        let emptyBundles = 0;
+        const nBundles = nTxns / chunkSize;
+        for (let i = 0; i < nBundles; i++) {
+          const wdow = i * chunkSize;
+          const sum = queueCopy.slice(wdow, wdow + chunkSize).reduce((sum, current) => sum + current, 0);
+          if (sum === 0) {
+            emptyBundles++;
+          }
         }
         expect(multiCaller.transactionCount()).to.equal(nTxns);
         const results = await multiCaller.executeTxnQueue(chainId, false);
-        expect(results.length).to.equal(nTxns / chunkSize); // With a chunk size of 5 and 20 transactions, 4 bundles should have been built.
+        expect(results.length).to.equal(nBundles - emptyBundles); // With a chunk size of 5 and 20 transactions, 4 bundles should have been built.
         expect(results.reduce((sum, result) => sum + result.length, 0)).to.equal(nSucceed);
       }
     });
