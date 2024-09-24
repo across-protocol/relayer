@@ -47,8 +47,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { spokePoolClients } = relayerClients;
   const simulate = !sendingRelaysEnabled;
+  let { spokePoolClients } = relayerClients;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
 
   try {
@@ -61,8 +61,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       const ready = await relayer.update();
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
-      // If there is another active relayer, allow up to 120 seconds for this instance to be ready.
-      // If this instance can't update, throw an error (for now).
+      // If there is another active relayer, allow up to 20 update cycles for this instance to be ready,
+      // then proceed unconditionally to protect against any RPC outages blocking the relayer.
       if (!ready && activeRelayer) {
         if (run * pollingDelay < 120) {
           const runTime = Math.round((performance.now() - tLoopStart) / 1000);
@@ -72,8 +72,21 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           continue;
         }
 
-        const badChains = Object.values(spokePoolClients).filter(({ isUpdated }) => !isUpdated);
-        throw new Error(`Unable to start relayer due to chains ${badChains}`);
+        // Some SpokePoolClients have not updated. Filter out the ones that are not updated to avoid upsetting the
+        // BundleDataClient.
+        const droppedSpokePools: string[] = [];
+        spokePoolClients = relayerClients.spokePoolClients = Object.fromEntries(
+          Object.values(relayerClients.spokePoolClients)
+            .filter(({ chainId, isUpdated }) => {
+              if (!isUpdated) {
+                droppedSpokePools.push(getNetworkName(chainId));
+              }
+
+              return isUpdated;
+            })
+            .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
+        );
+        logger.warn({ at: "Relayer#run", message: "Proceeding without some SpokePools", droppedSpokePools });
       }
 
       // Signal to any existing relayer that a handover is underway, or alternatively
