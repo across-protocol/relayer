@@ -1,6 +1,5 @@
 import { utils as ethersUtils } from "ethers";
 import winston from "winston";
-import { Result } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { Log } from "../src/interfaces";
 import { EventManager } from "../src/utils";
@@ -24,7 +23,7 @@ describe("EventManager: Event Handling ", async function () {
     address: randomAddress(),
     data: ethersUtils.id(`EventManager-random-txndata-${randomNumber()}`),
     topics: [makeTopic()],
-    args: [] as Result,
+    args: [],
     blockHash: makeHash(),
     event: "randomEvent",
   };
@@ -115,5 +114,11 @@ describe("EventManager: Event Handling ", async function () {
     eventMgr.add(eventTemplate, provider2);
     events = eventMgr.tick(eventTemplate.blockNumber + 1);
     expect(events.length).to.equal(0);
+  });
+
+  it("Hashes events correctly", async function () {
+    const log = eventTemplate;
+    const hash = eventMgr.hashEvent(log);
+    expect(hash).to.exist;
   });
 });
