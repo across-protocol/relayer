@@ -188,8 +188,8 @@ export class EventManager {
    */
   hashEvent(event: Log): string {
     const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, args } = event;
-    return ethersUtils.id(
-      `${eventName}-${blockNumber}-${blockHash}-${transactionHash}-${transactionIndex}-${logIndex}-${args.join("-")}`
-    );
+    const _args = Object.values(args).join("-");
+    const key = `${eventName}-${blockNumber}-${blockHash}-${transactionHash}-${transactionIndex}-${logIndex}-${_args}`;
+    return ethersUtils.id(key);
   }
 }
