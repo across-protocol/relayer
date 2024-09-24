@@ -23,7 +23,7 @@ describe("EventManager: Event Handling ", async function () {
     address: randomAddress(),
     data: ethersUtils.id(`EventManager-random-txndata-${randomNumber()}`),
     topics: [makeTopic()],
-    args: [],
+    args: {},
     blockHash: makeHash(),
     event: "randomEvent",
   };
