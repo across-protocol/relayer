@@ -7,9 +7,9 @@ import {
   Signer,
   Provider,
   ZERO_ADDRESS,
-  Event,
   TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
+import { Log } from "../../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { matchL2EthDepositAndWrapEvents } from "../utils";
 import { utils } from "@across-protocol/sdk";
@@ -81,7 +81,7 @@ export class WethBridge extends OpStackBridge {
     };
   }
 
-  private convertEventListToOpStackEvents(events: Event[]): OpStackEvents {
+  private convertEventListToOpStackEvents(events: Log[]): OpStackEvents {
     return {
       [this.resolveL2TokenAddress(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId])]: events,
     };
@@ -195,7 +195,7 @@ export class WethBridge extends OpStackBridge {
     fromAddress: string,
     eventConfig: EventSearchConfig,
     l2Weth = this.l2Weth
-  ): Promise<Event[]> {
+  ): Promise<Log[]> {
     return paginatedEventQuery(l2Weth, l2Weth.filters.Deposit(fromAddress), eventConfig);
   }
 }

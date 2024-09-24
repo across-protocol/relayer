@@ -1,13 +1,10 @@
-import { Event, providers, utils as ethersUtils } from "ethers";
+import { utils as ethersUtils } from "ethers";
 import winston from "winston";
 import { Result } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
+import { Log } from "../src/interfaces";
 import { EventManager } from "../src/utils";
 import { createSpyLogger, expect, randomAddress } from "./utils";
-
-type Block = providers.Block;
-type TransactionReceipt = providers.TransactionReceipt;
-type TransactionResponse = providers.TransactionResponse;
 
 describe("EventManager: Event Handling ", async function () {
   const chainId = CHAIN_IDs.MAINNET;
@@ -17,17 +14,8 @@ describe("EventManager: Event Handling ", async function () {
   const makeHash = () => ethersUtils.id(randomNumber().toString());
   const makeTopic = () => ethersUtils.id(randomNumber().toString()).slice(0, 40);
 
-  // Stub getters to be used in the events. These are not used in practice.
-  const decodeError = new Error("Event decoding error");
-  const getBlock = (): Promise<Block> => Promise.resolve({} as Block);
-  const getTransaction = (): Promise<TransactionResponse> => Promise.resolve({} as TransactionResponse);
-  const getTransactionReceipt = (): Promise<TransactionReceipt> => Promise.resolve({} as TransactionReceipt);
-  const removeListener = (): void => {
-    return;
-  };
-
   const blockNumber = 100;
-  const eventTemplate: Event = {
+  const eventTemplate: Log = {
     blockNumber,
     transactionIndex: randomNumber(100),
     logIndex: randomNumber(100),
@@ -39,12 +27,6 @@ describe("EventManager: Event Handling ", async function () {
     args: [] as Result,
     blockHash: makeHash(),
     event: "randomEvent",
-    eventSignature: "",
-    decodeError,
-    getBlock,
-    getTransaction,
-    getTransactionReceipt,
-    removeListener,
   };
 
   let logger: winston.Logger;

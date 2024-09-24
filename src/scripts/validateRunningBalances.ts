@@ -36,7 +36,6 @@ import {
   config,
   Logger,
   toBN,
-  Event,
   fromWei,
   isDefined,
   Contract,
@@ -56,7 +55,7 @@ import {
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getBlockForChain } from "../dataworker/DataworkerUtils";
-import { ProposedRootBundle, SpokePoolClientsByChain, SlowFillLeaf } from "../interfaces";
+import { Log, ProposedRootBundle, SpokePoolClientsByChain, SlowFillLeaf } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
 
@@ -212,7 +211,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                   `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
                 );
                 const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
-                let depositsToSpokePool: Event[];
+                let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
                 // including the L1 and L2 ETH (native gas token) addresses.

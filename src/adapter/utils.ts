@@ -1,4 +1,3 @@
-import { Event } from "ethers";
 import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../common";
 import {
   BigNumber,
@@ -13,7 +12,7 @@ import {
   winston,
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
-import { SortableEvent } from "../interfaces";
+import { Log, SortableEvent } from "../interfaces";
 import { ExpandedERC20 } from "@across-protocol/contracts";
 
 export {
@@ -55,7 +54,7 @@ export async function approveTokens(
   return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
 }
 
-export function processEvent(event: Event, amountField: string, toField: string, fromField: string): BridgeEvent {
+export function processEvent(event: Log, amountField: string, toField: string, fromField: string): BridgeEvent {
   const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
     amount: BigNumber;
     to: string;

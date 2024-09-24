@@ -1,7 +1,8 @@
 import assert from "assert";
 import { ChildProcess, spawn } from "child_process";
-import { Contract, Event } from "ethers";
+import { Contract } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
+import { Log } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
 import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
@@ -43,8 +44,8 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   private pendingCurrentTime: number;
   private pendingOldestTime: number;
 
-  private pendingEvents: Event[][];
-  private pendingEventsRemoved: Event[];
+  private pendingEvents: Log[][];
+  private pendingEventsRemoved: Log[];
 
   constructor(
     readonly logger: winston.Logger,
@@ -194,7 +195,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    * @param event An Ethers event instance.
    * @returns void
    */
-  protected removeEvent(event: Event): boolean {
+  protected removeEvent(event: Log): boolean {
     let removed = false;
     const eventIdx = this.queryableEventNames.indexOf(event.event);
     const pendingEvents = this.pendingEvents[eventIdx];

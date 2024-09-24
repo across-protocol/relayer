@@ -42,7 +42,10 @@ module.exports = {
       "error",
       {
         patterns: [{ group: ["@ethersproject/bignumber"], message: "Use 'src/utils/BNUtils' instead" }],
-        paths: [{ name: "ethers", importNames: ["BigNumber"], message: "Use 'src/utils/BNUtils' instead" }],
+        paths: [
+          { name: "ethers", importNames: ["BigNumber"], message: "Use 'src/utils/BNUtils' instead" },
+          { name: "ethers", importNames: ["Event"], message: "Use Log from 'src/interfaces/Common' instead" },
+        ],
       },
     ],
   },

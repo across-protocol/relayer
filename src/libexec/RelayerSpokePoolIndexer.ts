@@ -1,8 +1,9 @@
 import assert from "assert";
 import minimist from "minimist";
-import { Contract, Event, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
+import { Contract, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
+import { Log } from "../interfaces";
 import { SpokePoolClientMessage } from "../clients";
 import {
   disconnectRedisClients,
@@ -18,7 +19,6 @@ import {
   getRedisCache,
   getWSProviders,
   Logger,
-  mangleEventArgs,
   paginatedEventQuery,
   sortEventsAscending,
   winston,
@@ -73,17 +73,17 @@ function getEventFilterArgs(relayer?: string): { [event: string]: string[] } {
  * process (if defined).
  * @param blockNumber Block number up to which the update applies.
  * @param currentTime The SpokePool timestamp at blockNumber.
- * @param events An array of Ethers Event objects to be submitted.
+ * @param events An array of Log objects to be submitted.
  * @returns void
  */
-function postEvents(blockNumber: number, currentTime: number, events: Event[]): void {
+function postEvents(blockNumber: number, currentTime: number, events: Log[]): void {
   if (!isDefined(process.send) || stop) {
     return;
   }
 
   // Drop the array component of event.args and retain the named k/v pairs,
   // otherwise stringification tends to retain only the array.
-  events = sortEventsAscending(events.map(mangleEventArgs));
+  events = sortEventsAscending(events);
 
   const message: SpokePoolClientMessage = {
     blockNumber,
@@ -97,16 +97,16 @@ function postEvents(blockNumber: number, currentTime: number, events: Event[]): 
 
 /**
  * Given an event removal notification, post the message to the parent process.
- * @param event Ethers Event instance.
+ * @param event Log instance.
  * @returns void
  */
-function removeEvent(event: Event): void {
+function removeEvent(event: Log): void {
   if (!isDefined(process.send) || stop) {
     return;
   }
 
   const message: SpokePoolClientMessage = {
-    event: JSON.stringify(mangleEventArgs(event), sdkUtils.jsonReplacerWithBigNumbers),
+    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }
@@ -127,7 +127,7 @@ async function scrapeEvents(spokePool: Contract, eventName: string, opts: Scrape
 
   let tStart: number, tStop: number;
 
-  const pollEvents = async (filter: EventFilter, searchConfig: EventSearchConfig): Promise<Event[]> => {
+  const pollEvents = async (filter: EventFilter, searchConfig: EventSearchConfig): Promise<Log[]> => {
     tStart = performance.now();
     const events = await paginatedEventQuery(spokePool, filter, searchConfig);
     tStop = performance.now();
@@ -187,7 +187,7 @@ async function listen(
     eventNames.forEach((eventName) => {
       const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
       spokePool.connect(provider).on(filter, (...rawEvent) => {
-        const event = rawEvent.at(-1);
+        const event = sdkUtils.eventToLog(rawEvent.at(-1));
         if (event.removed) {
           eventMgr.remove(event, host);
           // Notify the parent immediately in case the event was already submitted.
