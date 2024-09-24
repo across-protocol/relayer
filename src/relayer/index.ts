@@ -61,8 +61,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       const ready = await relayer.update();
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
-      // If there is another active relayer, allow up to 60 seconds for this instance to be ready,
-      // then proceed unconditionally to protect against any RPC outages blocking the relayer.
+      // If there is another active relayer, allow up to 120 seconds for this instance to be ready.
+      // If this instance can't update, throw an error (for now).
       if (!ready && activeRelayer) {
         if (run * pollingDelay < 120) {
           const runTime = Math.round((performance.now() - tLoopStart) / 1000);
