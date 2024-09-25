@@ -126,7 +126,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.bal, // l1 token
       getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.bal].l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -142,7 +142,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc, // l1 token
       TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.usdc].canonicalBridge.l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -175,7 +175,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.dai, // l1 token
       getL2TokenAddresses(mainnetTokens.dai)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.dai].l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -184,7 +184,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.weth].l2Gas, // l2Gas
       chainId // chainId
     );
   });
@@ -354,7 +354,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.usdc, // l1 token
       TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.usdc].canonicalBridge.l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -363,7 +363,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.bal, // l1 token
       getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.bal].l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -373,7 +373,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens.dai, // l1 token
       getL2TokenAddresses(mainnetTokens.dai)[chainId], // l2 token
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.dai].l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -382,7 +382,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).l2Gas, // l2Gas
+      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.weth].l2Gas, // l2Gas
       chainId // chainId
     );
   });
