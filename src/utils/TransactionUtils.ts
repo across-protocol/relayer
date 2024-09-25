@@ -28,6 +28,8 @@ export type TransactionSimulationResult = {
 
 const { isError, isEthersError } = typeguards;
 
+const nonceReset: { [chainId: number]: boolean } = {};
+
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const expectedRpcErrorMessages = new Set(["nonce has already been used", "intrinsic gas too low"]);
 const txnRetryable = (error?: unknown): boolean => {
@@ -61,7 +63,13 @@ export async function runTransaction(
   nonce: number | null = null,
   retriesRemaining = 2
 ): Promise<TransactionResponse> {
-  const chainId = (await contract.provider.getNetwork()).chainId;
+  const { provider } = contract;
+  const { chainId } = await provider.getNetwork();
+
+  if (process.env[`ACROSS_RESET_NONCE_${chainId}`] && !nonceReset[chainId]) {
+    nonce = await provider.getTransactionCount(await contract.signer.getAddress());
+    nonceReset[chainId] = true;
+  }
 
   try {
     const priorityFeeScaler =
@@ -71,7 +79,7 @@ export async function runTransaction(
       Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
-    const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
+    const gas = await getGasPrice(provider, priorityFeeScaler, maxFeePerGasScaler);
 
     logger.debug({
       at: "TxUtil",

@@ -734,10 +734,12 @@ export class Dataworker {
       };
     }
 
-    const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
-      blockRange[0],
-      rootBundle.bundleEvaluationBlockNumbers[index],
-    ]);
+    const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => {
+      // Block ranges must be coherent; otherwise the chain is soft-paused.
+      const [startBlock, endBlock] = [blockRange[0], rootBundle.bundleEvaluationBlockNumbers[index]];
+      return endBlock > startBlock ? [startBlock, endBlock] : [endBlock, endBlock];
+    });
+
     const mainnetBlockRange = blockRangesImpliedByBundleEndBlocks[0];
     const mainnetBundleStartBlock = mainnetBlockRange[0];
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
