@@ -90,7 +90,6 @@ export class AdapterManager {
       this.adapters[LINEA] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(LINEA));
     }
     if (this.spokePoolClients[MODE] !== undefined) {
-      const bridges = constructBridges(MODE);
       this.adapters[MODE] = new BaseChainAdapter(
         spokePoolClients,
         MODE,
@@ -98,12 +97,11 @@ export class AdapterManager {
         filterMonitoredAddresses(MODE),
         logger,
         SUPPORTED_TOKENS[MODE],
-        bridges,
+        constructBridges(MODE),
         DEFAULT_GAS_MULTIPLIER[MODE] ?? 1
       );
     }
     if (this.spokePoolClients[REDSTONE] !== undefined) {
-      const bridges = constructBridges(REDSTONE);
       this.adapters[REDSTONE] = new BaseChainAdapter(
         spokePoolClients,
         REDSTONE,
@@ -111,12 +109,11 @@ export class AdapterManager {
         filterMonitoredAddresses(REDSTONE),
         logger,
         SUPPORTED_TOKENS[REDSTONE],
-        bridges,
+        constructBridges(REDSTONE),
         DEFAULT_GAS_MULTIPLIER[REDSTONE] ?? 1
       );
     }
     if (this.spokePoolClients[LISK] !== undefined) {
-      const bridges = constructBridges(LISK);
       this.adapters[LISK] = new BaseChainAdapter(
         spokePoolClients,
         LISK,
@@ -124,12 +121,11 @@ export class AdapterManager {
         filterMonitoredAddresses(LISK),
         logger,
         SUPPORTED_TOKENS[LISK],
-        bridges,
+        constructBridges(LISK),
         DEFAULT_GAS_MULTIPLIER[LISK] ?? 1
       );
     }
     if (this.spokePoolClients[BLAST] !== undefined) {
-      const bridges = constructBridges(BLAST);
       this.adapters[BLAST] = new BaseChainAdapter(
         spokePoolClients,
         BLAST,
@@ -137,7 +133,7 @@ export class AdapterManager {
         filterMonitoredAddresses(BLAST),
         logger,
         SUPPORTED_TOKENS[BLAST],
-        bridges,
+        constructBridges(BLAST),
         DEFAULT_GAS_MULTIPLIER[BLAST] ?? 1
       );
     }
@@ -145,7 +141,6 @@ export class AdapterManager {
       this.adapters[SCROLL] = new ScrollAdapter(logger, spokePoolClients, filterMonitoredAddresses(SCROLL));
     }
     if (this.spokePoolClients[ZORA] !== undefined) {
-      const bridges = constructBridges(ZORA);
       this.adapters[ZORA] = new BaseChainAdapter(
         spokePoolClients,
         ZORA,
@@ -153,7 +148,7 @@ export class AdapterManager {
         filterMonitoredAddresses(ZORA),
         logger,
         SUPPORTED_TOKENS[ZORA],
-        bridges,
+        constructBridges(ZORA),
         DEFAULT_GAS_MULTIPLIER[ZORA] ?? 1
       );
     }
