@@ -1,0 +1,33 @@
+import { Contract, EventFilter } from "ethers";
+import { isDefined } from "../../utils";
+
+/**
+ * Given an event name and contract, return the corresponding Ethers EventFilter object.
+ * @param contract Ethers Constract instance.
+ * @param eventName The name of the event to be filtered.
+ * @param filterArgs Optional filter arguments to be applied.
+ * @returns An Ethers EventFilter instance.
+ */
+export function getEventFilter(contract: Contract, eventName: string, filterArgs?: string[]): EventFilter {
+  const filter = contract.filters[eventName];
+  if (!isDefined(filter)) {
+    throw new Error(`Event ${eventName} not defined for contract`);
+  }
+
+  return isDefined(filterArgs) ? filter(...filterArgs) : filter();
+}
+
+/**
+ * Given an event name and contract, return the set of corresponding Ethers EventFilter object.
+ * @param contract Ethers Constract instance.
+ * @param eventName The name of the event to be filtered.
+ * @param filterArgs Optional filter arguments to be applied.
+ * @returns An Ethers EventFilter instance.
+ */
+export function getEventFilterArgs(relayer?: string): { [event: string]: (null | string)[] } {
+  const FilledV3Relay = !isDefined(relayer)
+    ? undefined
+    : [null, null, null, null, null, null, null, null, null, null, relayer];
+
+  return { FilledV3Relay };
+}
