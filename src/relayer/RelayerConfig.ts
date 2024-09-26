@@ -28,7 +28,7 @@ type DepositConfirmationConfig = {
 
 export class RelayerConfig extends CommonConfig {
   readonly externalIndexer: boolean;
-  readonly indexerPath: string;
+  readonly listenerPath: { [chainId: number]: string } = {};
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
   readonly sendingRelaysEnabled: boolean;
@@ -100,7 +100,6 @@ export class RelayerConfig extends CommonConfig {
 
     // External indexing is dependent on looping mode being configured.
     this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";
-    this.indexerPath = RELAYER_SPOKEPOOL_INDEXER_PATH ?? Constants.RELAYER_DEFAULT_SPOKEPOOL_INDEXER;
 
     // Empty means all chains.
     this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
@@ -326,7 +325,7 @@ export class RelayerConfig extends CommonConfig {
    * @param logger Optional logger object.
    */
   override validate(chainIds: number[], logger: winston.Logger): void {
-    const { relayerOriginChains, relayerDestinationChains } = this;
+    const { listenerPath, minFillTime, relayerOriginChains, relayerDestinationChains } = this;
     const relayerChainIds =
       relayerOriginChains.length > 0 && relayerDestinationChains.length > 0
         ? dedupArray([...relayerOriginChains, ...relayerDestinationChains])
@@ -343,8 +342,16 @@ export class RelayerConfig extends CommonConfig {
       });
     }
 
+    const {
+      RELAYER_SPOKEPOOL_INDEXER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_INDEXER
+    } = process.env;
+
     chainIds.forEach(
-      (chainId) => (this.minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0))
+      (chainId) => {
+        minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0)
+        listenerPath[chainId] = process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`]
+          ?? RELAYER_SPOKEPOOL_INDEXER_PATH;
+      }
     );
 
     // Only validate config for chains that the relayer cares about.
