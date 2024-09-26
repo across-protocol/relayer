@@ -62,7 +62,7 @@ export class BlastBridge extends BaseBridgeAdapter {
     const l2Bridge = this.getL2Bridge();
     const events = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.ERC20BridgeFinalized(l1Token, undefined, fromAddress),
+      l2Bridge.filters.ERC20BridgeFinalized(undefined, l1Token, fromAddress),
       eventConfig
     );
     return {

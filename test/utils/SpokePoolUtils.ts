@@ -5,13 +5,13 @@ import { SlowFillRequestWithBlock } from "../../src/interfaces";
 import { SignerWithAddress } from "./utils";
 
 export function V3FillFromDeposit(
-  deposit: interfaces.V3DepositWithBlock,
+  deposit: interfaces.DepositWithBlock,
   relayer: string,
   repaymentChainId?: number,
   fillType = interfaces.FillType.FastFill
-): interfaces.V3Fill {
+): interfaces.Fill {
   const { blockNumber, transactionHash, logIndex, transactionIndex, quoteTimestamp, ...relayData } = deposit;
-  const fill: interfaces.V3Fill = {
+  const fill: interfaces.Fill = {
     ...relayData,
     relayer,
     realizedLpFeePct: deposit.realizedLpFeePct ?? bnZero,
@@ -29,9 +29,9 @@ export function V3FillFromDeposit(
 export async function fillV3(
   spokePool: Contract,
   relayer: SignerWithAddress,
-  deposit: interfaces.V3Deposit,
+  deposit: interfaces.Deposit,
   _repaymentChainId = repaymentChainId
-): Promise<interfaces.V3FillWithBlock> {
+): Promise<interfaces.FillWithBlock> {
   await spokePool
     .connect(relayer)
     .fillV3Relay(
@@ -56,7 +56,7 @@ export async function fillV3(
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];
-  const fillObject: interfaces.V3FillWithBlock = {
+  const fillObject: interfaces.FillWithBlock = {
     inputToken: lastEvent.args?.inputToken,
     outputToken: lastEvent.args?.outputToken,
     inputAmount: lastEvent.args?.inputAmount,
@@ -89,7 +89,7 @@ export async function fillV3(
 export async function requestSlowFill(
   spokePool: Contract,
   relayer: SignerWithAddress,
-  deposit?: interfaces.V3Deposit
+  deposit?: interfaces.Deposit
 ): Promise<SlowFillRequestWithBlock> {
   await spokePool
     .connect(relayer)

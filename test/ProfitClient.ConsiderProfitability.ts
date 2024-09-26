@@ -2,7 +2,7 @@ import { assert } from "chai";
 import { random } from "lodash";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
-import { V3Deposit } from "../src/interfaces";
+import { Deposit } from "../src/interfaces";
 import {
   bnZero,
   bnOne,
@@ -41,7 +41,7 @@ describe("ProfitClient: Consider relay profit", () => {
   const lpFeePct = toBNWei(1).div(1e4);
   const relayerFeePct = toBNWei(1).div(1e4);
   const gasFeePct = toBNWei(1).div(1e4);
-  const v3DepositTemplate: V3Deposit = {
+  const v3DepositTemplate: Deposit = {
     originChainId,
     depositId: 1,
     destinationChainId,
@@ -56,6 +56,8 @@ describe("ProfitClient: Consider relay profit", () => {
     fillDeadline: now,
     exclusivityDeadline: 0,
     exclusiveRelayer: ZERO_ADDRESS,
+    fromLiteChain: false,
+    toLiteChain: false,
   };
 
   const chainIds = [originChainId, destinationChainId];

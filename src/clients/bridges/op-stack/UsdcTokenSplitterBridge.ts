@@ -1,7 +1,14 @@
-import { BigNumber, Signer } from "ethers";
+import { Signer } from "ethers";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
-import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, assert, compareAddressesSimple } from "../../../utils";
+import {
+  BigNumber,
+  EventSearchConfig,
+  Provider,
+  TOKEN_SYMBOLS_MAP,
+  assert,
+  compareAddressesSimple,
+} from "../../../utils";
 import { BridgeTransactionDetails, OpStackBridge, OpStackEvents } from "./OpStackBridgeInterface";
 import { CONTRACT_ADDRESSES } from "../../../common";
 

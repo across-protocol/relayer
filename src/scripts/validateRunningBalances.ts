@@ -36,7 +36,6 @@ import {
   config,
   Logger,
   toBN,
-  Event,
   fromWei,
   isDefined,
   Contract,
@@ -49,13 +48,14 @@ import {
   disconnectRedisClients,
   Signer,
   getSigner,
+  getEndBlockBuffers,
+  getWidestPossibleExpectedBlockRange,
   assert,
   CHAIN_IDs,
 } from "../utils";
 import { createDataworker } from "../dataworker";
-import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
-import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { ProposedRootBundle, SpokePoolClientsByChain, V3SlowFillLeaf } from "../interfaces";
+import { getBlockForChain } from "../dataworker/DataworkerUtils";
+import { Log, ProposedRootBundle, SpokePoolClientsByChain, SlowFillLeaf } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
 
@@ -211,7 +211,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                   `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
                 );
                 const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
-                let depositsToSpokePool: Event[];
+                let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
                 // including the L1 and L2 ETH (native gas token) addresses.
@@ -469,7 +469,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
     bundle: ProposedRootBundle,
     olderBundle: ProposedRootBundle,
     futureBundle: ProposedRootBundle
-  ): Promise<{ slowFills: V3SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
+  ): Promise<{ slowFills: SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to build slow roots.
     const spokeClientFromBlocks = Object.fromEntries(
       dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {

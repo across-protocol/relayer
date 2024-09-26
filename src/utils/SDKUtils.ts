@@ -27,7 +27,10 @@ export const {
   fillStatusArray,
   fixedPointAdjustment,
   forEachAsync,
+  formatEther,
+  formatUnits,
   mapAsync,
+  parseUnits,
   filterAsync,
   toBN,
   bnToHex,
@@ -51,3 +54,13 @@ export const {
   getL1TokenInfo,
   getUsdcSymbol,
 } = sdk.utils;
+
+export const {
+  getRefundsFromBundle,
+  isChainDisabled,
+  getWidestPossibleExpectedBlockRange,
+  getEndBlockBuffers,
+  buildPoolRebalanceLeafTree,
+  getNetSendAmountForL1Token,
+  _buildPoolRebalanceRoot,
+} = sdk.clients.BundleDataClient;

@@ -1,11 +1,22 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { config, delay, disconnectRedisClients, getCurrentTime, getNetworkName, Signer, winston } from "../utils";
+import {
+  config,
+  delay,
+  disconnectRedisClients,
+  getCurrentTime,
+  getNetworkName,
+  getRedisCache,
+  Signer,
+  winston,
+} from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
+const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
+const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer" } = process.env;
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
@@ -14,9 +25,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
+  const { externalIndexer, pollingDelay, sendingRelaysEnabled, sendingSlowRelaysEnabled } = config;
 
-  const loop = config.pollingDelay > 0;
-  let stop = !loop;
+  const loop = pollingDelay > 0;
+  let stop = false;
   process.on("SIGHUP", () => {
     logger.debug({
       at: "Relayer#run",
@@ -25,58 +37,70 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     stop = true;
   });
 
+  const redis = await getRedisCache(logger);
+  let activeRelayerUpdated = false;
+
   // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
   const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
-  const simulate = !config.sendingRelaysEnabled;
-  const enableSlowFills = config.sendingSlowRelaysEnabled;
+  await relayer.init();
 
-  let run = 1;
-  let txnReceipts: { [chainId: number]: Promise<string[]> };
+  const { spokePoolClients } = relayerClients;
+  const simulate = !sendingRelaysEnabled;
+  let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
+
   try {
-    do {
+    for (let run = 1; !stop; ++run) {
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
 
       const tLoopStart = performance.now();
-      if (run !== 1) {
-        await relayerClients.configStoreClient.update();
-        await relayerClients.hubPoolClient.update();
-      }
-      await updateRelayerClients(relayerClients, config);
+      const ready = await relayer.update();
+      const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
-      // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
-      relayerClients.tokenClient.clearTokenData();
-      await relayerClients.tokenClient.update();
-      txnReceipts = await relayer.checkForUnfilledDepositsAndFill(enableSlowFills, simulate);
-
-      // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
-      // any tokens so rebalancing can take into account unwrapped WETH balances.
-      await relayerClients.inventoryClient.unwrapWeth();
-
-      if (config.sendingRebalancesEnabled) {
-        // Since the above spoke pool updates are slow, refresh token client before sending rebalances now:
-        relayerClients.tokenClient.clearTokenData();
-        await relayerClients.tokenClient.update();
-        await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+      // If there is another active relayer, allow up to 10 update cycles for this instance to be ready,
+      // then proceed unconditionally to protect against any RPC outages blocking the relayer.
+      if (!ready && activeRelayer && run < 10) {
+        const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+        const delta = pollingDelay - runTime;
+        logger.debug({ at: "Relayer#run", message: `Not ready to relay, waiting ${delta} seconds.` });
+        await delay(delta);
+        continue;
       }
 
-      // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
-      relayerClients.profitClient.clearUnprofitableFills();
-      relayerClients.tokenClient.clearTokenShortfall();
+      // Signal to any existing relayer that a handover is underway, or alternatively
+      // check for handover initiated by another (newer) relayer instance.
+      if (loop && runIdentifier && redis) {
+        if (activeRelayer !== runIdentifier) {
+          if (!activeRelayerUpdated) {
+            await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
+            activeRelayerUpdated = true;
+          } else {
+            logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
+            stop = true;
+          }
+        }
+      }
 
-      if (loop) {
+      if (!stop) {
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(sendingSlowRelaysEnabled, simulate);
+        await relayer.runMaintenance();
+      }
+
+      if (!loop) {
+        stop = true;
+      } else {
         const runTime = Math.round((performance.now() - tLoopStart) / 1000);
         logger.debug({
           at: "Relayer#run",
-          message: `Completed relayer execution loop ${run++} in ${runTime} seconds.`,
+          message: `Completed relayer execution loop ${run} in ${runTime} seconds.`,
         });
 
-        if (!stop && runTime < config.pollingDelay) {
-          const delta = config.pollingDelay - runTime;
+        if (!stop && runTime < pollingDelay) {
+          const delta = pollingDelay - runTime;
           logger.debug({
             at: "relayer#run",
             message: `Waiting ${delta} s before next loop.`,
@@ -84,7 +108,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           await delay(delta);
         }
       }
-    } while (!stop);
+    }
 
     // Before exiting, wait for transaction submission to complete.
     for (const [chainId, submission] of Object.entries(txnReceipts)) {
@@ -100,8 +124,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   } finally {
     await disconnectRedisClients(logger);
 
-    if (config.externalIndexer) {
-      Object.values(relayerClients.spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
+    if (externalIndexer) {
+      Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
     }
   }
 

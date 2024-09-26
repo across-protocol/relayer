@@ -1,6 +1,6 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
-import { FillStatus, V3Deposit, V3RelayData } from "../src/interfaces";
+import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { averageBlockTime, bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
@@ -191,7 +191,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
   describe("Relayer: Check for Unfilled v3 Deposits and Fill", async function () {
     // Helper for quickly computing fill amounts.
-    const getFillAmount = (relayData: V3RelayData, tokenPrice: BigNumber): BigNumber =>
+    const getFillAmount = (relayData: RelayData, tokenPrice: BigNumber): BigNumber =>
       relayData.outputAmount.mul(tokenPrice).div(fixedPoint);
 
     const findOriginChainLimitIdx = (
@@ -422,7 +422,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     it("Ignores exclusive deposits", async function () {
       const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
       const exclusivityDeadline = currentTime + 7200;
-      const deposits: V3Deposit[] = [];
+      const deposits: Deposit[] = [];
       const { fillStatus, relayerAddress } = relayerInstance;
 
       // Make two deposits - one with the relayer as exclusiveRelayer, and one with a random address.

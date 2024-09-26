@@ -18,8 +18,8 @@ import {
 
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
-import { V3Deposit, InventoryConfig } from "../src/interfaces";
-import { CHAIN_IDs, ZERO_ADDRESS, bnZero, getNetworkName, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { Deposit, InventoryConfig } from "../src/interfaces";
+import { CHAIN_IDs, ZERO_ADDRESS, bnZero, getNetworkName, parseUnits, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import {
   MockAdapterManager,
   MockBundleDataClient,
@@ -38,7 +38,7 @@ describe("InventoryClient: Refund chain selection", async function () {
   let bundleDataClient: MockBundleDataClient;
   let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
   let inventoryClient: InventoryClient; // tested
-  let sampleDepositData: V3Deposit;
+  let sampleDepositData: Deposit;
   let crossChainTransferClient: CrossChainTransferClient;
 
   // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
@@ -51,7 +51,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       l2TokensForUsdc[chainId] = TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId];
     });
 
-  const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
+  const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
   // Configure thresholds percentages as 10% optimism, 5% polygon and 5% Arbitrum with a target being threshold +2%.
   const targetOverageBuffer = toWei(1);
   const inventoryConfig: InventoryConfig = {
@@ -94,7 +94,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
   };
 
-  const computeOutputAmount = async (deposit: V3Deposit) => {
+  const computeOutputAmount = async (deposit: Deposit) => {
     return deposit.inputAmount;
   };
 

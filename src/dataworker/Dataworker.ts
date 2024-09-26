@@ -15,6 +15,9 @@ import {
   ZERO_ADDRESS,
   chainIsMatic,
   CHAIN_IDs,
+  getWidestPossibleExpectedBlockRange,
+  getEndBlockBuffers,
+  _buildPoolRebalanceRoot,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -24,7 +27,7 @@ import {
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
-  V3SlowFillLeaf,
+  SlowFillLeaf,
   FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -37,12 +40,7 @@ import {
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
-import {
-  getEndBlockBuffers,
-  _buildPoolRebalanceRoot,
-  _buildRelayerRefundRoot,
-  _buildSlowRelayRoot,
-} from "./DataworkerUtils";
+import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
 import _ from "lodash";
 import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk";
@@ -64,8 +62,8 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
-  leaves: V3SlowFillLeaf[];
-  tree: MerkleTree<V3SlowFillLeaf>;
+  leaves: SlowFillLeaf[];
+  tree: MerkleTree<SlowFillLeaf>;
 };
 
 type ProposeRootBundleReturnType = {
@@ -73,8 +71,8 @@ type ProposeRootBundleReturnType = {
   poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
   relayerRefundLeaves: RelayerRefundLeaf[];
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
-  slowFillLeaves: V3SlowFillLeaf[];
-  slowFillTree: MerkleTree<V3SlowFillLeaf>;
+  slowFillLeaves: SlowFillLeaf[];
+  slowFillTree: MerkleTree<SlowFillLeaf>;
   bundleData: BundleData;
 };
 
@@ -85,7 +83,7 @@ export type PoolRebalanceRoot = {
   tree: MerkleTree<PoolRebalanceLeaf>;
 };
 
-type PoolRebalanceRootCache = Record<string, Promise<PoolRebalanceRoot>>;
+type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -189,7 +187,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    return await this._getPoolRebalanceRoot(
+    return this._getPoolRebalanceRoot(
       blockRangesForChains,
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -485,7 +483,7 @@ export class Dataworker {
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
-    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -682,8 +680,8 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<V3SlowFillLeaf>;
-            leaves: V3SlowFillLeaf[];
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
           };
         };
         bundleData?: BundleData;
@@ -702,8 +700,8 @@ export class Dataworker {
             leaves: RelayerRefundLeaf[];
           };
           slowRelayTree: {
-            tree: MerkleTree<V3SlowFillLeaf>;
-            leaves: V3SlowFillLeaf[];
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
           };
         };
         bundleData: BundleData;
@@ -736,10 +734,12 @@ export class Dataworker {
       };
     }
 
-    const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
-      blockRange[0],
-      rootBundle.bundleEvaluationBlockNumbers[index],
-    ]);
+    const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => {
+      // Block ranges must be coherent; otherwise the chain is soft-paused.
+      const [startBlock, endBlock] = [blockRange[0], rootBundle.bundleEvaluationBlockNumbers[index]];
+      return endBlock > startBlock ? [startBlock, endBlock] : [endBlock, endBlock];
+    });
+
     const mainnetBlockRange = blockRangesImpliedByBundleEndBlocks[0];
     const mainnetBundleStartBlock = mainnetBlockRange[0];
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
@@ -1136,10 +1136,10 @@ export class Dataworker {
   }
 
   async _executeSlowFillLeaf(
-    _leaves: V3SlowFillLeaf[],
+    _leaves: SlowFillLeaf[],
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
-    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
@@ -1152,7 +1152,7 @@ export class Dataworker {
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
-        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
@@ -1287,7 +1287,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
-        const { method, args } = this.encodeV3SlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,
@@ -1312,11 +1312,11 @@ export class Dataworker {
     });
   }
 
-  encodeV3SlowFillLeaf(
-    slowRelayTree: MerkleTree<V3SlowFillLeaf>,
+  encodeSlowFillLeaf(
+    slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
-    leaf: V3SlowFillLeaf
-  ): { method: string; args: (number | string[] | V3SlowFillLeaf)[] } {
+    leaf: SlowFillLeaf
+  ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
     const method = "executeV3SlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
     const args = [leaf, rootBundleId, proof];
@@ -2209,7 +2209,7 @@ export class Dataworker {
     poolRebalanceRoot: string,
     relayerRefundLeaves: RelayerRefundLeaf[],
     relayerRefundRoot: string,
-    slowRelayLeaves: V3SlowFillLeaf[],
+    slowRelayLeaves: SlowFillLeaf[],
     slowRelayRoot: string
   ): void {
     try {
@@ -2264,7 +2264,7 @@ export class Dataworker {
     }
   }
 
-  async _getPoolRebalanceRoot(
+  _getPoolRebalanceRoot(
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
@@ -2273,7 +2273,7 @@ export class Dataworker {
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
     expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
-  ): Promise<PoolRebalanceRoot> {
+  ): PoolRebalanceRoot {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
@@ -2293,7 +2293,14 @@ export class Dataworker {
       );
     }
 
-    return _.cloneDeep(await this.rootCache[key]);
+    this.logger.debug({
+      at: "Dataworker#_getPoolRebalanceRoot",
+      message: "Constructed new pool rebalance root",
+      key,
+      root: this.rootCache[key],
+    });
+
+    return _.cloneDeep(this.rootCache[key]);
   }
 
   _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): BigNumber {
@@ -2368,7 +2375,7 @@ export class Dataworker {
     mainnetBundleStartBlock: number
   ): number[][] {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
-    return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+    return getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
       chainIds,
       spokePoolClients,

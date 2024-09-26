@@ -3,14 +3,14 @@ import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
-import { BigNumber, Contract, providers } from "ethers";
+import { Contract, providers } from "ethers";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
-import { V3Deposit, V3DepositWithBlock, V3FillWithBlock, V3SlowFillLeaf } from "../../src/interfaces";
-import { isDefined, spreadEvent, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
+import { Deposit, DepositWithBlock, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
+import { BigNumber, isDefined, spreadEvent, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -276,7 +276,7 @@ export async function depositV3(
     exclusivityDeadline?: number;
     exclusiveRelayer?: string;
   } = {}
-): Promise<V3DepositWithBlock> {
+): Promise<DepositWithBlock> {
   const depositor = signer.address;
   const recipient = opts.recipient ?? depositor;
 
@@ -349,7 +349,7 @@ export async function depositV3(
 
 export async function updateDeposit(
   spokePool: Contract,
-  deposit: V3Deposit,
+  deposit: Deposit,
   depositor: SignerWithAddress
 ): Promise<string> {
   const { updatedRecipient, updatedOutputAmount, updatedMessage } = deposit;
@@ -380,10 +380,10 @@ export async function updateDeposit(
 
 export async function fillV3Relay(
   spokePool: Contract,
-  deposit: Omit<V3Deposit, "destinationChainId">,
+  deposit: Omit<Deposit, "destinationChainId">,
   signer: SignerWithAddress,
   repaymentChainId?: number
-): Promise<V3FillWithBlock> {
+): Promise<FillWithBlock> {
   const destinationChainId = Number(await spokePool.chainId());
   assert.notEqual(deposit.originChainId, destinationChainId);
 
@@ -439,13 +439,13 @@ export async function addLiquidity(
   await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
 }
 
-export function buildV3SlowRelayLeaves(deposits: interfaces.V3Deposit[], lpFeePct: BigNumber): V3SlowFillLeaf[] {
+export function buildV3SlowRelayLeaves(deposits: interfaces.Deposit[], lpFeePct: BigNumber): SlowFillLeaf[] {
   const chainId = deposits[0].destinationChainId;
   assert.isTrue(deposits.every(({ destinationChainId }) => chainId === destinationChainId));
   return deposits
     .map((deposit) => {
       const lpFee = deposit.inputAmount.mul(lpFeePct).div(toBNWei(1));
-      const slowFillLeaf: V3SlowFillLeaf = {
+      const slowFillLeaf: SlowFillLeaf = {
         relayData: {
           depositor: deposit.depositor,
           recipient: deposit.recipient,
