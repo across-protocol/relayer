@@ -88,7 +88,6 @@ export class RelayerConfig extends CommonConfig {
       MIN_DEPOSIT_CONFIRMATIONS,
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
-      RELAYER_SPOKEPOOL_INDEXER_PATH,
       RELAYER_TRY_MULTICALL_CHAINS,
       RELAYER_USE_GENERIC_ADAPTER,
       RELAYER_LOGGING_INTERVAL = "30",
@@ -342,17 +341,13 @@ export class RelayerConfig extends CommonConfig {
       });
     }
 
-    const {
-      RELAYER_SPOKEPOOL_INDEXER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_INDEXER
-    } = process.env;
+    const { RELAYER_SPOKEPOOL_INDEXER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_INDEXER } = process.env;
 
-    chainIds.forEach(
-      (chainId) => {
-        minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0)
-        listenerPath[chainId] = process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`]
-          ?? RELAYER_SPOKEPOOL_INDEXER_PATH;
-      }
-    );
+    chainIds.forEach((chainId) => {
+      minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
+      listenerPath[chainId] =
+        process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_INDEXER_PATH;
+    });
 
     // Only validate config for chains that the relayer cares about.
     super.validate(relayerChainIds, logger);
