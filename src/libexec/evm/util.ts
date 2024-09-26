@@ -1,5 +1,7 @@
+import assert from "assert";
 import { Contract, EventFilter } from "ethers";
-import { isDefined } from "../../utils";
+import { getNetworkName, isDefined, paginatedEventQuery, winston } from "../../utils";
+import { Log, ScraperOpts } from "../types";
 
 /**
  * Given an event name and contract, return the corresponding Ethers EventFilter object.
@@ -29,4 +31,40 @@ export function getEventFilterArgs(relayer?: string): { [event: string]: (null |
     : [null, null, null, null, null, null, null, null, null, null, relayer];
 
   return { FilledV3Relay };
+}
+
+/**
+ * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the
+ * parent process (if defined).
+ * @param spokePool Ethers Constract instance.
+ * @param eventName The name of the event to be filtered.
+ * @param opts Options to configure event scraping behaviour.
+ * @returns void
+ */
+export async function scrapeEvents(
+  spokePool: Contract,
+  eventName: string,
+  opts: ScraperOpts & { toBlock: number },
+  logger: winston.Logger
+): Promise<Log[]> {
+  const { lookback, deploymentBlock, filterArgs, maxBlockRange, toBlock } = opts;
+  const { provider } = spokePool;
+  const { chainId } = await provider.getNetwork();
+  const chain = getNetworkName(chainId);
+
+  const fromBlock = Math.max(toBlock - (lookback ?? deploymentBlock), deploymentBlock);
+  assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
+  const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
+
+  const tStart = performance.now();
+  const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
+  const events = await paginatedEventQuery(spokePool, filter, searchConfig);
+  const tStop = performance.now();
+  logger.debug({
+    at: "SpokePoolIndexer::listen",
+    message: `Scraped ${events.length} ${chain} ${eventName} events in ${Math.round((tStop - tStart) / 1000)} seconds`,
+    searchConfig,
+  });
+
+  return events;
 }

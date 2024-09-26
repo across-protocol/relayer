@@ -1,6 +1,6 @@
 import assert from "assert";
 import minimist from "minimist";
-import { Contract, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
+import { Contract, providers as ethersProviders, utils as ethersUtils } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import {
@@ -17,15 +17,13 @@ import {
   getRedisCache,
   getWSProviders,
   Logger,
-  paginatedEventQuery,
   winston,
 } from "../utils";
 import { postEvents, removeEvent } from "./util";
-import { Log, ScraperOpts } from "./types";
-import { getEventFilter, getEventFilterArgs } from "./evm/util";
+import { ScraperOpts } from "./types";
+import { getEventFilter, getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./evm/util";
 
 type WebSocketProvider = ethersProviders.WebSocketProvider;
-type EventSearchConfig = sdkUtils.EventSearchConfig;
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
@@ -38,42 +36,20 @@ let stop = false;
 let oldestTime = 0;
 
 /**
- * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the
- * parent process (if defined).
+ * Aggregate utils/scrapeEvents for a series of event names.
  * @param spokePool Ethers Constract instance.
- * @param eventName The name of the event to be filtered.
+ * @param eventNames The array of events to be queried.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
  */
-async function scrapeEvents(spokePool: Contract, eventName: string, opts: ScraperOpts): Promise<void> {
-  const { lookback, deploymentBlock, filterArgs, maxBlockRange } = opts;
-  const { provider } = spokePool;
-  const { chainId } = await provider.getNetwork();
-  const chain = getNetworkName(chainId);
+export async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
+  const { number: toBlock, timestamp: currentTime } = await spokePool.provider.getBlock("latest");
+  const events = await Promise.all(
+    eventNames.map((eventName) => _scrapeEvents(spokePool, eventName, { ...opts, toBlock }, logger))
+  );
 
-  let tStart: number, tStop: number;
-
-  const pollEvents = async (filter: EventFilter, searchConfig: EventSearchConfig): Promise<Log[]> => {
-    tStart = performance.now();
-    const events = await paginatedEventQuery(spokePool, filter, searchConfig);
-    tStop = performance.now();
-    logger.debug({
-      at: "SpokePoolIndexer::listen",
-      message: `Indexed ${events.length} ${chain} events in ${Math.round((tStop - tStart) / 1000)} seconds`,
-      searchConfig,
-    });
-    return events;
-  };
-
-  const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
-  const fromBlock = Math.max(toBlock - (lookback ?? deploymentBlock), deploymentBlock);
-  assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
-  const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
-
-  const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
-  const events = await pollEvents(filter, searchConfig);
   if (!stop) {
-    postEvents(toBlock, oldestTime, currentTime, events);
+    postEvents(toBlock, oldestTime, currentTime, events.flat());
   }
 }
 
@@ -209,10 +185,7 @@ async function run(argv: string[]): Promise<void> {
   if (latestBlock.number > startBlock) {
     const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     const _spokePool = spokePool.connect(quorumProvider);
-    await Promise.all([
-      resolveOldestTime(_spokePool, startBlock),
-      ...events.map((event) => scrapeEvents(_spokePool, event, opts)),
-    ]);
+    await Promise.all([resolveOldestTime(_spokePool, startBlock), scrapeEvents(_spokePool, events, opts)]);
   }
 
   // If no lookback was specified then default to the timestamp of the latest block.
