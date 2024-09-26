@@ -53,10 +53,6 @@ const _chains = {
   [CHAIN_IDs.ZORA]: chains.zora,
 } as const;
 
-BigInt.prototype["toJSON"] = function () {
-  return this.toString();
-};
-
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
  * @param spokePool Ethers Constract instance.
