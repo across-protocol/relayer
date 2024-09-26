@@ -229,10 +229,7 @@ async function run(argv: string[]): Promise<void> {
   if (latestBlock.number > startBlock) {
     const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     const _spokePool = spokePool.connect(quorumProvider);
-    await Promise.all([
-      resolveOldestTime(_spokePool, startBlock),
-      scrapeEvents(_spokePool, events, opts),
-    ]);
+    await Promise.all([resolveOldestTime(_spokePool, startBlock), scrapeEvents(_spokePool, events, opts)]);
   }
 
   // If no lookback was specified then default to the timestamp of the latest block.
