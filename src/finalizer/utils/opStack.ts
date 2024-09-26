@@ -27,6 +27,7 @@ import {
   ethers,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
+import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 const { utils } = ethers;
 
@@ -139,6 +140,11 @@ export async function opStackFinalizer(
       uniqueTokenhashes[event.transactionHash] += 1;
     }
 
+    const crossChainMessenger = new Contract(
+      VIEM_OP_STACK_CHAINS[chainId].contracts.portal[hubChainId].address,
+      OPStackPortalL1
+    );
+
     events.map(async (event, i) => {
       const receipt = await (publicClientL2 as viem.PublicClient).getTransactionReceipt({
         hash: event.transactionHash as `0x${string}`,
@@ -166,15 +172,17 @@ export async function opStackFinalizer(
           output: l2Output,
         });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
-        console.log(`Withdrawal ${event.transactionHash} is ready to prove: `, proofArgs);
+        const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
+        console.log(`Withdrawal ${event.transactionHash} is ready to prove: `, proofArgs, callData);
       } else if (withdrawalStatus === "waiting-to-finalize") {
         const { seconds } = await publicClientL1.getTimeToFinalize({
           withdrawalHash: withdrawal.withdrawalHash,
           targetChain: VIEM_OP_STACK_CHAINS[chainId],
         });
         console.log(`Withdrawal ${event.transactionHash} in in challenge period for ${seconds / 60 / 60} hours`);
-      } else if (withdrawalStatus === "ready-to-finalize"){
-        console.log(`Withdrawal ${event.transactionHash} is ready to finalize with args: `, withdrawal);
+      } else if (withdrawalStatus === "ready-to-finalize") {
+        const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
+        console.log(`Withdrawal ${event.transactionHash} is ready to finalize with args: `, withdrawal, callData);
       }
     });
   }
