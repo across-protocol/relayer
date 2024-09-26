@@ -3,8 +3,6 @@ import minimist from "minimist";
 import { Contract, EventFilter, providers as ethersProviders, utils as ethersUtils } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
-import { Log } from "../interfaces";
-import { SpokePoolClientMessage } from "../clients";
 import {
   disconnectRedisClients,
   EventManager,
@@ -20,19 +18,13 @@ import {
   getWSProviders,
   Logger,
   paginatedEventQuery,
-  sortEventsAscending,
   winston,
 } from "../utils";
+import { postEvents, removeEvent } from "./util";
+import { Log, ScraperOpts } from "./types";
 
 type WebSocketProvider = ethersProviders.WebSocketProvider;
 type EventSearchConfig = sdkUtils.EventSearchConfig;
-type ScraperOpts = {
-  lookback?: number; // Event lookback (in seconds).
-  deploymentBlock: number; // SpokePool deployment block
-  maxBlockRange?: number; // Maximum block range for paginated getLogs queries.
-  filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
-};
-
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
@@ -66,49 +58,6 @@ function getEventFilterArgs(relayer?: string): { [event: string]: string[] } {
     : [null, null, null, null, null, null, null, null, null, null, relayer];
 
   return { FilledV3Relay };
-}
-
-/**
- * Given the inputs for a SpokePoolClient update, consolidate the inputs into a message and submit it to the parent
- * process (if defined).
- * @param blockNumber Block number up to which the update applies.
- * @param currentTime The SpokePool timestamp at blockNumber.
- * @param events An array of Log objects to be submitted.
- * @returns void
- */
-function postEvents(blockNumber: number, currentTime: number, events: Log[]): void {
-  if (!isDefined(process.send) || stop) {
-    return;
-  }
-
-  // Drop the array component of event.args and retain the named k/v pairs,
-  // otherwise stringification tends to retain only the array.
-  events = sortEventsAscending(events);
-
-  const message: SpokePoolClientMessage = {
-    blockNumber,
-    currentTime,
-    oldestTime,
-    nEvents: events.length,
-    data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
-  };
-  process.send(JSON.stringify(message));
-}
-
-/**
- * Given an event removal notification, post the message to the parent process.
- * @param event Log instance.
- * @returns void
- */
-function removeEvent(event: Log): void {
-  if (!isDefined(process.send) || stop) {
-    return;
-  }
-
-  const message: SpokePoolClientMessage = {
-    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
-  };
-  process.send(JSON.stringify(message));
 }
 
 /**
@@ -146,7 +95,7 @@ async function scrapeEvents(spokePool: Contract, eventName: string, opts: Scrape
 
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
   const events = await pollEvents(filter, searchConfig);
-  postEvents(toBlock, currentTime, events);
+  postEvents(toBlock, oldestTime, currentTime, events);
 }
 
 /**
@@ -178,7 +127,7 @@ async function listen(
 
     // Post an update to the parent. Do this irrespective of whether there were new events or not, since there's
     // information in blockNumber and currentTime alone.
-    postEvents(blockNumber, currentTime, events);
+    postEvents(blockNumber, oldestTime, currentTime, events);
   });
 
   // Add a handler for each new instance of a subscribed event.
