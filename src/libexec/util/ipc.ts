@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { isDefined, sortEventsAscending } from "../utils";
-import { Log, SpokePoolClientMessage } from "./types";
+import { isDefined, sortEventsAscending } from "../../utils";
+import { Log, SpokePoolClientMessage } from "./../types";
 
 /**
  * Given the inputs for a SpokePoolClient update, consolidate the inputs into a message and submit it to the parent
@@ -15,10 +15,7 @@ export function postEvents(blockNumber: number, oldestTime: number, currentTime:
     return;
   }
 
-  // Drop the array component of event.args and retain the named k/v pairs,
-  // otherwise stringification tends to retain only the array.
   events = sortEventsAscending(events);
-
   const message: SpokePoolClientMessage = {
     blockNumber,
     currentTime,

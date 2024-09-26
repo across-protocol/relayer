@@ -19,9 +19,9 @@ import {
   Logger,
   winston,
 } from "../utils";
-import { postEvents, removeEvent } from "./util";
+import { postEvents, removeEvent } from "./util/ipc";
 import { ScraperOpts } from "./types";
-import { getEventFilter, getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./evm/util";
+import { getEventFilter, getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./util/evm";
 
 type WebSocketProvider = ethersProviders.WebSocketProvider;
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;

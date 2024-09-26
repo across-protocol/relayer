@@ -1,7 +1,7 @@
 import assert from "assert";
 import { Contract, EventFilter } from "ethers";
-import { getNetworkName, isDefined, paginatedEventQuery, winston } from "../../utils";
-import { Log, ScraperOpts } from "../types";
+import { getNetworkName, isDefined, paginatedEventQuery, winston } from "../../../utils";
+import { Log, ScraperOpts } from "../../types";
 
 /**
  * Given an event name and contract, return the corresponding Ethers EventFilter object.
