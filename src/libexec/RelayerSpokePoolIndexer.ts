@@ -95,7 +95,9 @@ async function scrapeEvents(spokePool: Contract, eventName: string, opts: Scrape
 
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
   const events = await pollEvents(filter, searchConfig);
-  postEvents(toBlock, oldestTime, currentTime, events);
+  if (!stop) {
+    postEvents(toBlock, oldestTime, currentTime, events);
+  }
 }
 
 /**
@@ -127,7 +129,9 @@ async function listen(
 
     // Post an update to the parent. Do this irrespective of whether there were new events or not, since there's
     // information in blockNumber and currentTime alone.
-    postEvents(blockNumber, oldestTime, currentTime, events);
+    if (!stop) {
+      postEvents(blockNumber, oldestTime, currentTime, events);
+    }
   });
 
   // Add a handler for each new instance of a subscribed event.
@@ -140,7 +144,9 @@ async function listen(
         if (event.removed) {
           eventMgr.remove(event, host);
           // Notify the parent immediately in case the event was already submitted.
-          removeEvent(event);
+          if (!stop) {
+            removeEvent(event);
+          }
         } else {
           eventMgr.add(event, host);
         }

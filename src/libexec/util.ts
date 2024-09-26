@@ -11,7 +11,7 @@ import { Log, SpokePoolClientMessage } from "./types";
  * @returns void
  */
 export function postEvents(blockNumber: number, oldestTime: number, currentTime: number, events: Log[]): void {
-  if (!isDefined(process.send) || stop) {
+  if (!isDefined(process.send)) {
     return;
   }
 
@@ -35,7 +35,7 @@ export function postEvents(blockNumber: number, oldestTime: number, currentTime:
  * @returns void
  */
 export function removeEvent(event: Log): void {
-  if (!isDefined(process.send) || stop) {
+  if (!isDefined(process.send)) {
     return;
   }
 
