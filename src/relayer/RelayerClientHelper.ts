@@ -94,7 +94,6 @@ export async function constructRelayerClients(
     spokePoolClients = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChains ?? configStoreClient.getEnabledChains(), async (chainId) => {
         const opts = {
-          path: config.indexerPath,
           lookback: config.maxRelayerLookBack,
           blockRange: config.maxBlockLookBack[chainId],
           path: config.listenerPath[chainId],
