@@ -1,4 +1,13 @@
-import { ethers, retrieveSignerFromCLIArgs, getProvider, WETH9, toBN, isKeyOf, getNetworkName } from "../src/utils";
+import {
+  ethers,
+  retrieveSignerFromCLIArgs,
+  getProvider,
+  WETH9,
+  toBN,
+  isKeyOf,
+  getNetworkName,
+  TOKEN_SYMBOLS_MAP,
+} from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 
@@ -37,10 +46,10 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = Number(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  if (!isKeyOf(chainId, WETH_ADDRESSES)) {
+  if (!TOKEN_SYMBOLS_MAP.WETH.addresses[chainId]) {
     throw new Error("chainId does not have a defined WETH address");
   }
-  const token = WETH_ADDRESSES[chainId];
+  const token = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
   const weth = new ethers.Contract(token, WETH9.abi, connectedSigner);
   const decimals = 18;
   const amountFromWei = ethers.utils.formatUnits(args.amount, decimals);
