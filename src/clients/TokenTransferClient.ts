@@ -3,12 +3,11 @@ import {
   winston,
   assign,
   ERC20,
-  Event,
   Contract,
   paginatedEventQuery,
   spreadEventWithBlockNumber,
 } from "../utils";
-import { TokenTransfer, TransfersByChain } from "../interfaces";
+import { Log, TokenTransfer, TransfersByChain } from "../interfaces";
 import { Provider } from "@ethersproject/abstract-provider";
 
 export class TokenTransferClient {
@@ -52,7 +51,7 @@ export class TokenTransferClient {
             this.querySendAndReceiveEvents(tokenContract, monitoredAddress, searchConfigByChainIds[chainId])
           )
         );
-        const transferEventsPerToken: { [tokenAddress: string]: Event[][] } = Object.fromEntries(
+        const transferEventsPerToken: { [tokenAddress: string]: Log[][] } = Object.fromEntries(
           transferEventsList.map((transferEvents, i) => [tokenContracts[i].address, transferEvents])
         );
 
@@ -89,7 +88,7 @@ export class TokenTransferClient {
   }
 
   // Returns outgoing and incoming transfers for the specified tokenContract and address.
-  querySendAndReceiveEvents(tokenContract: Contract, address: string, config: EventSearchConfig): Promise<Event[][]> {
+  querySendAndReceiveEvents(tokenContract: Contract, address: string, config: EventSearchConfig): Promise<Log[][]> {
     const eventFilters = [[address], [undefined, address]];
     return Promise.all(
       eventFilters.map((eventFilter) =>

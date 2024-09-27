@@ -17,16 +17,17 @@ import {
   convertFromWei,
   createFormatFunction,
   ERC20,
-  ethers,
   fillStatusArray,
   blockExplorerLink,
   blockExplorerLinks,
+  formatUnits,
   getNativeTokenAddressForChain,
   getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
   mapAsync,
+  parseUnits,
   providers,
   toBN,
   toBNWei,
@@ -42,11 +43,9 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 
-export const REBALANCE_FINALIZE_GRACE_PERIOD = process.env.REBALANCE_FINALIZE_GRACE_PERIOD
-  ? Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD)
-  : 60 * 60;
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
+export const REBALANCE_FINALIZE_GRACE_PERIOD = Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD ?? 60 * 60);
 
 // bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
@@ -381,8 +380,8 @@ export class Monitor {
           token,
           account,
           currentBalance: balances[i].toString(),
-          warnThreshold: ethers.utils.parseUnits(warnThreshold.toString(), decimalValues[i]),
-          errorThreshold: ethers.utils.parseUnits(errorThreshold.toString(), decimalValues[i]),
+          warnThreshold: parseUnits(warnThreshold.toString(), decimalValues[i]),
+          errorThreshold: parseUnits(errorThreshold.toString(), decimalValues[i]),
         };
       }),
     });
@@ -397,10 +396,10 @@ export class Monitor {
             const decimals = decimalValues[i];
             let trippedThreshold: { level: "warn" | "error"; threshold: number } | null = null;
 
-            if (warnThreshold !== null && balance.lt(ethers.utils.parseUnits(warnThreshold.toString(), decimals))) {
+            if (warnThreshold !== null && balance.lt(parseUnits(warnThreshold.toString(), decimals))) {
               trippedThreshold = { level: "warn", threshold: warnThreshold };
             }
-            if (errorThreshold !== null && balance.lt(ethers.utils.parseUnits(errorThreshold.toString(), decimals))) {
+            if (errorThreshold !== null && balance.lt(parseUnits(errorThreshold.toString(), decimals))) {
               trippedThreshold = { level: "error", threshold: errorThreshold };
             }
             if (trippedThreshold !== null) {
@@ -418,7 +417,7 @@ export class Monitor {
                 text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
                   account,
                   chainId
-                )} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
+                )} is ${formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
               };
             }
           }
@@ -456,7 +455,7 @@ export class Monitor {
           token,
           account,
           currentBalance: currentBalances[i].toString(),
-          target: ethers.utils.parseUnits(target.toString(), decimalValues[i]),
+          target: parseUnits(target.toString(), decimalValues[i]),
         };
       }),
     });
@@ -467,11 +466,11 @@ export class Monitor {
       refillEnabledBalances.map(async ({ chainId, isHubPool, token, account, target, trigger }, i) => {
         const currentBalance = currentBalances[i];
         const decimals = decimalValues[i];
-        const balanceTrigger = ethers.utils.parseUnits(trigger.toString(), decimals);
+        const balanceTrigger = parseUnits(trigger.toString(), decimals);
         const isBelowTrigger = currentBalance.lte(balanceTrigger);
         if (isBelowTrigger) {
           // Fill balance back to target, not trigger.
-          const balanceTarget = ethers.utils.parseUnits(target.toString(), decimals);
+          const balanceTarget = parseUnits(target.toString(), decimals);
           const deficit = balanceTarget.sub(currentBalance);
           let canRefill = await this.balanceAllocator.requestBalanceAllocation(
             chainId,
@@ -541,7 +540,7 @@ export class Monitor {
                 method: "loadEthForL2Calls",
                 args: [],
                 message: "Reloaded ETH in HubPool 🫡!",
-                mrkdwn: `Loaded ${ethers.utils.formatUnits(deficit, decimals)} ETH from ${signerAddress}.`,
+                mrkdwn: `Loaded ${formatUnits(deficit, decimals)} ETH from ${signerAddress}.`,
                 value: deficit,
               });
             } else {
@@ -554,7 +553,7 @@ export class Monitor {
               const receipt = await tx.wait();
               this.logger.info({
                 at: "Monitor#refillBalances",
-                message: `Reloaded ${ethers.utils.formatUnits(
+                message: `Reloaded ${formatUnits(
                   deficit,
                   decimals
                 )} ${nativeSymbolForChain} for ${account} from ${signerAddress} 🫡!`,

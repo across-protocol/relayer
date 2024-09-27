@@ -1,5 +1,5 @@
-import { BigNumber } from "ethers";
 import { interfaces } from "@across-protocol/sdk";
+import { BigNumber } from "../utils";
 
 export * from "./InventoryManagement";
 export * from "./SpokePool";
@@ -22,6 +22,7 @@ export interface OutstandingTransfers {
 }
 
 // Common interfaces
+export type Log = interfaces.Log;
 export type SortableEvent = interfaces.SortableEvent;
 export type BigNumberForToken = interfaces.BigNumberForToken;
 

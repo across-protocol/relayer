@@ -5,10 +5,9 @@ import {
   Contract,
   BigNumber,
   BigNumberish,
+  bnZero,
   TransactionResponse,
-  Event,
   checkAddressChecksum,
-  ethers,
   spreadEventWithBlockNumber,
   assign,
   winston,
@@ -16,7 +15,7 @@ import {
 } from "../../../utils";
 import { SpokePoolClient } from "../../";
 import { BaseAdapter } from "../";
-import { SortableEvent, OutstandingTransfers } from "../../../interfaces";
+import { Log, SortableEvent, OutstandingTransfers } from "../../../interfaces";
 import { OpStackBridge } from "./OpStackBridgeInterface";
 import { WethBridge } from "./WethBridge";
 import { DefaultERC20Bridge } from "./DefaultErc20Bridge";
@@ -82,7 +81,7 @@ export class OpStackAdapter extends BaseAdapter {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
 
-    const processEvent = (event: Event) => {
+    const processEvent = (event: Log) => {
       const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
         _amount: BigNumberish;
         _to: string;
@@ -146,7 +145,7 @@ export class OpStackAdapter extends BaseAdapter {
       method,
       args,
       gasLimitMultiplier,
-      ethers.constants.Zero,
+      bnZero,
       simMode
     );
   }

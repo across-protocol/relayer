@@ -1,9 +1,11 @@
 import { utils } from "@across-protocol/sdk";
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import axios from "axios";
-import { BigNumber, ethers } from "ethers";
+import { ethers } from "ethers";
+import { Log } from "../interfaces";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
+import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getProvider } from "./ProviderUtils";
@@ -79,7 +81,7 @@ export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
   sourceChainId: number,
   destinationChainId: number,
   fromAddress: string
-): Promise<ethers.Event[]> {
+): Promise<Log[]> {
   const sourceDomain = chainIdsToCctpDomains[sourceChainId];
   const targetDestinationDomain = chainIdsToCctpDomains[destinationChainId];
 

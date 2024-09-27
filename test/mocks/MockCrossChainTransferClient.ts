@@ -1,7 +1,7 @@
-import { BigNumber } from "ethers";
+import { BigNumber, bnZero } from "../../src/utils";
 import { CrossChainTransferClient } from "../../src/clients/bridges";
 export class MockCrossChainTransferClient extends CrossChainTransferClient {
-  crossChainTransferAmount: BigNumber = BigNumber.from(0);
+  crossChainTransferAmount = bnZero;
   constructor() {
     super(null, null, null);
   }
