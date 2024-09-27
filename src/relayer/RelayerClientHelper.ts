@@ -97,6 +97,7 @@ export async function constructRelayerClients(
           path: config.indexerPath,
           lookback: config.maxRelayerLookBack,
           blockRange: config.maxBlockLookBack[chainId],
+          path: config.listenerPath[chainId],
         };
         return [chainId, await indexedSpokePoolClient(baseSigner, hubPoolClient, chainId, opts)];
       })

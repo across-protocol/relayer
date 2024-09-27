@@ -48,8 +48,7 @@ export async function scrapeEvents(
   logger: winston.Logger
 ): Promise<Log[]> {
   const { lookback, deploymentBlock, filterArgs, maxBlockRange, toBlock } = opts;
-  const { provider } = spokePool;
-  const { chainId } = await provider.getNetwork();
+  const { chainId } = await spokePool.provider.getNetwork();
   const chain = getNetworkName(chainId);
 
   const fromBlock = Math.max(toBlock - (lookback ?? deploymentBlock), deploymentBlock);
@@ -61,7 +60,7 @@ export async function scrapeEvents(
   const events = await paginatedEventQuery(spokePool, filter, searchConfig);
   const tStop = performance.now();
   logger.debug({
-    at: "SpokePoolIndexer::listen",
+    at: "scrapeEvents",
     message: `Scraped ${events.length} ${chain} ${eventName} events in ${Math.round((tStop - tStart) / 1000)} seconds`,
     searchConfig,
   });
