@@ -1,4 +1,3 @@
-import { utils as ethersUtils } from "ethers";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import WETH_ABI from "../common/abi/Weth.json";
 import {
@@ -10,6 +9,7 @@ import {
   createFormatFunction,
   blockExplorerLink,
   Contract,
+  formatUnits,
   runTransaction,
   isDefined,
   DefaultLogLevels,
@@ -577,9 +577,9 @@ export class InventoryClient {
           cumulativeVirtualBalance,
           cumulativeVirtualBalanceWithShortfall,
           cumulativeVirtualBalanceWithShortfallPostRefunds,
-          targetPct: ethersUtils.formatUnits(tokenConfig.targetPct, 18),
-          targetOverage: ethersUtils.formatUnits(targetOverageBuffer, 18),
-          effectiveTargetPct: ethersUtils.formatUnits(effectiveTargetPct, 18),
+          targetPct: formatUnits(tokenConfig.targetPct, 18),
+          targetOverage: formatUnits(targetOverageBuffer, 18),
+          effectiveTargetPct: formatUnits(effectiveTargetPct, 18),
           expectedPostRelayAllocation,
           chainsToEvaluate,
         }

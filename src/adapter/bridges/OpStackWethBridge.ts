@@ -5,11 +5,11 @@ import {
   paginatedEventQuery,
   Signer,
   Provider,
-  Event,
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
+import { Log } from "../../interfaces";
 import { matchL2EthDepositAndWrapEvents, processEvent } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -67,7 +67,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     });
   }
 
-  private convertEventListToBridgeEvents(events: Event[]): BridgeEvents {
+  private convertEventListToBridgeEvents(events: Log[]): BridgeEvents {
     return {
       [this.resolveL2TokenAddress(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId])]: events.map((event) =>
         processEvent(event, "_amount", "_to", "_from")
@@ -138,7 +138,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       )
         // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
         // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
-        .filter((event) => event.args._to === fromAddress);
+        .filter((event) => event.args._to === toAddress);
 
       // We only care about WETH finalization events initiated by the relayer running this rebalancer logic, so only
       // filter on Deposit events sent from the provided signer. We can't simply filter on `fromAddress` because
@@ -176,7 +176,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     fromAddress: string,
     eventConfig: EventSearchConfig,
     l2Weth = this.l2Weth
-  ): Promise<Event[]> {
+  ): Promise<Log[]> {
     return paginatedEventQuery(l2Weth, l2Weth.filters.Deposit(fromAddress), eventConfig);
   }
 }

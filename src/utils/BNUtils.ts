@@ -1,4 +1,8 @@
-import { BigNumber } from "ethers";
+// eslint-disable-next-line no-restricted-imports
+import { BigNumber } from "@ethersproject/bignumber";
+
+// eslint-disable-next-line no-restricted-imports
+export * from "@ethersproject/bignumber";
 
 export function bnComparatorDescending(a: BigNumber, b: BigNumber): -1 | 0 | 1 {
   if (b.gt(a)) {

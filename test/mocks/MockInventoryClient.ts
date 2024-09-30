@@ -1,11 +1,12 @@
 import { Deposit, InventoryConfig } from "../../src/interfaces";
 import { BundleDataClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
-import { BigNumber } from "ethers";
+import { BigNumber, bnZero } from "../../src/utils";
 import winston from "winston";
+
 export class MockInventoryClient extends InventoryClient {
   possibleRebalances: Rebalance[] = [];
-  balanceOnChain: BigNumber | undefined = BigNumber.from(0);
+  balanceOnChain: BigNumber | undefined = bnZero;
   excessRunningBalancePcts: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
 
   constructor(

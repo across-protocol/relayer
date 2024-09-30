@@ -1,7 +1,7 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { BigNumber } from "ethers";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
+  BigNumber,
   winston,
   bnZero,
   getNetworkName,
@@ -633,7 +633,8 @@ export class TryMulticallClient extends MultiCallerClient {
           mrkdwn: mrkdwn.join(""),
         };
       };
-      txnRequestsToSubmit.push(...txnCalldataToRebuild.map(rebuildTryMulticall));
+      const tryMulticallTxns = txnCalldataToRebuild.filter((txn) => txn.calldata.length !== 0).map(rebuildTryMulticall);
+      txnRequestsToSubmit.push(...tryMulticallTxns);
     }
 
     if (simulate) {

@@ -1,8 +1,8 @@
-import { BigNumber, Signer } from "ethers";
+import { Signer } from "ethers";
 import { CONTRACT_ADDRESSES, CANONICAL_BRIDGE } from "../../common";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
+import { BigNumber, EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   protected cctpBridge: BaseBridgeAdapter;

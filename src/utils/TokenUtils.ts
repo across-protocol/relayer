@@ -1,7 +1,9 @@
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants, utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
-import { BigNumberish, utils as ethersUtils } from "ethers";
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { BigNumberish } from "./BNUtils";
+import { formatUnits } from "./SDKUtils";
+
 const { ZERO_ADDRESS } = constants;
 
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
@@ -18,5 +20,5 @@ export function getNativeTokenAddressForChain(chainId: number): string {
  */
 export function formatUnitsForToken(symbol: string, amount: BigNumberish): string {
   const decimals = (TOKEN_SYMBOLS_MAP[symbol]?.decimals as number) ?? 18;
-  return ethersUtils.formatUnits(amount, decimals);
+  return formatUnits(amount, decimals);
 }
