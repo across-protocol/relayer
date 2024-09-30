@@ -61,14 +61,19 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       const ready = await relayer.update();
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
-      // If there is another active relayer, allow up to 10 update cycles for this instance to be ready,
-      // then proceed unconditionally to protect against any RPC outages blocking the relayer.
-      if (!ready && activeRelayer && run < 10) {
-        const runTime = Math.round((performance.now() - tLoopStart) / 1000);
-        const delta = pollingDelay - runTime;
-        logger.debug({ at: "Relayer#run", message: `Not ready to relay, waiting ${delta} seconds.` });
-        await delay(delta);
-        continue;
+      // If there is another active relayer, allow up to 120 seconds for this instance to be ready.
+      // If this instance can't update, throw an error (for now).
+      if (!ready && activeRelayer) {
+        if (run * pollingDelay < 120) {
+          const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+          const delta = pollingDelay - runTime;
+          logger.debug({ at: "Relayer#run", message: `Not ready to relay, waiting ${delta} seconds.` });
+          await delay(delta);
+          continue;
+        }
+
+        const badChains = Object.values(spokePoolClients).filter(({ isUpdated }) => !isUpdated);
+        throw new Error(`Unable to start relayer due to chains ${badChains}`);
       }
 
       // Signal to any existing relayer that a handover is underway, or alternatively
