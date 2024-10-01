@@ -72,7 +72,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           continue;
         }
 
-        const badChains = Object.values(spokePoolClients).filter(({ isUpdated }) => !isUpdated);
+        const badChains = Object.values(spokePoolClients)
+          .filter(({ isUpdated }) => !isUpdated)
+          .map(({ chainId }) => getNetworkName(chainId));
         throw new Error(`Unable to start relayer due to chains ${badChains}`);
       }
 
