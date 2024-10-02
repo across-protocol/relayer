@@ -9,7 +9,7 @@ import {
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, OpStackAdapter, ScrollAdapter } from "./";
+import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, ScrollAdapter } from "./";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 
 import { BaseChainAdapter } from "../../adapter";
@@ -60,12 +60,15 @@ export class AdapterManager {
       );
     };
     if (this.spokePoolClients[OPTIMISM] !== undefined) {
-      this.adapters[OPTIMISM] = new OpStackAdapter(
+      this.adapters[OPTIMISM] = new BaseChainAdapter(
+        spokePoolClients,
         OPTIMISM,
+        hubChainId,
+        filterMonitoredAddresses(OPTIMISM),
         logger,
         SUPPORTED_TOKENS[OPTIMISM],
-        spokePoolClients,
-        filterMonitoredAddresses(OPTIMISM)
+        constructBridges(OPTIMISM),
+        DEFAULT_GAS_MULTIPLIER[OPTIMISM] ?? 1
       );
     }
     if (this.spokePoolClients[POLYGON] !== undefined) {
@@ -78,12 +81,15 @@ export class AdapterManager {
       this.adapters[ZK_SYNC] = new ZKSyncAdapter(logger, spokePoolClients, filterMonitoredAddresses(ZK_SYNC));
     }
     if (this.spokePoolClients[BASE] !== undefined) {
-      this.adapters[BASE] = new OpStackAdapter(
+      this.adapters[BASE] = new BaseChainAdapter(
+        spokePoolClients,
         BASE,
+        hubChainId,
+        filterMonitoredAddresses(BASE),
         logger,
         SUPPORTED_TOKENS[BASE],
-        spokePoolClients,
-        filterMonitoredAddresses(BASE)
+        constructBridges(BASE),
+        DEFAULT_GAS_MULTIPLIER[BASE] ?? 1
       );
     }
     if (this.spokePoolClients[LINEA] !== undefined) {
