@@ -292,6 +292,7 @@ export class Relayer {
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
         deposit,
+        notificationPath: "across-unprofitable-fills",
       });
       return false;
     }
