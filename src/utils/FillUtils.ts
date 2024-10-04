@@ -32,11 +32,14 @@ export function getUnfilledDeposits(
 
   return deposits
     .map((deposit) => {
-      const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
       const { unfilledAmount, invalidFills } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
-      return { deposit, version, unfilledAmount, invalidFills };
+      return { deposit, unfilledAmount, invalidFills };
     })
-    .filter(({ unfilledAmount }) => unfilledAmount.gt(bnZero));
+    .filter(({ unfilledAmount }) => unfilledAmount.gt(bnZero))
+    .map(({ deposit, ...rest }) => {
+      const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+      return { deposit, ...rest, version };
+    });
 }
 
 export function getAllUnfilledDeposits(
