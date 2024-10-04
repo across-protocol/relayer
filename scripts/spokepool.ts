@@ -69,7 +69,7 @@ function printFill(destinationChainId: number, log: LogDescription): void {
     destinationChainId
   );
 
-  const padLeft = [...eventArgs, "relayDataHash" ].reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const padLeft = [...eventArgs, "relayDataHash"].reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
     tokenSymbol: resolveTokenSymbols([outputToken], destinationChainId)[0],
