@@ -4,13 +4,13 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 // Tested
 import { DataworkerClients } from "../src/dataworker/DataworkerClientHelper";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
-import { getWidestPossibleExpectedBlockRange } from "../src/dataworker/PoolRebalanceUtils";
 import { originChainId } from "./constants";
-import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
+import { blockRangesAreInvalidForSpokeClients } from "../src/dataworker/DataworkerUtils";
 import { getDeployedBlockNumber } from "@across-protocol/contracts";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
-import { assert } from "../src/utils";
+import { assert, Contract, getEndBlockBuffers, getWidestPossibleExpectedBlockRange } from "../src/utils";
+import { CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS } from "../src/common";
 
 let dataworkerClients: DataworkerClients;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -263,10 +263,10 @@ describe("Dataworker block range-related utility methods", async function () {
     // Create a fake spoke pool so we can manipulate the fill deadline buffer. Make sure it returns a realistic
     // current time so that computing bundle end block timestamps gives us realistic numbers.
     const fakeSpokePool = await smock.fake(originSpokePoolClient.spokePool.interface);
-    fakeSpokePool.getCurrentTime.returns(originSpokePoolClient.currentTime);
+    fakeSpokePool.getCurrentTime.returns((originSpokePoolClient as unknown as { currentTime: number }).currentTime);
     const mockSpokePoolClient = new MockSpokePoolClient(
       originSpokePoolClient.logger,
-      fakeSpokePool,
+      fakeSpokePool as unknown as Contract,
       originSpokePoolClient.chainId,
       originSpokePoolClient.eventSearchConfig.fromBlock - 1 // Set deployment block less than eventSearchConfig.fromBlock
       // to force blockRangesAreInvalidForSpokeClients to compare the client's oldestTime() with its
@@ -314,8 +314,9 @@ describe("Dataworker block range-related utility methods", async function () {
     ).to.equal(false);
 
     // Set oldest time older such that fill deadline buffer now exceeds the time between the end block and the oldest
-    // time. Block ranges should now be valid.
-    const oldestBlockTimestampOverride = endBlockTimestamps[originChainId] - fillDeadlineOverride - 1;
+    // time plus the conservative bundle time. Block ranges should now be valid.
+    const oldestBlockTimestampOverride =
+      endBlockTimestamps[originChainId] - fillDeadlineOverride - CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS - 1;
     assert(oldestBlockTimestampOverride > 0, "unrealistic oldest block timestamp");
     mockSpokePoolClient.setOldestBlockTimestampOverride(oldestBlockTimestampOverride);
     expect(

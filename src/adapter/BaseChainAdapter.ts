@@ -219,7 +219,12 @@ export class BaseChainAdapter {
     const augmentedTxn = { contract, chainId: this.chainId, method, args: [], value, mrkdwn, message };
     if (simMode) {
       const { succeed, reason } = (await this.transactionClient.simulate([augmentedTxn]))[0];
-      this.log("Simulation result", { succeed, reason, contract, value }, "debug", "wrapEthIfAboveThreshold");
+      this.log(
+        "Simulation result",
+        { succeed, reason, contract: contract.address, value },
+        "debug",
+        "wrapEthIfAboveThreshold"
+      );
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     } else {
       (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];

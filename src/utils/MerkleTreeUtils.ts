@@ -1,36 +1,14 @@
 import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts";
-import { PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup, V3SlowFillLeaf } from "../interfaces";
+import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, SlowFillLeaf } from "../interfaces";
 import { getParamType, utils } from ".";
 
-export function buildSlowRelayTree(relays: V3SlowFillLeaf[]): MerkleTree<V3SlowFillLeaf> {
-  const hashFn = (input: V3SlowFillLeaf) => {
+export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillLeaf> {
+  const hashFn = (input: SlowFillLeaf) => {
     const verifyFn = "verifyV3SlowRelayFulfillment";
     const paramType = getParamType("MerkleLibTest", verifyFn, "slowFill");
     return utils.keccak256(utils.defaultAbiCoder.encode([paramType], [input]));
   };
   return new MerkleTree(relays, hashFn);
-}
-
-export function buildPoolRebalanceLeafTree(poolRebalanceLeaves: PoolRebalanceLeaf[]): MerkleTree<PoolRebalanceLeaf> {
-  for (let i = 0; i < poolRebalanceLeaves.length; i++) {
-    // The 4 provided parallel arrays must be of equal length. Running Balances can optionally be 2x the length
-    if (
-      poolRebalanceLeaves[i].l1Tokens.length !== poolRebalanceLeaves[i].bundleLpFees.length ||
-      poolRebalanceLeaves[i].netSendAmounts.length !== poolRebalanceLeaves[i].bundleLpFees.length
-    ) {
-      throw new Error("Provided lef arrays are not of equal length");
-    }
-    if (
-      poolRebalanceLeaves[i].runningBalances.length !== poolRebalanceLeaves[i].bundleLpFees.length * 2 &&
-      poolRebalanceLeaves[i].runningBalances.length !== poolRebalanceLeaves[i].bundleLpFees.length
-    ) {
-      throw new Error("Running balances length unexpected");
-    }
-  }
-
-  const paramType = getParamType("MerkleLibTest", "verifyPoolRebalance", "rebalance");
-  const hashFn = (input: PoolRebalanceLeaf) => utils.keccak256(utils.defaultAbiCoder.encode([paramType], [input]));
-  return new MerkleTree<PoolRebalanceLeaf>(poolRebalanceLeaves, hashFn);
 }
 
 export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[]): MerkleTree<RelayerRefundLeaf> {

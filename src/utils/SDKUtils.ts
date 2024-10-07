@@ -7,6 +7,12 @@ export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
 export const {
+  assign,
+  groupObjectCountsByProp,
+  groupObjectCountsByTwoProps,
+  groupObjectCountsByThreeProps,
+  delay,
+  getCurrentTime,
   averageBlockTime,
   bnZero,
   bnOne,
@@ -21,7 +27,10 @@ export const {
   fillStatusArray,
   fixedPointAdjustment,
   forEachAsync,
+  formatEther,
+  formatUnits,
   mapAsync,
+  parseUnits,
   filterAsync,
   toBN,
   bnToHex,
@@ -45,3 +54,13 @@ export const {
   getL1TokenInfo,
   getUsdcSymbol,
 } = sdk.utils;
+
+export const {
+  getRefundsFromBundle,
+  isChainDisabled,
+  getWidestPossibleExpectedBlockRange,
+  getEndBlockBuffers,
+  buildPoolRebalanceLeafTree,
+  getNetSendAmountForL1Token,
+  _buildPoolRebalanceRoot,
+} = sdk.clients.BundleDataClient;

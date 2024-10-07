@@ -1,7 +1,7 @@
-import { BigNumber, Contract, Signer } from "ethers";
+import { Contract, Signer } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../../common";
 import { BridgeTransactionDetails, OpStackBridge, OpStackEvents } from "./OpStackBridgeInterface";
-import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP } from "../../../utils";
+import { BigNumber, EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP } from "../../../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../../utils/CCTPUtils";
 
 export class UsdcCCTPBridge extends OpStackBridge {

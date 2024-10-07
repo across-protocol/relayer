@@ -30,11 +30,6 @@ export interface AugmentedTransaction {
   groupId?: string;
 }
 
-export interface RawTransaction {
-  contract: Contract;
-  data: string;
-}
-
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { isError } = typeguards;
 

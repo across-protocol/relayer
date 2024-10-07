@@ -1,7 +1,8 @@
 import assert from "assert";
 import { ChildProcess, spawn } from "child_process";
-import { Contract, Event } from "ethers";
+import { Contract } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
+import { Log } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
 import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
@@ -43,8 +44,8 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   private pendingCurrentTime: number;
   private pendingOldestTime: number;
 
-  private pendingEvents: Event[][];
-  private pendingEventsRemoved: Event[];
+  private pendingEvents: Log[][];
+  private pendingEventsRemoved: Log[];
 
   constructor(
     readonly logger: winston.Logger,
@@ -88,6 +89,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
 
+    this.worker.on("exit", (code, signal) => this.childExit(code, signal));
     this.worker.on("message", (message) => this.indexerUpdate(message));
     this.logger.debug({
       at: "SpokePoolClient#startWorker",
@@ -116,6 +118,26 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
         exitCode,
       });
     }
+  }
+
+  /**
+   * The worker process has exited. Future: Optionally restart it based on the exit code.
+   * See also: https://nodejs.org/api/child_process.html#event-exit
+   * @param code Optional exit code.
+   * @param signal Optional signal resulting in termination.
+   * @returns void
+   */
+  protected childExit(code?: number, signal?: string): void {
+    if (code === 0) {
+      return;
+    }
+
+    this.logger[signal === "SIGKILL" ? "debug" : "warn"]({
+      at: "SpokePoolClient#childExit",
+      message: `${this.chain} SpokePool listener exited.`,
+      code,
+      signal,
+    });
   }
 
   /**
@@ -173,7 +195,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    * @param event An Ethers event instance.
    * @returns void
    */
-  protected removeEvent(event: Event): boolean {
+  protected removeEvent(event: Log): boolean {
     let removed = false;
     const eventIdx = this.queryableEventNames.indexOf(event.event);
     const pendingEvents = this.pendingEvents[eventIdx];
@@ -239,6 +261,10 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   }
 
   protected async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {
+    if (this.pendingBlockNumber === this.deploymentBlock) {
+      return { success: false, reason: clients.UpdateFailureReason.NotReady };
+    }
+
     // If any events have been removed upstream, remove them first.
     this.pendingEventsRemoved = this.pendingEventsRemoved.filter((event) => !this.removeEvent(event));
 

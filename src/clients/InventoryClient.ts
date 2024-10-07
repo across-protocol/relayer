@@ -1,4 +1,3 @@
-import { utils as ethersUtils } from "ethers";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import WETH_ABI from "../common/abi/Weth.json";
 import {
@@ -10,6 +9,7 @@ import {
   createFormatFunction,
   blockExplorerLink,
   Contract,
+  formatUnits,
   runTransaction,
   isDefined,
   DefaultLogLevels,
@@ -27,7 +27,7 @@ import {
   getUsdcSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { V3Deposit } from "../interfaces";
+import { Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -340,10 +340,10 @@ export class InventoryClient {
    * so that it can batch compute LP fees for all possible repayment chains. By locating this function
    * here it ensures that the relayer and the inventory client are in sync as to which chains are possible
    * repayment chains for a given deposit.
-   * @param deposit V3Deposit
+   * @param deposit Deposit
    * @returns list of chain IDs that are possible repayment chains for the deposit.
    */
-  getPossibleRepaymentChainIds(deposit: V3Deposit): number[] {
+  getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Destination and Origin chain are always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = [originChainId, destinationChainId];
@@ -364,7 +364,7 @@ export class InventoryClient {
    * @returns boolean True if output and input tokens are equivalent or if input token is USDC and output token
    * is Bridged USDC.
    */
-  validateOutputToken(deposit: V3Deposit): boolean {
+  validateOutputToken(deposit: Deposit): boolean {
     const { inputToken, outputToken, originChainId, destinationChainId } = deposit;
 
     // Return true if input and output tokens are mapped to the same L1 token via PoolRebalanceRoutes
@@ -411,7 +411,7 @@ export class InventoryClient {
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
    */
-  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
+  async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
@@ -555,7 +555,10 @@ export class InventoryClient {
       // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
       // destined for that chain in order to offload its excess.
       const { targetOverageBuffer = DEFAULT_TOKEN_OVERAGE } = tokenConfig;
-      const effectiveTargetPct = tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
+      const effectiveTargetPct =
+        deposit.toLiteChain && chainId === destinationChainId
+          ? tokenConfig.targetPct
+          : tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
 
       this.log(
         `Evaluated taking repayment on ${
@@ -574,9 +577,9 @@ export class InventoryClient {
           cumulativeVirtualBalance,
           cumulativeVirtualBalanceWithShortfall,
           cumulativeVirtualBalanceWithShortfallPostRefunds,
-          targetPct: ethersUtils.formatUnits(tokenConfig.targetPct, 18),
-          targetOverage: ethersUtils.formatUnits(targetOverageBuffer, 18),
-          effectiveTargetPct: ethersUtils.formatUnits(effectiveTargetPct, 18),
+          targetPct: formatUnits(tokenConfig.targetPct, 18),
+          targetOverage: formatUnits(targetOverageBuffer, 18),
+          effectiveTargetPct: formatUnits(effectiveTargetPct, 18),
           expectedPostRelayAllocation,
           chainsToEvaluate,
         }
@@ -590,12 +593,8 @@ export class InventoryClient {
     // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
+    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainid].
     if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
-      this.logger.warn({
-        at: "InventoryClient#determineRefundChainId",
-        message: `Deposit ${deposit.depositId} originated on lite chain ${originChainId} and origin chain is over-allocated. Refusing to fill deposit.`,
-        eligibleRefundChains,
-      });
       return [];
     }
 

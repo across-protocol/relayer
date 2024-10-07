@@ -19,13 +19,23 @@
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
 //  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
+// This script also can be used to identify any unexecuted leaves in the last N bundles, where N is configurable.
+// If there are any, this script will log the leaf + proof conveniently for manual execution.
+
+// Example usage:
+// Look back the most recent 32 bundles:
+// $ ts-node ./src/scripts/validateRunningBalances.ts
+// Look back from 64 to 32 bundles ago:
+// $ PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
+// Look back from 256 to 128 bundles ago:
+// $ BUNDLES_COUNT=128 PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
+
 import {
   bnZero,
   winston,
   config,
   Logger,
   toBN,
-  Event,
   fromWei,
   isDefined,
   Contract,
@@ -38,11 +48,14 @@ import {
   disconnectRedisClients,
   Signer,
   getSigner,
+  getEndBlockBuffers,
+  getWidestPossibleExpectedBlockRange,
+  assert,
+  CHAIN_IDs,
 } from "../utils";
 import { createDataworker } from "../dataworker";
-import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
-import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { ProposedRootBundle, SpokePoolClientsByChain, V3SlowFillLeaf } from "../interfaces";
+import { getBlockForChain } from "../dataworker/DataworkerUtils";
+import { Log, ProposedRootBundle, SpokePoolClientsByChain, SlowFillLeaf } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
 
@@ -61,10 +74,15 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
 
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
 
-  // Throw out most recent bundle as its leaves might not have executed.
-  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
+  const bundlesToValidate = Number(process.env.BUNDLES_COUNT ?? 32);
+  // @dev: Set page to something higher than 1 to look for older bundles. For example, set this to 1 to look up
+  // bundle data from 64 bundles ago up to 32 bundles before HEAD.
+  const page = Number(process.env.PAGE ?? 0);
+  // @dev: Throw out most recent bundle as its leaves might not have executed, so that's why we add 1 to the lookback.
+  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(
+    page * bundlesToValidate + 1
+  );
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 5; // Roughly 12 hours worth of bundles.
 
   // Create spoke pool clients that only query events related to root bundle proposals and roots
   // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
@@ -193,7 +211,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                   `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
                 );
                 const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
-                let depositsToSpokePool: Event[];
+                let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
                 // including the L1 and L2 ETH (native gas token) addresses.
@@ -328,6 +346,48 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
         if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
+          // If we get here, then either the relayer refund root was not relayed from the Hub to the
+          // Spoke yet or the refund leaf has not been executed.
+          const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
+          const reconstructedBundleData = await dataworker._proposeRootBundle(
+            bundleBlockRanges,
+            spokePoolClients,
+            mostRecentValidatedBundle.blockNumber,
+            // Load data from Arweave to reconstruct bundle so we can pass in these "light" spoke pool clients
+            // that haven't loaded all the Bridge events.
+            true
+          );
+          // There should be no more one leaf for this chainId and l2Token. If not, then there's an issue.
+          // If there is no refund leaf, then we can early exit.
+          const refundLeaves = reconstructedBundleData.relayerRefundLeaves.filter(
+            (l) => l.chainId === leaf.chainId && l.l2TokenAddress === l2Token
+          );
+          if (refundLeaves.length === 0) {
+            continue;
+          } else {
+            assert(refundLeaves.length === 1);
+          }
+          const refundLeaf = refundLeaves[0];
+          const relayedRootBundle = spokePoolClients[leaf.chainId]
+            .getRootBundleRelays()
+            .find((_rootBundle) => _rootBundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot);
+          if (relayedRootBundle !== undefined) {
+            const proof = reconstructedBundleData.relayerRefundTree.getHexProof(refundLeaf);
+            logger.debug({
+              at: "validateRunningBalances",
+              message: `Found unexecuted refund leaf for ${leaf.chainId} and ${l2Token}`,
+              refundLeaf: {
+                ...refundLeaf,
+                amountToReturn: refundLeaf.amountToReturn.toString(),
+                refundAmounts: refundLeaf.refundAmounts.map((x) => x.toString()),
+                rootBundleId: relayedRootBundle.rootBundleId,
+                // @dev Log easy to copy and paste proof by stripping quotation marks, which most block explorers
+                // do not like
+                proof: JSON.stringify(proof).replace(/['"]+/g, ""),
+              },
+            });
+          }
+
           // There is a possibility that the relayer refund root does not contain a refund leaf for this chain Id x
           // token combination but it did have a non-zero netSendAmount in the pool rebalance leaf. This is possible
           // if the net send amount was used to pay out slow fill leaves. Therefore, we should
@@ -335,10 +395,16 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           // case there MIGHT be a relayer refund root. Its hard to figure out otherwise if there was a refund root
           // so there might be a false negative here where we don't subtract the refund leaf amount because we
           // can't find it and it legitimately wasn't relayed over yet.
+          if (
+            leaf.transactionHash.toLowerCase() ===
+              "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
+            leaf.chainId === CHAIN_IDs.REDSTONE
+          ) {
+            // Note: This bundle never made it to Redstone due to a configuration error when deploying the Redstone
+            // SpokePool.
+            continue;
+          }
           if (!netSendAmount.eq(0) && mostRecentValidatedBundle.slowRelayRoot === EMPTY_MERKLE_ROOT) {
-            // We shouldn't get here for any bundle since we start with the i-1'th most recent bundle.
-            // If so, then a relayed root message might have gotten stuck in a canonical bridge and we will
-            // want to know about it.
             const formattedAmount = fromWei(netSendAmount.toString(), decimals);
             throw new Error(
               `No relayed refund root for chain ID ${leaf.chainId} and token ${l2Token} with netSendAmount ${formattedAmount}`
@@ -403,7 +469,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
     bundle: ProposedRootBundle,
     olderBundle: ProposedRootBundle,
     futureBundle: ProposedRootBundle
-  ): Promise<{ slowFills: V3SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
+  ): Promise<{ slowFills: SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to build slow roots.
     const spokeClientFromBlocks = Object.fromEntries(
       dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
@@ -460,24 +526,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
         "FilledV3Relay",
       ]);
 
-      // Reconstruct bundle block range for bundle.
-      const mainnetBundleEndBlock = getBlockForChain(
-        bundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-        clients.hubPoolClient.chainId,
-        dataworker.chainIdListForBundleEvaluationBlockNumbers
-      );
-      const widestPossibleExpectedBlockRange = getWidestPossibleExpectedBlockRange(
-        clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleEndBlock),
-        spokePoolClientsForBundle,
-        getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
-        clients,
-        bundle.blockNumber,
-        clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
-      );
-      const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
-        blockRange[0],
-        bundle.bundleEvaluationBlockNumbers[index].toNumber(),
-      ]);
+      const blockRangesImpliedByBundleEndBlocks = _getBundleBlockRanges(bundle, spokePoolClientsForBundle);
       const output = {
         slowFills: (await dataworker.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClientsForBundle))
           .leaves,
@@ -488,6 +537,28 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
     } else {
       return slowRootCache[key];
     }
+  }
+
+  function _getBundleBlockRanges(bundle: ProposedRootBundle, spokePoolClients: SpokePoolClientsByChain): number[][] {
+    // Reconstruct bundle block range for bundle.
+    const mainnetBundleEndBlock = getBlockForChain(
+      bundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+      clients.hubPoolClient.chainId,
+      dataworker.chainIdListForBundleEvaluationBlockNumbers
+    );
+    const widestPossibleExpectedBlockRange = getWidestPossibleExpectedBlockRange(
+      clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleEndBlock),
+      spokePoolClients,
+      getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
+      clients,
+      bundle.blockNumber,
+      clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
+    );
+    const blockRangesImpliedByBundleEndBlocks = bundle.bundleEvaluationBlockNumbers.map((endBlock, index) => [
+      widestPossibleExpectedBlockRange[index][0],
+      endBlock.toNumber(),
+    ]);
+    return blockRangesImpliedByBundleEndBlocks;
   }
 
   /**

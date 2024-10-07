@@ -29,14 +29,7 @@ import {
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
 } from "../utils";
-import {
-  Deposit,
-  DepositWithBlock,
-  L1Token,
-  SpokePoolClientsByChain,
-  V3Deposit,
-  V3DepositWithBlock,
-} from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from ".";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
@@ -207,7 +200,7 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(deposit: V3Deposit, relayer: string): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<TransactionCostEstimate> {
     try {
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
@@ -217,12 +210,13 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         deposit,
+        notificationPath: "across-unprofitable-fills",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max };
     }
   }
 
-  async getTotalGasCost(deposit: V3Deposit): Promise<TransactionCostEstimate> {
+  async getTotalGasCost(deposit: Deposit): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
@@ -236,7 +230,7 @@ export class ProfitClient {
 
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
-    deposit: V3Deposit
+    deposit: Deposit
   ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
     const { destinationChainId: chainId } = deposit;
 
@@ -311,13 +305,13 @@ export class ProfitClient {
   }
 
   /**
-   * @param deposit V3Deposit object.
+   * @param deposit Deposit object.
    * @param lpFeePct Predetermined LP fee as a multiplier of the deposit inputAmount.
    * @param minRelayerFeePct Relayer minimum fee requirements.
    * @returns FillProfit object detailing the profitability breakdown.
    */
   async calculateFillProfitability(
-    deposit: V3Deposit,
+    deposit: Deposit,
     lpFeePct: BigNumber,
     minRelayerFeePct: BigNumber
   ): Promise<FillProfit> {
@@ -425,7 +419,7 @@ export class ProfitClient {
   }
 
   async getFillProfitability(
-    deposit: V3Deposit,
+    deposit: Deposit,
     lpFeePct: BigNumber,
     l1Token: L1Token,
     repaymentChainId: number
@@ -466,7 +460,7 @@ export class ProfitClient {
   }
 
   async isFillProfitable(
-    deposit: V3Deposit,
+    deposit: Deposit,
     lpFeePct: BigNumber,
     l1Token: L1Token,
     repaymentChainId: number
@@ -500,7 +494,7 @@ export class ProfitClient {
   }
 
   captureUnprofitableFill(
-    deposit: V3DepositWithBlock,
+    deposit: DepositWithBlock,
     lpFeePct: BigNumber,
     relayerFeePct: BigNumber,
     gasCost: BigNumber

@@ -1,6 +1,5 @@
-import { BigNumber } from "ethers";
 import { AugmentedTransaction } from "../src/clients";
-import { isDefined, TransactionResponse, TransactionSimulationResult } from "../src/utils";
+import { BigNumber, isDefined, TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";

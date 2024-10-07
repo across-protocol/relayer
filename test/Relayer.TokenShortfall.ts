@@ -165,6 +165,7 @@ describe("Relayer: Token balance shortfall", async function () {
         slowDepositors: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         tryMulticallChains: [],
+        loggingInterval: -1,
       } as unknown as RelayerConfig
     );
 

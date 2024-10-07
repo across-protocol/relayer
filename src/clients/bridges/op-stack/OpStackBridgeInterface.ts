@@ -1,12 +1,5 @@
-import {
-  Contract,
-  BigNumber,
-  Event,
-  EventSearchConfig,
-  Signer,
-  Provider,
-  getTranslatedTokenAddress,
-} from "../../../utils";
+import { Log } from "../../../interfaces";
+import { Contract, BigNumber, EventSearchConfig, Signer, Provider, getTranslatedTokenAddress } from "../../../utils";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;
@@ -14,7 +7,7 @@ export interface BridgeTransactionDetails {
   readonly args: unknown[];
 }
 
-export type OpStackEvents = { [l2Token: string]: Event[] };
+export type OpStackEvents = { [l2Token: string]: Log[] };
 
 export abstract class OpStackBridge {
   constructor(
