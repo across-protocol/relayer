@@ -72,8 +72,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           continue;
         }
 
-        const badChains = Object.values(spokePoolClients).filter(({ isUpdated }) => !isUpdated);
-        throw new Error(`Unable to start relayer due to chains ${badChains}`);
+        const badChains = Object.values(spokePoolClients)
+          .filter(({ isUpdated }) => !isUpdated)
+          .map(({ chainId }) => getNetworkName(chainId));
+        throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
       }
 
       // Signal to any existing relayer that a handover is underway, or alternatively
