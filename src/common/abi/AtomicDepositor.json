@@ -1,69 +1,69 @@
 [
-  { "stateMutability": "payable", "type": "fallback" },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "to", "type": "address" },
-      { "internalType": "uint256", "name": "amount", "type": "uint256" },
-      { "internalType": "uint32", "name": "l2Gas", "type": "uint32" },
-      { "internalType": "uint256", "name": "chainId", "type": "uint256" }
-    ],
-    "name": "bridgeWethToOvm",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "to", "type": "address" },
-      { "internalType": "uint256", "name": "amount", "type": "uint256" }
-    ],
-    "name": "bridgeWethToPolygon",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "to", "type": "address" },
-      { "internalType": "uint256", "name": "amount", "type": "uint256" }
-    ],
-    "name": "bridgeWethToLinea",
-    "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "to", "type": "address" },
-      { "internalType": "uint256", "name": "amount", "type": "uint256" },
-      { "internalType": "uint256", "name": "l2GasLimit", "type": "uint256" },
-      { "internalType": "uint256", "name": "l2GasPerPubdataByteLimit", "type": "uint256" },
-      { "internalType": "address", "name": "refundRecipient", "type": "address" }
-    ],
-    "name": "bridgeWethToZkSync",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
-      { "indexed": true, "internalType": "address", "name": "_to", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "_amount", "type": "uint256" }
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
     ],
-    "name": "ZkSyncEthDepositInitiated",
+    "name": "AtomicWethDepositInitiated",
     "type": "event"
   },
   {
-    "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
-      { "indexed": true, "internalType": "address", "name": "_to", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "_amount", "type": "uint256" }
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "bridgeCallData",
+        "type": "bytes"
+      }
     ],
-    "name": "LineaEthDepositInitiated",
-    "type": "event"
+    "name": "bridgeWeth",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
-  { "stateMutability": "payable", "type": "receive" }
+  {
+    "inputs": [
+      {
+        "internalType": "bytes[]",
+        "name": "data",
+        "type": "bytes[]"
+      }
+    ],
+    "name": "multicall",
+    "outputs": [
+      {
+        "internalType": "bytes[]",
+        "name": "results",
+        "type": "bytes[]"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
 ]
