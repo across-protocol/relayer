@@ -1,4 +1,12 @@
-import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Provider } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  EventSearchConfig,
+  Signer,
+  Provider,
+  isContractDeployedToAddress,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -43,11 +51,19 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // @dev For the SnxBridge, only the `toAddress` is indexed on the L2 event so we treat the `fromAddress` as the
-    // toAddress when fetching the L1 event.
+    const hubPoolAddress = this.getHubPool().address;
+    // @dev Since the SnxOptimism bridge has no _from field when querying for finalizations, we cannot use
+    // the hub pool to determine cross chain transfers (since we do not assume knowledge of the spoke pool address).
+    if (fromAddress === hubPoolAddress) {
+      return Promise.resolve({});
+    }
+    // If `toAddress` is a contract on L2, then assume the contract is the spoke pool, and further assume that the sender
+    // is the hub pool.
+    const isSpokePool = await this.isL2ChainContract(toAddress);
+    fromAddress = isSpokePool ? hubPoolAddress : fromAddress;
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, toAddress),
+      this.getL1Bridge().filters.DepositInitiated(fromAddress),
       eventConfig
     );
     return {
@@ -69,5 +85,17 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
+  }
+
+  private getHubPool(): Contract {
+    const hubPoolContractData = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool;
+    if (!hubPoolContractData) {
+      throw new Error(`hubPoolContractData not found for chain ${this.hubChainId}`);
+    }
+    return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.l1Signer);
+  }
+
+  private isL2ChainContract(address: string): Promise<boolean> {
+    return isContractDeployedToAddress(address, this.getL2Bridge().provider);
   }
 }
