@@ -588,7 +588,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     l1: {
-      AddressManager: ZERO_ADDRESS,
+      AddressManager: "0x5891090d5085679714cb0e62f74950a3c19146a8",
       L1CrossDomainMessenger: "0xf931a81D18B1766d15695ffc7c1920a62b7e710a",
       L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_480.address,
       StateCommitmentChain: ZERO_ADDRESS,
