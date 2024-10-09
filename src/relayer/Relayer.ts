@@ -19,6 +19,7 @@ import {
   winston,
   fixedPointAdjustment,
   TransactionResponse,
+  ZERO_ADDRESS,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -283,7 +284,11 @@ export class Relayer {
       return false;
     }
 
-    if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
+    if (
+      deposit.exclusiveRelayer !== ZERO_ADDRESS &&
+      deposit.exclusivityDeadline > currentTime &&
+      getAddress(deposit.exclusiveRelayer) !== this.relayerAddress
+    ) {
       return false;
     }
 
