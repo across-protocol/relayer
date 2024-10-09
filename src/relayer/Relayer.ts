@@ -19,7 +19,7 @@ import {
   winston,
   fixedPointAdjustment,
   TransactionResponse,
-  ZERO_ADDRESS
+  ZERO_ADDRESS,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
