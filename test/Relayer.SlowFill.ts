@@ -209,6 +209,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
     expect(deposit).to.exist;
 
+    await spokePool_2.setCurrentTime(deposit.exclusivityDeadline + 1); // Temporary workaround
     await updateAllClients();
     const _txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     const txnHashes = await _txnReceipts[destinationChainId];
