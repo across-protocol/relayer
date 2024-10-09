@@ -15,8 +15,8 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
   ) {
     // Lint Appeasement
     _l1Token;
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].opStackUSDCBridge;
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].opStackUSDCBridge;
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`opUSDCBridge_${l2chainId}`];
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].opUSDCBridge;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
@@ -43,16 +43,9 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l1Bridge = this.getL1Bridge();
-    const events = await paginatedEventQuery(
-      l1Bridge,
-      l1Bridge.filters.MessageSent(undefined, toAddress),
-      eventConfig
-    );
-
-    console.log(`Got events: ${JSON.stringify(events, null, 2)}.`);
-
+    const events = await paginatedEventQuery(l1Bridge, l1Bridge.filters.MessageSent(undefined, toAddress), eventConfig);
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "from", "to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_user", "_to", "_amount")),
     };
   }
 
@@ -68,9 +61,8 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
       l2Bridge.filters.MessageReceived(undefined, toAddress),
       eventConfig
     );
-    console.log(`Got events: ${JSON.stringify(events, null, 2)}.`);
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_spender", "_user", "_amount")),
     };
   }
 }
