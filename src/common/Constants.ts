@@ -179,7 +179,6 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
-  [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   [CHAIN_IDs.ZORA]: 60, // 2s/block
   // Testnets:
