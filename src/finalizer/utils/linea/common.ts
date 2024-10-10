@@ -84,11 +84,15 @@ export function makeGetMessagesWithStatusByTxHash(
         };
       });
 
-    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
-    // twice with a 1 second delay between in case of intermittent RPC failures.
-    const messageStatus = await Promise.all(
-      messages.map((message) => retryAsync(() => dstClaimingService.getMessageStatus(message.messageHash), 2, 1))
-    );
+    // The Linea SDK MessageServiceContract constructs its own Provider without our caching, rate-limiting or retry
+    // logic. In particular, it scrapes logs over 0 -> latest and can heavily load the RPC provider. Query message
+    // up to twice, with a 1 second delay between, in case of intermittent RPC failures.
+    const messageStatus: OnChainMessageStatus[] = [];
+    for (const message of messages) {
+      const status = await retryAsync(() => dstClaimingService.getMessageStatus(message.messageHash), 2, 1);
+      messageStatus.push(status);
+    }
+
     return messages.map((message, index) => ({
       ...message,
       status: messageStatus[index],
