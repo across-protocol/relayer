@@ -45,7 +45,7 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
     const l1Bridge = this.getL1Bridge();
     const events = await paginatedEventQuery(l1Bridge, l1Bridge.filters.MessageSent(undefined, toAddress), eventConfig);
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_user", "_to", "_amount")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_user")),
     };
   }
 
@@ -62,7 +62,7 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_spender", "_user", "_amount")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_user", "_spender")),
     };
   }
 }

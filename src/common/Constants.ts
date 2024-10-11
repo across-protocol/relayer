@@ -16,6 +16,7 @@ import {
   LineaWethBridge,
   BlastBridge,
   ScrollERC20Bridge,
+  OpStackUSDCBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
@@ -179,7 +180,6 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
-  [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   [CHAIN_IDs.ZORA]: 60, // 2s/block
   // Testnets:
@@ -358,7 +358,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC"],
-  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC"], // xxx @todo add USDC after new bridge adapter is supported
+  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
@@ -466,7 +466,7 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge, // xxx @todo custom bridged USDC adapter
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -590,7 +590,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     l1: {
-      AddressManager: "", // xxx @todo confirm
+      AddressManager: "0x5891090d5085679714cb0e62f74950a3c19146a8",
       L1CrossDomainMessenger: "0xf931a81D18B1766d15695ffc7c1920a62b7e710a",
       L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_480.address,
       StateCommitmentChain: ZERO_ADDRESS,
