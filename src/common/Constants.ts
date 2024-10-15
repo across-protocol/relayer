@@ -16,6 +16,7 @@ import {
   LineaWethBridge,
   BlastBridge,
   ScrollERC20Bridge,
+  OpStackUSDCBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
@@ -357,7 +358,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
-  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC"], // xxx @todo add USDC after new bridge adapter is supported
+  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
@@ -465,6 +466,7 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {

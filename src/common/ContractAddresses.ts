@@ -5,8 +5,9 @@ import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
-import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
+import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
+import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
 import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
 import SNX_OPTIMISM_BRIDGE_L2_ABI from "./abi/SnxOptimismBridgeL2.json";
 import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
@@ -75,6 +76,10 @@ export const CONTRACT_ADDRESSES: {
     atomicDepositor: {
       address: "0xa679201903847f3723Dc88CA7530c8B665bC51a5",
       abi: ATOMIC_DEPOSITOR_ABI,
+    },
+    opUSDCBridge_480: {
+      address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
+      abi: OP_USDC_BRIDGE_ABI,
     },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
     // Stack chain to the name to differentiate. This one is for Optimism.
@@ -230,6 +235,10 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   480: {
+    opUSDCBridge: {
+      address: "0xbD80b06d3dbD0801132c6689429aC09Ca6D27f82",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
