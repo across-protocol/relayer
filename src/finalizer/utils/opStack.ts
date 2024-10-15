@@ -85,7 +85,7 @@ export async function opStackFinalizer(
   // - Don't submit proofs for finalizations older than 1 day
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const redis = await getRedisCache(logger);
-  const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
+  const minimumFinalizationTime = getCurrentTime() - 32 * 3600 * 24;
   const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
@@ -114,6 +114,13 @@ export async function opStackFinalizer(
   // fully migrate from SDK to Viem. Note, the Viem "provider" is not easily translateable from the ethers.js provider,
   // so any RPC requests sent from the Viem client will likely not inherit benefits of our custom RetryProvider such
   // as quorum, caching, fallbacks, etc. This is workable for now if we isolate viem usage.
+  const viemTxns: {
+    callData: Multicall2Call[];
+    withdrawals: CrossChainMessage[];
+  } = {
+    callData: [],
+    withdrawals: [],
+  };
   if (VIEM_OP_STACK_CHAINS[chainId]) {
     const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
     const publicClientL1 = viem
@@ -132,7 +139,11 @@ export async function opStackFinalizer(
     const logIndexesForMessage = [];
     const events = spokePoolClient
       .getTokensBridged()
-      .filter((e) => !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]));
+      .filter(
+        (e) =>
+          !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) &&
+          e.blockNumber <= latestBlockToProve
+      );
     for (const event of events) {
       uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
       const logIndex = uniqueTokenhashes[event.transactionHash];
@@ -142,18 +153,26 @@ export async function opStackFinalizer(
 
     const crossChainMessenger = new Contract(
       VIEM_OP_STACK_CHAINS[chainId].contracts.portal[hubChainId].address,
-      OPStackPortalL1
+      OPStackPortalL1,
+      signer
     );
 
     events.map(async (event, i) => {
+      // Useful information for event:
+      const l1TokenInfo = getL1TokenInfo(event.l2TokenAddress, chainId);
+      const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
+
       const receipt = await (publicClientL2 as viem.PublicClient).getTransactionReceipt({
         hash: event.transactionHash as `0x${string}`,
       });
       const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
+      // Note: to fix this, you need to hardcode a change to the LOC here which assumes there
+      // is one MessagePassed event per log
+      // - https://github.com/wevm/viem/blob/df32667fd1038dbcb7bedec67381e8a2ff468a4e/src/op-stack/actions/getWithdrawalStatus.ts#L135
       if (logIndexesForMessage[i] !== 0) {
         console.warn(
           "Multiple events in the same transaction are not supported by Viem yet, cannot finalize withdrawal",
-          withdrawal
+          { withdrawal, receipt: event.transactionHash }
         );
         return;
       }
@@ -174,15 +193,43 @@ export async function opStackFinalizer(
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         console.log(`Withdrawal ${event.transactionHash} is ready to prove: `, proofArgs, callData);
+        viemTxns.callData.push({
+          callData: callData as any,
+          target: crossChainMessenger.address,
+        });
+        viemTxns.withdrawals.push({
+          originationChainId: chainId,
+          l1TokenSymbol: l1TokenInfo.symbol,
+          amount: amountFromWei,
+          type: "misc",
+          miscReason: "proof",
+          destinationChainId: hubPoolClient.chainId,
+        });
+        // const proveTxn = await(await crossChainMessenger.proveWithdrawalTransaction(...proofArgs)).wait();
+        // console.log(`Submitted proof`, proveTxn);
       } else if (withdrawalStatus === "waiting-to-finalize") {
         const { seconds } = await publicClientL1.getTimeToFinalize({
           withdrawalHash: withdrawal.withdrawalHash,
           targetChain: VIEM_OP_STACK_CHAINS[chainId],
         });
+        // console.log(`Withdrawal hash: ${event.transactionHash} for withdrawal of ${event.amountToReturn.toString()} of ${event.l2TokenAddress}`);
         console.log(`Withdrawal ${event.transactionHash} in in challenge period for ${seconds / 60 / 60} hours`);
       } else if (withdrawalStatus === "ready-to-finalize") {
         const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
         console.log(`Withdrawal ${event.transactionHash} is ready to finalize with args: `, withdrawal, callData);
+        viemTxns.callData.push({
+          callData: callData as any,
+          target: crossChainMessenger.address,
+        });
+        viemTxns.withdrawals.push({
+          originationChainId: chainId,
+          l1TokenSymbol: l1TokenInfo.symbol,
+          amount: amountFromWei,
+          type: "withdrawal",
+          destinationChainId: hubPoolClient.chainId,
+        });
+        // const finalizeTxn = await(await crossChainMessenger.finalizeWithdrawalTransaction(withdrawal)).wait();
+        // console.log(`Executed finalization`, finalizeTxn);
       }
     });
   }
@@ -211,8 +258,8 @@ export async function opStackFinalizer(
     logger
   );
 
-  const callData = [...proofs.callData, ...finalizations.callData];
-  const crossChainTransfers = [...proofs.withdrawals, ...finalizations.withdrawals];
+  const callData = viemTxns.callData;
+  const crossChainTransfers = viemTxns.withdrawals;
 
   return { callData, crossChainMessages: crossChainTransfers };
 }
