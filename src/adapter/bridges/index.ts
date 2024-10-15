@@ -14,3 +14,4 @@ export * from "./ZKSyncWethBridge";
 export * from "./LineaWethBridge";
 export * from "./BlastBridge";
 export * from "./ScrollERC20Bridge";
+export * from "./OpStackUSDCBridge";
