@@ -22,7 +22,6 @@ import {
   chainIsProd,
   Contract,
   ethers,
-  mapAsync,
   paginatedEventQuery,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
