@@ -420,8 +420,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Ignores exclusive deposits", async function () {
-      const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
-      const exclusivityDeadline = currentTime + 7200;
+      const exclusivityDeadline = 7200;
       const deposits: Deposit[] = [];
       const { fillStatus, relayerAddress } = relayerInstance;
 
@@ -456,7 +455,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect((await txnReceipts[destinationChainId]).length).to.equal(0);
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
-      await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
+      const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer !== relayerAddress);
+      expect(exclusiveDeposit).to.exist;
+      await spokePool_2.setCurrentTime(exclusiveDeposit!.exclusivityDeadline + 1);
       await updateAllClients();
 
       // Relayer can unconditionally fill after the exclusivityDeadline.
@@ -952,6 +953,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))
           ).to.not.be.undefined;
         } else {
+          await spokePool_2.setCurrentTime(deposit.exclusivityDeadline + 1); // Temporary workaround.
           // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
           expect((await txnReceipts[destinationChainId]).length).to.equal(1);
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
@@ -1025,6 +1027,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         depositor
       );
 
+      await spokePool_2.setCurrentTime(deposit.exclusivityDeadline + 1); // Temporary workaround.
       await updateAllClients();
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       expect((await txnReceipts[destinationChainId]).length).to.equal(1);
