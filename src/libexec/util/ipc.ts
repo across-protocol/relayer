@@ -10,7 +10,7 @@ import { Log, SpokePoolClientMessage } from "./../types";
  * @param events An array of Log objects to be submitted.
  * @returns void
  */
-export function postEvents(blockNumber: number, oldestTime: number, currentTime: number, events: Log[]): void {
+export function postEvents(blockNumber: number, currentTime: number, events: Log[]): void {
   if (!isDefined(process.send)) {
     return;
   }
@@ -19,7 +19,6 @@ export function postEvents(blockNumber: number, oldestTime: number, currentTime:
   const message: SpokePoolClientMessage = {
     blockNumber,
     currentTime,
-    oldestTime,
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
