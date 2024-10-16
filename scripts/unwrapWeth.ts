@@ -6,6 +6,7 @@ import {
   toBN,
   getNetworkName,
   TOKEN_SYMBOLS_MAP,
+  assert,
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
@@ -34,9 +35,7 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = Number(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  if (!TOKEN_SYMBOLS_MAP.WETH.addresses[chainId]) {
-    throw new Error("chainId does not have a defined WETH address");
-  }
+  assert(TOKEN_SYMBOLS_MAP.WETH.addresses[chainId], "chainId does not have a defined WETH address");
   const token = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
   const weth = new ethers.Contract(token, WETH9.abi, connectedSigner);
   const decimals = 18;
