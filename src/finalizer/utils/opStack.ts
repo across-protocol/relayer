@@ -107,7 +107,7 @@ export async function opStackFinalizer(
       at: "opStackFinalizer",
       message: `No OVM standard bridge contract found for chain ${networkName} in CONTRACT_ADDRESSES`,
     });
-  } else {
+  } else if (withdrawalToAddresses.length > 0) {
     const ovmStandardBridge = new Contract(
       CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
       CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
