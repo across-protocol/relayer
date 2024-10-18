@@ -8,6 +8,8 @@ import {
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
+  RelayerBalanceColumns,
+  RelayerBalanceCell,
   TokenTransfer,
 } from "../interfaces";
 import {
@@ -42,6 +44,8 @@ import {
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
+
+import lodash from "lodash";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -289,6 +293,25 @@ export class Monitor {
         at: "Monitor#reportRelayerBalances",
         message: `Balance report for ${relayer} 📖`,
         mrkdwn,
+      });
+
+      // Note: types are here for clarity, not necessity.
+      const machineReadableReport = lodash.mapValues(reports, (table: RelayerBalanceTable) =>
+        lodash.mapValues(table, (columns: RelayerBalanceColumns, tokenSymbol: string) => {
+          const decimals = allL1Tokens.find((token) => token.symbol === tokenSymbol)?.decimals;
+          if (!decimals) {
+            throw new Error(`No decimals found for ${tokenSymbol}`);
+          }
+          return lodash.mapValues(columns, (cell: RelayerBalanceCell) =>
+            lodash.mapValues(cell, (balance: BigNumber) => convertFromWei(balance.toString(), decimals))
+          );
+        })
+      );
+
+      this.logger.debug({
+        at: "Monitor#reportRelayerBalances",
+        message: "Machine-readable balance report",
+        report: machineReadableReport
       });
     }
   }
