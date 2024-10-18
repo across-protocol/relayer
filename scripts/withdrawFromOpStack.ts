@@ -13,9 +13,10 @@ import {
   Contract,
   fromWei,
   blockExplorerLink,
+  CHAIN_IDs,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
-import { askYesNoQuestion } from "./utils";
+import { askYesNoQuestion, getOvmSpokePoolContract } from "./utils";
 
 import minimist from "minimist";
 
@@ -80,6 +81,22 @@ export async function run(): Promise<void> {
   console.log(
     `Submitting bridgeETHTo on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
     ...bridgeETHToArgs
+  );
+
+  // Sanity check that the ovmStandardBridge contract is the one we expect by comparing its stored addresses
+  // with the ones we have recorded.
+  const spokePool = await getOvmSpokePoolContract(chainId, connectedSigner);
+  const expectedL2Messenger = await spokePool.MESSENGER();
+  const l2Messenger = await ovmStandardBridge.MESSENGER();
+  assert(
+    l2Messenger === expectedL2Messenger,
+    `Unexpected L2 messenger address in ovmStandardBridge contract, expected: ${expectedL2Messenger}, got: ${l2Messenger}`
+  );
+  const l1StandardBridge = await ovmStandardBridge.l1TokenBridge();
+  const expectedL1StandardBridge = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`ovmStandardBridge_${chainId}`].address;
+  assert(
+    l1StandardBridge === expectedL1StandardBridge,
+    `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`
   );
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
