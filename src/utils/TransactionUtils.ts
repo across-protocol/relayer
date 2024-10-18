@@ -28,6 +28,11 @@ export type TransactionSimulationResult = {
 
 const { isError, isEthersError } = typeguards;
 
+export type Multicall2Call = {
+  callData: ethers.utils.BytesLike;
+  target: string;
+};
+
 const nonceReset: { [chainId: number]: boolean } = {};
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
