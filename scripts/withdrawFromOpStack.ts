@@ -38,7 +38,7 @@ export async function run(): Promise<void> {
   );
   const baseSigner = await retrieveSignerFromCLIArgs();
   const signerAddr = await baseSigner.getAddress();
-  const chainId = Number(args.chainId);
+  const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
   const l2Token = TOKEN_SYMBOLS_MAP.WETH?.addresses[chainId];
   assert(l2Token, `WETH not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
