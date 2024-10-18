@@ -100,7 +100,7 @@ export async function opStackFinalizer(
   // and because they are lite chains, our only way to withdraw them is to initiate a slow bridge of ETH from the
   // the lite chain to Ethereum.
   const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
-    ? JSON.parse(process.env.WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
+    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
   if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
     logger.warn({
