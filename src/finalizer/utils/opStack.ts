@@ -99,7 +99,7 @@ export async function opStackFinalizer(
   // in the short term to automate ETH withdrawals from Lite chains, which can build up ETH balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a slow bridge of ETH from the
   // the lite chain to Ethereum.
-  const withdrawalToAddresses: string[] = process.env.WITHDRAWAL_TO_ADDRESSES
+  const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
     ? JSON.parse(process.env.WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
   if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
