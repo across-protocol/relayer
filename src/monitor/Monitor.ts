@@ -311,7 +311,7 @@ export class Monitor {
       this.logger.debug({
         at: "Monitor#reportRelayerBalances",
         message: "Machine-readable balance report",
-        report: machineReadableReport
+        report: machineReadableReport,
       });
     }
   }
