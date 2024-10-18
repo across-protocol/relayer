@@ -1,5 +1,5 @@
 import assert from "assert";
-import { Contract, ethers, utils as ethersUtils } from "ethers";
+import { Contract, ethers, utils as ethersUtils, Signer } from "ethers";
 import readline from "readline";
 import * as contracts from "@across-protocol/contracts";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -131,5 +131,19 @@ export async function getSpokePoolContract(chainId: number): Promise<Contract> {
   const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
 
   const contract = new Contract(spokePoolAddr, contracts.SpokePool__factory.abi);
+  return contract;
+}
+
+/**
+ * @description Instantiate an Across OVM SpokePool contract instance.
+ * @param chainId Chain ID for the SpokePool deployment.
+ * @returns SpokePool contract instance.
+ */
+export async function getOvmSpokePoolContract(chainId: number, signer?: Signer): Promise<Contract> {
+  const hubChainId = resolveHubChainId(chainId);
+  const hubPool = await getContract(hubChainId, "HubPool");
+  const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
+
+  const contract = new Contract(spokePoolAddr, contracts.Ovm_SpokePool__factory.abi, signer);
   return contract;
 }

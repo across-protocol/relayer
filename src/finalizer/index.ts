@@ -98,6 +98,14 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
+  [CHAIN_IDs.ZORA]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+  },
+  [CHAIN_IDs.REDSTONE]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+  },
   [CHAIN_IDs.BLAST]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
