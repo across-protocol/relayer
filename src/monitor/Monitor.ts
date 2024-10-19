@@ -618,7 +618,6 @@ export class Monitor {
     const l2TokenForChain = (chainId: number, symbol: string) => {
       return TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId];
     };
-    const allL1Tokens = monitoredTokenSymbols.map((symbol) => l2TokenForChain(hubPoolClient.chainId, symbol));
     const currentSpokeBalances = {};
     const pendingRelayerRefunds = {};
     const pendingRebalanceRoots = {};
@@ -627,15 +626,16 @@ export class Monitor {
     const poolRebalanceRoot = await this.clients.bundleDataClient.getLatestPoolRebalanceRoot();
     const poolRebalanceLeaves = poolRebalanceRoot.root.leaves;
 
+    const enabledTokens = [...hubPoolClient.getL1Tokens()];
     for (const leaf of poolRebalanceLeaves) {
       if (!chainIds.includes(leaf.chainId)) {
         continue;
       }
+      const l2TokenMap = this.getL2ToL1TokenMap(enabledTokens, leaf.chainId);
       pendingRebalanceRoots[leaf.chainId] = {};
-      const l2Tokens = monitoredTokenSymbols.map((symbol) => l2TokenForChain(leaf.chainId, symbol)).filter(isDefined);
-      allL1Tokens.forEach((l1Token, idx) => {
+      Object.entries(l2TokenMap).forEach(([l2Token, l1Token]) => {
         const rebalanceAmount = leaf.netSendAmounts[leaf.l1Tokens.findIndex((token) => token === l1Token.address)];
-        pendingRebalanceRoots[leaf.chainId][l2Tokens[idx]] = rebalanceAmount ?? bnZero;
+        pendingRebalanceRoots[leaf.chainId][l2Token] = rebalanceAmount ?? bnZero;
       });
     }
 
