@@ -601,13 +601,9 @@ export class Monitor {
 
   async checkSpokePoolRunningBalances(): Promise<void> {
     // We define a custom format function since we do not want the same precision that `convertFromWei` gives us.
-    const formatWei = (weiVal: string, decimals: number) => {
-      if (weiVal === "0") {
-        return "0";
-      }
-      const formatFunction = createFormatFunction(1, 4, false, decimals);
-      return formatFunction(weiVal);
-    };
+    const formatWei = (weiVal: string, decimals: number) =>
+        weiVal === "0" ? "0" :
+        createFormatFunction(1, 4, false, decimals)(weiVal);
 
     const hubPoolClient = this.clients.hubPoolClient;
     const monitoredTokenSymbols = this.monitorConfig.monitoredTokenSymbols;
