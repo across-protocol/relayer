@@ -10,6 +10,7 @@ export interface BotModes {
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
+  spokePoolBalanceReportEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -20,9 +21,12 @@ export class MonitorConfig extends CommonConfig {
   readonly hubPoolEndingBlock: number | undefined;
   readonly stuckRebalancesEnabled: boolean;
   readonly monitoredRelayers: string[];
+  readonly monitoredSpokePoolChains: number[];
+  readonly monitoredTokenSymbols: string[];
   readonly whitelistedDataworkers: string[];
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
+  readonly bundlesCount: number;
   readonly botModes: BotModes;
   readonly refillEnabledBalances: {
     chainId: number;
@@ -63,6 +67,10 @@ export class MonitorConfig extends CommonConfig {
       REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
       MONITOR_USE_GENERIC_ADAPTER,
+      REPORT_SPOKE_POOL_BALANCES,
+      MONITORED_SPOKE_POOL_CHAINS,
+      MONITORED_TOKEN_SYMBOLS,
+      BUNDLES_COUNT,
     } = env;
 
     this.botModes = {
@@ -72,6 +80,7 @@ export class MonitorConfig extends CommonConfig {
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
+      spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
     };
 
     this.useGenericAdapter = MONITOR_USE_GENERIC_ADAPTER === "true";
@@ -83,6 +92,9 @@ export class MonitorConfig extends CommonConfig {
     // Used to monitor balances, activities, etc. from the specified relayers.
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
+    this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
+    this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
+    this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
 
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
