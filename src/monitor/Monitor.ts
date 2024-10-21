@@ -39,6 +39,7 @@ import {
   runTransaction,
   isDefined,
   resolveTokenDecimals,
+  sortEventsDescending,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -612,7 +613,7 @@ export class Monitor {
     const monitoredTokenSymbols = this.monitorConfig.monitoredTokenSymbols;
     const chainIds =
       this.monitorConfig.monitoredSpokePoolChains.length !== 0
-        ? this.monitorConfig.monitoredSpokePoolChains
+        ? this.monitorChains.filter((chain) => this.monitorConfig.monitoredSpokePoolChains.includes(chain))
         : this.monitorChains;
 
     const l2TokenForChain = (chainId: number, symbol: string) => {
@@ -639,39 +640,29 @@ export class Monitor {
       });
     }
 
-    // Get current balances on the spoke pools.
+    // Take the validated bundles from the hub pool client.
+    const validatedBundles = sortEventsDescending(hubPoolClient.getValidatedRootBundles()).slice(
+      0,
+      this.monitorConfig.bundlesCount
+    );
+    const previouslyValidatedBundleRefunds: CombinedRefunds[] = await mapAsync(
+      validatedBundles,
+      async (bundle) => await this.clients.bundleDataClient.getPendingRefundsFromBundle(bundle)
+    );
+
+    // Here are the current outstanding refunds.
+    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
+
+    // Calculate the pending refunds and the spoke pool balances in parallel.
     for (const chainId of chainIds) {
-      currentSpokeBalances[chainId] = {};
       const spokePool = this.clients.spokePoolClients[chainId].spokePool.address;
       const l2TokenAddresses = monitoredTokenSymbols
         .map((symbol) => l2TokenForChain(chainId, symbol))
         .filter(isDefined);
-      for (const l2Token of l2TokenAddresses) {
-        currentSpokeBalances[chainId][l2Token] = (
-          await this._getBalances([
-            {
-              token: l2Token,
-              chainId: chainId,
-              account: spokePool,
-            },
-          ])
-        )[0];
-      }
-    }
-
-    // Here are the refunds which come from the last validated root bundle. We expect most of these to be zero since the refunds
-    // have been executed by the dataworker.
-    const validatedBundleRefunds: CombinedRefunds[] =
-      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles();
-    // Here are the current outstanding refunds.
-    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
-    for (const chainId of chainIds) {
-      const l2TokenAddresses = monitoredTokenSymbols
-        .map((symbol) => l2TokenForChain(chainId, symbol))
-        .filter(isDefined);
+      currentSpokeBalances[chainId] = {};
       pendingRelayerRefunds[chainId] = {};
-      for (const l2Token of l2TokenAddresses) {
-        const pendingValidatedDeductions = validatedBundleRefunds
+      void (await mapAsync(l2TokenAddresses, async (l2Token) => {
+        const pendingValidatedDeductions = previouslyValidatedBundleRefunds
           .map((refund) => refund[chainId]?.[l2Token])
           .filter(isDefined)
           .reduce(
@@ -694,8 +685,17 @@ export class Monitor {
             bnZero
           );
         const totalObligations = pendingValidatedDeductions.add(nextBundleDeductions);
+        currentSpokeBalances[chainId][l2Token] = (
+          await this._getBalances([
+            {
+              token: l2Token,
+              chainId: chainId,
+              account: spokePool,
+            },
+          ])
+        )[0];
         pendingRelayerRefunds[chainId][l2Token] = totalObligations;
-      }
+      }));
     }
 
     // Print the output: The current spoke pool balance, the amount of refunds to payout, the pending pool rebalances, and then the sum of the three.

@@ -26,6 +26,7 @@ export class MonitorConfig extends CommonConfig {
   readonly whitelistedDataworkers: string[];
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
+  readonly bundlesCount: number;
   readonly botModes: BotModes;
   readonly refillEnabledBalances: {
     chainId: number;
@@ -69,6 +70,7 @@ export class MonitorConfig extends CommonConfig {
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
       MONITORED_TOKEN_SYMBOLS,
+      BUNDLES_COUNT,
     } = env;
 
     this.botModes = {
@@ -92,6 +94,7 @@ export class MonitorConfig extends CommonConfig {
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
     this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
     this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
+    this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
 
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
