@@ -166,19 +166,10 @@ export async function opStackFinalizer(
         hash: event.transactionHash as `0x${string}`,
       });
       const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-      // Note: to fix this, you need to hardcode a change to the LOC here which assumes there
-      // is one MessagePassed event per log
-      // - https://github.com/wevm/viem/blob/df32667fd1038dbcb7bedec67381e8a2ff468a4e/src/op-stack/actions/getWithdrawalStatus.ts#L135
-      if (logIndexesForMessage[i] !== 0) {
-        console.warn(
-          "Multiple events in the same transaction are not supported by Viem yet, cannot finalize withdrawal",
-          { withdrawal, receipt: event.transactionHash }
-        );
-        return;
-      }
       const withdrawalStatus = await publicClientL1.getWithdrawalStatus({
         receipt,
         targetChain: VIEM_OP_STACK_CHAINS[chainId],
+        logIndex: logIndexesForMessage[i],
       });
       if (withdrawalStatus === "ready-to-prove") {
         const l2Output = await publicClientL1.getL2Output({
@@ -213,7 +204,11 @@ export async function opStackFinalizer(
           targetChain: VIEM_OP_STACK_CHAINS[chainId],
         });
         // console.log(`Withdrawal hash: ${event.transactionHash} for withdrawal of ${event.amountToReturn.toString()} of ${event.l2TokenAddress}`);
-        console.log(`Withdrawal ${event.transactionHash} in in challenge period for ${seconds / 60 / 60} hours`);
+        console.log(
+          `Withdrawal ${event.transactionHash} for ${amountFromWei} of ${
+            l1TokenInfo.symbol
+          } is in challenge period for ${seconds / 60 / 60} hours`
+        );
       } else if (withdrawalStatus === "ready-to-finalize") {
         const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
         console.log(`Withdrawal ${event.transactionHash} is ready to finalize with args: `, withdrawal, callData);
