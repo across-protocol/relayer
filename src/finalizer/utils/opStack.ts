@@ -175,17 +175,15 @@ export async function opStackFinalizer(
       withdrawalStatuses.push(withdrawalStatus);
       if (withdrawalStatus === "ready-to-prove") {
         const l2Output = await publicClientL1.getL2Output({
-          // [!code hl]
-          l2BlockNumber: event.blockNumber, // [!code hl]
-          targetChain: VIEM_OP_STACK_CHAINS[chainId], // [!code hl]
-        }); //
+          l2BlockNumber: event.blockNumber,
+          targetChain: VIEM_OP_STACK_CHAINS[chainId],
+        });
         const { l2OutputIndex, outputRootProof, withdrawalProof } = await (publicClientL2 as any).buildProveWithdrawal({
           withdrawal,
           output: l2Output,
         });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
-        console.log(`Withdrawal ${event.transactionHash} is ready to prove: `, proofArgs, callData);
         viemTxns.callData.push({
           callData: (callData as any).data,
           target: crossChainMessenger.address,
@@ -198,22 +196,22 @@ export async function opStackFinalizer(
           miscReason: "proof",
           destinationChainId: hubPoolClient.chainId,
         });
-        // const proveTxn = await(await crossChainMessenger.proveWithdrawalTransaction(...proofArgs)).wait();
-        // console.log(`Submitted proof`, proveTxn);
       } else if (withdrawalStatus === "waiting-to-finalize") {
         const { seconds } = await publicClientL1.getTimeToFinalize({
           withdrawalHash: withdrawal.withdrawalHash,
           targetChain: VIEM_OP_STACK_CHAINS[chainId],
         });
-        // console.log(`Withdrawal hash: ${event.transactionHash} for withdrawal of ${event.amountToReturn.toString()} of ${event.l2TokenAddress}`);
-        console.log(
-          `Withdrawal ${event.transactionHash} for ${amountFromWei} of ${
+        logger.debug({
+          at: `${getNetworkName(chainId)}Finalizer`,
+          message: `Withdrawal ${event.transactionHash} for ${amountFromWei} of ${
             l1TokenInfo.symbol
-          } is in challenge period for ${seconds / 60 / 60} hours`
-        );
+          } is in challenge period for ${seconds / 60 / 60} hours`,
+        });
       } else if (withdrawalStatus === "ready-to-finalize") {
-        const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
-        console.log(`Withdrawal ${event.transactionHash} is ready to finalize with args: `, withdrawal, callData);
+        const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransactionExternalProof(
+          withdrawal,
+          await signer.getAddress()
+        );
         viemTxns.callData.push({
           callData: (callData as any).data,
           target: crossChainMessenger.address,
@@ -225,8 +223,6 @@ export async function opStackFinalizer(
           type: "withdrawal",
           destinationChainId: hubPoolClient.chainId,
         });
-        // const finalizeTxn = await(await crossChainMessenger.finalizeWithdrawalTransaction(withdrawal)).wait();
-        // console.log(`Executed finalization`, finalizeTxn);
       }
     });
     logger.debug({
