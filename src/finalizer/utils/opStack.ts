@@ -3,7 +3,7 @@ import { groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
-import { publicActionsL1, publicActionsL2, getWithdrawals } from "viem/op-stack";
+import { publicActionsL1, publicActionsL2, getWithdrawals, GetWithdrawalStatusReturnType } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
 import {
@@ -25,6 +25,7 @@ import {
   chainIsProd,
   Contract,
   ethers,
+  mapAsync,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -110,6 +111,9 @@ export async function opStackFinalizer(
     latestBlockToProve,
   });
 
+  let callData: Multicall2Call[];
+  let crossChainTransfers: CrossChainMessage[];
+
   // @dev Experimental: try using Viem if its available for this chain. Eventually we should
   // fully migrate from SDK to Viem. Note, the Viem "provider" is not easily translateable from the ethers.js provider,
   // so any RPC requests sent from the Viem client will likely not inherit benefits of our custom RetryProvider such
@@ -137,13 +141,9 @@ export async function opStackFinalizer(
       .extend(publicActionsL2() as any) as any;
     const uniqueTokenhashes = {};
     const logIndexesForMessage = [];
-    const events = spokePoolClient
-      .getTokensBridged()
-      .filter(
-        (e) =>
-          !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) &&
-          e.blockNumber <= latestBlockToProve
-      );
+    const events = recentTokensBridgedEvents
+      .concat(olderTokensBridgedEvents)
+      .filter((e) => e.blockNumber <= latestBlockToProve);
     for (const event of events) {
       uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
       const logIndex = uniqueTokenhashes[event.transactionHash];
@@ -157,7 +157,8 @@ export async function opStackFinalizer(
       signer
     );
 
-    events.map(async (event, i) => {
+    const withdrawalStatuses: string[] = [];
+    await mapAsync(events, async (event, i) => {
       // Useful information for event:
       const l1TokenInfo = getL1TokenInfo(event.l2TokenAddress, chainId);
       const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
@@ -166,11 +167,12 @@ export async function opStackFinalizer(
         hash: event.transactionHash as `0x${string}`,
       });
       const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-      const withdrawalStatus = await publicClientL1.getWithdrawalStatus({
+      const withdrawalStatus: GetWithdrawalStatusReturnType = await publicClientL1.getWithdrawalStatus({
         receipt,
         targetChain: VIEM_OP_STACK_CHAINS[chainId],
         logIndex: logIndexesForMessage[i],
       });
+      withdrawalStatuses.push(withdrawalStatus);
       if (withdrawalStatus === "ready-to-prove") {
         const l2Output = await publicClientL1.getL2Output({
           // [!code hl]
@@ -227,34 +229,40 @@ export async function opStackFinalizer(
         // console.log(`Executed finalization`, finalizeTxn);
       }
     });
+    logger.debug({
+      at: `${getNetworkName(chainId)}Finalizer`,
+      message: `${getNetworkName(chainId)} message statuses`,
+      statusesGrouped: _.countBy(withdrawalStatuses),
+    });
+    callData = viemTxns.callData;
+    crossChainTransfers = viemTxns.withdrawals;
+  } else {
+    const proofs = await multicallOptimismL1Proofs(
+      chainId,
+      recentTokensBridgedEvents,
+      crossChainMessenger,
+      hubPoolClient,
+      logger
+    );
+
+    // Next finalize withdrawals that have passed challenge period.
+    // Skip events that are likely not past the seven day challenge period.
+    logger.debug({
+      at: "Finalizer",
+      message: `Earliest TokensBridged block to attempt to finalize for ${networkName}`,
+      earliestBlockToFinalize: latestBlockToProve,
+    });
+
+    const finalizations = await multicallOptimismFinalizations(
+      chainId,
+      olderTokensBridgedEvents,
+      crossChainMessenger,
+      hubPoolClient,
+      logger
+    );
+    callData = [...proofs.callData, ...finalizations.callData];
+    crossChainTransfers = [...proofs.withdrawals, ...finalizations.withdrawals];
   }
-
-  const proofs = await multicallOptimismL1Proofs(
-    chainId,
-    recentTokensBridgedEvents,
-    crossChainMessenger,
-    hubPoolClient,
-    logger
-  );
-
-  // Next finalize withdrawals that have passed challenge period.
-  // Skip events that are likely not past the seven day challenge period.
-  logger.debug({
-    at: "Finalizer",
-    message: `Earliest TokensBridged block to attempt to finalize for ${networkName}`,
-    earliestBlockToFinalize: latestBlockToProve,
-  });
-
-  const finalizations = await multicallOptimismFinalizations(
-    chainId,
-    olderTokensBridgedEvents,
-    crossChainMessenger,
-    hubPoolClient,
-    logger
-  );
-
-  const callData = viemTxns.callData;
-  const crossChainTransfers = viemTxns.withdrawals;
 
   return { callData, crossChainMessages: crossChainTransfers };
 }
