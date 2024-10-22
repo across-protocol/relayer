@@ -1,5 +1,5 @@
 import assert from "assert";
-import { groupBy } from "lodash";
+import { groupBy, countBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -232,7 +232,7 @@ export async function opStackFinalizer(
     logger.debug({
       at: `${getNetworkName(chainId)}Finalizer`,
       message: `${getNetworkName(chainId)} message statuses`,
-      statusesGrouped: _.countBy(withdrawalStatuses),
+      statusesGrouped: countBy(withdrawalStatuses),
     });
     callData = viemTxns.callData;
     crossChainTransfers = viemTxns.withdrawals;
