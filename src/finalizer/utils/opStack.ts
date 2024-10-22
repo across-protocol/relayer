@@ -187,7 +187,7 @@ export async function opStackFinalizer(
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         console.log(`Withdrawal ${event.transactionHash} is ready to prove: `, proofArgs, callData);
         viemTxns.callData.push({
-          callData: callData as any,
+          callData: (callData as any).data,
           target: crossChainMessenger.address,
         });
         viemTxns.withdrawals.push({
@@ -215,7 +215,7 @@ export async function opStackFinalizer(
         const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
         console.log(`Withdrawal ${event.transactionHash} is ready to finalize with args: `, withdrawal, callData);
         viemTxns.callData.push({
-          callData: callData as any,
+          callData: (callData as any).data,
           target: crossChainMessenger.address,
         });
         viemTxns.withdrawals.push({
