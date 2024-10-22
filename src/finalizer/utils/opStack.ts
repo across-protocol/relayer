@@ -208,6 +208,7 @@ export async function opStackFinalizer(
           } is in challenge period for ${seconds / 60 / 60} hours`,
         });
       } else if (withdrawalStatus === "ready-to-finalize") {
+        // @dev Note this assumes the signer submitted the proof.
         const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransactionExternalProof(
           withdrawal,
           await signer.getAddress()
