@@ -48,6 +48,7 @@ const _chains = {
   [CHAIN_IDs.POLYGON]: chains.polygon,
   [CHAIN_IDs.REDSTONE]: chains.redstone,
   [CHAIN_IDs.SCROLL]: chains.scroll,
+  [CHAIN_IDs.WORLD_CHAIN]: chains.worldchain,
   [CHAIN_IDs.ZK_SYNC]: chains.zksync,
   [CHAIN_IDs.ZORA]: chains.zora,
 } as const;
