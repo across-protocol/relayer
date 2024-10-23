@@ -106,7 +106,9 @@ export class BaseChainAdapter {
 
   async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
     const unavailableTokens: string[] = [];
-    const tokensToApprove = (
+    // Approve tokens to bridges. This includes the tokens we want to send over a bridge as well as the custom gas tokens
+    // each bridge supports (if applicable).
+    const [bridgeTokensToApprove, gasTokensToApprove] = await Promise.all([
       await mapAsync(
         l1Tokens.map((token) => [token, this.bridges[token]?.l1Gateways] as [string, string[]]),
         async ([l1Token, bridges]) => {
@@ -126,8 +128,28 @@ export class BaseChainAdapter {
           });
           return { token: erc20, bridges: bridgesToApprove };
         }
-      )
-    ).filter(({ bridges }) => bridges.length > 0);
+      ),
+      await mapAsync(
+        Object.values(this.bridges).filter((bridge) => isDefined(bridge.gasToken)),
+        async (bridge) => {
+          const gasToken = bridge.gasToken;
+          const erc20 = ERC20.connect(gasToken, this.getSigner(this.hubChainId));
+          const bridgesToApprove = await filterAsync(bridge.l1Gateways, async (gateway) => {
+            const senderAddress = await erc20.signer.getAddress();
+            const cachedResult = await getTokenAllowanceFromCache(gasToken, senderAddress, gateway);
+            const allowance = cachedResult ?? (await erc20.allowance(senderAddress, gateway));
+            if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
+              await setTokenAllowanceInCache(gasToken, senderAddress, gateway, allowance);
+            }
+            return !aboveAllowanceThreshold(allowance);
+          });
+          return { token: erc20, bridges: bridgesToApprove };
+        }
+      ),
+    ]);
+    const tokensToApprove = bridgeTokensToApprove
+      .concat(gasTokensToApprove)
+      .filter(({ bridges }) => bridges.length > 0);
     if (unavailableTokens.length > 0) {
       this.log("Some tokens do not have a bridge contract", { unavailableTokens });
     }
