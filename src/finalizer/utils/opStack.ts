@@ -198,7 +198,7 @@ export async function opStackFinalizer(
       logIndexesForMessage.push(logIndex);
       uniqueTokenhashes[event.transactionHash] += 1;
     }
-    
+
     const crossChainMessenger = new Contract(
       VIEM_OP_STACK_CHAINS[chainId].contracts.portal[hubChainId].address,
       OPStackPortalL1,
