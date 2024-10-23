@@ -52,12 +52,17 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
 const VIEM_OP_STACK_CHAINS = {
-  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
-  // [CHAIN_IDs.BASE]: viemChains.base,
-  // [CHAIN_IDs.BLAST]: viemChains.blast,
-  // [CHAIN_IDs.REDSTONE]: viemChains.redstone,
-  // [CHAIN_IDs.LISK]: viemChains.lisk,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: viemChains.optimismSepolia,
+  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
+  [CHAIN_IDs.BASE]: viemChains.base,
+  [CHAIN_IDs.REDSTONE]: viemChains.redstone,
+  [CHAIN_IDs.LISK]: viemChains.lisk,
+  [CHAIN_IDs.ZORA]: viemChains.zora,
+  [CHAIN_IDs.MODE]: viemChains.mode,
+  // @dev The following chains do not have "portal" contracts listed in the Viem chain definitions.
+  // They have non-standard interfaces for withdrawing from L2 to L1
+  // [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
+  // [CHAIN_IDs.BLAST]: viemChains.blast,
 };
 
 type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
@@ -189,9 +194,7 @@ export async function opStackFinalizer(
       .extend(publicActionsL2() as any) as any;
     const uniqueTokenhashes = {};
     const logIndexesForMessage = [];
-    const events = recentTokensBridgedEvents
-      .concat(olderTokensBridgedEvents)
-      .filter((e) => e.blockNumber <= latestBlockToProve);
+    const events = recentTokensBridgedEvents.concat(olderTokensBridgedEvents);
     for (const event of events) {
       uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
       const logIndex = uniqueTokenhashes[event.transactionHash];
@@ -256,11 +259,17 @@ export async function opStackFinalizer(
           } is in challenge period for ${seconds / 60 / 60} hours`,
         });
       } else if (withdrawalStatus === "ready-to-finalize") {
-        // @dev Note this assumes the signer submitted the proof.
-        const callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransactionExternalProof(
-          withdrawal,
-          await signer.getAddress()
-        );
+        // @dev The Optimism portal requires that the msg.sender of the finalizeWithdrawalTransaction is equal
+        // to the address that submitted the proof. Other OpStack chains do not currently have this requirement as of
+        // October 2024 so we'll call the special function for Optimism only, which assumes the signer
+        // submitted the proof.
+        const callData =
+          chainId === CHAIN_IDs.OPTIMISM
+            ? await crossChainMessenger.populateTransaction.finalizeWithdrawalTransactionExternalProof(
+                withdrawal,
+                await signer.getAddress()
+              )
+            : await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
         viemTxns.callData.push({
           callData: (callData as any).data,
           target: crossChainMessenger.address,
