@@ -26,6 +26,7 @@ import {
   Contract,
   ethers,
   mapAsync,
+  paginatedEventQuery,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -110,6 +111,53 @@ export async function opStackFinalizer(
     message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
     latestBlockToProve,
   });
+  
+  // Experimental feature: Add in all ETH withdrawals from OPStack chain to the finalizer. This will help us
+  // in the short term to automate ETH withdrawals from Lite chains, which can build up ETH balances over time
+  // and because they are lite chains, our only way to withdraw them is to initiate a slow bridge of ETH from the
+  // the lite chain to Ethereum.
+  const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
+    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
+    : [];
+  if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
+    logger.warn({
+      at: "opStackFinalizer",
+      message: `No OVM standard bridge contract found for chain ${networkName} in CONTRACT_ADDRESSES`,
+    });
+  } else if (withdrawalToAddresses.length > 0) {
+    const ovmStandardBridge = new Contract(
+      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
+      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
+      spokePoolClient.spokePool.provider
+    );
+    const withdrawalEvents = await paginatedEventQuery(
+      ovmStandardBridge,
+      ovmStandardBridge.filters.ETHBridgeInitiated(
+        null, // from
+        withdrawalToAddresses // to
+      ),
+      {
+        ...spokePoolClient.eventSearchConfig,
+        toBlock: spokePoolClient.latestBlockSearched,
+      }
+    );
+    // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
+    // submit proofs and finalizations for.
+    withdrawalEvents.forEach((event) => {
+      const tokenBridgedEvent: TokensBridged = {
+        ...event,
+        amountToReturn: event.args.amount,
+        chainId,
+        leafId: 0,
+        l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+      };
+      if (event.blockNumber >= latestBlockToProve) {
+        recentTokensBridgedEvents.push(tokenBridgedEvent);
+      } else {
+        olderTokensBridgedEvents.push(tokenBridgedEvent);
+      }
+    });
+  }
 
   let callData: Multicall2Call[];
   let crossChainTransfers: CrossChainMessage[];
@@ -150,7 +198,7 @@ export async function opStackFinalizer(
       logIndexesForMessage.push(logIndex);
       uniqueTokenhashes[event.transactionHash] += 1;
     }
-
+    
     const crossChainMessenger = new Contract(
       VIEM_OP_STACK_CHAINS[chainId].contracts.portal[hubChainId].address,
       OPStackPortalL1,
