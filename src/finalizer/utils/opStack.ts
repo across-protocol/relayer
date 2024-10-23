@@ -111,7 +111,7 @@ export async function opStackFinalizer(
     message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
     latestBlockToProve,
   });
-  
+
   // Experimental feature: Add in all ETH withdrawals from OPStack chain to the finalizer. This will help us
   // in the short term to automate ETH withdrawals from Lite chains, which can build up ETH balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a slow bridge of ETH from the
