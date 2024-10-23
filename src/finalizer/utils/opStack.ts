@@ -261,15 +261,22 @@ export async function opStackFinalizer(
       } else if (withdrawalStatus === "ready-to-finalize") {
         // @dev The Optimism portal requires that the msg.sender of the finalizeWithdrawalTransaction is equal
         // to the address that submitted the proof. Other OpStack chains do not currently have this requirement as of
-        // October 2024 so we'll call the special function for Optimism only, which assumes the signer
-        // submitted the proof.
-        const callData =
-          chainId === CHAIN_IDs.OPTIMISM
-            ? await crossChainMessenger.populateTransaction.finalizeWithdrawalTransactionExternalProof(
-                withdrawal,
-                await signer.getAddress()
-              )
-            : await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
+        // October 2024 so we'll call the special function for Optimism only, and look up who the original proof
+        // submitter was, which could be the Multicall2 contract.
+        let callData;
+        if (chainId === CHAIN_IDs.OPTIMISM) {
+          const numProofSubmitters = await crossChainMessenger.numProofSubmitters(withdrawal.withdrawalHash);
+          const proofSubmitter = await crossChainMessenger.proofSubmitters(
+            withdrawal.withdrawalHash,
+            numProofSubmitters - 1
+          );
+          callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransactionExternalProof(
+            withdrawal,
+            proofSubmitter
+          );
+        } else {
+          callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
+        }
         viemTxns.callData.push({
           callData: (callData as any).data,
           target: crossChainMessenger.address,
