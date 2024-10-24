@@ -119,7 +119,9 @@ export class Relayer {
       tokenClient.clearTokenData();
 
       await configStoreClient.update();
-      await hubPoolClient.update();
+      if (configStoreClient.latestBlockSearched > hubPoolClient.latestBlockSearched) {
+        await hubPoolClient.update();
+      }
     }
 
     await updateSpokePoolClients(spokePoolClients, [
