@@ -19,6 +19,7 @@ import {
   isDefined,
   paginatedEventQuery,
   winston,
+  convertFromWei,
 } from "../../../utils";
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
@@ -147,7 +148,7 @@ async function generateDepositData(
 ): Promise<CrossChainMessage[]> {
   return messages.map((message) => ({
     l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-    amount: formatUnitsForToken("USDC", message.amount), // Format out to 6 decimal places for USDC
+    amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
     type: "deposit",
     originationChainId,
     destinationChainId,
