@@ -146,18 +146,6 @@ export class AdapterManager {
     if (this.spokePoolClients[SCROLL] !== undefined) {
       this.adapters[SCROLL] = new ScrollAdapter(logger, spokePoolClients, filterMonitoredAddresses(SCROLL));
     }
-    if (this.spokePoolClients[CHAIN_IDs.WORLD_CHAIN] !== undefined) {
-      this.adapters[CHAIN_IDs.WORLD_CHAIN] = new BaseChainAdapter(
-        spokePoolClients,
-        CHAIN_IDs.WORLD_CHAIN,
-        hubChainId,
-        filterMonitoredAddresses(CHAIN_IDs.WORLD_CHAIN),
-        logger,
-        SUPPORTED_TOKENS[CHAIN_IDs.WORLD_CHAIN],
-        constructBridges(CHAIN_IDs.WORLD_CHAIN),
-        DEFAULT_GAS_MULTIPLIER[CHAIN_IDs.WORLD_CHAIN] ?? 1
-      );
-    }
     if (this.spokePoolClients[ZORA] !== undefined) {
       this.adapters[ZORA] = new BaseChainAdapter(
         spokePoolClients,

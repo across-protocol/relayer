@@ -88,10 +88,7 @@ export function getTranslatedTokenAddress(
   }
   if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
-    const onZora = l2ChainId === CHAIN_IDs.ZORA;
-    return isNativeUsdc
-      ? TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]
-      : TOKEN_SYMBOLS_MAP[onBase ? "USDbC" : onZora ? "USDzC" : "USDC.e"].addresses[l2ChainId];
+    return TOKEN_SYMBOLS_MAP[isNativeUsdc ? "USDC" : onBase ? "USDbC" : "USDC.e"].addresses[l2ChainId];
   } else if (
     l2ChainId === CHAIN_IDs.BLAST &&
     compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId])

@@ -11,53 +11,5 @@
     ],
     "name": "DepositFinalized",
     "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
-      { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
-      { "indexed": false, "internalType": "bytes", "name": "extraData", "type": "bytes" }
-    ],
-    "name": "ETHBridgeInitiated",
-    "type": "event"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "_to", "type": "address" },
-      { "internalType": "uint32", "name": "_minGasLimit", "type": "uint32" },
-      { "internalType": "bytes", "name": "_extraData", "type": "bytes" }
-    ],
-    "name": "bridgeETHTo",
-    "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "MESSENGER",
-    "outputs": [
-      {
-        "internalType": "contract CrossDomainMessenger",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "l1TokenBridge",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
   }
 ]

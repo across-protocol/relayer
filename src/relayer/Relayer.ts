@@ -19,7 +19,6 @@ import {
   winston,
   fixedPointAdjustment,
   TransactionResponse,
-  ZERO_ADDRESS,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -119,9 +118,7 @@ export class Relayer {
       tokenClient.clearTokenData();
 
       await configStoreClient.update();
-      if (configStoreClient.latestBlockSearched > hubPoolClient.latestBlockSearched) {
-        await hubPoolClient.update();
-      }
+      await hubPoolClient.update();
     }
 
     await updateSpokePoolClients(spokePoolClients, [
@@ -286,11 +283,7 @@ export class Relayer {
       return false;
     }
 
-    if (
-      deposit.exclusiveRelayer !== ZERO_ADDRESS &&
-      deposit.exclusivityDeadline > currentTime &&
-      getAddress(deposit.exclusiveRelayer) !== this.relayerAddress
-    ) {
+    if (deposit.exclusivityDeadline > currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
       return false;
     }
 

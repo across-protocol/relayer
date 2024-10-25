@@ -6,7 +6,6 @@ import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
-import { RelayData } from "../src/interfaces";
 import {
   BigNumber,
   formatFeePct,
@@ -63,18 +62,11 @@ function printDeposit(originChainId: number, log: LogDescription): void {
 function printFill(destinationChainId: number, log: LogDescription): void {
   const { originChainId, outputToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
-
-  const relayDataHash = sdkUtils.getRelayDataHash(
-    Object.fromEntries(eventArgs.map((arg) => [arg, log.args[arg]])) as RelayData,
-    destinationChainId
-  );
-
-  const padLeft = [...eventArgs, "relayDataHash"].reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
     tokenSymbol: resolveTokenSymbols([outputToken], destinationChainId)[0],
     ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
-    relayDataHash,
   };
   console.log(
     `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
