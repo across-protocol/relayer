@@ -66,7 +66,7 @@ export async function runTransaction(
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();
 
-  if (process.env[`ACROSS_RESET_NONCE_${chainId}`] && !nonceReset[chainId]) {
+  if (!nonceReset[chainId]) {
     nonce = await provider.getTransactionCount(await contract.signer.getAddress());
     nonceReset[chainId] = true;
   }
