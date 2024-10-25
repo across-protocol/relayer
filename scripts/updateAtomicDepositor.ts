@@ -1,4 +1,4 @@
-import { ethers, retrieveSignerFromCLIArgs, getProvider, ERC20, ZERO_ADDRESS, toBN, getGasPrice, Contract, CHAIN_IDs } from "../src/utils";
+import { ethers, Contract, CHAIN_IDs } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common/ContractAddresses";
 import { askYesNoQuestion } from "./utils";
 
@@ -10,7 +10,10 @@ const args = minimist(process.argv.slice(2), {
 const { MAINNET } = CHAIN_IDs;
 
 // The atomic depositor should not change on each new chain deployment.
-const atomicDepositor = new Contract(CONTRACT_ADDRESSES[MAINNET].atomicDepositor.address, CONTRACT_ADDRESSES[MAINNET].atomicDepositor.abi);
+const atomicDepositor = new Contract(
+  CONTRACT_ADDRESSES[MAINNET].atomicDepositor.address,
+  CONTRACT_ADDRESSES[MAINNET].atomicDepositor.abi
+);
 
 // Example run:
 // ts-node ./scripts/updateAtomicDepositor.ts \
@@ -28,13 +31,23 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("bridge")) {
     throw new Error("Define `bridge` as address of the canonical bridge which bridges raw ETH to L2");
   }
-  console.log(`Confirmation: target chain ID: ${args.chainId}, function: ${args.function}, bridge address: ${args.bridge}`);
-  if (!(await askYesNoQuestion("Do these arguments match with your expectations?"))) process.exit(0);
+  console.log(
+    `Confirmation: target chain ID: ${args.chainId}, function: ${args.function}, bridge address: ${args.bridge}`
+  );
+  if (!(await askYesNoQuestion("Do these arguments match with your expectations?"))) {
+    throw new Error("Exiting due to incorrect arguments");
+  }
   const functionSignatureToWhitelist = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(args.function)).slice(0, 10);
 
   // We need the bridge address still.
-  console.log(`Call ${atomicDepositor.address} with chain ID ${args.chainId}, bridge ${args.bridge}, and function signature ${functionSignatureToWhitelist}`);
-  const calldata = atomicDepositor.interface.encodeFunctionData("whitelistBridge", [args.chainId, args.bridge, functionSignatureToWhitelist]);
+  console.log(
+    `Call ${atomicDepositor.address} with chain ID ${args.chainId}, bridge ${args.bridge}, and function signature ${functionSignatureToWhitelist}`
+  );
+  const calldata = atomicDepositor.interface.encodeFunctionData("whitelistBridge", [
+    args.chainId,
+    args.bridge,
+    functionSignatureToWhitelist,
+  ]);
   console.log(`Alternatively, call ${atomicDepositor.address} directly with calldata ${calldata}`);
 }
 
