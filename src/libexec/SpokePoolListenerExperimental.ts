@@ -1,6 +1,6 @@
 import assert from "assert";
 import minimist from "minimist";
-import { Contract, providers as ethersProviders, utils as ethersUtils } from "ethers";
+import { Contract, utils as ethersUtils } from "ethers";
 import { BaseError, Block, createPublicClient, Log as viemLog, webSocket } from "viem";
 import * as chains from "viem/chains";
 import { utils as sdkUtils } from "@across-protocol/sdk";
