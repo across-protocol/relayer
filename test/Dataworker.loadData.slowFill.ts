@@ -321,6 +321,8 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     const destinationChainDeposit = spokePoolClient_2.getDeposits()[0];
 
     // Generate slow fill requests for the slow fill-eligible deposits
+    await spokePool_1.setCurrentTime(depositsWithSlowFillRequests[1].exclusivityDeadline + 1); // Temporary workaround
+    await spokePool_2.setCurrentTime(depositsWithSlowFillRequests[0].exclusivityDeadline + 1); // Temporary workaround
     await requestSlowFill(spokePool_2, relayer, depositsWithSlowFillRequests[0]);
     await requestSlowFill(spokePool_1, relayer, depositsWithSlowFillRequests[1]);
     const lastDestinationChainSlowFillRequestBlock = await spokePool_2.provider.getBlockNumber();
