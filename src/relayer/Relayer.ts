@@ -667,7 +667,7 @@ export class Relayer {
         l1Token,
         lpFees
       );
-      const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
+      const { relayerFeePct, gasCost, gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
       if (!isDefined(repaymentChainId)) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       } else {
@@ -695,7 +695,6 @@ export class Relayer {
         // Update local balance to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
 
-        const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? _gasLimit : undefined;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
       }
     } else if (selfRelay) {
