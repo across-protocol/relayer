@@ -224,7 +224,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     exclusiveRelayer ?? depositQuote.exclusiveRelayer,
     depositQuote.quoteTimestamp,
     Number(currentTime) + Number(fillDeadlineBuffer),
-    exclusivityDeadline ?? depositQuote.exclusivityDeadline,
+    isNaN(exclusivityDeadline) ? depositQuote.exclusivityDeadline : exclusivityDeadline,
     message
   );
   const { hash: transactionHash } = deposit;
