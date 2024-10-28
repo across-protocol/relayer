@@ -16,6 +16,7 @@ import {
   groupObjectCountsByProp,
   isDefined,
   winston,
+  convertFromWei,
 } from "../../../utils";
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
@@ -127,7 +128,7 @@ async function generateWithdrawalData(
 ): Promise<CrossChainMessage[]> {
   return messages.map((message) => ({
     l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-    amount: message.amount,
+    amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals),
     type: "withdrawal",
     originationChainId,
     destinationChainId,

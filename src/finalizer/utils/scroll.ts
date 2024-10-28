@@ -4,7 +4,15 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../utils";
+import {
+  Contract,
+  Signer,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getRedisCache,
+  winston,
+  convertFromWei,
+} from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 // The highest amount of pending finalizations the scroll API can return.
@@ -169,7 +177,7 @@ function populateClaimWithdrawal(
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,
-    amount: claim.tokenAmount,
+    amount: convertFromWei(claim.tokenAmount, l1Token.decimals),
     type: "withdrawal",
     destinationChainId: hubPoolClient.chainId, // Always on L1
   };
