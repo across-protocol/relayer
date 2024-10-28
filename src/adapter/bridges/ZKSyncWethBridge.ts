@@ -18,6 +18,7 @@ import { processEvent } from "../utils";
 import * as zksync from "zksync-ethers";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 import { matchL2EthDepositAndWrapEvents } from "../../clients/bridges/utils";
+import { gasPriceOracle } from "@across-protocol/sdk";
 
 /* For both the canonical bridge and the ZkSync Weth bridge (this
  * bridge), we need to assume that the l1 and l2 signers contain
@@ -82,9 +83,10 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         )
       : BigNumber.from(2_000_000);
 
-    const currentGasPrice = await l1Provider.getGasPrice();
+    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider);
+    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
     const l2TransactionBaseCost = await this.getL1Bridge().l2TransactionBaseCost(
-      currentGasPrice,
+      estimatedL1GasPrice,
       l2GasLimit,
       this.gasPerPubdataLimit
     );
