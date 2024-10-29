@@ -16,7 +16,7 @@ import {
   getNetworkName,
   getRedisCache,
   groupObjectCountsByProp,
-  isDefined, 
+  isDefined,
   Multicall2Call,
   paginatedEventQuery,
   winston,
