@@ -209,7 +209,7 @@ export class BaseChainAdapter {
 
     const value = ethBalance.sub(target);
     this.log(
-      `Wrapping ETH on chain ${this.chainId}`,
+      `Wrapping ETH on chain ${getNetworkName(this.chainId)}`,
       { threshold, target, value, ethBalance },
       "debug",
       "wrapEthIfAboveThreshold"
