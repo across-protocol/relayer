@@ -259,12 +259,14 @@ export async function opStackFinalizer(
           } is in challenge period for ${seconds / 60 / 60} hours`,
         });
       } else if (withdrawalStatus === "ready-to-finalize") {
-        // @dev The Optimism portal requires that the msg.sender of the finalizeWithdrawalTransaction is equal
-        // to the address that submitted the proof. Other OpStack chains do not currently have this requirement as of
-        // October 2024 so we'll call the special function for Optimism only, and look up who the original proof
-        // submitter was, which could be the Multicall2 contract.
+        // @dev Some OpStack chains use OptimismPortal instead of the newer OptimismPortal2, the latter of which
+        // requires that the msg.sender of the  finalizeWithdrawalTransaction is equal to the address that
+        // submitted the proof. We try-catch both calls to handle this.
+        // See this comment in OptimismPortal2 for more context on why the new portal requires checking the
+        // proof submitter address: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L132
         let callData;
-        if (chainId === CHAIN_IDs.OPTIMISM) {
+        try {
+          // Calling OptimismPortal2: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol
           const numProofSubmitters = await crossChainMessenger.numProofSubmitters(withdrawal.withdrawalHash);
           const proofSubmitter = await crossChainMessenger.proofSubmitters(
             withdrawal.withdrawalHash,
@@ -274,7 +276,8 @@ export async function opStackFinalizer(
             withdrawal,
             proofSubmitter
           );
-        } else {
+        } catch (e) {
+          // Calling OptimismPortal: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal.sol
           callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
         }
         viemTxns.callData.push({
