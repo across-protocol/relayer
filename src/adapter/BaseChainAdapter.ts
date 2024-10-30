@@ -208,7 +208,12 @@ export class BaseChainAdapter {
     }
 
     const value = ethBalance.sub(target);
-    this.log("Wrapping ETH", { threshold, target, value, ethBalance }, "debug", "wrapEthIfAboveThreshold");
+    this.log(
+      `Wrapping ETH on chain ${getNetworkName(this.chainId)}`,
+      { threshold, target, value, ethBalance },
+      "debug",
+      "wrapEthIfAboveThreshold"
+    );
     const method = "deposit";
     const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =
