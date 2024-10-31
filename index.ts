@@ -75,8 +75,6 @@ if (require.main === module) {
       logger.error({
         at: cmd ?? "unknown process",
         message: "There was an execution error!",
-        reason: stringifiedError,
-        e: stringifiedError,
         error: stringifiedError,
         args,
         notificationPath: "across-error",
