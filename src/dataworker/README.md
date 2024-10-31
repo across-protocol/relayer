@@ -123,41 +123,44 @@ flowchart TD
 
 ### Validating fills
 
-A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L139)'s:
+A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts/blob/a663586e8619bc74cb1da2375107bd5eef0f3144/contracts/interfaces/V3SpokePoolInterface.sol#L124)'s:
 
 ```solidity
-event FilledRelay(
-    uint256 amount,
-    uint256 totalFilledAmount,
-    uint256 fillAmount,
+event FilledV3Relay(
+    address inputToken,
+    address outputToken,
+    uint256 inputAmount,
+    uint256 outputAmount,
     uint256 repaymentChainId,
     uint256 indexed originChainId,
-    uint256 destinationChainId,
-    int64 relayerFeePct,
-    int64 realizedLpFeePct,
     uint32 indexed depositId,
-    address destinationToken,
-    address relayer,
-    address indexed depositor,
+    uint32 fillDeadline,
+    uint32 exclusivityDeadline,
+    address exclusiveRelayer,
+    address indexed relayer,
+    address depositor,
     address recipient,
     bytes message,
-    RelayExecutionInfo updatableRelayData
+    V3RelayExecutionEventInfo relayExecutionInfo
 );
 ```
 
-A [deposit](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L119) contains:
+A [deposit](https://github.com/across-protocol/contracts/blob/a663586e8619bc74cb1da2375107bd5eef0f3144/contracts/interfaces/V3SpokePoolInterface.sol#L99) contains:
 
 ```solidity
-event FundsDeposited(
-    uint256 amount,
-    uint256 originChainId,
+event V3FundsDeposited(
+    address inputToken,
+    address outputToken,
+    uint256 inputAmount,
+    uint256 outputAmount,
     uint256 indexed destinationChainId,
-    int64 relayerFeePct,
     uint32 indexed depositId,
     uint32 quoteTimestamp,
-    address originToken,
-    address recipient,
+    uint32 fillDeadline,
+    uint32 exclusivityDeadline,
     address indexed depositor,
+    address recipient,
+    address exclusiveRelayer,
     bytes message
 );
 ```

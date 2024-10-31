@@ -231,7 +231,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Send expired deposit
       const expiredDeposits = [generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 })];
       const depositEvents = [...unexpiredDeposits, ...expiredDeposits];
-      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -258,7 +258,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       const originChainBlockRange = [deposits[1].blockNumber - 1, deposits[1].blockNumber + 1];
       // Substitute origin chain bundle block range.
       const bundleBlockRanges = [originChainBlockRange].concat(getDefaultBlockRange(5).slice(1));
-      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       expect(mockOriginSpokePoolClient.getDeposits().length).to.equal(deposits.length);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
@@ -299,7 +299,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       // Fill deposits from different relayers
@@ -307,7 +307,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -361,7 +361,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       // Fill deposits from different relayers
@@ -369,7 +369,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -548,7 +548,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       generateV3Deposit({ outputToken: randomAddress() });
       generateV3Deposit({ outputToken: randomAddress() });
       generateV3Deposit({ outputToken: randomAddress() });
-      await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       const fills = [
@@ -569,7 +569,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       const destinationChainIndex =
         dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
       bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay", "FilledRelay"]);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
       expect(mockDestinationSpokePoolClient.getFills().length).to.equal(fills.length);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
