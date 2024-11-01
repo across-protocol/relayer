@@ -78,6 +78,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
+  [CHAIN_IDs.ALEPH_ZERO]: {
+    finalizeOnL1: [arbitrumOneFinalizer],
+    finalizeOnL2: [],
+  },
   [CHAIN_IDs.ARBITRUM]: {
     finalizeOnL1: [arbitrumOneFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
