@@ -3,7 +3,14 @@ import { groupBy, countBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
-import { publicActionsL1, publicActionsL2, getWithdrawals, GetWithdrawalStatusReturnType } from "viem/op-stack";
+import {
+  publicActionsL1,
+  publicActionsL2,
+  getWithdrawals,
+  GetWithdrawalStatusReturnType,
+  PublicActionsL1,
+  PublicActionsL2,
+} from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
 import {
@@ -180,18 +187,19 @@ export async function opStackFinalizer(
   };
   if (VIEM_OP_STACK_CHAINS[chainId]) {
     const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
+    // TODO: can't figure out how to get these typecasts to work, despite this code being in the viem.opStack tutorials
     const publicClientL1 = viem
       .createPublicClient({
         chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
         transport: viem.http(getCachedProvider(hubChainId, true).providers[0].connection.url),
       })
-      .extend(publicActionsL1() as any) as any;
+      .extend(publicActionsL1() as any) as unknown as viem.PublicClient & PublicActionsL1;
     const publicClientL2 = viem
       .createPublicClient({
         chain: VIEM_OP_STACK_CHAINS[chainId],
         transport: viem.http(getCachedProvider(chainId, true).providers[0].connection.url),
       })
-      .extend(publicActionsL2() as any) as any;
+      .extend(publicActionsL2() as any) as unknown as viem.PublicClient & PublicActionsL2;
     const uniqueTokenhashes = {};
     const logIndexesForMessage = [];
     const events = recentTokensBridgedEvents.concat(olderTokensBridgedEvents);
@@ -214,29 +222,32 @@ export async function opStackFinalizer(
       const l1TokenInfo = getL1TokenInfo(event.l2TokenAddress, chainId);
       const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
 
-      const receipt = await (publicClientL2 as viem.PublicClient).getTransactionReceipt({
+      const receipt = await publicClientL2.getTransactionReceipt({
         hash: event.transactionHash as `0x${string}`,
       });
       const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
       const withdrawalStatus: GetWithdrawalStatusReturnType = await publicClientL1.getWithdrawalStatus({
         receipt,
+        chain: undefined,
         targetChain: VIEM_OP_STACK_CHAINS[chainId],
         logIndex: logIndexesForMessage[i],
       });
       withdrawalStatuses.push(withdrawalStatus);
       if (withdrawalStatus === "ready-to-prove") {
         const l2Output = await publicClientL1.getL2Output({
-          l2BlockNumber: event.blockNumber,
+          chain: undefined,
+          l2BlockNumber: BigInt(event.blockNumber),
           targetChain: VIEM_OP_STACK_CHAINS[chainId],
         });
-        const { l2OutputIndex, outputRootProof, withdrawalProof } = await (publicClientL2 as any).buildProveWithdrawal({
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await publicClientL2.buildProveWithdrawal({
+          chain: undefined,
           withdrawal,
           output: l2Output,
         });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         viemTxns.callData.push({
-          callData: (callData as any).data,
+          callData: callData.data,
           target: crossChainMessenger.address,
         });
         viemTxns.withdrawals.push({
@@ -249,6 +260,7 @@ export async function opStackFinalizer(
         });
       } else if (withdrawalStatus === "waiting-to-finalize") {
         const { seconds } = await publicClientL1.getTimeToFinalize({
+          chain: undefined,
           withdrawalHash: withdrawal.withdrawalHash,
           targetChain: VIEM_OP_STACK_CHAINS[chainId],
         });
@@ -264,7 +276,7 @@ export async function opStackFinalizer(
         // submitted the proof. We try-catch both calls to handle this.
         // See this comment in OptimismPortal2 for more context on why the new portal requires checking the
         // proof submitter address: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L132
-        let callData;
+        let callData: ethers.PopulatedTransaction;
         try {
           // Calling OptimismPortal2: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol
           const numProofSubmitters = await crossChainMessenger.numProofSubmitters(withdrawal.withdrawalHash);
@@ -281,7 +293,7 @@ export async function opStackFinalizer(
           callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
         }
         viemTxns.callData.push({
-          callData: (callData as any).data,
+          callData: callData.data,
           target: crossChainMessenger.address,
         });
         viemTxns.withdrawals.push({
