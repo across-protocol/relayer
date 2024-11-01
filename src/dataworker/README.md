@@ -165,7 +165,7 @@ event V3FundsDeposited(
 );
 ```
 
-Therefore, `amount`, `originChainId`, `destinationChainId`, `relayerFeePct`, `depositId`, `destinationToken`, `message`, and `recipient` must match. In addition, the fill's matched deposit must have been emitted from the SpokePool at the `originChainId` of the fill. The fill must have been emitted from the SpokePool on the `destinationChainId`.
+All of the shared event properties must match. In addition, the fill's matched deposit must have been emitted from the SpokePool at the `originChainId` of the fill. The fill must have been emitted from the SpokePool on the `destinationChainId`.
 
 Finally, the fill's `realizedLpFeePct` must be correct. Currently this is deterministically linked with the deposit's `quoteTimestamp`: there is a correct `realizedLpFeePct` for each `quoteTimestamp`, which is computed by querying the HubPool's "utilization" at the Ethereum block height corresponding to the `quoteTimestamp`. This is described in the [UMIP here](https://github.com/UMAprotocol/UMIPs/blob/e3198578b1d339914afa5243a80e3ac8055fba34/UMIPs/umip-157.md#validating-realizedlpfeepct).
 
@@ -234,7 +234,7 @@ This is everything that the Dataworker needs to construct a root bundle! All tha
 
 Root bundle merkle leaf formats
 
-- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
-- [RelayerRefundLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
-- [SlowFillLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L29) One per unfilled deposit
-- [RootBundle](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window
+- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
+- [RelayerRefundLeaf](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
+- [SlowFillLeaf](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/V3SpokePoolInterface.sol#L66) One per unfilled deposit
+- [RootBundle](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window
