@@ -11,13 +11,14 @@ import {
   getRedisCache,
   getBlockForTimestamp,
   getL1TokenInfo,
+  Multicall2Call,
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
+import { CONTRACT_ADDRESSES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 const CHAIN_ID = CHAIN_IDs.ARBITRUM;
