@@ -11,6 +11,7 @@ import {
   ZKSyncBridge,
   ZKSyncWethBridge,
   ArbitrumOneBridge,
+  AlephZeroBridge,
   LineaBridge,
   LineaUSDCBridge,
   LineaWethBridge,
@@ -40,6 +41,7 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
+  [CHAIN_IDs.ALEPH_ZERO]: 86400, // 1 block every ~4 seconds
   [CHAIN_IDs.ARBITRUM]: 1382400,
   [CHAIN_IDs.BASE]: 172800, // Same as Optimism.
   [CHAIN_IDs.BLAST]: 172800,
@@ -70,7 +72,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // The key of the following dictionary is used as the USD threshold to determine the MDC:
 // - Searching from highest USD threshold to lowest
 // - If the key is >= deposited USD amount, then use the MDC associated with the key for the origin chain
-// - If no keys are >= depostied USD amount, ignore the deposit.
+// - If no keys are >= deposited USD amount, ignore the deposit.
 // To see the latest block reorg events go to:
 // - Ethereum: https://etherscan.io/blocks_forked
 // - Polygon: https://polygonscan.com/blocks_forked
@@ -79,6 +81,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // anything under 7 days.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
+    [CHAIN_IDs.ALEPH_ZERO]: 30,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 120,
     [CHAIN_IDs.BLAST]: 120,
@@ -95,6 +98,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZORA]: 120,
   },
   1000: {
+    [CHAIN_IDs.ALEPH_ZERO]: 1,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
@@ -111,6 +115,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZORA]: 60,
   },
   100: {
+    [CHAIN_IDs.ALEPH_ZERO]: 1,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
@@ -136,6 +141,7 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 // if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
 // Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
+  [CHAIN_IDs.ALEPH_ZERO]: 10000,
   [CHAIN_IDs.ARBITRUM]: 10000,
   [CHAIN_IDs.BASE]: 10000,
   [CHAIN_IDs.BLAST]: 10000,
@@ -167,6 +173,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
+  [CHAIN_IDs.ALEPH_ZERO]: 30, // 4s/block
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BLAST]: 60,
@@ -212,6 +219,7 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
 // This is intended to be conservative.
 export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
+  [CHAIN_IDs.ALEPH_ZERO]: 60,
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
@@ -242,6 +250,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
 // These are all intended to be roughly 2 days of blocks for each chain.
 // blocks = 172800 / avg_block_time
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
+  [CHAIN_IDs.ALEPH_ZERO]: 43200,
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
@@ -283,6 +292,7 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // Multicall3 Constants:
 export const multicall3Addresses = {
+  // TODO: Add AlephZero when there's a Multicall3 implementation deployed
   [CHAIN_IDs.ARBITRUM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BASE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
@@ -349,6 +359,7 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
+  [CHAIN_IDs.ALEPH_ZERO]: ["USDT", "WETH"],
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
@@ -402,6 +413,7 @@ export const CANONICAL_BRIDGE: {
     ): BaseBridgeAdapter;
   };
 } = {
+  [CHAIN_IDs.ALEPH_ZERO]: AlephZeroBridge,
   [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
@@ -524,6 +536,7 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
+  [CHAIN_IDs.ALEPH_ZERO]: 20 * 60,
   [CHAIN_IDs.ARBITRUM]: 20 * 60,
   [CHAIN_IDs.BASE]: 20 * 60,
   [CHAIN_IDs.BLAST]: 20 * 60,
