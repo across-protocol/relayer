@@ -41,7 +41,7 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
-  [CHAIN_IDs.ALEPH_ZERO]: 86400, // 1 block every ~4 seconds
+  [CHAIN_IDs.ALEPH_ZERO]: 1382400, // Same as Arbitrum
   [CHAIN_IDs.ARBITRUM]: 1382400,
   [CHAIN_IDs.BASE]: 172800, // Same as Optimism.
   [CHAIN_IDs.BLAST]: 172800,
@@ -173,7 +173,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  [CHAIN_IDs.ALEPH_ZERO]: 30, // 4s/block
+  [CHAIN_IDs.ALEPH_ZERO]: 240, // Same as Arbitrum
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BLAST]: 60,
@@ -250,7 +250,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
 // These are all intended to be roughly 2 days of blocks for each chain.
 // blocks = 172800 / avg_block_time
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
-  [CHAIN_IDs.ALEPH_ZERO]: 43200,
+  [CHAIN_IDs.ALEPH_ZERO]: 691200,
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
