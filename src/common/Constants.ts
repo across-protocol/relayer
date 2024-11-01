@@ -509,6 +509,22 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
 };
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
+  [CHAIN_IDs.BASE]: {
+    // https://github.com/ethereum-optimism/ecosystem/blob/8df6ab1afcf49312dc7e89ed079f910843d74427/packages/sdk/src/utils/chain-constants.ts#L252
+    l1: {
+      AddressManager: "0x8EfB6B5c4767B09Dc9AA6Af4eAA89F749522BaE2",
+      L1CrossDomainMessenger: "0x866E82a600A1414e583f7F13623F1aC5d58b0Afa",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_8453.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
+      L2OutputOracle: "0x56315b90c40730925ec5485cf004d835058518A0",
+      OptimismPortal2: "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
+      DisputeGameFactory: "0x43edB88C4B80fDD2AdFF2412A7BebF9dF42cB40e",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
   [CHAIN_IDs.BLAST]: {
     l1: {
       AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
