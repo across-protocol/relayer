@@ -14,7 +14,6 @@ import { processEvent } from "../utils";
 import { PRODUCTION_NETWORKS, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 
 export class AlephZeroBridge extends BaseBridgeAdapter {
-  public gasToken: string;
   protected l1GatewayRouter: Contract;
 
   private readonly transactionSubmissionData =
