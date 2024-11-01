@@ -4,6 +4,7 @@ export * from "./BaseBridgeAdapter";
 export * from "./UsdcTokenSplitterBridge";
 export * from "./OpStackWethBridge";
 export * from "./ArbitrumOneBridge";
+export * from "./AlephZeroBridge";
 export * from "./LineaBridge";
 export * from "./LineaUSDCBridge";
 export * from "./PolygonERC20Bridge";
