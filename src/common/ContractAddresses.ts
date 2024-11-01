@@ -19,6 +19,7 @@ import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI from "./abi/ZkSyncDefaultErc20BridgeL
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI from "./abi/ZkSyncDefaultErc20BridgeL2.json";
 import ZK_SYNC_MAILBOX_ABI from "./abi/ZkSyncMailbox.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
+import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "./abi/ArbitrumErc20GatewayL2.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
@@ -327,9 +328,9 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   41455: {
-    erc20GatewayRouter: {
-      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
-      address: "0xD296d45171B97720D3aBdb68B0232be01F1A9216",
+    erc20Gateway: {
+      address: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
+      abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
   },
   59144: {
