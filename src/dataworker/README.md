@@ -2,6 +2,8 @@
 
 This document explains how the Dataworker constructs "root bundles", which instruct the Across system on how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
 
+The following README is a simplified summary of the exact protocol rules described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-179.md) and its predecessor [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157). These UMIP's describe the explicit rules that the Dataworker implements. In other words, the "Dataworker" code is an implementation of the UMIP-179 "interface".
+
 ## Why does Across need to move capital around?
 
 There are two types of capital pools in Across: liquidity provider capital in the `HubPool` ("LP capital") and capital held in the `SpokePools` ("SpokePool balance").
@@ -167,7 +169,7 @@ event V3FundsDeposited(
 
 All of the shared event properties must match. In addition, the fill's matched deposit must have been emitted from the SpokePool at the `originChainId` of the fill. The fill must have been emitted from the SpokePool on the `destinationChainId`.
 
-Finally, the fill's `realizedLpFeePct` must be correct. Currently this is deterministically linked with the deposit's `quoteTimestamp`: there is a correct `realizedLpFeePct` for each `quoteTimestamp`, which is computed by querying the HubPool's "utilization" at the Ethereum block height corresponding to the `quoteTimestamp`. This is described in the [UMIP here](https://github.com/UMAprotocol/UMIPs/blob/e3198578b1d339914afa5243a80e3ac8055fba34/UMIPs/umip-157.md#validating-realizedlpfeepct).
+The only exception to the above rule is if `outputToken` is equal to the zero address, then the "equivalent" token address should be substituted in as described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-179.md#finding-valid-relays).
 
 ## Incorporating slow fills
 
