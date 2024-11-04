@@ -16,6 +16,7 @@ import {
   Signer,
   toBNWei,
   winston,
+  stringifyThrownValue,
 } from "../utils";
 dotenv.config();
 
@@ -107,7 +108,7 @@ export async function runTransaction(
       logger.debug({
         at: "TxUtil#runTransaction",
         message: "Retrying txn due to expected error",
-        error: JSON.stringify(error),
+        error: stringifyThrownValue(error),
         retriesRemaining,
       });
 
@@ -143,7 +144,7 @@ export async function runTransaction(
       } else {
         logger[txnRetryable(error) ? "warn" : "error"]({
           ...commonFields,
-          error: JSON.stringify(error),
+          error: stringifyThrownValue(error),
         });
       }
       throw error;
