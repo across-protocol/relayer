@@ -428,7 +428,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     generateV3Deposit({ outputToken: erc20_2.address });
     generateV3Deposit({ outputToken: erc20_2.address });
     generateV3Deposit({ outputToken: erc20_2.address });
-    await mockOriginSpokePoolClient.update(["FundsDeposited", "V3FundsDeposited"]);
+    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
     const deposits = mockOriginSpokePoolClient.getDeposits();
 
     const events = [
