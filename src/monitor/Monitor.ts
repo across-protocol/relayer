@@ -631,6 +631,8 @@ export class Monitor {
 
     const hubPoolClient = this.clients.hubPoolClient;
     const monitoredTokenSymbols = this.monitorConfig.monitoredTokenSymbols;
+
+    // Define the chain IDs in the same order as `enabledChainIds` so that block range ordering is preserved.
     const chainIds =
       this.monitorConfig.monitoredSpokePoolChains.length !== 0
         ? this.monitorChains.filter((chain) => this.monitorConfig.monitoredSpokePoolChains.includes(chain))
@@ -648,6 +650,15 @@ export class Monitor {
       this.monitorConfig.bundlesCount
     );
 
+    // Fetch the data from the latest root bundle.
+    const bundle = hubPoolClient.getLatestProposedRootBundle();
+    // If there is an outstanding root bundle, then add it to the bundles to check. Otherwise, ignore it.
+    const bundlesToCheck = validatedBundles
+      .map((validatedBundle) => validatedBundle.transactionHash)
+      .includes(bundle.transactionHash)
+      ? validatedBundles
+      : [...validatedBundles, bundle];
+
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.clients.bundleDataClient.chainIdListForBundleEvaluationBlockNumbers,
       hubPoolClient.latestBlockSearched,
@@ -655,9 +666,7 @@ export class Monitor {
     );
     const enabledChainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
 
-    // @dev: If spoke pool client is undefined for a chain, then the end block will be null or undefined, which
-    // should be handled gracefully and effectively cause this function to ignore refunds for the chain.
-    const widestBundleBlockRanges = getWidestPossibleExpectedBlockRange(
+    const slowFillBlockRange = getWidestPossibleExpectedBlockRange(
       enabledChainIds,
       this.clients.spokePoolClients,
       getEndBlockBuffers(enabledChainIds, this.clients.bundleDataClient.blockRangeEndBlockBuffer),
@@ -665,6 +674,13 @@ export class Monitor {
       hubPoolClient.latestBlockSearched,
       this.clients.configStoreClient.getEnabledChains(hubPoolClient.latestBlockSearched)
     );
+    const blockRangeTail = bundle.bundleEvaluationBlockNumbers.map((endBlockForChain, idx) => {
+      const endBlockNumber = Number(endBlockForChain);
+      const spokeLatestBlockSearched = this.clients.spokePoolClients[enabledChainIds[idx]]?.latestBlockSearched ?? 0;
+      return spokeLatestBlockSearched === 0
+        ? [endBlockNumber, endBlockNumber]
+        : [endBlockNumber + 1, spokeLatestBlockSearched > endBlockNumber ? spokeLatestBlockSearched : endBlockNumber];
+    });
 
     // Do all async tasks in parallel. We want to know about the pool rebalances, slow fills in the most recent proposed bundle, refunds
     // from the last `n` bundles, pending refunds which have not been made official via a root bundle proposal, and the current balances of
@@ -672,16 +688,16 @@ export class Monitor {
     const [
       poolRebalanceRoot,
       currentBundleData,
-      previouslyValidatedBundleRefunds,
-      nextBundleRefunds,
+      accountedBundleRefunds,
+      unaccountedBundleRefunds,
       currentSpokeBalances,
     ] = await Promise.all([
       this.clients.bundleDataClient.getLatestPoolRebalanceRoot(),
-      this.clients.bundleDataClient.loadData(widestBundleBlockRanges, this.clients.spokePoolClients, false),
-      mapAsync(validatedBundles, async (validatedBundle) =>
-        this.clients.bundleDataClient.getPendingRefundsFromBundle(validatedBundle)
+      this.clients.bundleDataClient.loadData(slowFillBlockRange, this.clients.spokePoolClients, false),
+      mapAsync(bundlesToCheck, async (proposedBundle) =>
+        this.clients.bundleDataClient.getPendingRefundsFromBundle(proposedBundle)
       ),
-      this.clients.bundleDataClient.getNextBundleRefunds(),
+      this.clients.bundleDataClient.getApproximateRefundsForBlockRange(enabledChainIds, blockRangeTail),
       Object.fromEntries(
         await mapAsync(chainIds, async (chainId) => {
           const spokePool = this.clients.spokePoolClients[chainId].spokePool.address;
@@ -730,7 +746,7 @@ export class Monitor {
         .filter(isDefined);
       pendingRelayerRefunds[chainId] = {};
       l2TokenAddresses.forEach((l2Token) => {
-        const pendingValidatedDeductions = previouslyValidatedBundleRefunds
+        const pendingValidatedDeductions = accountedBundleRefunds
           .map((refund) => refund[chainId]?.[l2Token])
           .filter(isDefined)
           .reduce(
@@ -741,7 +757,7 @@ export class Monitor {
               ),
             bnZero
           );
-        const nextBundleDeductions = nextBundleRefunds
+        const nextBundleDeductions = [unaccountedBundleRefunds]
           .map((refund) => refund[chainId]?.[l2Token])
           .filter(isDefined)
           .reduce(
@@ -756,6 +772,7 @@ export class Monitor {
       });
     }
 
+    // Get the slow fill amounts. Only do this step if there were slow fills in the most recent root bundle.
     Object.entries(currentBundleData.bundleSlowFillsV3)
       .filter(([chainId]) => chainIds.includes(+chainId))
       .map(([chainId, bundleSlowFills]) => {
