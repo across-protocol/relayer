@@ -169,7 +169,7 @@ event V3FundsDeposited(
 
 All of the shared event properties must match. In addition, the fill's matched deposit must have been emitted from the SpokePool at the `originChainId` of the fill. The fill must have been emitted from the SpokePool on the `destinationChainId`.
 
-The only exception to the above rule is if `outputToken` is equal to the zero address, then the "equivalent" token address should be substituted in as described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-179.md#finding-valid-relays).
+The only exception to the above rule is if `outputToken` is equal to the zero address, then the "equivalent" token address should be substituted in as described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/2046d3cc228cacfb27688fc02e9674aef13445c9/UMIPs/umip-179.md#finding-valid-relays).
 
 ## Incorporating slow fills
 
