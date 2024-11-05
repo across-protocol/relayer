@@ -81,7 +81,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // anything under 7 days.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
-    [CHAIN_IDs.ALEPH_ZERO]: 30,
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 120,
     [CHAIN_IDs.BLAST]: 120,
@@ -98,7 +98,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZORA]: 120,
   },
   1000: {
-    [CHAIN_IDs.ALEPH_ZERO]: 1,
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
@@ -115,7 +115,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZORA]: 60,
   },
   100: {
-    [CHAIN_IDs.ALEPH_ZERO]: 1,
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
