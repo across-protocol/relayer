@@ -292,7 +292,7 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // Multicall3 Constants:
 export const multicall3Addresses = {
-  // TODO: Add AlephZero when there's a Multicall3 implementation deployed
+  [CHAIN_IDs.ALEPH_ZERO]: "0x3CA11702f7c0F28e0b4e03C31F7492969862C569",
   [CHAIN_IDs.ARBITRUM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BASE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
   [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
