@@ -147,3 +147,17 @@ export async function getOvmSpokePoolContract(chainId: number, signer?: Signer):
   const contract = new Contract(spokePoolAddr, contracts.Ovm_SpokePool__factory.abi, signer);
   return contract;
 }
+
+/**
+ * @description Instantiate an Across Arbitrum SpokePool contract instance.
+ * @param chainId Chain ID for the SpokePool deployment.
+ * @returns SpokePool contract instance.
+ */
+export async function getArbSpokePoolContract(chainId: number, signer?: Signer): Promise<Contract> {
+  const hubChainId = resolveHubChainId(chainId);
+  const hubPool = await getContract(hubChainId, "HubPool");
+  const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
+
+  const contract = new Contract(spokePoolAddr, contracts.Arbitrum_SpokePool__factory.abi, signer);
+  return contract;
+}

@@ -113,6 +113,10 @@ export async function opStackFinalizer(
       CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
       spokePoolClient.spokePool.provider
     );
+    // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
+    // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
+    // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
+    // which withdraws WETH to mainnet using dev wallet.
     const withdrawalEvents = await paginatedEventQuery(
       ovmStandardBridge,
       ovmStandardBridge.filters.ETHBridgeInitiated(

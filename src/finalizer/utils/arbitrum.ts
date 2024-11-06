@@ -14,6 +14,8 @@ import {
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
+  ethers,
+  paginatedEventQuery,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -50,6 +52,56 @@ export async function arbitrumOneFinalizer(
       // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
       !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[CHAIN_ID])
   );
+
+  // Experimental feature: Add in all ETH withdrawals from Arbitrum Orbit chain to the finalizer. This will help us
+  // in the short term to automate ETH withdrawals from Lite chains, which can build up ETH balances over time
+  // and because they are lite chains, our only way to withdraw them is to initiate a slow bridge of ETH from the
+  // the lite chain to Ethereum.
+  const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
+    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
+    : [];
+    if (!CONTRACT_ADDRESSES[chainId].erc20GatewayRouter) {
+      logger.warn({
+        at: "ArbitrumFinalizer",
+        message: `No erc20GatewayRouter contract found for chain ${chainId} in CONTRACT_ADDRESSES`,
+      });
+    } else if (withdrawalToAddresses.length > 0) {
+      const arbitrumGatewayRouter = new Contract(
+        CONTRACT_ADDRESSES[chainId].erc20GatewayRouter.address,
+        CONTRACT_ADDRESSES[chainId].erc20GatewayRouter.abi,
+        spokePoolClient.spokePool.provider
+      );
+      const arbitrumGateway = await arbitrumGatewayRouter.getGateway(TOKEN_SYMBOLS_MAP.WETH.addresses[chainId]);
+      // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
+      // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
+      // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
+      // which withdraws WETH to mainnet using dev wallet.
+      const withdrawalEvents = await paginatedEventQuery(
+        arbitrumGateway,
+        arbitrumGateway.filters.WithdrawalInitiated(
+          null, // from
+          withdrawalToAddresses // to
+        ),
+        {
+          ...spokePoolClient.eventSearchConfig,
+          toBlock: spokePoolClient.latestBlockSearched,
+        }
+      );
+      // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
+      // submit proofs and finalizations for.
+      withdrawalEvents.forEach((event) => {
+        const tokenBridgedEvent: TokensBridged = {
+          ...event,
+          amountToReturn: event.args.amount,
+          chainId,
+          leafId: 0,
+          l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+        };
+        if (event.blockNumber <= latestBlockToFinalize) {
+          olderTokensBridgedEvents.push(tokenBridgedEvent);
+        }
+      });
+    }
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
