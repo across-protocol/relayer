@@ -128,7 +128,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
       abi: POLYGON_BRIDGE_ABI,
     },
-    arbitrumErc20GatewayRouter: {
+    arbErc20GatewayRouter_42161: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },

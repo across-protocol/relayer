@@ -1,4 +1,9 @@
-import { L2ToL1MessageStatus, L2TransactionReceipt, L2ToL1MessageWriter } from "@arbitrum/sdk";
+import {
+  ChildToParentMessageStatus,
+  ChildTransactionReceipt,
+  ChildToParentMessageWriter,
+  registerCustomArbitrumNetwork,
+} from "@arbitrum/sdk";
 import {
   winston,
   convertFromWei,
@@ -15,7 +20,8 @@ import {
   TOKEN_SYMBOLS_MAP,
   ethers,
   paginatedEventQuery,
-  averageBlockTime
+  CHAIN_IDs,
+  getNetworkName,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -25,6 +31,29 @@ import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20Gateway
 
 let LATEST_MAINNET_BLOCK: number = 0;
 
+export const ARB_ORBIT_NETWORK_CONFIGS = [
+  {
+      chainId: CHAIN_IDs.ALEPH_ZERO,
+      name: 'Aleph Zero',
+      explorerUrl: 'https://evm-explorer.alephzero.org',
+      parentChainId: CHAIN_IDs.MAINNET,
+      ethBridge: {
+          bridge: '0x41Ec9456AB918f2aBA81F38c03Eb0B93b78E84d9',
+          inbox: '0x56D8EC76a421063e1907503aDd3794c395256AEb ',
+          sequencerInbox: '0xF75206c49c1694594E3e69252E519434f1579876',
+          outbox: '0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e ',
+          rollup: '0x1CA12290D954CFe022323b6A6Df92113ed6b1C98',      
+      },
+      confirmPeriodBlocks: 45818, // Challenge period in blocks
+      isTestnet: false,
+      // Must be set to true for L3's
+      isCustom: true,
+  }, 
+]
+ARB_ORBIT_NETWORK_CONFIGS.forEach((networkConfig) => {
+  registerCustomArbitrumNetwork(networkConfig);
+})
+
 export async function arbitrumOneFinalizer(
   logger: winston.Logger,
   signer: Signer,
@@ -33,8 +62,9 @@ export async function arbitrumOneFinalizer(
 ): Promise<FinalizerPromise> {
   LATEST_MAINNET_BLOCK = hubPoolClient.latestBlockSearched;
   const { chainId } = spokePoolClient;
+  const networkName = getNetworkName(chainId);
 
-  // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
+  // Arbitrum orbit takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
   const latestBlockToFinalize = await getBlockForTimestamp(
     chainId,
@@ -43,8 +73,8 @@ export async function arbitrumOneFinalizer(
     redis
   );
   logger.debug({
-    at: "Finalizer#ArbitrumFinalizer",
-    message: "Arbitrum TokensBridged event filter",
+    at: `Finalizer#${networkName}Finalizer`,
+    message: `${networkName} TokensBridged event filter`,
     toBlock: latestBlockToFinalize,
   });
   // Skip events that are likely not past the seven day challenge period.
@@ -52,6 +82,7 @@ export async function arbitrumOneFinalizer(
     (e) =>
       e.blockNumber <= latestBlockToFinalize &&
       // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
+      chainId === CHAIN_IDs.ARBITRUM &&
       !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId])
   );
 
@@ -64,8 +95,8 @@ export async function arbitrumOneFinalizer(
     : [];
     if (!CONTRACT_ADDRESSES[chainId].erc20GatewayRouter) {
       logger.warn({
-        at: "ArbitrumFinalizer",
-        message: `No erc20GatewayRouter contract found for chain ${chainId} in CONTRACT_ADDRESSES`,
+        at: `Finalizer#${networkName}Finalizer`,
+        message: `No erc20GatewayRouter contract found for chain ${chainId} in CONTRACT_ADDRESSES, skipping manual withdrawal finalization`,
       });
     } else if (withdrawalToAddresses.length > 0) {
       const arbitrumGatewayRouter = new Contract(
@@ -142,7 +173,7 @@ async function multicallArbitrumFinalizations(
   };
 }
 
-async function finalizeArbitrum(chainId, message: L2ToL1MessageWriter): Promise<Multicall2Call> {
+async function finalizeArbitrum(chainId, message: ChildToParentMessageWriter): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(chainId, true);
   const proof = await message.getOutboxProof(l2Provider);
   const outboxData = CONTRACT_ADDRESSES[chainId][`arbOutbox_${chainId}`];
@@ -180,7 +211,7 @@ async function getFinalizableMessages(
 ): Promise<
   {
     info: TokensBridged;
-    message: L2ToL1MessageWriter;
+    message: ChildToParentMessageWriter;
     status: string;
   }[]
 > {
@@ -189,12 +220,13 @@ async function getFinalizableMessages(
     allMessagesWithStatuses,
     (message: { status: string }) => message.status
   );
+  const networkName = getNetworkName(chainId);
   logger.debug({
-    at: "ArbitrumFinalizer",
-    message: "Arbitrum outbox message statuses",
+    at: `Finalizer#${networkName}Finalizer`,
+    message: `${networkName} outbox message statuses`,
     statusesGrouped,
   });
-  return allMessagesWithStatuses.filter((x) => x.status === L2ToL1MessageStatus[L2ToL1MessageStatus.CONFIRMED]);
+  return allMessagesWithStatuses.filter((x) => x.status === ChildToParentMessageStatus[ChildToParentMessageStatus.CONFIRMED]);
 }
 
 async function getAllMessageStatuses(
@@ -205,7 +237,7 @@ async function getAllMessageStatuses(
 ): Promise<
   {
     info: TokensBridged;
-    message: L2ToL1MessageWriter;
+    message: ChildToParentMessageWriter;
     status: string;
   }[]
 > {
@@ -233,23 +265,24 @@ async function getMessageOutboxStatusAndProof(
   l1Signer: Signer,
   logIndex: number
 ): Promise<{
-  message: L2ToL1MessageWriter;
+  message: ChildToParentMessageWriter;
   status: string;
   estimatedFinalizationBlock?: number;
 }> {
+  const networkName = getNetworkName(chainId);
   const l2Provider = getCachedProvider(chainId, true);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
-  const l2Receipt = new L2TransactionReceipt(receipt);
+  const l2Receipt = new ChildTransactionReceipt(receipt);
 
   try {
-    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer);
+    const l2ToL1Messages = await l2Receipt.getChildToParentMessages(l1Signer);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
       const error = new Error(
         `No outgoing messages found in transaction:${event.transactionHash} for l2 token ${event.l2TokenAddress}`
       );
       logger.warn({
-        at: "ArbitrumFinalizer",
-        message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
+        at: `Finalizer#${networkName}Finalizer`,
+        message: "Transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
         logIndex,
         l2ToL1Messages: l2ToL1Messages.length,
         event,
@@ -263,18 +296,18 @@ async function getMessageOutboxStatusAndProof(
     // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
     // window)
     const outboxMessageExecutionStatus = await l2Message.status(l2Provider);
-    if (outboxMessageExecutionStatus === L2ToL1MessageStatus.EXECUTED) {
+    if (outboxMessageExecutionStatus === ChildToParentMessageStatus.EXECUTED) {
       return {
         message: l2Message,
-        status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
+        status: ChildToParentMessageStatus[ChildToParentMessageStatus.EXECUTED],
       };
     }
-    if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
+    if (outboxMessageExecutionStatus !== ChildToParentMessageStatus.CONFIRMED) {
       const estimatedFinalizationBlock = await l2Message.getFirstExecutableBlock(l2Provider);
-      const estimatedFinalizationBlockDelta = estimatedFinalizationBlock.toNumber() - LATEST_MAINNET_BLOCK
-      const mainnetBlockTime = 12
+      const estimatedFinalizationBlockDelta = estimatedFinalizationBlock.toNumber() - LATEST_MAINNET_BLOCK;
+      const mainnetBlockTime = 12;
       logger.debug({
-        at: "ArbitrumFinalizer",
+        at: `Finalizer#${networkName}Finalizer`,
         message: `Unconfirmed withdrawal can be finalized in ${
           (estimatedFinalizationBlockDelta * mainnetBlockTime) / 60 / 60
         } hours`,
@@ -286,7 +319,7 @@ async function getMessageOutboxStatusAndProof(
       return {
         estimatedFinalizationBlock: estimatedFinalizationBlock.toNumber(),
         message: l2Message,
-        status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
+        status: ChildToParentMessageStatus[ChildToParentMessageStatus.UNCONFIRMED],
       };
     }
 
@@ -294,14 +327,14 @@ async function getMessageOutboxStatusAndProof(
     // message in its outbox entry.
     return {
       message: l2Message,
-      status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
+      status: ChildToParentMessageStatus[outboxMessageExecutionStatus],
     };
   } catch (error) {
     console.error(error)
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,
-      status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
+      status: ChildToParentMessageStatus[ChildToParentMessageStatus.UNCONFIRMED],
     };
   }
 }
