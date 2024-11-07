@@ -13,6 +13,7 @@ import {
   getL1TokenInfo,
   Multicall2Call,
   compareAddressesSimple,
+  CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
@@ -83,7 +84,7 @@ async function multicallArbitrumFinalizations(
 async function finalizeArbitrum(message: L2ToL1MessageWriter, chainId: number): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(chainId, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const { address, abi } = CONTRACT_ADDRESSES[chainId].outbox;
+  const { address, abi } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].arbitrumOutbox;
   const outbox = new Contract(address, abi);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
