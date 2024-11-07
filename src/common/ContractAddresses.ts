@@ -135,11 +135,11 @@ export const CONTRACT_ADDRESSES: {
     arbitrumErc20Gateway: {
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
-    alephZeroErc20GatewayRouter: {
+    avmErc20GatewayRouter_41455: {
       address: "0xeBb17f398ed30d02F2e8733e7c1e5cf566e17812",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
-    alephZeroL1Gateway: {
+    avmErc20L1Gateway_41455: {
       address: "0xccaF21F002EAF230c9Fa810B34837a3739B70F7B",
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
