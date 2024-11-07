@@ -158,6 +158,10 @@ export async function getArbSpokePoolContract(chainId: number, signer?: Signer):
   // const hubPool = await getContract(hubChainId, "HubPool");
   // const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
 
-  const contract = new Contract("0x13fDac9F9b4777705db45291bbFF3c972c6d1d97", contracts.Arbitrum_SpokePool__factory.abi, signer);
+  const contract = new Contract(
+    "0x13fDac9F9b4777705db45291bbFF3c972c6d1d97",
+    contracts.Arbitrum_SpokePool__factory.abi,
+    signer
+  );
   return contract;
 }

@@ -28,32 +28,32 @@ import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
-let LATEST_MAINNET_BLOCK: number = 0;
+let LATEST_MAINNET_BLOCK = 0;
 
 export const ARB_ORBIT_NETWORK_CONFIGS = [
   {
-      chainId: CHAIN_IDs.ALEPH_ZERO,
-      name: 'Aleph Zero',
-      explorerUrl: 'https://evm-explorer.alephzero.org',
-      parentChainId: CHAIN_IDs.MAINNET,
-      ethBridge: {
-          bridge: '0x41Ec9456AB918f2aBA81F38c03Eb0B93b78E84d9',
-          inbox: '0x56D8EC76a421063e1907503aDd3794c395256AEb ',
-          sequencerInbox: '0xF75206c49c1694594E3e69252E519434f1579876',
-          outbox: '0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e ',
-          rollup: '0x1CA12290D954CFe022323b6A6Df92113ed6b1C98',      
-      },
-      confirmPeriodBlocks: 45818, // Challenge period in blocks
-      isTestnet: false,
-      // Must be set to true for L3's
-      isCustom: true,
-  }, 
-]
+    chainId: CHAIN_IDs.ALEPH_ZERO,
+    name: "Aleph Zero",
+    explorerUrl: "https://evm-explorer.alephzero.org",
+    parentChainId: CHAIN_IDs.MAINNET,
+    ethBridge: {
+      bridge: "0x41Ec9456AB918f2aBA81F38c03Eb0B93b78E84d9",
+      inbox: "0x56D8EC76a421063e1907503aDd3794c395256AEb ",
+      sequencerInbox: "0xF75206c49c1694594E3e69252E519434f1579876",
+      outbox: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e ",
+      rollup: "0x1CA12290D954CFe022323b6A6Df92113ed6b1C98",
+    },
+    confirmPeriodBlocks: 45818, // Challenge period in blocks
+    isTestnet: false,
+    // Must be set to true for L3's
+    isCustom: true,
+  },
+];
 ARB_ORBIT_NETWORK_CONFIGS.forEach((networkConfig) => {
   registerCustomArbitrumNetwork(networkConfig);
-})
+});
 
-export async function arbitrumOneFinalizer(
+export async function arbStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
@@ -81,26 +81,29 @@ export async function arbitrumOneFinalizer(
     (e) =>
       e.blockNumber <= latestBlockToFinalize &&
       // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      chainId === CHAIN_IDs.ARBITRUM &&
-      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId])
+      (chainId !== CHAIN_IDs.ARBITRUM ||
+        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]))
   );
 
   // Experimental feature: Add in all ETH withdrawals from Arbitrum Orbit chain to the finalizer. This will help us
   // in the short term to automate ETH withdrawals from Lite chains, which can build up ETH balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a slow bridge of ETH from the
   // the lite chain to Ethereum.
+  const liteChains = [CHAIN_IDs.ALEPH_ZERO];
   const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
     ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
-    if (!CONTRACT_ADDRESSES[chainId].erc20GatewayRouter) {
-      logger.warn({
-        at: `Finalizer#${networkName}Finalizer`,
-        message: `No erc20GatewayRouter contract found for chain ${chainId} in CONTRACT_ADDRESSES, skipping manual withdrawal finalization`,
-      });
-    } else if (withdrawalToAddresses.length > 0) {
+  const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+  if (!l2Erc20Gateway) {
+    logger.warn({
+      at: `Finalizer#${networkName}Finalizer`,
+      message: `No erc20Gateway contract found for chain ${chainId} in CONTRACT_ADDRESSES, skipping manual withdrawal finalization`,
+    });
+  } else if (liteChains.includes(chainId)) {
+    if (withdrawalToAddresses.length > 0) {
       const arbitrumGateway = new Contract(
-        CONTRACT_ADDRESSES[chainId].erc20Gateway.address,
-        CONTRACT_ADDRESSES[chainId].erc20Gateway.abi,
+        l2Erc20Gateway.address,
+        l2Erc20Gateway.abi,
         spokePoolClient.spokePool.provider
       );
       // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
@@ -121,19 +124,22 @@ export async function arbitrumOneFinalizer(
       );
       // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
       // submit proofs and finalizations for.
-      withdrawalEvents.filter((e) => e.args.l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId]).forEach((event) => {
-        const tokenBridgedEvent: TokensBridged = {
-          ...event,
-          amountToReturn: event.args._amount,
-          chainId,
-          leafId: 0,
-          l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
-        };
-        // if (event.blockNumber <= latestBlockToFinalize) {
+      withdrawalEvents
+        .filter((e) => e.args.l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId])
+        .forEach((event) => {
+          const tokenBridgedEvent: TokensBridged = {
+            ...event,
+            amountToReturn: event.args._amount,
+            chainId,
+            leafId: 0,
+            l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+          };
+          // if (event.blockNumber <= latestBlockToFinalize) {
           olderTokensBridgedEvents.push(tokenBridgedEvent);
-        // }
-      });
+          // }
+        });
     }
+  }
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger, chainId);
 }
@@ -142,7 +148,8 @@ async function multicallArbitrumFinalizations(
   tokensBridged: TokensBridged[],
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
-  logger: winston.Logger
+  logger: winston.Logger,
+  chainId: number
 ): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(chainId, message.message)));
@@ -170,7 +177,7 @@ async function finalizeArbitrum(chainId, message: ChildToParentMessageWriter): P
   const proof = await message.getOutboxProof(l2Provider);
   const outboxData = CONTRACT_ADDRESSES[chainId][`arbOutbox_${chainId}`];
   if (!outboxData) {
-    throw new Error(`Missing arbOutbox entry in CONTRACT_ADDRESSES for chain ${chainId}`)
+    throw new Error(`Missing arbOutbox entry in CONTRACT_ADDRESSES for chain ${chainId}`);
   }
   const { address, abi } = outboxData;
   const outbox = new Contract(address, abi);
@@ -198,7 +205,8 @@ async function finalizeArbitrum(chainId, message: ChildToParentMessageWriter): P
 async function getFinalizableMessages(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
-  l1Signer: Signer
+  l1Signer: Signer,
+  chainId: number
 ): Promise<
   {
     info: TokensBridged;
@@ -217,13 +225,16 @@ async function getFinalizableMessages(
     message: `${networkName} outbox message statuses`,
     statusesGrouped,
   });
-  return allMessagesWithStatuses.filter((x) => x.status === ChildToParentMessageStatus[ChildToParentMessageStatus.CONFIRMED]);
+  return allMessagesWithStatuses.filter(
+    (x) => x.status === ChildToParentMessageStatus[ChildToParentMessageStatus.CONFIRMED]
+  );
 }
 
 async function getAllMessageStatuses(
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
-  mainnetSigner: Signer
+  mainnetSigner: Signer,
+  chainId: number
 ): Promise<
   {
     info: TokensBridged;
@@ -236,7 +247,9 @@ async function getAllMessageStatuses(
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   return (
     await Promise.all(
-      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId))
+      tokensBridged.map((e, i) =>
+        getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId)
+      )
     )
   )
     .map((result, i) => {
@@ -252,7 +265,8 @@ async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Signer,
-  logIndex: number
+  logIndex: number,
+  chainId: number
 ): Promise<{
   message: ChildToParentMessageWriter;
   status: string;
@@ -303,8 +317,8 @@ async function getMessageOutboxStatusAndProof(
         chainId,
         token: event.l2TokenAddress,
         amount: event.amountToReturn,
-        receipt: l2Receipt.transactionHash
-      })
+        receipt: l2Receipt.transactionHash,
+      });
       return {
         estimatedFinalizationBlock: estimatedFinalizationBlock.toNumber(),
         message: l2Message,
@@ -319,7 +333,7 @@ async function getMessageOutboxStatusAndProof(
       status: ChildToParentMessageStatus[outboxMessageExecutionStatus],
     };
   } catch (error) {
-    console.error(error)
+    console.error(error);
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,

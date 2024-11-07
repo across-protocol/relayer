@@ -118,10 +118,6 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
-  [CHAIN_IDs.ALEPH_ZERO]: {
-    finalizeOnL1: [arbitrumOneFinalizer],
-    finalizeOnL2: [],
-  },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
     finalizeOnL1: [cctpL2toL1Finalizer],
