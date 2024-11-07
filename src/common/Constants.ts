@@ -212,6 +212,7 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
 // This is intended to be conservative.
 export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
+  [CHAIN_IDs.ALEPH_ZERO]: 60,
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
