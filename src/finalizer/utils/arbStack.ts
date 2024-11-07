@@ -27,7 +27,6 @@ import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
 let LATEST_MAINNET_BLOCK: number = 0;
 
@@ -99,17 +98,11 @@ export async function arbitrumOneFinalizer(
         message: `No erc20GatewayRouter contract found for chain ${chainId} in CONTRACT_ADDRESSES, skipping manual withdrawal finalization`,
       });
     } else if (withdrawalToAddresses.length > 0) {
-      const arbitrumGatewayRouter = new Contract(
-        CONTRACT_ADDRESSES[chainId].erc20GatewayRouter.address,
-        CONTRACT_ADDRESSES[chainId].erc20GatewayRouter.abi,
+      const arbitrumGateway = new Contract(
+        CONTRACT_ADDRESSES[chainId].erc20Gateway.address,
+        CONTRACT_ADDRESSES[chainId].erc20Gateway.abi,
         spokePoolClient.spokePool.provider
       );
-      const arbitrumGatewayAddress = await arbitrumGatewayRouter.getGateway(TOKEN_SYMBOLS_MAP.WETH.addresses[chainId]);
-    const arbitrumGateway = new Contract(
-      arbitrumGatewayAddress,
-      ARBITRUM_ERC20_GATEWAY_L2_ABI,
-      spokePoolClient.spokePool.provider
-    );
       // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
       // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
       // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
@@ -142,17 +135,16 @@ export async function arbitrumOneFinalizer(
       });
     }
 
-  return await multicallArbitrumFinalizations(chainId, olderTokensBridgedEvents, signer, hubPoolClient, logger);
+  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger, chainId);
 }
 
 async function multicallArbitrumFinalizations(
-  chainId: number,
   tokensBridged: TokensBridged[],
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<FinalizerPromise> {
-  const finalizableMessages = await getFinalizableMessages(chainId, logger, tokensBridged, hubSigner);
+  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(chainId, message.message)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
     const l1TokenInfo = getL1TokenInfo(l2TokenAddress, chainId);
@@ -204,7 +196,6 @@ async function finalizeArbitrum(chainId, message: ChildToParentMessageWriter): P
 }
 
 async function getFinalizableMessages(
-  chainId: number,
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   l1Signer: Signer
@@ -215,7 +206,7 @@ async function getFinalizableMessages(
     status: string;
   }[]
 > {
-  const allMessagesWithStatuses = await getAllMessageStatuses(chainId, tokensBridged, logger, l1Signer);
+  const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer, chainId);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
     (message: { status: string }) => message.status
@@ -230,7 +221,6 @@ async function getFinalizableMessages(
 }
 
 async function getAllMessageStatuses(
-  chainId: number,
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
   mainnetSigner: Signer
@@ -246,7 +236,7 @@ async function getAllMessageStatuses(
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   return (
     await Promise.all(
-      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(chainId, logger, e, mainnetSigner, logIndexesForMessage[i]))
+      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId))
     )
   )
     .map((result, i) => {
@@ -259,7 +249,6 @@ async function getAllMessageStatuses(
 }
 
 async function getMessageOutboxStatusAndProof(
-  chainId: number,
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Signer,
