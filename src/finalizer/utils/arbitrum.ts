@@ -13,16 +13,17 @@ import {
   getL1TokenInfo,
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
-  CHAIN_IDs,
   ethers,
   paginatedEventQuery,
+  averageBlockTime
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
+import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
-const CHAIN_ID = CHAIN_IDs.ARBITRUM;
+let LATEST_MAINNET_BLOCK: number = 0;
 
 export async function arbitrumOneFinalizer(
   logger: winston.Logger,
@@ -30,6 +31,7 @@ export async function arbitrumOneFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  LATEST_MAINNET_BLOCK = hubPoolClient.latestBlockSearched;
   const { chainId } = spokePoolClient;
 
   // Arbitrum takes 7 days to finalize withdrawals, so don't look up events younger than that.
@@ -50,7 +52,7 @@ export async function arbitrumOneFinalizer(
     (e) =>
       e.blockNumber <= latestBlockToFinalize &&
       // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[CHAIN_ID])
+      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId])
   );
 
   // Experimental feature: Add in all ETH withdrawals from Arbitrum Orbit chain to the finalizer. This will help us
@@ -71,7 +73,12 @@ export async function arbitrumOneFinalizer(
         CONTRACT_ADDRESSES[chainId].erc20GatewayRouter.abi,
         spokePoolClient.spokePool.provider
       );
-      const arbitrumGateway = await arbitrumGatewayRouter.getGateway(TOKEN_SYMBOLS_MAP.WETH.addresses[chainId]);
+      const arbitrumGatewayAddress = await arbitrumGatewayRouter.getGateway(TOKEN_SYMBOLS_MAP.WETH.addresses[chainId]);
+    const arbitrumGateway = new Contract(
+      arbitrumGatewayAddress,
+      ARBITRUM_ERC20_GATEWAY_L2_ABI,
+      spokePoolClient.spokePool.provider
+    );
       // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
       // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
       // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
@@ -79,6 +86,7 @@ export async function arbitrumOneFinalizer(
       const withdrawalEvents = await paginatedEventQuery(
         arbitrumGateway,
         arbitrumGateway.filters.WithdrawalInitiated(
+          null, // l1Token, not-indexed so can't filter
           null, // from
           withdrawalToAddresses // to
         ),
@@ -89,36 +97,37 @@ export async function arbitrumOneFinalizer(
       );
       // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
       // submit proofs and finalizations for.
-      withdrawalEvents.forEach((event) => {
+      withdrawalEvents.filter((e) => e.args.l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId]).forEach((event) => {
         const tokenBridgedEvent: TokensBridged = {
           ...event,
-          amountToReturn: event.args.amount,
+          amountToReturn: event.args._amount,
           chainId,
           leafId: 0,
           l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
         };
-        if (event.blockNumber <= latestBlockToFinalize) {
+        // if (event.blockNumber <= latestBlockToFinalize) {
           olderTokensBridgedEvents.push(tokenBridgedEvent);
-        }
+        // }
       });
     }
 
-  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
+  return await multicallArbitrumFinalizations(chainId, olderTokensBridgedEvents, signer, hubPoolClient, logger);
 }
 
 async function multicallArbitrumFinalizations(
+  chainId: number,
   tokensBridged: TokensBridged[],
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<FinalizerPromise> {
-  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
-  const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
+  const finalizableMessages = await getFinalizableMessages(chainId, logger, tokensBridged, hubSigner);
+  const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(chainId, message.message)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, CHAIN_ID);
+    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
     const withdrawal: CrossChainMessage = {
-      originationChainId: CHAIN_ID,
+      originationChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
@@ -133,10 +142,14 @@ async function multicallArbitrumFinalizations(
   };
 }
 
-async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
-  const l2Provider = getCachedProvider(CHAIN_ID, true);
+async function finalizeArbitrum(chainId, message: L2ToL1MessageWriter): Promise<Multicall2Call> {
+  const l2Provider = getCachedProvider(chainId, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const { address, abi } = CONTRACT_ADDRESSES[CHAIN_ID].outbox;
+  const outboxData = CONTRACT_ADDRESSES[chainId][`arbOutbox_${chainId}`];
+  if (!outboxData) {
+    throw new Error(`Missing arbOutbox entry in CONTRACT_ADDRESSES for chain ${chainId}`)
+  }
+  const { address, abi } = outboxData;
   const outbox = new Contract(address, abi);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
@@ -160,6 +173,7 @@ async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall
 }
 
 async function getFinalizableMessages(
+  chainId: number,
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   l1Signer: Signer
@@ -170,7 +184,7 @@ async function getFinalizableMessages(
     status: string;
   }[]
 > {
-  const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer);
+  const allMessagesWithStatuses = await getAllMessageStatuses(chainId, tokensBridged, logger, l1Signer);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
     (message: { status: string }) => message.status
@@ -184,6 +198,7 @@ async function getFinalizableMessages(
 }
 
 async function getAllMessageStatuses(
+  chainId: number,
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
   mainnetSigner: Signer
@@ -199,7 +214,7 @@ async function getAllMessageStatuses(
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   return (
     await Promise.all(
-      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
+      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(chainId, logger, e, mainnetSigner, logIndexesForMessage[i]))
     )
   )
     .map((result, i) => {
@@ -212,6 +227,7 @@ async function getAllMessageStatuses(
 }
 
 async function getMessageOutboxStatusAndProof(
+  chainId: number,
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Signer,
@@ -219,8 +235,9 @@ async function getMessageOutboxStatusAndProof(
 ): Promise<{
   message: L2ToL1MessageWriter;
   status: string;
+  estimatedFinalizationBlock?: number;
 }> {
-  const l2Provider = getCachedProvider(CHAIN_ID, true);
+  const l2Provider = getCachedProvider(chainId, true);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 
@@ -253,7 +270,21 @@ async function getMessageOutboxStatusAndProof(
       };
     }
     if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
+      const estimatedFinalizationBlock = await l2Message.getFirstExecutableBlock(l2Provider);
+      const estimatedFinalizationBlockDelta = estimatedFinalizationBlock.toNumber() - LATEST_MAINNET_BLOCK
+      const mainnetBlockTime = 12
+      logger.debug({
+        at: "ArbitrumFinalizer",
+        message: `Unconfirmed withdrawal can be finalized in ${
+          (estimatedFinalizationBlockDelta * mainnetBlockTime) / 60 / 60
+        } hours`,
+        chainId,
+        token: event.l2TokenAddress,
+        amount: event.amountToReturn,
+        receipt: l2Receipt.transactionHash
+      })
       return {
+        estimatedFinalizationBlock: estimatedFinalizationBlock.toNumber(),
         message: l2Message,
         status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
       };
@@ -266,6 +297,7 @@ async function getMessageOutboxStatusAndProof(
       status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
     };
   } catch (error) {
+    console.error(error)
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,

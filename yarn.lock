@@ -50,6 +50,26 @@
     axios "^1.7.4"
     zksync-web3 "^0.14.3"
 
+"@across-protocol/contracts@^3.0.12-beta.3":
+  version "3.0.12-beta.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.12-beta.3.tgz#8f4a9a9489d11c53a34c43a90b2193ab7fa9d289"
+  integrity sha512-2Hy/DvQsQ2X4ppnaOxTesbD5wjRU3aKzsrAobqFU6uFCyOxmIkZKUO9QCwwCP4UbhTHUpZ2yM6hDSCISXtub3A==
+  dependencies:
+    "@across-protocol/constants" "^3.1.18"
+    "@defi-wonderland/smock" "^2.3.4"
+    "@eth-optimism/contracts" "^0.5.40"
+    "@ethersproject/abstract-provider" "5.7.0"
+    "@ethersproject/abstract-signer" "5.7.0"
+    "@ethersproject/bignumber" "5.7.0"
+    "@openzeppelin/contracts" "4.9.6"
+    "@openzeppelin/contracts-upgradeable" "4.9.6"
+    "@scroll-tech/contracts" "^0.1.0"
+    "@uma/common" "^2.34.0"
+    "@uma/contracts-node" "^0.4.17"
+    "@uma/core" "^2.56.0"
+    axios "^1.7.4"
+    zksync-web3 "^0.14.3"
+
 "@across-protocol/sdk@^3.2.11":
   version "3.2.11"
   resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.2.11.tgz#8d5190863240e9a5062a38a03406f8e3b0390d84"
