@@ -38,6 +38,7 @@ enum POLYGON_MESSAGE_STATUS {
 // canonical bridge. Do not change.
 const BURN_SIG = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
+// We should ideally read this limit from a contract call, but for now we'll hardcode it.
 const CCTP_WITHDRAWAL_LIMIT_WEI = toBNWei(1_000_000, 6);
 
 export interface PolygonTokensBridged extends TokensBridged {
