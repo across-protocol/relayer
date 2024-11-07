@@ -40,8 +40,9 @@ const defaultLogger = winston.createLogger({
 });
 
 export class Profiler {
+  private static instance: Profiler;
   private tasks: Map<
-    string,
+    string, // taskName used as key.
     {
       startTime: number;
       detail?: unknown;
@@ -56,6 +57,18 @@ export class Profiler {
    */
   constructor(params?: ProfilerOptions) {
     this.logger = params?.logger ?? defaultLogger;
+  }
+
+  /**
+   * Returns the singleton instance of the Profiler.
+   * @param params Profiler options (only used on first instantiation).
+   * @returns The singleton Profiler instance.
+   */
+  public static create(params?: ProfilerOptions): Profiler {
+    if (!Profiler.instance) {
+      Profiler.instance = new Profiler(params);
+    }
+    return Profiler.instance;
   }
 
   /**
@@ -102,6 +115,20 @@ export class Profiler {
   }
 
   /**
+   * Combines detail objects from start and stop into a single object.
+   * @param startDetail Detail object from start.
+   * @param stopDetail Detail object from stop.
+   * @returns Combined detail object.
+   */
+  private mergeData(startDetail?: unknown, stopDetail?: unknown): unknown {
+    const startData = typeof startDetail === "object" && startDetail !== null ? startDetail : {};
+    const stopData = typeof stopDetail === "object" && stopDetail !== null ? stopDetail : {};
+
+    // Merge data
+    return { ...startData, ...stopData };
+  }
+
+  /**
    * Marks the end of a performance measurement for a given task and logs the measurement.
    * @param taskName The name of the task.
    * @param detail Optional additional data related to the task.
@@ -115,7 +142,7 @@ export class Profiler {
 
     const endTime = performance.now();
     const duration = endTime - task.startTime;
-    const data = detail ?? task.detail;
+    const data = this.mergeData(task.detail, detail);
 
     const performanceData: PerformanceData = {
       task: taskName,
@@ -137,3 +164,5 @@ export class Profiler {
     this.tasks.clear();
   }
 }
+
+export const profiler = Profiler.create();
