@@ -25,6 +25,7 @@ import {
   assert,
   compareAddressesSimple,
   getUsdcSymbol,
+  profiler,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit } from "../interfaces";
@@ -301,9 +302,10 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    let startTimer: number;
     if (!isDefined(this.bundleRefundsPromise)) {
-      startTimer = performance.now();
+      profiler.start("InventoryClient::getBundleRefunds", {
+        l1Token,
+      });
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
@@ -326,12 +328,10 @@ export class InventoryClient {
       },
       {}
     );
-    if (startTimer) {
-      this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTimer) / 1000)}s`, {
-        l1Token,
-        totalRefundsPerChain,
-      });
-    }
+    profiler.stop("InventoryClient::getBundleRefunds", {
+      totalRefundsPerChain,
+    });
+
     return totalRefundsPerChain;
   }
 
@@ -617,7 +617,7 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-    const start = performance.now();
+    profiler.start("InventoryClient::getLatestRunningBalances");
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
         const chainIdIndex = chainIds.indexOf(chainId);
@@ -673,13 +673,7 @@ export class InventoryClient {
         ];
       })
     );
-    this.log(
-      `Approximated latest (abs. val) running balance for ORU chains for token ${l1Token} in ${
-        Math.round(performance.now() - start) / 1000
-      }s`,
-      { runningBalances }
-    );
-
+    profiler.stop("InventoryClient::getLatestRunningBalances", { runningBalances });
     return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
 
