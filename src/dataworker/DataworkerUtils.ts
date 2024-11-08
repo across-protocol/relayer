@@ -20,6 +20,7 @@ import {
   getTimestampsForBundleEndBlocks,
   isDefined,
   MerkleTree,
+  profiler,
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../utils";
@@ -342,7 +343,10 @@ export async function persistDataToArweave(
   logger: winston.Logger,
   tag?: string
 ): Promise<void> {
-  const startTime = performance.now();
+  const taskProfiler = profiler.create({
+    at: "DataworkerUtils#persistDataToArweave",
+  });
+  taskProfiler.mark("A");
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const [matchingTxns, address, balance] = await Promise.all([
@@ -389,10 +393,9 @@ export async function persistDataToArweave(
       balance: formatWinston(balance),
       notificationPath: "across-arweave",
     });
-    const endTime = performance.now();
-    logger.debug({
-      at: "Dataworker#index",
-      message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
+    taskProfiler.measure("Arweave Persist", {
+      from: "A",
+      message: "Time to persist to Arweave",
     });
   }
 }
