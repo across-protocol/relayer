@@ -84,16 +84,24 @@ class TaskProfiler {
    * @param endLabel The label of the ending mark.
    * @param detail Optional detail data to merge.
    */
-  measure(taskName: string, startLabel: string, endLabel: string, detail?: Detail): void {
-    const startMark = this.marks.get(startLabel);
-    const endMark = this.marks.get(endLabel);
+  measure(
+    taskName: string,
+    params: {
+      from: string;
+      to?: string;
+    } & Detail
+  ): void {
+    const { from, to, ...detail } = params;
+    const startMark = this.marks.get(from);
+    const endMark = to ? this.marks.get(to) : undefined;
 
-    if (!startMark || !endMark) {
-      this.logger.warn(`Cannot find marks for labels "${startLabel}" or "${endLabel}".`);
+    if (!startMark) {
+      this.logger.warn(`Cannot find start marks for label "${params.startLabel}".`);
       return;
     }
+    const endTime = endMark?.time ?? performance.now();
 
-    const duration = endMark.time - startMark.time;
+    const duration = endTime - startMark.time;
 
     // Merge detail
     const { message, ...combinedDetail } = { ...(this.detail ?? {}), ...(detail ?? {}) };

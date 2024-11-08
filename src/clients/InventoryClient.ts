@@ -298,14 +298,16 @@ export class InventoryClient {
   // Return the upcoming refunds (in pending and next bundles) on each chain.
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
-
+    const taskProfiler = profiler.create({
+      at: "InventoryClient::getBundleRefunds",
+    });
+    taskProfiler.mark("A", {
+      l1Token,
+    });
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
     if (!isDefined(this.bundleRefundsPromise)) {
-      profiler.start("InventoryClient::getBundleRefunds", {
-        l1Token,
-      });
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
@@ -328,10 +330,12 @@ export class InventoryClient {
       },
       {}
     );
-    profiler.stop("InventoryClient::getBundleRefunds", {
-      totalRefundsPerChain,
-    });
 
+    taskProfiler.measure("totalRefundsPerChain", {
+      from: "A",
+      message: "Time to calculate total refunds per chain",
+      l1Token,
+    });
     return totalRefundsPerChain;
   }
 
@@ -615,9 +619,13 @@ export class InventoryClient {
     l1Token: string,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
+    const taskProfiler = profiler.create();
     const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-    profiler.start("InventoryClient::getLatestRunningBalances");
+
+    taskProfiler.mark("start", {
+      at: "InventoryClient::getLatestRunningBalances",
+    });
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
         const chainIdIndex = chainIds.indexOf(chainId);
@@ -673,7 +681,11 @@ export class InventoryClient {
         ];
       })
     );
-    profiler.stop("InventoryClient::getLatestRunningBalances", { runningBalances });
+    taskProfiler.measure("getLatestRunningBalances", {
+      from: "start",
+      message: "Time to get running balances",
+      runningBalances,
+    });
     return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
 
