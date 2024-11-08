@@ -138,7 +138,7 @@ export const CONTRACT_ADDRESSES: {
       abi: ARBITRUM_OUTBOX_ABI,
     },
     arbOutbox_41455: {
-      address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
+      address: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e",
       abi: ARBITRUM_OUTBOX_ABI,
     },
     VotingV2: {
@@ -316,6 +316,7 @@ export const CONTRACT_ADDRESSES: {
   },
   42161: {
     erc20Gateway: {
+      address: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
     cctpMessageTransmitter: {

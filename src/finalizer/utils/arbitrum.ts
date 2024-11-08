@@ -3,6 +3,7 @@ import {
   ChildTransactionReceipt,
   ChildToParentMessageWriter,
   registerCustomArbitrumNetwork,
+  ArbitrumNetwork
 } from "@arbitrum/sdk";
 import {
   winston,
@@ -30,20 +31,23 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 
 let LATEST_MAINNET_BLOCK = 0;
 
-export const ARB_ORBIT_NETWORK_CONFIGS = [
+// These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
+// We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
+export const ARB_ORBIT_NETWORK_CONFIGS: ArbitrumNetwork[] = [
   {
     chainId: CHAIN_IDs.ALEPH_ZERO,
     name: "Aleph Zero",
-    explorerUrl: "https://evm-explorer.alephzero.org",
     parentChainId: CHAIN_IDs.MAINNET,
     ethBridge: {
       bridge: "0x41Ec9456AB918f2aBA81F38c03Eb0B93b78E84d9",
       inbox: "0x56D8EC76a421063e1907503aDd3794c395256AEb ",
       sequencerInbox: "0xF75206c49c1694594E3e69252E519434f1579876",
-      outbox: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e ",
+      outbox: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e",
       rollup: "0x1CA12290D954CFe022323b6A6Df92113ed6b1C98",
     },
     confirmPeriodBlocks: 45818, // Challenge period in blocks
+    retryableLifetimeSeconds: 7 * 24 * 60 * 60,
+    nativeToken: "0xdD0ae774F7E300CdAA4EA371cD55169665Ee6AFe",
     isTestnet: false,
     // Must be set to true for L3's
     isCustom: true,
@@ -89,7 +93,6 @@ export async function arbStackFinalizer(
   // in the short term to automate ETH withdrawals from Lite chains, which can build up ETH balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a slow bridge of ETH from the
   // the lite chain to Ethereum.
-  const liteChains = [CHAIN_IDs.ALEPH_ZERO];
   const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
     ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
@@ -99,7 +102,7 @@ export async function arbStackFinalizer(
       at: `Finalizer#${networkName}Finalizer`,
       message: `No erc20Gateway contract found for chain ${chainId} in CONTRACT_ADDRESSES, skipping manual withdrawal finalization`,
     });
-  } else if (liteChains.includes(chainId)) {
+  } else {
     if (withdrawalToAddresses.length > 0) {
       const arbitrumGateway = new Contract(
         l2Erc20Gateway.address,
@@ -175,9 +178,9 @@ async function multicallArbitrumFinalizations(
 async function finalizeArbitrum(chainId, message: ChildToParentMessageWriter): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(chainId, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const outboxData = CONTRACT_ADDRESSES[chainId][`arbOutbox_${chainId}`];
+  const outboxData = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`arbOutbox_${chainId}`];
   if (!outboxData) {
-    throw new Error(`Missing arbOutbox entry in CONTRACT_ADDRESSES for chain ${chainId}`);
+    throw new Error(`Missing arbOutbox_${chainId} entry in CONTRACT_ADDRESSES`);
   }
   const { address, abi } = outboxData;
   const outbox = new Contract(address, abi);
