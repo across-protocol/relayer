@@ -50,7 +50,7 @@ export const ARB_ORBIT_NETWORK_CONFIGS: (Omit<ArbitrumNetwork, "confirmPeriodBlo
       bridge: "0x41Ec9456AB918f2aBA81F38c03Eb0B93b78E84d9",
       inbox: "0x56D8EC76a421063e1907503aDd3794c395256AEb ",
       sequencerInbox: "0xF75206c49c1694594E3e69252E519434f1579876",
-      outbox: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`arbOutbox_${CHAIN_IDs.ALEPH_ZERO}`].address,
+      outbox: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`orbitOutbox_${CHAIN_IDs.ALEPH_ZERO}`].address,
       rollup: "0x1CA12290D954CFe022323b6A6Df92113ed6b1C98",
     },
     challengePeriodSeconds: 6 * 60 * 60, // ~ 6 hours
@@ -193,9 +193,9 @@ async function multicallArbitrumFinalizations(
 async function finalizeArbitrum(chainId, message: ChildToParentMessageWriter): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(chainId, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const outboxData = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`arbOutbox_${chainId}`];
+  const outboxData = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`orbitOutbox_${chainId}`];
   if (!outboxData) {
-    throw new Error(`Missing arbOutbox_${chainId} entry in CONTRACT_ADDRESSES`);
+    throw new Error(`Missing orbitOutbox_${chainId} entry in CONTRACT_ADDRESSES`);
   }
   const { address, abi } = outboxData;
   const outbox = new Contract(address, abi);
