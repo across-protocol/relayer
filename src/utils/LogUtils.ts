@@ -1,6 +1,7 @@
 import { bigNumberFormatter } from "@uma/logger";
 import { performance } from "node:perf_hooks";
 import winston, { Logger } from "winston";
+import crypto from "crypto";
 
 export type DefaultLogLevels = "debug" | "info" | "warn" | "error";
 
@@ -18,10 +19,17 @@ export function stringifyThrownValue(value: unknown): string {
   }
 }
 
+type Detail = {
+  message?: string;
+  [key: string]: unknown;
+};
+
 export type PerformanceData = {
-  task: string; // Name of the task being measured
-  duration: number; // Duration of the task in milliseconds
-  data?: unknown; // Optional additional data related to the task
+  id: string; // Unique identifier for the profiling session
+  taskName: string; // Name of the task being measured
+  duration: number; // Duration in milliseconds
+  message: string;
+  data?: Record<string, unknown>; // Cumulative detail data
 };
 
 type ProfilerOptions = {
@@ -30,139 +38,156 @@ type ProfilerOptions = {
 
 const defaultLogger = winston.createLogger({
   level: "debug",
-  defaultMeta: { datadog: true }, // Key to identify data for ingestion
+  defaultMeta: { datadog: true },
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format(bigNumberFormatter)(),
-    winston.format.json()
+    winston.format.json({
+      space: 2,
+    })
   ),
   transports: [new winston.transports.Console()],
 });
 
-export class Profiler {
-  private static instance: Profiler;
-  private tasks: Map<
-    string, // taskName used as key.
-    {
-      startTime: number;
-      detail?: unknown;
-    }
-  > = new Map();
+class TaskProfiler {
+  id: string;
+  private marks: Map<string, { time: number; detail?: Record<string, unknown> }>;
+  private detail: Detail;
   private logger: Logger;
 
-  /**
-   * Constructs a new Profiler instance.
-   * @param params Profiler options.
-   * @param params.logger A custom Winston logger instance.
-   */
-  constructor(params?: ProfilerOptions) {
-    this.logger = params?.logger ?? defaultLogger;
+  constructor(logger: Logger, detail?: Record<string, unknown>) {
+    this.id = crypto.randomUUID();
+    this.marks = new Map();
+    this.detail = detail ? { ...detail } : {};
+    this.logger = logger;
   }
 
   /**
-   * Returns the singleton instance of the Profiler.
-   * @param params Profiler options (only used on first instantiation).
-   * @returns The singleton Profiler instance.
+   * Records a mark with a label and optional detail.
+   * @param label The label for the mark.
+   * @param detail Optional detail data to merge.
    */
-  public static create(params?: ProfilerOptions): Profiler {
-    if (!Profiler.instance) {
-      Profiler.instance = new Profiler(params);
+  mark(label: string, detail?: Detail): void {
+    const currentTime = performance.now();
+
+    // merge additional data
+    this.detail = { ...(this.detail ?? {}), ...(detail ?? {}) };
+
+    // Store the mark
+    this.marks.set(label, { time: currentTime, detail });
+  }
+
+  /**
+   * Measures the duration between two marks and logs the performance data.
+   * @param taskName The name of the task for this measurement.
+   * @param startLabel The label of the starting mark.
+   * @param endLabel The label of the ending mark.
+   * @param detail Optional detail data to merge.
+   */
+  measure(taskName: string, startLabel: string, endLabel: string, detail?: Detail): void {
+    const startMark = this.marks.get(startLabel);
+    const endMark = this.marks.get(endLabel);
+
+    if (!startMark || !endMark) {
+      this.logger.warn(`Cannot find marks for labels "${startLabel}" or "${endLabel}".`);
+      return;
     }
-    return Profiler.instance;
+
+    const duration = endMark.time - startMark.time;
+
+    // Merge detail
+    const { message, ...combinedDetail } = { ...(this.detail ?? {}), ...(detail ?? {}) };
+    const defaultMessage = `Profiler Log: ${taskName}`;
+
+    const performanceData: PerformanceData = {
+      id: this.id,
+      taskName,
+      duration,
+      message: message ?? defaultMessage,
+      data: combinedDetail,
+    };
+
+    this.logger.debug(performanceData);
   }
 
   /**
-   * Measures the performance of a synchronous function.
+   * Measures the performance of an asynchronous function by wrapping it.
+   * @param fn The asynchronous function to measure.
+   * @param taskName The name of the task for this measurement.
+   * @param detail Optional detail data to merge.
+   * @returns The result of the asynchronous function.
+   */
+  async measureAsync<T>(pr: Promise<T>, taskName: string, detail?: Detail): Promise<T> {
+    const startTime = performance.now();
+
+    try {
+      const result = await pr;
+      return result;
+    } finally {
+      const endTime = performance.now();
+      const duration = endTime - startTime;
+      const { message, ...combinedDetail } = { ...detail };
+      const defaultMessage = `Profiler Log: ${taskName}`;
+
+      const performanceData: PerformanceData = {
+        id: crypto.randomUUID(),
+        taskName,
+        duration,
+        message: message ?? defaultMessage,
+        data: combinedDetail,
+      };
+
+      this.logger.debug(performanceData);
+    }
+  }
+
+  /**
+   * Measures the performance of a synchronous function by wrapping it.
    * @param fn The synchronous function to measure.
-   * @param taskName A unique identifier for the task.
-   * @param detail Optional additional data related to the task.
+   * @param taskName The name of the task for this measurement.
+   * @param detail Optional detail data to merge.
    * @returns The result of the synchronous function.
    */
-  measureSync<T>(fn: () => T, taskName: string, detail?: unknown): T {
-    this.start(taskName, detail);
+  measureSync<T>(fn: () => T, taskName: string, detail?: Detail): T {
+    const startTime = performance.now();
+
     try {
       const result = fn();
       return result;
     } finally {
-      this.stop(taskName, detail);
+      const endTime = performance.now();
+      const duration = endTime - startTime;
+      const { message, ...combinedDetail } = { ...detail };
+      const defaultMessage = `Profiler Log: ${taskName}`;
+
+      const performanceData: PerformanceData = {
+        id: crypto.randomUUID(),
+        taskName,
+        duration,
+        message: message ?? defaultMessage,
+        data: combinedDetail,
+      };
+
+      this.logger.debug(performanceData);
     }
-  }
-
-  /**
-   * Measures the performance of an asynchronous operation.
-   * @param pr The promise representing the asynchronous operation.
-   * @param taskName A unique identifier for the task.
-   * @param detail Optional additional data related to the task.
-   * @returns The result of the asynchronous operation.
-   */
-  async measureAsync<T>(pr: Promise<T>, taskName: string, detail?: unknown): Promise<T> {
-    this.start(taskName, detail);
-    const result = await pr;
-    this.stop(taskName, detail);
-    return result;
-  }
-
-  /**
-   * Marks the start of a performance measurement for a given task.
-   * @param taskName The name of the task.
-   * @param detail Optional additional data related to the task.
-   */
-  start(taskName: string, detail?: unknown): void {
-    this.tasks.set(taskName, {
-      startTime: performance.now(),
-      detail,
-    });
-  }
-
-  /**
-   * Combines detail objects from start and stop into a single object.
-   * @param startDetail Detail object from start.
-   * @param stopDetail Detail object from stop.
-   * @returns Combined detail object.
-   */
-  private mergeData(startDetail?: unknown, stopDetail?: unknown): unknown {
-    const startData = typeof startDetail === "object" && startDetail !== null ? startDetail : {};
-    const stopData = typeof stopDetail === "object" && stopDetail !== null ? stopDetail : {};
-
-    // Merge data
-    return { ...startData, ...stopData };
-  }
-
-  /**
-   * Marks the end of a performance measurement for a given task and logs the measurement.
-   * @param taskName The name of the task.
-   * @param detail Optional additional data related to the task.
-   */
-  stop(taskName: string, detail?: unknown): void {
-    const task = this.tasks.get(taskName);
-    if (!task) {
-      this.logger.warn(`No start time found for task "${taskName}". Did you forget to call start()?`, detail);
-      return;
-    }
-
-    const endTime = performance.now();
-    const duration = endTime - task.startTime;
-    const data = this.mergeData(task.detail, detail);
-
-    const performanceData: PerformanceData = {
-      task: taskName,
-      duration,
-      data,
-    };
-
-    // Log the measure immediately
-    this.logger.debug(performanceData);
-
-    // Clean up the task from the map
-    this.tasks.delete(taskName);
-  }
-
-  /**
-   * Clears all recorded performance entries and internal data structures.
-   */
-  clear(): void {
-    this.tasks.clear();
   }
 }
 
-export const profiler = Profiler.create();
+export class Profiler {
+  private logger: Logger;
+
+  constructor(options?: ProfilerOptions) {
+    this.logger = options?.logger ?? defaultLogger;
+  }
+
+  /**
+   * Creates a new profiling session.
+   * @param detail Optional detail data.
+   * @returns A TaskProfiler instance.
+   */
+  create(detail?: Record<string, unknown>): TaskProfiler {
+    return new TaskProfiler(this.logger, detail);
+  }
+}
+
+export const profiler = new Profiler();
