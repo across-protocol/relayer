@@ -23,17 +23,20 @@ import {
   paginatedEventQuery,
   CHAIN_IDs,
   getNetworkName,
+  averageBlockTime,
+  getProvider,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
-let LATEST_MAINNET_BLOCK = 0;
+let LATEST_MAINNET_BLOCK;
+let MAINNET_BLOCK_TIME;
 
 // These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
 // We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
-export const ARB_ORBIT_NETWORK_CONFIGS: ArbitrumNetwork[] = [
+export const ARB_ORBIT_NETWORK_CONFIGS: (Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & { challengePeriodSeconds: number })[] = [
   {
     chainId: CHAIN_IDs.ALEPH_ZERO,
     name: "Aleph Zero",
@@ -42,20 +45,18 @@ export const ARB_ORBIT_NETWORK_CONFIGS: ArbitrumNetwork[] = [
       bridge: "0x41Ec9456AB918f2aBA81F38c03Eb0B93b78E84d9",
       inbox: "0x56D8EC76a421063e1907503aDd3794c395256AEb ",
       sequencerInbox: "0xF75206c49c1694594E3e69252E519434f1579876",
-      outbox: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e",
+      outbox: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`arbOutbox_${CHAIN_IDs.ALEPH_ZERO}`].address,
       rollup: "0x1CA12290D954CFe022323b6A6Df92113ed6b1C98",
     },
-    confirmPeriodBlocks: 45818, // Challenge period in blocks
+    challengePeriodSeconds: 6 * 60 * 60, // ~ 6 hours
     retryableLifetimeSeconds: 7 * 24 * 60 * 60,
-    nativeToken: "0xdD0ae774F7E300CdAA4EA371cD55169665Ee6AFe",
+    nativeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
     isTestnet: false,
     // Must be set to true for L3's
     isCustom: true,
   },
 ];
-ARB_ORBIT_NETWORK_CONFIGS.forEach((networkConfig) => {
-  registerCustomArbitrumNetwork(networkConfig);
-});
+
 
 export async function arbStackFinalizer(
   logger: winston.Logger,
@@ -64,6 +65,18 @@ export async function arbStackFinalizer(
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   LATEST_MAINNET_BLOCK = hubPoolClient.latestBlockSearched;
+  const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
+  MAINNET_BLOCK_TIME = (await averageBlockTime(hubPoolProvider)).average;
+  // Now that we know the L1 block time, we can calculate the confirmPeriodBlocks.
+  ARB_ORBIT_NETWORK_CONFIGS.forEach((_networkConfig) => {
+    const networkConfig: ArbitrumNetwork = {
+      ..._networkConfig,
+      confirmPeriodBlocks: _networkConfig.challengePeriodSeconds / MAINNET_BLOCK_TIME,
+    }
+    // The network config object should be full now.
+    registerCustomArbitrumNetwork(networkConfig);
+  })
+
   const { chainId } = spokePoolClient;
   const networkName = getNetworkName(chainId);
 
@@ -96,14 +109,8 @@ export async function arbStackFinalizer(
   const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
     ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
-  const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
-  if (!l2Erc20Gateway) {
-    logger.warn({
-      at: `Finalizer#${networkName}Finalizer`,
-      message: `No erc20Gateway contract found for chain ${chainId} in CONTRACT_ADDRESSES, skipping manual withdrawal finalization`,
-    });
-  } else {
     if (withdrawalToAddresses.length > 0) {
+      const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
       const arbitrumGateway = new Contract(
         l2Erc20Gateway.address,
         l2Erc20Gateway.abi,
@@ -142,7 +149,6 @@ export async function arbStackFinalizer(
           // }
         });
     }
-  }
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger, chainId);
 }
@@ -311,11 +317,10 @@ async function getMessageOutboxStatusAndProof(
     if (outboxMessageExecutionStatus !== ChildToParentMessageStatus.CONFIRMED) {
       const estimatedFinalizationBlock = await l2Message.getFirstExecutableBlock(l2Provider);
       const estimatedFinalizationBlockDelta = estimatedFinalizationBlock.toNumber() - LATEST_MAINNET_BLOCK;
-      const mainnetBlockTime = 12;
       logger.debug({
         at: `Finalizer#${networkName}Finalizer`,
         message: `Unconfirmed withdrawal can be finalized in ${
-          (estimatedFinalizationBlockDelta * mainnetBlockTime) / 60 / 60
+          (estimatedFinalizationBlockDelta * MAINNET_BLOCK_TIME) / 60 / 60
         } hours`,
         chainId,
         token: event.l2TokenAddress,
