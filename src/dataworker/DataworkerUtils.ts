@@ -20,7 +20,7 @@ import {
   getTimestampsForBundleEndBlocks,
   isDefined,
   MerkleTree,
-  profiler,
+  Profiler,
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../utils";
@@ -343,7 +343,8 @@ export async function persistDataToArweave(
   logger: winston.Logger,
   tag?: string
 ): Promise<void> {
-  const taskProfiler = profiler.create({
+  const taskProfiler = new Profiler({
+    logger,
     at: "DataworkerUtils#persistDataToArweave",
   });
   taskProfiler.mark("A");

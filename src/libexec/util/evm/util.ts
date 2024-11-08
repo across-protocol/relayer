@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, EventFilter } from "ethers";
-import { getNetworkName, isDefined, paginatedEventQuery, profiler, winston } from "../../../utils";
+import { getNetworkName, isDefined, paginatedEventQuery, Profiler, winston } from "../../../utils";
 import { Log, ScraperOpts } from "../../types";
 
 /**
@@ -47,7 +47,7 @@ export async function scrapeEvents(
   opts: ScraperOpts & { toBlock: number },
   logger?: winston.Logger
 ): Promise<Log[]> {
-  const taskProfiler = profiler.create({
+  const taskProfiler = new Profiler({
     logger,
     at: "scrapeEvents",
   });

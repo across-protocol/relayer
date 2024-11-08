@@ -6,7 +6,7 @@ import {
   getCurrentTime,
   getNetworkName,
   getRedisCache,
-  profiler,
+  Profiler,
   Signer,
   winston,
 } from "../utils";
@@ -21,7 +21,7 @@ const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-r
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const taskProfiler = profiler.create({
+  const taskProfiler = new Profiler({
     at: "Relayer#run",
     logger: _logger,
   });

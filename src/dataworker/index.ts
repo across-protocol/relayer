@@ -6,7 +6,7 @@ import {
   Signer,
   disconnectRedisClients,
   isDefined,
-  profiler,
+  Profiler,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -55,7 +55,7 @@ export async function createDataworker(
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const taskProfiler = profiler.create({
+  const taskProfiler = new Profiler({
     at: "Dataworker#index",
     logger: _logger,
   });

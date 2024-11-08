@@ -25,7 +25,7 @@ import {
   assert,
   compareAddressesSimple,
   getUsdcSymbol,
-  profiler,
+  Profiler,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit } from "../interfaces";
@@ -298,7 +298,8 @@ export class InventoryClient {
   // Return the upcoming refunds (in pending and next bundles) on each chain.
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
-    const taskProfiler = profiler.create({
+    const taskProfiler = new Profiler({
+      logger: this.logger,
       at: "InventoryClient::getBundleRefunds",
     });
     taskProfiler.mark("A", {
@@ -619,13 +620,14 @@ export class InventoryClient {
     l1Token: string,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
-    const taskProfiler = profiler.create();
+    const taskProfiler = new Profiler({
+      logger: this.logger,
+      at: "InventoryClient::getLatestRunningBalances",
+    });
     const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
 
-    taskProfiler.mark("start", {
-      at: "InventoryClient::getLatestRunningBalances",
-    });
+    taskProfiler.mark("start");
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
         const chainIdIndex = chainIds.indexOf(chainId);

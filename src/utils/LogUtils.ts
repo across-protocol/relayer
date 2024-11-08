@@ -1,6 +1,5 @@
-import { bigNumberFormatter } from "@uma/logger";
 import { performance } from "node:perf_hooks";
-import winston, { Logger } from "winston";
+import { Logger } from "winston";
 import crypto from "crypto";
 
 export type DefaultLogLevels = "debug" | "info" | "warn" | "error";
@@ -35,33 +34,21 @@ export type PerformanceData = {
 };
 
 type ProfilerOptions = {
-  logger?: Logger;
-};
+  logger: Logger;
+  at?: string;
+} & Record<string, unknown>;
 
-const defaultLogger = winston.createLogger({
-  level: "debug",
-  defaultMeta,
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format(bigNumberFormatter)(),
-    winston.format.json({
-      space: 2,
-    })
-  ),
-  transports: [new winston.transports.Console()],
-});
-
-class TaskProfiler {
+export class Profiler {
   id: string;
   private marks: Map<string, { time: number; detail?: Record<string, unknown> }>;
   private detail: Detail;
   private logger: Logger;
 
-  constructor(logger: Logger, detail?: Record<string, unknown>) {
+  constructor({ logger, ...detail }: ProfilerOptions) {
     this.id = crypto.randomUUID();
     this.marks = new Map();
-    this.detail = detail ? { ...detail } : {};
-    this.logger = logger;
+    this.detail = detail ?? {};
+    this.logger = logger.child(defaultMeta);
   }
 
   /**
@@ -184,22 +171,3 @@ class TaskProfiler {
     }
   }
 }
-
-export class Profiler {
-  private logger: Logger;
-
-  constructor(options?: ProfilerOptions) {
-    this.logger = options?.logger ? options.logger.child(defaultMeta) : defaultLogger;
-  }
-
-  /**
-   * Creates a new profiling session.
-   * @param detail Optional detail data.
-   * @returns A TaskProfiler instance.
-   */
-  create(detail?: Record<string, unknown>): TaskProfiler {
-    return new TaskProfiler(this.logger, detail);
-  }
-}
-
-export const profiler = new Profiler();

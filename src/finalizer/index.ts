@@ -29,7 +29,7 @@ import {
   startupLogLevel,
   winston,
   CHAIN_IDs,
-  profiler,
+  Profiler,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage } from "./types";
 import {
@@ -471,7 +471,8 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
 
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
-  const taskProfiler = profiler.create({
+  const taskProfiler = new Profiler({
+    logger,
     at: "Finalizer#index",
     config,
   });

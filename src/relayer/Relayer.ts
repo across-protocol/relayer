@@ -20,7 +20,7 @@ import {
   fixedPointAdjustment,
   TransactionResponse,
   ZERO_ADDRESS,
-  profiler,
+  Profiler,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -1027,7 +1027,7 @@ export class Relayer {
     repaymentChainId?: number;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
-    const taskProfiler = profiler.create({
+    const taskProfiler = new Profiler({
       at: "Relayer::resolveRepaymentChain",
       logger: this.logger,
     });
