@@ -128,22 +128,22 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
       abi: POLYGON_BRIDGE_ABI,
     },
-    arbitrumOutbox: {
+    orbitOutbox_42161: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
       abi: ARBITRUM_OUTBOX_ABI,
     },
-    arbitrumErc20GatewayRouter: {
+    orbitErc20GatewayRouter_42161: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
-    arbitrumErc20Gateway: {
+    orbitErc20Gateway_42161: {
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
-    avmErc20GatewayRouter_41455: {
+    orbitErc20GatewayRouter_41455: {
       address: "0xeBb17f398ed30d02F2e8733e7c1e5cf566e17812",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
-    avmErc20L1Gateway_41455: {
+    orbitErc20L1Gateway_41455: {
       address: "0xccaF21F002EAF230c9Fa810B34837a3739B70F7B",
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },

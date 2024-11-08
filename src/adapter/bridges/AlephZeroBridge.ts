@@ -32,8 +32,8 @@ export class AlephZeroBridge extends BaseBridgeAdapter {
     // Lint Appeasement
     _l1Token;
     const { address: gatewayAddress, abi: gatewayRouterAbi } =
-      CONTRACT_ADDRESSES[hubChainId][`avmErc20GatewayRouter_${l2chainId}`];
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`avmErc20L1Gateway_${l2chainId}`];
+      CONTRACT_ADDRESSES[hubChainId][`orbitErc20GatewayRouter_${l2chainId}`];
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`orbitErc20L1Gateway_${l2chainId}`];
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].erc20Gateway;
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
