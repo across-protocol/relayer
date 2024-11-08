@@ -53,7 +53,6 @@ export type PendingRootBundle = interfaces.PendingRootBundle;
 
 // SpokePool interfaces
 export type RelayData = interfaces.RelayData;
-export type FundsDepositedEvent = interfaces.FundsDepositedEvent;
 export type Deposit = interfaces.Deposit;
 export type DepositWithBlock = interfaces.DepositWithBlock;
 export type Fill = interfaces.Fill;
