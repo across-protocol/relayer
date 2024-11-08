@@ -20,6 +20,7 @@ import {
   fixedPointAdjustment,
   TransactionResponse,
   ZERO_ADDRESS,
+  profiler,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -1026,13 +1027,17 @@ export class Relayer {
     repaymentChainId?: number;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
+    const taskProfiler = profiler.create({
+      at: "Relayer::resolveRepaymentChain",
+      logger: this.logger,
+    });
     const { inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash, fromLiteChain } =
       deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
-    const start = performance.now();
+    taskProfiler.mark("A");
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
@@ -1056,14 +1061,17 @@ export class Relayer {
       };
     }
 
-    this.logger.debug({
-      at: "Relayer::resolveRepaymentChain",
+    taskProfiler.measure("Resolve Repayment Chains", {
+      from: "A",
       message: `Determined eligible repayment chains ${JSON.stringify(
         preferredChainIds
-      )} for deposit ${depositId} from ${originChain} to ${destinationChain} in ${
-        Math.round(performance.now() - start) / 1000
-      }s.`,
+      )} for deposit ${depositId} from ${originChain} to ${destinationChain}.`,
+      preferredChainIds,
+      depositId,
+      originChain,
+      destinationChain,
     });
+
     const _repaymentFees = preferredChainIds.map((chainId) =>
       repaymentFees.find(({ paymentChainId }) => paymentChainId === chainId)
     );

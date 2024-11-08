@@ -6,6 +6,7 @@ import {
   getCurrentTime,
   getNetworkName,
   getRedisCache,
+  profiler,
   Signer,
   winston,
 } from "../utils";
@@ -20,6 +21,10 @@ const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-r
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const taskProfiler = profiler.create({
+    at: "Relayer#run",
+    logger: _logger,
+  });
   const relayerRun = randomNumber();
   const startTime = getCurrentTime();
 
@@ -56,8 +61,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
-
-      const tLoopStart = performance.now();
+      const tLoopStart = taskProfiler.mark("tLoopStart");
       const ready = await relayer.update();
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
@@ -100,11 +104,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (!loop) {
         stop = true;
       } else {
-        const runTime = Math.round((performance.now() - tLoopStart) / 1000);
-        logger.debug({
-          at: "Relayer#run",
-          message: `Completed relayer execution loop ${run} in ${runTime} seconds.`,
+        const runTimeMilliseconds = taskProfiler.measure("Relayer execution loop", {
+          from: "tLoopStart",
+          message: `Completed relayer execution loop ${run} times.`,
         });
+        const runTime = Math.round(runTimeMilliseconds / 1000);
 
         if (!stop && runTime < pollingDelay) {
           const delta = pollingDelay - runTime;

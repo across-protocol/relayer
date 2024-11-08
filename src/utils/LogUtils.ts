@@ -69,7 +69,7 @@ class TaskProfiler {
    * @param label The label for the mark.
    * @param detail Optional detail data to merge.
    */
-  mark(label: string, detail?: Detail): void {
+  mark(label: string, detail?: Detail): number {
     const currentTime = performance.now();
 
     // merge additional data
@@ -77,6 +77,7 @@ class TaskProfiler {
 
     // Store the mark
     this.marks.set(label, { time: currentTime, detail });
+    return currentTime;
   }
 
   /**
@@ -92,7 +93,7 @@ class TaskProfiler {
       from: string;
       to?: string;
     } & Detail
-  ): void {
+  ): number {
     const { from, to, ...detail } = params;
     const startMark = this.marks.get(from);
     const endMark = to ? this.marks.get(to) : undefined;
@@ -118,6 +119,7 @@ class TaskProfiler {
     };
 
     this.logger.debug(performanceData);
+    return duration;
   }
 
   /**
