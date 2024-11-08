@@ -25,6 +25,7 @@ import {
   assert,
   compareAddressesSimple,
   getUsdcSymbol,
+  getNativeTokenSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit } from "../interfaces";
@@ -982,7 +983,7 @@ export class InventoryClient {
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
             if (
-              [CHAIN_IDs.ALEPH_ZERO, CHAIN_IDs.POLYGON].includes(chainId) ||
+              getNativeTokenSymbol(chainId) !== "ETH" ||
               unwrapWethThreshold === undefined ||
               unwrapWethTarget === undefined
             ) {
