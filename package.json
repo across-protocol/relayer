@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.19",
-    "@across-protocol/contracts": "^3.0.12-beta.3",
-    "@across-protocol/sdk": "^3.2.11-beta.1",
+    "@across-protocol/contracts": "^3.0.16",
+    "@across-protocol/sdk": "^3.2.12",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",

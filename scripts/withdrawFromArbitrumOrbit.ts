@@ -15,7 +15,7 @@ import {
   CHAIN_IDs,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
-import { askYesNoQuestion, getArbSpokePoolContract } from "./utils";
+import { askYesNoQuestion } from "./utils";
 
 import minimist from "minimist";
 
@@ -66,13 +66,9 @@ export async function run(): Promise<void> {
   // - Example WETH: 0xB3f0eE446723f4258862D949B4c9688e7e7d35d3
   // - Example ERC20GatewayRouter: https://evm-explorer.alephzero.org/address/0xD296d45171B97720D3aBdb68B0232be01F1A9216?tab=read_proxy
   // - Example Txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
-  const arbErc20GatewayRouterObj = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
-  assert(arbErc20GatewayRouterObj, "erc20GatewayRouter for chain not found in CONTRACT_ADDRESSES");
-  const erc20GatewayRouter = new Contract(
-    arbErc20GatewayRouterObj.address,
-    arbErc20GatewayRouterObj.abi,
-    connectedSigner
-  );
+  const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+  assert(arbErc20GatewayObj, "erc20GatewayRouter for chain not found in CONTRACT_ADDRESSES");
+  const erc20Gateway = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
   const outboundTransferArgs = [
     TOKEN_SYMBOLS_MAP.WETH?.addresses[CHAIN_IDs.MAINNET], // l1Token
     signerAddr, // to
@@ -81,22 +77,14 @@ export async function run(): Promise<void> {
   ];
 
   console.log(
-    `Submitting outboundTransfer on the Arbitrum ERC20 gateway router @ ${erc20GatewayRouter.address} with the following args: `,
+    `Submitting outboundTransfer on the Arbitrum ERC20 gateway router @ ${erc20Gateway.address} with the following args: `,
     ...outboundTransferArgs
   );
 
-  // Sanity check that the ovmStandardBridge contract is the one we expect by comparing its stored addresses
-  // with the ones we have recorded.
-  const spokePool = await getArbSpokePoolContract(chainId, connectedSigner);
-  const expectedErc20GatewayRouter = await spokePool.l2GatewayRouter();
-  assert(
-    expectedErc20GatewayRouter === arbErc20GatewayRouterObj.address,
-    `Unexpected L2 erc20 gateway router address in ArbitrumSpokePool contract, expected: ${expectedErc20GatewayRouter}, got: ${arbErc20GatewayRouterObj.address}`
-  );
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
   }
-  const withdrawal = await erc20GatewayRouter.outboundTransfer(...outboundTransferArgs);
+  const withdrawal = await erc20Gateway.outboundTransfer(...outboundTransferArgs);
   console.log(`Submitted withdrawal: ${blockExplorerLink(withdrawal.hash, chainId)}.`);
   const receipt = await withdrawal.wait();
   console.log("Receipt", receipt);

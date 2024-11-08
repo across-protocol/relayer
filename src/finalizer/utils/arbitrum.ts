@@ -3,7 +3,7 @@ import {
   ChildTransactionReceipt,
   ChildToParentMessageWriter,
   registerCustomArbitrumNetwork,
-  ArbitrumNetwork
+  ArbitrumNetwork,
 } from "@arbitrum/sdk";
 import {
   winston,
@@ -31,13 +31,18 @@ import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
-let LATEST_MAINNET_BLOCK;
-let MAINNET_BLOCK_TIME;
+let LATEST_MAINNET_BLOCK: number;
+let MAINNET_BLOCK_TIME: number;
 
 // These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
 // We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
-export const ARB_ORBIT_NETWORK_CONFIGS: (Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & { challengePeriodSeconds: number })[] = [
+export const ARB_ORBIT_NETWORK_CONFIGS: (Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & {
+  challengePeriodSeconds: number;
+  registered: boolean;
+})[] = [
   {
+    // Addresses are available here:
+    // https://raas.gelato.network/rollups/details/public/aleph-zero-evm
     chainId: CHAIN_IDs.ALEPH_ZERO,
     name: "Aleph Zero",
     parentChainId: CHAIN_IDs.MAINNET,
@@ -52,11 +57,11 @@ export const ARB_ORBIT_NETWORK_CONFIGS: (Omit<ArbitrumNetwork, "confirmPeriodBlo
     retryableLifetimeSeconds: 7 * 24 * 60 * 60,
     nativeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
     isTestnet: false,
+    registered: false,
     // Must be set to true for L3's
     isCustom: true,
   },
 ];
-
 
 export async function arbStackFinalizer(
   logger: winston.Logger,
@@ -69,13 +74,17 @@ export async function arbStackFinalizer(
   MAINNET_BLOCK_TIME = (await averageBlockTime(hubPoolProvider)).average;
   // Now that we know the L1 block time, we can calculate the confirmPeriodBlocks.
   ARB_ORBIT_NETWORK_CONFIGS.forEach((_networkConfig) => {
+    if (_networkConfig.registered) {
+      return;
+    }
     const networkConfig: ArbitrumNetwork = {
       ..._networkConfig,
       confirmPeriodBlocks: _networkConfig.challengePeriodSeconds / MAINNET_BLOCK_TIME,
-    }
+    };
     // The network config object should be full now.
     registerCustomArbitrumNetwork(networkConfig);
-  })
+    _networkConfig.registered = true;
+  });
 
   const { chainId } = spokePoolClient;
   const networkName = getNetworkName(chainId);
@@ -109,46 +118,46 @@ export async function arbStackFinalizer(
   const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
     ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
-    if (withdrawalToAddresses.length > 0) {
-      const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
-      const arbitrumGateway = new Contract(
-        l2Erc20Gateway.address,
-        l2Erc20Gateway.abi,
-        spokePoolClient.spokePool.provider
-      );
-      // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
-      // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
-      // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
-      // which withdraws WETH to mainnet using dev wallet.
-      const withdrawalEvents = await paginatedEventQuery(
-        arbitrumGateway,
-        arbitrumGateway.filters.WithdrawalInitiated(
-          null, // l1Token, not-indexed so can't filter
-          null, // from
-          withdrawalToAddresses // to
-        ),
-        {
-          ...spokePoolClient.eventSearchConfig,
-          toBlock: spokePoolClient.latestBlockSearched,
-        }
-      );
-      // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
-      // submit proofs and finalizations for.
-      withdrawalEvents
-        .filter((e) => e.args.l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId])
-        .forEach((event) => {
-          const tokenBridgedEvent: TokensBridged = {
-            ...event,
-            amountToReturn: event.args._amount,
-            chainId,
-            leafId: 0,
-            l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
-          };
-          // if (event.blockNumber <= latestBlockToFinalize) {
-          olderTokensBridgedEvents.push(tokenBridgedEvent);
-          // }
-        });
-    }
+  if (withdrawalToAddresses.length > 0) {
+    const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+    const arbitrumGateway = new Contract(
+      l2Erc20Gateway.address,
+      l2Erc20Gateway.abi,
+      spokePoolClient.spokePool.provider
+    );
+    // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
+    // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
+    // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
+    // which withdraws WETH to mainnet using dev wallet.
+    const withdrawalEvents = await paginatedEventQuery(
+      arbitrumGateway,
+      arbitrumGateway.filters.WithdrawalInitiated(
+        null, // l1Token, not-indexed so can't filter
+        null, // from
+        withdrawalToAddresses // to
+      ),
+      {
+        ...spokePoolClient.eventSearchConfig,
+        toBlock: spokePoolClient.latestBlockSearched,
+      }
+    );
+    // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
+    // submit proofs and finalizations for.
+    withdrawalEvents
+      .filter((e) => e.args.l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId])
+      .forEach((event) => {
+        const tokenBridgedEvent: TokensBridged = {
+          ...event,
+          amountToReturn: event.args._amount,
+          chainId,
+          leafId: 0,
+          l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+        };
+        // if (event.blockNumber <= latestBlockToFinalize) {
+        olderTokensBridgedEvents.push(tokenBridgedEvent);
+        // }
+      });
+  }
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger, chainId);
 }
