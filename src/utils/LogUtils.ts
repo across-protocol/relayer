@@ -24,6 +24,8 @@ type Detail = {
   [key: string]: unknown;
 };
 
+const defaultMeta = { datadog: true };
+
 export type PerformanceData = {
   id: string; // Unique identifier for the profiling session
   taskName: string; // Name of the task being measured
@@ -38,7 +40,7 @@ type ProfilerOptions = {
 
 const defaultLogger = winston.createLogger({
   level: "debug",
-  defaultMeta: { datadog: true },
+  defaultMeta,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format(bigNumberFormatter)(),
@@ -185,7 +187,7 @@ export class Profiler {
   private logger: Logger;
 
   constructor(options?: ProfilerOptions) {
-    this.logger = options?.logger ?? defaultLogger;
+    this.logger = options?.logger ? options.logger.child(defaultMeta) : defaultLogger;
   }
 
   /**
