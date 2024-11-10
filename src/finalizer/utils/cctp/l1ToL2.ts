@@ -1,15 +1,13 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  formatUnitsForToken,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
@@ -28,7 +26,7 @@ import { uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
-  signer: Signer,
+  _signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
