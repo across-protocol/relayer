@@ -3,7 +3,7 @@ import { Contract, ethers, utils as ethersUtils, Signer } from "ethers";
 import readline from "readline";
 import * as contracts from "@across-protocol/contracts";
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
+import { getDeployedContract, getNodeUrlList, getProvider, CHAIN_IDs } from "../src/utils";
 
 // https://nodejs.org/api/process.html#exit-codes
 export const NODE_SUCCESS = 0;
@@ -82,19 +82,6 @@ export function validateChainIds(chainIds: number[]): boolean {
 }
 
 /**
- * @description Resolve a default provider URL.
- * @param chainId Chain ID for the provider to select.
- * @returns URL of the provider endpoint.
- */
-export function getProviderUrl(chainId: number): string {
-  try {
-    return getNodeUrlList(chainId, 1)[0];
-  } catch {
-    return fallbackProviders[chainId];
-  }
-}
-
-/**
  * @description For a SpokePool chain ID, resolve its corresponding HubPool chain ID.
  * @param spokeChainId Chain ID of the SpokePool.
  * @returns Chain ID for the corresponding HubPool.
@@ -116,7 +103,7 @@ export function resolveHubChainId(spokeChainId: number): number {
  */
 export async function getContract(chainId: number, contractName: string): Promise<Contract> {
   const contract = getDeployedContract(contractName, chainId);
-  const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(chainId));
+  const provider = await getProvider(chainId);
   return contract.connect(provider);
 }
 
