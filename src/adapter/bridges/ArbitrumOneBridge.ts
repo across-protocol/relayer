@@ -18,7 +18,7 @@ const DEFAULT_ERC20_GATEWAY = {
 };
 
 export class ArbitrumOneBridge extends BaseBridgeAdapter {
-  protected l1Gateway: Contract;
+  protected l1GatewayRouter: Contract;
 
   private readonly transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
@@ -43,7 +43,7 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
-    this.l1Gateway = new Contract(gatewayAddress, gatewayRouterAbi, l1Signer);
+    this.l1GatewayRouter = new Contract(gatewayAddress, gatewayRouterAbi, l1Signer);
   }
 
   async constructL1ToL2Txn(
@@ -52,9 +52,9 @@ export class ArbitrumOneBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    const { l1Gateway, l2GasLimit, l2GasPrice, transactionSubmissionData, l1SubmitValue } = this;
+    const { l1GatewayRouter, l2GasLimit, l2GasPrice, transactionSubmissionData, l1SubmitValue } = this;
     return Promise.resolve({
-      contract: l1Gateway,
+      contract: l1GatewayRouter,
       method: "outboundTransfer",
       args: [l1Token, toAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
       value: l1SubmitValue,
