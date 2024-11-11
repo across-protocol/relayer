@@ -162,7 +162,7 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
  */
 async function run(argv: string[]): Promise<void> {
   const minimistOpts = {
-    string: ["lookback", "blockrange", "quorum", "relayer", "spokepool"],
+    string: ["lookback", "relayer", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
