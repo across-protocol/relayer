@@ -78,9 +78,10 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    */
   protected startWorker(): void {
     const {
-      eventSearchConfig: { fromBlock, maxBlockLookBack: blockRange },
+      eventSearchConfig: { fromBlock, maxBlockLookBack: blockrange },
+      spokePool: { address: spokepool },
     } = this;
-    const opts = { blockRange, lookback: `@${fromBlock}` };
+    const opts = { spokepool, blockrange, lookback: `@${fromBlock}` };
 
     const args = Object.entries(opts)
       .map(([k, v]) => [`--${k}`, `${v}`])
