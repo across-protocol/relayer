@@ -14,6 +14,7 @@ import {
   getBlockForTimestamp,
   getChainQuorum,
   getDeploymentBlockNumber,
+  getDeployedContract,
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
@@ -206,7 +207,7 @@ async function run(argv: string[]): Promise<void> {
   };
 
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
-  const spokePool = await utils.getSpokePoolContract(chainId);
+  const spokePool = getDeployedContract("SpokePool", chainId);
 
   process.on("SIGHUP", () => {
     logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
