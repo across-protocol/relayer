@@ -14,11 +14,11 @@ import {
   getBlockForTimestamp,
   getChainQuorum,
   getDeploymentBlockNumber,
-  getDeployedContract,
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
   getProvider,
+  getSpokePool,
   getRedisCache,
   Logger,
   winston,
@@ -162,18 +162,24 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
  */
 async function run(argv: string[]): Promise<void> {
   const minimistOpts = {
-    string: ["lookback", "relayer"],
+    string: ["lookback", "blockrange", "quorum", "relayer", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
   ({ chainId } = args);
-  const { lookback, relayer = null, maxBlockRange = 10_000 } = args;
+  const { lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
+
+  let { spokepool: spokePoolAddr } = args;
+  assert(
+    !isDefined(spokePoolAddr) || ethersUtils.isAddress(spokePoolAddr),
+    `Invalid SpokePool address (${spokePoolAddr})`
+  );
 
   chain = getNetworkName(chainId);
 
@@ -198,16 +204,21 @@ async function run(argv: string[]): Promise<void> {
     logger.debug({ at: "RelayerSpokePoolListener::run", message: `Skipping lookback on ${chain}.` });
   }
 
+  const spokePool = getSpokePool(chainId, spokePoolAddr);
+  if (!isDefined(spokePoolAddr)) {
+    ({ address: spokePoolAddr } = spokePool);
+  }
+
   const opts = {
-    quorum,
+    spokePool: spokePoolAddr,
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
     maxBlockRange,
     filterArgs: getEventFilterArgs(relayer),
+    quorum,
   };
 
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
-  const spokePool = getDeployedContract("SpokePool", chainId);
 
   process.on("SIGHUP", () => {
     logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
