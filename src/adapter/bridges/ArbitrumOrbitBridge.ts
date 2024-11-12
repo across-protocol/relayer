@@ -7,10 +7,12 @@ import {
   Provider,
   toBN,
   toWei,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
+import { PRODUCTION_NETWORKS } from "@across-protocol/constants";
 
 export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   protected l1GatewayRouter: Contract;
