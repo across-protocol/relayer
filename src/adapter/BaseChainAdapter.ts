@@ -109,7 +109,7 @@ export class BaseChainAdapter {
     // Approve tokens to bridges. This includes the tokens we want to send over a bridge as well as the custom gas tokens
     // each bridge supports (if applicable).
     const [bridgeTokensToApprove, gasTokensToApprove] = await Promise.all([
-      await mapAsync(
+      mapAsync(
         l1Tokens.map((token) => [token, this.bridges[token]?.l1Gateways] as [string, string[]]),
         async ([l1Token, bridges]) => {
           const erc20 = ERC20.connect(l1Token, this.getSigner(this.hubChainId));
@@ -129,7 +129,7 @@ export class BaseChainAdapter {
           return { token: erc20, bridges: bridgesToApprove };
         }
       ),
-      await mapAsync(
+      mapAsync(
         Object.values(this.bridges).filter((bridge) => isDefined(bridge.gasToken)),
         async (bridge) => {
           const gasToken = bridge.gasToken;
