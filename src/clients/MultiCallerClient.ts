@@ -12,7 +12,6 @@ import {
   TransactionSimulationResult,
   Contract,
   Signer,
-  getMultisender,
   getProvider,
   assert,
 } from "../utils";
@@ -256,7 +255,9 @@ export class MultiCallerClient {
   }
 
   async _getMultisender(chainId: number): Promise<Contract | undefined> {
-    return this.baseSigner ? getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId))) : undefined;
+    return this.baseSigner
+      ? await sdkUtils.getMulticall3(chainId, this.baseSigner.connect(await getProvider(chainId)))
+      : undefined;
   }
 
   async buildMultiSenderBundle(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction> {
