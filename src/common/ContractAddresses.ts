@@ -144,7 +144,6 @@ export const CONTRACT_ADDRESSES: {
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
     orbitErc20L1Gateway_41455: {
-      address: "0xccaF21F002EAF230c9Fa810B34837a3739B70F7B",
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
     VotingV2: {
@@ -335,7 +334,6 @@ export const CONTRACT_ADDRESSES: {
   },
   41455: {
     erc20Gateway: {
-      address: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
   },

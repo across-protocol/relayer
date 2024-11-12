@@ -10,8 +10,7 @@ import {
   PolygonERC20Bridge,
   ZKSyncBridge,
   ZKSyncWethBridge,
-  ArbitrumOneBridge,
-  AlephZeroBridge,
+  ArbitrumOrbitBridge,
   LineaBridge,
   LineaUSDCBridge,
   LineaWethBridge,
@@ -416,8 +415,8 @@ export const CANONICAL_BRIDGE: {
     ): BaseBridgeAdapter;
   };
 } = {
-  [CHAIN_IDs.ALEPH_ZERO]: AlephZeroBridge,
-  [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
+  [CHAIN_IDs.ALEPH_ZERO]: ArbitrumOrbitBridge,
+  [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.LINEA]: LineaBridge,
@@ -504,22 +503,38 @@ export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol
 // relayer to unintentionally overdraw the HubPool's available reserves.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM, CHAIN_IDs.BLAST];
 
-export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { l1: string; l2: string } } = {
-  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
-    l2: "0x096760F208390250649E3e8763348E783AEF5562",
+// Arbitrum Orbit chains may have custom gateways for certain tokens. These gateways need to be specified since token approvals are directed at the
+// gateway, while function calls are directed at the gateway router.
+export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]: { l1: string; l2: string } } } = {
+  [CHAIN_IDs.ARBITRUM]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
+      l2: "0x096760F208390250649E3e8763348E783AEF5562",
+    },
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
+      l2: "0x096760F208390250649E3e8763348E783AEF5562", // If we want to bridge to USDC.e, we need to specify a unique Arbitrum Gateway.
+    },
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
+      l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
+    },
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
+      l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
+    },
   },
-  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
-    l2: "0x096760F208390250649E3e8763348E783AEF5562", // If we want to bridge to USDC.e, we need to specify a unique Arbitrum Gateway.
+};
+
+// The default ERC20 gateway is the generic gateway used by Arbitrum Orbit chains to mint tokens which do not have a custom gateway set.
+export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: string } } = {
+  [CHAIN_IDs.ALEPH_ZERO]: {
+    l1: "0xccaF21F002EAF230c9Fa810B34837a3739B70F7B",
+    l2: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
   },
-  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
-    l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
-  },
-  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
-    l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
+  [CHAIN_IDs.ARBITRUM]: {
+    l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
+    l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
   },
 };
 
