@@ -1,5 +1,15 @@
 import minimist from "minimist";
-import { config, delay, exit, retrieveSignerFromCLIArgs, help, Logger, usage, waitForLogger } from "./src/utils";
+import {
+  config,
+  delay,
+  exit,
+  retrieveSignerFromCLIArgs,
+  help,
+  Logger,
+  usage,
+  waitForLogger,
+  stringifyThrownValue,
+} from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -61,12 +71,11 @@ if (require.main === module) {
   run(args)
     .catch(async (error) => {
       exitCode = 1;
+      const stringifiedError = stringifyThrownValue(error);
       logger.error({
         at: cmd ?? "unknown process",
         message: "There was an execution error!",
-        reason: error,
-        e: error,
-        error,
+        error: stringifiedError,
         args,
         notificationPath: "across-error",
       });

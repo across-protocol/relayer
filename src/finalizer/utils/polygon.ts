@@ -17,6 +17,8 @@ import {
   Multicall2Call,
   TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
+  sortEventsAscending,
+  toBNWei,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -35,6 +37,9 @@ enum POLYGON_MESSAGE_STATUS {
 // Unique signature used to identify Polygon L2 transactions that were erc20 withdrawals from the Polygon
 // canonical bridge. Do not change.
 const BURN_SIG = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+// We should ideally read this limit from a contract call, but for now we'll hardcode it.
+const CCTP_WITHDRAWAL_LIMIT_WEI = toBNWei(1_000_000, 6);
 
 export interface PolygonTokensBridged extends TokensBridged {
   payload: string;
@@ -61,7 +66,26 @@ export async function polygonFinalizer(
 
   // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
   // that are older than 1 day old:
-  const recentTokensBridgedEvents = spokePoolClient.getTokensBridged().filter((e) => e.blockNumber >= fromBlock);
+  let recentTokensBridgedEvents = spokePoolClient.getTokensBridged().filter((e) => e.blockNumber >= fromBlock);
+
+  // The SpokePool emits one TokensBridged event even if the token is USDC and it gets withdrawn in two separate
+  // CCTP events. We can't filter out these USDC events here (see comment below in `getFinalizableTransactions()`)
+  // but we do need to add in more TokensBridged events so that the call to `getUniqueLogIndex` will work.
+  recentTokensBridgedEvents.forEach((e) => {
+    if (
+      compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_ID]) &&
+      e.amountToReturn.gt(CCTP_WITHDRAWAL_LIMIT_WEI)
+    ) {
+      // Inject one TokensBridged event for each CCTP withdrawal that needs to be processed.
+      const numberOfEventsToAdd = Math.ceil(e.amountToReturn.div(CCTP_WITHDRAWAL_LIMIT_WEI).toNumber());
+      for (let i = 0; i < numberOfEventsToAdd; i++) {
+        recentTokensBridgedEvents.push({
+          ...e,
+        });
+      }
+    }
+  });
+  recentTokensBridgedEvents = sortEventsAscending(recentTokensBridgedEvents);
 
   return multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, signer, hubPoolClient, logger);
 }
