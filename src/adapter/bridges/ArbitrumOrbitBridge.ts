@@ -37,6 +37,11 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
+    const nativeToken = PRODUCTION_NETWORKS[l2chainId].nativeToken;
+    // Only set nonstandard gas tokens.
+    if (nativeToken !== "ETH") {
+      this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
+    }
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
     this.l1GatewayRouter = new Contract(gatewayAddress, gatewayRouterAbi, l1Signer);
