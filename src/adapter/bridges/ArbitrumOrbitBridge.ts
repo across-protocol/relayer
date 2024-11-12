@@ -8,6 +8,9 @@ import {
   toBN,
   toWei,
   TOKEN_SYMBOLS_MAP,
+  isDefined,
+  ethers,
+  bnZero,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -55,12 +58,18 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    const { l1GatewayRouter, l2GasLimit, l2GasPrice, transactionSubmissionData, l1SubmitValue } = this;
+    const { l1GatewayRouter, l2GasLimit, l2GasPrice, l1SubmitValue } = this;
+    const transactionSubmissionData = isDefined(this.gasToken)
+      ? ethers.utils.defaultAbiCoder.encode(
+          ["uint256", "bytes", "uint256"],
+          [l1SubmitValue, "0x", l2GasLimit.mul(l2GasPrice).add(l1SubmitValue)]
+        )
+      : this.transactionSubmissionData;
     return Promise.resolve({
       contract: l1GatewayRouter,
       method: "outboundTransfer",
       args: [l1Token, toAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
-      value: l1SubmitValue,
+      value: isDefined(this.gasToken) ? bnZero : l1SubmitValue,
     });
   }
 

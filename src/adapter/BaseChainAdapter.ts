@@ -147,8 +147,10 @@ export class BaseChainAdapter {
         }
       ),
     ]);
-    const tokensToApprove = bridgeTokensToApprove
-      .concat(gasTokensToApprove)
+    // Dedup the `gasTokensToApprove` array so that we don't approve the same bridge to send the same token multiple times.
+    const tokensToApprove = gasTokensToApprove
+      .filter(({ token, bridges }, idx) => gasTokensToApprove.indexOf({ token, bridges }) === idx)
+      .concat(bridgeTokensToApprove)
       .filter(({ bridges }) => bridges.length > 0);
     if (unavailableTokens.length > 0) {
       this.log("Some tokens do not have a bridge contract", { unavailableTokens });
