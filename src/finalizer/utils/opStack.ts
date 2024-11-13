@@ -22,9 +22,10 @@ import {
   chainIsProd,
   Contract,
   ethers,
+  Multicall2Call,
   paginatedEventQuery,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
+import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 const { utils } = ethers;
 
