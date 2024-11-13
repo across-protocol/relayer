@@ -10,15 +10,9 @@
     "node": ">=20"
   },
   "dependencies": {
-<<<<<<< HEAD
     "@across-protocol/constants": "^3.1.19",
     "@across-protocol/contracts": "^3.0.16",
     "@across-protocol/sdk": "^3.2.13",
-=======
-    "@across-protocol/constants": "^3.1.18",
-    "@across-protocol/contracts": "^3.0.12-beta.3",
-    "@across-protocol/sdk": "^3.2.11-beta.1",
->>>>>>> be3b729e (Support AlephZero)
     "@arbitrum/sdk": "^3.1.3",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
