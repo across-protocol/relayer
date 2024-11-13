@@ -46,7 +46,8 @@ export class AdapterManager {
       );
     };
 
-    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL, ZORA } = CHAIN_IDs;
+    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL, ZORA, ALEPH_ZERO } =
+      CHAIN_IDs;
     const hubChainId = hubPoolClient.chainId;
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
     const constructBridges = (chainId: number) => {
@@ -169,6 +170,18 @@ export class AdapterManager {
         SUPPORTED_TOKENS[ZORA],
         constructBridges(ZORA),
         DEFAULT_GAS_MULTIPLIER[ZORA] ?? 1
+      );
+    }
+    if (this.spokePoolClients[ALEPH_ZERO] !== undefined) {
+      this.adapters[ALEPH_ZERO] = new BaseChainAdapter(
+        spokePoolClients,
+        ALEPH_ZERO,
+        hubChainId,
+        filterMonitoredAddresses(ALEPH_ZERO),
+        logger,
+        SUPPORTED_TOKENS[ALEPH_ZERO],
+        constructBridges(ALEPH_ZERO),
+        DEFAULT_GAS_MULTIPLIER[ALEPH_ZERO] ?? 1
       );
     }
 
