@@ -11,11 +11,22 @@ import {
   isDefined,
   ethers,
   bnZero,
+  CHAIN_IDs,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PRODUCTION_NETWORKS } from "@across-protocol/constants";
+
+const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
+  [CHAIN_IDs.ARBITRUM]: toWei(0.013),
+  [CHAIN_IDs.ALEPH_ZERO]: toWei(0.45),
+};
+
+const maxFeePerGas: { [chainId: number]: BigNumber } = {
+  [CHAIN_IDs.ARBITRUM]: toBN(20e9),
+  [CHAIN_IDs.ALEPH_ZERO]: toBN(24e10),
+};
 
 export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   protected l1GatewayRouter: Contract;
@@ -23,8 +34,8 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   private readonly transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
   private readonly l2GasLimit = toBN(150000);
-  private readonly l2GasPrice = toBN(20e9);
-  private readonly l1SubmitValue = toWei(0.013);
+  private readonly l2GasPrice;
+  private readonly l1SubmitValue;
 
   constructor(
     l2chainId: number,
@@ -47,6 +58,8 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     if (nativeToken !== "ETH") {
       this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
     }
+    this.l1SubmitValue = bridgeSubmitValue[l2chainId];
+    this.l2GasPrice = maxFeePerGas[l2chainId];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
     this.l1GatewayRouter = new Contract(gatewayAddress, gatewayRouterAbi, l1Signer);
