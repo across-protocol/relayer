@@ -14,6 +14,7 @@ import {
   getBlockForTimestamp,
   getL1TokenInfo,
   compareAddressesSimple,
+  Multicall2Call,
   TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
   sortEventsAscending,
@@ -21,7 +22,6 @@ import {
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { Multicall2Call } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization

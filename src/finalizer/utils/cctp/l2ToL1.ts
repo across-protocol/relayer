@@ -1,7 +1,7 @@
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
+import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   Signer,
@@ -13,6 +13,7 @@ import {
   getNetworkName,
   getRedisCache,
   groupObjectCountsByProp,
+  Multicall2Call,
   isDefined,
   winston,
   convertFromWei,

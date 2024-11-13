@@ -1,7 +1,7 @@
 import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
@@ -15,6 +15,7 @@ import {
   getRedisCache,
   groupObjectCountsByProp,
   isDefined,
+  Multicall2Call,
   paginatedEventQuery,
   winston,
   convertFromWei,

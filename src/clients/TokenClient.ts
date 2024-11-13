@@ -211,7 +211,7 @@ export class TokenClient {
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const { spokePool } = this.spokePoolClients[chainId];
 
-    const multicall3 = await sdkUtils.getMulticall3(chainId, spokePool.provider);
+    const multicall3 = sdkUtils.getMulticall3(chainId, spokePool.provider);
     if (!isDefined(multicall3)) {
       return this.fetchTokenData(chainId, hubPoolTokens);
     }
