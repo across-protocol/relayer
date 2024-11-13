@@ -148,8 +148,12 @@ export class BaseChainAdapter {
       ),
     ]);
     // Dedup the `gasTokensToApprove` array so that we don't approve the same bridge to send the same token multiple times.
+    const tokenBridgePairs = gasTokensToApprove.map(({ token, bridges }) => `${token.address}_${bridges.join("_")}`);
     const tokensToApprove = gasTokensToApprove
-      .filter(({ token, bridges }, idx) => gasTokensToApprove.indexOf({ token, bridges }) === idx)
+      .filter(({ token, bridges }, idx) => {
+        const tokenBridgePair = `${token.address}_${bridges.join("_")}`;
+        tokenBridgePairs.indexOf(tokenBridgePair) === idx;
+      })
       .concat(bridgeTokensToApprove)
       .filter(({ bridges }) => bridges.length > 0);
     if (unavailableTokens.length > 0) {
