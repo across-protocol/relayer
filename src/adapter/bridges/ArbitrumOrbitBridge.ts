@@ -8,11 +8,25 @@ import {
   toBN,
   toWei,
   TOKEN_SYMBOLS_MAP,
+  isDefined,
+  ethers,
+  bnZero,
+  CHAIN_IDs,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PRODUCTION_NETWORKS } from "@across-protocol/constants";
+
+const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
+  [CHAIN_IDs.ARBITRUM]: toWei(0.013),
+  [CHAIN_IDs.ALEPH_ZERO]: toWei(0.45),
+};
+
+const maxFeePerGas: { [chainId: number]: BigNumber } = {
+  [CHAIN_IDs.ARBITRUM]: toBN(20e9),
+  [CHAIN_IDs.ALEPH_ZERO]: toBN(24e10),
+};
 
 export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   protected l1GatewayRouter: Contract;
@@ -20,8 +34,8 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   private readonly transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
   private readonly l2GasLimit = toBN(150000);
-  private readonly l2GasPrice = toBN(20e9);
-  private readonly l1SubmitValue = toWei(0.013);
+  private readonly l2GasPrice;
+  private readonly l1SubmitValue;
 
   constructor(
     l2chainId: number,
@@ -44,6 +58,8 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     if (nativeToken !== "ETH") {
       this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
     }
+    this.l1SubmitValue = bridgeSubmitValue[l2chainId];
+    this.l2GasPrice = maxFeePerGas[l2chainId];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
     this.l1GatewayRouter = new Contract(gatewayAddress, gatewayRouterAbi, l1Signer);
@@ -55,12 +71,18 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    const { l1GatewayRouter, l2GasLimit, l2GasPrice, transactionSubmissionData, l1SubmitValue } = this;
+    const { l1GatewayRouter, l2GasLimit, l2GasPrice, l1SubmitValue } = this;
+    const transactionSubmissionData = isDefined(this.gasToken)
+      ? ethers.utils.defaultAbiCoder.encode(
+          ["uint256", "bytes", "uint256"],
+          [l1SubmitValue, "0x", l2GasLimit.mul(l2GasPrice).add(l1SubmitValue)]
+        )
+      : this.transactionSubmissionData;
     return Promise.resolve({
       contract: l1GatewayRouter,
       method: "outboundTransfer",
       args: [l1Token, toAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
-      value: l1SubmitValue,
+      value: isDefined(this.gasToken) ? bnZero : l1SubmitValue,
     });
   }
 
