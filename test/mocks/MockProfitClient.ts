@@ -7,7 +7,7 @@ import { MockHubPoolClient } from "./MockHubPoolClient";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
-const defaultFillCost = toBN(100_000); // gas
+const defaultFillCost = toBN(150_000); // gas
 const defaultGasPrice = bnOne; // wei per gas
 
 export class MockProfitClient extends ProfitClient {
