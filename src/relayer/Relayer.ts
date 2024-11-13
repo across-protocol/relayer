@@ -148,8 +148,8 @@ export class Relayer {
     const { inventoryClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
-    const update = tokenClient.anyCapturedShortFallFills() ||
-      currentTime < this.lastMaintenance + this.config.maintenanceInterval;
+    const update =
+      tokenClient.anyCapturedShortFallFills() || currentTime < this.lastMaintenance + this.config.maintenanceInterval;
 
     if (!update) {
       return; // Nothing to do.
