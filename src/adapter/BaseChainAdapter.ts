@@ -152,7 +152,7 @@ export class BaseChainAdapter {
     const tokensToApprove = gasTokensToApprove
       .filter(({ token, bridges }, idx) => {
         const tokenBridgePair = `${token.address}_${bridges.join("_")}`;
-        tokenBridgePairs.indexOf(tokenBridgePair) === idx;
+        return tokenBridgePairs.indexOf(tokenBridgePair) === idx;
       })
       .concat(bridgeTokensToApprove)
       .filter(({ bridges }) => bridges.length > 0);
