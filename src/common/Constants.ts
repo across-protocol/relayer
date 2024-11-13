@@ -38,26 +38,6 @@ export const INFINITE_FILL_DEADLINE = bnUint32Max;
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
-// Target ~4 days per chain. Should cover all events needed to construct pending bundle.
-export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
-  [CHAIN_IDs.ALEPH_ZERO]: 1382400, // Same as Arbitrum
-  [CHAIN_IDs.ARBITRUM]: 1382400,
-  [CHAIN_IDs.BASE]: 172800, // Same as Optimism.
-  [CHAIN_IDs.BLAST]: 172800,
-  [CHAIN_IDs.BOBA]: 11520,
-  [CHAIN_IDs.LINEA]: 115200, // 1 block every 3 seconds
-  [CHAIN_IDs.LISK]: 172800, // Same as Optimism.
-  [CHAIN_IDs.MAINNET]: 28800,
-  [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
-  [CHAIN_IDs.OPTIMISM]: 172800, // 1 block every 2 seconds after bedrock
-  [CHAIN_IDs.POLYGON]: 138240,
-  [CHAIN_IDs.REDSTONE]: 172800, // OP stack
-  [CHAIN_IDs.SCROLL]: 115200, // 4 * 24 * 20 * 60,
-  [CHAIN_IDs.WORLD_CHAIN]: 172800, // OP stack
-  [CHAIN_IDs.ZK_SYNC]: 345600, // 4 * 24 * 60 * 60,
-  [CHAIN_IDs.ZORA]: 172800, // OP stack
-};
-
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
 // rollup challenge period seems safe.
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
@@ -289,41 +269,6 @@ export const BLOCK_NUMBER_TTL = 60;
 export const PROVIDER_CACHE_TTL = 3600;
 export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
-<<<<<<< HEAD
-=======
-// Multicall3 Constants:
-export const multicall3Addresses = {
-  [CHAIN_IDs.ALEPH_ZERO]: "0x3CA11702f7c0F28e0b4e03C31F7492969862C569",
-  [CHAIN_IDs.ARBITRUM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BASE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BOBA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.LINEA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.LISK]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.MAINNET]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.MODE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.OPTIMISM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.POLYGON]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.REDSTONE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.WORLD_CHAIN]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.ZK_SYNC]: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
-  [CHAIN_IDs.ZORA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  // Testnet:
-  [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BASE_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BLAST_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.SCROLL_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-};
-
-export type Multicall2Call = {
-  callData: ethers.utils.BytesLike;
-  target: string;
-};
-
->>>>>>> 7f3388da (Delete duplicated multicall address)
 // These are the spokes that can hold both ETH and WETH, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [
