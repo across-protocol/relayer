@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { DEFAULT_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
 import {
   BigNumber,
   winston,
@@ -14,6 +14,7 @@ import {
   Signer,
   getMultisender,
   getProvider,
+  Multicall2Call,
   assert,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
