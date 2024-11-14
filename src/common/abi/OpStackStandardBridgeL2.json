@@ -15,27 +15,16 @@
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
-      { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
-      { "indexed": false, "internalType": "bytes", "name": "extraData", "type": "bytes" }
-    ],
-    "name": "ETHBridgeInitiated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
       {
         "indexed": true,
         "internalType": "address",
-        "name": "localToken",
+        "name": "l1Token",
         "type": "address"
       },
       {
         "indexed": true,
         "internalType": "address",
-        "name": "remoteToken",
+        "name": "l2Token",
         "type": "address"
       },
       {
@@ -63,7 +52,7 @@
         "type": "bytes"
       }
     ],
-    "name": "ERC20BridgeInitiated",
+    "name": "WithdrawalInitiated",
     "type": "event"
   },
   {
