@@ -171,7 +171,7 @@ export async function opStackFinalizer(
         amountToReturn: event.args.amount,
         chainId,
         leafId: 0,
-        l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+        l2TokenAddress: event.l2TokenAddress,
       };
       if (event.blockNumber >= latestBlockToProve) {
         recentTokensBridgedEvents.push(tokenBridgedEvent);
