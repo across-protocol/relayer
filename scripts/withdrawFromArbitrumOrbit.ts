@@ -13,13 +13,14 @@ import {
   fromWei,
   blockExplorerLink,
   CHAIN_IDs,
+  getNativeTokenSymbol,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
 import { askYesNoQuestion } from "./utils";
 
 import minimist from "minimist";
 
-const cliArgs = ["amount", "chainId"];
+const cliArgs = ["amount", "chainId", "token"];
 const args = minimist(process.argv.slice(2), {
   string: cliArgs,
 });
@@ -28,6 +29,7 @@ const args = minimist(process.argv.slice(2), {
 // ts-node ./scripts/withdrawFromArbitrumOrbit.ts
 // \ --amount 3000000000000000000
 // \ --chainId 41455
+// \ --token WETH
 // \ --wallet gckms
 // \ --keys bot1
 
@@ -40,48 +42,61 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = TOKEN_SYMBOLS_MAP.WETH?.addresses[chainId];
-  assert(l2Token, `WETH not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2Token = TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId];
+  assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
   const l1TokenInfo = getL1TokenInfo(l2Token, chainId);
   console.log("Fetched L1 token info:", l1TokenInfo);
-  assert(l1TokenInfo.symbol === "ETH", "Only WETH withdrawals are supported for now.");
   const amount = args.amount;
   const amountFromWei = ethers.utils.formatUnits(amount, l1TokenInfo.decimals);
   console.log(`Amount to bridge from chain ${chainId}: ${amountFromWei} ${l2Token}`);
 
   const erc20 = new Contract(l2Token, ERC20.abi, connectedSigner);
   const currentBalance = await erc20.balanceOf(signerAddr);
+  const nativeTokenSymbol = getNativeTokenSymbol(chainId)
   const currentNativeBalance = await connectedSigner.getBalance();
   console.log(
-    `Current WETH balance for account ${signerAddr}: ${fromWei(currentBalance, l1TokenInfo.decimals)} ${l2Token}`
+    `Current ${l1TokenInfo.symbol} balance for account ${signerAddr}: ${fromWei(currentBalance, l1TokenInfo.decimals)} ${l2Token}`
   );
   console.log(
-    `Current native token balance for account ${signerAddr}: ${fromWei(currentNativeBalance, l1TokenInfo.decimals)}`
+    `Current native ${nativeTokenSymbol} token balance for account ${signerAddr}: ${fromWei(currentNativeBalance, l1TokenInfo.decimals)}`
   );
 
   // Now, submit a withdrawal:
-  // - Example WETH: 0xB3f0eE446723f4258862D949B4c9688e7e7d35d3
-  // - Example ERC20GatewayRouter: https://evm-explorer.alephzero.org/address/0xD296d45171B97720D3aBdb68B0232be01F1A9216?tab=read_proxy
-  // - Example Txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
-  const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20Gateway;
-  assert(arbErc20GatewayObj, "erc20GatewayRouter for chain not found in CONTRACT_ADDRESSES");
-  const erc20Gateway = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
-  const outboundTransferArgs = [
-    TOKEN_SYMBOLS_MAP.WETH?.addresses[CHAIN_IDs.MAINNET], // l1Token
-    signerAddr, // to
-    amount, // amount
-    "0x", // data
-  ];
+  let contract: Contract, functionName: string, functionArgs: any[];
+  if (l1TokenInfo.symbol !== nativeTokenSymbol) {
+    const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+    contract = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
+    functionName = "outboundTransfer";
+    functionArgs = [
+      l1TokenInfo.address, // l1Token
+      signerAddr, // to
+      amount, // amount
+      "0x", // data
+    ];
 
-  console.log(
-    `Submitting outboundTransfer on the Arbitrum ERC20 gateway router @ ${erc20Gateway.address} with the following args: `,
-    ...outboundTransferArgs
-  );
+    console.log(
+      `Submitting ${functionName} on the Arbitrum ERC20 gateway router @ ${contract.address} with the following args: `,
+      ...functionArgs
+    );
+  } else {
+    const arbSys = CONTRACT_ADDRESSES[chainId].arbSys;
+    contract = new Contract(arbSys.address, arbSys.abi, connectedSigner);
+    functionName = "withdrawEth";
+    functionArgs = [
+      signerAddr, // to
+      { value: amount }
+    ];
+    console.log(
+      `Submitting ${functionName} on the ArbSys contract @ ${contract.address} with the following args: `,
+      ...functionArgs
+    );
+
+  }
 
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
   }
-  const withdrawal = await erc20Gateway.outboundTransfer(...outboundTransferArgs);
+  const withdrawal = await contract[functionName](...functionArgs);
   console.log(`Submitted withdrawal: ${blockExplorerLink(withdrawal.hash, chainId)}.`);
   const receipt = await withdrawal.wait();
   console.log("Receipt", receipt);

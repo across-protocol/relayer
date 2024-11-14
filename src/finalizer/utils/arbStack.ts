@@ -26,6 +26,8 @@ import {
   paginatedEventQuery,
   getNetworkName,
   ethers,
+  getL2TokenAddresses,
+  getNativeTokenSymbol,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -129,6 +131,10 @@ export async function arbStackFinalizer(
     ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
   if (getOrbitNetwork(chainId) !== undefined && withdrawalToAddresses.length > 0) {
+    // ERC20 withdrawals emit events in the erc20Gateway.
+    // Native token withdrawals emit events in the ArbSys contract.
+    const l2ArbSys = CONTRACT_ADDRESSES[chainId].arbSys;
+    const arbSys = new Contract(l2ArbSys.address, l2ArbSys.abi, spokePoolClient.spokePool.provider);
     const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
     const arbitrumGateway = new Contract(
       l2Erc20Gateway.address,
@@ -139,7 +145,7 @@ export async function arbStackFinalizer(
     // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
     // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
     // which withdraws WETH to mainnet using dev wallet.
-    const withdrawalEvents = await paginatedEventQuery(
+    const withdrawalErc20Events = await paginatedEventQuery(
       arbitrumGateway,
       arbitrumGateway.filters.WithdrawalInitiated(
         null, // l1Token, not-indexed so can't filter
@@ -151,22 +157,49 @@ export async function arbStackFinalizer(
         toBlock: spokePoolClient.latestBlockSearched,
       }
     );
+    const withdrawalNativeEvents = await paginatedEventQuery(
+      arbSys,
+      arbSys.filters.L2ToL1Tx(
+        null, // caller, not-indexed so can't filter
+        withdrawalToAddresses // destination
+      ),
+      {
+        ...spokePoolClient.eventSearchConfig,
+        toBlock: spokePoolClient.latestBlockSearched,
+      }
+    );
+    const withdrawalEvents = [
+      ...withdrawalErc20Events.map((e) => {
+        const l2Token = getL2TokenAddresses(e.args.l1Token)[chainId];
+        return {
+          ...e,
+          l2TokenAddress: l2Token,
+        };
+      }),
+      ...withdrawalNativeEvents.map((e) => {
+        const nativeTokenSymbol = getNativeTokenSymbol(chainId);
+        const l2Token = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses[chainId];
+        return {
+          ...e,
+          l2TokenAddress: l2Token,
+        };
+      }),
+    ];
+    console.log(withdrawalEvents)
     // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
     // submit proofs and finalizations for.
-    withdrawalEvents
-      .filter((e) => e.args.l1Token === TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId])
-      .forEach((event) => {
-        const tokenBridgedEvent: TokensBridged = {
-          ...event,
-          amountToReturn: event.args._amount,
-          chainId,
-          leafId: 0,
-          l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
-        };
-        // if (event.blockNumber <= latestBlockToFinalize) {
+    withdrawalEvents.forEach((event) => {
+      const tokenBridgedEvent: TokensBridged = {
+        ...event,
+        amountToReturn: event.args._amount,
+        chainId,
+        leafId: 0,
+        l2TokenAddress: event.l2TokenAddress,
+      };
+      if (event.blockNumber <= latestBlockToFinalize) {
         olderTokensBridgedEvents.push(tokenBridgedEvent);
-        // }
-      });
+      }
+    });
   }
 
   return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger, chainId);
