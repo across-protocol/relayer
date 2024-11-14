@@ -14,6 +14,7 @@ import {
   fromWei,
   blockExplorerLink,
   CHAIN_IDs,
+  ZERO_ADDRESS,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
 import { askYesNoQuestion, getOvmSpokePoolContract } from "./utils";
@@ -118,6 +119,8 @@ export async function run(): Promise<void> {
     l1StandardBridge === expectedL1StandardBridge,
     `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`
   );
+  const customTokenBridge = await spokePool.tokenBridges(l2Token);
+  assert(customTokenBridge === ZERO_ADDRESS, "Custom token bridge set for token");
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
   }
