@@ -77,24 +77,25 @@ export async function run(): Promise<void> {
   const ovmStandardBridgeObj = CONTRACT_ADDRESSES[chainId].ovmStandardBridge;
   assert(CONTRACT_ADDRESSES[chainId].ovmStandardBridge, "ovmStandardBridge for chain not found in CONTRACT_ADDRESSES");
   const ovmStandardBridge = new Contract(ovmStandardBridgeObj.address, ovmStandardBridgeObj.abi, connectedSigner);
-  const bridgeArgs = l1TokenInfo.symbol === "ETH"
-    ? [
-        signerAddr, // to
-        200_000, // minGasLimit
-        "0x", // extraData
-        { value: amount }, // msg.value
-      ]
-    : [
-        l2Token, // _localToken
-        TOKEN_SYMBOLS_MAP[args.token]?.addresses[CHAIN_IDs.MAINNET], // Remote token to be received on L1 side. If the
-        // remoteL1Token on the other chain does not recognize the local token as the correct
-        // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
-        // this chain.
-        signerAddr, // _to
-        amount, // _amount
-        200_000, // minGasLimit
-        "0x", // _data
-      ];
+  const bridgeArgs =
+    l1TokenInfo.symbol === "ETH"
+      ? [
+          signerAddr, // to
+          200_000, // minGasLimit
+          "0x", // extraData
+          { value: amount }, // msg.value
+        ]
+      : [
+          l2Token, // _localToken
+          TOKEN_SYMBOLS_MAP[args.token]?.addresses[CHAIN_IDs.MAINNET], // Remote token to be received on L1 side. If the
+          // remoteL1Token on the other chain does not recognize the local token as the correct
+          // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
+          // this chain.
+          signerAddr, // _to
+          amount, // _amount
+          200_000, // minGasLimit
+          "0x", // _data
+        ];
 
   console.log(
     `Submitting bridgeETHTo on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
