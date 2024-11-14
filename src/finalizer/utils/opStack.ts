@@ -114,12 +114,30 @@ export async function opStackFinalizer(
       CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
       spokePoolClient.spokePool.provider
     );
-    const withdrawalEvents = (
+    const withdrawalEthEvents = (
       await paginatedEventQuery(
         ovmStandardBridge,
-        ovmStandardBridge.filters.WithdrawalInitiated(
-          null, // l1Token
-          null, // l2Token
+        ovmStandardBridge.filters.ETHBridgeInitiated(
+          null, // from
+          withdrawalToAddresses // to
+        ),
+        {
+          ...spokePoolClient.eventSearchConfig,
+          toBlock: spokePoolClient.latestBlockSearched,
+        }
+      )
+    ).map((event) => {
+      return {
+        ...event,
+        l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+      };
+    });
+    const withdrawalErc20Events = (
+      await paginatedEventQuery(
+        ovmStandardBridge,
+        ovmStandardBridge.filters.ERC20BridgeInitiated(
+          null, // localToken
+          null, // remoteToken
           withdrawalToAddresses // from
         ),
         {
@@ -133,17 +151,18 @@ export async function opStackFinalizer(
         getL1TokenInfo(event.args.localToken, chainId);
         return {
           ...event,
+          l2TokenAddress: event.args.localToken,
         };
       } catch (err) {
         logger.debug({
           at: "opStackFinalizer",
-          message: `Skipping ERC20 withdrawal event for unknown token ${event.args.l2Token} on chain ${networkName}`,
+          message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
           event: event,
         });
         return undefined;
       }
     });
-
+    const withdrawalEvents = [...withdrawalEthEvents, ...withdrawalErc20Events].filter((event) => event !== undefined);
     // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
     // submit proofs and finalizations for.
     withdrawalEvents.forEach((event) => {
@@ -152,7 +171,7 @@ export async function opStackFinalizer(
         amountToReturn: event.args.amount,
         chainId,
         leafId: 0,
-        l2TokenAddress: event.args.l2Token,
+        l2TokenAddress: event.l2TokenAddress,
       };
       if (event.blockNumber >= latestBlockToProve) {
         recentTokensBridgedEvents.push(tokenBridgedEvent);
