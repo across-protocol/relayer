@@ -175,6 +175,7 @@ export async function arbStackFinalizer(
         const l2Token = getL2TokenAddresses(e.args.l1Token)[chainId];
         return {
           ...e,
+          amount: e.args._amount,
           l2TokenAddress: l2Token,
         };
       }),
@@ -183,6 +184,7 @@ export async function arbStackFinalizer(
         const l2Token = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses[chainId];
         return {
           ...e,
+          amount: e.args.callvalue,
           l2TokenAddress: l2Token,
         };
       }),
@@ -192,7 +194,7 @@ export async function arbStackFinalizer(
     withdrawalEvents.forEach((event) => {
       const tokenBridgedEvent: TokensBridged = {
         ...event,
-        amountToReturn: event.args._amount,
+        amountToReturn: event.amount,
         chainId,
         leafId: 0,
         l2TokenAddress: event.l2TokenAddress,
