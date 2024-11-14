@@ -117,7 +117,7 @@ export async function run(): Promise<void> {
     `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`
   );
   const customTokenBridge = await spokePool.tokenBridges(l2Token);
-  assert(customTokenBridge === ZERO_ADDRESS, `Custom token bridge set for token ${l2Token} (${customTokenBridge})");
+  assert(customTokenBridge === ZERO_ADDRESS, `Custom token bridge set for token ${l2Token} (${customTokenBridge})`);
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
   }
