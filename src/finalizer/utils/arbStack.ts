@@ -185,7 +185,6 @@ export async function arbStackFinalizer(
         };
       }),
     ];
-    console.log(withdrawalEvents)
     // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
     // submit proofs and finalizations for.
     withdrawalEvents.forEach((event) => {
@@ -383,7 +382,6 @@ async function getMessageOutboxStatusAndProof(
       status: ChildToParentMessageStatus[outboxMessageExecutionStatus],
     };
   } catch (error) {
-    console.error(error);
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,

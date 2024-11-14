@@ -12,7 +12,6 @@ import {
   Contract,
   fromWei,
   blockExplorerLink,
-  CHAIN_IDs,
   getNativeTokenSymbol,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
@@ -52,13 +51,19 @@ export async function run(): Promise<void> {
 
   const erc20 = new Contract(l2Token, ERC20.abi, connectedSigner);
   const currentBalance = await erc20.balanceOf(signerAddr);
-  const nativeTokenSymbol = getNativeTokenSymbol(chainId)
+  const nativeTokenSymbol = getNativeTokenSymbol(chainId);
   const currentNativeBalance = await connectedSigner.getBalance();
   console.log(
-    `Current ${l1TokenInfo.symbol} balance for account ${signerAddr}: ${fromWei(currentBalance, l1TokenInfo.decimals)} ${l2Token}`
+    `Current ${l1TokenInfo.symbol} balance for account ${signerAddr}: ${fromWei(
+      currentBalance,
+      l1TokenInfo.decimals
+    )} ${l2Token}`
   );
   console.log(
-    `Current native ${nativeTokenSymbol} token balance for account ${signerAddr}: ${fromWei(currentNativeBalance, l1TokenInfo.decimals)}`
+    `Current native ${nativeTokenSymbol} token balance for account ${signerAddr}: ${fromWei(
+      currentNativeBalance,
+      l1TokenInfo.decimals
+    )}`
   );
 
   // Now, submit a withdrawal:
@@ -84,13 +89,12 @@ export async function run(): Promise<void> {
     functionName = "withdrawEth";
     functionArgs = [
       signerAddr, // to
-      { value: amount }
+      { value: amount },
     ];
     console.log(
       `Submitting ${functionName} on the ArbSys contract @ ${contract.address} with the following args: `,
       ...functionArgs
     );
-
   }
 
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
