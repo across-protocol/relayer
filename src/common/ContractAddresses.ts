@@ -326,7 +326,6 @@ export const CONTRACT_ADDRESSES: {
   },
   42161: {
     erc20Gateway: {
-      address: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
     cctpMessageTransmitter: {
