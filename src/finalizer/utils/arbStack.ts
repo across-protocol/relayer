@@ -28,6 +28,7 @@ import {
   ethers,
   getL2TokenAddresses,
   getNativeTokenSymbol,
+  fromWei,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -192,15 +193,30 @@ export async function arbStackFinalizer(
     // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
     // submit proofs and finalizations for.
     withdrawalEvents.forEach((event) => {
-      const tokenBridgedEvent: TokensBridged = {
-        ...event,
-        amountToReturn: event.amount,
-        chainId,
-        leafId: 0,
-        l2TokenAddress: event.l2TokenAddress,
-      };
-      if (event.blockNumber <= latestBlockToFinalize) {
-        olderTokensBridgedEvents.push(tokenBridgedEvent);
+      try {
+        const tokenBridgedEvent: TokensBridged = {
+          ...event,
+          amountToReturn: event.amount,
+          chainId,
+          leafId: 0,
+          l2TokenAddress: event.l2TokenAddress,
+        };
+        if (event.blockNumber <= latestBlockToFinalize) {
+          olderTokensBridgedEvents.push(tokenBridgedEvent);
+        } else {
+          const l1TokenInfo = getL1TokenInfo(tokenBridgedEvent.l2TokenAddress, chainId);
+          const amountFromWei = fromWei(tokenBridgedEvent.amountToReturn.toString(), l1TokenInfo.decimals);
+          logger.debug({
+            at: `Finalizer#${networkName}Finalizer`,
+            message: `Withdrawal event for ${amountFromWei} of ${l1TokenInfo.symbol} is too recent to finalize`,
+          });
+        }
+      } catch (err) {
+        logger.debug({
+          at: `Finalizer#${networkName}Finalizer`,
+          message: `Skipping ERC20 withdrawal event for unknown token ${event.l2TokenAddress} on chain ${networkName}`,
+          event: event,
+        });
       }
     });
   }
