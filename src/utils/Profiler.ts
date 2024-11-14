@@ -35,10 +35,7 @@ export class Profiler {
     this.logger = logger.child(defaultMeta);
   }
 
-  start(
-    taskName: string,
-    detail?: Detail
-  ): { startTime: number | undefined; stop: (_detail?: Detail) => number | undefined } {
+  start(taskName: string, detail?: Detail): { startTime: number; stop: (_detail?: Detail) => number | undefined } {
     const start = crypto.randomUUID();
     const startTime = this.mark(start, detail);
     return {
