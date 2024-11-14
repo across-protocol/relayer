@@ -118,8 +118,10 @@ export async function arbStackFinalizer(
   const olderTokensBridgedEvents = spokePoolClient.getTokensBridged().filter(
     (e) =>
       e.blockNumber <= latestBlockToFinalize &&
-      // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      (chainId !== CHAIN_IDs.ARBITRUM ||
+      // USDC withdrawals for chains that support CCTP should be finalized via the CCTP Finalizer.
+      // The way we detect if a chain supports CCTP is by checking if there is a `cctpMessageTransmitter`
+      // entry in CONTRACT_ADDRESSES
+      (CONTRACT_ADDRESSES[chainId].cctpMessageTransmitter === undefined ||
         !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]))
   );
 
