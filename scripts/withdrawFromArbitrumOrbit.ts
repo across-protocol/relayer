@@ -60,10 +60,7 @@ export async function run(): Promise<void> {
     )} ${l2Token}`
   );
   console.log(
-    `Current native ${nativeTokenSymbol} token balance for account ${signerAddr}: ${fromWei(
-      currentNativeBalance,
-      l1TokenInfo.decimals
-    )}`
+    `Current native ${nativeTokenSymbol} token balance for account ${signerAddr}: ${fromWei(currentNativeBalance, 18)}`
   );
 
   // Now, submit a withdrawal:
