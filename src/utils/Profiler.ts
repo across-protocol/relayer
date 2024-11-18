@@ -10,11 +10,11 @@ type Detail = {
 const defaultMeta = { datadog: true };
 
 export type PerformanceData = {
-  taskName: string; // Name of the task being measured
-  duration: number; // Duration in milliseconds
-  message: string;
-  at: string;
-  data?: Record<string, unknown>; // Cumulative detail data
+  task: string; // The name of the task being measured.
+  duration: number; // Duration in milliseconds.
+  message: string; // A descriptive message about the task.
+  at: string; // Identifier indicating where the profiling is happening.
+  data?: Record<string, unknown>; // Additional detail data.
 };
 
 type ProfilerOptions = {
@@ -28,6 +28,12 @@ export class Profiler {
   private detail: Detail;
   private logger: Logger;
 
+  /**
+   * Initializes a new instance of the Profiler class.
+   * @param logger The logger instance for logging performance data.
+   * @param at A string identifier for where the profiler is used.
+   * @param detail Optional additional detail data.
+   */
   constructor({ logger, at, ...detail }: ProfilerOptions) {
     this.marks = new Map();
     this.at = at;
@@ -35,12 +41,18 @@ export class Profiler {
     this.logger = logger.child(defaultMeta);
   }
 
-  start(taskName: string, detail?: Detail): { startTime: number; stop: (_detail?: Detail) => number | undefined } {
+  /**
+   * Starts a profiling session for a task.
+   * @param task The name of the task being measured.
+   * @param detail Optional detail data to merge.
+   * @returns An object containing the start time and a stop function.
+   */
+  start(task: string, detail?: Detail): { startTime: number; stop: (_detail?: Detail) => number | undefined } {
     const start = crypto.randomUUID();
     const startTime = this.mark(start, detail);
     return {
       startTime,
-      stop: (_detail?: Detail) => this.measure(taskName, { from: start, ...(detail ?? {}), ...(_detail ?? {}) }),
+      stop: (_detail?: Detail) => this.measure(task, { from: start, ...(detail ?? {}), ...(_detail ?? {}) }),
     };
   }
 
@@ -48,11 +60,12 @@ export class Profiler {
    * Records a mark with a label and optional detail.
    * @param label The label for the mark.
    * @param detail Optional detail data to merge.
+   * @returns The current timestamp in milliseconds.
    */
   mark(label: string, detail?: Detail): number {
     const currentTime = performance.now();
 
-    // merge additional data
+    // Merge additional data
     this.detail = { ...(this.detail ?? {}), ...(detail ?? {}) };
 
     // Store the mark
@@ -62,13 +75,15 @@ export class Profiler {
 
   /**
    * Measures the duration between two marks and logs the performance data.
-   * @param taskName The name of the task for this measurement.
-   * @param startLabel The label of the starting mark.
-   * @param endLabel The label of the ending mark.
-   * @param detail Optional detail data to merge.
+   * @param task The name of the task for this measurement.
+   * @param params An object containing:
+   *  - `from`: The label of the starting mark.
+   *  - `to` (optional): The label of the ending mark.
+   *  - Additional detail data to merge.
+   * @returns The duration in milliseconds, or undefined if the start mark is not found.
    */
   measure(
-    taskName: string,
+    task: string,
     params: {
       from: string;
       to?: string;
@@ -81,7 +96,7 @@ export class Profiler {
     if (!startMark) {
       this.logger.warn({
         at: this.at,
-        message: `Cannot find start marks for label "${params.startLabel}".`,
+        message: `Cannot find start mark for label "${from}".`,
         ...this.detail,
       });
       return;
@@ -92,11 +107,11 @@ export class Profiler {
 
     // Merge detail
     const { message, ...combinedDetail } = { ...(this.detail ?? {}), ...(detail ?? {}) };
-    const defaultMessage = `Profiler Log: ${taskName}`;
+    const defaultMessage = `Profiler Log: ${task}`;
 
     const performanceData: PerformanceData = {
       at: this.at,
-      taskName,
+      task,
       duration,
       message: message ?? defaultMessage,
       data: combinedDetail,
@@ -107,13 +122,13 @@ export class Profiler {
   }
 
   /**
-   * Measures the performance of an asynchronous function by wrapping it.
-   * @param fn The asynchronous function to measure.
-   * @param taskName The name of the task for this measurement.
+   * Measures the performance of an asynchronous operation represented by a promise.
+   * @param pr The promise representing the asynchronous operation to measure.
+   * @param task The name of the task for this measurement.
    * @param detail Optional detail data to merge.
-   * @returns The result of the asynchronous function.
+   * @returns A promise that resolves with the result of the asynchronous operation.
    */
-  async measureAsync<T>(pr: Promise<T>, taskName: string, detail?: Detail): Promise<T> {
+  async measureAsync<T>(pr: Promise<T>, task: string, detail?: Detail): Promise<T> {
     const startTime = performance.now();
 
     try {
@@ -123,11 +138,11 @@ export class Profiler {
       const endTime = performance.now();
       const duration = endTime - startTime;
       const { message, ...combinedDetail } = { ...detail };
-      const defaultMessage = `Profiler Log: ${taskName}`;
+      const defaultMessage = `Profiler Log: ${task}`;
 
       const performanceData: PerformanceData = {
         at: this.at,
-        taskName,
+        task,
         duration,
         message: message ?? defaultMessage,
         data: combinedDetail,
@@ -140,11 +155,11 @@ export class Profiler {
   /**
    * Measures the performance of a synchronous function by wrapping it.
    * @param fn The synchronous function to measure.
-   * @param taskName The name of the task for this measurement.
+   * @param task The name of the task for this measurement.
    * @param detail Optional detail data to merge.
    * @returns The result of the synchronous function.
    */
-  measureSync<T>(fn: () => T, taskName: string, detail?: Detail): T {
+  measureSync<T>(fn: () => T, task: string, detail?: Detail): T {
     const startTime = performance.now();
 
     try {
@@ -154,11 +169,11 @@ export class Profiler {
       const endTime = performance.now();
       const duration = endTime - startTime;
       const { message, ...combinedDetail } = { ...detail };
-      const defaultMessage = `Profiler Log: ${taskName}`;
+      const defaultMessage = `Profiler Log: ${task}`;
 
       const performanceData: PerformanceData = {
         at: this.at,
-        taskName,
+        task,
         duration,
         message: message ?? defaultMessage,
         data: combinedDetail,
