@@ -8,7 +8,6 @@ import {
   CONTRACT_ADDRESSES,
   Clients,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
-  Multicall2Call,
   ProcessEnv,
   constructClients,
   constructSpokePoolClientsWithLookback,
@@ -25,6 +24,7 @@ import {
   disconnectRedisClients,
   getMultisender,
   getNetworkName,
+  Multicall2Call,
   processEndPollingLoop,
   startupLogLevel,
   winston,
@@ -33,7 +33,7 @@ import {
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage } from "./types";
 import {
-  arbitrumOneFinalizer,
+  arbStackFinalizer,
   cctpL1toL2Finalizer,
   cctpL2toL1Finalizer,
   lineaL1ToL2Finalizer,
@@ -79,8 +79,12 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
+  [CHAIN_IDs.ALEPH_ZERO]: {
+    finalizeOnL1: [arbStackFinalizer],
+    finalizeOnL2: [],
+  },
   [CHAIN_IDs.ARBITRUM]: {
-    finalizeOnL1: [arbitrumOneFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.LINEA]: {

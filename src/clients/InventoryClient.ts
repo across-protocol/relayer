@@ -26,6 +26,7 @@ import {
   compareAddressesSimple,
   getUsdcSymbol,
   Profiler,
+  getNativeTokenSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit } from "../interfaces";
@@ -989,7 +990,11 @@ export class InventoryClient {
             const { unwrapWethThreshold, unwrapWethTarget } = tokenConfig;
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
-            if (chainId === CHAIN_IDs.POLYGON || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
+            if (
+              getNativeTokenSymbol(chainId) !== "ETH" ||
+              unwrapWethThreshold === undefined ||
+              unwrapWethTarget === undefined
+            ) {
               return;
             }
             const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];

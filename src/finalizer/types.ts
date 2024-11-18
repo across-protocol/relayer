@@ -1,7 +1,6 @@
 import { Signer } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../clients";
-import { Multicall2Call } from "../common";
-import { winston } from "../utils";
+import { Multicall2Call, winston } from "../utils";
 
 /**
  * A cross-chain message is a message sent from one chain to another. This can be a token withdrawal from L2 to L1,

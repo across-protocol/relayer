@@ -11,18 +11,17 @@ import {
   getRedisCache,
   getBlockForTimestamp,
   getL1TokenInfo,
+  Multicall2Call,
   compareAddressesSimple,
-  TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
+import { CONTRACT_ADDRESSES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
-const CHAIN_ID = CHAIN_IDs.ARBITRUM;
-
-export async function arbitrumOneFinalizer(
+export async function arbStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
@@ -48,25 +47,26 @@ export async function arbitrumOneFinalizer(
     (e) =>
       e.blockNumber <= latestBlockToFinalize &&
       // USDC withdrawals for Arbitrum should be finalized via the CCTP Finalizer.
-      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[CHAIN_ID])
+      !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId])
   );
 
-  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger);
+  return await multicallArbitrumFinalizations(olderTokensBridgedEvents, signer, hubPoolClient, logger, chainId);
 }
 
 async function multicallArbitrumFinalizations(
   tokensBridged: TokensBridged[],
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
-  logger: winston.Logger
+  logger: winston.Logger,
+  chainId: number
 ): Promise<FinalizerPromise> {
-  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
-  const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
+  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
+  const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message, chainId)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, CHAIN_ID);
+    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
     const withdrawal: CrossChainMessage = {
-      originationChainId: CHAIN_ID,
+      originationChainId: chainId,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
       type: "withdrawal",
@@ -81,10 +81,10 @@ async function multicallArbitrumFinalizations(
   };
 }
 
-async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
-  const l2Provider = getCachedProvider(CHAIN_ID, true);
+async function finalizeArbitrum(message: L2ToL1MessageWriter, chainId: number): Promise<Multicall2Call> {
+  const l2Provider = getCachedProvider(chainId, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const { address, abi } = CONTRACT_ADDRESSES[CHAIN_ID].outbox;
+  const { address, abi } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`orbitOutbox_${chainId}`];
   const outbox = new Contract(address, abi);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
@@ -110,7 +110,8 @@ async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall
 async function getFinalizableMessages(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
-  l1Signer: Signer
+  l1Signer: Signer,
+  chainId: number
 ): Promise<
   {
     info: TokensBridged;
@@ -118,7 +119,7 @@ async function getFinalizableMessages(
     status: string;
   }[]
 > {
-  const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer);
+  const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer, chainId);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
     (message: { status: string }) => message.status
@@ -134,7 +135,8 @@ async function getFinalizableMessages(
 async function getAllMessageStatuses(
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
-  mainnetSigner: Signer
+  mainnetSigner: Signer,
+  chainId: number
 ): Promise<
   {
     info: TokensBridged;
@@ -147,7 +149,9 @@ async function getAllMessageStatuses(
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   return (
     await Promise.all(
-      tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
+      tokensBridged.map((e, i) =>
+        getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId)
+      )
     )
   )
     .map((result, i) => {
@@ -163,12 +167,13 @@ async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Signer,
-  logIndex: number
+  logIndex: number,
+  chainId: number
 ): Promise<{
   message: L2ToL1MessageWriter;
   status: string;
 }> {
-  const l2Provider = getCachedProvider(CHAIN_ID, true);
+  const l2Provider = getCachedProvider(chainId, true);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 
