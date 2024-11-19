@@ -619,13 +619,17 @@ export class Dataworker {
     // Root bundle is valid, attempt to persist the raw bundle data and the merkle leaf data to DA layer
     // if not already there.
     if (persistBundleData && isDefined(bundleData)) {
+      const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
+      const bundleBlockRangeMap = Object.fromEntries(
+        bundleData.bundleBlockRanges.map(([,endBlock], i) => {
+          const chainIdForRange = chainIds[i];
+          // The arweave tag cannot exceed 2048 bytes so only keep the end block in the tag.
+          return [chainIdForRange, endBlock];
+        })
+      );
+      const partialArweaveDataKey = JSON.stringify(bundleBlockRangeMap);
       await Promise.all([
-        persistDataToArweave(
-          this.clients.arweaveClient,
-          bundleData,
-          this.logger,
-          `bundles-${bundleData.bundleBlockRanges}`
-        ),
+        persistDataToArweave(this.clients.arweaveClient, bundleData, this.logger, `bundles-${partialArweaveDataKey}`),
         persistDataToArweave(
           this.clients.arweaveClient,
           {
@@ -652,7 +656,7 @@ export class Dataworker {
             slowRelayRoot: expectedTrees.slowRelayTree.tree.getHexRoot(),
           },
           this.logger,
-          `merkletree-${bundleData.bundleBlockRanges}`
+          `merkletree-${partialArweaveDataKey}`
         ),
       ]);
     }
