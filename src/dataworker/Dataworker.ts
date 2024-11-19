@@ -2315,7 +2315,10 @@ export class Dataworker {
       at: "Dataworker#_getPoolRebalanceRoot",
       message: "Constructed new pool rebalance root",
       key,
-      root: this.rootCache[key],
+      root: {
+        ...this.rootCache[key],
+        tree: this.rootCache[key].tree.getHexRoot(),
+      },
     });
 
     return _.cloneDeep(this.rootCache[key]);
