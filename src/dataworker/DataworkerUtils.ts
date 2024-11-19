@@ -343,11 +343,11 @@ export async function persistDataToArweave(
   logger: winston.Logger,
   tag?: string
 ): Promise<void> {
-  const taskProfiler = new Profiler({
+  const profiler = new Profiler({
     logger,
     at: "DataworkerUtils#persistDataToArweave",
   });
-  taskProfiler.mark("A");
+  const mark = profiler.start("persistDataToArweave");
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const [matchingTxns, address, balance] = await Promise.all([
@@ -394,8 +394,7 @@ export async function persistDataToArweave(
       balance: formatWinston(balance),
       notificationPath: "across-arweave",
     });
-    taskProfiler.measure("Arweave Persist", {
-      from: "A",
+    mark.stop({
       message: "Time to persist to Arweave",
     });
   }

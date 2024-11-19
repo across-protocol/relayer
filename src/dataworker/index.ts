@@ -55,13 +55,13 @@ export async function createDataworker(
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const taskProfiler = new Profiler({
+  const profiler = new Profiler({
     at: "Dataworker#index",
     logger: _logger,
   });
   logger = _logger;
 
-  const { clients, config, dataworker } = await taskProfiler.measureAsync(
+  const { clients, config, dataworker } = await profiler.measureAsync(
     createDataworker(logger, baseSigner),
     "createDataworker",
     {
@@ -75,7 +75,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
-      taskProfiler.mark("loopStart");
+      profiler.mark("loopStart");
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
       //    how many bundles we want to look back from the start bundle blocks.
@@ -117,7 +117,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         fromBlocks,
         toBlocks
       );
-      taskProfiler.mark("dataworkerFunctionLoopTimerStart");
+      profiler.mark("dataworkerFunctionLoopTimerStart");
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(
@@ -200,19 +200,19 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       } else {
         await clients.multiCallerClient.executeTxnQueues();
       }
-      taskProfiler.mark("dataworkerFunctionLoopTimerEnd");
-      taskProfiler.measure("timeToLoadSpokes", {
+      profiler.mark("dataworkerFunctionLoopTimerEnd");
+      profiler.measure("timeToLoadSpokes", {
         message: "Time to load spokes in data worker loop",
         from: "loopStart",
         to: "dataworkerFunctionLoopTimerStart",
       });
-      taskProfiler.measure("timeToRunDataworkerFunctions", {
+      profiler.measure("timeToRunDataworkerFunctions", {
         message: "Time to run data worker functions in data worker loop",
         from: "dataworkerFunctionLoopTimerStart",
         to: "dataworkerFunctionLoopTimerEnd",
       });
       // do we need to add an additional log for the sum of the previous?
-      taskProfiler.measure("dataWorkerTotal", {
+      profiler.measure("dataWorkerTotal", {
         message: "Total time taken for dataworker loop",
         from: "loopStart",
         to: "dataworkerFunctionLoopTimerEnd",

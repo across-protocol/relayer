@@ -21,7 +21,7 @@ const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-r
 const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const taskProfiler = new Profiler({
+  const profiler = new Profiler({
     at: "Relayer#run",
     logger: _logger,
   });
@@ -61,7 +61,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
-      const tLoopStart = taskProfiler.mark("tLoopStart");
+      const tLoopStart = profiler.start("Relayer execution loop");
       const ready = await relayer.update();
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
@@ -69,7 +69,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       // If this instance can't update, throw an error (for now).
       if (!ready && activeRelayer) {
         if (run * pollingDelay < 120) {
-          const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+          const runTime = Math.round((performance.now() - tLoopStart.startTime) / 1000);
           const delta = pollingDelay - runTime;
           logger.debug({ at: "Relayer#run", message: `Not ready to relay, waiting ${delta} seconds.` });
           await delay(delta);
@@ -104,9 +104,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (!loop) {
         stop = true;
       } else {
-        const runTimeMilliseconds = taskProfiler.measure("Relayer execution loop", {
-          from: "tLoopStart",
+        const runTimeMilliseconds = tLoopStart.stop({
           message: `Completed relayer execution loop ${run} times.`,
+          loopCount: run,
         });
         const runTime = Math.round(runTimeMilliseconds / 1000);
 

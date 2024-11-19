@@ -46,7 +46,7 @@ export class Relayer {
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
   private lastLogTime = 0;
   private lastMaintenance = 0;
-
+  private profiler: InstanceType<typeof Profiler>;
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected inventoryChainIds: number[];
@@ -70,7 +70,10 @@ export class Relayer {
         ];
       }
     });
-
+    this.profiler = new Profiler({
+      at: "Relayer",
+      logger: this.logger,
+    });
     this.relayerAddress = getAddress(relayerAddress);
     this.inventoryChainIds =
       this.config.pollingDelay === 0 ? Object.values(clients.spokePoolClients).map(({ chainId }) => chainId) : [];
@@ -1029,17 +1032,13 @@ export class Relayer {
     repaymentChainId?: number;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
-    const taskProfiler = new Profiler({
-      at: "Relayer::resolveRepaymentChain",
-      logger: this.logger,
-    });
     const { inventoryClient, profitClient } = this.clients;
     const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash, fromLiteChain } =
       deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
-    taskProfiler.mark("A");
+    const mark = this.profiler.start("resolveRepaymentChain");
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
@@ -1063,8 +1062,7 @@ export class Relayer {
       };
     }
 
-    taskProfiler.measure("Resolve Repayment Chains", {
-      from: "A",
+    mark.stop({
       message: `Determined eligible repayment chains ${JSON.stringify(
         preferredChainIds
       )} for deposit ${depositId} from ${originChain} to ${destinationChain}.`,

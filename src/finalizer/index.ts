@@ -475,7 +475,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
 
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
-  const taskProfiler = new Profiler({
+  const profiler = new Profiler({
     logger,
     at: "Finalizer#index",
     config,
@@ -486,9 +486,9 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
 
   try {
     for (;;) {
-      taskProfiler.mark("loopStart");
+      profiler.mark("loopStart");
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged"]);
-      taskProfiler.mark("loopStartPostSpokePoolUpdates");
+      profiler.mark("loopStartPostSpokePoolUpdates");
 
       if (config.finalizerEnabled) {
         const availableChains = commonClients.configStoreClient
@@ -509,21 +509,21 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }
 
-      taskProfiler.mark("loopEndPostFinalizations");
+      profiler.mark("loopEndPostFinalizations");
 
-      taskProfiler.measure("timeToUpdateSpokeClients", {
+      profiler.measure("timeToUpdateSpokeClients", {
         from: "loopStart",
         to: "loopStartPostSpokePoolUpdates",
         strategy: config.finalizationStrategy,
       });
 
-      taskProfiler.measure("timeToFinalize", {
+      profiler.measure("timeToFinalize", {
         from: "loopStartPostSpokePoolUpdates",
         to: "loopEndPostFinalizations",
         strategy: config.finalizationStrategy,
       });
 
-      taskProfiler.measure("loopTime", {
+      profiler.measure("loopTime", {
         message: "Time to loop",
         from: "loopStart",
         to: "loopEndPostFinalizations",

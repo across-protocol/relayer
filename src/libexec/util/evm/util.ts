@@ -47,7 +47,7 @@ export async function scrapeEvents(
   opts: ScraperOpts & { toBlock: number },
   logger?: winston.Logger
 ): Promise<Log[]> {
-  const taskProfiler = new Profiler({
+  const profiler = new Profiler({
     logger,
     at: "scrapeEvents",
   });
@@ -59,11 +59,10 @@ export async function scrapeEvents(
   assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
   const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
 
-  taskProfiler.mark("A");
+  const mark = profiler.start("paginatedEventQuery");
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
   const events = await paginatedEventQuery(spokePool, filter, searchConfig);
-  taskProfiler.measure("paginatedEventQuery", {
-    from: "A",
+  mark.stop({
     message: `Scraped ${events.length} ${chain} ${eventName} events.`,
     numEvents: events.length,
     chain,
