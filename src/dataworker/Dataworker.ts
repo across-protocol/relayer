@@ -622,7 +622,7 @@ export class Dataworker {
       const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
       // Store the bundle block ranges on Arweave as a map of chainId to block range to aid users in querying.
       const bundleBlockRangeMap = Object.fromEntries(
-        bundleData.bundleBlockRanges.map(([range], i) => {
+        bundleData.bundleBlockRanges.map((range, i) => {
           const chainIdForRange = chainIds[i];
           // The arweave tag cannot exceed 2048 bytes so only keep the end block in the tag.
           return [chainIdForRange, range];
