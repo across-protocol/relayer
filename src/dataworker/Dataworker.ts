@@ -619,16 +619,34 @@ export class Dataworker {
     // Root bundle is valid, attempt to persist the raw bundle data and the merkle leaf data to DA layer
     // if not already there.
     if (persistBundleData && isDefined(bundleData)) {
+      const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
+      // Store the bundle block ranges on Arweave as a map of chainId to block range to aid users in querying.
+      const bundleBlockRangeMap = Object.fromEntries(
+        bundleData.bundleBlockRanges.map((range, i) => {
+          const chainIdForRange = chainIds[i];
+          // The arweave tag cannot exceed 2048 bytes so only keep the end block in the tag.
+          return [chainIdForRange, range];
+        })
+      );
+      // As a unique key for this bundle, use the next bundle mainnet start block, which should
+      // never be duplicated between bundles as long as the mainnet end block in the bundle block range
+      // always progresses forwards, which I think is a safe assumption. Other chains might pause
+      // but mainnet should never pause.
+      const partialArweaveDataKey = nextBundleMainnetStartBlock;
       await Promise.all([
         persistDataToArweave(
           this.clients.arweaveClient,
-          bundleData,
+          {
+            ...bundleData,
+            bundleBlockRanges: bundleBlockRangeMap,
+          },
           this.logger,
-          `bundles-${bundleData.bundleBlockRanges}`
+          `bundles-${partialArweaveDataKey}`
         ),
         persistDataToArweave(
           this.clients.arweaveClient,
           {
+            bundleBlockRanges: bundleBlockRangeMap,
             poolRebalanceLeaves: expectedTrees.poolRebalanceTree.leaves.map((leaf) => {
               return {
                 ...leaf,
@@ -652,7 +670,7 @@ export class Dataworker {
             slowRelayRoot: expectedTrees.slowRelayTree.tree.getHexRoot(),
           },
           this.logger,
-          `merkletree-${bundleData.bundleBlockRanges}`
+          `merkletree-${partialArweaveDataKey}`
         ),
       ]);
     }
@@ -2297,7 +2315,10 @@ export class Dataworker {
       at: "Dataworker#_getPoolRebalanceRoot",
       message: "Constructed new pool rebalance root",
       key,
-      root: this.rootCache[key],
+      root: {
+        ...this.rootCache[key],
+        tree: this.rootCache[key].tree.getHexRoot(),
+      },
     });
 
     return _.cloneDeep(this.rootCache[key]);
