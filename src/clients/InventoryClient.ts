@@ -303,7 +303,7 @@ export class InventoryClient {
       logger: this.logger,
       at: "InventoryClient::getBundleRefunds",
     });
-    taskProfiler.mark("A", {
+    const A = taskProfiler.start("A", {
       l1Token,
     });
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
@@ -333,8 +333,7 @@ export class InventoryClient {
       {}
     );
 
-    taskProfiler.measure("totalRefundsPerChain", {
-      from: "A",
+    A.stop({
       message: "Time to calculate total refunds per chain",
       l1Token,
     });
