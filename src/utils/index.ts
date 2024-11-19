@@ -1,5 +1,5 @@
 // Utils from other packages.
-import { constants as sdkConstants } from "@across-protocol/sdk";
+import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { constants as ethersConstants } from "ethers";
 
 import winston from "winston";
@@ -7,6 +7,7 @@ import assert from "assert";
 export { winston, assert };
 
 export const { MAX_SAFE_ALLOWANCE } = sdkConstants;
+export const { Profiler } = sdkUtils;
 export const { AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
 
 export {
@@ -77,4 +78,3 @@ export * from "./CLIUtils";
 export * from "./BNUtils";
 export * from "./CCTPUtils";
 export * from "./RetryUtils";
-export * from "./Profiler";
