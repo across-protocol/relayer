@@ -1,7 +1,11 @@
 import assert from "assert";
 import { utils, interfaces, caching } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
-import { ARWEAVE_TAG_BYTE_LIMIT, CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS, spokesThatHoldEthAndWeth } from "../common/Constants";
+import {
+  ARWEAVE_TAG_BYTE_LIMIT,
+  CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS,
+  spokesThatHoldEthAndWeth,
+} from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
