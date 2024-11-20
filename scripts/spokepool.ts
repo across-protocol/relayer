@@ -4,9 +4,11 @@ import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
 import { RelayData } from "../src/interfaces";
+import { getAcrossHost } from "../src/clients";
 import {
   BigNumber,
   formatFeePct,
@@ -32,8 +34,6 @@ type RelayerFeeQuery = {
   skipAmountLimit?: string;
   timestamp?: number;
 };
-
-const { ACROSS_API_HOST = "across.to" } = process.env;
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -87,8 +87,9 @@ function printFill(destinationChainId: number, log: LogDescription): void {
 }
 
 async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
+  const hubChainId = sdkUtils.chainIsProd(params.originChainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
   const path = "api/suggested-fees";
-  const url = `https://${ACROSS_API_HOST}/${path}`;
+  const url = `https://${getAcrossHost(hubChainId)}/${path}`;
 
   try {
     const quote = await axios.get(url, { timeout, params });
