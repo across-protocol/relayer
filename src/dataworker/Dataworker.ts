@@ -624,7 +624,6 @@ export class Dataworker {
       const bundleBlockRangeMap = Object.fromEntries(
         bundleData.bundleBlockRanges.map((range, i) => {
           const chainIdForRange = chainIds[i];
-          // The arweave tag cannot exceed 2048 bytes so only keep the end block in the tag.
           return [chainIdForRange, range];
         })
       );
