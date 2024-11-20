@@ -31,7 +31,7 @@ import {
   FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient, BalanceAllocator } from "../clients";
+import { SpokePoolClient, BalanceAllocator, BundleDataClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -632,7 +632,7 @@ export class Dataworker {
       // never be duplicated between bundles as long as the mainnet end block in the bundle block range
       // always progresses forwards, which I think is a safe assumption. Other chains might pause
       // but mainnet should never pause.
-      const partialArweaveDataKey = nextBundleMainnetStartBlock;
+      const partialArweaveDataKey = BundleDataClient.getArweaveClientKey(bundleData.bundleBlockRanges);
       await Promise.all([
         persistDataToArweave(
           this.clients.arweaveClient,
