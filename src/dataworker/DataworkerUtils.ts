@@ -1,7 +1,11 @@
 import assert from "assert";
 import { utils, interfaces, caching } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
-import { CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS, spokesThatHoldEthAndWeth } from "../common/Constants";
+import {
+  ARWEAVE_TAG_BYTE_LIMIT,
+  CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS,
+  spokesThatHoldEthAndWeth,
+} from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
@@ -342,6 +346,10 @@ export async function persistDataToArweave(
   logger: winston.Logger,
   tag?: string
 ): Promise<void> {
+  assert(
+    Buffer.from(tag).length <= ARWEAVE_TAG_BYTE_LIMIT,
+    `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`
+  );
   const startTime = performance.now();
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
