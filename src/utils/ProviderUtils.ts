@@ -139,6 +139,7 @@ export async function getProvider(
           rpc: getOriginFromURL(url),
           retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,
+          datadog: true,
         });
       }
       await delay(delayMs);
