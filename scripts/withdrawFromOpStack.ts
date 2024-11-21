@@ -60,7 +60,7 @@ export async function run(): Promise<void> {
       l1TokenInfo.decimals
     )} ${l2Token}`
   );
-  console.log(`Current ETH balance for account ${signerAddr}: ${fromWei(currentEthBalance, l1TokenInfo.decimals)}`);
+  console.log(`Current ETH balance for account ${signerAddr}: ${fromWei(currentEthBalance)}`);
 
   // First offer user option to unwrap WETH into ETH
   if (l1TokenInfo.symbol === "ETH") {
