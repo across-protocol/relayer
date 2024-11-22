@@ -666,6 +666,13 @@ export class Monitor {
     );
     const enabledChainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
 
+    this.logger.debug({
+      at: "Monitor#checkSpokePoolRunningBalances",
+      message: "Mainnet root bundles in scope",
+      validatedBundles,
+      outstandingBundle: bundle,
+    });
+
     const slowFillBlockRange = getWidestPossibleExpectedBlockRange(
       enabledChainIds,
       this.clients.spokePoolClients,
@@ -680,6 +687,13 @@ export class Monitor {
       return spokeLatestBlockSearched === 0
         ? [endBlockNumber, endBlockNumber]
         : [endBlockNumber + 1, spokeLatestBlockSearched > endBlockNumber ? spokeLatestBlockSearched : endBlockNumber];
+    });
+
+    this.logger.debug({
+      at: "Monitor#checkSpokePoolRunningBalances",
+      message: "Block ranges to search",
+      slowFillBlockRange,
+      blockRangeTail,
     });
 
     // Do all async tasks in parallel. We want to know about the pool rebalances, slow fills in the most recent proposed bundle, refunds
@@ -739,6 +753,12 @@ export class Monitor {
       });
     }
 
+    this.logger.debug({
+      at: "Monitor#checkSpokePoolRunningBalances",
+      message: "Print pool rebalance leaves",
+      poolRebalanceRootLeaves: poolRebalanceLeaves,
+    });
+
     // Calculate the pending refunds.
     for (const chainId of chainIds) {
       const l2TokenAddresses = monitoredTokenSymbols
@@ -769,6 +789,13 @@ export class Monitor {
             bnZero
           );
         pendingRelayerRefunds[chainId][l2Token] = pendingValidatedDeductions.add(nextBundleDeductions);
+      });
+
+      this.logger.debug({
+        at: "Monitor#checkSpokePoolRunningBalances",
+        message: "Print refund amounts for chainId",
+        chainId,
+        pendingDeductions: pendingRelayerRefunds[chainId],
       });
     }
 
