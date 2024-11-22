@@ -22,6 +22,7 @@ import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRout
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "./abi/ArbitrumErc20GatewayL2.json";
 import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
+import ARBSYS_L2_ABI from "./abi/ArbSysL2.json";
 import LINEA_MESSAGE_SERVICE_ABI from "./abi/LineaMessageService.json";
 import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
@@ -130,6 +131,10 @@ export const CONTRACT_ADDRESSES: {
     },
     orbitOutbox_42161: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
+      abi: ARBITRUM_OUTBOX_ABI,
+    },
+    orbitOutbox_41455: {
+      address: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e",
       abi: ARBITRUM_OUTBOX_ABI,
     },
     orbitErc20GatewayRouter_42161: {
@@ -334,7 +339,12 @@ export const CONTRACT_ADDRESSES: {
   },
   41455: {
     erc20Gateway: {
+      address: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
+    },
+    arbSys: {
+      address: "0x0000000000000000000000000000000000000064",
+      abi: ARBSYS_L2_ABI,
     },
   },
   59144: {
