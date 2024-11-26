@@ -82,7 +82,7 @@ async function getMessageProof(
   return tree.getProof(l2Messages.indexOf(messageHash));
 }
 
-function getL2MessageHashesInBlockRange(
+async function getL2MessageHashesInBlockRange(
   l2MessageServiceContract: Contract,
   l2SearchConfig: EventSearchConfig
 ): Promise<string[]> {

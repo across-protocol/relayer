@@ -12,6 +12,7 @@ import {
   findMessageFromUsdcBridge,
   findMessageSentEvents,
   getBlockRangeByHoursOffsets,
+  getL1MessageServiceContractFromL1ClaimingService,
   initLineaSdk,
 } from "./common";
 
@@ -84,11 +85,7 @@ export async function lineaL1ToL2Finalizer(
 
   const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
     findMessageSentEvents(
-      new Contract(
-        l1MessageServiceContract.contractAddress,
-        l1MessageServiceContract.contract.interface,
-        hubPoolClient.hubPool.provider
-      ),
+      getL1MessageServiceContractFromL1ClaimingService(lineaSdk.getL1ClaimingService(), hubPoolClient.hubPool.provider),
       l1ToL2AddressesToFinalize,
       searchConfig
     ),
