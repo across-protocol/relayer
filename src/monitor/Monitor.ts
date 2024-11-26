@@ -308,7 +308,7 @@ export class Monitor {
             throw new Error(`No decimals found for ${tokenSymbol}`);
           }
           return lodash.mapValues(columns, (cell: RelayerBalanceCell) =>
-            lodash.mapValues(cell, (balance: BigNumber) => convertFromWei(balance.toString(), decimals))
+            lodash.mapValues(cell, (balance: BigNumber) => Number(convertFromWei(balance.toString(), decimals)))
           );
         })
       );
