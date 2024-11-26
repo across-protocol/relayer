@@ -10,7 +10,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@across-protocol/constants": "^3.1.19",
+    "@across-protocol/constants": "^3.1.20",
     "@across-protocol/contracts": "^3.0.16",
     "@across-protocol/sdk": "^3.3.21",
     "@arbitrum/sdk": "^4.0.2",
