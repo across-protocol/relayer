@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, EventFilter } from "ethers";
-import { getNetworkName, isDefined, paginatedEventQuery, winston } from "../../../utils";
+import { getNetworkName, isDefined, paginatedEventQuery, Profiler, winston } from "../../../utils";
 import { Log, ScraperOpts } from "../../types";
 
 /**
@@ -45,8 +45,12 @@ export async function scrapeEvents(
   spokePool: Contract,
   eventName: string,
   opts: ScraperOpts & { toBlock: number },
-  logger: winston.Logger
+  logger?: winston.Logger
 ): Promise<Log[]> {
+  const profiler = new Profiler({
+    logger,
+    at: "scrapeEvents",
+  });
   const { lookback, deploymentBlock, filterArgs, maxBlockRange, toBlock } = opts;
   const { chainId } = await spokePool.provider.getNetwork();
   const chain = getNetworkName(chainId);
@@ -55,13 +59,14 @@ export async function scrapeEvents(
   assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
   const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
 
-  const tStart = performance.now();
+  const mark = profiler.start("paginatedEventQuery");
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
   const events = await paginatedEventQuery(spokePool, filter, searchConfig);
-  const tStop = performance.now();
-  logger.debug({
-    at: "scrapeEvents",
-    message: `Scraped ${events.length} ${chain} ${eventName} events in ${Math.round((tStop - tStart) / 1000)} seconds`,
+  mark.stop({
+    message: `Scraped ${events.length} ${chain} ${eventName} events.`,
+    numEvents: events.length,
+    chain,
+    eventName,
     searchConfig,
   });
 
