@@ -159,15 +159,15 @@ export async function getMessageSentEventForMessageHash(
   l2MessageServiceContract: Contract,
   l2SearchConfig: EventSearchConfig
 ): Promise<Log> {
-  const [messageEvents] = await paginatedEventQuery(
+  const [messageEvent] = await paginatedEventQuery(
     l2MessageServiceContract,
     l2MessageServiceContract.filters.MessageSent(null, null, null, null, null, null, messageHash),
     l2SearchConfig
   );
-  if (!messageEvents) {
+  if (!messageEvent) {
     throw new Error(`Message hash does not exist on L2. Message hash: ${messageHash}`);
   }
-  return messageEvents[0];
+  return messageEvent;
 }
 export async function getL2MessagingBlockAnchoredFromMessageSentEvent(
   messageSentEvent: Log,
