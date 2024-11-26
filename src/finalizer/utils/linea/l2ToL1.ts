@@ -3,7 +3,7 @@ import { Wallet } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { Signer, winston, convertFromWei, getL1TokenInfo } from "../../../utils";
+import { Signer, winston, convertFromWei, getL1TokenInfo, getProvider } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
 import {
@@ -12,6 +12,7 @@ import {
   MessageWithStatus,
   getBlockRangeByHoursOffsets,
 } from "./common";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
 
 export async function lineaL2ToL1Finalizer(
   logger: winston.Logger,
@@ -24,7 +25,19 @@ export async function lineaL2ToL1Finalizer(
   const l2Contract = lineaSdk.getL2Contract();
   const l1Contract = lineaSdk.getL1Contract();
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);
-  const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(l2Contract, l1ClaimingService);
+  const { fromBlock: l1FromBlock, toBlock: l1ToBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24 * 7, 0);
+  const l1SearchConfig = {
+    fromBlock: l1FromBlock,
+    toBlock: l1ToBlock,
+    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
+  };
+  const getMessagesWithStatusByTxHash = makeGetMessagesWithStatusByTxHash(
+    await getProvider(l2ChainId),
+    await getProvider(l1ChainId),
+    l2Contract,
+    l1ClaimingService,
+    l1SearchConfig
+  );
 
   // Optimize block range for querying relevant source events on L2.
   // Linea L2->L1 messages are claimable after 6 - 32 hours
@@ -65,24 +78,8 @@ export async function lineaL2ToL1Finalizer(
   // Populate txns for claimable messages
   const populatedTxns = await Promise.all(
     claimable.map(async ({ message }) => {
-      const isProofNeeded = await l1ClaimingService.isClaimingNeedingProof(message.messageHash);
-
-      if (isProofNeeded) {
-        const proof = await l1ClaimingService.getMessageProof(message.messageHash);
-        return l1ClaimingService.l1Contract.contract.populateTransaction.claimMessageWithProof({
-          from: message.messageSender,
-          to: message.destination,
-          fee: message.fee,
-          value: message.value,
-          feeRecipient: (signer as Wallet).address,
-          data: message.calldata,
-          messageNumber: message.messageNonce,
-          proof: proof.proof,
-          leafIndex: proof.leafIndex,
-          merkleRoot: proof.root,
-        });
-      }
-
+      // In prior Linea message service contract versions, a proof would have to be submitted to claim messages, but
+      // of the latest version the message can be claimed directly.
       return l1ClaimingService.l1Contract.contract.populateTransaction.claimMessage(
         message.messageSender,
         message.destination,

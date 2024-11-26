@@ -4,7 +4,7 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston, CHAIN_IDs } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -12,6 +12,7 @@ import {
   findMessageFromUsdcBridge,
   findMessageSentEvents,
   getBlockRangeByHoursOffsets,
+  getL1ToL2MessageStatusUsingCustomProvider,
   initLineaSdk,
 } from "./common";
 
@@ -58,7 +59,15 @@ export async function lineaL1ToL2Finalizer(
   };
 
   const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
-    findMessageSentEvents(l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageSentEvents(
+      new Contract(
+        l1MessageServiceContract.contractAddress,
+        l1MessageServiceContract.contract.interface,
+        hubPoolClient.hubPool.provider
+      ),
+      l1ToL2AddressesToFinalize,
+      searchConfig
+    ),
     findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
     findMessageFromUsdcBridge(l1UsdcBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
   ]);
@@ -73,9 +82,11 @@ export async function lineaL1ToL2Finalizer(
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
 
-    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
-    // twice with a 1 second delay between in case of intermittent RPC failures.
-    const messageStatus = await retryAsync(() => l2MessageServiceContract.getMessageStatus(_messageHash), 2, 1);
+    const messageStatus = await getL1ToL2MessageStatusUsingCustomProvider(
+      l2MessageServiceContract,
+      _messageHash,
+      _spokePoolClient.spokePool.provider
+    );
     return {
       messageSender: _from,
       destination: _to,
