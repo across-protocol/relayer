@@ -102,7 +102,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         stop = true;
       } else {
         const runTimeMilliseconds = tLoopStart.stop({
-          message: `Completed relayer execution loop ${run} times.`,
+          message: `Completed relayer execution loop.`,
           loopCount: run,
         });
         const runTime = Math.round(runTimeMilliseconds / 1000);
