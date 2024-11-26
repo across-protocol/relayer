@@ -96,36 +96,12 @@ export function makeGetMessagesWithStatusByTxHash(
   };
 }
 
-// Temporary re-implementations of the SDK's various `getMessageStatus` functions that allow us to use
+// Temporary re-implementation of the SDK's `L1ClaimingService.getMessageStatus` functions that allow us to use
 // our custom provider, with retry and caching logic, to get around the SDK's hardcoded logic to query events
 // from 0 to "latest" which will not work on all RPC's.
-export async function getL1ToL2MessageStatusUsingCustomProvider(
-  messageService: L2MessageServiceContract,
-  messageHash: string,
-  l2Provider: ethers.providers.Provider
-): Promise<OnChainMessageStatus> {
-  const l2Contract = new Contract(messageService.contract.address, messageService.contract.interface, l2Provider);
-  const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
-  switch (status.toString()) {
-    case "0":
-      return OnChainMessageStatus.UNKNOWN;
-    case "1":
-      return OnChainMessageStatus.CLAIMABLE;
-    case "2":
-      return OnChainMessageStatus.CLAIMED;
-  }
-}
 async function getL2L1MessageStatusUsingCustomProvider(
   messageService: L1ClaimingService,
   messageHash: string,
-  l1Provider: ethers.providers.Provider,
-  l1SearchConfig: EventSearchConfig
-): Promise<OnChainMessageStatus> {
-  return await getMessageStatusUsingMessageHash(messageHash, messageService, l1Provider, l1SearchConfig);
-}
-async function getMessageStatusUsingMessageHash(
-  messageHash: string,
-  messageService: L1ClaimingService,
   l1Provider: ethers.providers.Provider,
   l1SearchConfig: EventSearchConfig
 ): Promise<OnChainMessageStatus> {

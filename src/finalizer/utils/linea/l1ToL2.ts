@@ -1,10 +1,11 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
+import { L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs, ethers, BigNumber } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -12,9 +13,28 @@ import {
   findMessageFromUsdcBridge,
   findMessageSentEvents,
   getBlockRangeByHoursOffsets,
-  getL1ToL2MessageStatusUsingCustomProvider,
   initLineaSdk,
 } from "./common";
+
+// Temporary re-implementation of the SDK's `L2MessageServiceContract.getMessageStatus` functions that allow us to use
+// our custom provider, with retry and caching logic, to get around the SDK's hardcoded logic to query events
+// from 0 to "latest" which will not work on all RPC's.
+async function getL1ToL2MessageStatusUsingCustomProvider(
+  messageService: L2MessageServiceContract,
+  messageHash: string,
+  l2Provider: ethers.providers.Provider
+): Promise<OnChainMessageStatus> {
+  const l2Contract = new Contract(messageService.contract.address, messageService.contract.interface, l2Provider);
+  const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
+  switch (status.toString()) {
+    case "0":
+      return OnChainMessageStatus.UNKNOWN;
+    case "1":
+      return OnChainMessageStatus.CLAIMABLE;
+    case "2":
+      return OnChainMessageStatus.CLAIMED;
+  }
+}
 
 export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
