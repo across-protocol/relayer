@@ -1,7 +1,4 @@
 import { LineaSDK, Message, OnChainMessageStatus } from "@consensys/linea-sdk";
-import { L1MessageServiceContract, L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
-import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
-import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/L2MessageService";
 import { Linea_Adapter__factory } from "@across-protocol/contracts";
 import {
   BigNumber,
@@ -20,6 +17,14 @@ import {
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
+import { Log } from "../../../interfaces";
+
+// Normally we avoid importing directly from a node_modules' /dist package but we need access to some
+// of the internal classes and functions in order to replicate SDK logic so that we can by pass hardcoded
+// ethers.Provider instances and use our own custom provider instead.
+import { L1MessageServiceContract, L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
+import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
+import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/L2MessageService";
 
 export type MessageWithStatus = Message & {
   logIndex: number;
@@ -43,7 +48,8 @@ export function makeGetMessagesWithStatusByTxHash(
   l1Provider: ethers.providers.Provider,
   l2MessageService: L2MessageServiceContract,
   l1ClaimingService: L1ClaimingService,
-  l1SearchConfig: EventSearchConfig
+  l1SearchConfig: EventSearchConfig,
+  l2SearchConfig: EventSearchConfig
 ) {
   /**
    * Retrieves Linea's MessageSent events for a given transaction hash and enhances them with their status.
@@ -83,10 +89,16 @@ export function makeGetMessagesWithStatusByTxHash(
           logIndex: log.logIndex,
         };
       });
-
     const messageStatus = await Promise.all(
       messages.map((message) =>
-        getL2L1MessageStatusUsingCustomProvider(l1ClaimingService, message.messageHash, l1Provider, l1SearchConfig)
+        getL2L1MessageStatusUsingCustomProvider(
+          l1ClaimingService,
+          message.messageHash,
+          l1Provider,
+          l1SearchConfig,
+          l2Provider,
+          l2SearchConfig
+        )
       )
     );
     return messages.map((message, index) => ({
@@ -103,31 +115,73 @@ async function getL2L1MessageStatusUsingCustomProvider(
   messageService: L1ClaimingService,
   messageHash: string,
   l1Provider: ethers.providers.Provider,
-  l1SearchConfig: EventSearchConfig
+  l1SearchConfig: EventSearchConfig,
+  l2Provider: ethers.providers.Provider,
+  l2SearchConfig: EventSearchConfig
 ): Promise<OnChainMessageStatus> {
-  const l1Contract = new Contract(
-    messageService.l1Contract.contract.address,
-    messageService.l1Contract.contract.interface,
-    l1Provider
-  );
-  const onchainStatus: BigNumber = await l1Contract.inboxL2L1MessageStatus(messageHash);
-  if (onchainStatus.eq(0)) {
-    const events = await paginatedEventQuery(
-      l1Contract,
-      l1Contract.filters.MessageClaimed(messageHash),
-      l1SearchConfig
-    );
-    if (events.length > 0) {
-      return OnChainMessageStatus.CLAIMED;
-    } else {
-      return OnChainMessageStatus.UNKNOWN;
-    }
-  } else if (onchainStatus.eq(1)) {
-    return OnChainMessageStatus.CLAIMABLE;
-  } else {
+  const l2Contract = getL2MessageServiceContractFromL1ClaimingService(messageService, l2Provider);
+  const messageEvent = await getMessageSentEventForMessageHash(messageHash, l2Contract, l2SearchConfig);
+  const l1Contract = getL1MessageServiceContractFromL1ClaimingService(messageService, l1Provider);
+  const [l2MessagingBlockAnchoredEvents, isMessageClaimed] = await Promise.all([
+    getL2MessagingBlockAnchoredFromMessageSentEvent(messageEvent, l1Contract, l1SearchConfig),
+    l1Contract.isMessageClaimed(messageEvent.args?._nonce),
+  ]);
+  if (isMessageClaimed) {
     return OnChainMessageStatus.CLAIMED;
   }
+  if (l2MessagingBlockAnchoredEvents.length > 0) {
+    return OnChainMessageStatus.CLAIMABLE;
+  }
+  return OnChainMessageStatus.UNKNOWN;
 }
+export function getL2MessageServiceContractFromL1ClaimingService(
+  l1ClaimingService: L1ClaimingService,
+  l2Provider: ethers.providers.Provider
+): Contract {
+  return new Contract(
+    l1ClaimingService.l2Contract.contract.address,
+    l1ClaimingService.l2Contract.contract.interface,
+    l2Provider
+  );
+}
+export function getL1MessageServiceContractFromL1ClaimingService(
+  l1ClaimingService: L1ClaimingService,
+  l1Provider: ethers.providers.Provider
+): Contract {
+  return new Contract(
+    l1ClaimingService.l1Contract.contract.address,
+    l1ClaimingService.l1Contract.contract.interface,
+    l1Provider
+  );
+}
+export async function getMessageSentEventForMessageHash(
+  messageHash: string,
+  l2MessageServiceContract: Contract,
+  l2SearchConfig: EventSearchConfig
+): Promise<Log> {
+  const [messageEvents] = await paginatedEventQuery(
+    l2MessageServiceContract,
+    l2MessageServiceContract.filters.MessageSent(null, null, null, null, null, null, messageHash),
+    l2SearchConfig
+  );
+  if (!messageEvents) {
+    throw new Error(`Message hash does not exist on L2. Message hash: ${messageHash}`);
+  }
+  return messageEvents[0];
+}
+export async function getL2MessagingBlockAnchoredFromMessageSentEvent(
+  messageSentEvent: Log,
+  l1MessageServiceContract: Contract,
+  l1SearchConfig: EventSearchConfig
+): Promise<Log[]> {
+  const l2MessagingBlockAnchoredEvents = await paginatedEventQuery(
+    l1MessageServiceContract,
+    l1MessageServiceContract.filters.L2MessagingBlockAnchored(messageSentEvent.blockNumber),
+    l1SearchConfig
+  );
+  return l2MessagingBlockAnchoredEvents;
+}
+
 export async function getBlockRangeByHoursOffsets(
   chainId: number,
   fromBlockHoursOffsetToNow: number,

@@ -1,6 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
-import { L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
@@ -15,6 +14,11 @@ import {
   getBlockRangeByHoursOffsets,
   initLineaSdk,
 } from "./common";
+
+// Normally we avoid importing directly from a node_modules' /dist package but we need access to some
+// of the internal classes and functions in order to replicate SDK logic so that we can by pass hardcoded
+// ethers.Provider instances and use our own custom provider instead.
+import { L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
 
 // Temporary re-implementation of the SDK's `L2MessageServiceContract.getMessageStatus` functions that allow us to use
 // our custom provider, with retry and caching logic, to get around the SDK's hardcoded logic to query events
