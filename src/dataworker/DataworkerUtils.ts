@@ -24,6 +24,7 @@ import {
   getTimestampsForBundleEndBlocks,
   isDefined,
   MerkleTree,
+  Profiler,
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../utils";
@@ -350,7 +351,13 @@ export async function persistDataToArweave(
     Buffer.from(tag).length <= ARWEAVE_TAG_BYTE_LIMIT,
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`
   );
-  const startTime = performance.now();
+
+  const profiler = new Profiler({
+    logger,
+    at: "DataworkerUtils#persistDataToArweave",
+  });
+  const mark = profiler.start("persistDataToArweave");
+
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const [matchingTxns, address, balance] = await Promise.all([
@@ -397,10 +404,8 @@ export async function persistDataToArweave(
       balance: formatWinston(balance),
       notificationPath: "across-arweave",
     });
-    const endTime = performance.now();
-    logger.debug({
-      at: "Dataworker#index",
-      message: `Time to persist data to Arweave: ${endTime - startTime}ms`,
+    mark.stop({
+      message: "Time to persist to Arweave",
     });
   }
 }

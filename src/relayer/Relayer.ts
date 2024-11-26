@@ -20,6 +20,7 @@ import {
   fixedPointAdjustment,
   TransactionResponse,
   ZERO_ADDRESS,
+  Profiler,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -45,7 +46,7 @@ export class Relayer {
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
   private lastLogTime = 0;
   private lastMaintenance = 0;
-
+  private profiler: InstanceType<typeof Profiler>;
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected inventoryChainIds: number[];
@@ -69,7 +70,10 @@ export class Relayer {
         ];
       }
     });
-
+    this.profiler = new Profiler({
+      at: "Relayer",
+      logger: this.logger,
+    });
     this.relayerAddress = getAddress(relayerAddress);
     this.inventoryChainIds =
       this.config.pollingDelay === 0 ? Object.values(clients.spokePoolClients).map(({ chainId }) => chainId) : [];
@@ -1034,7 +1038,7 @@ export class Relayer {
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
-    const start = performance.now();
+    const mark = this.profiler.start("resolveRepaymentChain");
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
@@ -1058,14 +1062,16 @@ export class Relayer {
       };
     }
 
-    this.logger.debug({
-      at: "Relayer::resolveRepaymentChain",
+    mark.stop({
       message: `Determined eligible repayment chains ${JSON.stringify(
         preferredChainIds
-      )} for deposit ${depositId} from ${originChain} to ${destinationChain} in ${
-        Math.round(performance.now() - start) / 1000
-      }s.`,
+      )} for deposit ${depositId} from ${originChain} to ${destinationChain}.`,
+      preferredChainIds,
+      depositId,
+      originChain,
+      destinationChain,
     });
+
     const _repaymentFees = preferredChainIds.map((chainId) =>
       repaymentFees.find(({ paymentChainId }) => paymentChainId === chainId)
     );

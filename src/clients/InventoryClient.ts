@@ -25,6 +25,7 @@ import {
   assert,
   compareAddressesSimple,
   getUsdcSymbol,
+  Profiler,
   getNativeTokenSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
@@ -59,6 +60,7 @@ export class InventoryClient {
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
   private bundleRefundsPromise: Promise<CombinedRefunds[]> = undefined;
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
+  private profiler: InstanceType<typeof Profiler>;
 
   constructor(
     readonly relayer: string,
@@ -75,6 +77,10 @@ export class InventoryClient {
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
+    this.profiler = new Profiler({
+      logger: this.logger,
+      at: "InventoryClient",
+    });
   }
 
   /**
@@ -299,13 +305,15 @@ export class InventoryClient {
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
 
+    let mark: ReturnType<typeof this.profiler.start>;
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    let startTimer: number;
     if (!isDefined(this.bundleRefundsPromise)) {
-      startTimer = performance.now();
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
+      mark = this.profiler.start("bundleRefunds", {
+        l1Token,
+      });
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
@@ -327,12 +335,12 @@ export class InventoryClient {
       },
       {}
     );
-    if (startTimer) {
-      this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTimer) / 1000)}s`, {
-        l1Token,
-        totalRefundsPerChain,
-      });
-    }
+
+    mark?.stop({
+      message: "Time to calculate total refunds per chain",
+      l1Token,
+    });
+
     return totalRefundsPerChain;
   }
 
@@ -618,7 +626,8 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-    const start = performance.now();
+
+    const mark = this.profiler.start("getLatestRunningBalances");
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
         const chainIdIndex = chainIds.indexOf(chainId);
@@ -674,13 +683,10 @@ export class InventoryClient {
         ];
       })
     );
-    this.log(
-      `Approximated latest (abs. val) running balance for ORU chains for token ${l1Token} in ${
-        Math.round(performance.now() - start) / 1000
-      }s`,
-      { runningBalances }
-    );
-
+    mark.stop({
+      message: "Time to get running balances",
+      runningBalances,
+    });
     return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
 

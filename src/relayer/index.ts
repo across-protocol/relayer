@@ -3,9 +3,9 @@ import {
   config,
   delay,
   disconnectRedisClients,
-  getCurrentTime,
   getNetworkName,
   getRedisCache,
+  Profiler,
   Signer,
   winston,
 } from "../utils";
@@ -17,11 +17,12 @@ let logger: winston.Logger;
 
 const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
 const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer" } = process.env;
-const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const relayerRun = randomNumber();
-  const startTime = getCurrentTime();
+  const profiler = new Profiler({
+    at: "Relayer#run",
+    logger: _logger,
+  });
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
@@ -42,7 +43,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
   const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
-  logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
+  logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig });
+  const mark = profiler.start("relayer");
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
@@ -56,8 +58,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
-
-      const tLoopStart = performance.now();
+      const tLoopStart = profiler.start("Relayer execution loop");
       const ready = await relayer.update();
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
@@ -65,7 +66,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       // If this instance can't update, throw an error (for now).
       if (!ready && activeRelayer) {
         if (run * pollingDelay < 120) {
-          const runTime = Math.round((performance.now() - tLoopStart) / 1000);
+          const runTime = Math.round((performance.now() - tLoopStart.startTime) / 1000);
           const delta = pollingDelay - runTime;
           logger.debug({ at: "Relayer#run", message: `Not ready to relay, waiting ${delta} seconds.` });
           await delay(delta);
@@ -100,11 +101,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (!loop) {
         stop = true;
       } else {
-        const runTime = Math.round((performance.now() - tLoopStart) / 1000);
-        logger.debug({
-          at: "Relayer#run",
-          message: `Completed relayer execution loop ${run} in ${runTime} seconds.`,
+        const runTimeMilliseconds = tLoopStart.stop({
+          message: "Completed relayer execution loop.",
+          loopCount: run,
         });
+        const runTime = Math.round(runTimeMilliseconds / 1000);
 
         if (!stop && runTime < pollingDelay) {
           const delta = pollingDelay - runTime;
@@ -136,6 +137,5 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     }
   }
 
-  const runtime = getCurrentTime() - startTime;
-  logger.debug({ at: "Relayer#index", message: `Completed relayer run ${relayerRun} in ${runtime} seconds.` });
+  mark.stop({ message: "Relayer instance completed." });
 }
