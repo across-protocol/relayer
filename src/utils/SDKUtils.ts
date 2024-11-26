@@ -53,6 +53,7 @@ export const {
   getTokenInfo,
   getL1TokenInfo,
   getUsdcSymbol,
+  Profiler,
 } = sdk.utils;
 
 export const {
