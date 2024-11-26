@@ -3,7 +3,6 @@ import {
   config,
   delay,
   disconnectRedisClients,
-  getCurrentTime,
   getNetworkName,
   getRedisCache,
   Profiler,
@@ -18,15 +17,12 @@ let logger: winston.Logger;
 
 const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
 const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer" } = process.env;
-const randomNumber = () => Math.floor(Math.random() * 1_000_000);
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const profiler = new Profiler({
     at: "Relayer#run",
     logger: _logger,
   });
-  const relayerRun = randomNumber();
-  const startTime = getCurrentTime();
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
@@ -47,7 +43,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
   const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
-  logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig, relayerRun });
+  logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig });
+  const mark = profiler.start("relayer");
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
@@ -140,6 +137,5 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     }
   }
 
-  const runtime = getCurrentTime() - startTime;
-  logger.debug({ at: "Relayer#index", message: `Completed relayer run ${relayerRun} in ${runtime} seconds.` });
+  mark.stop({ message: "Relayer instance completed." });
 }
