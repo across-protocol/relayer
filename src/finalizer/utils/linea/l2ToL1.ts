@@ -13,6 +13,7 @@ import {
   ethers,
   Contract,
   paginatedEventQuery,
+  mapAsync,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -27,6 +28,8 @@ import {
   getL2MessagingBlockAnchoredFromMessageSentEvent,
 } from "./common";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
+import { utils as sdkUtils } from "@across-protocol/sdk";
+
 
 // Normally we avoid importing directly from a node_modules' /dist package but we need access to some
 // of the internal classes and functions in order to replicate SDK logic so that we can by pass hardcoded
@@ -216,14 +219,25 @@ export async function lineaL2ToL1Finalizer(
     return transfer;
   });
 
+  const averageBlockTimeSeconds = await sdkUtils.averageBlockTime(spokePoolClient.spokePool.provider)
   logger.debug({
     at: "Finalizer#LineaL2ToL1Finalizer",
     message: "Linea L2->L1 message statuses",
+    averageBlockTimeSeconds,
+    latestSpokePoolBlock: spokePoolClient.latestBlockSearched,
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
       notReceived: unknown.length,
     },
+    notReceivedTxns: await mapAsync(unknown, async ({ message, tokensBridged }) => {      
+      const withdrawalBlock = tokensBridged.blockNumber
+      return {
+        txnHash: message.txHash,
+        withdrawalBlock,
+        maturedHours: averageBlockTimeSeconds.average * (spokePoolClient.latestBlockSearched - withdrawalBlock) / 60 / 60
+      }
+    }),
   });
 
   return { callData: multicall3Call, crossChainMessages: transfers };
