@@ -31,7 +31,7 @@ import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
 const destinationChainId = 42161;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, hubPool: Contract;
+let l1Token_1: Contract, hubPool: Contract, spokePool_4: Contract;
 let depositor: SignerWithAddress, spy: sinon.SinonSpy;
 
 let hubPoolClient: HubPoolClient;
@@ -48,6 +48,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       erc20_1,
       erc20_2,
       spokePool_2,
+      spokePool_4,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -122,6 +123,58 @@ describe("Dataworker: Execute pool rebalances", async function () {
     leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     expect(leafCount).to.equal(0);
     expect(multiCallerClient.transactionCount()).to.equal(0);
+  });
+  it("BalanceAllocator used values are correctly updated", async function () {
+    // Send deposit on SpokePool with same chain ID as hub chain.
+    // Fill it on a different spoke pool.
+    // This should result in a net 0 used value for the hub pool.
+
+    await updateAllClients();
+
+    // Send a deposit and a fill so that dataworker builds simple roots.
+    const deposit = await depositV3(
+      spokePool_4,
+      destinationChainId,
+      depositor,
+      l1Token_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    // Now, fill the deposit. This should result in a positive netSendAmount to the destination chain,
+    // which should increase the used value for the hub pool.
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await updateAllClients();
+
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [hubPoolClient.chainId]: hubPool.provider,
+    };
+
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
+    // Execute queue and check that root bundle is pending:
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+    await multiCallerClient.executeTxnQueues();
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    const balanceAllocator = new BalanceAllocator(providers);
+    const leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    expect(leafCount).to.equal(2);
+
+    // Deposit on Hub SpokePool should return funds to the hub pool, so there should be positive "used" value
+    // for the spoke pool and negative for the hub pool.
+    const usedHubPoolBalance = balanceAllocator.getUsed(hubPoolClient.chainId, l1Token_1.address, hubPool.address);
+    // The used value for the hub pool should be slightly negative since it has accrued some
+    // bundle LP fees after paying out the refund to the destination chain and taking in the deposit
+    // from the origin chain.
+    expect(usedHubPoolBalance).to.equal("-83532215599429900");
+    expect(balanceAllocator.getUsed(hubPoolClient.chainId, l1Token_1.address, spokePool_4.address)).to.equal(
+      amountToDeposit
+    );
   });
   describe("update exchange rates", function () {
     let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;
@@ -287,6 +340,68 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
+        expect(updated.size).to.equal(0);
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+      });
+      it("groups aggregate net send amounts by L1 token", async function () {
+        const liquidReserves = toBNWei("1");
+        const l1Token2 = erc20_1.address;
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: liquidReserves,
+            [l1Token2]: liquidReserves,
+          },
+
+          balanceAllocator,
+          [
+            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
+            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token2], chainId: 10 },
+          ],
+          true
+        );
+        expect(updated.size).to.equal(0);
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+      });
+      it("errors if a single l1 token's aggregate net send amount exceeds liquid reserves", async function () {
+        const liquidReserves = toBNWei("1");
+        const l1Token2 = erc20_1.address;
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: liquidReserves,
+            [l1Token2]: liquidReserves,
+          },
+
+          balanceAllocator,
+          [
+            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
+            // This one execeeds the liquid reserves for the l1 token.
+            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token2], chainId: 10 },
+          ],
+          true
+        );
+        expect(lastSpyLogLevel(spy)).to.equal("error");
+        expect(lastSpyLogIncludes(spy, "will fail")).to.be.true;
+        expect(spy.getCall(-1).lastArg.l1Token).to.equal(l1Token2)
+        expect(updated.size).to.equal(0);
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+      });
+      it("ignores negative net send amounts", async function () {
+        const liquidReserves = toBNWei("2");
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: liquidReserves.sub(toBNWei("1")),
+          },
+
+          balanceAllocator,
+          [
+            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
+            // This negative liquid reserves doesn't offset the positive one, it just gets ignored.
+            { netSendAmounts: [liquidReserves.mul(-1)], l1Tokens: [l1Token_1.address], chainId: 10 },
+          ],
+          true
+        );
+        expect(lastSpyLogLevel(spy)).to.equal("error");
+        expect(lastSpyLogIncludes(spy, "will fail")).to.be.true;
         expect(updated.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
