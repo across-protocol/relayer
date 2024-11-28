@@ -5,7 +5,6 @@ import {
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
   ZERO_ADDRESS,
-  originChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
