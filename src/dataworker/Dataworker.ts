@@ -1621,7 +1621,7 @@ export class Dataworker {
                       leaf.chainId,
                       leaf.l1Tokens[i],
                       spokePoolClients[leaf.chainId].spokePool.address,
-                      amount
+                      amount.mul(-1)
                     );
                   }
                 })
@@ -1772,81 +1772,94 @@ export class Dataworker {
     const hubPool = this.clients.hubPoolClient.hubPool;
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
+    const aggregateNetSendAmounts: Record<string, BigNumber> = {};
+
     await sdkUtils.forEachAsync(poolRebalanceLeaves, async (leaf) => {
       await sdkUtils.forEachAsync(leaf.l1Tokens, async (l1Token, idx) => {
-        const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
-
-        if (updatedL1Tokens.has(l1Token)) {
-          return;
+        if (aggregateNetSendAmounts[l1Token] === undefined) {
+          aggregateNetSendAmounts[l1Token] = bnZero;
         }
+
         // If leaf's netSendAmount is negative, then we don't need to updateExchangeRates since the Hub will not
         // have a liquidity constraint because it won't be sending any tokens.
         if (leaf.netSendAmounts[idx].lte(0)) {
           return;
         }
-        // The "used" balance kept in the BalanceAllocator should have adjusted for the netSendAmounts and relayer refund leaf
-        // executions above. Therefore, check if the current liquidReserves is less than the pool rebalance leaf's netSendAmount
-        // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
-        // the HubPool becomes "aware" of its inflow following the relayre refund leaf execution.
-        let currHubPoolLiquidReserves = latestLiquidReserves[l1Token];
-        if (!currHubPoolLiquidReserves) {
-          // @dev If there aren't liquid reserves for this token then set them to max value so we won't update them.
-          currHubPoolLiquidReserves = this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token).liquidReserves;
-        }
-        assert(currHubPoolLiquidReserves !== undefined);
-        // We only need to update the exchange rate in the case where tokens are returned to the HubPool increasing
-        // its balance enough that it can execute a pool rebalance leaf it otherwise would not be able to.
-        // This would only happen if the starting hub pool balance is below the net send amount. If it started
-        // above, then the dataworker would not purposefully send tokens out of it to fulfill the Ethereum
-        // PoolRebalanceLeaf and then return tokens to it to execute another chain's PoolRebalanceLeaf.
-        if (currHubPoolLiquidReserves.gte(leaf.netSendAmounts[idx])) {
-          this.logger.debug({
-            at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
-            message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for chain ${leaf.chainId}`,
-            l2ChainId: leaf.chainId,
-            currHubPoolLiquidReserves,
-            netSendAmount: leaf.netSendAmounts[idx],
-            l1Token,
-          });
-          return;
-        }
+        aggregateNetSendAmounts[l1Token] = aggregateNetSendAmounts[l1Token].add(leaf.netSendAmounts[idx]);
+      });
+    });
 
-        // @dev: Virtual balance = post-sync liquid reserves + any used balance.
-        const multicallInput = [
-          hubPool.interface.encodeFunctionData("sync", [l1Token]),
-          hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
-        ];
-        const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
-        const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[1]);
-        const updatedLiquidReserves = updatedPooledTokens.liquidReserves;
-        const virtualHubPoolBalance = updatedLiquidReserves.sub(
-          balanceAllocator.getUsed(hubPoolChainId, l1Token, hubPool.address)
-        );
+    // Now, go through each L1 token and see if we need to update the exchange rate for it.
+    await sdkUtils.forEachAsync(Object.keys(aggregateNetSendAmounts), async (l1Token) => {
+      const requiredNetSendAmountForL1Token = aggregateNetSendAmounts[l1Token];
+      // The "used" balance kept in the BalanceAllocator should have adjusted for the netSendAmounts and relayer refund leaf
+      // executions above. Therefore, check if the current liquidReserves is less than the pool rebalance leaf's netSendAmount
+      // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
+      // the HubPool becomes "aware" of its inflow following the relayre refund leaf execution.
+      let currHubPoolLiquidReserves = latestLiquidReserves[l1Token];
+      if (!currHubPoolLiquidReserves) {
+        // @dev If there aren't liquid reserves for this token then set them to max value so we won't update them.
+        currHubPoolLiquidReserves = this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token).liquidReserves;
+      }
+      assert(currHubPoolLiquidReserves !== undefined);
 
-        // If the virtual balance is still too low to execute the pool leaf, then log an error that this will
-        // pool rebalance leaf execution will fail.
-        if (virtualHubPoolBalance.lt(leaf.netSendAmounts[idx])) {
-          this.logger.error({
-            at: "Dataworker#executePoolRebalanceLeaves",
-            message: "Executing pool rebalance leaf on HubPool will fail due to lack of funds to send.",
-            leaf: leaf,
-            l1Token,
-            netSendAmount: leaf.netSendAmounts[idx],
-            updatedLiquidReserves,
-            virtualHubPoolBalance,
-          });
-          return;
-        }
+      // Subtract any used balance from previous pool rebalance leaf executions.
+      currHubPoolLiquidReserves = currHubPoolLiquidReserves.sub(
+        balanceAllocator.getUsed(hubPoolChainId, l1Token, hubPool.address)
+      );
+
+      // We only need to update the exchange rate in the case where tokens are returned to the HubPool increasing
+      // its balance enough that it can execute a pool rebalance leaf it otherwise would not be able to.
+      // This would only happen if the starting hub pool balance is below the net send amount. If it started
+      // above, then the dataworker would not purposefully send tokens out of it to fulfill the Ethereum
+      // PoolRebalanceLeaf and then return tokens to it to execute another chain's PoolRebalanceLeaf.
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
+      if (currHubPoolLiquidReserves.gte(requiredNetSendAmountForL1Token)) {
         this.logger.debug({
-          at: "Dataworker#executePoolRebalanceLeaves",
-          message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${tokenSymbol}`,
+          at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
+          message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > required netSendAmount`,
+          currHubPoolLiquidReserves,
+          requiredNetSendAmountForL1Token,
+          l1Token,
+        });
+        return;
+      }
+
+      // @dev: Virtual balance = post-sync liquid reserves + any used balance.
+      const multicallInput = [
+        hubPool.interface.encodeFunctionData("sync", [l1Token]),
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+      ];
+      const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
+      const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[1]);
+      const updatedLiquidReserves = updatedPooledTokens.liquidReserves;
+      const virtualHubPoolBalance = updatedLiquidReserves.sub(
+        balanceAllocator.getUsed(hubPoolChainId, l1Token, hubPool.address)
+      );
+
+      // If the virtual balance is still too low to execute all the pool leaves, then log an error
+      if (virtualHubPoolBalance.lt(requiredNetSendAmountForL1Token)) {
+        this.logger.error({
+          at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
+          message: `Executing non-ethereum pool rebalance leaves on HubPool will fail due to lack of ${tokenSymbol} funds`,
+          l1Token,
+          requiredNetSendAmountForL1Token,
+          currHubPoolLiquidReserves,
           updatedLiquidReserves,
           virtualHubPoolBalance,
-          netSendAmount: leaf.netSendAmounts[idx],
-          leaf,
         });
-        updatedL1Tokens.add(l1Token);
+        return;
+      }
+      this.logger.debug({
+        at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
+        message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${tokenSymbol}`,
+        l1Token,
+        requiredNetSendAmountForL1Token,
+        currHubPoolLiquidReserves,
+        updatedLiquidReserves,
+        virtualHubPoolBalance,
       });
+      updatedL1Tokens.add(l1Token);
     });
 
     // Submit executions at the end since the above double loop runs in parallel and we don't want to submit
