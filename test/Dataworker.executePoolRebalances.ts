@@ -381,7 +381,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         );
         expect(lastSpyLogLevel(spy)).to.equal("error");
         expect(lastSpyLogIncludes(spy, "will fail")).to.be.true;
-        expect(spy.getCall(-1).lastArg.l1Token).to.equal(l1Token2)
+        expect(spy.getCall(-1).lastArg.l1Token).to.equal(l1Token2);
         expect(updated.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
