@@ -1621,7 +1621,7 @@ export class Dataworker {
                       leaf.chainId,
                       leaf.l1Tokens[i],
                       spokePoolClients[leaf.chainId].spokePool.address,
-                      amount.mul(-1)
+                      amount
                     );
                   }
                 })
