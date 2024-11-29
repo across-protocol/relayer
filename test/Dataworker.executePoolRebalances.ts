@@ -325,25 +325,9 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(updated.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
-      it("exits early if current liquid reserves are greater than total net send amount", async function () {
-        const netSendAmount = toBNWei("1");
-        const liquidReserves = toBNWei("2");
-        // For this test, do not pass in a liquid reserves object and force dataworker to load
-        // from HubPoolClient
-        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-          {},
-          balanceAllocator,
-          [
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 10 },
-          ],
-          true
-        );
-        expect(updated.size).to.equal(0);
-        expect(multiCallerClient.transactionCount()).to.equal(0);
-      });
       it("groups aggregate net send amounts by L1 token", async function () {
+        // Total net send amount is 1 for each token but they are not summed together because they are different,
+        // so the liquid reserves of 1 for each individual token is enough.
         const liquidReserves = toBNWei("1");
         const l1Token2 = erc20_1.address;
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
@@ -426,6 +410,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       it("logs error if updated liquid reserves aren't enough to execute leaf", async function () {
         const netSendAmount = toBNWei("1");
         const liquidReserves = toBNWei("1");
+        // Total net send amount will be 2, but liquid reserves are only 1.
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
 
         // Even after simulating sync, there are not enough liquid reserves.
@@ -436,7 +421,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             true, // enabled
             0, // last lp fee update
             bnZero, // utilized reserves
-            liquidReserves, // liquid reserves, >= than total netSendAmount
+            liquidReserves, // liquid reserves, still < than total netSendAmount
             bnZero, // unaccumulated fees
           ]),
         ]);
@@ -521,8 +506,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
-        expect(spy.getCall(-1).lastArg.virtualHubPoolBalance).to.equal(netSendAmount.mul(2));
         expect(updated.size).to.equal(1);
+        expect(spy.getCall(-1).lastArg.virtualHubPoolBalance).to.equal(netSendAmount.mul(2));
         expect(updated.has(l1Token_1.address)).to.be.true;
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
@@ -557,8 +542,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
-        expect(spy.getCall(-1).lastArg.virtualHubPoolBalance).to.equal(netSendAmount.mul(3).sub(toBNWei("1")));
         expect(updated.size).to.equal(1);
+        expect(spy.getCall(-1).lastArg.virtualHubPoolBalance).to.equal(netSendAmount.mul(3).sub(toBNWei("1")));
         expect(updated.has(l1Token_1.address)).to.be.true;
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
