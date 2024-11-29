@@ -478,11 +478,10 @@ describe("Dataworker: Execute pool rebalances", async function () {
       });
       it("submits update: liquid reserves post-sync are enough to execute leaf", async function () {
         // Liquid reserves cover one leaf but not two.
-        const netSendAmount = toBNWei("10");
-        const liquidReserves = toBNWei("11");
+        const postUpdateLiquidReserves = toBNWei("20");
 
         // Current reserves are insufficient to cover the two leaves:
-        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
+        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, bnZero);
 
         // Post-update, liquid reserves will be enough to cover the two leaves:
         fakeHubPool.multicall.returns([
@@ -492,7 +491,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             true, // enabled
             0, // last lp fee update
             bnZero, // utilized reserves
-            netSendAmount.mul(2),
+            postUpdateLiquidReserves,
             bnZero, // unaccumulated fees
           ]),
         ]);
@@ -500,14 +499,18 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
+          // Each leaf's net send amount is individually less than the post-updateliquid reserves,
+          // but the sum of the three is greater than the post-update liquid reserves.
+          // This should force the dataworker to submit an update.
           [
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 10 },
+            { netSendAmounts: [toBNWei("4")], l1Tokens: [l1Token_1.address], chainId: 1 },
+            { netSendAmounts: [toBNWei("9")], l1Tokens: [l1Token_1.address], chainId: 10 },
+            { netSendAmounts: [toBNWei("7")], l1Tokens: [l1Token_1.address], chainId: 137 },
           ],
           true
         );
         expect(updated.size).to.equal(1);
-        expect(spy.getCall(-1).lastArg.virtualHubPoolBalance).to.equal(netSendAmount.mul(2));
+        expect(spy.getCall(-1).lastArg.virtualHubPoolBalance).to.equal(postUpdateLiquidReserves);
         expect(updated.has(l1Token_1.address)).to.be.true;
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
