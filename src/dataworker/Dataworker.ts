@@ -1488,6 +1488,7 @@ export class Dataworker {
       ({ availableLiquidReserves: updatedLiquidReserves, syncedL1Tokens: updatedL1Tokens } =
         await this._updateExchangeRatesBeforeExecutingHubChainLeaves(mainnetLeaves[0], submitExecution));
       await this._executePoolRebalanceLeaves(
+        spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
         expectedTrees.poolRebalanceTree.tree,
@@ -1553,6 +1554,7 @@ export class Dataworker {
 
     // Perform similar funding checks for remaining non-mainnet pool rebalance leaves.
     await this._executePoolRebalanceLeaves(
+      spokePoolClients,
       nonHubChainPoolRebalanceLeaves,
       balanceAllocator,
       expectedTrees.poolRebalanceTree.tree,
@@ -1563,6 +1565,9 @@ export class Dataworker {
   }
 
   async _executePoolRebalanceLeaves(
+    spokePoolClients: {
+      [chainId: number]: SpokePoolClient;
+    },
     leaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator,
     tree: MerkleTree<PoolRebalanceLeaf>,
@@ -1574,12 +1579,16 @@ export class Dataworker {
       (leaf) => sdkUtils.chainIsArbitrum(leaf.chainId) || sdkUtils.chainIsOrbit(leaf.chainId)
     );
     await forEachAsync(orbitLeaves, async (leaf) => {
-      const { amount: requiredAmount, token: feeToken } = await this._getRequiredEthForOrbitPoolRebalanceLeaf(leaf);
+      const {
+        amount: requiredAmount,
+        token: feeToken,
+        holder,
+      } = await this._getRequiredEthForOrbitPoolRebalanceLeaf(leaf);
       const success = await balanceAllocator.requestBalanceAllocations([
         {
           tokens: [feeToken],
           amount: requiredAmount,
-          holder: this.clients.hubPoolClient.hubPool.address,
+          holder: holder,
           chainId: hubPoolChainId,
         },
       ]);
@@ -1609,7 +1618,7 @@ export class Dataworker {
               contract: new Contract(feeToken, ERC20.abi, signer),
               chainId: hubPoolChainId,
               method: "transfer",
-              args: [this.clients.hubPoolClient.hubPool.address, requiredAmount],
+              args: [holder, requiredAmount],
               message: `Loaded orbit gas token for message to ${getNetworkName(leaf.chainId)} 📨!`,
               mrkdwn: `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`,
             });
@@ -1617,9 +1626,27 @@ export class Dataworker {
         }
       }
     });
-    if (submitExecution) {
-      leaves.forEach((leaf) => {
-        const mrkdwn = `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`;
+    await forEachAsync(leaves, async (leaf) => {
+      // Add balances to spoke pool on mainnet since we know it will be sent atomically.
+      if (leaf.chainId === hubPoolChainId) {
+        await Promise.all(
+          leaf.netSendAmounts.map(async (amount, i) => {
+            if (amount.gt(bnZero)) {
+              await balanceAllocator.addUsed(
+                leaf.chainId,
+                leaf.l1Tokens[i],
+                spokePoolClients[leaf.chainId].spokePool.address,
+                amount.mul(-1)
+              );
+            }
+          })
+        );
+      }
+    });
+
+    leaves.forEach((leaf) => {
+      const mrkdwn = `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`;
+      if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
           chainId: hubPoolChainId,
@@ -1641,8 +1668,10 @@ export class Dataworker {
           // from relayer refund leaves.
           canFailInSimulation: leaf.chainId !== hubPoolChainId,
         });
-      });
-    }
+      } else {
+        this.logger.debug({ at: "Dataworker#_executePoolRebalanceLeaves", message: mrkdwn });
+      }
+    });
   }
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
@@ -2123,7 +2152,7 @@ export class Dataworker {
           const success = await balanceAllocator.requestBalanceAllocations(balanceRequestsToQuery);
           if (!success) {
             this.logger.warn({
-              at: "Dataworker#executeRelayerRefundLeaves",
+              at: "Dataworker#_executeRelayerRefundLeaves",
               message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
               root: relayerRefundTree.getHexRoot(),
               bundle: rootBundleId,
@@ -2174,7 +2203,7 @@ export class Dataworker {
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
         });
       } else {
-        this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
+        this.logger.debug({ at: "Dataworker#_executeRelayerRefundLeaves", message: mrkdwn });
       }
     });
   }
@@ -2286,16 +2315,20 @@ export class Dataworker {
   async _getRequiredEthForOrbitPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): Promise<{
     amount: BigNumber;
     token: string;
+    holder: string;
   }> {
     // TODO: Make this code more dynamic in the future. For now, hard code custom gas token fees.
     let relayMessageFee: BigNumber;
     let token: string;
+    let holder: string;
     if (leaf.chainId === CHAIN_IDs.ALEPH_ZERO) {
       relayMessageFee = toBNWei("0.49");
       token = TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET];
+      holder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1";
     } else {
       relayMessageFee = toBNWei("0.02");
       token = ZERO_ADDRESS;
+      holder = this.clients.hubPoolClient.hubPool.address;
     }
 
     // For orbit chains, the bot needs enough ETH to pay for each L1 -> L2 message.
@@ -2314,6 +2347,7 @@ export class Dataworker {
     return {
       amount: requiredAmount,
       token,
+      holder,
     };
   }
 

@@ -509,6 +509,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         },
       ];
       await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
         leaves,
         balanceAllocator,
         buildPoolRebalanceLeafTree(leaves),
@@ -521,6 +522,37 @@ describe("Dataworker: Execute pool rebalances", async function () {
       expect(queuedTransactions[0].message).to.match(/chain 10/);
       expect(queuedTransactions[1].method).to.equal("executeRootBundle");
       expect(queuedTransactions[1].message).to.match(/chain 137/);
+    });
+    it("subtracts used balance for ethereum leaves", async function () {
+      const leaves: PoolRebalanceLeaf[] = [
+        {
+          chainId: hubPoolClient.chainId,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1")],
+          netSendAmounts: [toBNWei("1")],
+          runningBalances: [toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [l1Token_1.address],
+        },
+      ];
+      await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
+        leaves,
+        balanceAllocator,
+        buildPoolRebalanceLeafTree(leaves),
+        true
+      );
+
+      expect(multiCallerClient.transactionCount()).to.equal(1);
+      const queuedTransactions = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+      expect(queuedTransactions[0].method).to.equal("executeRootBundle");
+      expect(
+        await balanceAllocator.getUsed(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          spokePoolClients[hubPoolClient.chainId].spokePool.address
+        )
+      ).to.equal(toBNWei("-1"));
     });
     it("contains arbitrum leaf", async function () {
       // Adds one fee per net send amount + one extra if groupIndex = 0
@@ -549,6 +581,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       const expectedFeeLeaf1 = expectedFee.mul(2).add(expectedFee);
       const expectedFeeLeaf2 = expectedFee.mul(2);
       await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
         leaves,
         balanceAllocator,
         buildPoolRebalanceLeafTree(leaves),
@@ -571,10 +604,10 @@ describe("Dataworker: Execute pool rebalances", async function () {
         address: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
         provider: hubPoolClient.hubPool.signer.provider,
       });
-      azero.balanceOf.whenCalledWith(hubPoolClient.hubPool.address).returns(0);
-      expect(
-        await balanceAllocator.getBalance(hubPoolClient.chainId, azero.address, hubPoolClient.hubPool.address)
-      ).to.equal(0);
+      // Custom gas token funder for AZERO
+      const customGasTokenFunder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1";
+      azero.balanceOf.whenCalledWith(customGasTokenFunder).returns(0);
+      expect(await balanceAllocator.getBalance(hubPoolClient.chainId, azero.address, customGasTokenFunder)).to.equal(0);
 
       // Adds one fee per net send amount + one extra if groupIndex = 0
       const leaves: PoolRebalanceLeaf[] = [
@@ -602,6 +635,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       const expectedFeeLeaf1 = expectedFee.mul(2).add(expectedFee);
       const expectedFeeLeaf2 = expectedFee.mul(2);
       await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
         leaves,
         balanceAllocator,
         buildPoolRebalanceLeafTree(leaves),
@@ -612,9 +646,9 @@ describe("Dataworker: Execute pool rebalances", async function () {
       expect(multiCallerClient.transactionCount()).to.equal(4);
       const queuedTransactions = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
       expect(queuedTransactions[0].method).to.equal("transfer");
-      expect(queuedTransactions[0].args).to.deep.equal([hubPoolClient.hubPool.address, expectedFeeLeaf1]);
+      expect(queuedTransactions[0].args).to.deep.equal([customGasTokenFunder, expectedFeeLeaf1]);
       expect(queuedTransactions[1].method).to.equal("transfer");
-      expect(queuedTransactions[1].args).to.deep.equal([hubPoolClient.hubPool.address, expectedFeeLeaf2]);
+      expect(queuedTransactions[1].args).to.deep.equal([customGasTokenFunder, expectedFeeLeaf2]);
       expect(queuedTransactions[2].method).to.equal("executeRootBundle");
       expect(queuedTransactions[3].method).to.equal("executeRootBundle");
     });
