@@ -166,7 +166,7 @@ async function run(argv: string[]): Promise<void> {
   };
   const args = minimist(argv, minimistOpts);
 
-  ({ chainId } = args);
+  ({ chainid: chainId } = args);
   const { lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
