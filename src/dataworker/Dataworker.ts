@@ -1603,6 +1603,21 @@ export class Dataworker {
           requiredAmount,
         });
         if (submitExecution) {
+          const canFund = await balanceAllocator.requestBalanceAllocations([
+            {
+              tokens: [feeToken],
+              amount: requiredAmount,
+              holder: await signer.getAddress(),
+              chainId: hubPoolChainId,
+            },
+          ]);
+          if (!canFund) {
+            throw new Error(
+              `Failed to fund ${requiredAmount.toString()} of orbit gas token ${feeToken} for message to ${getNetworkName(
+                leaf.chainId
+              )}!`
+            );
+          }
           if (feeToken === ZERO_ADDRESS) {
             this.clients.multiCallerClient.enqueueTransaction({
               contract: this.clients.hubPoolClient.hubPool,

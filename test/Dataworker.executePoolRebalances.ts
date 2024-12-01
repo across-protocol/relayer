@@ -554,7 +554,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         )
       ).to.equal(toBNWei("-1"));
     });
-    it("contains arbitrum leaf", async function () {
+    it("funds arbitrum leaf", async function () {
       // Adds one fee per net send amount + one extra if groupIndex = 0
       const leaves: PoolRebalanceLeaf[] = [
         {
@@ -598,7 +598,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       expect(queuedTransactions[2].method).to.equal("executeRootBundle");
       expect(queuedTransactions[3].method).to.equal("executeRootBundle");
     });
-    it("contains custom gas token orbit leaf", async function () {
+    it("funds custom gas token orbit leaf", async function () {
       // Replicate custom gas token setups:
       const azero = await smock.fake(ERC20.abi, {
         address: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
@@ -634,6 +634,9 @@ describe("Dataworker: Execute pool rebalances", async function () {
       const expectedFee = toBNWei("0.49");
       const expectedFeeLeaf1 = expectedFee.mul(2).add(expectedFee);
       const expectedFeeLeaf2 = expectedFee.mul(2);
+      azero.balanceOf
+        .whenCalledWith(await hubPoolClient.hubPool.signer.getAddress())
+        .returns(expectedFeeLeaf1.add(expectedFeeLeaf2));
       await dataworkerInstance._executePoolRebalanceLeaves(
         spokePoolClients,
         leaves,
@@ -651,6 +654,42 @@ describe("Dataworker: Execute pool rebalances", async function () {
       expect(queuedTransactions[1].args).to.deep.equal([customGasTokenFunder, expectedFeeLeaf2]);
       expect(queuedTransactions[2].method).to.equal("executeRootBundle");
       expect(queuedTransactions[3].method).to.equal("executeRootBundle");
+    });
+    it("fails to fund custom gas token orbit leaf", async function () {
+      // Replicate custom gas token setups, but this time do not set a balance for the custom gas token funder.
+      const azero = await smock.fake(ERC20.abi, {
+        address: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
+        provider: hubPoolClient.hubPool.signer.provider,
+      });
+      // Custom gas token funder for AZERO
+      const customGasTokenFunder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1";
+      azero.balanceOf.whenCalledWith(customGasTokenFunder).returns(0);
+      expect(await balanceAllocator.getBalance(hubPoolClient.chainId, azero.address, customGasTokenFunder)).to.equal(0);
+
+      // Adds one fee per net send amount + one extra if groupIndex = 0
+      const leaves: PoolRebalanceLeaf[] = [
+        {
+          chainId: 41455,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1"), toBNWei("1")],
+          netSendAmounts: [toBNWei("1"), toBNWei("1")],
+          runningBalances: [toBNWei("1"), toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [randomAddress(), randomAddress()],
+        },
+      ];
+      // Should throw an error if caller doesn't have enough custom gas token to fund
+      // DonationBox.
+      await assertPromiseError(
+        dataworkerInstance._executePoolRebalanceLeaves(
+          spokePoolClients,
+          leaves,
+          balanceAllocator,
+          buildPoolRebalanceLeafTree(leaves),
+          true
+        ),
+        "Failed to fund"
+      );
     });
   });
 });
