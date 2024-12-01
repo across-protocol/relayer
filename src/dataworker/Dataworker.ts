@@ -1825,7 +1825,18 @@ export class Dataworker {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
           message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > required netSendAmount for non-hubChain pool leaves`,
-          leavesToExecute: poolRebalanceLeaves.map((leaf) => leaf.chainId),
+          leavesWithNetSendAmountRequirementsFromHubPoolLiquidReserves: Object.fromEntries(
+            poolRebalanceLeaves
+              .filter((leaf) => {
+                const l1TokenIndex = leaf.l1Tokens.indexOf(l1Token);
+                if (l1TokenIndex === -1) {
+                  return false;
+                }
+                const netSendAmount = leaf.netSendAmounts[l1TokenIndex];
+                return netSendAmount.gt(0);
+              })
+              .map((leaf) => [leaf.chainId, leaf.netSendAmounts[leaf.l1Tokens.indexOf(l1Token)]])
+          ),
           currHubPoolLiquidReserves,
           requiredNetSendAmountForL1Token,
           l1Token,
