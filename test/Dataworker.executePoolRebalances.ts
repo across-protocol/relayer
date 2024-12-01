@@ -97,6 +97,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
       ...spokePoolClientsToProviders(spokePoolClients),
       [hubPoolClient.chainId]: hubPool.provider,
     };
+    const balanceAllocator = new BalanceAllocator(providers);
+
+    // Executing leaves before there is a bundle should do nothing:
+    let leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    expect(leafCount).to.equal(0);
+    expect(lastSpyLogIncludes(spy, "No pending proposal")).to.be.true;
 
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
@@ -104,11 +110,16 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTxnQueues();
 
+    // Executing leaves before bundle challenge period has passed should do nothing:
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    expect(leafCount).to.equal(0);
+    expect(lastSpyLogIncludes(spy, "Challenge period not passed")).to.be.true;
+
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    const balanceAllocator = new BalanceAllocator(providers);
-    let leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
     expect(leafCount).to.equal(2);
 
     // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
