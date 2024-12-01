@@ -2356,7 +2356,7 @@ export class Dataworker {
     if (leaf.chainId === CHAIN_IDs.ALEPH_ZERO) {
       relayMessageFee = toBNWei("0.49");
       token = TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET];
-      holder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1";
+      holder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1"; // DonationBox.
     } else {
       relayMessageFee = toBNWei("0.02");
       token = ZERO_ADDRESS;
