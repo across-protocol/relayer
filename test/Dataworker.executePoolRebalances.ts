@@ -28,6 +28,7 @@ import {
   sinon,
   assertPromiseError,
   randomAddress,
+  lastSpyLogIncludes,
 } from "./utils";
 
 // Tested
@@ -296,6 +297,18 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(updated.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
+      it("exits early if total required net send amount is 0", async function () {
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
+          [{ netSendAmounts: [toBNWei(0)], l1Tokens: [l1Token_1.address], chainId: 1 }],
+          true
+        );
+        expect(updated.size).to.equal(0);
+        expect(multiCallerClient.transactionCount()).to.equal(0);
+        expect(
+          spy.getCalls().filter((call) => call.lastArg.message.includes("Skipping exchange rate update")).length
+        ).to.equal(0);
+      });
       it("groups aggregate net send amounts by L1 token", async function () {
         // Total net send amount is 1 for each token but they are not summed together because they are different,
         // so the liquid reserves of 1 for each individual token is enough.
@@ -344,7 +357,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             [
               { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
               // This negative liquid reserves doesn't offset the positive one, it just gets ignored.
-              { netSendAmounts: [liquidReserves.mul(-1)], l1Tokens: [l1Token_1.address], chainId: 10 },
+              { netSendAmounts: [liquidReserves.mul(-10)], l1Tokens: [l1Token_1.address], chainId: 10 },
             ],
             true
           ),
@@ -367,6 +380,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         );
         expect(updated.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
+        expect(lastSpyLogIncludes(spy, "Skipping exchange rate update")).to.be.true;
       });
       it("logs error if updated liquid reserves aren't enough to execute leaf", async function () {
         const netSendAmount = toBNWei("1");

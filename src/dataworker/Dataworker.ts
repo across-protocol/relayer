@@ -1802,6 +1802,11 @@ export class Dataworker {
     // Now, go through each L1 token and see if we need to update the exchange rate for it.
     await sdkUtils.forEachAsync(Object.keys(aggregateNetSendAmounts), async (l1Token) => {
       const requiredNetSendAmountForL1Token = aggregateNetSendAmounts[l1Token];
+      // If netSendAmounts is 0, there is no need to update this exchange rate.
+      assert(requiredNetSendAmountForL1Token.gte(0), "Aggregate net send amount should be >= 0");
+      if (requiredNetSendAmountForL1Token.eq(0)) {
+        return;
+      }
       // The "used" balance kept in the BalanceAllocator should have adjusted for the netSendAmounts and relayer refund leaf
       // executions above. Therefore, check if the current liquidReserves is less than the pool rebalance leaf's netSendAmount
       // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
@@ -1819,7 +1824,8 @@ export class Dataworker {
       if (currHubPoolLiquidReserves.gte(requiredNetSendAmountForL1Token)) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
-          message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > required netSendAmount`,
+          message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > required netSendAmount for non-hubChain pool leaves`,
+          leavesToExecute: poolRebalanceLeaves.map((leaf) => leaf.chainId),
           currHubPoolLiquidReserves,
           requiredNetSendAmountForL1Token,
           l1Token,
