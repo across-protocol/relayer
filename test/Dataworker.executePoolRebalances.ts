@@ -41,7 +41,7 @@ import { PoolRebalanceLeaf } from "../src/interfaces";
 const destinationChainId = 42161;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, hubPool: Contract;
+let l1Token_1: Contract, hubPool: Contract, spokePool_4: Contract;
 let depositor: SignerWithAddress, spy: sinon.SinonSpy;
 
 let hubPoolClient: HubPoolClient;
@@ -55,6 +55,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     ({
       hubPool,
       spokePool_1,
+      spokePool_4,
       erc20_1,
       erc20_2,
       spokePool_2,
@@ -129,6 +130,59 @@ describe("Dataworker: Execute pool rebalances", async function () {
     leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     expect(leafCount).to.equal(0);
     expect(multiCallerClient.transactionCount()).to.equal(0);
+  });
+  it("Executes mainnet leaves before non-mainnet leaves", async function () {
+    // Send deposit on SpokePool with same chain ID as hub chain.
+    // Fill it on a different spoke pool.
+    await updateAllClients();
+
+    // Mainnet deposit should produce a mainnet pool leaf.
+    const deposit = await depositV3(
+      spokePool_4,
+      destinationChainId,
+      depositor,
+      l1Token_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    // Fill and take repayment on a non-mainnet spoke pool.
+    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await updateAllClients();
+
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [hubPoolClient.chainId]: hubPool.provider,
+    };
+    const balanceAllocator = new BalanceAllocator(providers);
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
+    // Execute queue and check that root bundle is pending:
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+    await multiCallerClient.executeTxnQueues();
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    const leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    expect(leafCount).to.equal(2);
+
+    const leafExecutions = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId).map((tx, index) => {
+      return {
+        ...tx,
+        index,
+      };
+    });
+    const poolLeafExecutions = leafExecutions.filter((tx) => tx.method === "executeRootBundle");
+    expect(poolLeafExecutions[0].args[0]).to.equal(hubPoolClient.chainId);
+    const refundLeafExecutions = leafExecutions.filter((tx) => tx.method === "executeRelayerRefundLeaf");
+    expect(refundLeafExecutions.length).to.equal(1);
+
+    // Hub chain relayer refund leaves should also execute before non-mainnet pool leaves
+    expect(refundLeafExecutions[0].index).to.be.greaterThan(poolLeafExecutions[0].index);
+    expect(refundLeafExecutions[0].index).to.be.lessThan(poolLeafExecutions[1].index);
+    expect(poolLeafExecutions[1].args[0]).to.equal(destinationChainId);
   });
   describe("update exchange rates", function () {
     let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;
