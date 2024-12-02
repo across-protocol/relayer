@@ -210,9 +210,7 @@ export async function arbStackFinalizer(
           logger.debug({
             at: `Finalizer#${networkName}Finalizer`,
             message: `Withdrawal event for ${amountFromWei} of ${l1TokenInfo.symbol} is too recent to finalize`,
-            l2BlockTimeSeconds: l2BlockTime,
-            maturedHours: `${((spokePoolClient.latestBlockSearched - event.blockNumber) * l2BlockTime) / 60 / 60}`,
-            challengePeriodHours: `${getArbitrumOrbitFinalizationTime(chainId) / 60 / 60}`,
+            timeUntilFinalization: `${((event.blockNumber - latestBlockToFinalize) * l2BlockTime) / 60 / 60}`,
           });
         }
       } catch (err) {
