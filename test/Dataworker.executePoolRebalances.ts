@@ -33,7 +33,7 @@ import {
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
-import { spokePoolClientsToProviders } from "../src/common";
+import { ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA, spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
 import { PoolRebalanceLeaf } from "../src/interfaces";
@@ -710,7 +710,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
         },
       ];
       // Should have a total of 2 + 1 + 2 = 5 fees.
-      const expectedFee = toBNWei("0.49");
+      const { amountBNWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ALEPH_ZERO];
+      const expectedFee = toBNWei(amountBNWei).mul(amountMultipleToFund);
       const expectedFeeLeaf1 = expectedFee.mul(2).add(expectedFee);
       const expectedFeeLeaf2 = expectedFee.mul(2);
       azero.balanceOf

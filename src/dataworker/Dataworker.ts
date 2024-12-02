@@ -19,7 +19,6 @@ import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
   forEachAsync,
-  TOKEN_SYMBOLS_MAP,
   ERC20,
 } from "../utils";
 import {
@@ -45,7 +44,7 @@ import {
 } from "../dataworker/DataworkerUtils";
 import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
 import _ from "lodash";
-import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
+import { ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA, CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import * as sdk from "@across-protocol/sdk";
 import {
   BundleData,
@@ -2354,11 +2353,20 @@ export class Dataworker {
     let token: string;
     let holder: string;
     if (leaf.chainId === CHAIN_IDs.ALEPH_ZERO) {
-      relayMessageFee = toBNWei("0.49");
-      token = TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET];
-      holder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1"; // DonationBox.
+      // Unlike when handling native ETH, the monitor bot does NOT support sending arbitrary ERC20 tokens to any other
+      // EOA, so if we're short a custom gas token like AZERO, then we're going to have to keep sending over token
+      // amounts to the DonationBox contract. Therefore, we'll multiply the final amount by 10 to ensure we don't incur
+      // a transfer() gas cost on every single pool rebalance leaf execution involving this arbitrum orbit chain.
+      const { amountBNWei, feePayer, feeToken, amountMultipleToFund } =
+        ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ALEPH_ZERO];
+      relayMessageFee = toBNWei(amountBNWei).mul(amountMultipleToFund);
+      token = feeToken;
+      holder = feePayer;
     } else {
-      relayMessageFee = toBNWei("0.02");
+      // For now, assume arbitrum message fees are the same for all non-custom gas token chains. This obviously needs
+      // to be changed if we add support for an orbit chains where we pay message fees in ETH but they are different
+      // parameters than for Arbitrum mainnet.
+      relayMessageFee = toBNWei(ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM].amountBNWei);
       token = ZERO_ADDRESS;
       holder = this.clients.hubPoolClient.hubPool.address;
     }
