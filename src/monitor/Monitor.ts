@@ -321,6 +321,7 @@ export class Monitor {
                 balanceType,
                 balanceInWei: balance.toString(),
                 balance: Number(utils.formatUnits(balance, decimals)),
+                datadog: true,
               });
             });
           });
