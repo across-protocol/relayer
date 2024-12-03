@@ -48,7 +48,7 @@ export async function blockRangesAreInvalidForSpokeClients(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   earliestValidBundleStartBlock: { [chainId: number]: number },
   isV3 = false
-): Promise<boolean> {
+): Promise<{ result: boolean; reason?: string }> {
   assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
   let endBlockTimestamps: { [chainId: number]: number } | undefined;
   if (isV3) {
@@ -60,10 +60,14 @@ export async function blockRangesAreInvalidForSpokeClients(
     // There should be a spoke pool client instantiated for every bundle timestamp.
     assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
   }
-  return utils.someAsync(blockRanges, async ([start, end], index) => {
+  let reason: string | undefined;
+  const _result = await utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
     if (isNaN(end) || isNaN(start)) {
+      reason = `block range contains undefined block for chain ${chainId}: [isNaN(start): ${isNaN(
+          start
+        )}, isNaN(end): ${isNaN(end)}]`;
       return true;
     }
     if (start === end) {
@@ -74,21 +78,29 @@ export async function blockRangesAreInvalidForSpokeClients(
 
     // If spoke pool client doesn't exist for enabled chain then we clearly cannot query events for this chain.
     if (spokePoolClient === undefined) {
+      reason = `Spoke pool client undefined for chain ${chainId}`;
       return true;
     }
 
     const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
 
     const earliestValidBundleStartBlockForChain =
-      earliestValidBundleStartBlock[chainId] ?? spokePoolClient.deploymentBlock;
+      earliestValidBundleStartBlock?.[chainId] ?? spokePoolClient.deploymentBlock;
 
     // If range start block is less than the earliest spoke pool client we can validate or the range end block
     // is greater than the latest client end block, then ranges are invalid.
     // Note: Math.max the from block with the registration block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
     const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
-    if (bundleRangeFromBlock < earliestValidBundleStartBlockForChain || end > clientLastBlockQueried) {
-      return true;
+    const bundleRangeFromBlockTooEarly = bundleRangeFromBlock < earliestValidBundleStartBlockForChain;
+    const endGreaterThanClientLastBlockQueried = end > clientLastBlockQueried;
+    if (bundleRangeFromBlockTooEarly || endGreaterThanClientLastBlockQueried) {
+        reason = `${
+          bundleRangeFromBlockTooEarly
+            ? `bundleRangeFromBlock ${bundleRangeFromBlock} < earliestValidBundleStartBlockForChain ${earliestValidBundleStartBlockForChain}`
+            : `end ${end} > clientLastBlockQueried ${clientLastBlockQueried}`
+        } for chain ${chainId}`;
+        return true;
     }
 
     if (endBlockTimestamps !== undefined) {
@@ -113,6 +125,9 @@ export async function blockRangesAreInvalidForSpokeClients(
         endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() <
           maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds
       ) {
+        reason = `endBlockTimestamp ${
+          endBlockTimestamps[chainId]
+        } - spokePoolClient.getOldestTime ${spokePoolClient.getOldestTime()} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds} for chain ${chainId}`
         return true;
       }
     }
@@ -122,6 +137,7 @@ export async function blockRangesAreInvalidForSpokeClients(
     // If we get to here, block ranges are valid, return false.
     return false;
   });
+  return { result: _result, reason };
 }
 
 export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {

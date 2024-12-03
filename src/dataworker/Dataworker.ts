@@ -311,24 +311,19 @@ export class Dataworker {
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
-    if (
-      Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      (await blockRangesAreInvalidForSpokeClients(
-        spokePoolClients,
-        blockRangesForProposal,
-        chainIds,
-        earliestBlocksInSpokePoolClients,
-        this.isV3(mainnetBlockRange[0])
-      ))
-    ) {
+    const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+      spokePoolClients,
+      blockRangesForProposal,
+      chainIds,
+      earliestBlocksInSpokePoolClients,
+      this.isV3(mainnetBlockRange[0])
+    );
+    if (blockRangesAreInvalid.result) {
       this.logger.warn({
         at: "Dataworke#propose",
         message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
-        rootBundleRanges: blockRangesForProposal,
-        earliestBlocksInSpokePoolClients,
-        spokeClientsEventSearchConfigs: Object.fromEntries(
-          Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
-        ),
+        failReason: blockRangesAreInvalid.reason,
+        bundleBlockRanges: Object.fromEntries(chainIds.map((chainId, i) => [chainId, blockRangesForProposal[i]])),
       });
       return;
     }
@@ -838,25 +833,19 @@ export class Dataworker {
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
-    if (
-      Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-      (await blockRangesAreInvalidForSpokeClients(
-        spokePoolClients,
-        blockRangesImpliedByBundleEndBlocks,
-        chainIds,
-        earliestBlocksInSpokePoolClients,
-        this.isV3(mainnetBlockRange[0])
-      ))
-    ) {
-      this.logger.debug({
+    const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+      spokePoolClients,
+      blockRangesImpliedByBundleEndBlocks,
+      chainIds,
+      earliestBlocksInSpokePoolClients,
+      this.isV3(mainnetBlockRange[0])
+    );
+    if (blockRangesAreInvalid.result) {
+      this.logger.warn({
         at: "Dataworke#validate",
         message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
-        rootBundleRanges: blockRangesImpliedByBundleEndBlocks,
-        availableSpokePoolClients: Object.keys(spokePoolClients),
-        earliestBlocksInSpokePoolClients,
-        spokeClientsEventSearchConfigs: Object.fromEntries(
-          Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
-        ),
+        failReason: blockRangesAreInvalid.reason,
+        bundleBlockRanges: Object.fromEntries(chainIds.map((chainId, i) => [chainId, blockRangesImpliedByBundleEndBlocks[i]])),
       });
       return {
         valid: false,
@@ -1076,27 +1065,20 @@ export class Dataworker {
           );
           const mainnetBlockRange = blockNumberRanges[0];
           const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRange[0]);
-          if (
-            Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-            (await blockRangesAreInvalidForSpokeClients(
-              spokePoolClients,
-              blockNumberRanges,
-              chainIds,
-              earliestBlocksInSpokePoolClients,
-              this.isV3(mainnetBlockRange[0])
-            ))
-          ) {
+          const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+            spokePoolClients,
+            blockNumberRanges,
+            chainIds,
+            earliestBlocksInSpokePoolClients,
+            this.isV3(mainnetBlockRange[0])
+          )
+          if (blockRangesAreInvalid.result) {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
               message:
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
-              chainId,
-              rootBundleRanges: blockNumberRanges,
-              availableSpokePoolClients: Object.keys(spokePoolClients),
-              earliestBlocksInSpokePoolClients,
-              spokeClientsEventSearchConfigs: Object.fromEntries(
-                Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
-              ),
+              failReason: blockRangesAreInvalid.reason,
+              bundleTxn: matchingRootBundle.transactionHash
             });
             continue;
           }
@@ -1638,6 +1620,16 @@ export class Dataworker {
             });
           }
         }
+      } else {
+        this.logger.debug({
+          at: "Dataworker#_executePoolRebalanceLeaves",
+          message: `feePayer ${holder} has sufficient orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
+            leaf.chainId
+          )}`,
+          leaf,
+          feeToken,
+          requiredAmount,
+        });
       }
     });
     await forEachAsync(leaves, async (leaf) => {
@@ -2028,26 +2020,19 @@ export class Dataworker {
         const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
         const mainnetBlockRanges = blockNumberRanges[0];
         const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRanges[0]);
-        if (
-          Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-          (await blockRangesAreInvalidForSpokeClients(
-            spokePoolClients,
-            blockNumberRanges,
-            chainIds,
-            earliestBlocksInSpokePoolClients,
-            this.isV3(mainnetBlockRanges[0])
-          ))
-        ) {
+        const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+          spokePoolClients,
+          blockNumberRanges,
+          chainIds,
+          earliestBlocksInSpokePoolClients,
+          this.isV3(mainnetBlockRanges[0])
+        )
+        if (blockRangesAreInvalid.result) {
           this.logger.warn({
             at: "Dataworke#executeRelayerRefundLeaves",
             message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
-            chainId,
-            rootBundleRanges: blockNumberRanges,
-            availableSpokePoolClients: Object.keys(spokePoolClients),
-            earliestBlocksInSpokePoolClients,
-            spokeClientsEventSearchConfigs: Object.fromEntries(
-              Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
-            ),
+            failReason: blockRangesAreInvalid.reason,
+            bundleTxn: matchingRootBundle.transactionHash,
           });
           continue;
         }

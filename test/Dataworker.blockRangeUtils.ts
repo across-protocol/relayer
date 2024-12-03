@@ -179,36 +179,36 @@ describe("Dataworker block range-related utility methods", async function () {
     // latest invalid bundle start blocks below and toBlocks are >= client's last block queried, return false meaning
     // that block ranges can be validated by spoke pool clients.
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         { [chainId]: mainnetDeploymentBlock + 2 }
-      )
+      )).result
     ).to.equal(false);
     // Set block range toBlock > client's last block queried. Clients can no longer validate this block range.
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched + 3]],
         chainIds,
         { [chainId]: mainnetDeploymentBlock + 2 }
-      )
+      )).result
     ).to.equal(true);
     // Bundle block range toBlocks is less than
     // latest invalid bundle start blocks below, so block ranges can't be validated by clients.
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         { [chainId]: mainnetDeploymentBlock + 2 }
-      )
+      )).result
     ).to.equal(true);
     // Works even if the condition is true for one chain.
     const optimismDeploymentBlock = getDeployedBlockNumber("SpokePool", 10);
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
         [
           [mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched],
@@ -216,10 +216,10 @@ describe("Dataworker block range-related utility methods", async function () {
         ],
         [chainId, 10],
         { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
-      )
+      )).result
     ).to.equal(true);
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
         [
           [mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched],
@@ -227,31 +227,31 @@ describe("Dataworker block range-related utility methods", async function () {
         ],
         [chainId, 10],
         { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
-      )
+      )).result
     ).to.equal(false);
 
     // On these tests, set block range fromBlock < deployment block. The deployment block is now compared against
     // the latest invalid start block. This means that the dataworker will refuse to validate any bundles with clients
     // that don't have early enough data for the first bundle, which started at the deployment block height.
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[0, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         {
           [chainId]: mainnetDeploymentBlock + 2,
         }
-      )
+      )).result
     ).to.equal(true);
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         _spokePoolClients,
         [[0, spokePoolClients[chainId].latestBlockSearched]],
         chainIds,
         {
           [chainId]: mainnetDeploymentBlock - 1,
         }
-      )
+      )).result
     ).to.equal(false);
 
     // Override spoke pool client fill deadline buffer and oldest time searched and check that it returns false
@@ -289,7 +289,7 @@ describe("Dataworker block range-related utility methods", async function () {
     const fillDeadlineOverride = expectedTimeBetweenOldestAndEndBlockTimestamp + 1;
     mockSpokePoolClient.setMaxFillDeadlineOverride(fillDeadlineOverride);
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         { [originChainId]: mockSpokePoolClient as SpokePoolClient },
         blockRanges,
         chainIds,
@@ -297,12 +297,12 @@ describe("Dataworker block range-related utility methods", async function () {
           [originChainId]: mainnetDeploymentBlock,
         },
         true // isV3
-      )
+      )).result
     ).to.equal(true);
 
     // Should be valid if not V3
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         { [originChainId]: mockSpokePoolClient as SpokePoolClient },
         blockRanges,
         chainIds,
@@ -310,7 +310,7 @@ describe("Dataworker block range-related utility methods", async function () {
           [originChainId]: mainnetDeploymentBlock,
         },
         false // isV3
-      )
+      )).result
     ).to.equal(false);
 
     // Set oldest time older such that fill deadline buffer now exceeds the time between the end block and the oldest
@@ -320,7 +320,7 @@ describe("Dataworker block range-related utility methods", async function () {
     assert(oldestBlockTimestampOverride > 0, "unrealistic oldest block timestamp");
     mockSpokePoolClient.setOldestBlockTimestampOverride(oldestBlockTimestampOverride);
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         { [originChainId]: mockSpokePoolClient as SpokePoolClient },
         blockRanges,
         chainIds,
@@ -328,7 +328,7 @@ describe("Dataworker block range-related utility methods", async function () {
           [originChainId]: mainnetDeploymentBlock,
         },
         true // isV3
-      )
+      )).result
     ).to.equal(false);
 
     // Finally, reset fill deadline buffer in contracts and reset the override in the mock to test that
@@ -338,7 +338,7 @@ describe("Dataworker block range-related utility methods", async function () {
     fakeSpokePool.fillDeadlineBuffer.returns(expectedTimeBetweenOldestAndEndBlockTimestamp); // This should be same
     // length as time between oldest time and end block timestamp so it should be a valid block range.
     expect(
-      await blockRangesAreInvalidForSpokeClients(
+      (await blockRangesAreInvalidForSpokeClients(
         { [originChainId]: mockSpokePoolClient as SpokePoolClient },
         blockRanges,
         chainIds,
@@ -346,7 +346,7 @@ describe("Dataworker block range-related utility methods", async function () {
           [originChainId]: mainnetDeploymentBlock,
         },
         true // isV3
-      )
+      )).result
     ).to.equal(false);
   });
 });
