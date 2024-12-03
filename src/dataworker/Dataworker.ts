@@ -2366,7 +2366,8 @@ export class Dataworker {
       // For now, assume arbitrum message fees are the same for all non-custom gas token chains. This obviously needs
       // to be changed if we add support for an orbit chains where we pay message fees in ETH but they are different
       // parameters than for Arbitrum mainnet.
-      relayMessageFee = toBNWei(ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM].amountBNWei);
+      const { amountBNWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM];
+      relayMessageFee = toBNWei(amountBNWei).mul(amountMultipleToFund);
       token = ZERO_ADDRESS;
       holder = this.clients.hubPoolClient.hubPool.address;
     }

@@ -29,6 +29,7 @@ import {
   assertPromiseError,
   randomAddress,
   lastSpyLogIncludes,
+  assert,
 } from "./utils";
 
 // Tested
@@ -656,7 +657,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
         },
       ];
       // Should have a total of 2 + 1 + 2 = 5 fees.
-      const expectedFee = toBNWei("0.02");
+      const { amountBNWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM];
+      const expectedFee = toBNWei(amountBNWei).mul(amountMultipleToFund);
       const expectedFeeLeaf1 = expectedFee.mul(2).add(expectedFee);
       const expectedFeeLeaf2 = expectedFee.mul(2);
       await dataworkerInstance._executePoolRebalanceLeaves(
@@ -684,7 +686,10 @@ describe("Dataworker: Execute pool rebalances", async function () {
         provider: hubPoolClient.hubPool.signer.provider,
       });
       // Custom gas token funder for AZERO
-      const customGasTokenFunder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1";
+      const { amountBNWei, amountMultipleToFund, feePayer } =
+        ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ALEPH_ZERO];
+      assert(feePayer !== undefined);
+      const customGasTokenFunder = feePayer;
       azero.balanceOf.whenCalledWith(customGasTokenFunder).returns(0);
       expect(await balanceAllocator.getBalance(hubPoolClient.chainId, azero.address, customGasTokenFunder)).to.equal(0);
 
@@ -710,7 +715,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
         },
       ];
       // Should have a total of 2 + 1 + 2 = 5 fees.
-      const { amountBNWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ALEPH_ZERO];
       const expectedFee = toBNWei(amountBNWei).mul(amountMultipleToFund);
       const expectedFeeLeaf1 = expectedFee.mul(2).add(expectedFee);
       const expectedFeeLeaf2 = expectedFee.mul(2);
