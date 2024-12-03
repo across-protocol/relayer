@@ -44,6 +44,7 @@ import {
   resolveTokenDecimals,
   sortEventsDescending,
   getWidestPossibleExpectedBlockRange,
+  utils
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -301,22 +302,29 @@ export class Monitor {
       });
 
       // Note: types are here for clarity, not necessity.
-      const machineReadableReport = lodash.mapValues(reports, (table: RelayerBalanceTable) =>
-        lodash.mapValues(table, (columns: RelayerBalanceColumns, tokenSymbol: string) => {
+
+      Object.entries(reports).forEach(([relayer, balanceTable]) => {
+        Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
           const decimals = allL1Tokens.find((token) => token.symbol === tokenSymbol)?.decimals;
           if (!decimals) {
             throw new Error(`No decimals found for ${tokenSymbol}`);
           }
-          return lodash.mapValues(columns, (cell: RelayerBalanceCell) =>
-            lodash.mapValues(cell, (balance: BigNumber) => Number(convertFromWei(balance.toString(), decimals)))
-          );
-        })
-      );
-
-      this.logger.debug({
-        at: "Monitor#reportRelayerBalances",
-        message: "Machine-readable balance report",
-        report: machineReadableReport,
+          Object.entries(columns).forEach(([chainName, cell]) => {
+            Object.entries(cell).forEach(([balanceType, balance]) => {
+              this.logger.debug({
+                at: "Monitor#reportRelayerBalances",
+                message: "Machine-readable balance report",
+                relayer,
+                tokenSymbol,
+                decimals,
+                chainName,
+                balanceType,
+                balanceInWei: balance.toString(),
+                balance: Number(utils.formatUnits(balance, decimals)),
+              });
+            });
+          });
+        });
       });
     }
   }
