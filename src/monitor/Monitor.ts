@@ -313,7 +313,7 @@ export class Monitor {
             Object.entries(cell).forEach(([balanceType, balance]) => {
               this.logger.debug({
                 at: "Monitor#reportRelayerBalances",
-                message: "Machine-readable balance report",
+                message: "Machine-readable single balance report",
                 relayer,
                 tokenSymbol,
                 decimals,
