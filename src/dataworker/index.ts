@@ -194,7 +194,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           at: "Dataworker#index",
           message: "Exiting early due to dataworker function collision",
           proposalCollision,
+          proposedBundleData,
           executorCollision,
+          poolRebalanceLeafExecutionCount,
+          unclaimedPoolRebalanceLeafCount: pendingProposal.unclaimedPoolRebalanceLeafCount,
+          challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime,
           pendingProposal,
         });
       } else {
