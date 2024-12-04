@@ -8,8 +8,6 @@ import {
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
-  RelayerBalanceColumns,
-  RelayerBalanceCell,
   TokenTransfer,
 } from "../interfaces";
 import {
@@ -44,14 +42,12 @@ import {
   resolveTokenDecimals,
   sortEventsDescending,
   getWidestPossibleExpectedBlockRange,
-  utils
+  utils,
 } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
-
-import lodash from "lodash";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
