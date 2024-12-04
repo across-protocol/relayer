@@ -194,7 +194,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           at: "Dataworker#index",
           message: "Exiting early due to dataworker function collision",
           proposalCollision,
-          proposedBundleData,
+          proposedBundleDataDefined: isDefined(proposedBundleData),
           executorCollision,
           poolRebalanceLeafExecutionCount,
           unclaimedPoolRebalanceLeafCount: pendingProposal.unclaimedPoolRebalanceLeafCount,
