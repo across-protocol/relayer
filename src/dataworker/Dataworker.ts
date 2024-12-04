@@ -1526,8 +1526,8 @@ export class Dataworker {
     // Save all L1 tokens that we haven't updated exchange rates for in a different step.
     const l1TokensWithPotentiallyOlderUpdate = expectedTrees.poolRebalanceTree.leaves.reduce((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
-      currLeafL1Tokens.forEach((l1Token) => {
-        if (!l1TokenSet.includes(l1Token) && !updatedL1Tokens.has(l1Token)) {
+      currLeafL1Tokens.forEach((l1Token, i) => {
+        if (leaf.netSendAmounts[i].gt(0) && !l1TokenSet.includes(l1Token) && !updatedL1Tokens.has(l1Token)) {
           l1TokenSet.push(l1Token);
         }
       });
