@@ -845,7 +845,9 @@ export class Dataworker {
         at: "Dataworke#validate",
         message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         failReason: blockRangesAreInvalid.reason,
-        bundleBlockRanges: Object.fromEntries(chainIds.map((chainId, i) => [chainId, blockRangesImpliedByBundleEndBlocks[i]])),
+        bundleBlockRanges: Object.fromEntries(
+          chainIds.map((chainId, i) => [chainId, blockRangesImpliedByBundleEndBlocks[i]])
+        ),
       });
       return {
         valid: false,
@@ -1071,14 +1073,14 @@ export class Dataworker {
             chainIds,
             earliestBlocksInSpokePoolClients,
             this.isV3(mainnetBlockRange[0])
-          )
+          );
           if (blockRangesAreInvalid.result) {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
               message:
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               failReason: blockRangesAreInvalid.reason,
-              bundleTxn: matchingRootBundle.transactionHash
+              bundleTxn: matchingRootBundle.transactionHash,
             });
             continue;
           }
@@ -1626,9 +1628,9 @@ export class Dataworker {
           message: `feePayer ${holder} has sufficient orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )}`,
-          leaf,
           feeToken,
           requiredAmount,
+          feePayerBalance: await balanceAllocator.getBalance(hubPoolChainId, feeToken, holder),
         });
       }
     });
@@ -2026,7 +2028,7 @@ export class Dataworker {
           chainIds,
           earliestBlocksInSpokePoolClients,
           this.isV3(mainnetBlockRanges[0])
-        )
+        );
         if (blockRangesAreInvalid.result) {
           this.logger.warn({
             at: "Dataworke#executeRelayerRefundLeaves",

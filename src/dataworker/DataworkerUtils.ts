@@ -66,8 +66,8 @@ export async function blockRangesAreInvalidForSpokeClients(
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
     if (isNaN(end) || isNaN(start)) {
       reason = `block range contains undefined block for chain ${chainId}: [isNaN(start): ${isNaN(
-          start
-        )}, isNaN(end): ${isNaN(end)}]`;
+        start
+      )}, isNaN(end): ${isNaN(end)}]`;
       return true;
     }
     if (start === end) {
@@ -95,12 +95,12 @@ export async function blockRangesAreInvalidForSpokeClients(
     const bundleRangeFromBlockTooEarly = bundleRangeFromBlock < earliestValidBundleStartBlockForChain;
     const endGreaterThanClientLastBlockQueried = end > clientLastBlockQueried;
     if (bundleRangeFromBlockTooEarly || endGreaterThanClientLastBlockQueried) {
-        reason = `${
-          bundleRangeFromBlockTooEarly
-            ? `bundleRangeFromBlock ${bundleRangeFromBlock} < earliestValidBundleStartBlockForChain ${earliestValidBundleStartBlockForChain}`
-            : `end ${end} > clientLastBlockQueried ${clientLastBlockQueried}`
-        } for chain ${chainId}`;
-        return true;
+      reason = `${
+        bundleRangeFromBlockTooEarly
+          ? `bundleRangeFromBlock ${bundleRangeFromBlock} < earliestValidBundleStartBlockForChain ${earliestValidBundleStartBlockForChain}`
+          : `end ${end} > clientLastBlockQueried ${clientLastBlockQueried}`
+      } for chain ${chainId}`;
+      return true;
     }
 
     if (endBlockTimestamps !== undefined) {
@@ -127,7 +127,7 @@ export async function blockRangesAreInvalidForSpokeClients(
       ) {
         reason = `endBlockTimestamp ${
           endBlockTimestamps[chainId]
-        } - spokePoolClient.getOldestTime ${spokePoolClient.getOldestTime()} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds} for chain ${chainId}`
+        } - spokePoolClient.getOldestTime ${spokePoolClient.getOldestTime()} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds} for chain ${chainId}`;
         return true;
       }
     }
