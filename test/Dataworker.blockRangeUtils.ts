@@ -169,6 +169,18 @@ describe("Dataworker block range-related utility methods", async function () {
       throw new Error(`Chain ${originChainId} SpokePoolClient has not been updated`);
     }
 
+    // Does not error if earliest block range object is empty:
+    expect(
+      (
+        await blockRangesAreInvalidForSpokeClients(
+          _spokePoolClients,
+          [[0, spokePoolClients[chainId].latestBlockSearched]],
+          chainIds,
+          {}
+        )
+      ).result
+    ).to.not.throw;
+
     // latestInvalidBundleStartBlock is only used if its greater than the spoke pool deployment block, so in the
     // following tests, set latestInvalidBundleStartBlock > deployment blocks.
 
