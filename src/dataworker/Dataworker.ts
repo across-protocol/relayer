@@ -1567,14 +1567,12 @@ export class Dataworker {
         token: feeToken,
         holder,
       } = await this._getRequiredEthForOrbitPoolRebalanceLeaf(leaf);
-      const success = await balanceAllocator.requestBalanceAllocations([
-        {
-          tokens: [feeToken],
-          amount: requiredAmount,
-          holder: holder,
-          chainId: hubPoolChainId,
-        },
-      ]);
+      const feeData = {
+        tokens: [feeToken],
+        amount: requiredAmount,
+        chainId: hubPoolChainId,
+      };
+      const success = await balanceAllocator.requestBalanceAllocations([{ ...feeData, holder }]);
       if (!success) {
         this.logger.debug({
           at: "Dataworker#_executePoolRebalanceLeaves",
@@ -1587,12 +1585,7 @@ export class Dataworker {
         });
         if (submitExecution) {
           const canFund = await balanceAllocator.requestBalanceAllocations([
-            {
-              tokens: [feeToken],
-              amount: requiredAmount,
-              holder: await signer.getAddress(),
-              chainId: hubPoolChainId,
-            },
+            { ...feeData, holder: await signer.getAddress() },
           ]);
           if (!canFund) {
             throw new Error(
