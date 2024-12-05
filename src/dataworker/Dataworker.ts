@@ -1796,7 +1796,7 @@ export class Dataworker {
       // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
       // the HubPool becomes "aware" of its inflow following the relayre refund leaf execution.
       const currHubPoolLiquidReserves =
-        latestLiquidReserves[l1Token] ?? this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token).liquidReserves;
+        latestLiquidReserves[l1Token] ?? this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
       assert(currHubPoolLiquidReserves !== undefined);
 
       // We only need to update the exchange rate in the case where tokens are returned to the HubPool increasing
