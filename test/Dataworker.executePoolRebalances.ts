@@ -129,6 +129,11 @@ describe("Dataworker: Execute pool rebalances", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(4);
     await multiCallerClient.executeTxnQueues();
 
+    // If we attempt execution again, the hub pool client should show them as already executed.
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    expect(leafCount).to.equal(0);
+
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
     // yet. In the bundle block range, all chains should have increased their start block, including those without
