@@ -61,7 +61,7 @@ export async function blockRangesAreInvalidForSpokeClients(
     assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
   }
   let reason: string | undefined;
-  const _result = await utils.someAsync(blockRanges, async ([start, end], index) => {
+  const result = await utils.someAsync(blockRanges, async ([start, end], index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
     if (isNaN(end) || isNaN(start)) {
@@ -137,7 +137,7 @@ export async function blockRangesAreInvalidForSpokeClients(
     // If we get to here, block ranges are valid, return false.
     return false;
   });
-  return { result: _result, reason };
+  return { result, reason };
 }
 
 export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
