@@ -615,7 +615,7 @@ export const CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS = 3 * 60 * 60; // 3 hours is 
 export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   [chainId: number]: {
     // Amount of tokens required to send a single message to the L2
-    amountBNWei: number;
+    amountWei: number;
     // Multiple of the required amount above to send to the feePayer in case
     // we are short funds. For example, if set to 10, then everytime we need to load more funds
     // we'll send 10x the required amount.
@@ -629,11 +629,11 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   // Leave feePayer undefined if feePayer is HubPool.
   // Leave feeToken undefined if feeToken is ETH.
   [CHAIN_IDs.ARBITRUM]: {
-    amountBNWei: 0.02,
+    amountWei: 0.02,
     amountMultipleToFund: 1,
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
-    amountBNWei: 0.49,
+    amountWei: 0.49,
     amountMultipleToFund: 20,
     feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
     feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],

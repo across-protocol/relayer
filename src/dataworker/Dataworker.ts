@@ -2344,17 +2344,17 @@ export class Dataworker {
       // EOA, so if we're short a custom gas token like AZERO, then we're going to have to keep sending over token
       // amounts to the DonationBox contract. Therefore, we'll multiply the final amount by 10 to ensure we don't incur
       // a transfer() gas cost on every single pool rebalance leaf execution involving this arbitrum orbit chain.
-      const { amountBNWei, feePayer, feeToken, amountMultipleToFund } =
+      const { amountWei, feePayer, feeToken, amountMultipleToFund } =
         ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ALEPH_ZERO];
-      relayMessageFee = toBNWei(amountBNWei).mul(amountMultipleToFund);
+      relayMessageFee = toBNWei(amountWei).mul(amountMultipleToFund);
       token = feeToken;
       holder = feePayer;
     } else {
       // For now, assume arbitrum message fees are the same for all non-custom gas token chains. This obviously needs
       // to be changed if we add support for an orbit chains where we pay message fees in ETH but they are different
       // parameters than for Arbitrum mainnet.
-      const { amountBNWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM];
-      relayMessageFee = toBNWei(amountBNWei).mul(amountMultipleToFund);
+      const { amountWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM];
+      relayMessageFee = toBNWei(amountWei).mul(amountMultipleToFund);
       token = ZERO_ADDRESS;
       holder = this.clients.hubPoolClient.hubPool.address;
     }
