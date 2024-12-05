@@ -311,7 +311,7 @@ export class Dataworker {
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
-    const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+    const blockRangesAreInvalid = await this._validateBlockRanges(
       spokePoolClients,
       blockRangesForProposal,
       chainIds,
@@ -833,7 +833,7 @@ export class Dataworker {
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
-    const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+    const blockRangesAreInvalid = await this._validateBlockRanges(
       spokePoolClients,
       blockRangesImpliedByBundleEndBlocks,
       chainIds,
@@ -1067,7 +1067,7 @@ export class Dataworker {
           );
           const mainnetBlockRange = blockNumberRanges[0];
           const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRange[0]);
-          const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+          const blockRangesAreInvalid = await this._validateBlockRanges(
             spokePoolClients,
             blockNumberRanges,
             chainIds,
@@ -2022,7 +2022,7 @@ export class Dataworker {
         const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
         const mainnetBlockRanges = blockNumberRanges[0];
         const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBlockRanges[0]);
-        const blockRangesAreInvalid = await blockRangesAreInvalidForSpokeClients(
+        const blockRangesAreInvalid = await this._validateBlockRanges(
           spokePoolClients,
           blockNumberRanges,
           chainIds,
@@ -2443,6 +2443,22 @@ export class Dataworker {
       this.clients.hubPoolClient.latestBlockSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
       this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock)
+    );
+  }
+
+  async _validateBlockRanges(
+    spokePoolClients: SpokePoolClientsByChain,
+    blockRanges: number[][],
+    chainIds: number[],
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
+    isV3: boolean
+  ): Promise<ReturnType<typeof blockRangesAreInvalidForSpokeClients>> {
+    return await blockRangesAreInvalidForSpokeClients(
+      spokePoolClients,
+      blockRanges,
+      chainIds,
+      earliestBlocksInSpokePoolClients,
+      isV3
     );
   }
 }
