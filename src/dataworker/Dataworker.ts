@@ -1512,11 +1512,12 @@ export class Dataworker {
     if (nonHubChainPoolRebalanceLeaves.length === 0) {
       return leafCount;
     }
-    const _updatedL1Tokens = await this._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-      updatedLiquidReserves,
-      nonHubChainPoolRebalanceLeaves,
-      submitExecution
-    );
+    const { updatedL1Tokens: _updatedL1Tokens, availableLiquidReserves } =
+      await this._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+        updatedLiquidReserves,
+        nonHubChainPoolRebalanceLeaves,
+        submitExecution
+      );
     Object.keys(_updatedL1Tokens).forEach((token) => {
       if (!updatedL1Tokens.has(token)) {
         updatedL1Tokens.add(token);
@@ -1535,16 +1536,43 @@ export class Dataworker {
     }, []);
     await this._updateOldExchangeRates(l1TokensWithPotentiallyOlderUpdate, submitExecution);
 
-    // Perform similar funding checks for remaining non-mainnet pool rebalance leaves.
+    // Figure out which non-mainnet pool rebalance leaves we can execute and execute them:
+    const leavesWeCanExecute = this._getExecutablePoolRebalanceLeavesUsingReserves(
+      nonHubChainPoolRebalanceLeaves,
+      availableLiquidReserves
+    );
     await this._executePoolRebalanceLeaves(
       spokePoolClients,
-      nonHubChainPoolRebalanceLeaves,
+      leavesWeCanExecute,
       balanceAllocator,
       expectedTrees.poolRebalanceTree.tree,
       submitExecution
     );
-    leafCount += nonHubChainPoolRebalanceLeaves.length;
+    leafCount += leavesWeCanExecute.length;
     return leafCount;
+  }
+
+  _getExecutablePoolRebalanceLeavesUsingReserves(
+    poolLeaves: PoolRebalanceLeaf[],
+    availableLiquidReserves: Record<string, BigNumber>
+  ): PoolRebalanceLeaf[] {
+    return poolLeaves.filter((leaf) => {
+      return leaf.l1Tokens.every((l1Token, i) => {
+        const netSendAmountForLeaf = leaf.netSendAmounts[i];
+        if (netSendAmountForLeaf.lte(0)) {
+          return true;
+        }
+        assert(
+          availableLiquidReserves[l1Token] !== undefined,
+          "availableLiquidReserves should be defined for all l1 tokens"
+        );
+        if (availableLiquidReserves[l1Token].lt(netSendAmountForLeaf)) {
+          return false;
+        }
+        availableLiquidReserves[l1Token] = availableLiquidReserves[l1Token].sub(netSendAmountForLeaf);
+        return true;
+      });
+    });
   }
 
   async _executePoolRebalanceLeaves(
@@ -1763,7 +1791,7 @@ export class Dataworker {
     latestLiquidReserves: Record<string, BigNumber>,
     poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens" | "chainId">[],
     submitExecution: boolean
-  ): Promise<Set<string>> {
+  ): Promise<{ updatedL1Tokens: Set<string>; availableLiquidReserves: Record<string, BigNumber> }> {
     const updatedL1Tokens = new Set<string>();
     const hubPool = this.clients.hubPoolClient.hubPool;
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
@@ -1784,13 +1812,8 @@ export class Dataworker {
     });
 
     // Now, go through each L1 token and see if we need to update the exchange rate for it.
+    const availableLiquidReserves = {};
     await sdkUtils.forEachAsync(Object.keys(aggregateNetSendAmounts), async (l1Token) => {
-      const requiredNetSendAmountForL1Token = aggregateNetSendAmounts[l1Token];
-      // If netSendAmounts is 0, there is no need to update this exchange rate.
-      assert(requiredNetSendAmountForL1Token.gte(0), "Aggregate net send amount should be >= 0");
-      if (requiredNetSendAmountForL1Token.eq(0)) {
-        return;
-      }
       // The "used" balance kept in the BalanceAllocator should have adjusted for the netSendAmounts and relayer refund leaf
       // executions above. Therefore, check if the current liquidReserves is less than the pool rebalance leaf's netSendAmount
       // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
@@ -1798,6 +1821,14 @@ export class Dataworker {
       const currHubPoolLiquidReserves =
         latestLiquidReserves[l1Token] ?? this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
       assert(currHubPoolLiquidReserves !== undefined);
+      availableLiquidReserves[l1Token] = currHubPoolLiquidReserves;
+
+      const requiredNetSendAmountForL1Token = aggregateNetSendAmounts[l1Token];
+      // If netSendAmounts is 0, there is no need to update this exchange rate.
+      assert(requiredNetSendAmountForL1Token.gte(0), "Aggregate net send amount should be >= 0");
+      if (requiredNetSendAmountForL1Token.eq(0)) {
+        return;
+      }
 
       // We only need to update the exchange rate in the case where tokens are returned to the HubPool increasing
       // its balance enough that it can execute a pool rebalance leaf it otherwise would not be able to.
@@ -1839,18 +1870,25 @@ export class Dataworker {
 
       // If the virtual balance is still too low to execute all the pool leaves, then log an error
       if (updatedLiquidReserves.lt(requiredNetSendAmountForL1Token)) {
-        throw new Error(
-          `Not enough funds to execute non-Ethereum pool rebalance leaf on HubPool for token: ${tokenSymbol}`
-        );
+        this.logger.error({
+          at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
+          message: `Not enough funds to execute ALL non-Ethereum pool rebalance leaf on HubPool for token: ${tokenSymbol}, updating exchange rate anyways to try to execute as many leaves as possible`,
+          l1Token,
+          requiredNetSendAmountForL1Token,
+          currHubPoolLiquidReserves,
+          updatedLiquidReserves,
+        });
+      } else {
+        this.logger.debug({
+          at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
+          message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${tokenSymbol}`,
+          l1Token,
+          requiredNetSendAmountForL1Token,
+          currHubPoolLiquidReserves,
+          updatedLiquidReserves,
+        });
       }
-      this.logger.debug({
-        at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
-        message: `Relayer refund leaf will return enough funds to HubPool to execute PoolRebalanceLeaf, updating exchange rate for ${tokenSymbol}`,
-        l1Token,
-        requiredNetSendAmountForL1Token,
-        currHubPoolLiquidReserves,
-        updatedLiquidReserves,
-      });
+      availableLiquidReserves[l1Token] = updatedLiquidReserves;
       updatedL1Tokens.add(l1Token);
     });
 
@@ -1871,7 +1909,10 @@ export class Dataworker {
       }
     }
 
-    return updatedL1Tokens;
+    return {
+      updatedL1Tokens,
+      availableLiquidReserves,
+    };
   }
 
   async _updateOldExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {

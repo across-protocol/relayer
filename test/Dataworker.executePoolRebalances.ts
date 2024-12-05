@@ -30,6 +30,7 @@ import {
   randomAddress,
   lastSpyLogIncludes,
   assert,
+  lastSpyLogLevel,
 } from "./utils";
 
 // Tested
@@ -311,16 +312,19 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
-        expect(updated.size).to.equal(0);
+        expect(updated.updatedL1Tokens.size).to.equal(0);
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(liquidReserves);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
       it("exits early if total required net send amount is 0", async function () {
+        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, toBNWei("0"));
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           [{ netSendAmounts: [toBNWei(0)], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
         );
-        expect(updated.size).to.equal(0);
+        expect(updated.updatedL1Tokens.size).to.equal(0);
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
         expect(
           spy.getCalls().filter((call) => call.lastArg.message.includes("Skipping exchange rate update")).length
@@ -342,44 +346,111 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
-        expect(updated.size).to.equal(0);
+        expect(updated.updatedL1Tokens.size).to.equal(0);
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(liquidReserves);
+        expect(updated.availableLiquidReserves[l1Token2]).to.equal(liquidReserves);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
-      it("errors if a single l1 token's aggregate net send amount exceeds liquid reserves", async function () {
+      it("Logs error if any l1 token's aggregate net send amount exceeds post-sync liquid reserves", async function () {
         const liquidReserves = toBNWei("1");
+        const postUpdateLiquidReserves = liquidReserves.mul(toBNWei("1.1")).div(toBNWei("1"));
         const l1Token2 = erc20_1.address;
-        await assertPromiseError(
-          dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-            {
-              [l1Token_1.address]: liquidReserves,
-              [l1Token2]: liquidReserves,
-            },
-            [
-              { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
-              // This one execeeds the liquid reserves for the l1 token.
-              { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token2], chainId: 10 },
-            ],
-            true
-          ),
-          "Not enough funds to execute non-Ethereum"
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            postUpdateLiquidReserves, // liquid reserves, still < than netSendAmount for l1Token2
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: liquidReserves,
+            [l1Token2]: liquidReserves,
+          },
+          [
+            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
+            // This one exceeds the post-update liquid reserves for the l1 token.
+            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token2], chainId: 10 },
+          ],
+          true
         );
+        expect(updated.updatedL1Tokens.size).to.equal(1);
+        expect(updated.updatedL1Tokens.has(l1Token2)).to.be.true;
+        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        expect(errorLogs.length).to.equal(1);
+        expect(errorLogs[0].lastArg.message).to.contain("Not enough funds to execute ALL non-Ethereum");
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(liquidReserves);
+        expect(updated.availableLiquidReserves[l1Token2]).to.equal(postUpdateLiquidReserves);
+      });
+      it("Logs one error for each L1 token whose aggregate net send amount exceeds post-sync liquid reserves", async function () {
+        const liquidReserves = toBNWei("1");
+        const postUpdateLiquidReserves = liquidReserves.mul(toBNWei("1.1")).div(toBNWei("1"));
+        const l1Token2 = erc20_1.address;
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            postUpdateLiquidReserves, // liquid reserves, still < than netSendAmount for l1Token2
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: liquidReserves,
+            [l1Token2]: liquidReserves,
+          },
+          [
+            // Both net send amounts exceed the post update liquid reserves
+            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 },
+            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token2], chainId: 10 },
+          ],
+          true
+        );
+        expect(updated.updatedL1Tokens.size).to.equal(2);
+        expect(updated.updatedL1Tokens.has(l1Token2)).to.be.true;
+        expect(updated.updatedL1Tokens.has(l1Token_1.address)).to.be.true;
+        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        expect(errorLogs.length).to.equal(2);
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(postUpdateLiquidReserves);
+        expect(updated.availableLiquidReserves[l1Token2]).to.equal(postUpdateLiquidReserves);
       });
       it("ignores negative net send amounts", async function () {
-        const liquidReserves = toBNWei("2");
-        await assertPromiseError(
-          dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-            {
-              [l1Token_1.address]: liquidReserves.sub(toBNWei("1")),
-            },
-            [
-              { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
-              // This negative liquid reserves doesn't offset the positive one, it just gets ignored.
-              { netSendAmounts: [liquidReserves.mul(-10)], l1Tokens: [l1Token_1.address], chainId: 10 },
-            ],
-            true
-          ),
-          "Not enough funds to execute non-Ethereum"
+        const netSendAmount = toBNWei("2");
+        const postUpdateLiquidReserves = netSendAmount.sub(toBNWei("1"));
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            postUpdateLiquidReserves, // liquid reserves, still < than netSendAmount for l1Token2
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: postUpdateLiquidReserves,
+          },
+          [
+            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
+            // This negative liquid reserves doesn't offset the positive one, it just gets ignored.
+            { netSendAmounts: [netSendAmount.mul(-10)], l1Tokens: [l1Token_1.address], chainId: 10 },
+          ],
+          true
         );
+        expect(updated.updatedL1Tokens.size).to.equal(1);
+        expect(updated.updatedL1Tokens.has(l1Token_1.address)).to.be.true;
+        expect(lastSpyLogLevel(spy)).to.equal("error");
+        expect(lastSpyLogIncludes(spy, "Not enough funds to execute ALL non-Ethereum")).to.be.true;
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(postUpdateLiquidReserves);
       });
       it("exits early if passed in liquid reserves are greater than net send amount", async function () {
         const netSendAmount = toBNWei("1");
@@ -395,40 +466,10 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
-        expect(updated.size).to.equal(0);
+        expect(updated.updatedL1Tokens.size).to.equal(0);
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(liquidReserves);
         expect(multiCallerClient.transactionCount()).to.equal(0);
         expect(lastSpyLogIncludes(spy, "Skipping exchange rate update")).to.be.true;
-      });
-      it("logs error if updated liquid reserves aren't enough to execute leaf", async function () {
-        const netSendAmount = toBNWei("1");
-        const liquidReserves = toBNWei("1");
-        // Total net send amount will be 2, but liquid reserves are only 1.
-        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-
-        // Even after simulating sync, there are not enough liquid reserves.
-        fakeHubPool.multicall.returns([
-          ZERO_ADDRESS, // sync output
-          hubPool.interface.encodeFunctionResult("pooledTokens", [
-            ZERO_ADDRESS, // lp token address
-            true, // enabled
-            0, // last lp fee update
-            bnZero, // utilized reserves
-            liquidReserves, // liquid reserves, still < than total netSendAmount
-            bnZero, // unaccumulated fees
-          ]),
-        ]);
-
-        await assertPromiseError(
-          dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-            {},
-            [
-              { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
-              { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 10 },
-            ],
-            true
-          ),
-          "Not enough funds to execute non-Ethereum"
-        );
       });
       it("submits update: liquid reserves post-sync are enough to execute leaf", async function () {
         // Liquid reserves cover one leaf but not two.
@@ -462,9 +503,9 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
-        expect(updated.size).to.equal(1);
-        expect(spy.getCall(-1).lastArg.updatedLiquidReserves).to.equal(postUpdateLiquidReserves);
-        expect(updated.has(l1Token_1.address)).to.be.true;
+        expect(updated.updatedL1Tokens.size).to.equal(1);
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(postUpdateLiquidReserves);
+        expect(updated.updatedL1Tokens.has(l1Token_1.address)).to.be.true;
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
     });
@@ -778,6 +819,112 @@ describe("Dataworker: Execute pool rebalances", async function () {
         ),
         "Failed to fund"
       );
+    });
+  });
+  describe("_getExecutablePoolRebalanceLeavesUsingReserves", function () {
+    let token1: string, token2: string;
+    beforeEach(function () {
+      token1 = randomAddress();
+      token2 = randomAddress();
+    });
+    it("All l1 tokens on single leaf are executable", async function () {
+      const leaves = dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        {
+          [token1]: toBNWei("1"),
+          [token2]: toBNWei("1"),
+        }
+      );
+      expect(leaves.length).to.equal(1);
+    });
+    it("Some l1 tokens on single leaf are not executable", async function () {
+      const leaves = dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        {
+          [token1]: toBNWei("0"), // Not enough to cover one net send amounts of 1
+          [token2]: toBNWei("1"),
+        }
+      );
+      expect(leaves.length).to.equal(0);
+    });
+    it("All l1 tokens on multiple leaves are executable", async function () {
+      const leaves = dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+          {
+            chainId: 42161,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        {
+          [token1]: toBNWei("2"), // Covers 2 leaves each with one net send amount of 1
+          [token2]: toBNWei("2"),
+        }
+      );
+      expect(leaves.length).to.equal(2);
+    });
+    it("Some l1 tokens are not executable after first leaf is executed", async function () {
+      const leaves = dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+          {
+            chainId: 42161,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        {
+          [token1]: toBNWei("1"), // 1 only covers the first leaf
+          [token2]: toBNWei("2"),
+        }
+      );
+      expect(leaves.length).to.equal(1);
+      expect(leaves[0].chainId).to.equal(10);
     });
   });
 });
