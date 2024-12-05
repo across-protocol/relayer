@@ -224,11 +224,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
       it("does not subtract negative net send amounts from available reserves", async function () {
         const liquidReserves = toBNWei("1");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        const { syncedL1Tokens, availableLiquidReserves } =
+        const { syncedL1Tokens, availableLiquidReserves, canExecute } =
           await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
             { netSendAmounts: [toBNWei(-1)], l1Tokens: [l1Token_1.address] },
             true
           );
+        expect(canExecute).to.be.true;
         expect(syncedL1Tokens.size).to.equal(0);
         expect(availableLiquidReserves[l1Token_1.address]).to.equal(liquidReserves);
         expect(multiCallerClient.transactionCount()).to.equal(0);
@@ -238,18 +239,21 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const netSendAmount = toBNWei("1");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, currentReserves);
 
-        const { syncedL1Tokens, availableLiquidReserves } =
+        const { syncedL1Tokens, availableLiquidReserves, canExecute } =
           await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
             { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
             true
           );
+        expect(canExecute).to.be.true;
         expect(availableLiquidReserves[l1Token_1.address]).to.equal(currentReserves.sub(netSendAmount));
         expect(syncedL1Tokens.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
-      it("throws error if updated liquid reserves aren't enough to execute leaf", async function () {
+      it("logs error if updated liquid reserves aren't enough to execute leaf", async function () {
         const netSendAmount = toBNWei("1");
-
+        const liquidReserves = netSendAmount.sub(1);
+        const postUpdateLiquidReserves = liquidReserves.sub(1);
+        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         fakeHubPool.multicall.returns([
           ZERO_ADDRESS, // sync output
           hubPool.interface.encodeFunctionResult("pooledTokens", [
@@ -257,18 +261,21 @@ describe("Dataworker: Execute pool rebalances", async function () {
             true, // enabled
             0, // last lp fee update
             bnZero, // utilized reserves
-            bnZero, // liquid reserves, still less than net send amount
+            postUpdateLiquidReserves, // liquid reserves, still less than net send amount
             bnZero, // unaccumulated fees
           ]),
         ]);
 
-        await assertPromiseError(
-          dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
-            true
-          ),
-          "Not enough funds to execute Ethereum pool rebalance leaf"
+        const result = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
+          { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
+          true
         );
+        expect(result.canExecute).to.equal(false);
+        expect(lastSpyLogLevel(spy)).to.equal("error");
+        expect(lastSpyLogIncludes(spy, "Not enough funds to execute Ethereum pool rebalance leaf")).to.be.true;
+        expect(result.syncedL1Tokens.size).to.equal(0);
+        // Should return pre-update liquid reserves:
+        expect(result.availableLiquidReserves[l1Token_1.address]).to.equal(liquidReserves);
       });
       it("submits update if updated liquid reserves cover execution of pool leaf", async function () {
         const netSendAmount = toBNWei("1");
@@ -286,11 +293,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ]),
         ]);
 
-        const { syncedL1Tokens, availableLiquidReserves } =
+        const { syncedL1Tokens, availableLiquidReserves, canExecute } =
           await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
             { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
             true
           );
+        expect(canExecute).to.be.true;
         expect(syncedL1Tokens.size).to.equal(1);
         expect(syncedL1Tokens.has(l1Token_1.address)).to.be.true;
         expect(availableLiquidReserves[l1Token_1.address]).to.equal(updatedLiquidReserves.sub(netSendAmount));

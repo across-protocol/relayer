@@ -1468,22 +1468,28 @@ export class Dataworker {
     const mainnetLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
     if (mainnetLeaves.length > 0) {
       assert(mainnetLeaves.length === 1);
-      ({ availableLiquidReserves: updatedLiquidReserves, syncedL1Tokens: updatedL1Tokens } =
-        await this._updateExchangeRatesBeforeExecutingHubChainLeaves(mainnetLeaves[0], submitExecution));
-      await this._executePoolRebalanceLeaves(
-        spokePoolClients,
-        mainnetLeaves,
-        balanceAllocator,
-        expectedTrees.poolRebalanceTree.tree,
+      const updateHubChainExchangeRatesResult = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
+        mainnetLeaves[0],
         submitExecution
       );
-      leafCount += 1;
+      updatedLiquidReserves = updateHubChainExchangeRatesResult.availableLiquidReserves;
+      updatedL1Tokens = updateHubChainExchangeRatesResult.syncedL1Tokens;
+      if (updateHubChainExchangeRatesResult.canExecute) {
+        await this._executePoolRebalanceLeaves(
+          spokePoolClients,
+          mainnetLeaves,
+          balanceAllocator,
+          expectedTrees.poolRebalanceTree.tree,
+          submitExecution
+        );
+        leafCount += 1;
+      }
 
       // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
       // will be relayed after executing the above pool rebalance root.
       const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
 
-      // Now, execute refund and slow fill leaves for Mainnet using new funds. These methods will return early if there
+      // Now, execute refund and slow fill leaves for Mainnet usingany new funds. These methods will return early if there
       // are no relevant leaves to execute.
       await this._executeSlowFillLeaf(
         expectedTrees.slowRelayTree.leaves.filter((leaf) => leaf.chainId === hubPoolChainId),
@@ -1563,7 +1569,7 @@ export class Dataworker {
           return true;
         }
         assert(
-          availableLiquidReserves[l1Token] !== undefined,
+          availableLiquidReserves[l1Token] !== undefined && availableLiquidReserves[l1Token].gt(0),
           "availableLiquidReserves should be defined for all l1 tokens"
         );
         if (availableLiquidReserves[l1Token].lt(netSendAmountForLeaf)) {
@@ -1707,9 +1713,11 @@ export class Dataworker {
     poolRebalanceLeaf: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">,
     submitExecution: boolean
   ): Promise<{
+    canExecute: boolean;
     availableLiquidReserves: Record<string, BigNumber>;
     syncedL1Tokens: Set<string>;
   }> {
+    let canExecute = true;
     const hubPool = this.clients.hubPoolClient.hubPool;
     const chainId = this.clients.hubPoolClient.chainId;
 
@@ -1730,7 +1738,6 @@ export class Dataworker {
       if (netSendAmounts[idx].lte(0)) {
         return;
       }
-      availableLiquidReserves[l1Token] = currentLiquidReserves.sub(netSendAmounts[idx]);
 
       // If current liquid reserves can cover the netSendAmount, then there is no need to update the exchange rate.
       if (currentLiquidReserves.gte(netSendAmounts[idx])) {
@@ -1741,6 +1748,7 @@ export class Dataworker {
           netSendAmount: netSendAmounts[idx],
           l1Token,
         });
+        availableLiquidReserves[l1Token] = currentLiquidReserves.sub(netSendAmounts[idx]);
         return;
       }
 
@@ -1752,36 +1760,48 @@ export class Dataworker {
       const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[1]);
       const updatedLiquidReserves = updatedPooledTokens.liquidReserves;
 
-      // If updated liquid reserves are not enough to cover the payment, then send a warning that
-      // we're short on funds.
+      // If updated liquid reserves are not enough to cover the payment, then send an error log that
+      // we're short on funds. Otherwise, enqueue a sync() call and then update the availableLiquidReserves.
       if (updatedLiquidReserves.lt(netSendAmounts[idx])) {
-        throw new Error(
-          `Not enough funds to execute Ethereum pool rebalance leaf on HubPool for token: ${tokenSymbol}`
-        );
-      }
-      availableLiquidReserves[l1Token] = updatedLiquidReserves.sub(netSendAmounts[idx]);
-      syncedL1Tokens.add(l1Token);
-      this.logger.debug({
-        at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
-        message: `Updating exchange rate for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the hubChain poolRebalanceLeaf.`,
-        poolRebalanceLeaf,
-        netSendAmount: netSendAmounts[idx],
-        currentLiquidReserves,
-        updatedLiquidReserves,
-      });
-      if (submitExecution) {
-        this.clients.multiCallerClient.enqueueTransaction({
-          contract: hubPool,
-          chainId,
-          method: "exchangeRateCurrent",
-          args: [l1Token],
-          message: "Updated exchange rate ♻️!",
-          mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
-          unpermissioned: true,
+        canExecute = false;
+        this.logger.error({
+          at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
+          message: `Not enough funds to execute Ethereum pool rebalance leaf on HubPool for token: ${tokenSymbol}`,
+          poolRebalanceLeaf,
+          netSendAmount: netSendAmounts[idx],
+          currentLiquidReserves,
+          updatedLiquidReserves,
         });
+
+        // We won't update the exchange rate for this token because there is no possibility of being able to execute
+        // this leaf. If the executor wants to try executing the non-Hub chain leaves, then it will look to do a sync
+        // then in _updateExchangeRatesBeforeExecutingNonHubChainLeaves.
+      } else {
+        availableLiquidReserves[l1Token] = updatedLiquidReserves.sub(netSendAmounts[idx]);
+        syncedL1Tokens.add(l1Token);
+        this.logger.debug({
+          at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
+          message: `Updating exchange rate for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the hubChain poolRebalanceLeaf.`,
+          poolRebalanceLeaf,
+          netSendAmount: netSendAmounts[idx],
+          currentLiquidReserves,
+          updatedLiquidReserves,
+        });
+        if (submitExecution) {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: hubPool,
+            chainId,
+            method: "exchangeRateCurrent",
+            args: [l1Token],
+            message: "Updated exchange rate ♻️!",
+            mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
+            unpermissioned: true,
+          });
+        }
       }
     });
     return {
+      canExecute,
       availableLiquidReserves,
       syncedL1Tokens,
     };
@@ -1820,7 +1840,7 @@ export class Dataworker {
       // the HubPool becomes "aware" of its inflow following the relayre refund leaf execution.
       const currHubPoolLiquidReserves =
         latestLiquidReserves[l1Token] ?? this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
-      assert(currHubPoolLiquidReserves !== undefined);
+      assert(currHubPoolLiquidReserves !== undefined && currHubPoolLiquidReserves.gte(0));
       availableLiquidReserves[l1Token] = currHubPoolLiquidReserves;
 
       const requiredNetSendAmountForL1Token = aggregateNetSendAmounts[l1Token];
