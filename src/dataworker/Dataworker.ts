@@ -323,7 +323,7 @@ export class Dataworker {
         at: "Dataworke#propose",
         message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         failReason: blockRangesAreInvalid.reason,
-        bundleBlockRanges: Object.fromEntries(chainIds.map((chainId, i) => [chainId, blockRangesForProposal[i]])),
+        bundleBlockRanges: this._prettifyBundleBlockRanges(chainIds, blockRangesForProposal),
       });
       return;
     }
@@ -845,9 +845,7 @@ export class Dataworker {
         at: "Dataworke#validate",
         message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         failReason: blockRangesAreInvalid.reason,
-        bundleBlockRanges: Object.fromEntries(
-          chainIds.map((chainId, i) => [chainId, blockRangesImpliedByBundleEndBlocks[i]])
-        ),
+        bundleBlockRanges: this._prettifyBundleBlockRanges(chainIds, blockRangesImpliedByBundleEndBlocks),
       });
       return {
         valid: false,
@@ -2525,5 +2523,9 @@ export class Dataworker {
       earliestBlocksInSpokePoolClients,
       isV3
     );
+  }
+
+  _prettifyBundleBlockRanges(chainIds: number[], blockRanges: number[][]): Record<number, number[]> {
+    return Object.fromEntries(chainIds.map((chainId, i) => [chainId, blockRanges[i]]));
   }
 }
