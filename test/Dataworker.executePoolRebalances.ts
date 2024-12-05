@@ -430,8 +430,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(updated.availableLiquidReserves[l1Token2]).to.equal(postUpdateLiquidReserves);
       });
       it("ignores negative net send amounts", async function () {
-        const netSendAmount = toBNWei("2");
-        const postUpdateLiquidReserves = netSendAmount.sub(toBNWei("1"));
+        const liquidReserves = toBNWei("2");
+        const postUpdateLiquidReserves = liquidReserves;
         fakeHubPool.multicall.returns([
           ZERO_ADDRESS, // sync output
           hubPool.interface.encodeFunctionResult("pooledTokens", [
@@ -439,7 +439,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             true, // enabled
             0, // last lp fee update
             bnZero, // utilized reserves
-            postUpdateLiquidReserves, // liquid reserves, still < than netSendAmount for l1Token2
+            postUpdateLiquidReserves, // liquid reserves < than netSendAmount for l1Token2
             bnZero, // unaccumulated fees
           ]),
         ]);
@@ -448,16 +448,15 @@ describe("Dataworker: Execute pool rebalances", async function () {
             [l1Token_1.address]: postUpdateLiquidReserves,
           },
           [
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
+            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 },
             // This negative liquid reserves doesn't offset the positive one, it just gets ignored.
-            { netSendAmounts: [netSendAmount.mul(-10)], l1Tokens: [l1Token_1.address], chainId: 10 },
+            { netSendAmounts: [liquidReserves.mul(-10)], l1Tokens: [l1Token_1.address], chainId: 10 },
           ],
           true
         );
-        expect(updated.updatedL1Tokens.size).to.equal(1);
-        expect(updated.updatedL1Tokens.has(l1Token_1.address)).to.be.true;
-        expect(lastSpyLogLevel(spy)).to.equal("error");
-        expect(lastSpyLogIncludes(spy, "Not enough funds to execute ALL non-Ethereum")).to.be.true;
+        const errorLog = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        expect(errorLog.length).to.equal(1);
+        expect(errorLog[0].lastArg.message).to.contain("Not enough funds to execute ALL non-Ethereum");
         expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(postUpdateLiquidReserves);
       });
       it("exits early if passed in liquid reserves are greater than net send amount", async function () {
@@ -515,6 +514,36 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(postUpdateLiquidReserves);
         expect(updated.updatedL1Tokens.has(l1Token_1.address)).to.be.true;
         expect(multiCallerClient.transactionCount()).to.equal(1);
+      });
+      it("Logs error and does not submit update if liquid reserves post-sync are <= current liquid reserves and are insufficient to execute leaf", async function () {
+        const liquidReserves = toBNWei("1");
+        const postUpdateLiquidReserves = liquidReserves.sub(1);
+        fakeHubPool.multicall.returns([
+          ZERO_ADDRESS, // sync output
+          hubPool.interface.encodeFunctionResult("pooledTokens", [
+            ZERO_ADDRESS, // lp token address
+            true, // enabled
+            0, // last lp fee update
+            bnZero, // utilized reserves
+            postUpdateLiquidReserves, // liquid reserves, still < than netSendAmount for l1Token2
+            bnZero, // unaccumulated fees
+          ]),
+        ]);
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: liquidReserves,
+          },
+          [{ netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 }],
+          true
+        );
+        expect(updated.updatedL1Tokens.size).to.equal(0);
+        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        expect(errorLogs.length).to.equal(1);
+        expect(errorLogs[0].lastArg.message).to.contain("Not enough funds to execute ALL non-Ethereum");
+
+        // Should return the current liquid reserves instead of post-update
+        expect(updated.availableLiquidReserves[l1Token_1.address]).to.equal(liquidReserves);
+        expect(lastSpyLogIncludes(spy, "liquid reserves would not increase")).to.be.true;
       });
     });
     describe("_updateOldExchangeRates", function () {

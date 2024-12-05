@@ -1569,7 +1569,7 @@ export class Dataworker {
           return true;
         }
         assert(
-          availableLiquidReserves[l1Token] !== undefined && availableLiquidReserves[l1Token].gt(0),
+          availableLiquidReserves[l1Token] !== undefined && availableLiquidReserves[l1Token].gte(0),
           "availableLiquidReserves should be defined for all l1 tokens"
         );
         if (availableLiquidReserves[l1Token].lt(netSendAmountForLeaf)) {
@@ -1772,12 +1772,9 @@ export class Dataworker {
           currentLiquidReserves,
           updatedLiquidReserves,
         });
-
-        // We won't update the exchange rate for this token because there is no possibility of being able to execute
-        // this leaf. If the executor wants to try executing the non-Hub chain leaves, then it will look to do a sync
-        // then in _updateExchangeRatesBeforeExecutingNonHubChainLeaves.
       } else {
         availableLiquidReserves[l1Token] = updatedLiquidReserves.sub(netSendAmounts[idx]);
+        // At this point, we can assume that the liquid reserves increased post-sync so we'll enqueue an update.
         syncedL1Tokens.add(l1Token);
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
@@ -1908,8 +1905,24 @@ export class Dataworker {
           updatedLiquidReserves,
         });
       }
-      availableLiquidReserves[l1Token] = updatedLiquidReserves;
-      updatedL1Tokens.add(l1Token);
+
+      // We don't know yet which leaves we can execute so we'll update the exchange rate for this token even if
+      // some leaves might not be executable.
+      // TODO: Be more precise about whether updating this l1 token is worth it. For example, if we update this l1
+      // token and its reserves increase, depending on which other tokens are contained in the pool rebalance leaf
+      // with this token, increasing this token's reserves might not help us execute those leaves.
+      if (updatedLiquidReserves.gt(currHubPoolLiquidReserves)) {
+        availableLiquidReserves[l1Token] = updatedLiquidReserves;
+        updatedL1Tokens.add(l1Token);
+      } else {
+        this.logger.debug({
+          at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
+          message: `Skipping exchange rate update for ${tokenSymbol} because liquid reserves would not increase`,
+          currHubPoolLiquidReserves,
+          updatedLiquidReserves,
+          l1Token,
+        });
+      }
     });
 
     // Submit executions at the end since the above double loop runs in parallel and we don't want to submit
