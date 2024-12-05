@@ -1772,9 +1772,7 @@ export class Dataworker {
 
     await sdkUtils.forEachAsync(poolRebalanceLeaves, async (leaf) => {
       await sdkUtils.forEachAsync(leaf.l1Tokens, async (l1Token, idx) => {
-        if (aggregateNetSendAmounts[l1Token] === undefined) {
-          aggregateNetSendAmounts[l1Token] = bnZero;
-        }
+        aggregateNetSendAmounts[l1Token] ??= bnZero;
 
         // If leaf's netSendAmount is negative, then we don't need to updateExchangeRates since the Hub will not
         // have a liquidity constraint because it won't be sending any tokens.
