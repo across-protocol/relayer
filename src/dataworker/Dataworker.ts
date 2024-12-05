@@ -1735,7 +1735,7 @@ export class Dataworker {
       syncedL1Tokens.add(l1Token);
       this.logger.debug({
         at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
-        message: `Updating exchange rate update for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the hubChain poolRebalanceLeaf.`,
+        message: `Updating exchange rate for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the hubChain poolRebalanceLeaf.`,
         poolRebalanceLeaf,
         netSendAmount: netSendAmounts[idx],
         currentLiquidReserves,
