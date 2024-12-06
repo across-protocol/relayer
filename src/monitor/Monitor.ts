@@ -44,10 +44,10 @@ import {
   getWidestPossibleExpectedBlockRange,
   utils,
 } from "../utils";
-
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
+import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -306,20 +306,22 @@ export class Monitor {
             throw new Error(`No decimals found for ${tokenSymbol}`);
           }
           Object.entries(columns).forEach(([chainName, cell]) => {
-            Object.entries(cell).forEach(([balanceType, balance]) => {
-              this.logger.debug({
-                at: "Monitor#reportRelayerBalances",
-                message: "Machine-readable single balance report",
-                relayer,
-                tokenSymbol,
-                decimals,
-                chainName,
-                balanceType,
-                balanceInWei: balance.toString(),
-                balance: Number(utils.formatUnits(balance, decimals)),
-                datadog: true,
+            if (this._tokenEnabledForNetwork(tokenSymbol, chainName)) {
+              Object.entries(cell).forEach(([balanceType, balance]) => {
+                this.logger.debug({
+                  at: "Monitor#reportRelayerBalances",
+                  message: "Machine-readable single balance report",
+                  relayer,
+                  tokenSymbol,
+                  decimals,
+                  chainName,
+                  balanceType,
+                  balanceInWei: balance.toString(),
+                  balance: Number(utils.formatUnits(balance, decimals)),
+                  datadog: true,
+                });
               });
-            });
+            }
           });
         });
       });
@@ -1288,5 +1290,14 @@ export class Monitor {
         return decimals;
       })
     );
+  }
+
+  private _tokenEnabledForNetwork(tokenSymbol: string, networkName: string): boolean {
+    for (const [chainId, network] of Object.entries(PUBLIC_NETWORKS)) {
+      if (network.name === networkName) {
+        return isDefined(TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[chainId]);
+      }
+    }
+    return false;
   }
 }
