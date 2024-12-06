@@ -1425,9 +1425,7 @@ export class Dataworker {
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
-      if (!process.env.SIMULATE_L1_EXECUTION) {
-        return leafCount;
-      }
+      return leafCount;
     }
 
     // At this point, check again that there are still unexecuted pool rebalance leaves. This is done because the above
