@@ -258,7 +258,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
           true
         );
-        expect(lastSpyLogLevel(spy)).to.equal("error");
+        expect(lastSpyLogLevel(spy)).to.equal("warn");
         expect(lastSpyLogIncludes(spy, "Not enough funds to execute Ethereum pool rebalance leaf")).to.be.true;
         expect(syncedL1Tokens.size).to.equal(0);
       });
@@ -355,7 +355,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         );
         expect(updated.size).to.equal(1);
         expect(updated.has(l1Token2)).to.be.true;
-        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "warn");
         expect(errorLogs.length).to.equal(1);
         expect(errorLogs[0].lastArg.message).to.contain("Not enough funds to execute ALL non-Ethereum");
       });
@@ -382,7 +382,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         expect(updated.size).to.equal(2);
         expect(updated.has(l1Token2)).to.be.true;
         expect(updated.has(l1Token_1.address)).to.be.true;
-        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "warn");
         expect(errorLogs.length).to.equal(2);
       });
       it("ignores negative net send amounts", async function () {
@@ -402,7 +402,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           ],
           true
         );
-        const errorLog = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        const errorLog = spy.getCalls().filter((call) => call.lastArg.level === "warn");
         expect(errorLog.length).to.equal(1);
         expect(errorLog[0].lastArg.message).to.contain("Not enough funds to execute ALL non-Ethereum");
       });
@@ -445,7 +445,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           true
         );
         expect(updated.size).to.equal(0);
-        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "warn");
         expect(errorLogs.length).to.equal(1);
         expect(errorLogs[0].lastArg.message).to.contain("Not enough funds to execute ALL non-Ethereum");
         expect(lastSpyLogIncludes(spy, "liquid reserves would not increase")).to.be.true;
@@ -827,7 +827,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       expect(result).to.equal(1);
     });
   });
-  describe("_getExecutablePoolRebalanceLeavesUsingReserves", function () {
+  describe("_getExecutablePoolRebalanceLeaves", function () {
     let token1: string, token2: string, balanceAllocator: BalanceAllocator;
     beforeEach(function () {
       token1 = randomAddress();
@@ -837,7 +837,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     it("All l1 tokens on single leaf are executable", async function () {
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("1"));
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("1"));
-      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [
           {
             chainId: 10,
@@ -857,7 +857,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // Not enough to cover one net send amounts of 1
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("0"));
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("1"));
-      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [
           {
             chainId: 10,
@@ -872,12 +872,15 @@ describe("Dataworker: Execute pool rebalances", async function () {
         balanceAllocator
       );
       expect(leaves.length).to.equal(0);
+      const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+      expect(errorLogs.length).to.equal(1);
+      expect(errorLogs[0].lastArg.message).to.contain("Not enough funds to execute");
     });
     it("All l1 tokens on multiple leaves are executable", async function () {
       // Covers 2 leaves each with one net send amount of 1
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("2"));
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("2"));
-      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [
           {
             chainId: 10,
@@ -907,7 +910,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("1"));
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("2"));
 
-      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeavesUsingReserves(
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [
           {
             chainId: 10,
@@ -932,6 +935,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
       );
       expect(leaves.length).to.equal(1);
       expect(leaves[0].chainId).to.equal(10);
+      const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
+      expect(errorLogs.length).to.equal(1);
     });
   });
 });

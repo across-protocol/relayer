@@ -1551,7 +1551,7 @@ export class Dataworker {
     return leafCount;
   }
 
-  async _getExecutablePoolRebalanceLeavesUsingReserves(
+  async _getExecutablePoolRebalanceLeaves(
     poolLeaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator
   ): Promise<PoolRebalanceLeaf[]> {
@@ -1566,16 +1566,25 @@ export class Dataworker {
         if (netSendAmountForLeaf.lte(0)) {
           return true;
         }
+        const hubChainId = this.clients.hubPoolClient.chainId;
+        const hubPoolAddress = this.clients.hubPoolClient.hubPool.address;
         const success = await balanceAllocator.requestBalanceAllocation(
-          this.clients.hubPoolClient.chainId,
+          hubChainId,
           [l1Token],
-          this.clients.hubPoolClient.hubPool.address,
+          hubPoolAddress,
           netSendAmountForLeaf
         );
         return success;
       });
       if (isExecutable) {
         executableLeaves.push(leaf);
+      } else {
+        this.logger.error({
+          at: "Dataworker#_getExecutablePoolRebalanceLeaves",
+          message: `Not enough funds to execute pool rebalance leaf for chain ${leaf.chainId}`,
+          l1Tokens: leaf.l1Tokens,
+          netSendAmounts: leaf.netSendAmounts,
+        });
       }
     }
     return executableLeaves;
@@ -1595,7 +1604,7 @@ export class Dataworker {
 
     // Evaluate leaves iteratively because we will be modifying virtual balances and we want
     // to make sure we are getting the virtual balance computations correct.
-    const fundedLeaves = await this._getExecutablePoolRebalanceLeavesUsingReserves(allLeaves, balanceAllocator);
+    const fundedLeaves = await this._getExecutablePoolRebalanceLeaves(allLeaves, balanceAllocator);
     const executableLeaves: PoolRebalanceLeaf[] = [];
     for (const leaf of fundedLeaves) {
       // For orbit leaves we need to check if we have enough gas tokens to pay for the L1 to L2 message.
@@ -1758,7 +1767,7 @@ export class Dataworker {
       // If updated liquid reserves are not enough to cover the payment, then send an error log that
       // we're short on funds. Otherwise, enqueue a sync() call and then update the availableLiquidReserves.
       if (updatedLiquidReserves.lt(netSendAmounts[idx])) {
-        this.logger.error({
+        this.logger.warn({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
           message: `Not enough funds to execute Ethereum pool rebalance leaf on HubPool for token: ${tokenSymbol}`,
           poolRebalanceLeaf,
@@ -1867,7 +1876,7 @@ export class Dataworker {
 
       // If the post-sync balance is still too low to execute all the pool leaves, then log an error
       if (updatedLiquidReserves.lt(requiredNetSendAmountForL1Token)) {
-        this.logger.error({
+        this.logger.warn({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
           message: `Not enough funds to execute ALL non-Ethereum pool rebalance leaf on HubPool for token: ${tokenSymbol}, updating exchange rate anyways to try to execute as many leaves as possible`,
           l1Token,
