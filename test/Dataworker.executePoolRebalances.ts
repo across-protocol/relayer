@@ -1,11 +1,14 @@
-import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import {
+  BaseContract,
   bnZero,
   buildPoolRebalanceLeafTree,
   CHAIN_IDs,
   ERC20,
   getCurrentTime,
   MAX_UINT_VAL,
+  MerkleTree,
+  RelayerRefundLeaf,
   toBNWei,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
@@ -37,7 +40,7 @@ import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 import { ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA, spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
-import { PoolRebalanceLeaf } from "../src/interfaces";
+import { PoolRebalanceLeaf, SlowFillLeaf } from "../src/interfaces";
 
 // Set to arbitrum to test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message transfers.
 const destinationChainId = 42161;
@@ -59,6 +62,30 @@ describe("Dataworker: Execute pool rebalances", async function () {
       [hubPoolClient.chainId]: hubPool.provider,
     };
     return new BalanceAllocator(providers);
+  }
+  async function createMockHubPoolClient(): Promise<{
+    mockHubPoolClient: MockHubPoolClient;
+    fakeHubPool: FakeContract<BaseContract>;
+  }> {
+    const fakeHubPool = await smock.fake(hubPool.interface, { address: hubPool.address });
+    const mockHubPoolClient = new MockHubPoolClient(
+      hubPoolClient.logger,
+      fakeHubPool as unknown as Contract,
+      hubPoolClient.configStoreClient as unknown as ConfigStoreClient
+    );
+    mockHubPoolClient.chainId = hubPoolClient.chainId;
+    mockHubPoolClient.setTokenInfoToReturn({ address: l1Token_1.address, decimals: 18, symbol: "TEST" });
+
+    // Sub in a dummy root bundle proposal for use in HubPoolClient update.
+    const zero = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    fakeHubPool.multicall.returns([
+      hubPool.interface.encodeFunctionResult("getCurrentTime", [getCurrentTime().toString()]),
+      hubPool.interface.encodeFunctionResult("rootBundleProposal", [zero, zero, zero, 0, ZERO_ADDRESS, 0, 0]),
+    ]);
+    return {
+      mockHubPoolClient,
+      fakeHubPool,
+    };
   }
   beforeEach(async function () {
     ({
@@ -199,20 +226,73 @@ describe("Dataworker: Execute pool rebalances", async function () {
     expect(refundLeafExecutions[0].index).to.be.lessThan(poolLeafExecutions[1].index);
     expect(poolLeafExecutions[1].args[0]).to.equal(destinationChainId);
   });
+  it("Should not double update an LP token", async function () {
+    // In this test, the HubPool client returns the liquid reserves as 0 for a token.
+
+    // So, executing the ethereum leaves results in an exchangeRate() update call.
+
+    // The subsequent call to execute non-ethereum leaves should not result in an extra exchange rate call
+    // if a sync was already included.
+
+    // Set LP reserves to 0 for the token.
+    const { mockHubPoolClient } = await createMockHubPoolClient();
+    dataworkerInstance.clients.hubPoolClient = mockHubPoolClient;
+    mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, bnZero);
+
+    // Make sure post-sync reserves are greater than the net send amount.
+    const balanceAllocator = getNewBalanceAllocator();
+    balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, toBNWei("2"));
+
+    const poolRebalanceLeaves: PoolRebalanceLeaf[] = [
+      {
+        chainId: hubPoolClient.chainId,
+        groupIndex: 0,
+        bundleLpFees: [toBNWei("1")],
+        netSendAmounts: [toBNWei("1")],
+        runningBalances: [toBNWei("1")],
+        leafId: 0,
+        l1Tokens: [l1Token_1.address],
+      },
+      {
+        chainId: 10,
+        groupIndex: 0,
+        bundleLpFees: [toBNWei("1")],
+        netSendAmounts: [toBNWei("1")],
+        runningBalances: [toBNWei("1")],
+        leafId: 0,
+        l1Tokens: [l1Token_1.address],
+      },
+    ];
+
+    const leafCount = await dataworkerInstance._executePoolLeaves(
+      spokePoolClients,
+      balanceAllocator,
+      poolRebalanceLeaves,
+      new MerkleTree<PoolRebalanceLeaf>(poolRebalanceLeaves, () => "test"),
+      [],
+      new MerkleTree<RelayerRefundLeaf>([], () => "test"),
+      [],
+      new MerkleTree<SlowFillLeaf>([], () => "test"),
+      true
+    );
+    expect(leafCount).to.equal(2);
+
+    // Should sync LP token for first leaf execution, but not for the second. This tests that latestLiquidReserves
+    // are passed correctly into _updateExchangeRatesBeforeExecutingNonHubChainLeaves so that currentReserves
+    // don't get set to the HubPool.pooledTokens.liquidReserves value. If this was done incorrectly then I would
+    // expect a second exchangeRateCurrent method before the second executeRootBundle call.
+    const enqueuedTxns = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+    expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal([
+      "exchangeRateCurrent",
+      "executeRootBundle",
+      "executeRootBundle",
+    ]);
+  });
   describe("update exchange rates", function () {
     let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;
     beforeEach(async function () {
-      fakeHubPool = await smock.fake(hubPool.interface, { address: hubPool.address });
-      mockHubPoolClient = new MockHubPoolClient(hubPoolClient.logger, fakeHubPool, hubPoolClient.configStoreClient);
-      mockHubPoolClient.setTokenInfoToReturn({ address: l1Token_1.address, decimals: 18, symbol: "TEST" });
+      ({ mockHubPoolClient, fakeHubPool } = await createMockHubPoolClient());
       dataworkerInstance.clients.hubPoolClient = mockHubPoolClient;
-
-      // Sub in a dummy root bundle proposal for use in HubPoolClient update.
-      const zero = "0x0000000000000000000000000000000000000000000000000000000000000000";
-      fakeHubPool.multicall.returns([
-        hubPool.interface.encodeFunctionResult("getCurrentTime", [getCurrentTime().toString()]),
-        hubPool.interface.encodeFunctionResult("rootBundleProposal", [zero, zero, zero, 0, ZERO_ADDRESS, 0, 0]),
-      ]);
 
       await updateAllClients();
     });
@@ -251,7 +331,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const liquidReserves = netSendAmount.sub(1);
         const postUpdateLiquidReserves = liquidReserves.sub(1);
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          hubPool.address,
+          postUpdateLiquidReserves
+        );
 
         const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
@@ -267,7 +352,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const netSendAmount = toBNWei("1");
         const updatedLiquidReserves = netSendAmount.add(1);
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, bnZero);
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, updatedLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          hubPool.address,
+          updatedLiquidReserves
+        );
 
         const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
@@ -292,7 +382,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const passedInLiquidReserves = toBNWei("0");
 
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, netSendAmount);
+        balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token_1.address, hubPool.address, netSendAmount);
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {
@@ -373,8 +463,13 @@ describe("Dataworker: Execute pool rebalances", async function () {
         mockHubPoolClient.setLpTokenInfo(l1Token2, 0, liquidReserves);
 
         // Post-sync reserves are still insufficient to execute all leaves.
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
-        balanceAllocator.testSetBalance(1, l1Token2, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          hubPool.address,
+          postUpdateLiquidReserves
+        );
+        balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token2, hubPool.address, postUpdateLiquidReserves);
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
@@ -400,8 +495,13 @@ describe("Dataworker: Execute pool rebalances", async function () {
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         mockHubPoolClient.setLpTokenInfo(l1Token2, 0, liquidReserves);
 
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
-        balanceAllocator.testSetBalance(1, l1Token2, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          hubPool.address,
+          postUpdateLiquidReserves
+        );
+        balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token2, hubPool.address, postUpdateLiquidReserves);
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
@@ -425,7 +525,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
 
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          hubPool.address,
+          postUpdateLiquidReserves
+        );
 
         await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
@@ -448,7 +553,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
         // Current reserves are insufficient to cover the two leaves:
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, bnZero);
 
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          hubPool.address,
+          postUpdateLiquidReserves
+        );
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
@@ -473,7 +583,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
 
-        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          l1Token_1.address,
+          hubPool.address,
+          postUpdateLiquidReserves
+        );
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},

@@ -1345,7 +1345,7 @@ export class Dataworker {
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<number> {
-    let leafCount = 0;
+    const leafCount = 0;
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Executing pool rebalance leaves",
@@ -1454,6 +1454,32 @@ export class Dataworker {
       return leafCount;
     }
 
+    return this._executePoolLeaves(
+      spokePoolClients,
+      balanceAllocator,
+      unexecutedLeaves,
+      expectedTrees.poolRebalanceTree.tree,
+      expectedTrees.relayerRefundTree.leaves,
+      expectedTrees.relayerRefundTree.tree,
+      expectedTrees.slowRelayTree.leaves,
+      expectedTrees.slowRelayTree.tree,
+      submitExecution
+    );
+  }
+
+  async _executePoolLeaves(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    balanceAllocator: BalanceAllocator,
+    poolLeaves: PoolRebalanceLeaf[],
+    poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>,
+    relayerRefundLeaves: RelayerRefundLeaf[],
+    relayerRefundTree: MerkleTree<RelayerRefundLeaf>,
+    slowFillLeaves: SlowFillLeaf[],
+    slowFillTree: MerkleTree<SlowFillLeaf>,
+    submitExecution: boolean
+  ): Promise<number> {
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+
     // There are three times that we should look to update the HubPool's liquid reserves:
     // 1. First, before we attempt to execute the HubChain PoolRebalance leaves and RelayerRefund leaves.
     //    We should see if there are new liquid reserves we need to account for before sending out these
@@ -1469,11 +1495,12 @@ export class Dataworker {
     // LP token update. This way we can efficiently update LP liquid reserves values if and only if we need to do so
     // to execute a pool leaf.
     let latestLiquidReserves: Record<string, BigNumber> = {};
+    let leafCount = 0;
 
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
     // takes advantage of the fact that mainnet transfers between HubPool and SpokePool are atomic.
-    const mainnetLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
+    const mainnetLeaves = poolLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
     if (mainnetLeaves.length > 0) {
       assert(mainnetLeaves.length === 1, "There should only be one Ethereum PoolRebalanceLeaf");
       latestLiquidReserves = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
@@ -1485,7 +1512,7 @@ export class Dataworker {
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
-        expectedTrees.poolRebalanceTree.tree,
+        poolRebalanceTree,
         submitExecution
       );
 
@@ -1496,18 +1523,18 @@ export class Dataworker {
       // Now, execute refund and slow fill leaves for Mainnet using any new funds. These methods will return early if there
       // are no relevant leaves to execute.
       await this._executeSlowFillLeaf(
-        expectedTrees.slowRelayTree.leaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+        slowFillLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
         balanceAllocator,
         spokePoolClients[hubPoolChainId],
-        expectedTrees.slowRelayTree.tree,
+        slowFillTree,
         submitExecution,
         nextRootBundleIdForMainnet
       );
       await this._executeRelayerRefundLeaves(
-        expectedTrees.relayerRefundTree.leaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+        relayerRefundLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
         balanceAllocator,
         spokePoolClients[hubPoolChainId],
-        expectedTrees.relayerRefundTree.tree,
+        relayerRefundTree,
         submitExecution,
         nextRootBundleIdForMainnet
       );
@@ -1517,7 +1544,7 @@ export class Dataworker {
     // any tokens returned to the hub pool via the EthereumSpokePool that we'll need to use to execute
     // any of the remaining pool rebalance leaves. This is also important if we failed to execute
     // the mainnet leaf and haven't enqueued a sync call that could be used to execute some of the other leaves.
-    const nonHubChainPoolRebalanceLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
+    const nonHubChainPoolRebalanceLeaves = poolLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
     if (nonHubChainPoolRebalanceLeaves.length === 0) {
       return leafCount;
     }
@@ -1534,7 +1561,7 @@ export class Dataworker {
     });
 
     // Save all L1 tokens that we haven't updated exchange rates for in a different step.
-    const l1TokensWithPotentiallyOlderUpdate = expectedTrees.poolRebalanceTree.leaves.reduce((l1TokenSet, leaf) => {
+    const l1TokensWithPotentiallyOlderUpdate = poolLeaves.reduce((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token, i) => {
         if (leaf.netSendAmounts[i].gt(0) && !l1TokenSet.includes(l1Token) && !syncedL1Tokens.has(l1Token)) {
@@ -1550,7 +1577,7 @@ export class Dataworker {
       spokePoolClients,
       nonHubChainPoolRebalanceLeaves,
       balanceAllocator,
-      expectedTrees.poolRebalanceTree.tree,
+      poolRebalanceTree,
       submitExecution
     );
     return leafCount;
