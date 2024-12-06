@@ -101,10 +101,9 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await fillV3(spokePool_2, depositor, deposit, destinationChainId);
     await updateAllClients();
 
-    const balanceAllocator = getNewBalanceAllocator();
 
     // Executing leaves before there is a bundle should do nothing:
-    let leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    let leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
     expect(leafCount).to.equal(0);
     expect(lastSpyLogIncludes(spy, "No pending proposal")).to.be.true;
 
@@ -116,14 +115,15 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     // Executing leaves before bundle challenge period has passed should do nothing:
     await updateAllClients();
-    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    // console.log(spy.getCall(-1))
     expect(leafCount).to.equal(0);
     expect(lastSpyLogIncludes(spy, "Challenge period not passed")).to.be.true;
 
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
     expect(leafCount).to.equal(2);
 
     // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
@@ -134,7 +134,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     // If we attempt execution again, the hub pool client should show them as already executed.
     await updateAllClients();
-    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
     expect(leafCount).to.equal(0);
 
     // TEST 3:
@@ -148,7 +148,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
     expect(leafCount).to.equal(0);
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
@@ -226,13 +226,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
       it("ignores negative net send amounts", async function () {
         const liquidReserves = toBNWei("1");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        const { syncedL1Tokens, canExecute } =
+        const syncedL1Tokens =
           await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
             balanceAllocator,
             { netSendAmounts: [toBNWei(-1)], l1Tokens: [l1Token_1.address] },
             true
           );
-        expect(canExecute).to.be.true;
         expect(syncedL1Tokens.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
@@ -241,13 +240,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const netSendAmount = toBNWei("1");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, currentReserves);
 
-        const { syncedL1Tokens, canExecute } =
+        const syncedL1Tokens =
           await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
             balanceAllocator,
             { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
             true
           );
-        expect(canExecute).to.be.true;
         expect(syncedL1Tokens.size).to.equal(0);
         expect(multiCallerClient.transactionCount()).to.equal(0);
         expect(lastSpyLogIncludes(spy, "current liquid reserves > netSendAmount")).to.be.true;
@@ -259,28 +257,26 @@ describe("Dataworker: Execute pool rebalances", async function () {
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
 
-        const result = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
+        const syncedL1Tokens = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
           { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
           true
         );
-        expect(result.canExecute).to.equal(false);
         expect(lastSpyLogLevel(spy)).to.equal("error");
         expect(lastSpyLogIncludes(spy, "Not enough funds to execute Ethereum pool rebalance leaf")).to.be.true;
-        expect(result.syncedL1Tokens.size).to.equal(0);
+        expect(syncedL1Tokens.size).to.equal(0);
       });
       it("submits update if updated liquid reserves cover execution of pool leaf", async function () {
         const netSendAmount = toBNWei("1");
         const updatedLiquidReserves = netSendAmount.add(1);
         balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, updatedLiquidReserves);
 
-        const { syncedL1Tokens, canExecute } =
+        const syncedL1Tokens =
           await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
             balanceAllocator,
             { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
             true
           );
-        expect(canExecute).to.be.true;
         expect(syncedL1Tokens.size).to.equal(1);
         expect(syncedL1Tokens.has(l1Token_1.address)).to.be.true;
         expect(multiCallerClient.transactionCount()).to.equal(1);

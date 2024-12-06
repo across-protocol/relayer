@@ -1472,12 +1472,11 @@ export class Dataworker {
     const mainnetLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
     if (mainnetLeaves.length > 0) {
       assert(mainnetLeaves.length === 1, "There should only be one Ethereum PoolRebalanceLeaf");
-      const updateHubChainExchangeRatesResult = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
+      updatedL1Tokens = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
         balanceAllocator,
         mainnetLeaves[0],
         submitExecution
       );
-      updatedL1Tokens = updateHubChainExchangeRatesResult.syncedL1Tokens;
       leafCount += await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
@@ -1725,11 +1724,7 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator,
     poolRebalanceLeaf: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">,
     submitExecution: boolean
-  ): Promise<{
-    canExecute: boolean;
-    syncedL1Tokens: Set<string>;
-  }> {
-    let canExecute = true;
+  ): Promise<Set<string>> {
     const hubPool = this.clients.hubPoolClient.hubPool;
     const chainId = this.clients.hubPoolClient.chainId;
 
@@ -1763,7 +1758,6 @@ export class Dataworker {
       // If updated liquid reserves are not enough to cover the payment, then send an error log that
       // we're short on funds. Otherwise, enqueue a sync() call and then update the availableLiquidReserves.
       if (updatedLiquidReserves.lt(netSendAmounts[idx])) {
-        canExecute = false;
         this.logger.error({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
           message: `Not enough funds to execute Ethereum pool rebalance leaf on HubPool for token: ${tokenSymbol}`,
@@ -1796,10 +1790,7 @@ export class Dataworker {
         }
       }
     });
-    return {
-      canExecute,
-      syncedL1Tokens,
-    };
+    return syncedL1Tokens;
   }
 
   async _updateExchangeRatesBeforeExecutingNonHubChainLeaves(
