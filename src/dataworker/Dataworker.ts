@@ -1263,6 +1263,12 @@ export class Dataworker {
               chainId: destinationChainId,
               token: outputToken,
               amount: outputAmount,
+              spokeBalance: await this._getSpokeBalanceForL2Tokens(
+                balanceAllocator,
+                destinationChainId,
+                outputToken,
+                client.spokePool.address
+              ),
             });
           }
 
@@ -1420,7 +1426,9 @@ export class Dataworker {
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
-      return leafCount;
+      if (!process.env.SIMULATE_L1_EXECUTION) {
+        return leafCount;
+      }
     }
 
     // At this point, check again that there are still unexecuted pool rebalance leaves. This is done because the above
@@ -2241,12 +2249,18 @@ export class Dataworker {
               chainId: leaf.chainId,
               amountToReturn: leaf.amountToReturn,
               refunds: leaf.refundAmounts,
+              spokeBalance: await this._getSpokeBalanceForL2Tokens(
+                balanceAllocator,
+                leaf.chainId,
+                leaf.l2TokenAddress,
+                client.spokePool.address
+              ),
               senderEthValue: await balanceAllocator.getBalance(
                 leaf.chainId,
                 ZERO_ADDRESS,
                 await client.spokePool.signer.getAddress()
               ),
-              requiredEthValue: valueToPassViaPayable,
+              requiredEthValue: valueToPassViaPayable ?? bnZero,
             });
           } else {
             // If mainnet leaf, then allocate balance to the HubPool since it will be atomically transferred.
@@ -2354,6 +2368,19 @@ export class Dataworker {
         notificationPath: "across-error",
       });
     }
+  }
+
+  _getSpokeBalanceForL2Tokens(
+    balanceAllocator: BalanceAllocator,
+    chainId: number,
+    token: string,
+    holder: string
+  ): Promise<BigNumber> {
+    return sdkUtils.reduceAsync(
+      l2TokensToCountTowardsSpokePoolLeafExecutionCapital(token, chainId),
+      async (acc, token) => acc.add(await balanceAllocator.getBalance(chainId, token, holder)),
+      bnZero
+    );
   }
 
   _getPoolRebalanceRoot(
