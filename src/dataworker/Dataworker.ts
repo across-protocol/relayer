@@ -18,7 +18,6 @@ import {
   getWidestPossibleExpectedBlockRange,
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
-  forEachAsync,
   ERC20,
 } from "../utils";
 import {
@@ -1465,7 +1464,6 @@ export class Dataworker {
     //    back from the Ethereum RelayerRefundLeaves.
     // 3. Third, we haven't updated the exchange rate for an L1 token on a PoolRebalanceLeaf in a while that
     //    we're going to execute, so we should batch in an update.
-    let updatedLiquidReserves: Record<string, BigNumber> = {};
     let updatedL1Tokens: Set<string> = new Set();
 
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
@@ -1475,21 +1473,18 @@ export class Dataworker {
     if (mainnetLeaves.length > 0) {
       assert(mainnetLeaves.length === 1, "There should only be one Ethereum PoolRebalanceLeaf");
       const updateHubChainExchangeRatesResult = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
+        balanceAllocator,
         mainnetLeaves[0],
         submitExecution
       );
-      updatedLiquidReserves = updateHubChainExchangeRatesResult.availableLiquidReserves;
       updatedL1Tokens = updateHubChainExchangeRatesResult.syncedL1Tokens;
-      if (updateHubChainExchangeRatesResult.canExecute) {
-        await this._executePoolRebalanceLeaves(
-          spokePoolClients,
-          mainnetLeaves,
-          balanceAllocator,
-          expectedTrees.poolRebalanceTree.tree,
-          submitExecution
-        );
-        leafCount += 1;
-      }
+      leafCount += await this._executePoolRebalanceLeaves(
+        spokePoolClients,
+        mainnetLeaves,
+        balanceAllocator,
+        expectedTrees.poolRebalanceTree.tree,
+        submitExecution
+      );
 
       // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
       // will be relayed after executing the above pool rebalance root.
@@ -1523,12 +1518,11 @@ export class Dataworker {
     if (nonHubChainPoolRebalanceLeaves.length === 0) {
       return leafCount;
     }
-    const { updatedL1Tokens: _updatedL1Tokens, availableLiquidReserves } =
-      await this._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-        updatedLiquidReserves,
-        nonHubChainPoolRebalanceLeaves,
-        submitExecution
-      );
+    const _updatedL1Tokens = await this._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+      balanceAllocator,
+      nonHubChainPoolRebalanceLeaves,
+      submitExecution
+    );
     Object.keys(_updatedL1Tokens).forEach((token) => {
       if (!updatedL1Tokens.has(token)) {
         updatedL1Tokens.add(token);
@@ -1548,59 +1542,78 @@ export class Dataworker {
     await this._updateOldExchangeRates(l1TokensWithPotentiallyOlderUpdate, submitExecution);
 
     // Figure out which non-mainnet pool rebalance leaves we can execute and execute them:
-    const leavesWeCanExecute = this._getExecutablePoolRebalanceLeavesUsingReserves(
-      nonHubChainPoolRebalanceLeaves,
-      availableLiquidReserves
-    );
-    await this._executePoolRebalanceLeaves(
+    leafCount += await this._executePoolRebalanceLeaves(
       spokePoolClients,
-      leavesWeCanExecute,
+      nonHubChainPoolRebalanceLeaves,
       balanceAllocator,
       expectedTrees.poolRebalanceTree.tree,
       submitExecution
     );
-    leafCount += leavesWeCanExecute.length;
     return leafCount;
   }
 
-  _getExecutablePoolRebalanceLeavesUsingReserves(
+  async _getExecutablePoolRebalanceLeavesUsingReserves(
     poolLeaves: PoolRebalanceLeaf[],
-    availableLiquidReserves: Record<string, BigNumber>
-  ): PoolRebalanceLeaf[] {
-    return poolLeaves.filter((leaf) => {
-      return leaf.l1Tokens.every((l1Token, i) => {
+    balanceAllocator: BalanceAllocator
+  ): Promise<PoolRebalanceLeaf[]> {
+    // We evaluate these leaves iteratively rather than in parallel so we can keep track
+    // of the used balances after "executing" each leaf.
+    const executableLeaves: PoolRebalanceLeaf[] = [];
+    for (const leaf of poolLeaves) {
+      // We can evaluate the l1 tokens within the leaf in parallel because we can assume
+      // that there are not duplicate L1 tokens within the leaf.
+      const isExecutable = await sdkUtils.everyAsync(leaf.l1Tokens, async (l1Token, i) => {
         const netSendAmountForLeaf = leaf.netSendAmounts[i];
         if (netSendAmountForLeaf.lte(0)) {
           return true;
         }
-        assert(
-          availableLiquidReserves[l1Token] !== undefined && availableLiquidReserves[l1Token].gte(0),
-          "availableLiquidReserves should be defined for all l1 tokens"
+        const balance = await balanceAllocator.getBalanceSubUsed(
+          this.clients.hubPoolClient.chainId,
+          l1Token,
+          this.clients.hubPoolClient.hubPool.address
         );
-        if (availableLiquidReserves[l1Token].lt(netSendAmountForLeaf)) {
+        if (balance.lt(netSendAmountForLeaf)) {
           return false;
         }
-        availableLiquidReserves[l1Token] = availableLiquidReserves[l1Token].sub(netSendAmountForLeaf);
+        balanceAllocator.addUsed(
+          this.clients.hubPoolClient.chainId,
+          l1Token,
+          this.clients.hubPoolClient.hubPool.address,
+          netSendAmountForLeaf
+        );
         return true;
       });
-    });
+      if (isExecutable) {
+        executableLeaves.push(leaf);
+      }
+    }
+    return executableLeaves;
   }
 
   async _executePoolRebalanceLeaves(
     spokePoolClients: {
       [chainId: number]: SpokePoolClient;
     },
-    leaves: PoolRebalanceLeaf[],
+    allLeaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator,
     tree: MerkleTree<PoolRebalanceLeaf>,
     submitExecution: boolean
-  ): Promise<void> {
+  ): Promise<number> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const signer = this.clients.hubPoolClient.hubPool.signer;
-    const orbitLeaves = leaves.filter(
-      (leaf) => sdkUtils.chainIsArbitrum(leaf.chainId) || sdkUtils.chainIsOrbit(leaf.chainId)
-    );
-    await forEachAsync(orbitLeaves, async (leaf) => {
+
+    // Evaluate leaves iteratively because we will be modifying virtual balances and we want
+    // to make sure we are getting the virtual balance computations correct.
+    const fundedLeaves = await this._getExecutablePoolRebalanceLeavesUsingReserves(allLeaves, balanceAllocator);
+    const executableLeaves: PoolRebalanceLeaf[] = [];
+    for (const leaf of fundedLeaves) {
+      // For orbit leaves we need to check if we have enough gas tokens to pay for the L1 to L2 message.
+      if (!sdkUtils.chainIsArbitrum(leaf.chainId) && !sdkUtils.chainIsOrbit(leaf.chainId)) {
+        executableLeaves.push(leaf);
+        continue;
+      }
+
+      // Check if orbit leaf can be executed.
       const {
         amount: requiredAmount,
         token: feeToken,
@@ -1627,11 +1640,13 @@ export class Dataworker {
             { ...feeData, holder: await signer.getAddress() },
           ]);
           if (!canFund) {
-            throw new Error(
-              `Failed to fund ${requiredAmount.toString()} of orbit gas token ${feeToken} for message to ${getNetworkName(
+            this.logger.error({
+              at: "Dataworker#_executePoolRebalanceLeaves",
+              message: `Failed to fund ${requiredAmount.toString()} of orbit gas token ${feeToken} for message to ${getNetworkName(
                 leaf.chainId
-              )}!`
-            );
+              )}!`,
+            });
+            continue;
           }
           if (feeToken === ZERO_ADDRESS) {
             this.clients.multiCallerClient.enqueueTransaction({
@@ -1662,29 +1677,27 @@ export class Dataworker {
           )}`,
           feeToken,
           requiredAmount,
-          feePayerBalance: await balanceAllocator.getBalance(hubPoolChainId, feeToken, holder),
+          feePayerBalance: await balanceAllocator.getBalanceSubUsed(hubPoolChainId, feeToken, holder),
         });
       }
-    });
-    await forEachAsync(leaves, async (leaf) => {
+      executableLeaves.push(leaf);
+    }
+
+    // Execute the leaves:
+    executableLeaves.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
-        await Promise.all(
-          leaf.netSendAmounts.map(async (amount, i) => {
-            if (amount.gt(bnZero)) {
-              await balanceAllocator.addUsed(
-                leaf.chainId,
-                leaf.l1Tokens[i],
-                spokePoolClients[leaf.chainId].spokePool.address,
-                amount.mul(-1)
-              );
-            }
-          })
-        );
+        leaf.netSendAmounts.map((amount, i) => {
+          if (amount.gt(bnZero)) {
+            balanceAllocator.addUsed(
+              leaf.chainId,
+              leaf.l1Tokens[i],
+              spokePoolClients[leaf.chainId].spokePool.address,
+              amount.mul(-1)
+            );
+          }
+        });
       }
-    });
-
-    leaves.forEach((leaf) => {
       const mrkdwn = `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`;
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
@@ -1712,31 +1725,27 @@ export class Dataworker {
         this.logger.debug({ at: "Dataworker#_executePoolRebalanceLeaves", message: mrkdwn });
       }
     });
+
+    return executableLeaves.length;
   }
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
+    balanceAllocator: BalanceAllocator,
     poolRebalanceLeaf: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">,
     submitExecution: boolean
   ): Promise<{
     canExecute: boolean;
-    availableLiquidReserves: Record<string, BigNumber>;
     syncedL1Tokens: Set<string>;
   }> {
     let canExecute = true;
     const hubPool = this.clients.hubPoolClient.hubPool;
     const chainId = this.clients.hubPoolClient.chainId;
 
-    const availableLiquidReserves: Record<string, BigNumber> = {};
     const syncedL1Tokens = new Set<string>();
     const { netSendAmounts, l1Tokens } = poolRebalanceLeaf;
     await sdk.utils.forEachAsync(l1Tokens, async (l1Token, idx) => {
-      assert(
-        !availableLiquidReserves[l1Token],
-        "_updateExchangeRatesBeforeExecutingHubChainLeaves: More than one L1 token in pool leaf"
-      );
       const currentLiquidReserves =
         this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves ?? bnZero;
-      availableLiquidReserves[l1Token] = currentLiquidReserves;
       const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
 
       // If netSendAmounts is negative, there is no need to update this exchange rate.
@@ -1753,17 +1762,11 @@ export class Dataworker {
           netSendAmount: netSendAmounts[idx],
           l1Token,
         });
-        availableLiquidReserves[l1Token] = currentLiquidReserves.sub(netSendAmounts[idx]);
         return;
       }
 
-      const multicallInput = [
-        hubPool.interface.encodeFunctionData("sync", [l1Token]),
-        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
-      ];
-      const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
-      const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[1]);
-      const updatedLiquidReserves = updatedPooledTokens.liquidReserves;
+      // @dev: post-sync liquid reserves should be equal to ERC20 balanceOf the HubPool.
+      const updatedLiquidReserves = await balanceAllocator.getBalanceSubUsed(chainId, l1Token, hubPool.address);
 
       // If updated liquid reserves are not enough to cover the payment, then send an error log that
       // we're short on funds. Otherwise, enqueue a sync() call and then update the availableLiquidReserves.
@@ -1778,7 +1781,6 @@ export class Dataworker {
           updatedLiquidReserves,
         });
       } else {
-        availableLiquidReserves[l1Token] = updatedLiquidReserves.sub(netSendAmounts[idx]);
         // At this point, we can assume that the liquid reserves increased post-sync so we'll enqueue an update.
         syncedL1Tokens.add(l1Token);
         this.logger.debug({
@@ -1804,16 +1806,15 @@ export class Dataworker {
     });
     return {
       canExecute,
-      availableLiquidReserves,
       syncedL1Tokens,
     };
   }
 
   async _updateExchangeRatesBeforeExecutingNonHubChainLeaves(
-    latestLiquidReserves: Record<string, BigNumber>,
+    balanceAllocator: BalanceAllocator,
     poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens" | "chainId">[],
     submitExecution: boolean
-  ): Promise<{ updatedL1Tokens: Set<string>; availableLiquidReserves: Record<string, BigNumber> }> {
+  ): Promise<Set<string>> {
     const updatedL1Tokens = new Set<string>();
     const hubPool = this.clients.hubPoolClient.hubPool;
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
@@ -1834,19 +1835,16 @@ export class Dataworker {
     });
 
     // Now, go through each L1 token and see if we need to update the exchange rate for it.
-    const availableLiquidReserves = {};
     await sdkUtils.forEachAsync(Object.keys(aggregateNetSendAmounts), async (l1Token) => {
       // The "used" balance kept in the BalanceAllocator should have adjusted for the netSendAmounts and relayer refund leaf
       // executions above. Therefore, check if the current liquidReserves is less than the pool rebalance leaf's netSendAmount
       // and the virtual hubPoolBalance would be enough to execute it. If so, then add an update exchange rate call to make sure that
       // the HubPool becomes "aware" of its inflow following the relayer refund leaf execution.
-      const currHubPoolLiquidReserves =
-        latestLiquidReserves[l1Token] ?? this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
+      const currHubPoolLiquidReserves = this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
       assert(
         currHubPoolLiquidReserves !== undefined && currHubPoolLiquidReserves.gte(0),
         "Liquid reserves should be >= 0"
       );
-      availableLiquidReserves[l1Token] = currHubPoolLiquidReserves;
 
       const requiredNetSendAmountForL1Token = aggregateNetSendAmounts[l1Token];
       // If netSendAmounts is 0, there is no need to update this exchange rate.
@@ -1880,14 +1878,9 @@ export class Dataworker {
       }
 
       // Current liquid reserves are insufficient to execute aggregate net send amount for this token so
-      // look at the updated liquid reserves post-sync.
-      const multicallInput = [
-        hubPool.interface.encodeFunctionData("sync", [l1Token]),
-        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
-      ];
-      const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
-      const updatedPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[1]);
-      const updatedLiquidReserves = updatedPooledTokens.liquidReserves;
+      // look at the updated liquid reserves post-sync. This will be equal the ERC20 balanceOf the hub pool
+      // including any netSendAmounts used in a prior pool leaf execution.
+      const updatedLiquidReserves = await balanceAllocator.getBalanceSubUsed(hubPoolChainId, l1Token, hubPool.address);
 
       // If the post-sync balance is still too low to execute all the pool leaves, then log an error
       if (updatedLiquidReserves.lt(requiredNetSendAmountForL1Token)) {
@@ -1916,7 +1909,6 @@ export class Dataworker {
       // token and its reserves increase, depending on which other tokens are contained in the pool rebalance leaf
       // with this token, increasing this token's reserves might not help us execute those leaves.
       if (updatedLiquidReserves.gt(currHubPoolLiquidReserves)) {
-        availableLiquidReserves[l1Token] = updatedLiquidReserves;
         updatedL1Tokens.add(l1Token);
       } else {
         this.logger.debug({
@@ -1946,10 +1938,7 @@ export class Dataworker {
       }
     }
 
-    return {
-      updatedL1Tokens,
-      availableLiquidReserves,
-    };
+    return updatedL1Tokens;
   }
 
   async _updateOldExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {
@@ -2255,7 +2244,7 @@ export class Dataworker {
                 leaf.l2TokenAddress,
                 client.spokePool.address
               ),
-              senderEthValue: await balanceAllocator.getBalance(
+              senderEthValue: await balanceAllocator.getBalanceSubUsed(
                 leaf.chainId,
                 ZERO_ADDRESS,
                 await client.spokePool.signer.getAddress()
@@ -2378,7 +2367,7 @@ export class Dataworker {
   ): Promise<BigNumber> {
     return sdkUtils.reduceAsync(
       l2TokensToCountTowardsSpokePoolLeafExecutionCapital(token, chainId),
-      async (acc, token) => acc.add(await balanceAllocator.getBalance(chainId, token, holder)),
+      async (acc, token) => acc.add(await balanceAllocator.getBalanceSubUsed(chainId, token, holder)),
       bnZero
     );
   }
