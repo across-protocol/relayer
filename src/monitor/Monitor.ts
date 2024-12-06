@@ -296,36 +296,37 @@ export class Monitor {
         message: `Balance report for ${relayer} 📖`,
         mrkdwn,
       });
-
-      // Note: types are here for clarity, not necessity.
-
-      Object.entries(reports).forEach(([relayer, balanceTable]) => {
-        Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
-          const decimals = allL1Tokens.find((token) => token.symbol === tokenSymbol)?.decimals;
-          if (!decimals) {
-            throw new Error(`No decimals found for ${tokenSymbol}`);
-          }
-          Object.entries(columns).forEach(([chainName, cell]) => {
-            if (this._tokenEnabledForNetwork(tokenSymbol, chainName)) {
-              Object.entries(cell).forEach(([balanceType, balance]) => {
-                this.logger.debug({
-                  at: "Monitor#reportRelayerBalances",
-                  message: "Machine-readable single balance report",
-                  relayer,
-                  tokenSymbol,
-                  decimals,
-                  chainName,
-                  balanceType,
-                  balanceInWei: balance.toString(),
-                  balance: Number(utils.formatUnits(balance, decimals)),
-                  datadog: true,
-                });
+    }
+    Object.entries(reports).forEach(([relayer, balanceTable]) => {
+      Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
+        const decimals = allL1Tokens.find((token) => token.symbol === tokenSymbol)?.decimals;
+        if (!decimals) {
+          throw new Error(`No decimals found for ${tokenSymbol}`);
+        }
+        Object.entries(columns).forEach(([chainName, cell]) => {
+          if (this._tokenEnabledForNetwork(tokenSymbol, chainName)) {
+            Object.entries(cell).forEach(([balanceType, balance]) => {
+              // Don't log zero balances.
+              if (balance.isZero()) {
+                return;
+              }
+              this.logger.debug({
+                at: "Monitor#reportRelayerBalances",
+                message: "Machine-readable single balance report",
+                relayer,
+                tokenSymbol,
+                decimals,
+                chainName,
+                balanceType,
+                balanceInWei: balance.toString(),
+                balance: Number(utils.formatUnits(balance, decimals)),
+                datadog: true,
               });
-            }
-          });
+            });
+          }
         });
       });
-    }
+    });
   }
 
   // Update current balances of all tokens on each supported chain for each relayer.
