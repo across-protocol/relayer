@@ -1465,7 +1465,7 @@ export class Dataworker {
     // takes advantage of the fact that mainnet transfers between HubPool and SpokePool are atomic.
     const mainnetLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
     if (mainnetLeaves.length > 0) {
-      assert(mainnetLeaves.length === 1);
+      assert(mainnetLeaves.length === 1, "There should only be one Ethereum PoolRebalanceLeaf");
       const updateHubChainExchangeRatesResult = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
         mainnetLeaves[0],
         submitExecution
@@ -1834,7 +1834,10 @@ export class Dataworker {
       // the HubPool becomes "aware" of its inflow following the relayer refund leaf execution.
       const currHubPoolLiquidReserves =
         latestLiquidReserves[l1Token] ?? this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
-      assert(currHubPoolLiquidReserves !== undefined && currHubPoolLiquidReserves.gte(0));
+      assert(
+        currHubPoolLiquidReserves !== undefined && currHubPoolLiquidReserves.gte(0),
+        "Liquid reserves should be >= 0"
+      );
       availableLiquidReserves[l1Token] = currHubPoolLiquidReserves;
 
       const requiredNetSendAmountForL1Token = aggregateNetSendAmounts[l1Token];
@@ -2229,7 +2232,8 @@ export class Dataworker {
           if (!success) {
             this.logger.warn({
               at: "Dataworker#_executeRelayerRefundLeaves",
-              message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
+              message:
+                "Not executing relayer refund leaf on SpokePool due to lack of funds or missing msg.value to execute Linea leaf.",
               root: relayerRefundTree.getHexRoot(),
               bundle: rootBundleId,
               leafId: leaf.leafId,
@@ -2237,6 +2241,12 @@ export class Dataworker {
               chainId: leaf.chainId,
               amountToReturn: leaf.amountToReturn,
               refunds: leaf.refundAmounts,
+              senderEthValue: await balanceAllocator.getBalance(
+                leaf.chainId,
+                ZERO_ADDRESS,
+                await client.spokePool.signer.getAddress()
+              ),
+              requiredEthValue: valueToPassViaPayable,
             });
           } else {
             // If mainnet leaf, then allocate balance to the HubPool since it will be atomically transferred.
