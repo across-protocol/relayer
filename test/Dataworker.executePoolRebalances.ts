@@ -116,7 +116,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Executing leaves before bundle challenge period has passed should do nothing:
     await updateAllClients();
     leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
-    // console.log(spy.getCall(-1))
     expect(leafCount).to.equal(0);
     expect(lastSpyLogIncludes(spy, "Challenge period not passed")).to.be.true;
 
