@@ -224,12 +224,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
       it("ignores negative net send amounts", async function () {
         const liquidReserves = toBNWei("1");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        const syncedL1Tokens = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
+        const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
           { netSendAmounts: [toBNWei(-1)], l1Tokens: [l1Token_1.address] },
           true
         );
-        expect(syncedL1Tokens.size).to.equal(0);
+        expect(latestReserves[l1Token_1.address]).to.equal(liquidReserves);
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
       it("considers positive net send amounts", async function () {
@@ -237,12 +237,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
         const netSendAmount = toBNWei("1");
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, currentReserves);
 
-        const syncedL1Tokens = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
+        const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
           { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
           true
         );
-        expect(syncedL1Tokens.size).to.equal(0);
+        expect(latestReserves[l1Token_1.address]).to.equal(currentReserves.sub(netSendAmount));
         expect(multiCallerClient.transactionCount()).to.equal(0);
         expect(lastSpyLogIncludes(spy, "current liquid reserves > netSendAmount")).to.be.true;
       });
@@ -253,27 +253,28 @@ describe("Dataworker: Execute pool rebalances", async function () {
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
 
-        const syncedL1Tokens = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
+        const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
           { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
           true
         );
         expect(lastSpyLogLevel(spy)).to.equal("warn");
         expect(lastSpyLogIncludes(spy, "Not enough funds to execute Ethereum pool rebalance leaf")).to.be.true;
-        expect(syncedL1Tokens.size).to.equal(0);
+        expect(latestReserves[l1Token_1.address]).to.equal(liquidReserves);
+        expect(multiCallerClient.transactionCount()).to.equal(0);
       });
       it("submits update if updated liquid reserves cover execution of pool leaf", async function () {
         const netSendAmount = toBNWei("1");
         const updatedLiquidReserves = netSendAmount.add(1);
+        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, bnZero);
         balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, updatedLiquidReserves);
 
-        const syncedL1Tokens = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
+        const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
           { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
           true
         );
-        expect(syncedL1Tokens.size).to.equal(1);
-        expect(syncedL1Tokens.has(l1Token_1.address)).to.be.true;
+        expect(latestReserves[l1Token_1.address]).to.equal(updatedLiquidReserves.sub(netSendAmount));
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
     });
@@ -282,6 +283,34 @@ describe("Dataworker: Execute pool rebalances", async function () {
       beforeEach(function () {
         balanceAllocator = getNewBalanceAllocator();
       });
+      it("uses input liquid reserves value for a token if it exists", async function () {
+        // In this test the `liquidReserves` > `netSendAmount` but we pass in the
+        // `passedInLiquidReserves` value which is less than `liquidReserves`. So, the function
+        // should attempt an update.
+        const netSendAmount = toBNWei("1");
+        const liquidReserves = toBNWei("3");
+        const passedInLiquidReserves = toBNWei("0");
+
+        mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
+        balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, netSendAmount);
+
+        const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {
+            [l1Token_1.address]: passedInLiquidReserves,
+          },
+          balanceAllocator,
+          [
+            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
+            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 10 },
+          ],
+          true
+        );
+        expect(updated.size).to.equal(1);
+        expect(updated.has(l1Token_1.address)).to.be.true;
+        const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "warn");
+        expect(errorLogs.length).to.equal(1);
+        expect(errorLogs[0].lastArg.message).to.contain("Not enough funds to execute ALL non-Ethereum");
+      });
       it("exits early if current liquid reserves are greater than all individual net send amount", async function () {
         const netSendAmount = toBNWei("1");
         const liquidReserves = toBNWei("3");
@@ -289,6 +318,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         // from HubPoolClient
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           [
             { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
@@ -303,6 +333,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       it("exits early if total required net send amount is 0", async function () {
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, toBNWei("0"));
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           [{ netSendAmounts: [toBNWei(0)], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
@@ -321,6 +352,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         mockHubPoolClient.setLpTokenInfo(l1Token2, 0, liquidReserves);
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           [
             { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
@@ -345,6 +377,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         balanceAllocator.testSetBalance(1, l1Token2, hubPool.address, postUpdateLiquidReserves);
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           [
             { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
@@ -371,6 +404,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         balanceAllocator.testSetBalance(1, l1Token2, hubPool.address, postUpdateLiquidReserves);
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           [
             // Both net send amounts exceed the post update liquid reserves
@@ -394,6 +428,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
 
         await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           [
             { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 },
@@ -416,6 +451,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           // Each leaf's net send amount is individually less than the post-updateliquid reserves,
           // but the sum of the three is greater than the post-update liquid reserves.
@@ -440,6 +476,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         balanceAllocator.testSetBalance(1, l1Token_1.address, hubPool.address, postUpdateLiquidReserves);
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
+          {},
           balanceAllocator,
           [{ netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 }],
           true
