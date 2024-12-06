@@ -131,7 +131,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       true,
       0
     );
-    expect(balanceAllocator.getUsed(hubPoolClient.chainId, l1Token_1.address, hubPool.address)).to.equal(toBNWei("1"));
+    expect(balanceAllocator.getUsed(hubPoolClient.chainId, l1Token_1.address, hubPool.address)).to.equal(toBNWei("-1"));
   });
   describe("Computing refunds for bundles", function () {
     let relayer: SignerWithAddress;
