@@ -1567,21 +1567,13 @@ export class Dataworker {
         if (netSendAmountForLeaf.lte(0)) {
           return true;
         }
-        const balance = await balanceAllocator.getBalanceSubUsed(
+        const success = await balanceAllocator.requestBalanceAllocation(
           this.clients.hubPoolClient.chainId,
-          l1Token,
-          this.clients.hubPoolClient.hubPool.address
-        );
-        if (balance.lt(netSendAmountForLeaf)) {
-          return false;
-        }
-        balanceAllocator.addUsed(
-          this.clients.hubPoolClient.chainId,
-          l1Token,
+          [l1Token],
           this.clients.hubPoolClient.hubPool.address,
           netSendAmountForLeaf
         );
-        return true;
+        return success;
       });
       if (isExecutable) {
         executableLeaves.push(leaf);
