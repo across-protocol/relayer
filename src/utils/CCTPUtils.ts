@@ -237,10 +237,15 @@ async function _resolveCCTPRelatedTxns(
           if (processed) {
             status = "finalized";
           } else {
-            // Generate the attestation proof for the message. This is required to finalize the message.
-            attestation = await generateCCTPAttestationProof(messageHash, utils.chainIsProd(destinationChainId));
-            // If the attestation proof is pending, we can't finalize the message yet.
-            status = attestation.status === "pending_confirmations" ? "pending" : "ready";
+            // Try to generate the attestation proof for the message. This is required to finalize the message.
+            // If the request fails, which may happen if Circle's attestation API is falling behind, ignore the finalization on this run.
+            try {
+              attestation = await generateCCTPAttestationProof(messageHash, utils.chainIsProd(destinationChainId));
+              // If the attestation proof is pending, we can't finalize the message yet.
+              status = attestation.status === "pending_confirmations" ? "pending" : "ready";
+            } catch (e) {
+              return undefined;
+            }
           }
 
           return {
