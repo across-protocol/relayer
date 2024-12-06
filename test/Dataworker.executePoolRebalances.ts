@@ -264,7 +264,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       },
     ];
 
-    const leafCount = await dataworkerInstance._executePoolLeaves(
+    const leafCount = await dataworkerInstance._executePoolLeavesAndSyncL1Tokens(
       spokePoolClients,
       balanceAllocator,
       poolRebalanceLeaves,

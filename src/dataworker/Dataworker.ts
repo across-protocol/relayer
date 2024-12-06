@@ -1454,7 +1454,7 @@ export class Dataworker {
       return leafCount;
     }
 
-    return this._executePoolLeaves(
+    return this._executePoolLeavesAndSyncL1Tokens(
       spokePoolClients,
       balanceAllocator,
       unexecutedLeaves,
@@ -1467,7 +1467,7 @@ export class Dataworker {
     );
   }
 
-  async _executePoolLeaves(
+  async _executePoolLeavesAndSyncL1Tokens(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator,
     poolLeaves: PoolRebalanceLeaf[],
