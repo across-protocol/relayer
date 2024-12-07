@@ -68,6 +68,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     );
     mockHubPoolClient.chainId = hubPoolClient.chainId;
     mockHubPoolClient.setTokenInfoToReturn({ address: l1Token_1.address, decimals: 18, symbol: "TEST" });
+    mockHubPoolClient.setTokenMapping(l1Token_1.address, hubPoolClient.chainId, l1Token_1.address);
 
     // Sub in a dummy root bundle proposal for use in HubPoolClient update.
     const zero = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -287,7 +288,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
         "executeRootBundle",
       ]);
     });
-    it("Executing hub chain leaves should decrement available liquid reserves for subsequent executions", async function () {
+    it("Executing hub chain pool leaves should decrement available liquid reserves for subsequent executions", async function () {
       // In this test, the HubPool client returns the liquid reserves as sufficient for
       // executing Hub chain leaves for a token.
 
@@ -340,6 +341,76 @@ describe("Dataworker: Execute pool rebalances", async function () {
       const enqueuedTxns = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
       expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal([
         "executeRootBundle",
+        "exchangeRateCurrent",
+        "executeRootBundle",
+      ]);
+    });
+    it("Executing hub chain refund leaves should increment available liquid reserves for subsequent executions", async function () {
+      // In this test, the refund leaf returns reserves to the hub chain, which gives enough post-sync liquid
+      // reserves to execute the non hub chain leaf.
+
+      const netSendAmount = toBNWei("1");
+      const liquidReserves = toBNWei("0");
+      mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
+
+      const poolRebalanceLeaves: PoolRebalanceLeaf[] = [
+        {
+          chainId: 10,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1")],
+          netSendAmounts: [netSendAmount],
+          runningBalances: [toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [l1Token_1.address],
+        },
+        {
+          chainId: hubPoolClient.chainId,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1")],
+          netSendAmounts: [toBNWei("0")],
+          runningBalances: [toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [l1Token_1.address],
+        },
+      ];
+
+      // Need to set a balance for the spoke pool to make the dataworker believe this leaf can be executed.
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        l1Token_1.address,
+        spokePoolClients[hubPoolClient.chainId].spokePool.address,
+        netSendAmount
+      );
+
+      const relayerRefundLeaves: RelayerRefundLeaf[] = [
+        {
+          chainId: hubPoolClient.chainId,
+          l2TokenAddress: l1Token_1.address,
+          amountToReturn: netSendAmount,
+          refundAddresses: [],
+          refundAmounts: [],
+          leafId: 0,
+        },
+      ];
+
+      const leafCount = await dataworkerInstance._executePoolLeavesAndSyncL1Tokens(
+        spokePoolClients,
+        balanceAllocator,
+        poolRebalanceLeaves,
+        new MerkleTree<PoolRebalanceLeaf>(poolRebalanceLeaves, () => "test"),
+        relayerRefundLeaves,
+        new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, () => "test"),
+        [],
+        new MerkleTree<SlowFillLeaf>([], () => "test"),
+        true
+      );
+      expect(leafCount).to.equal(2);
+
+      // Execute mainnet refund leaf after mainnet pool leaf. Then update exchange rates to execute non-mainnet pool leaf.
+      const enqueuedTxns = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+      expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal([
+        "executeRootBundle",
+        "executeRelayerRefundLeaf",
         "exchangeRateCurrent",
         "executeRootBundle",
       ]);
