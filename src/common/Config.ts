@@ -45,6 +45,7 @@ export class CommonConfig {
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
+    this.hubPoolChainId = Number(HUB_CHAIN_ID ?? CHAIN_IDs.MAINNET);
 
     this.timeToCache = Number(HUB_POOL_TIME_TO_CACHE ?? 60 * 60); // 1 hour by default.
     if (Number.isNaN(this.timeToCache) || this.timeToCache < 0) {
@@ -57,22 +58,25 @@ export class CommonConfig {
     this.maxConfigVersion = Number(ACROSS_MAX_CONFIG_VERSION ?? Constants.CONFIG_STORE_VERSION);
     assert(!isNaN(this.maxConfigVersion), `Invalid maximum config version: ${this.maxConfigVersion}`);
 
-    this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
-      ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
-      : Constants.BUNDLE_END_BLOCK_BUFFERS;
+    this.blockRangeEndBlockBuffer = { ...Constants.BUNDLE_END_BLOCK_BUFFERS };
+    Object.entries(JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER ?? "{}")).forEach((_chainId, buffer) =>
+      this.blockRangeEndBlockBuffer[Number(_chainId)] = buffer
+    );
 
     this.ignoredAddresses = JSON.parse(IGNORED_ADDRESSES ?? "[]").map((address) => ethers.utils.getAddress(address));
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
-    this.hubPoolChainId = Number(HUB_CHAIN_ID ?? CHAIN_IDs.MAINNET);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
-    this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];
-    this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
-    if (Object.keys(this.maxBlockLookBack).length === 0) {
-      this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
-    }
-    this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
+    this.spokePoolChainsOverride = JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE ?? "[]");
+
+    // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
+    this.maxBlockLookBack = { ...Constants.CHAIN_MAX_BLOCK_LOOKBACK };
+    const maxBlockLookBack = JSON.parse(MAX_BLOCK_LOOK_BACK ?? "{}");
+    Object.entries(JSON.parse(MAX_BLOCK_LOOK_BACK ?? "{}")).forEach((_chainId, lookback) =>
+      this.maxBlockLookBack[Number(_chainId)] = lookback
+    );
+
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
 
     // Load the Arweave gateway from the environment.
