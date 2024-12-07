@@ -42,73 +42,27 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 // rollup challenge period seems safe.
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
-// Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
-// events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
-// a large deposit (i.e. with an amount equal to a large amount of $$$) but the deposit is included in a re-orged
-// block. This would cause the relayer to unintentionally send an invalid fill and not refunded. The tradeoff is that
-// the larger the follow distance, the slower the relayer will be to fulfill deposits. Therefore, the following
-// configuration allows the user to set higher follow distances for higher deposit amounts.
-// The key of the following dictionary is used as the USD threshold to determine the MDC:
-// - Searching from highest USD threshold to lowest
-// - If the key is >= deposited USD amount, then use the MDC associated with the key for the origin chain
-// - If no keys are >= deposited USD amount, ignore the deposit.
+// We set different deposit confirmation requirements based on the USD amount of the deposit and the origin chain.
+// Reorgs are anticipated on Ethereum, Polygon and Scroll. Rollups with centralized sequences are not expected to reorg.
 // To see the latest block reorg events go to:
 // - Ethereum: https://etherscan.io/blocks_forked
 // - Polygon: https://polygonscan.com/blocks_forked
-// Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
-// ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
-// anything under 7 days.
+// - Scroll: https://scrollscan.com/blocks_forked
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
-    [CHAIN_IDs.ALEPH_ZERO]: 0,
-    [CHAIN_IDs.ARBITRUM]: 0,
-    [CHAIN_IDs.BASE]: 120,
-    [CHAIN_IDs.BLAST]: 120,
-    [CHAIN_IDs.LINEA]: 30,
-    [CHAIN_IDs.LISK]: 120,
-    [CHAIN_IDs.MAINNET]: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-    [CHAIN_IDs.MODE]: 120,
-    [CHAIN_IDs.OPTIMISM]: 120,
-    [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
-    [CHAIN_IDs.REDSTONE]: 120,
-    [CHAIN_IDs.SCROLL]: 30,
-    [CHAIN_IDs.WORLD_CHAIN]: 120,
-    [CHAIN_IDs.ZK_SYNC]: 120,
-    [CHAIN_IDs.ZORA]: 120,
+    [CHAIN_IDs.MAINNET]: 16,
+    [CHAIN_IDs.POLYGON]: 64,
+    [CHAIN_IDs.SCROLL]: 18,
   },
   1000: {
-    [CHAIN_IDs.ALEPH_ZERO]: 0,
-    [CHAIN_IDs.ARBITRUM]: 0,
-    [CHAIN_IDs.BASE]: 60,
-    [CHAIN_IDs.BLAST]: 60,
-    [CHAIN_IDs.LINEA]: 1,
-    [CHAIN_IDs.LISK]: 60,
-    [CHAIN_IDs.MAINNET]: 32, // Justified block
-    [CHAIN_IDs.MODE]: 60,
-    [CHAIN_IDs.OPTIMISM]: 60,
-    [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
-    [CHAIN_IDs.REDSTONE]: 60,
-    [CHAIN_IDs.SCROLL]: 1,
-    [CHAIN_IDs.WORLD_CHAIN]: 60,
-    [CHAIN_IDs.ZK_SYNC]: 0,
-    [CHAIN_IDs.ZORA]: 60,
+    [CHAIN_IDs.MAINNET]: 6,
+    [CHAIN_IDs.POLYGON]: 32,
+    [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
-    [CHAIN_IDs.ALEPH_ZERO]: 0,
-    [CHAIN_IDs.ARBITRUM]: 0,
-    [CHAIN_IDs.BASE]: 60,
-    [CHAIN_IDs.BLAST]: 60,
-    [CHAIN_IDs.LINEA]: 1,
-    [CHAIN_IDs.LISK]: 60,
-    [CHAIN_IDs.MAINNET]: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
-    [CHAIN_IDs.MODE]: 60,
-    [CHAIN_IDs.OPTIMISM]: 60,
-    [CHAIN_IDs.POLYGON]: 80,
-    [CHAIN_IDs.REDSTONE]: 60,
-    [CHAIN_IDs.SCROLL]: 1,
-    [CHAIN_IDs.WORLD_CHAIN]: 60,
-    [CHAIN_IDs.ZK_SYNC]: 0,
-    [CHAIN_IDs.ZORA]: 60,
+    [CHAIN_IDs.MAINNET]: 4,
+    [CHAIN_IDs.POLYGON]: 16,
+    [CHAIN_IDs.SCROLL]: 2,
   },
 };
 
