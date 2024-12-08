@@ -35,7 +35,6 @@ export class CommonConfig {
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
-      MAX_TX_WAIT_DURATION,
       SEND_TRANSACTIONS,
       SPOKE_POOL_CHAINS_OVERRIDE,
       ACROSS_BOT_VERSION,
@@ -59,8 +58,8 @@ export class CommonConfig {
     assert(!isNaN(this.maxConfigVersion), `Invalid maximum config version: ${this.maxConfigVersion}`);
 
     this.blockRangeEndBlockBuffer = { ...Constants.BUNDLE_END_BLOCK_BUFFERS };
-    Object.entries(JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER ?? "{}")).forEach((_chainId, buffer) =>
-      this.blockRangeEndBlockBuffer[Number(_chainId)] = buffer
+    Object.entries(JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER ?? "{}")).forEach(
+      (_chainId, buffer) => (this.blockRangeEndBlockBuffer[Number(_chainId)] = buffer)
     );
 
     this.ignoredAddresses = JSON.parse(IGNORED_ADDRESSES ?? "[]").map((address) => ethers.utils.getAddress(address));
@@ -72,9 +71,8 @@ export class CommonConfig {
 
     // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
     this.maxBlockLookBack = { ...Constants.CHAIN_MAX_BLOCK_LOOKBACK };
-    const maxBlockLookBack = JSON.parse(MAX_BLOCK_LOOK_BACK ?? "{}");
-    Object.entries(JSON.parse(MAX_BLOCK_LOOK_BACK ?? "{}")).forEach((_chainId, lookback) =>
-      this.maxBlockLookBack[Number(_chainId)] = lookback
+    Object.entries(JSON.parse(MAX_BLOCK_LOOK_BACK ?? "{}")).forEach(
+      (_chainId, lookback) => (this.maxBlockLookBack[Number(_chainId)] = lookback)
     );
 
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
