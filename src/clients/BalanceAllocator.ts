@@ -122,9 +122,7 @@ export class BalanceAllocator {
 
   testSetBalance(chainId: number, token: string, holder: string, balance: BigNumber): void {
     this.balances[chainId] ??= {};
-    if (!this.balances[chainId][token]) {
-      this.balances[chainId][token] = {};
-    }
+    this.balances[chainId][token] ??= {};
     this.balances[chainId][token][holder] = balance;
   }
 
