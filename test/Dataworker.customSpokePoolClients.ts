@@ -70,7 +70,7 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
     expect(lastSpyLogIncludes(spy, "Skipping dispute")).to.be.true;
     expect(spyLogLevel(spy, -1)).to.equal("error");
     expect(spyLogIncludes(spy, -2, "Cannot validate bundle with insufficient event data")).to.be.true;
-    expect(spyLogLevel(spy, -2)).to.equal("debug");
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 });

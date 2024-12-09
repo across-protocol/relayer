@@ -481,6 +481,10 @@ export function getDefaultBlockRange(toBlockOffset: number): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
 }
 
+export function getDisabledBlockRanges(): number[][] {
+  return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[0]]);
+}
+
 export function createRefunds(
   outputToken: string,
   refundAmount: BigNumber,

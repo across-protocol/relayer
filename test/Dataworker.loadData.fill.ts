@@ -18,6 +18,7 @@ import {
   expect,
   fillV3,
   getDefaultBlockRange,
+  getDisabledBlockRanges,
   randomAddress,
   sinon,
   smock,
@@ -246,6 +247,28 @@ describe("Dataworker: Load data used in all functions", async function () {
       ).to.deep.equal(expiredDeposits.map((event) => event.args.depositId));
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
     });
+
+    it("Ignores disabled chains", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      // Send unexpired deposit
+      generateV3Deposit();
+      // Send expired deposit
+      generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+
+      // Returns no data if block range is undefined
+      const emptyData = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDisabledBlockRanges(),
+        spokePoolClients
+      );
+      expect(emptyData.bundleDepositsV3).to.deep.equal({});
+      expect(emptyData.expiredDepositsToRefundV3).to.deep.equal({});
+    });
+
     it("Filters unexpired deposit out of block range", async function () {
       // Send deposit behind and after origin chain block range. Should not be included in bundleDeposits.
       // First generate mock deposit events with some block time between events.
@@ -338,7 +361,29 @@ describe("Dataworker: Load data used in all functions", async function () {
           .div(fixedPointAdjustment),
       });
     });
+    it("Ignores disabled chains", async function () {
+      const depositV3Events: Event[] = [];
+      const fillV3Events: Event[] = [];
 
+      // Create three valid deposits
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      // Fill deposits from different relayers
+      const relayer2 = randomAddress();
+      fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      const emptyData = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDisabledBlockRanges(),
+        spokePoolClients
+      );
+      expect(emptyData.bundleFillsV3).to.deep.equal({});
+    });
     it("Saves V3 fast fill under correct repayment chain and repayment token when dealing with lite chains", async function () {
       // Mock the config store client to include the lite chain index.
       mockConfigStore.updateGlobalConfig(

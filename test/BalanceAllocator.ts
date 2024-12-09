@@ -54,6 +54,12 @@ describe("BalanceAllocator", async function () {
     expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(100));
   });
 
+  it("Returns balance sub used", async function () {
+    balanceAllocator.addUsed(1, testToken1, testAccount1, BigNumber.from(100));
+    balanceAllocator.setMockBalances(1, testToken1, testAccount1, BigNumber.from(150));
+    expect(await balanceAllocator.getBalanceSubUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(50));
+  });
+
   it("Simple request", async function () {
     balanceAllocator.setMockBalances(1, testToken1, testAccount1, BigNumber.from(100));
     expect(await balanceAllocator.requestBalanceAllocation(1, [testToken1], testAccount1, BigNumber.from(50))).to.be
