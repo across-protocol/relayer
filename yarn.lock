@@ -30,10 +30,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/contracts@^3.0.16":
-  version "3.0.16"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.16.tgz#22eb0c1dcdb01e8ca504dc2351d46513d9f71cc6"
-  integrity sha512-vwg+PmWaenlrx7kTHZdjDTTj1PwXWFU3rMlFyfKM8xBXbPWhIfMQCKCYOwFrGmZw2nRTYgoyhoKN/f6rUs/snw==
+"@across-protocol/contracts@^3.0.17":
+  version "3.0.17"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.17.tgz#eb1c260cc5feeeec24cf300f8ebba29755d17e65"
+  integrity sha512-XnWoVA10IeEiOxAOOeO7r1sq79lP0EEp3tpajN9sDPBnzVCiwSzhthNSClbbOQOxpOG9NYxBXC9bamEe4AUG2g==
   dependencies:
     "@across-protocol/constants" "^3.1.19"
     "@coral-xyz/anchor" "^0.30.1"
@@ -49,28 +49,28 @@
     "@solana/spl-token" "^0.4.6"
     "@solana/web3.js" "^1.31.0"
     "@types/yargs" "^17.0.33"
-    "@uma/common" "^2.34.0"
+    "@uma/common" "^2.37.3"
     "@uma/contracts-node" "^0.4.17"
-    "@uma/core" "^2.56.0"
+    "@uma/core" "^2.61.0"
     axios "^1.7.4"
     bs58 "^6.0.0"
     prettier-plugin-rust "^0.1.9"
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@^3.3.21":
-  version "3.3.21"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.3.21.tgz#f223a0d88b09c5f2335723b89e777a36df5255ca"
-  integrity sha512-N/0H5KwPS+iyMh8m1QvIPBNJuPFhHlRW1841AzcmhXdzwRtbarmSWXaXNDifeWDWMf3Fie8TN2WnSW4oQKd1HQ==
+"@across-protocol/sdk@^3.3.24":
+  version "3.3.24"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-3.3.24.tgz#2ed21617aaf35e9ebfb6d009eefa27b8e59cd7aa"
+  integrity sha512-FNFM2vANGhQwZ6b5y/G5h9ox0A2ES07oLJXoEPIxLXUZrwRqmKeEvQ2x1heiclY+iyVibEm49V7svWIv5lkEqw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.20"
-    "@across-protocol/contracts" "^3.0.16"
+    "@across-protocol/contracts" "^3.0.17"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
     "@pinata/sdk" "^2.1.0"
     "@types/mocha" "^10.0.1"
-    "@uma/sdk" "^0.34.1"
+    "@uma/sdk" "^0.34.10"
     arweave "^1.14.4"
     async "^3.2.5"
     axios "^0.27.2"
@@ -1954,7 +1954,7 @@
   resolved "https://registry.yarnpkg.com/@nomiclabs/hardhat-ethers/-/hardhat-ethers-2.2.3.tgz#b41053e360c31a32c2640c9a45ee981a7e603fe0"
   integrity sha512-YhzPdzb612X591FOe68q+qXVXGG2ANZRvDo0RRUtimev85rCrAlv/TLMEZw5c+kq9AbzocLTVX/h2jVIFPL9Xg==
 
-"@nomiclabs/hardhat-etherscan@^3.1.5", "@nomiclabs/hardhat-etherscan@^3.1.7":
+"@nomiclabs/hardhat-etherscan@^3.1.7":
   version "3.1.7"
   resolved "https://registry.yarnpkg.com/@nomiclabs/hardhat-etherscan/-/hardhat-etherscan-3.1.7.tgz#72e3d5bd5d0ceb695e097a7f6f5ff6fcbf062b9a"
   integrity sha512-tZ3TvSgpvsQ6B6OGmo1/Au6u8BrAkvs1mIC/eURA3xgIfznUZBhmpne8hv7BXUzw9xNL3fXdpOYgOQlVMTcoHQ==
@@ -3459,23 +3459,28 @@
     "@typescript-eslint/types" "4.33.0"
     eslint-visitor-keys "^2.0.0"
 
-"@uma/common@2.33.0":
-  version "2.33.0"
-  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.33.0.tgz#25157e804228f91a52f501ca174d9432601836ad"
-  integrity sha512-w6wKpfXHJzFYHN3QqYGJrCRtussgQBu2L/glmuolxIz1kFS5aGjUnqhll+XJBK9G9RDx2b3J1vBEMAlF25sTVw==
+"@uma/common@2.37.3", "@uma/common@^2.37.3":
+  version "2.37.3"
+  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.37.3.tgz#0d7fda1227e3a05563544bb36f418a790c81129d"
+  integrity sha512-DLcM2xtiFWDbty21r2gsL6AJbOc8G/CMqg0iMxssvkKbz8varsWS44zJF85XGxMlY8fE40w0ZS8MR92xpbsu4g==
   dependencies:
     "@across-protocol/contracts" "^0.1.4"
+    "@ethersproject/address" "^5.7.0"
     "@ethersproject/bignumber" "^5.0.5"
+    "@ethersproject/bytes" "^5.7.0"
+    "@ethersproject/constants" "^5.7.0"
     "@google-cloud/kms" "^3.0.1"
     "@google-cloud/storage" "^6.4.2"
+    "@nomicfoundation/hardhat-verify" "^1.0.4"
     "@nomiclabs/hardhat-ethers" "^2.2.1"
-    "@nomiclabs/hardhat-etherscan" "^3.1.5"
     "@nomiclabs/hardhat-web3" "^2.0.0"
     "@truffle/contract" "4.6.17"
     "@truffle/hdwallet-provider" eip1559-beta
     "@types/ethereum-protocol" "^1.0.0"
     "@uniswap/v3-core" "^1.0.0-rc.2"
     abi-decoder "github:UMAprotocol/abi-decoder"
+    async-retry "^1.3.3"
+    axios "^1.6.1"
     bignumber.js "^8.0.1"
     chalk-pipe "^3.0.0"
     decimal.js "^10.2.1"
@@ -3487,6 +3492,7 @@
     lodash.uniqby "^4.7.0"
     minimist "^1.2.0"
     moment "^2.24.0"
+    node-fetch "^2.6.0"
     node-metamask "github:UMAprotocol/node-metamask"
     require-context "^1.1.0"
     solidity-coverage "^0.7.13"
@@ -3534,17 +3540,22 @@
     web3 "^1.6.0"
     winston "^3.2.1"
 
-"@uma/contracts-frontend@^0.4.18":
-  version "0.4.18"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.18.tgz#339093239ea6f2ba2914de424ad609e6f9346379"
-  integrity sha512-0UcA0Io+RB8p2BAeoyubNb0wQzvIWynQ2805ZzbwWhDB2jlW2xRNAKPRP6kcxaqtzCYcEoLnsTLwOP0ojmeWjw==
+"@uma/contracts-frontend@^0.4.25":
+  version "0.4.25"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.25.tgz#86fd9e07d0466e04be41c48856e292b0f0de0722"
+  integrity sha512-LfkMw0lO+H+hUPevoAFogVu5iJTXp+Q2ChddqiynvvrwZ/lrNHrOjj0uEX1winjJXTLFs78jBK1AsIkkYK2VTQ==
 
-"@uma/contracts-node@^0.4.0", "@uma/contracts-node@^0.4.17", "@uma/contracts-node@^0.4.18":
+"@uma/contracts-node@^0.4.0", "@uma/contracts-node@^0.4.17":
   version "0.4.18"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.18.tgz#3d3e0ad7dc70b81b3d0dbe722b4eba93bd29f9bf"
   integrity sha512-JiICiNPEfL18JrddxjSNQUs0/gRMAvdqejIu7UP8JTG4Cup8tDJ6TejZJxBVHlmtB6hSOBnbLoPXb/uLtfdQiw==
 
-"@uma/core@^2.18.0", "@uma/core@^2.56.0":
+"@uma/contracts-node@^0.4.25":
+  version "0.4.25"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.25.tgz#d5c82f1f2c7e0dc2dec26fe876db73ba3f0689d7"
+  integrity sha512-WaFojX4qyMmXpy5MBS7g0M0KnWESGusdSfTmlkZpCh65TksGaJwAyOM1YBRLL3xm3xSgxPoG+n6tTilSomUmOw==
+
+"@uma/core@^2.18.0":
   version "2.56.0"
   resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.56.0.tgz#c19aa427f08691a85e99ec523d23abf359a6b0c3"
   integrity sha512-unylWwHeD/1mYcj1t2UPVgj1V+ceBLSo/BcYKgZyyBIHYAkC6bOx4egV/2NrhWPt3sX5CZFG1I1kMAqgp245tQ==
@@ -3555,6 +3566,22 @@
     "@openzeppelin/contracts" "4.4.2"
     "@uma/common" "^2.34.0"
     "@uma/merkle-distributor" "^1.3.38"
+    "@uniswap/lib" "4.0.1-alpha"
+    "@uniswap/v2-core" "1.0.0"
+    "@uniswap/v2-periphery" "1.1.0-beta.0"
+    "@uniswap/v3-core" "^1.0.0-rc.2"
+    "@uniswap/v3-periphery" "^1.0.0-beta.23"
+
+"@uma/core@^2.61.0":
+  version "2.61.0"
+  resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.61.0.tgz#29580736349a47af8fb10beb4bb3b50bfcf912f5"
+  integrity sha512-bnk+CWW+uWpRilrgUny/gDXHKomG+h1Ug84OXdx+AAvj1/BtlMDOCNNt1OX8LSAz+a0hkiN9s24/zgHclTC/sg==
+  dependencies:
+    "@gnosis.pm/safe-contracts" "^1.3.0"
+    "@gnosis.pm/zodiac" "3.2.0"
+    "@maticnetwork/fx-portal" "^1.0.4"
+    "@openzeppelin/contracts" "4.9.6"
+    "@uma/common" "^2.37.3"
     "@uniswap/lib" "4.0.1-alpha"
     "@uniswap/v2-core" "1.0.0"
     "@uniswap/v2-periphery" "1.1.0-beta.0"
@@ -3594,19 +3621,19 @@
     mocha "^8.3.0"
     node-fetch "^2.6.1"
 
-"@uma/sdk@^0.34.1":
-  version "0.34.3"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.34.3.tgz#cd358e11df02abcf163703d94d4c5f448220b999"
-  integrity sha512-1DqzkculvR5qlRv0R1by9F/RJfMWgFgQa4nn4W2pWhyTvhsTi7/9ZFDbRgm5iU9xRHnWWZiEQE89SIZ8Vl+UiQ==
+"@uma/sdk@^0.34.10":
+  version "0.34.10"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.34.10.tgz#ae2bb4d1f5f4140aef0f7d6141620d70dbd57f35"
+  integrity sha512-Jo64XpbCxquuPIIktQCWFMNN/vCTyA1SbVXMrlmXgO7NAtPPMyPBlsKJr+N0/QrqymBQcO5wzdmo+EqJaeKIHw==
   dependencies:
     "@eth-optimism/core-utils" "^0.7.7"
     "@ethersproject/abstract-signer" "^5.4.0"
     "@ethersproject/providers" "^5.4.2"
     "@google-cloud/datastore" "^8.2.1"
     "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.4.18"
-    "@uma/contracts-node" "^0.4.18"
-    axios "^0.24.0"
+    "@uma/contracts-frontend" "^0.4.25"
+    "@uma/contracts-node" "^0.4.25"
+    axios "^1.6.0"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
     decimal.js "^10.3.1"
@@ -4290,13 +4317,6 @@ axios@^0.21.1, axios@^0.21.2:
   dependencies:
     follow-redirects "^1.14.0"
 
-axios@^0.24.0:
-  version "0.24.0"
-  resolved "https://registry.yarnpkg.com/axios/-/axios-0.24.0.tgz#804e6fa1e4b9c5288501dd9dff56a7a0940d20d6"
-  integrity sha512-Q6cWsys88HoPgAaFAVUb0WpPk0O8iTeisR9IMqy9G8AbO4NlpVknrnQS03zzF9PGAWgO3cgletO3VjV/P7VztA==
-  dependencies:
-    follow-redirects "^1.14.4"
-
 axios@^0.27.2:
   version "0.27.2"
   resolved "https://registry.yarnpkg.com/axios/-/axios-0.27.2.tgz#207658cc8621606e586c85db4b41a750e756d972"
@@ -4304,6 +4324,15 @@ axios@^0.27.2:
   dependencies:
     follow-redirects "^1.14.9"
     form-data "^4.0.0"
+
+axios@^1.6.0, axios@^1.6.1:
+  version "1.7.9"
+  resolved "https://registry.yarnpkg.com/axios/-/axios-1.7.9.tgz#d7d071380c132a24accda1b2cfc1535b79ec650a"
+  integrity sha512-LhLcE7Hbiryz8oMDdDptSrWowmB4Bl6RCt6sIJKpRB4XtVf0iEgewX3au/pJqm+Py1kCASkb/FFKjxQaLtxJvw==
+  dependencies:
+    follow-redirects "^1.15.6"
+    form-data "^4.0.0"
+    proxy-from-env "^1.1.0"
 
 axios@^1.7.4:
   version "1.7.4"
@@ -7552,7 +7581,7 @@ fn.name@1.x.x:
   resolved "https://registry.yarnpkg.com/fn.name/-/fn.name-1.1.0.tgz#26cad8017967aea8731bc42961d04a3d5988accc"
   integrity sha512-GRnmB5gPyJpAhTQdSZTSp9uaPSvl09KoYcMQtsB9rQoOmzs9dH6ffeccH+Z+cv6P68Hu5bC6JjRh4Ah/mHSNRw==
 
-follow-redirects@^1.12.1, follow-redirects@^1.14.0, follow-redirects@^1.14.4, follow-redirects@^1.14.9, follow-redirects@^1.15.6:
+follow-redirects@^1.12.1, follow-redirects@^1.14.0, follow-redirects@^1.14.9, follow-redirects@^1.15.6:
   version "1.15.9"
   resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.15.9.tgz#a604fa10e443bf98ca94228d9eebcc2e8a2c8ee1"
   integrity sha512-gew4GsXizNgdoRyqmyfMHyAmXsZDk6mHkSxZFCzW9gwlbtOW44CDtYavM+y+72qD/Vq2l550kMF52DT8fOLJqQ==
