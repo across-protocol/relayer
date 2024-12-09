@@ -42,13 +42,14 @@ import { any } from "superstruct";
 // TODO: Move to SDK since this implements UMIP logic about validating block ranges.
 // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
 // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
+export type InvalidBlockRange = { chainId: number; reason: string };
 export async function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
   earliestValidBundleStartBlock: { [chainId: number]: number },
   isV3 = false
-): Promise<{ result: boolean; reason?: string }> {
+): Promise<InvalidBlockRange[]> {
   assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
   let endBlockTimestamps: { [chainId: number]: number } | undefined;
   if (isV3) {
@@ -60,84 +61,94 @@ export async function blockRangesAreInvalidForSpokeClients(
     // There should be a spoke pool client instantiated for every bundle timestamp.
     assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
   }
-  let reason: string | undefined;
-  const result = await utils.someAsync(blockRanges, async ([start, end], index) => {
-    const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
-    // If block range is 0 then chain is disabled, we don't need to query events for this chain.
-    if (isNaN(end) || isNaN(start)) {
-      reason = `block range contains undefined block for chain ${chainId}: [isNaN(start): ${isNaN(
-        start
-      )}, isNaN(end): ${isNaN(end)}]`;
-      return true;
-    }
-    if (start === end) {
-      return false;
-    }
 
-    const spokePoolClient = spokePoolClients[chainId];
-
-    // If spoke pool client doesn't exist for enabled chain then we clearly cannot query events for this chain.
-    if (spokePoolClient === undefined) {
-      reason = `Spoke pool client undefined for chain ${chainId}`;
-      return true;
-    }
-
-    const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
-
-    const earliestValidBundleStartBlockForChain =
-      earliestValidBundleStartBlock?.[chainId] ?? spokePoolClient.deploymentBlock;
-
-    // If range start block is less than the earliest spoke pool client we can validate or the range end block
-    // is greater than the latest client end block, then ranges are invalid.
-    // Note: Math.max the from block with the registration block of the spoke pool to handle the edge case for the first
-    // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
-    const bundleRangeFromBlockTooEarly = bundleRangeFromBlock < earliestValidBundleStartBlockForChain;
-    const endGreaterThanClientLastBlockQueried = end > clientLastBlockQueried;
-    if (bundleRangeFromBlockTooEarly || endGreaterThanClientLastBlockQueried) {
-      reason = `${
-        bundleRangeFromBlockTooEarly
-          ? `bundleRangeFromBlock ${bundleRangeFromBlock} < earliestValidBundleStartBlockForChain ${earliestValidBundleStartBlockForChain}`
-          : `end ${end} > clientLastBlockQueried ${clientLastBlockQueried}`
-      } for chain ${chainId}`;
-      return true;
-    }
-
-    if (endBlockTimestamps !== undefined) {
-      const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(
-        bundleRangeFromBlock,
-        end
-      );
-      // Skip this check if the spokePoolClient.fromBlock is less than or equal to the spokePool deployment block.
-      // In this case, we have all the information for this SpokePool possible so there are no older deposits
-      // that might have expired that we might miss.
-      const conservativeBundleFrequencySeconds = Number(
-        process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS
-      );
-      if (
-        spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
-        // @dev The maximum lookback window we need to evaluate expired deposits is the max fill deadline buffer,
-        // which captures all deposits that newly expired, plus the bundle time (e.g. 1 hour) to account for the
-        // maximum time it takes for a newly expired deposit to be included in a bundle. A conservative value for
-        // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
-        // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
-        // is sent pretty late into the deposit's expiry period.
-        endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() <
-          maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds
-      ) {
-        reason = `endBlockTimestamp ${
-          endBlockTimestamps[chainId]
-        } - spokePoolClient.getOldestTime ${spokePoolClient.getOldestTime()} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds} for chain ${chainId}`;
-        return true;
+  // Return an undefined object if the block ranges are valid
+  return (
+    await utils.mapAsync(blockRanges, async ([start, end], index): Promise<undefined | InvalidBlockRange> => {
+      const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
+      if (isNaN(end) || isNaN(start)) {
+        return {
+          reason: `block range contains undefined block for: [isNaN(start): ${isNaN(start)}, isNaN(end): ${isNaN(
+            end
+          )}]`,
+          chainId,
+        };
       }
-    }
-    // We must now assume that all newly expired deposits at the time of the bundle end blocks are contained within
-    // the spoke pool client's memory.
+      if (start === end) {
+        // If block range is 0 then chain is disabled, we don't need to query events for this chain.
+        return undefined;
+      }
 
-    // If we get to here, block ranges are valid, return false.
-    return false;
-  });
-  return { result, reason };
+      const spokePoolClient = spokePoolClients[chainId];
+
+      // If spoke pool client doesn't exist for enabled chain then we clearly cannot query events for this chain.
+      if (spokePoolClient === undefined) {
+        return {
+          reason: "spoke pool client undefined",
+          chainId,
+        };
+      }
+
+      const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
+
+      const earliestValidBundleStartBlockForChain =
+        earliestValidBundleStartBlock?.[chainId] ?? spokePoolClient.deploymentBlock;
+
+      // If range start block is less than the earliest spoke pool client we can validate or the range end block
+      // is greater than the latest client end block, then ranges are invalid.
+      // Note: Math.max the from block with the registration block of the spoke pool to handle the edge case for the first
+      // bundle that set its start blocks equal 0.
+      const bundleRangeFromBlock = Math.max(spokePoolClient.deploymentBlock, start);
+      const bundleRangeFromBlockTooEarly = bundleRangeFromBlock < earliestValidBundleStartBlockForChain;
+      const endGreaterThanClientLastBlockQueried = end > clientLastBlockQueried;
+      if (bundleRangeFromBlockTooEarly || endGreaterThanClientLastBlockQueried) {
+        return {
+          reason: `${
+            bundleRangeFromBlockTooEarly
+              ? `bundleRangeFromBlock ${bundleRangeFromBlock} < earliestValidBundleStartBlockForChain ${earliestValidBundleStartBlockForChain}`
+              : `end ${end} > clientLastBlockQueried ${clientLastBlockQueried}`
+          }`,
+          chainId,
+        };
+      }
+
+      if (endBlockTimestamps !== undefined) {
+        const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(
+          bundleRangeFromBlock,
+          end
+        );
+        // Skip this check if the spokePoolClient.fromBlock is less than or equal to the spokePool deployment block.
+        // In this case, we have all the information for this SpokePool possible so there are no older deposits
+        // that might have expired that we might miss.
+        const conservativeBundleFrequencySeconds = Number(
+          process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS
+        );
+        if (
+          spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
+          // @dev The maximum lookback window we need to evaluate expired deposits is the max fill deadline buffer,
+          // which captures all deposits that newly expired, plus the bundle time (e.g. 1 hour) to account for the
+          // maximum time it takes for a newly expired deposit to be included in a bundle. A conservative value for
+          // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
+          // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
+          // is sent pretty late into the deposit's expiry period.
+          endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() <
+            maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds
+        ) {
+          return {
+            reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${
+              endBlockTimestamps[chainId]
+            } - spokePoolClient.getOldestTime ${spokePoolClient.getOldestTime()} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
+            chainId,
+          };
+        }
+      }
+      // We must now assume that all newly expired deposits at the time of the bundle end blocks are contained within
+      // the spoke pool client's memory.
+
+      // If we get to here, block ranges are valid, return false.
+      return undefined;
+    })
+  ).filter(isDefined);
 }
 
 export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
