@@ -1717,7 +1717,7 @@ export class Dataworker {
     executableLeaves.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
-        leaf.netSendAmounts.map((amount, i) => {
+        leaf.netSendAmounts.forEach((amount, i) => {
           if (amount.gt(bnZero)) {
             balanceAllocator.addUsed(
               leaf.chainId,
