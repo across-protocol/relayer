@@ -105,12 +105,8 @@ export class RelayerConfig extends CommonConfig {
     this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
 
     // Empty means all tokens.
-    this.relayerTokens = RELAYER_TOKENS
-      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
-      : [];
-    this.slowDepositors = SLOW_DEPOSITORS
-      ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
-      : [];
+    this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) => ethers.utils.getAddress(token));
+    this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor) => ethers.utils.getAddress(depositor));
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
