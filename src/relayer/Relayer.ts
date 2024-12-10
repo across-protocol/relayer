@@ -1258,16 +1258,16 @@ export class Relayer {
               l1Token.address,
               token
             );
-          crossChainLog =
-            outstandingCrossChainTransferAmount &&
-            " There is " +
+          crossChainLog = outstandingCrossChainTransferAmount.gt(0)
+            ? " There is " +
               formatter(
                 this.clients.inventoryClient.crossChainTransferClient
                   .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
                   // TODO: Add in additional l2Token param here once we can specify it
                   .toString()
               ) +
-              ` inbound L1->L2 ${symbol} transfers. `;
+              ` inbound L1->L2 ${symbol} transfers. `
+            : undefined;
         }
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
