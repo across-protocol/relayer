@@ -21,6 +21,7 @@ import {
   TransactionResponse,
   ZERO_ADDRESS,
   Profiler,
+  convertFromWei,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -702,7 +703,7 @@ export class Relayer {
         tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
 
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit, gasCost);
       }
     } else if (selfRelay) {
       // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
@@ -973,7 +974,13 @@ export class Relayer {
     this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
 
-  fillRelay(deposit: Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
+  fillRelay(
+    deposit: Deposit,
+    repaymentChainId: number,
+    realizedLpFeePct: BigNumber,
+    gasLimit?: BigNumber,
+    gasCost?: BigNumber
+  ): void {
     const { spokePoolClients } = this.clients;
     this.logger.debug({
       at: "Relayer::fillRelay",
@@ -1005,7 +1012,7 @@ export class Relayer {
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;
-    const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct);
+    const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasCost, gasLimit);
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
     const multiCallerClient = this.getMulticaller(chainId);
@@ -1344,9 +1351,15 @@ export class Relayer {
     }
   }
 
-  private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber): string {
+  private constructRelayFilledMrkdwn(
+    deposit: Deposit,
+    repaymentChainId: number,
+    realizedLpFeePct: BigNumber,
+    gasCost: BigNumber,
+    gasLimit: BigNumber
+  ): string {
     let mrkdwn =
-      this.constructBaseFillMarkdown(deposit, realizedLpFeePct) +
+      this.constructBaseFillMarkdown(deposit, realizedLpFeePct, gasCost, gasLimit) +
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
@@ -1361,7 +1374,12 @@ export class Relayer {
     return mrkdwn;
   }
 
-  private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber): string {
+  private constructBaseFillMarkdown(
+    deposit: Deposit,
+    _realizedLpFeePct: BigNumber,
+    _gasCost: BigNumber,
+    _gasLimit: BigNumber
+  ): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
@@ -1370,6 +1388,8 @@ export class Relayer {
 
     let msg = `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
     const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
+    const gasPriceGwei = _gasCost.div(_gasLimit);
+    const gwei = convertFromWei(gasPriceGwei.toString(), 9);
     const _totalFeePct = deposit.inputAmount
       .sub(deposit.outputAmount)
       .mul(fixedPointAdjustment)
@@ -1380,7 +1400,7 @@ export class Relayer {
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
-      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
+      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%. Gas price: ${gwei} gWei.`;
 
     return msg;
   }

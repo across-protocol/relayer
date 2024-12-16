@@ -33,7 +33,7 @@ import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../
 import { getAcrossHost } from "./AcrossAPIClient";
 import { HubPoolClient } from "./HubPoolClient";
 
-type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
+type TransactionCostEstimate = sdkUtils.TransactionCostEstimate & { gasPrice?: BigNumber };
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
@@ -434,7 +434,7 @@ export class ProfitClient {
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${l1Token.symbol} v3 deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
+        message: `${l1Token.symbol} deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit,
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
@@ -630,7 +630,13 @@ export class ProfitClient {
       assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
       const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-      this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
+      const { nativeGasCost, tokenGasCost } = await this._getTotalGasCost(deposit, relayer);
+      const gasPrice = tokenGasCost.div(nativeGasCost);
+      this.totalGasCosts[destinationChainId] = {
+        nativeGasCost,
+        tokenGasCost,
+        gasPrice
+      };
     });
 
     this.logger.debug({
