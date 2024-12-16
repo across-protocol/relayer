@@ -78,7 +78,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
     // Randomise the fillRelay cost in units of gas.
     const nativeGasCost = toBN(random(80_000, 100_000));
-    const gasPrice = toGWei(random(1, 100))
+    const gasPrice = toGWei(random(1, 100));
     const tokenGasCost = nativeGasCost.mul(gasPrice).div(toBN(10).pow(9));
 
     profitClient.setTokenPrice(gasToken.address, gasTokenPriceUsd);
