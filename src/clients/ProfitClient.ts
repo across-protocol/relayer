@@ -635,7 +635,7 @@ export class ProfitClient {
       this.totalGasCosts[destinationChainId] = {
         nativeGasCost,
         tokenGasCost,
-        gasPrice
+        gasPrice,
       };
     });
 
