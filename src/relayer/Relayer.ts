@@ -1377,7 +1377,7 @@ export class Relayer {
       .div(deposit.inputAmount);
     const totalFeePct = formatFeePct(_totalFeePct);
     const totalGasCosts = this.clients.profitClient.getGasCostsForChain(deposit.destinationChainId);
-    const gasPriceGwei = convertFromWei(totalGasCosts.gasPrice.toString(), 9)
+    const gasPriceGwei = convertFromWei(totalGasCosts.gasPrice.toString(), 9);
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
       this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());

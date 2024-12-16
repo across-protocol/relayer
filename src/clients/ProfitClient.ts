@@ -208,7 +208,7 @@ export class ProfitClient {
       return {
         ...totalGasCosts,
         gasPrice,
-      }
+      };
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       this.logger.warn({
