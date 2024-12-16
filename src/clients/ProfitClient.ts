@@ -33,7 +33,7 @@ import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../
 import { getAcrossHost } from "./AcrossAPIClient";
 import { HubPoolClient } from "./HubPoolClient";
 
-type TransactionCostEstimate = sdkUtils.TransactionCostEstimate & { gasPrice?: BigNumber };
+export type ProfitClientTransactionCostEstimate = sdkUtils.TransactionCostEstimate & { gasPrice: BigNumber };
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
@@ -92,7 +92,7 @@ export class ProfitClient {
   private unprofitableFills: { [chainId: number]: UnprofitableFill[] } = {};
 
   // Track total gas costs of a relay on each chain.
-  protected totalGasCosts: { [chainId: number]: TransactionCostEstimate } = {};
+  protected totalGasCosts: { [chainId: number]: ProfitClientTransactionCostEstimate } = {};
 
   // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
@@ -201,9 +201,14 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<ProfitClientTransactionCostEstimate> {
     try {
-      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
+      const totalGasCosts = await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
+      const gasPrice = totalGasCosts.tokenGasCost.div(totalGasCosts.nativeGasCost);
+      return {
+        ...totalGasCosts,
+        gasPrice,
+      }
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       this.logger.warn({
@@ -213,11 +218,11 @@ export class ProfitClient {
         deposit,
         notificationPath: "across-unprofitable-fills",
       });
-      return { nativeGasCost: uint256Max, tokenGasCost: uint256Max };
+      return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
     }
   }
 
-  async getTotalGasCost(deposit: Deposit): Promise<TransactionCostEstimate> {
+  async getTotalGasCost(deposit: Deposit): Promise<ProfitClientTransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
@@ -227,6 +232,10 @@ export class ProfitClient {
     }
 
     return this._getTotalGasCost(deposit, this.relayerAddress);
+  }
+
+  getGasCostsForChain(chainId: number): ProfitClientTransactionCostEstimate {
+    return this.totalGasCosts[chainId];
   }
 
   // Estimate the gas cost of filling this relay.

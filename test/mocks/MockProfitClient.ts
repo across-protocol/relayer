@@ -1,11 +1,8 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
-import { ProfitClient } from "../../src/clients";
+import { ProfitClient, ProfitClientTransactionCostEstimate } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
 import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
-
-type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const defaultFillCost = toBN(100_000); // gas
 const defaultGasPrice = bnOne; // wei per gas
@@ -57,6 +54,7 @@ export class MockProfitClient extends ProfitClient {
     const defaultGasCost = {
       nativeGasCost: defaultFillCost,
       tokenGasCost: defaultGasPrice.mul(defaultFillCost),
+      gasPrice: defaultGasPrice,
     };
     Object.values(spokePoolClients).map(({ chainId }) => {
       this.setGasCost(chainId, defaultGasCost); // gas/fill
@@ -93,7 +91,7 @@ export class MockProfitClient extends ProfitClient {
     });
   }
 
-  setGasCost(chainId: number, gas?: TransactionCostEstimate): void {
+  setGasCost(chainId: number, gas?: ProfitClientTransactionCostEstimate): void {
     if (gas) {
       this.totalGasCosts[chainId] = gas;
     } else {
@@ -101,7 +99,7 @@ export class MockProfitClient extends ProfitClient {
     }
   }
 
-  setGasCosts(gasCosts: { [chainId: number]: TransactionCostEstimate }): void {
+  setGasCosts(gasCosts: { [chainId: number]: ProfitClientTransactionCostEstimate }): void {
     this.totalGasCosts = gasCosts;
   }
 
