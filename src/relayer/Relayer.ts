@@ -21,6 +21,7 @@ import {
   TransactionResponse,
   ZERO_ADDRESS,
   Profiler,
+  convertFromWei,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -1375,12 +1376,14 @@ export class Relayer {
       .mul(fixedPointAdjustment)
       .div(deposit.inputAmount);
     const totalFeePct = formatFeePct(_totalFeePct);
+    const totalGasCosts = this.clients.profitClient.getGasCostsForChain(deposit.destinationChainId);
+    const gasPriceGwei = convertFromWei(totalGasCosts.gasPrice.toString(), 9)
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
       this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
-      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
+      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%. Gas price: ${gasPriceGwei} Gwei.`;
 
     return msg;
   }
