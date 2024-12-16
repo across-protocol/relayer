@@ -28,12 +28,13 @@ import {
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
+  formatGwei,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
 import { HubPoolClient } from "./HubPoolClient";
 
-export type ProfitClientTransactionCostEstimate = sdkUtils.TransactionCostEstimate & { gasPrice: BigNumber };
+type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
 const { isError, isEthersError } = typeguards;
 const { formatEther } = ethersUtils;
@@ -58,6 +59,7 @@ export type FillProfit = {
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
   nativeGasCost: BigNumber; // Cost of completing the fill in the units of gas.
   tokenGasCost: BigNumber; // Cost of completing the fill in the relevant gas token.
+  gasPrice: BigNumber; // Gas price in wei.
   gasPadding: BigNumber; // Positive padding applied to nativeGasCost and tokenGasCost before profitability.
   gasMultiplier: BigNumber; // Gas multiplier applied to fill cost estimates before profitability.
   gasTokenPriceUsd: BigNumber; // Price paid per unit of gas the gas token in USD.
@@ -92,7 +94,7 @@ export class ProfitClient {
   private unprofitableFills: { [chainId: number]: UnprofitableFill[] } = {};
 
   // Track total gas costs of a relay on each chain.
-  protected totalGasCosts: { [chainId: number]: ProfitClientTransactionCostEstimate } = {};
+  protected totalGasCosts: { [chainId: number]: TransactionCostEstimate } = {};
 
   // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
@@ -201,14 +203,9 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<ProfitClientTransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<TransactionCostEstimate> {
     try {
-      const totalGasCosts = await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
-      const gasPrice = totalGasCosts.tokenGasCost.div(totalGasCosts.nativeGasCost);
-      return {
-        ...totalGasCosts,
-        gasPrice,
-      };
+      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       this.logger.warn({
@@ -222,7 +219,7 @@ export class ProfitClient {
     }
   }
 
-  async getTotalGasCost(deposit: Deposit): Promise<ProfitClientTransactionCostEstimate> {
+  async getTotalGasCost(deposit: Deposit): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
@@ -234,19 +231,21 @@ export class ProfitClient {
     return this._getTotalGasCost(deposit, this.relayerAddress);
   }
 
-  getGasCostsForChain(chainId: number): ProfitClientTransactionCostEstimate {
+  getGasCostsForChain(chainId: number): TransactionCostEstimate {
     return this.totalGasCosts[chainId];
   }
 
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
     deposit: Deposit
-  ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
+  ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd" | "gasPrice">> {
     const { destinationChainId: chainId } = deposit;
 
     const gasToken = this.resolveGasToken(chainId);
     const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
-    let { nativeGasCost, tokenGasCost } = await this.getTotalGasCost(deposit);
+    const totalGasCost = await this.getTotalGasCost(deposit);
+    let { nativeGasCost, tokenGasCost } = totalGasCost;
+    const gasPrice = totalGasCost.gasPrice;
 
     Object.entries({
       "gas consumption": nativeGasCost, // raw gas units
@@ -274,6 +273,7 @@ export class ProfitClient {
     return {
       nativeGasCost,
       tokenGasCost,
+      gasPrice,
       gasTokenPriceUsd,
       gasCostUsd,
     };
@@ -372,7 +372,9 @@ export class ProfitClient {
       : bnZero;
 
     // Estimate the gas cost of filling this relay.
-    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd } = await this.estimateFillCost(deposit);
+    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd, gasPrice } = await this.estimateFillCost(
+      deposit
+    );
 
     // Determine profitability. netRelayerFeePct effectively represents the capital cost to the relayer;
     // i.e. how much it pays out to the recipient vs. the net fee that it receives for doing so.
@@ -395,6 +397,7 @@ export class ProfitClient {
       grossRelayerFeeUsd,
       nativeGasCost,
       tokenGasCost,
+      gasPrice,
       gasPadding: this.gasPadding,
       gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
@@ -454,6 +457,7 @@ export class ProfitClient {
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
         nativeGasCost: fill.nativeGasCost,
         tokenGasCost: formatEther(fill.tokenGasCost),
+        gasPrice: formatGwei(fill.gasPrice.toString()),
         gasPadding: this.gasPadding,
         gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
         gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
@@ -474,13 +478,14 @@ export class ProfitClient {
     lpFeePct: BigNumber,
     l1Token: L1Token,
     repaymentChainId: number
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "netRelayerFeePct">> {
+  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct">> {
     let profitable = false;
     let netRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
     let tokenGasCost = uint256Max;
+    let gasPrice = uint256Max;
     try {
-      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
+      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice } = await this.getFillProfitability(
         deposit,
         lpFeePct,
         l1Token,
@@ -499,6 +504,7 @@ export class ProfitClient {
       profitable: profitable || (this.isTestnet && nativeGasCost.lt(uint256Max)),
       nativeGasCost,
       tokenGasCost,
+      gasPrice,
       netRelayerFeePct,
     };
   }
@@ -639,13 +645,7 @@ export class ProfitClient {
       assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
       const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-      const { nativeGasCost, tokenGasCost } = await this._getTotalGasCost(deposit, relayer);
-      const gasPrice = tokenGasCost.div(nativeGasCost);
-      this.totalGasCosts[destinationChainId] = {
-        nativeGasCost,
-        tokenGasCost,
-        gasPrice,
-      };
+      this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
     });
 
     this.logger.debug({
