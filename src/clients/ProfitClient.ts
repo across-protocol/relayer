@@ -30,7 +30,8 @@ import {
   ZERO_ADDRESS,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient } from ".";
+import { getAcrossHost } from "./AcrossAPIClient";
+import { HubPoolClient } from "./HubPoolClient";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
@@ -129,7 +130,7 @@ export class ProfitClient {
     );
 
     this.priceClient = new PriceClient(logger, [
-      new acrossApi.PriceFeed(),
+      new acrossApi.PriceFeed({ host: getAcrossHost(hubPoolClient.chainId) }),
       new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
       new defiLlama.PriceFeed(),
     ]);
@@ -527,7 +528,7 @@ export class ProfitClient {
         .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
         .map(({ symbol }) => {
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-          const address = addresses[1];
+          const address = addresses[CHAIN_IDs.MAINNET];
           return [symbol, address];
         })
     );
@@ -550,7 +551,7 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      tokens[symbol] ??= TOKEN_SYMBOLS_MAP[symbol].addresses[1];
+      tokens[symbol] ??= TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
     });
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
@@ -587,6 +588,7 @@ export class ProfitClient {
     // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
     // the main RL address because it has all supported tokens and approvals in place on all chains.
     const testSymbols = {
+      [CHAIN_IDs.ALEPH_ZERO]: "USDT", // USDC is not yet supported on AlephZero, so revert to USDT. @todo: Update.
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.

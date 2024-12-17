@@ -12,17 +12,5 @@
     "outputs": [{ "internalType": "bytes", "name": "", "type": "bytes" }],
     "stateMutability": "payable",
     "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": false, "internalType": "address", "name": "l1Token", "type": "address" },
-      { "indexed": true, "internalType": "address", "name": "_from", "type": "address" },
-      { "indexed": true, "internalType": "address", "name": "_to", "type": "address" },
-      { "indexed": true, "internalType": "uint256", "name": "_sequenceNumber", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "_amount", "type": "uint256" }
-    ],
-    "name": "DepositInitiated",
-    "type": "event"
   }
 ]

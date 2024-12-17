@@ -428,8 +428,8 @@ async function constructChainSpecificFakes() {
 
   // Arbitrum contracts
   l1ArbitrumBridge = await makeFake(
-    "arbitrumErc20GatewayRouter",
-    CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address
+    "orbitErc20GatewayRouter_42161",
+    CONTRACT_ADDRESSES[1].orbitErc20GatewayRouter_42161.address
   );
 
   // zkSync contracts

@@ -20,6 +20,7 @@ import {
   fixedPointAdjustment,
   TransactionResponse,
   ZERO_ADDRESS,
+  Profiler,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -45,7 +46,7 @@ export class Relayer {
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
   private lastLogTime = 0;
   private lastMaintenance = 0;
-
+  private profiler: InstanceType<typeof Profiler>;
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected inventoryChainIds: number[];
@@ -69,7 +70,10 @@ export class Relayer {
         ];
       }
     });
-
+    this.profiler = new Profiler({
+      at: "Relayer",
+      logger: this.logger,
+    });
     this.relayerAddress = getAddress(relayerAddress);
     this.inventoryChainIds =
       this.config.pollingDelay === 0 ? Object.values(clients.spokePoolClients).map(({ chainId }) => chainId) : [];
@@ -628,13 +632,15 @@ export class Relayer {
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-    if (slowDepositors?.includes(depositor) && fillStatus === FillStatus.Unfilled) {
-      this.logger.debug({
-        at: "Relayer::evaluateFill",
-        message: "Initiating slow fill for grey listed depositor",
-        depositor,
-      });
-      this.requestSlowFill(deposit);
+    if (slowDepositors?.includes(depositor)) {
+      if (fillStatus === FillStatus.Unfilled) {
+        this.logger.debug({
+          at: "Relayer::evaluateFill",
+          message: "Initiating slow fill for grey listed depositor",
+          depositor,
+        });
+        this.requestSlowFill(deposit);
+      }
       return;
     }
 
@@ -1032,7 +1038,7 @@ export class Relayer {
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
-    const start = performance.now();
+    const mark = this.profiler.start("resolveRepaymentChain");
     const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
@@ -1056,14 +1062,16 @@ export class Relayer {
       };
     }
 
-    this.logger.debug({
-      at: "Relayer::resolveRepaymentChain",
+    mark.stop({
       message: `Determined eligible repayment chains ${JSON.stringify(
         preferredChainIds
-      )} for deposit ${depositId} from ${originChain} to ${destinationChain} in ${
-        Math.round(performance.now() - start) / 1000
-      }s.`,
+      )} for deposit ${depositId} from ${originChain} to ${destinationChain}.`,
+      preferredChainIds,
+      depositId,
+      originChain,
+      destinationChain,
     });
+
     const _repaymentFees = preferredChainIds.map((chainId) =>
       repaymentFees.find(({ paymentChainId }) => paymentChainId === chainId)
     );
@@ -1243,21 +1251,29 @@ export class Relayer {
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
-          crossChainLog =
-            "There is " +
-            formatter(
-              this.clients.inventoryClient.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
-                // TODO: Add in additional l2Token param here once we can specify it
-                .toString()
-            ) +
-            ` inbound L1->L2 ${symbol} transfers. `;
+          const outstandingCrossChainTransferAmount =
+            this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+              this.relayerAddress,
+              chainId,
+              l1Token.address,
+              token
+            );
+          crossChainLog = outstandingCrossChainTransferAmount.gt(0)
+            ? " There is " +
+              formatter(
+                this.clients.inventoryClient.crossChainTransferClient
+                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
+                  // TODO: Add in additional l2Token param here once we can specify it
+                  .toString()
+              ) +
+              ` inbound L1->L2 ${symbol} transfers. `
+            : undefined;
         }
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
           `${formatter(shortfall.toString())} ` +
           `(have ${formatter(balance.toString())} but need ` +
-          `${formatter(needed.toString())}). ${crossChainLog}` +
+          `${formatter(needed.toString())}).${crossChainLog}` +
           `This is blocking deposits: ${deposits}.\n`;
       });
     });

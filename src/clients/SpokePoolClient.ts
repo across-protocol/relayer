@@ -78,14 +78,15 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    */
   protected startWorker(): void {
     const {
-      eventSearchConfig: { fromBlock, maxBlockLookBack: blockRange },
+      eventSearchConfig: { fromBlock, maxBlockLookBack: blockrange },
+      spokePool: { address: spokepool },
     } = this;
-    const opts = { blockRange, lookback: `@${fromBlock}` };
+    const opts = { spokepool, blockrange, lookback: `@${fromBlock}` };
 
     const args = Object.entries(opts)
       .map(([k, v]) => [`--${k}`, `${v}`])
       .flat();
-    this.worker = spawn("node", [this.indexerPath, "--chainId", this.chainId.toString(), ...args], {
+    this.worker = spawn("node", [this.indexerPath, "--chainid", this.chainId.toString(), ...args], {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
 

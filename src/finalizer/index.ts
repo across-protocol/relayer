@@ -8,7 +8,6 @@ import {
   CONTRACT_ADDRESSES,
   Clients,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
-  Multicall2Call,
   ProcessEnv,
   constructClients,
   constructSpokePoolClientsWithLookback,
@@ -25,14 +24,16 @@ import {
   disconnectRedisClients,
   getMultisender,
   getNetworkName,
+  Multicall2Call,
   processEndPollingLoop,
   startupLogLevel,
   winston,
   CHAIN_IDs,
+  Profiler,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage } from "./types";
 import {
-  arbitrumOneFinalizer,
+  arbStackFinalizer,
   cctpL1toL2Finalizer,
   cctpL2toL1Finalizer,
   lineaL1ToL2Finalizer,
@@ -78,8 +79,12 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
+  [CHAIN_IDs.ALEPH_ZERO]: {
+    finalizeOnL1: [arbStackFinalizer],
+    finalizeOnL2: [],
+  },
   [CHAIN_IDs.ARBITRUM]: {
-    finalizeOnL1: [arbitrumOneFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.LINEA]: {
@@ -467,17 +472,23 @@ export class FinalizerConfig extends DataworkerConfig {
 
 export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
+
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
+  const profiler = new Profiler({
+    logger,
+    at: "Finalizer#index",
+    config,
+  });
 
   logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
   const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config, baseSigner);
 
   try {
     for (;;) {
-      const loopStart = performance.now();
+      profiler.mark("loopStart");
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged"]);
-      const loopStartPostSpokePoolUpdates = performance.now();
+      profiler.mark("loopStartPostSpokePoolUpdates");
 
       if (config.finalizerEnabled) {
         const availableChains = commonClients.configStoreClient
@@ -497,13 +508,25 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }
-      const loopEndPostFinalizations = performance.now();
 
-      logger.debug({
-        at: "Finalizer#index",
-        message: `Time to loop: ${Math.round((loopEndPostFinalizations - loopStart) / 1000)}s`,
-        timeToUpdateSpokeClients: Math.round((loopStartPostSpokePoolUpdates - loopStart) / 1000),
-        timeToFinalize: Math.round((loopEndPostFinalizations - loopStartPostSpokePoolUpdates) / 1000),
+      profiler.mark("loopEndPostFinalizations");
+
+      profiler.measure("timeToUpdateSpokeClients", {
+        from: "loopStart",
+        to: "loopStartPostSpokePoolUpdates",
+        strategy: config.finalizationStrategy,
+      });
+
+      profiler.measure("timeToFinalize", {
+        from: "loopStartPostSpokePoolUpdates",
+        to: "loopEndPostFinalizations",
+        strategy: config.finalizationStrategy,
+      });
+
+      profiler.measure("loopTime", {
+        message: "Time to loop",
+        from: "loopStart",
+        to: "loopEndPostFinalizations",
         strategy: config.finalizationStrategy,
       });
 

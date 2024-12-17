@@ -2,7 +2,7 @@ import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
-import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
+import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { EthersError } from "../interfaces";
 import {
   BigNumber,
@@ -29,6 +29,11 @@ export type TransactionSimulationResult = {
 
 const { isError, isEthersError } = typeguards;
 
+export type Multicall2Call = {
+  callData: ethers.utils.BytesLike;
+  target: string;
+};
+
 const nonceReset: { [chainId: number]: boolean } = {};
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
@@ -46,10 +51,7 @@ export function getNetworkError(err: unknown): string {
 }
 
 export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
-  if (!multicall3Addresses[chainId] || !baseSigner) {
-    return undefined;
-  }
-  return new Contract(multicall3Addresses[chainId], await sdkUtils.getABI("Multicall3"), baseSigner);
+  return sdkUtils.getMulticall3(chainId, baseSigner);
 }
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers

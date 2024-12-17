@@ -19,8 +19,10 @@ import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI from "./abi/ZkSyncDefaultErc20BridgeL
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI from "./abi/ZkSyncDefaultErc20BridgeL2.json";
 import ZK_SYNC_MAILBOX_ABI from "./abi/ZkSyncMailbox.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
+import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "./abi/ArbitrumErc20GatewayL2.json";
 import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
+import ARBSYS_L2_ABI from "./abi/ArbSysL2.json";
 import LINEA_MESSAGE_SERVICE_ABI from "./abi/LineaMessageService.json";
 import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
 import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
@@ -127,9 +129,27 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
       abi: POLYGON_BRIDGE_ABI,
     },
-    arbitrumErc20GatewayRouter: {
+    orbitOutbox_42161: {
+      address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
+      abi: ARBITRUM_OUTBOX_ABI,
+    },
+    orbitOutbox_41455: {
+      address: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e",
+      abi: ARBITRUM_OUTBOX_ABI,
+    },
+    orbitErc20GatewayRouter_42161: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
+    },
+    orbitErc20Gateway_42161: {
+      abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
+    },
+    orbitErc20GatewayRouter_41455: {
+      address: "0xeBb17f398ed30d02F2e8733e7c1e5cf566e17812",
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
+    },
+    orbitErc20Gateway_41455: {
+      abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
     VotingV2: {
       address: "0x004395edb43EFca9885CEdad51EC9fAf93Bd34ac",
@@ -308,10 +328,6 @@ export const CONTRACT_ADDRESSES: {
     erc20Gateway: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
-    outbox: {
-      address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
-      abi: ARBITRUM_OUTBOX_ABI,
-    },
     cctpMessageTransmitter: {
       address: "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
@@ -319,6 +335,16 @@ export const CONTRACT_ADDRESSES: {
     cctpTokenMessenger: {
       address: "0x19330d10D9Cc8751218eaf51E8885D058642E08A",
       abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+  },
+  41455: {
+    erc20Gateway: {
+      address: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
+      abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
+    },
+    arbSys: {
+      address: "0x0000000000000000000000000000000000000064",
+      abi: ARBSYS_L2_ABI,
     },
   },
   59144: {
