@@ -17,6 +17,11 @@ import {
 } from "./common";
 import { L2MessageServiceContract } from "./imports";
 
+const L1L2MessageStatuses = {
+  0: "UNKNOWN",
+  1: "CLAIMABLE",
+  2: "CLAIMED",
+};
 // Temporary re-implementation of the SDK's `L2MessageServiceContract.getMessageStatus` functions that allow us to use
 // our custom provider, with retry and caching logic, to get around the SDK's hardcoded logic to query events
 // from 0 to "latest" which will not work on all RPC's.
@@ -27,14 +32,7 @@ async function getL1ToL2MessageStatusUsingCustomProvider(
 ): Promise<OnChainMessageStatus> {
   const l2Contract = messageService.contract.connect(l2Provider);
   const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
-  switch (status.toString()) {
-    case "0":
-      return OnChainMessageStatus.UNKNOWN;
-    case "1":
-      return OnChainMessageStatus.CLAIMABLE;
-    case "2":
-      return OnChainMessageStatus.CLAIMED;
-  }
+  return L1L2MessageStatuses[status.toString()];
 }
 
 export async function lineaL1ToL2Finalizer(
