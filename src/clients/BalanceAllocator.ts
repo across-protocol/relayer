@@ -97,6 +97,12 @@ export class BalanceAllocator {
     return this.requestBalanceAllocations([{ chainId, tokens, holder, amount }]);
   }
 
+  async getBalanceSubUsed(chainId: number, token: string, holder: string): Promise<BigNumber> {
+    const balance = await this.getBalance(chainId, token, holder);
+    const used = this.getUsed(chainId, token, holder);
+    return balance.sub(used);
+  }
+
   async getBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
     if (!this.balances?.[chainId]?.[token]?.[holder]) {
       const balance = await this._queryBalance(chainId, token, holder);
@@ -112,6 +118,12 @@ export class BalanceAllocator {
       }
     }
     return this.balances[chainId][token][holder];
+  }
+
+  testSetBalance(chainId: number, token: string, holder: string, balance: BigNumber): void {
+    this.balances[chainId] ??= {};
+    this.balances[chainId][token] ??= {};
+    this.balances[chainId][token][holder] = balance;
   }
 
   getUsed(chainId: number, token: string, holder: string): BigNumber {
