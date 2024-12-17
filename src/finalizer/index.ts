@@ -246,7 +246,7 @@ export async function finalize(
       } catch (_e) {
         logger.error({
           at: "finalizer",
-          message: "Something errored in a chain-specific finalizer",
+          message: `Something errored in a finalizer for chain ${client.chainId}`,
           errorMsg: _e,
         });
       }
