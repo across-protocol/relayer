@@ -14,6 +14,7 @@ import {
   Contract,
   paginatedEventQuery,
   mapAsync,
+  BigNumber,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -35,7 +36,11 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 // ethers.Provider instances and use our own custom provider instead.
 import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
 import { SparseMerkleTreeFactory } from "@consensys/linea-sdk/dist/lib/sdk/merkleTree/MerkleTreeFactory";
-import { DEFAULT_L2_MESSAGE_TREE_DEPTH } from "@consensys/linea-sdk/dist/lib/utils/constants";
+import {
+  DEFAULT_L2_MESSAGE_TREE_DEPTH,
+  L2_MERKLE_TREE_ADDED_EVENT_SIGNATURE,
+  L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE,
+} from "@consensys/linea-sdk/dist/lib/utils/constants";
 
 // Ideally we could call this function through the LineaSDK but its hardcoded to use an ethers.Provider instance
 // that doesn't have our custom caching logic or ability for us to customize the block lookback. This means we can't
@@ -61,7 +66,8 @@ async function getMessageProof(
   }
   // This SDK function is complex but only makes one l1Provider.getTransactionReceipt call so we can make this
   // through the SDK rather than re-implement it.
-  const finalizationInfo = await l1ClaimingService.getFinalizationMessagingInfo(
+  const finalizationInfo = await getFinalizationMessagingInfo(
+    l1ClaimingService,
     l2MessagingBlockAnchoredEvent.transactionHash
   );
   const l2MessageHashesInBlockRange = await getL2MessageHashesInBlockRange(l2Contract, {
@@ -82,6 +88,56 @@ async function getMessageProof(
     throw new Error("Merkle tree build failed.");
   }
   return tree.getProof(l2Messages.indexOf(messageHash));
+}
+
+async function getFinalizationMessagingInfo(
+  l1ClaimingService: L1ClaimingService,
+  transactionHash: string
+): Promise<{
+  l2MessagingBlocksRange: { startingBlock: number; endBlock: number };
+  l2MerkleRoots: string[];
+  treeDepth: number;
+}> {
+  const l1Contract = l1ClaimingService.l1Contract;
+  const receipt = await l1Contract.provider.getTransactionReceipt(transactionHash);
+  if (!receipt || receipt.logs.length === 0) {
+    throw new Error(`Transaction does not exist or no logs found in this transaction: ${transactionHash}.`);
+  }
+  let treeDepth = 0;
+  const l2MerkleRoots = [];
+  const blocksNumber = [];
+  const filteredLogs = receipt.logs.filter((log) => log.address === l1Contract.contractAddress);
+  for (let i = 0; i < filteredLogs.length; i++) {
+    const log = filteredLogs[i];
+    // This part changes from the SDK: remove any logs with topic hashes that don't exist in the current SDK's ABI,
+    // otherwise parseLog will fail.
+    const topic = log.topics[0];
+    if (topic !== L2_MERKLE_TREE_ADDED_EVENT_SIGNATURE && topic !== L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE) {
+      continue;
+    }
+
+    const parsedLog = l1Contract.contract.interface.parseLog(log);
+    if (topic === L2_MERKLE_TREE_ADDED_EVENT_SIGNATURE) {
+      treeDepth = BigNumber.from(parsedLog.args.treeDepth).toNumber();
+      l2MerkleRoots.push(parsedLog.args.l2MerkleRoot);
+    } else if (topic === L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE) {
+      blocksNumber.push(parsedLog.args.l2Block);
+    }
+  }
+  if (l2MerkleRoots.length === 0) {
+    throw new Error("No L2MerkleRootAdded events found in this transaction.");
+  }
+  if (blocksNumber.length === 0) {
+    throw new Error("No L2MessagingBlocksAnchored events found in this transaction.");
+  }
+  return {
+    l2MessagingBlocksRange: {
+      startingBlock: Math.min(...blocksNumber),
+      endBlock: Math.max(...blocksNumber),
+    },
+    l2MerkleRoots,
+    treeDepth,
+  };
 }
 
 async function getL2MessageHashesInBlockRange(
