@@ -3,6 +3,7 @@
 import kms from "@google-cloud/kms";
 import { Storage } from "@google-cloud/storage";
 import fs from "fs";
+import path from "node:path";
 export interface KeyConfig {
   projectId: string;
   locationId: string;
@@ -29,17 +30,30 @@ const storageConfig = GCP_STORAGE_CONFIG ? JSON.parse(GCP_STORAGE_CONFIG) : unde
 export function getGckmsConfig(keys: string[]): KeyConfig[] {
   let configOverride: GckmsConfig = {};
   if (process.env.GCKMS_CONFIG) {
-    configOverride = JSON.parse(process.env.GCKMS_CONFIG);
+    const isFile = fs.existsSync(process.env.GCKMS_CONFIG);
+    if (isFile) {
+      configOverride = JSON.parse(fs.readFileSync(process.env.GCKMS_CONFIG, "utf8"));
+    } else {
+      configOverride = JSON.parse(process.env.GCKMS_CONFIG);
+    }
   } else {
     const overrideFname = ".GckmsOverride.js";
     try {
-      if (fs.existsSync(`${__dirname}/${overrideFname}`)) {
-        configOverride = require(`./${overrideFname}`);
+      const filePath = path.join(__dirname, overrideFname);
+      const doesFileExist = fs.existsSync(filePath);
+      if (doesFileExist) {
+        configOverride = require(filePath);
+      } else {
+        throw new Error(`GCKMS_CONFIG file not found at path: ${filePath}`);
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(err);
     }
+  }
+
+  if (Object.keys(configOverride).length === 0) {
+    throw new Error("GCKMS_CONFIG is empty");
   }
 
   const keyConfigs = keys.map((keyName: string): KeyConfig => {
