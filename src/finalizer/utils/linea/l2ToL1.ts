@@ -30,17 +30,17 @@ import {
 } from "./common";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
 import { utils as sdkUtils } from "@across-protocol/sdk";
+import {
+  L1ClaimingService,
+  SparseMerkleTreeFactory,
+  DEFAULT_L2_MESSAGE_TREE_DEPTH,
+  L2_MERKLE_TREE_ADDED_EVENT_SIGNATURE,
+  L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE,
+} from "./imports";
 
 // Normally we avoid importing directly from a node_modules' /dist package but we need access to some
 // of the internal classes and functions in order to replicate SDK logic so that we can by pass hardcoded
 // ethers.Provider instances and use our own custom provider instead.
-import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
-import { SparseMerkleTreeFactory } from "@consensys/linea-sdk/dist/lib/sdk/merkleTree/MerkleTreeFactory";
-import {
-  DEFAULT_L2_MESSAGE_TREE_DEPTH,
-  L2_MERKLE_TREE_ADDED_EVENT_SIGNATURE,
-  L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE,
-} from "@consensys/linea-sdk/dist/lib/utils/constants";
 
 // Ideally we could call this function through the LineaSDK but its hardcoded to use an ethers.Provider instance
 // that doesn't have our custom caching logic or ability for us to customize the block lookback. This means we can't

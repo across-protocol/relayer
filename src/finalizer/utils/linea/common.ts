@@ -18,13 +18,7 @@ import {
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import { Log } from "../../../interfaces";
-
-// Normally we avoid importing directly from a node_modules' /dist package but we need access to some
-// of the internal classes and functions in order to replicate SDK logic so that we can by pass hardcoded
-// ethers.Provider instances and use our own custom provider instead.
-import { L1MessageServiceContract, L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
-import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
-import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/L2MessageService";
+import { L1ClaimingService, L1MessageServiceContract, L2MessageServiceContract, MessageSentEvent } from "./imports";
 
 export type MessageWithStatus = Message & {
   logIndex: number;
