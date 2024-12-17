@@ -138,21 +138,13 @@ export function getL2MessageServiceContractFromL1ClaimingService(
   l1ClaimingService: L1ClaimingService,
   l2Provider: ethers.providers.Provider
 ): Contract {
-  return new Contract(
-    l1ClaimingService.l2Contract.contract.address,
-    l1ClaimingService.l2Contract.contract.interface,
-    l2Provider
-  );
+  return l1ClaimingService.l2Contract.contract.connect(l2Provider);
 }
 export function getL1MessageServiceContractFromL1ClaimingService(
   l1ClaimingService: L1ClaimingService,
   l1Provider: ethers.providers.Provider
 ): Contract {
-  return new Contract(
-    l1ClaimingService.l1Contract.contract.address,
-    l1ClaimingService.l1Contract.contract.interface,
-    l1Provider
-  );
+  return l1ClaimingService.l1Contract.contract.connect(l1Provider);
 }
 export async function getMessageSentEventForMessageHash(
   messageHash: string,
