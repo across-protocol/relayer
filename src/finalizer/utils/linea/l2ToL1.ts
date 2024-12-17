@@ -168,8 +168,8 @@ export async function lineaL2ToL1Finalizer(
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);
   // We need a longer lookback period for L1 to ensure we find all L1 events containing finalized
   // L2 block heights. Use the max spoke pool client lookback for the hub chain.
-  const l1FromBlock = spokePoolClient[hubPoolClient.chainId].eventSearchConfig.fromBlock;
-  const l1ToBlock = spokePoolClient[hubPoolClient.chainId].latestBlockSearched;
+  const l1FromBlock = spokePoolClient.eventSearchConfig.fromBlock;
+  const l1ToBlock = spokePoolClient.latestBlockSearched;
   // Optimize block range for querying relevant source events on L2.
   // Linea L2->L1 messages are claimable after 6 - 32 hours
   const { fromBlock: l2FromBlock, toBlock: l2ToBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 24 * 8, 6);
