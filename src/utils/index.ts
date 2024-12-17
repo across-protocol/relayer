@@ -54,7 +54,6 @@ export * from "./chains";
 export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
-export * from "./DepositUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
