@@ -78,12 +78,13 @@ describe("ProfitClient: Consider relay profit", () => {
 
     // Randomise the fillRelay cost in units of gas.
     const nativeGasCost = toBN(random(80_000, 100_000));
-    const tokenGasCost = nativeGasCost.mul(toGWei(random(1, 100))).div(toBN(10).pow(9));
+    const gasPrice = toGWei(random(1, 100));
+    const tokenGasCost = nativeGasCost.mul(gasPrice).div(toBN(10).pow(9));
 
     profitClient.setTokenPrice(gasToken.address, gasTokenPriceUsd);
-    profitClient.setGasCost(chainId, { nativeGasCost, tokenGasCost });
+    profitClient.setGasCost(chainId, { nativeGasCost, tokenGasCost, gasPrice });
 
-    return { nativeGasCost, tokenGasCost, gasTokenPriceUsd };
+    return { nativeGasCost, tokenGasCost, gasPrice, gasTokenPriceUsd };
   };
 
   const tokens = Object.fromEntries(
@@ -106,8 +107,9 @@ describe("ProfitClient: Consider relay profit", () => {
     chainIds.map((chainId) => {
       const nativeGasCost = toBN(100_000); // Assume 100k gas for a single fill
       const gasTokenPrice = toBN(chainId);
-      const tokenGasCost = nativeGasCost.mul(gasTokenPrice);
-      return [chainId, { nativeGasCost, tokenGasCost }];
+      const gasPrice = gasTokenPrice;
+      const tokenGasCost = nativeGasCost.mul(gasPrice);
+      return [chainId, { nativeGasCost, tokenGasCost, gasPrice }];
     })
   );
 
@@ -296,12 +298,11 @@ describe("ProfitClient: Consider relay profit", () => {
   });
 
   it("Considers gas cost when computing profitability", async () => {
-    const gasPrice = toGWei(10);
     const gasCostMultipliers = ["0.1", "0.5", "1", "2", "5", "10"].map((n) => toBNWei(n));
 
     for (const originChainId of chainIds) {
       for (const destinationChainId of chainIds.filter((chainId) => chainId !== originChainId)) {
-        const { nativeGasCost: baseNativeGasCost } = gasCost[destinationChainId];
+        const { nativeGasCost: baseNativeGasCost, gasPrice } = gasCost[destinationChainId];
 
         for (const token of Object.values(tokens)) {
           const inputToken = randomAddress();
@@ -339,7 +340,7 @@ describe("ProfitClient: Consider relay profit", () => {
             const nativeGasCost = baseNativeGasCost.mul(gasCostMultiplier).div(fixedPoint);
             const tokenGasCost = nativeGasCost.mul(gasPrice);
             const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(fixedPoint);
-            profitClient.setGasCost(destinationChainId, { nativeGasCost, tokenGasCost });
+            profitClient.setGasCost(destinationChainId, { nativeGasCost, tokenGasCost, gasPrice });
 
             const gasCostPct = gasCostUsd.mul(fixedPoint).div(outputAmountUsd);
 
