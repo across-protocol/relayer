@@ -244,7 +244,7 @@ export async function finalize(
         totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
         totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
       } catch (_e) {
-        logger.error({
+        logger.warn({
           at: "finalizer",
           message: `Something errored in a finalizer for chain ${client.chainId}`,
           errorMsg: _e,
