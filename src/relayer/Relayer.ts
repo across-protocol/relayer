@@ -21,6 +21,7 @@ import {
   TransactionResponse,
   ZERO_ADDRESS,
   Profiler,
+  formatGwei,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -36,6 +37,7 @@ type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
 type RepaymentChainProfitability = {
   gasLimit: BigNumber;
   gasCost: BigNumber;
+  gasPrice: BigNumber;
   relayerFeePct: BigNumber;
   lpFeePct: BigNumber;
 };
@@ -673,7 +675,13 @@ export class Relayer {
         l1Token,
         lpFees
       );
-      const { relayerFeePct, gasCost, gasLimit: _gasLimit, lpFeePct: realizedLpFeePct } = repaymentChainProfitability;
+      const {
+        relayerFeePct,
+        gasCost,
+        gasLimit: _gasLimit,
+        lpFeePct: realizedLpFeePct,
+        gasPrice,
+      } = repaymentChainProfitability;
       if (!isDefined(repaymentChainId)) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
       } else {
@@ -702,7 +710,7 @@ export class Relayer {
         tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
 
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasLimit);
+        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasPrice, gasLimit);
       }
     } else if (selfRelay) {
       // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
@@ -720,7 +728,14 @@ export class Relayer {
       // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
       // expensive fills on (for example) mainnet.
       const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
-      this.fillRelay(deposit, destinationChainId, lpFeePct);
+      // For self-relays, gas price is not a concern because we are bypassing profitability requirements so
+      // use profit client's gasprice.
+      this.fillRelay(
+        deposit,
+        destinationChainId,
+        lpFeePct,
+        this.clients.profitClient.getGasCostsForChain(destinationChainId).gasPrice
+      );
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
@@ -973,7 +988,13 @@ export class Relayer {
     this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
 
-  fillRelay(deposit: Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber, gasLimit?: BigNumber): void {
+  fillRelay(
+    deposit: Deposit,
+    repaymentChainId: number,
+    realizedLpFeePct: BigNumber,
+    gasPrice: BigNumber,
+    gasLimit?: BigNumber
+  ): void {
     const { spokePoolClients } = this.clients;
     this.logger.debug({
       at: "Relayer::fillRelay",
@@ -1005,7 +1026,7 @@ export class Relayer {
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;
-    const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct);
+    const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
     const contract = spokePoolClients[deposit.destinationChainId].spokePool;
     const chainId = deposit.destinationChainId;
     const multiCallerClient = this.getMulticaller(chainId);
@@ -1056,6 +1077,7 @@ export class Relayer {
         repaymentChainProfitability: {
           gasLimit: bnZero,
           gasCost: bnUint256Max,
+          gasPrice: bnUint256Max,
           relayerFeePct: bnZero,
           lpFeePct: bnUint256Max,
         },
@@ -1086,17 +1108,25 @@ export class Relayer {
     const getRepaymentChainProfitability = async (
       preferredChainId: number,
       lpFeePct: BigNumber
-    ): Promise<{ profitable: boolean; gasLimit: BigNumber; gasCost: BigNumber; relayerFeePct: BigNumber }> => {
+    ): Promise<{
+      profitable: boolean;
+      gasLimit: BigNumber;
+      gasCost: BigNumber;
+      gasPrice: BigNumber;
+      relayerFeePct: BigNumber;
+    }> => {
       const {
         profitable,
         nativeGasCost: gasLimit,
         tokenGasCost: gasCost,
+        gasPrice,
         netRelayerFeePct: relayerFeePct, // net relayer fee is equal to total fee minus the lp fee.
       } = await profitClient.isFillProfitable(deposit, lpFeePct, hubPoolToken, preferredChainId);
       return {
         profitable,
         gasLimit,
         gasCost,
+        gasPrice,
         relayerFeePct,
       };
     };
@@ -1116,10 +1146,11 @@ export class Relayer {
     // @dev The following internal function should be the only one used to set `preferredChain` above.
     const getProfitabilityDataForPreferredChainIndex = (preferredChainIndex: number): RepaymentChainProfitability => {
       const lpFeePct = lpFeePcts[preferredChainIndex];
-      const { gasLimit, gasCost, relayerFeePct } = repaymentChainProfitabilities[preferredChainIndex];
+      const { gasLimit, gasCost, relayerFeePct, gasPrice } = repaymentChainProfitabilities[preferredChainIndex];
       return {
         gasLimit,
         gasCost,
+        gasPrice,
         relayerFeePct,
         lpFeePct,
       };
@@ -1251,21 +1282,29 @@ export class Relayer {
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
-          crossChainLog =
-            "There is " +
-            formatter(
-              this.clients.inventoryClient.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
-                // TODO: Add in additional l2Token param here once we can specify it
-                .toString()
-            ) +
-            ` inbound L1->L2 ${symbol} transfers. `;
+          const outstandingCrossChainTransferAmount =
+            this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+              this.relayerAddress,
+              chainId,
+              l1Token.address,
+              token
+            );
+          crossChainLog = outstandingCrossChainTransferAmount.gt(0)
+            ? " There is " +
+              formatter(
+                this.clients.inventoryClient.crossChainTransferClient
+                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
+                  // TODO: Add in additional l2Token param here once we can specify it
+                  .toString()
+              ) +
+              ` inbound L1->L2 ${symbol} transfers. `
+            : undefined;
         }
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
           `${formatter(shortfall.toString())} ` +
           `(have ${formatter(balance.toString())} but need ` +
-          `${formatter(needed.toString())}). ${crossChainLog}` +
+          `${formatter(needed.toString())}).${crossChainLog}` +
           `This is blocking deposits: ${deposits}.\n`;
       });
     });
@@ -1336,9 +1375,14 @@ export class Relayer {
     }
   }
 
-  private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, realizedLpFeePct: BigNumber): string {
+  private constructRelayFilledMrkdwn(
+    deposit: Deposit,
+    repaymentChainId: number,
+    realizedLpFeePct: BigNumber,
+    gasPrice: BigNumber
+  ): string {
     let mrkdwn =
-      this.constructBaseFillMarkdown(deposit, realizedLpFeePct) +
+      this.constructBaseFillMarkdown(deposit, realizedLpFeePct, gasPrice) +
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
@@ -1353,7 +1397,7 @@ export class Relayer {
     return mrkdwn;
   }
 
-  private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber): string {
+  private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
@@ -1372,7 +1416,9 @@ export class Relayer {
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
-      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
+      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%. Gas price used in profit calc: ${formatGwei(
+        _gasPriceGwei.toString()
+      )} Gwei.`;
 
     return msg;
   }

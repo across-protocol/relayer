@@ -937,7 +937,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             spy.getCalls().find(({ lastArg }) => lastArg.message.includes("Skipping fill for deposit with message"))
           ).to.not.be.undefined;
         } else {
-          await spokePool_2.setCurrentTime(deposit.exclusivityDeadline + 1); // Temporary workaround.
           // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
           expect((await txnReceipts[destinationChainId]).length).to.equal(1);
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
@@ -1011,7 +1010,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         depositor
       );
 
-      await spokePool_2.setCurrentTime(deposit.exclusivityDeadline + 1); // Temporary workaround.
       await updateAllClients();
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       expect((await txnReceipts[destinationChainId]).length).to.equal(1);

@@ -311,13 +311,13 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  [CHAIN_IDs.LISK]: ["WETH", "USDT", "LSK"],
+  [CHAIN_IDs.LISK]: ["WETH", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
-  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC"],
+  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
@@ -611,3 +611,31 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
 };
 
 export const CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS = 3 * 60 * 60; // 3 hours is a safe assumption for the time
+
+export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
+  [chainId: number]: {
+    // Amount of tokens required to send a single message to the L2
+    amountWei: number;
+    // Multiple of the required amount above to send to the feePayer in case
+    // we are short funds. For example, if set to 10, then everytime we need to load more funds
+    // we'll send 10x the required amount.
+    amountMultipleToFund: number;
+    // Account that pays the fees on-chain that we will load more fee tokens into.
+    feePayer?: string;
+    // Token that the feePayer will pay the fees in.
+    feeToken?: string;
+  };
+} = {
+  // Leave feePayer undefined if feePayer is HubPool.
+  // Leave feeToken undefined if feeToken is ETH.
+  [CHAIN_IDs.ARBITRUM]: {
+    amountWei: 0.02,
+    amountMultipleToFund: 1,
+  },
+  [CHAIN_IDs.ALEPH_ZERO]: {
+    amountWei: 0.49,
+    amountMultipleToFund: 20,
+    feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
+    feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
+  },
+};
