@@ -57,6 +57,7 @@ export class MockProfitClient extends ProfitClient {
     const defaultGasCost = {
       nativeGasCost: defaultFillCost,
       tokenGasCost: defaultGasPrice.mul(defaultFillCost),
+      gasPrice: defaultGasPrice,
     };
     Object.values(spokePoolClients).map(({ chainId }) => {
       this.setGasCost(chainId, defaultGasCost); // gas/fill

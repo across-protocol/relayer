@@ -40,6 +40,7 @@ export const {
   formatFeePct,
   shortenHexStrings,
   convertFromWei,
+  formatGwei,
   max,
   min,
   utf8ToHex,
