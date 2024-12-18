@@ -32,7 +32,7 @@ export class AcrossApiClient {
   private endpoint: string;
   private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
-  private gasPrices: GasPrices;
+  private gasPrices: GasPrices = {};
   private updatedAt = 0;
   private profiler: sdkUtils.Profiler;
 
