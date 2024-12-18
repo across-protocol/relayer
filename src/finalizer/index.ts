@@ -30,6 +30,7 @@ import {
   winston,
   CHAIN_IDs,
   Profiler,
+  stringifyThrownValue,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage } from "./types";
 import {
@@ -247,7 +248,7 @@ export async function finalize(
         logger.error({
           at: "finalizer",
           message: `Something errored in a finalizer for chain ${client.chainId}`,
-          errorMsg: _e,
+          errorMsg: `${stringifyThrownValue(_e)}`,
         });
       }
     });
