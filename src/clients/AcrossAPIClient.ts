@@ -12,6 +12,7 @@ import {
   bnUint256Max as uint256Max,
 } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -23,13 +24,20 @@ export function getAcrossHost(hubChainId: number): string {
   return process.env.ACROSS_API_HOST ?? (hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to");
 }
 
+interface GasPrices {
+  [chainId: number]: string;
+}
+
 export class AcrossApiClient {
   private endpoint: string;
   private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
+  private gasPrices: GasPrices;
   private updatedAt = 0;
+  private profiler: sdkUtils.Profiler;
 
   public updatedLimits = false;
+  public updatedGasPrices = false;
 
   // Note: Max vercel execution duration is 1 minute
   constructor(
@@ -44,6 +52,10 @@ export class AcrossApiClient {
     if (Object.keys(tokensQuery).length === 0) {
       this.tokensQuery = dedupArray(Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[hubChainId]));
     }
+    this.profiler = new sdkUtils.Profiler({
+      at: "AcrossAPIClient",
+      logger,
+    });
 
     this.chainIds = chainIds.filter((chainId) => chainId !== hubChainId);
   }
@@ -65,27 +77,43 @@ export class AcrossApiClient {
     }
     const enabledTokens = hubPoolClient.getL1Tokens().map((token) => token.address);
     const tokens = this.tokensQuery.filter((token) => enabledTokens.includes(token));
+    this.updatedLimits = false;
+    this.updatedGasPrices = false;
     this.logger.debug({
       at: "AcrossAPIClient",
-      message: "Querying /liquid-reserves",
+      message: "Querying Across API",
       timeout: this.timeout,
-      tokens,
       endpoint: this.endpoint,
+      paths: ["/liquid-reserves", "/gas-prices"],
     });
-    this.updatedLimits = false;
+    const tStart = this.profiler.start("Across API request");
+    // TODO: Double timeout for callLimits because its not called on production API which gets its cache warmed.
+    const [liquidReserves, gasPrices] = await Promise.all([this.callLimits(tokens), this.callGasPrices(6000)]);
+    tStart.stop({
+      message: "Completed API requests",
+    });
+    this.updatedLimits = true;
+    this.updatedGasPrices = true;
+    this.updatedAt = now;
 
     // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
-    const liquidReserves = await this.callLimits(tokens);
     tokens.forEach((token, i) => (this.limits[token] = liquidReserves[i]));
-
     this.logger.debug({
       at: "AcrossAPIClient",
       message: "🏁 Fetched HubPool liquid reserves",
       limits: this.limits,
     });
-    this.updatedLimits = true;
-    this.updatedAt = now;
+
+    // /gas-prices
+    if (Object.keys(gasPrices).length > 0) {
+      this.gasPrices = gasPrices;
+      this.logger.debug({
+        at: "AcrossAPIClient",
+        message: "🏁 Fetched gas prices",
+        gasPrices: this.gasPrices,
+      });
+    }
   }
 
   getLimit(originChainId: number, l1Token: string): BigNumber {
@@ -103,8 +131,23 @@ export class AcrossApiClient {
     return this.limits[l1Token] ?? bnZero;
   }
 
+  getGasPrice(chainId: number): string | undefined {
+    if (!this.gasPrices[chainId]) {
+      this.logger.warn({
+        at: "AcrossApiClient::gasPrices",
+        message: `No gas price stored for chain ${chainId}`,
+      });
+      return undefined;
+    }
+    return this.gasPrices[chainId];
+  }
+
   getLimitsCacheKey(l1Tokens: string[]): string {
     return `limits_api_${l1Tokens.join(",")}`;
+  }
+
+  getGasPricesCacheKey(): string {
+    return "gasprices_api";
   }
 
   private async callLimits(l1Tokens: string[], timeout = this.timeout): Promise<BigNumber[]> {
@@ -132,7 +175,7 @@ export class AcrossApiClient {
       if (!result?.data) {
         this.logger.error({
           at: "AcrossAPIClient",
-          message: `Invalid response from /${path}, expected maxDeposit field.`,
+          message: `Invalid response from /${path}`,
           url,
           params,
           result,
@@ -154,5 +197,58 @@ export class AcrossApiClient {
     }
 
     return liquidReserves;
+  }
+
+  private async callGasPrices(timeout = this.timeout): Promise<GasPrices> {
+    const path = "gas-prices";
+    // TODO: Change endpoint if live:
+    const url = `https://app-frontend-v3-git-gas-prices-api-uma.vercel.app/api/${path}`;
+
+    const redis = await getRedisCache();
+
+    // Assume worst-case payout on mainnet.
+    if (redis) {
+      try {
+        const gasPrices = await redis.get<string>(this.getGasPricesCacheKey());
+        if (gasPrices !== null) {
+          return JSON.parse(gasPrices);
+        }
+      } catch (e) {
+        this.logger.debug({ at: "AcrossAPIClient", message: `Failed to get cached ${path} data.`, error: e });
+      }
+    }
+
+    let gasPrices: GasPrices = {};
+    try {
+      const result = await axios(url, { timeout });
+      if (!result?.data) {
+        this.logger.error({
+          at: "AcrossAPIClient",
+          message: `Invalid response from /${path}`,
+          url,
+          result,
+        });
+      }
+      const chainIds = Object.keys(result.data);
+      gasPrices = Object.fromEntries(
+        chainIds
+          .map((chainId) => [chainId, result.data[chainId] ?? bnZero])
+          .filter(([, amount]) => BigNumber.from(amount).gt(0))
+      );
+    } catch (err) {
+      const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
+      this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, msg });
+      return {};
+    }
+
+    if (redis) {
+      // Cache gas prices for 1 minute.
+      const baseTtl = 60;
+      // Apply a random margin to spread expiry over a larger time window.
+      const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);
+      await redis.set(this.getGasPricesCacheKey(), JSON.stringify(gasPrices), ttl);
+    }
+
+    return gasPrices;
   }
 }

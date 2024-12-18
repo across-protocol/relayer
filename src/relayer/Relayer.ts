@@ -1413,12 +1413,13 @@ export class Relayer {
     const totalFeePct = formatFeePct(_totalFeePct);
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
       this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
+    const apiGasPrice = this.clients.acrossApiClient.getGasPrice(deposit.destinationChainId);
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
       ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%. Gas price used in profit calc: ${formatGwei(
         _gasPriceGwei.toString()
-      )} Gwei.`;
+      )} Gwei.${apiGasPrice ? ` API gas price: ${formatGwei(apiGasPrice)}.` : ""}`;
 
     return msg;
   }
