@@ -30,6 +30,7 @@ import {
   winston,
   CHAIN_IDs,
   Profiler,
+  stringifyThrownValue,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage } from "./types";
 import {
@@ -227,21 +228,29 @@ export async function finalize(
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
     await sdkUtils.mapAsync(chainSpecificFinalizers, async (finalizer) => {
-      const { callData, crossChainMessages } = await finalizer(
-        logger,
-        hubSigner,
-        hubPoolClient,
-        client,
-        l1ToL2AddressesToFinalize
-      );
+      try {
+        const { callData, crossChainMessages } = await finalizer(
+          logger,
+          hubSigner,
+          hubPoolClient,
+          client,
+          l1ToL2AddressesToFinalize
+        );
 
-      callData.forEach((txn, idx) => {
-        finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
-      });
+        callData.forEach((txn, idx) => {
+          finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
+        });
 
-      totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
-      totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
-      totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
+        totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
+        totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
+        totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
+      } catch (_e) {
+        logger.error({
+          at: "finalizer",
+          message: `Something errored in a finalizer for chain ${client.chainId}`,
+          errorMsg: stringifyThrownValue(_e),
+        });
+      }
     });
     const totalTransfers = totalWithdrawalsForChain + totalDepositsForChain + totalMiscTxnsForChain;
     logger.debug({
